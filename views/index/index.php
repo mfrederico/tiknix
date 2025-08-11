@@ -127,7 +127,7 @@
         <h2 class="mb-4">Ready to Build Your Next Project?</h2>
         <p class="lead mb-4">Get started with our comprehensive documentation and examples.</p>
         <div class="d-grid gap-2 d-md-flex justify-content-md-center">
-            <a href="https://github.com/yourusername/php-framework-starter" class="btn btn-primary btn-lg">
+            <a href="https://github.com/mfrederico/tiknix" class="btn btn-primary btn-lg">
                 <i class="bi bi-github"></i> View on GitHub
             </a>
             <a href="/docs" class="btn btn-outline-primary btn-lg">

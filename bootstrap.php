@@ -144,16 +144,31 @@ class Bootstrap {
         try {
             // Construct DSN based on database type
             $type = $dbConfig['type'] ?? 'mysql';
-            $host = $dbConfig['host'] ?? 'localhost';
-            $port = $dbConfig['port'] ?? 3306;
-            $name = $dbConfig['name'] ?? 'app';
-            $user = $dbConfig['user'] ?? 'root';
-            $pass = $dbConfig['pass'] ?? '';
             
-            $dsn = "{$type}:host={$host};port={$port};dbname={$name}";
-            
-            // Setup RedBean
-            R::setup($dsn, $user, $pass);
+            if ($type === 'sqlite') {
+                // SQLite configuration
+                $dbPath = $dbConfig['path'] ?? 'database/tiknix.db';
+                // Create database directory if it doesn't exist
+                $dbDir = dirname($dbPath);
+                if (!is_dir($dbDir)) {
+                    mkdir($dbDir, 0755, true);
+                }
+                $dsn = "sqlite:{$dbPath}";
+                // Setup RedBean for SQLite (no user/pass needed)
+                R::setup($dsn);
+            } else {
+                // MySQL/PostgreSQL configuration
+                $host = $dbConfig['host'] ?? 'localhost';
+                $port = $dbConfig['port'] ?? 3306;
+                $name = $dbConfig['name'] ?? 'app';
+                $user = $dbConfig['user'] ?? 'root';
+                $pass = $dbConfig['pass'] ?? '';
+                
+                $dsn = "{$type}:host={$host};port={$port};dbname={$name}";
+                
+                // Setup RedBean
+                R::setup($dsn, $user, $pass);
+            }
             
             // Set freeze mode based on environment
             $freeze = $this->config['app']['environment'] === 'production';

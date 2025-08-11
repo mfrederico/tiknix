@@ -37,15 +37,15 @@ A modern, production-ready PHP framework featuring automatic routing, authentica
 
 ### Requirements
 - PHP 8.1 or higher (uses modern PHP features)
-- MySQL/MariaDB (or PostgreSQL/SQLite)
+- MySQL/MariaDB, PostgreSQL, or SQLite
 - Composer
-- Apache/Nginx with mod_rewrite
+- Apache/Nginx with mod_rewrite (or PHP built-in server for development)
 
 ### Installation
 
 1. **Clone or download the repository**
 ```bash
-git clone https://github.com/yourusername/tiknix.git myapp
+git clone https://github.com/mfrederico/tiknix.git myapp
 cd myapp
 ```
 
@@ -55,22 +55,29 @@ composer install
 ```
 
 3. **Configure the application**
+
+#### Option A: Using SQLite (Easiest - no database server required!)
+```bash
+cp conf/config.sqlite.example.ini conf/config.ini
+# SQLite database will be created automatically at database/tiknix.db
+```
+
+#### Option B: Using MySQL/MariaDB
 ```bash
 cp conf/config.example.ini conf/config.ini
-# Edit conf/config.ini with your database credentials and settings
+# Edit conf/config.ini with your MySQL credentials
+
+# Create database (if not exists)
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS tiknix"
 ```
 
 4. **Initialize the database**
 
-The framework uses RedBeanPHP which auto-creates tables. To initialize default users and permissions:
+The framework uses RedBeanPHP which auto-creates tables. Run the initialization script:
 
 ```bash
-# Create database (if not exists)
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS tiknix"
-
-# Run initialization scripts
-php database/init_users.php      # Creates admin and public users
-php database/init_contact.php    # Creates contact form tables
+# This works for any database type (SQLite, MySQL, PostgreSQL)
+php database/init.php
 ```
 
 This creates:

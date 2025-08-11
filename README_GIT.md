@@ -6,7 +6,7 @@ A modern, production-ready PHP framework featuring automatic routing, authentica
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/tiknix.git
+git clone https://github.com/mfrederico/tiknix.git
 cd tiknix
 ```
 
@@ -15,17 +15,15 @@ cd tiknix
 composer install
 ```
 
-3. Configure the application
+3. Configure the application (SQLite - no database server needed!)
 ```bash
-cp conf/config.example.ini conf/config.ini
-# Edit conf/config.ini with your database credentials
+cp conf/config.sqlite.example.ini conf/config.ini
+# Or use MySQL: cp conf/config.example.ini conf/config.ini
 ```
 
-4. Create database and initialize
+4. Initialize database
 ```bash
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS tiknix"
-php database/init_users.php
-php database/init_contact.php
+php database/init.php
 ```
 
 5. Start development server

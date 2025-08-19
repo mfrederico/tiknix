@@ -31,20 +31,38 @@ class Member extends Control {
      */
     public function edit($params = []) {
         if (Flight::request()->method === 'POST') {
-            // TODO: Fix CSRF validation
-            // Temporarily disabled for debugging
-            // if (!Flight::csrf()->validateRequest()) {
-            //     $this->viewData['error'] = 'Invalid CSRF token';
-            // } else {
+            // Validate CSRF token
+            if (!Flight::csrf()->validateRequest()) {
+                $this->viewData['error'] = 'Invalid CSRF token';
+            } else {
             
             $request = Flight::request();
             $member = R::load('member', $this->member->id);
             
-            // Update allowed fields
-            $member->email = $request->data->email ?? $member->email;
-            $member->first_name = $request->data->first_name ?? $member->first_name;
-            $member->last_name = $request->data->last_name ?? $member->last_name;
-            $member->bio = $request->data->bio ?? $member->bio;
+            // Validate input
+            $email = trim($request->data->email ?? '');
+            $first_name = trim($request->data->first_name ?? '');
+            $last_name = trim($request->data->last_name ?? '');
+            $bio = trim($request->data->bio ?? '');
+            
+            if (empty($email)) {
+                $this->viewData['error'] = 'Email is required';
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $this->viewData['error'] = 'Invalid email format';
+            } else {
+                // Check for duplicate email (excluding current member)
+                $existingEmail = R::findOne('member', 'email = ? AND id != ?', [$email, $member->id]);
+                
+                if ($existingEmail) {
+                    $this->viewData['error'] = 'Email already exists';
+                } else {
+                    // Update allowed fields
+                    $member->email = $email;
+                    $member->first_name = $first_name;
+                    $member->last_name = $last_name;
+                    $member->bio = $bio;
+                }
+            }
             
             // Update password if provided
             if (!empty($request->data->password) || !empty($request->data->current_password)) {
@@ -75,11 +93,16 @@ class Member extends Control {
                     if (empty($this->viewData['success'])) {
                         $this->viewData['success'] = 'Profile updated successfully';
                     }
+                    $this->logger->info('Member profile updated', ['member_id' => $member->id]);
                 } catch (Exception $e) {
-                    $this->viewData['error'] = 'Error updating profile';
+                    $this->logger->error('Failed to update member profile', [
+                        'member_id' => $member->id,
+                        'error' => $e->getMessage()
+                    ]);
+                    $this->viewData['error'] = 'Error updating profile: ' . $e->getMessage();
                 }
             }
-            // }
+            }
         }
         
         $this->viewData['title'] = 'Edit Profile';

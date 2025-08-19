@@ -158,7 +158,6 @@ Flight::map('hasLevel', function($requiredLevel) {
  * CSRF Protection
  */
 Flight::map('csrf', function() {
-	$csrf = new AntiCSRF();
     static $csrf = null;
     if ($csrf === null) {
         $csrf = new AntiCSRF();
@@ -170,13 +169,12 @@ Flight::map('csrf', function() {
  * Render view with common data
  */
 Flight::map('renderView', function($template, $data = []) {
-	$csrf = new AntiCSRF();
     // Add common data to all views
     $data['member'] = Flight::getMember();
     $data['isLoggedIn'] = Flight::isLoggedIn();
     $data['levels'] = LEVELS;
     $data['baseurl'] = Flight::get('baseurl');
-    $data['csrf'] = $csrf->getTokenArray();
+    $data['csrf'] = Flight::csrf()->getTokenArray();
     
     Flight::render($template, $data);
 });

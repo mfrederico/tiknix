@@ -65,6 +65,15 @@ class Admin extends Control {
             return;
         }
         
+        // Handle bulk actions
+        if ($request->method === 'POST' && !empty($request->data->bulk_action) && !empty($request->data->selected_members)) {
+            if (Flight::csrf()->validateRequest()) {
+                $this->handleBulkAction($request->data->bulk_action, $request->data->selected_members);
+                Flight::redirect('/admin/members');
+                return;
+            }
+        }
+        
         // Get all members
         $this->viewData['members'] = R::findAll('member', 'ORDER BY created_at DESC');
         
@@ -94,24 +103,64 @@ class Admin extends Control {
             if (!Flight::csrf()->validateRequest()) {
                 $this->viewData['error'] = 'Invalid CSRF token';
             } else {
-                // Update member
-                $member->username = $request->data->username ?? $member->username;
-                $member->email = $request->data->email ?? $member->email;
-                $member->level = intval($request->data->level ?? $member->level);
-                $member->status = $request->data->status ?? $member->status;
+                // Validate input
+                $username = trim($request->data->username ?? '');
+                $email = trim($request->data->email ?? '');
+                $level = intval($request->data->level ?? $member->level);
+                $status = $request->data->status ?? $member->status;
                 
-                // Update password if provided
-                if (!empty($request->data->password)) {
-                    $member->password = password_hash($request->data->password, PASSWORD_DEFAULT);
-                }
-                
-                $member->updated_at = date('Y-m-d H:i:s');
-                
-                try {
-                    R::store($member);
-                    $this->viewData['success'] = 'Member updated successfully';
-                } catch (Exception $e) {
-                    $this->viewData['error'] = 'Error updating member: ' . $e->getMessage();
+                if (empty($username)) {
+                    $this->viewData['error'] = 'Username is required';
+                } elseif (empty($email)) {
+                    $this->viewData['error'] = 'Email is required';
+                } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $this->viewData['error'] = 'Invalid email format';
+                } elseif (strlen($username) < 3) {
+                    $this->viewData['error'] = 'Username must be at least 3 characters long';
+                } else {
+                    // Check for duplicate username/email (excluding current member)
+                    $existingUsername = R::findOne('member', 'username = ? AND id != ?', [$username, $member->id]);
+                    $existingEmail = R::findOne('member', 'email = ? AND id != ?', [$email, $member->id]);
+                    
+                    if ($existingUsername) {
+                        $this->viewData['error'] = 'Username already exists';
+                    } elseif ($existingEmail) {
+                        $this->viewData['error'] = 'Email already exists';
+                    } else {
+                        // Update member
+                        $member->username = $username;
+                        $member->email = $email;
+                        $member->level = $level;
+                        $member->status = $status;
+                        
+                        // Update password if provided
+                        if (!empty($request->data->password)) {
+                            if (strlen($request->data->password) < 8) {
+                                $this->viewData['error'] = 'Password must be at least 8 characters long';
+                            } else {
+                                $member->password = password_hash($request->data->password, PASSWORD_DEFAULT);
+                            }
+                        }
+                        
+                        if (empty($this->viewData['error'])) {
+                            $member->updated_at = date('Y-m-d H:i:s');
+                            
+                            try {
+                                R::store($member);
+                                $this->viewData['success'] = 'Member updated successfully';
+                                $this->logger->info('Member updated by admin', [
+                                    'member_id' => $member->id,
+                                    'updated_by' => $this->member->id
+                                ]);
+                            } catch (Exception $e) {
+                                $this->logger->error('Failed to update member', [
+                                    'member_id' => $member->id,
+                                    'error' => $e->getMessage()
+                                ]);
+                                $this->viewData['error'] = 'Error updating member: ' . $e->getMessage();
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -120,6 +169,81 @@ class Admin extends Control {
         $this->viewData['editMember'] = $member;
         
         $this->render('admin/edit_member', $this->viewData);
+    }
+
+    /**
+     * Add new member
+     */
+    public function addMember($params = []) {
+        $request = Flight::request();
+        
+        if ($request->method === 'POST') {
+            // Validate CSRF
+            if (!Flight::csrf()->validateRequest()) {
+                $this->viewData['error'] = 'Invalid CSRF token';
+            } else {
+                // Validate input
+                $username = trim($request->data->username ?? '');
+                $email = trim($request->data->email ?? '');
+                $password = $request->data->password ?? '';
+                $level = intval($request->data->level ?? 100);
+                $status = $request->data->status ?? 'active';
+                
+                if (empty($username)) {
+                    $this->viewData['error'] = 'Username is required';
+                } elseif (empty($email)) {
+                    $this->viewData['error'] = 'Email is required';
+                } elseif (empty($password)) {
+                    $this->viewData['error'] = 'Password is required';
+                } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $this->viewData['error'] = 'Invalid email format';
+                } elseif (strlen($username) < 3) {
+                    $this->viewData['error'] = 'Username must be at least 3 characters long';
+                } elseif (strlen($password) < 8) {
+                    $this->viewData['error'] = 'Password must be at least 8 characters long';
+                } else {
+                    // Check for duplicate username/email
+                    $existingUsername = R::findOne('member', 'username = ?', [$username]);
+                    $existingEmail = R::findOne('member', 'email = ?', [$email]);
+                    
+                    if ($existingUsername) {
+                        $this->viewData['error'] = 'Username already exists';
+                    } elseif ($existingEmail) {
+                        $this->viewData['error'] = 'Email already exists';
+                    } else {
+                        // Create new member
+                        $member = R::dispense('member');
+                        $member->username = $username;
+                        $member->email = $email;
+                        $member->password = password_hash($password, PASSWORD_DEFAULT);
+                        $member->level = $level;
+                        $member->status = $status;
+                        $member->created_at = date('Y-m-d H:i:s');
+                        $member->updated_at = date('Y-m-d H:i:s');
+                        
+                        try {
+                            R::store($member);
+                            $this->logger->info('New member created by admin', [
+                                'member_id' => $member->id,
+                                'username' => $username,
+                                'created_by' => $this->member->id
+                            ]);
+                            Flight::redirect('/admin/members');
+                            return;
+                        } catch (Exception $e) {
+                            $this->logger->error('Failed to create member', [
+                                'username' => $username,
+                                'error' => $e->getMessage()
+                            ]);
+                            $this->viewData['error'] = 'Error creating member: ' . $e->getMessage();
+                        }
+                    }
+                }
+            }
+        }
+        
+        $this->viewData['title'] = 'Add New Member';
+        $this->render('admin/add_member', $this->viewData);
     }
 
     /**
@@ -238,13 +362,47 @@ class Admin extends Control {
     private function deleteMember($id) {
         // Don't allow deleting self or system users
         if ($id == $this->member->id) {
+            $this->logger->warning('Attempted to delete self', ['member_id' => $id]);
             return;
         }
         
         $member = R::load('member', $id);
         if ($member->id && $member->username !== 'public-user-entity') {
-            R::trash($member);
-            $this->logger->info('Deleted member', ['id' => $id]);
+            // Additional protection for critical accounts
+            if ($member->level <= self::ADMIN_LEVEL && $member->id != $this->member->id) {
+                // Only ROOT users can delete ADMIN users
+                if ($this->member->level > self::ROOT_LEVEL) {
+                    $this->logger->warning('Non-root user attempted to delete admin', [
+                        'target_member_id' => $id,
+                        'target_level' => $member->level,
+                        'admin_id' => $this->member->id,
+                        'admin_level' => $this->member->level
+                    ]);
+                    return;
+                }
+            }
+            
+            try {
+                // Log member details before deletion
+                $this->logger->info('Deleting member', [
+                    'id' => $id,
+                    'username' => $member->username,
+                    'email' => $member->email,
+                    'level' => $member->level,
+                    'deleted_by' => $this->member->id
+                ]);
+                
+                R::trash($member);
+                
+                $this->logger->info('Member deleted successfully', ['id' => $id]);
+            } catch (Exception $e) {
+                $this->logger->error('Failed to delete member', [
+                    'id' => $id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        } else {
+            $this->logger->warning('Attempted to delete non-existent or protected user', ['id' => $id]);
         }
     }
 
@@ -262,5 +420,65 @@ class Admin extends Control {
             // If we can't read session directory, just return estimate
         }
         return 1; // At least current user is active
+    }
+    
+    /**
+     * Handle bulk actions for members
+     */
+    private function handleBulkAction($action, $selectedMembers) {
+        if (!is_array($selectedMembers)) {
+            return;
+        }
+        
+        $count = 0;
+        
+        switch ($action) {
+            case 'activate':
+                foreach ($selectedMembers as $memberId) {
+                    if (is_numeric($memberId)) {
+                        $member = R::load('member', $memberId);
+                        if ($member->id && $member->username !== 'public-user-entity') {
+                            $member->status = 'active';
+                            $member->updated_at = date('Y-m-d H:i:s');
+                            R::store($member);
+                            $count++;
+                        }
+                    }
+                }
+                $this->logger->info("Bulk activated $count members", ['admin_id' => $this->member->id]);
+                break;
+                
+            case 'suspend':
+                foreach ($selectedMembers as $memberId) {
+                    if (is_numeric($memberId) && $memberId != $this->member->id) {
+                        $member = R::load('member', $memberId);
+                        if ($member->id && $member->username !== 'public-user-entity') {
+                            $member->status = 'suspended';
+                            $member->updated_at = date('Y-m-d H:i:s');
+                            R::store($member);
+                            $count++;
+                        }
+                    }
+                }
+                $this->logger->info("Bulk suspended $count members", ['admin_id' => $this->member->id]);
+                break;
+                
+            case 'delete':
+                foreach ($selectedMembers as $memberId) {
+                    if (is_numeric($memberId) && $memberId != $this->member->id) {
+                        $member = R::load('member', $memberId);
+                        if ($member->id && $member->username !== 'public-user-entity') {
+                            // Same protection as single delete
+                            if ($member->level <= self::ADMIN_LEVEL && $this->member->level > self::ROOT_LEVEL) {
+                                continue; // Skip admin deletion by non-root
+                            }
+                            R::trash($member);
+                            $count++;
+                        }
+                    }
+                }
+                $this->logger->info("Bulk deleted $count members", ['admin_id' => $this->member->id]);
+                break;
+        }
     }
 }

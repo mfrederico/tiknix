@@ -33,6 +33,7 @@ class Permissions extends BaseControls\Control {
             'index:index',
             'auth:login',
             'auth:dologin',
+            'auth:logout',  // Logout should always be accessible
             'auth:register',
             'auth:doregister',
             'auth:forgot',

@@ -82,7 +82,17 @@ Flight::map('defaultRoute', function($prefix = '') {
             }
         } else {
             Flight::get('log')->warning("Permission denied: {$class}->{$function}");
-            Flight::redirect('/auth/login?redirect='.urlencode(Flight::request()->url));
+            
+            // If user is logged in, show forbidden error instead of redirecting to login
+            if (Flight::isLoggedIn()) {
+                Flight::renderView('error/403', [
+                    'title' => '403 - Forbidden',
+                    'message' => 'You do not have permission to access this page.'
+                ]);
+            } else {
+                // Only redirect to login if not logged in
+                Flight::redirect('/auth/login?redirect='.urlencode(Flight::request()->url));
+            }
         }
     });
 });

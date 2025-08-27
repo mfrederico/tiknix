@@ -16,15 +16,24 @@ class Auth extends BaseControls\Control {
      * Show login form
      */
     public function login() {
-        // Redirect if already logged in
-        if (Flight::isLoggedIn()) {
+        // Don't redirect if coming from a permission denied scenario
+        // Check if we're in a redirect loop situation
+        $redirect = Flight::request()->query->redirect ?? '';
+        
+        // If already logged in and NOT coming from a permission denied redirect
+        if (Flight::isLoggedIn() && empty($redirect)) {
             Flight::redirect('/dashboard');
             return;
         }
         
+        // If logged in but redirected here due to permission issues, show a message
+        if (Flight::isLoggedIn() && !empty($redirect)) {
+            $this->flash('error', 'You do not have permission to access that page.');
+        }
+        
         $this->render('auth/login', [
             'title' => 'Login',
-            'redirect' => Flight::request()->query->redirect ?? ''
+            'redirect' => $redirect
         ]);
     }
     
@@ -92,11 +101,25 @@ class Auth extends BaseControls\Control {
             $this->logger->info('User logged out', ['id' => $_SESSION['member']['id']]);
         }
         
-        // Clear session
-        session_destroy();
-        session_start();
+        // Properly clear session data
+        $_SESSION = array();
         
+        // Destroy session cookie
+        if (ini_get("session.use_cookies")) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000,
+                $params["path"], $params["domain"],
+                $params["secure"], $params["httponly"]
+            );
+        }
+        
+        // Destroy the session
+        session_destroy();
+        
+        // Start a new session for flash messages
+        session_start();
         $this->flash('success', 'You have been logged out');
+        
         Flight::redirect('/');
     }
     

@@ -19,15 +19,42 @@ class PermissionCache {
     private static $CACHE_KEY = null;
     private const CACHE_TTL = 3600; // 1 hour
     private static $STATS_KEY = null;
+    private static $CACHE_VERSION_FILE = null;
 
     /**
-     * Get unique cache key for this installation
+     * Get cache version file path
+     */
+    private static function getCacheVersionFile() {
+        if (self::$CACHE_VERSION_FILE === null) {
+            $cacheDir = dirname(__DIR__) . '/cache';
+            if (!is_dir($cacheDir)) {
+                @mkdir($cacheDir, 0755, true);
+            }
+            self::$CACHE_VERSION_FILE = $cacheDir . '/.permission_cache_version';
+        }
+        return self::$CACHE_VERSION_FILE;
+    }
+
+    /**
+     * Get current cache version (timestamp from version file)
+     */
+    private static function getCacheVersion() {
+        $versionFile = self::getCacheVersionFile();
+        if (file_exists($versionFile)) {
+            return (int)file_get_contents($versionFile);
+        }
+        return 0;
+    }
+
+    /**
+     * Get unique cache key for this installation (includes version for cache busting)
      */
     private static function getCacheKey() {
         if (self::$CACHE_KEY === null) {
-            // Create unique key based on installation path
+            // Create unique key based on installation path and version
             $siteId = md5(__DIR__ . '_' . ($_SERVER['HTTP_HOST'] ?? 'cli'));
-            self::$CACHE_KEY = "tiknix_{$siteId}_permissions";
+            $version = self::getCacheVersion();
+            self::$CACHE_KEY = "tiknix_{$siteId}_permissions_v{$version}";
             self::$STATS_KEY = "tiknix_{$siteId}_stats";
         }
         return self::$CACHE_KEY;
@@ -165,18 +192,21 @@ class PermissionCache {
 
     /**
      * Clear the cache (call after permission changes)
+     * Works from both CLI and web by incrementing version file
      */
     public static function clear() {
         // Clear local cache
         self::$localCache = null;
 
-        // Clear APCu cache
-        if (self::hasAPCu()) {
-            apcu_delete(self::getCacheKey());
-            Flight::get('log')->info('PermissionCache: Cleared APCu cache');
-        }
+        // Increment version file to invalidate all APCu caches across all processes
+        $versionFile = self::getCacheVersionFile();
+        $newVersion = time();
+        file_put_contents($versionFile, $newVersion);
 
-        Flight::get('log')->info('PermissionCache: Cache cleared');
+        // Reset cache key so it uses new version
+        self::$CACHE_KEY = null;
+
+        Flight::get('log')->info('PermissionCache: Cache cleared (version: ' . $newVersion . ')');
     }
 
     /**
@@ -190,23 +220,43 @@ class PermissionCache {
 
     /**
      * Get cache statistics
+     * Returns consistent field names across all views
      */
     public static function getStats() {
+        $apcu_hits = 0;
+        $db_loads = 0;
+
+        // Get APCu counters if available
+        if (self::hasAPCu()) {
+            $apcu_hits = apcu_fetch(self::getStatsKey() . '_apcu_hits') ?: 0;
+            $db_loads = apcu_fetch(self::getStatsKey() . '_db_loads') ?: 0;
+        }
+
+        // Calculate hit rate
+        $total_requests = $apcu_hits + $db_loads;
+        $hit_rate = $total_requests > 0 ? ($apcu_hits / $total_requests) * 100 : 0;
+
         $stats = [
+            // Basic cache status
             'apcu_available' => self::hasAPCu(),
             'cache_loaded' => self::$localCache !== null,
-            'permission_count' => self::$localCache ? count(self::$localCache) : 0,
-            'cache_memory' => self::$localCache ? strlen(serialize(self::$localCache)) : 0
+            'in_apcu' => false,
+
+            // Permission counts and memory
+            'count' => self::$localCache ? count(self::$localCache) : 0,
+            'memory' => self::$localCache ? strlen(serialize(self::$localCache)) : 0,
+
+            // Cache performance metrics
+            'hits' => $apcu_hits,
+            'misses' => $db_loads,
+            'hit_rate' => $hit_rate,
+
+            // Cache version
+            'cache_version' => self::getCacheVersion()
         ];
 
-        // Get APCu stats if available
+        // Get additional APCu-specific stats
         if (self::hasAPCu()) {
-            $stats['apcu_info'] = [
-                'hits' => apcu_fetch(self::getStatsKey() . '_apcu_hits') ?: 0,
-                'db_loads' => apcu_fetch(self::getStatsKey() . '_db_loads') ?: 0
-            ];
-
-            // Check if our key exists in APCu
             $stats['in_apcu'] = apcu_exists(self::getCacheKey());
 
             if ($stats['in_apcu']) {

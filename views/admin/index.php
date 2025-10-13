@@ -29,6 +29,41 @@
             </div>
         </div>
     </div>
+
+    <div class="row">
+        <div class="col-md-12 mb-4">
+            <div class="card border-<?= $cache_stats['apcu_available'] ? 'success' : 'warning' ?>">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h5 class="card-title mb-1">
+                                <i class="bi bi-lightning-charge-fill text-warning"></i> Cache Status
+                            </h5>
+                            <p class="mb-0 text-muted">
+                                <?php if ($cache_stats['apcu_available']): ?>
+                                    <span class="badge bg-success me-2">APCu Active</span>
+                                    <?php if ($cache_stats['in_apcu']): ?>
+                                        <span class="badge bg-info">Permissions Cached</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-warning">Cache Warming Recommended</span>
+                                    <?php endif; ?>
+                                    <span class="ms-2"><?= $cache_stats['count'] ?> permissions cached</span>
+                                <?php else: ?>
+                                    <span class="badge bg-warning">APCu Not Available</span>
+                                    <span class="ms-2">Using database-only caching</span>
+                                <?php endif; ?>
+                            </p>
+                        </div>
+                        <div>
+                            <a href="/admin/cache" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-gear"></i> Manage Cache
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <div class="row">
         <div class="col-md-12">
@@ -54,7 +89,14 @@
                     </div>
                     <p class="mb-1">Configure system-wide settings</p>
                 </a>
-                
+
+                <a href="/admin/cache" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1"><i class="bi bi-lightning-charge"></i> Cache Management</h5>
+                    </div>
+                    <p class="mb-1">View cache statistics and clear caches (APCu, OPcache, Query Cache)</p>
+                </a>
+
                 <a href="/contact/admin" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1">Contact Messages</h5>

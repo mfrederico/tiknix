@@ -100,11 +100,29 @@ Three-tier caching system for ultra-fast permission checks.
 - **Automatic Population**: Fills higher tiers on cache miss
 - **Batch Loading**: Loads all permissions at once
 - **Build Mode**: Auto-creates permissions during development
+- **Version-Based Invalidation**: Cache keys include version timestamp from file
+- **CLI-Safe Clearing**: Clear cache from CLI without PHP-FPM restart
 
 #### Performance Metrics:
 - **Speed**: 175,000 checks/second
 - **Improvement**: 99.7% faster than database lookups
 - **Memory**: <100KB for typical permission set
+
+#### Cache Invalidation Strategy:
+
+The PermissionCache uses a version-file approach to invalidate caches across all processes:
+
+1. **Cache Key Format**: `tiknix_[site_id]_permissions_v[timestamp]`
+2. **Version File**: `cache/.permission_cache_version` contains current timestamp
+3. **On Clear**: Updates version file with new timestamp
+4. **Next Request**: All processes read new version, look for cache with new version key
+5. **Auto-Reload**: Cache miss triggers reload from database with new version key
+
+**Key Benefits:**
+- Works from CLI without PHP-FPM restart
+- No race conditions between processes
+- Automatic across all workers
+- File system ensures atomic updates
 
 #### API:
 
@@ -112,7 +130,7 @@ Three-tier caching system for ultra-fast permission checks.
 // Check permission (automatically cached)
 $allowed = PermissionCache::check('Admin', 'users', $userLevel);
 
-// Clear cache after permission changes
+// Clear cache after permission changes (works from CLI)
 PermissionCache::clear();
 
 // Warm up cache
@@ -169,8 +187,31 @@ Access the cache management interface at `/admin/cache` (requires admin privileg
 
 ### CLI Commands
 
+#### Reset Permission Cache (Recommended)
+
+The `scripts/resetcache.php` script provides a fast, reliable way to clear the permission cache from CLI without requiring PHP-FPM restart:
+
 ```bash
-# Clear all caches
+# Clear permission cache from CLI
+php scripts/resetcache.php
+```
+
+**How it works:**
+- Updates a version file at `cache/.permission_cache_version` with a new timestamp
+- All PHP-FPM workers automatically invalidate their APCu caches on next request
+- No service restart required - works across all processes (CLI and web)
+- Shows before/after statistics and confirmation
+
+**When to use:**
+- After bulk permission changes
+- After database schema updates
+- During deployment scripts
+- When troubleshooting permission issues
+
+#### Legacy Cache Commands
+
+```bash
+# Clear all caches via admin controller
 php index.php --control=cache --method=clear
 
 # Show cache statistics

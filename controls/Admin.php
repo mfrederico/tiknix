@@ -39,14 +39,17 @@ class Admin extends Control {
      */
     public function index($params = []) {
         $this->viewData['title'] = 'Admin Dashboard';
-        
+
         // Get system stats
         $this->viewData['stats'] = [
             'members' => R::count('member'),
             'permissions' => R::count('authcontrol'),
             'active_sessions' => $this->getActiveSessions(),
         ];
-        
+
+        // Get cache stats for dashboard (using consistent field names)
+        $this->viewData['cache_stats'] = \app\PermissionCache::getStats();
+
         $this->render('admin/index', $this->viewData);
     }
 

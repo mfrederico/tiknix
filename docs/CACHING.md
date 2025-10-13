@@ -377,28 +377,6 @@ Regularly check cache statistics:
 - Memory usage should be <70%
 - No excessive cache evictions
 
-## Migration from Legacy Systems
-
-### From RedBeanQueryCache
-
-If migrating from the older `R::ext('queryCache')` system:
-
-1. **No code changes required** - old calls are ignored
-2. **Better performance** - 9.4x vs 8-10x
-3. **Automatic invalidation** - no manual cache management
-
-### Before:
-```php
-$users = R::ext('queryCache', [$sql, $params, 60]);
-R::ext('invalidateCache', 'users');
-```
-
-### After:
-```php
-$users = R::getAll($sql, $params);  // Automatically cached!
-// No manual invalidation needed!
-```
-
 ## Security Considerations
 
 ### Cache Key Security

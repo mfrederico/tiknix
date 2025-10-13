@@ -93,7 +93,7 @@ tail -f log/app-*.log
 php -r "require 'bootstrap.php'; \$app = new app\Bootstrap('conf/config.ini');"</code></pre>
                 </div>
 
-                <div class="alert alert-success mt-5">
+                <div class="alert alert-success alert-dismissible fade show mt-5" role="alert">
                     <h4><i class="bi bi-lightbulb"></i> Pro Tip</h4>
                     <p>Create a shell script wrapper for commonly used CLI commands:</p>
                     <pre class="mb-0"><code class="language-bash">#!/bin/bash
@@ -101,6 +101,7 @@ php -r "require 'bootstrap.php'; \$app = new app\Bootstrap('conf/config.ini');"<
 cd /path/to/tiknix
 /usr/bin/php public/index.php "$@"</code></pre>
                     <p class="mb-0 mt-2">Then use: <code>./tiknix-cli.sh --control=cleanup --method=daily</code></p>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             </div>
 

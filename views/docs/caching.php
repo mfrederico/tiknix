@@ -9,7 +9,7 @@
                 ['href' => '#architecture', 'icon' => 'bi-diagram-3', 'text' => 'Architecture'],
                 ['href' => '#component-details', 'icon' => 'bi-puzzle', 'text' => 'Components'],
                 ['href' => '#installation', 'icon' => 'bi-download', 'text' => 'Installation'],
-                ['href' => '#configuration', 'icon' => 'bi-gear', 'text' => 'Configuration'],
+                ['href' => '#performance-tuning', 'icon' => 'bi-speedometer2', 'text' => 'Performance'],
                 ['href' => '#best-practices', 'icon' => 'bi-trophy', 'text' => 'Best Practices']
             ];
             $showPerformanceBadge = true;

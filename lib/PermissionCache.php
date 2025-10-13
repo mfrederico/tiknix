@@ -60,7 +60,14 @@ class PermissionCache {
         if (isset(self::$localCache[$key])) {
             $requiredLevel = self::$localCache[$key];
             self::logAccess('hit', $key);
-            return $userLevel <= $requiredLevel;
+            $hasPermission = $userLevel <= $requiredLevel;
+
+            // Increment validcount when permission is granted
+            if ($hasPermission) {
+                self::incrementValidCount($control, $method);
+            }
+
+            return $hasPermission;
         }
 
         // Check wildcard permission for entire controller
@@ -68,7 +75,14 @@ class PermissionCache {
         if (isset(self::$localCache[$wildcardKey])) {
             $requiredLevel = self::$localCache[$wildcardKey];
             self::logAccess('wildcard', $wildcardKey);
-            return $userLevel <= $requiredLevel;
+            $hasPermission = $userLevel <= $requiredLevel;
+
+            // Increment validcount for wildcard when permission is granted
+            if ($hasPermission) {
+                self::incrementValidCount($control, '*');
+            }
+
+            return $hasPermission;
         }
 
         // No permission found - check if we're in build mode
@@ -232,9 +246,30 @@ class PermissionCache {
 
     /**
      * Create a new permission entry (build mode only)
+     * Only creates if the controller and method actually exist
      */
     private static function createPermission($control, $method) {
         if (!Flight::get('build')) {
+            return false;
+        }
+
+        // Verify controller class exists (use ucfirst to match routing convention)
+        $className = "app\\" . ucfirst($control);
+        if (!class_exists($className)) {
+            Flight::get('log')->debug("PermissionCache: Controller class not found: {$className}");
+            return false;
+        }
+
+        // Verify method exists in the controller
+        if (!method_exists($className, $method)) {
+            Flight::get('log')->debug("PermissionCache: Method not found: {$className}::{$method}");
+            return false;
+        }
+
+        // Check if method is public (required for routing)
+        $reflection = new \ReflectionMethod($className, $method);
+        if (!$reflection->isPublic()) {
+            Flight::get('log')->debug("PermissionCache: Method is not public: {$className}::{$method}");
             return false;
         }
 
@@ -246,6 +281,7 @@ class PermissionCache {
             $auth->method = $method;
             $auth->level = LEVELS['ADMIN']; // Default to admin level
             $auth->description = "Auto-generated permission for {$control}::{$method}";
+            $auth->validcount = 0;
             $auth->created_at = date('Y-m-d H:i:s');
             R::store($auth);
 
@@ -328,5 +364,38 @@ class PermissionCache {
         }
 
         Flight::get('log')->debug("PermissionCache: Removed {$key}");
+    }
+
+    /**
+     * Increment validcount for a permission (async to avoid performance impact)
+     *
+     * @param string $control Controller name
+     * @param string $method Method name
+     */
+    private static function incrementValidCount($control, $method) {
+        // Use a deferred write to avoid blocking the request
+        // Only increment once per request to avoid multiple increments
+        static $incrementedThisRequest = [];
+
+        $key = strtolower("{$control}::{$method}");
+
+        if (isset($incrementedThisRequest[$key])) {
+            return; // Already incremented this request
+        }
+
+        $incrementedThisRequest[$key] = true;
+
+        try {
+            // Use a simple SQL UPDATE for better performance
+            R::exec(
+                'UPDATE authcontrol SET validcount = validcount + 1 WHERE LOWER(control) = ? AND LOWER(method) = ?',
+                [strtolower($control), strtolower($method)]
+            );
+        } catch (\Exception $e) {
+            // Silently fail - don't interrupt request for counter update
+            Flight::get('log')->debug("PermissionCache: Failed to increment validcount for {$key}", [
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }

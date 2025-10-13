@@ -39,7 +39,11 @@
         "files": [
             "lib/FlightMap.php",
             "lib/CliHandler.php",
-            "lib/PermissionCache.php"
+            "lib/PermissionCache.php",
+            "lib/MarkdownParser.php",
+            "lib/CachedDatabaseAdapter.php",
+            "lib/RedBeanQueryCache.php",
+            "lib/functions.php"
         ]
     },
     "autoload-dev": {

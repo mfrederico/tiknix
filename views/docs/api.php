@@ -231,9 +231,10 @@ try {
     Flight::redirect('/dashboard');
 }</code></pre>
 
-                <div class="alert alert-success mt-5">
+                <div class="alert alert-success alert-dismissible fade show mt-5" role="alert">
                     <h4><i class="bi bi-lightning"></i> Performance Note</h4>
                     <p class="mb-0">All database queries are <strong>automatically cached</strong> by the CachedDatabaseAdapter, providing <strong>9.4x faster</strong> performance with zero code changes!</p>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             </div>
         </div>

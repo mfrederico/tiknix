@@ -86,13 +86,17 @@ document.getElementById("btn-back-to-top").addEventListener("click", function() 
 // Toast notification function
 function showToast(type, message) {
     const toastEl = document.getElementById('liveToast');
-    const toast = new bootstrap.Toast(toastEl);
+
+    // Disable autohide to prevent layout shift - user must manually dismiss
+    const toast = new bootstrap.Toast(toastEl, {
+        autohide: false
+    });
     const toastBody = toastEl.querySelector('.toast-body');
     const toastHeader = toastEl.querySelector('.toast-header');
-    
+
     // Set message
     toastBody.textContent = message;
-    
+
     // Set type styling
     toastHeader.className = 'toast-header';
     if (type === 'success') {
@@ -108,7 +112,7 @@ function showToast(type, message) {
         toastHeader.classList.add('bg-info', 'text-white');
         toastHeader.querySelector('i').className = 'bi bi-info-circle me-2';
     }
-    
+
     toast.show();
 }
 </script>

@@ -15,16 +15,10 @@ document.addEventListener('DOMContentLoaded', function() {
     var popoverList = popoverTriggerList.map(function (popoverTriggerEl) {
         return new bootstrap.Popover(popoverTriggerEl);
     });
-    
-    // Auto-hide alerts after 5 seconds
-    setTimeout(function() {
-        var alerts = document.querySelectorAll('.alert:not(.alert-permanent)');
-        alerts.forEach(function(alert) {
-            var bsAlert = new bootstrap.Alert(alert);
-            bsAlert.close();
-        });
-    }, 5000);
-    
+
+    // Alerts are now manually dismissible only (no auto-hide to prevent layout shift)
+    // Users can close alerts using the X button
+
     // Confirm delete actions
     document.querySelectorAll('.confirm-delete').forEach(function(element) {
         element.addEventListener('click', function(e) {
@@ -122,17 +116,20 @@ document.addEventListener('DOMContentLoaded', function() {
 function showToast(type, message) {
     var toastEl = document.getElementById('liveToast');
     if (!toastEl) return;
-    
-    var toast = new bootstrap.Toast(toastEl);
+
+    // Disable autohide to prevent layout shift - user must manually dismiss
+    var toast = new bootstrap.Toast(toastEl, {
+        autohide: false
+    });
     var toastBody = toastEl.querySelector('.toast-body');
     var toastHeader = toastEl.querySelector('.toast-header');
-    
+
     // Set message
     toastBody.textContent = message;
-    
+
     // Reset classes
     toastHeader.className = 'toast-header';
-    
+
     // Set type styling
     if (type === 'success') {
         toastHeader.classList.add('bg-success', 'text-white');
@@ -147,7 +144,7 @@ function showToast(type, message) {
         toastHeader.classList.add('bg-info', 'text-white');
         toastHeader.querySelector('i').className = 'bi bi-info-circle me-2';
     }
-    
+
     toast.show();
 }
 

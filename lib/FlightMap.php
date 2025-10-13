@@ -58,12 +58,20 @@ Flight::map('defaultRoute', function($prefix = '') {
             $classname = ucfirst($class);
             try {
                 $classname = '\\'.CLASS_NAMESPACE.'\\'.$classname;
+
+                // Check if controller class exists before trying to instantiate
+                if (!class_exists($classname)) {
+                    Flight::get('log')->error("Controller not found: {$classname}");
+                    Flight::notFound();
+                    return;
+                }
+
                 $instance = new $classname;
-                
+
                 // Check if method exists and is callable
                 if (method_exists($instance, $function)) {
                     $reflection = new ReflectionMethod($instance, $function);
-                    
+
                     // Only call if method is public
                     if ($reflection->isPublic()) {
                         Flight::get('log')->info("Calling: {$classname}->{$function}");
@@ -76,7 +84,8 @@ Flight::map('defaultRoute', function($prefix = '') {
                     Flight::get('log')->error("Method not found: {$function}");
                     Flight::notFound();
                 }
-            } catch(Exception $e) {
+            } catch(\Throwable $e) {
+                // Catch both Exception and Error (PHP 7+)
                 Flight::get('log')->error("Controller error: ".$e->getMessage());
                 Flight::notFound();
             }

@@ -3,11 +3,12 @@
         <div class="col-md-12">
             <h1 class="mb-4">Welcome to Your Dashboard</h1>
             
-            <div class="alert alert-info">
+            <div class="alert alert-info alert-dismissible fade show" role="alert">
                 <h4 class="alert-heading">Hello, <?= htmlspecialchars($member['username'] ?? 'User') ?>!</h4>
                 <p>Welcome to the TikNix Framework Dashboard. This is your central hub for accessing all available features and tools.</p>
                 <hr>
                 <p class="mb-0">You're successfully logged in and ready to get started.</p>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         </div>
     </div>

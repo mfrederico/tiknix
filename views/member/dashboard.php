@@ -162,8 +162,9 @@
                     <h5 class="mb-0">Recent Activity</h5>
                 </div>
                 <div class="card-body">
-                    <div class="alert alert-info">
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
                         <i class="bi bi-info-circle"></i> Activity tracking will be available in a future update.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 </div>
             </div>

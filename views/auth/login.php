@@ -7,11 +7,17 @@
                 </div>
                 <div class="card-body">
                     <?php if (!empty($error)): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <?= htmlspecialchars($error) ?>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
                     <?php endif; ?>
-                    
+
                     <?php if (!empty($redirect)): ?>
-                        <div class="alert alert-info">Please login to continue</div>
+                        <div class="alert alert-info alert-dismissible fade show" role="alert">
+                            Please login to continue
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
                     <?php endif; ?>
                     
                     <form method="POST" action="/auth/dologin">
@@ -53,12 +59,13 @@
                     </div>
                     
                     <?php if (Flight::get('debug') || Flight::get('development')): ?>
-                        <div class="alert alert-info mt-3">
+                        <div class="alert alert-info alert-dismissible fade show mt-3" role="alert">
                             <small>
                                 <strong>Dev Mode:</strong><br>
                                 Username: admin<br>
                                 Password: admin123
                             </small>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
                     <?php endif; ?>
                 </div>

@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS `authcontrol` (
   `method` varchar(100) NOT NULL COMMENT 'Method name or * for all',
   `level` int(11) DEFAULT 100 COMMENT 'Required permission level',
   `description` text DEFAULT NULL,
+  `validcount` int(11) DEFAULT 0 COMMENT 'Count of successful permission checks',
+  `linkorder` int(11) DEFAULT 0 COMMENT 'Display order in UI',
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

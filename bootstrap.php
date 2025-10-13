@@ -178,12 +178,30 @@ class Bootstrap {
             if ($this->config['app']['debug'] ?? false) {
                 R::debug(true, 1);
             }
-            
+
+            // Initialize Query Cache with CachedDatabaseAdapter
+            if ($this->config['cache']['query_cache'] ?? false) {
+                // Use the new transparent CachedDatabaseAdapter
+                if (file_exists(__DIR__ . '/lib/CachedDatabaseAdapter.php')) {
+                    require_once __DIR__ . '/lib/CachedDatabaseAdapter.php';
+                    $cachedAdapter = new \app\CachedDatabaseAdapter(R::getDatabaseAdapter()->getDatabase());
+                    $toolbox = new \RedBeanPHP\ToolBox(R::getRedBean(), $cachedAdapter, R::getWriter());
+                    R::configureFacadeWithToolbox($toolbox);
+                    $this->logger->info('CachedDatabaseAdapter initialized - all queries cached automatically');
+                }
+                // Fallback to old implementation if new one doesn't exist
+                elseif (file_exists(__DIR__ . '/lib/RedBeanQueryCache.php')) {
+                    require_once __DIR__ . '/lib/RedBeanQueryCache.php';
+                    \app\RedBeanQueryCache::init();
+                    $this->logger->info('Query cache initialized (legacy)');
+                }
+            }
+
             $this->logger->info('Database connected');
             
         } catch (\Exception $e) {
             $this->logger->error('Database connection failed: ' . $e->getMessage());
-            die('Database connection failed');
+            die('Database connection failed: '.$e->getMessage());
         }
     }
     

@@ -98,29 +98,11 @@ Flight::map('defaultRoute', function($prefix = '') {
 });
 
 /**
- * Permission checking function
+ * Permission checking function - Now uses PermissionCache for performance
  */
 Flight::map('permissionFor', function($control, $function, $level = LEVELS['PUBLIC'], $wholeclass = false) {
-    try {
-        Flight::get('log')->debug('Permission: ', [$control, $function, $level, $wholeclass]);
-        $perms = Flight::Permissions()->permFor($control, $function, $level, $wholeclass);
-    } catch(Exception $e) {
-        Flight::get('log')->error('Permission issue: '.$e->getMessage());
-        
-        // In build mode, auto-create permissions
-        if (Flight::get('build')) {
-            Flight::get('log')->info("Build mode: Creating permission for {$control}->{$function}");
-            $auth = R::dispense('authcontrol');
-            $auth->control = $control;
-            $auth->method = $function;
-            $auth->level = LEVELS['ADMIN']; // Default to admin level
-            $auth->created_at = date('Y-m-d H:i:s');
-            R::store($auth);
-            return true;
-        }
-        return false;
-    }
-    return $perms;
+    // Use the new PermissionCache for high-performance permission checking
+    return \app\PermissionCache::check($control, $function, $level);
 });
 
 /**

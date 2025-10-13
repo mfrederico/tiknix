@@ -481,4 +481,95 @@ class Admin extends Control {
                 break;
         }
     }
+
+    /**
+     * Cache management page
+     */
+    public function cache() {
+        // Check admin permission
+        if (!$this->requireLevel(self::ADMIN_LEVEL)) {
+            return;
+        }
+
+        // Handle cache actions
+        if ($this->getParam('action')) {
+            $action = $this->getParam('action');
+
+            switch ($action) {
+                case 'clear':
+                    // Clear permission cache
+                    \app\PermissionCache::clear();
+
+                    // Clear query cache if available
+                    $dbAdapter = R::getDatabaseAdapter();
+                    if ($dbAdapter instanceof \app\CachedDatabaseAdapter) {
+                        $dbAdapter->clearAllCache();
+                        $this->flash('success', 'Permission and query caches cleared successfully');
+                    } else {
+                        $this->flash('success', 'Permission cache cleared successfully');
+                    }
+
+                    Flight::redirect('/admin/cache');
+                    return;
+
+                case 'clear_query':
+                    // Clear only query cache
+                    $dbAdapter = R::getDatabaseAdapter();
+                    if ($dbAdapter instanceof \app\CachedDatabaseAdapter) {
+                        $dbAdapter->clearAllCache();
+                        $this->flash('success', 'Query cache cleared successfully');
+                    } else {
+                        $this->flash('error', 'Query cache not available');
+                    }
+                    Flight::redirect('/admin/cache');
+                    return;
+
+                case 'reload':
+                    $stats = \app\PermissionCache::reload();
+                    $this->flash('success', 'Permission cache reloaded with ' . count($stats) . ' entries');
+                    Flight::redirect('/admin/cache');
+                    return;
+
+                case 'warmup':
+                    $stats = \app\PermissionCache::warmup();
+                    $this->flash('success', 'Cache warmed up successfully');
+                    Flight::redirect('/admin/cache');
+                    return;
+            }
+        }
+
+        // Get cache statistics
+        $this->viewData['cache_stats'] = \app\PermissionCache::getStats();
+        $this->viewData['permissions'] = \app\PermissionCache::getAll();
+
+        // Get query cache statistics from CachedDatabaseAdapter
+        $dbAdapter = R::getDatabaseAdapter();
+        if ($dbAdapter instanceof \app\CachedDatabaseAdapter) {
+            $this->viewData['query_cache_stats'] = $dbAdapter->getCacheStats();
+        } else {
+            $this->viewData['query_cache_stats'] = null;
+        }
+
+        // Get OPcache stats if available
+        if (function_exists('opcache_get_status')) {
+            $this->viewData['opcache_stats'] = opcache_get_status(false);
+        }
+
+        // Check if APCu is available
+        $this->viewData['apcu_available'] = function_exists('apcu_cache_info');
+        if ($this->viewData['apcu_available']) {
+            $this->viewData['apcu_info'] = apcu_cache_info();
+        }
+
+        $this->render('admin/cache', $this->viewData);
+    }
+
+    /**
+     * Clear cache after permission updates
+     */
+    private function clearPermissionCache() {
+        // Clear the permission cache when permissions are modified
+        \app\PermissionCache::clear();
+        $this->logger->info('Permission cache cleared after update');
+    }
 }

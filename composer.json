@@ -38,7 +38,8 @@
         },
         "files": [
             "lib/FlightMap.php",
-            "lib/CliHandler.php"
+            "lib/CliHandler.php",
+            "lib/PermissionCache.php"
         ]
     },
     "autoload-dev": {

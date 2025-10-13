@@ -77,7 +77,10 @@ class Permissions extends BaseControls\Control {
             $auth->description = "Auto-generated permission for {$control}:{$method}";
             $auth->created_at = date('Y-m-d H:i:s');
             R::store($auth);
-            
+
+            // Clear cache after creating permission
+            \app\PermissionCache::clear();
+
             // Admin level required by default
             $hasPermission = $level <= LEVELS['ADMIN'];
             self::$cache[$cacheKey] = $hasPermission;
@@ -171,10 +174,11 @@ class Permissions extends BaseControls\Control {
             $permission->updated_at = date('Y-m-d H:i:s');
             
             R::store($permission);
-            
-            // Clear cache
+
+            // Clear both local and APCu cache
             self::$cache = [];
-            
+            \app\PermissionCache::clear();
+
             $this->flash('success', 'Permission saved successfully');
             Flight::redirect('/permissions');
             
@@ -203,10 +207,11 @@ class Permissions extends BaseControls\Control {
             
             if ($permission->id) {
                 R::trash($permission);
-                
-                // Clear cache
+
+                // Clear both local and APCu cache
                 self::$cache = [];
-                
+                \app\PermissionCache::clear();
+
                 $this->jsonSuccess([], 'Permission deleted');
             } else {
                 $this->jsonError('Permission not found', 404);

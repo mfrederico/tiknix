@@ -83,7 +83,7 @@ if (isset($_SERVER['REQUEST_URI'])) {
     // Check if we have a specific route file for the first segment
     $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
     $segments = explode('/', trim($requestUri, '/'));
-    $firstSegment = $segments[0] ?? 'index';
+    $firstSegment = (!empty($segments[0])) ? $segments[0] : 'index';
     
     // Load specific route file if it exists, otherwise use default
     $specificRoute = $routePath . '/' . $firstSegment . '.php';

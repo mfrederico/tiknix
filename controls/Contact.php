@@ -116,12 +116,12 @@ class Contact extends BaseControls\Control {
         // Get total count
         $total = R::count('contact', $where, $params);
         
-        // Get messages
+        // Get messages with parameterized LIMIT and OFFSET
         $offset = ($page - 1) * $perPage;
-        $messages = R::findAll('contact', 
-            $where . ' ORDER BY created_at DESC LIMIT ? OFFSET ?', 
-            array_merge($params, [$perPage, $offset])
-        );
+        $sql = ($where ? $where . ' ' : '') . "ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+        $params[':limit'] = $perPage;
+        $params[':offset'] = $offset;
+        $messages = R::findAll('contact', $sql, $params);
         
         $this->render('contact/admin', [
             'title' => 'Contact Messages',

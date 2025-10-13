@@ -42,11 +42,12 @@ class Auth extends BaseControls\Control {
      */
     public function dologin() {
         try {
-            // TODO: Fix CSRF validation
-            // Temporarily disabled for debugging
-            // if (!$this->validateCSRF()) {
-            //     return;
-            // }
+            // CSRF validation enabled for security
+            if (!$this->validateCSRF()) {
+                $this->flash('error', 'Security validation failed. Please try again.');
+                Flight::redirect('/auth/login');
+                return;
+            }
             
             // Accept either username or email
             $request = Flight::request();

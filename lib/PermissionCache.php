@@ -198,13 +198,21 @@ class PermissionCache {
         // Clear local cache
         self::$localCache = null;
 
+        // Clear APCu stats counters before changing version
+        if (self::hasAPCu()) {
+            $statsKey = self::getStatsKey();
+            apcu_delete($statsKey . '_apcu_hits');
+            apcu_delete($statsKey . '_db_loads');
+        }
+
         // Increment version file to invalidate all APCu caches across all processes
         $versionFile = self::getCacheVersionFile();
         $newVersion = time();
         file_put_contents($versionFile, $newVersion);
 
-        // Reset cache key so it uses new version
+        // Reset cache keys so they use new version
         self::$CACHE_KEY = null;
+        self::$STATS_KEY = null;
 
         Flight::get('log')->info('PermissionCache: Cache cleared (version: ' . $newVersion . ')');
     }

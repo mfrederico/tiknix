@@ -76,3 +76,23 @@ All views and controllers use these exact field names. No aliases or duplicates 
 - ~~`cache_memory`~~ → Use `memory`
 - ~~`apcu_info['hits']`~~ → Use `hits`
 - ~~`apcu_info['db_loads']`~~ → Use `misses`
+
+## CLI Mode
+
+When running scripts from the command line, the bootstrap automatically detects CLI mode and:
+
+- **Skips session initialization** to avoid warnings about cookies/headers
+- **Maintains full database and logging** functionality
+- **Allows cache operations** without needing web context
+
+### Running Cache Scripts
+
+```bash
+# Clean output with no warnings
+php scripts/resetcache.php
+
+# Other CLI operations work the same
+php index.php --control=cache --method=stats
+```
+
+The CLI detection uses `php_sapi_name() === 'cli'` to determine runtime environment.

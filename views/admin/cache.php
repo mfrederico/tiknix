@@ -96,10 +96,14 @@
         <div class="col-md-6 mb-4">
             <div class="card">
                 <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Permission Cache Statistics</h5>
+                    <h5 class="mb-0">Permission Cache Statistics <small>(TikNix Only)</small></h5>
                 </div>
                 <div class="card-body">
                     <?php if (isset($cache_stats) && is_array($cache_stats)): ?>
+                    <div class="alert alert-success alert-dismissible fade show py-2 mb-3" role="alert">
+                        <small><i class="bi bi-check-circle"></i> These statistics reset when you clear the permission cache.</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
                     <div class="row">
                         <div class="col-6">
                             <p><strong>Hit Rate:</strong></p>
@@ -107,6 +111,7 @@
                             <p><strong>Total Misses:</strong></p>
                             <p><strong>Cached Permissions:</strong></p>
                             <p><strong>Memory Usage:</strong></p>
+                            <p><strong>Cache Version:</strong></p>
                         </div>
                         <div class="col-6">
                             <p>
@@ -118,6 +123,7 @@
                             <p><?= number_format($cache_stats['misses'] ?? 0) ?></p>
                             <p><?= number_format($cache_stats['count'] ?? 0) ?></p>
                             <p><?= number_format(($cache_stats['memory'] ?? 0) / 1024, 2) ?> KB</p>
+                            <p><small class="text-muted"><?= $cache_stats['cache_version'] ?? 'N/A' ?></small></p>
                         </div>
                     </div>
                     <?php else: ?>
@@ -133,10 +139,14 @@
         <div class="col-md-6 mb-4">
             <div class="card">
                 <div class="card-header bg-warning">
-                    <h5 class="mb-0">APCu Cache Status</h5>
+                    <h5 class="mb-0">APCu System Status <small class="text-muted">(Server-Wide)</small></h5>
                 </div>
                 <div class="card-body">
                     <?php if ($apcu_available && isset($apcu_info)): ?>
+                    <div class="alert alert-info alert-dismissible fade show py-2 mb-3" role="alert">
+                        <small><i class="bi bi-info-circle"></i> These are system-wide APCu statistics for all applications on this server, not just TikNix.</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
                     <div class="row">
                         <div class="col-6">
                             <p><strong>Number of Entries:</strong></p>

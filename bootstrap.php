@@ -207,27 +207,34 @@ class Bootstrap {
     
     /**
      * Initialize PHP session with security settings
+     * Skips session initialization in CLI mode to avoid warnings
      */
     private function initSession() {
+        // Skip session initialization in CLI mode
+        if (php_sapi_name() === 'cli') {
+            $this->logger->debug('Skipping session initialization in CLI mode');
+            return;
+        }
+
         // Session configuration for security
         ini_set('session.use_only_cookies', 1);
         ini_set('session.use_strict_mode', 1);
         ini_set('session.cookie_httponly', 1);
         ini_set('session.cookie_samesite', 'Lax');
-        
+
         // Use HTTPS for cookies in production
         if ($this->config['app']['environment'] === 'production') {
             ini_set('session.cookie_secure', 1);
         }
-        
+
         // Set session name
         session_name($this->config['app']['session_name'] ?? 'APP_SESSION');
-        
+
         // Set session lifetime (default 24 hours)
         $lifetime = $this->config['app']['session_lifetime'] ?? 86400;
         ini_set('session.gc_maxlifetime', $lifetime);
         session_set_cookie_params($lifetime);
-        
+
         // Start session
         if (session_status() === PHP_SESSION_NONE) {
             session_start();

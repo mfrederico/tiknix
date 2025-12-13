@@ -18,6 +18,7 @@ uploads/
 # IDE
 .idea/
 .vscode/
+.playwright-mcp/
 *.swp
 *.swo
 

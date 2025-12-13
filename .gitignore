@@ -1,0 +1,29 @@
+# Configuration (contains credentials)
+conf/config.ini
+
+# Database files
+database/*.db
+database/*.sqlite
+
+# Cache
+cache/
+*.cache
+
+# Logs
+log/*.log
+
+# Uploads
+uploads/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Composer (optional - uncomment to ignore vendor)
+# vendor/

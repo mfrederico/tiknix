@@ -58,6 +58,15 @@ class Docs extends BaseControls\Control {
     }
 
     /**
+     * Display Tutorials page
+     */
+    public function tutorials() {
+        $this->render('docs/tutorials', [
+            'title' => 'Tutorials'
+        ]);
+    }
+
+    /**
      * Display Caching documentation
      */
     public function caching() {

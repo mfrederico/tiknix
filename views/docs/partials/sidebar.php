@@ -27,6 +27,9 @@ $activeSection = $activeSection ?? 'index';
             <a href="/docs/caching" class="list-group-item list-group-item-action <?= $activeSection === 'caching' ? 'active' : '' ?>">
                 <i class="bi bi-lightning-charge"></i> Caching System
             </a>
+            <a href="/docs/tutorials" class="list-group-item list-group-item-action <?= $activeSection === 'tutorials' ? 'active' : '' ?>">
+                <i class="bi bi-mortarboard"></i> Tutorials
+            </a>
             <a href="/help" class="list-group-item list-group-item-action <?= $activeSection === 'help' ? 'active' : '' ?>">
                 <i class="bi bi-question-circle"></i> Help Center
             </a>

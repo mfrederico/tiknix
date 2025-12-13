@@ -45,6 +45,10 @@ Quick reference guides designed for AI coding assistants and developers:
 - **[FLIGHTPHP_README.md](FLIGHTPHP_README.md)**: FlightPHP patterns, custom methods, and Tiknix conventions
 - **[REDBEAN_README.md](REDBEAN_README.md)**: RedBeanPHP CRUD operations, query cache, and common patterns
 
+### Tutorials
+Learn Tiknix step-by-step with hands-on tutorials:
+- **[tiknix-tutorials](https://github.com/mfrederico/tiknix-tutorials)**: Build a multi-user TODO app in ~90 minutes (9 lessons, beginner-friendly)
+
 ## High-Performance Caching System
 
 Tiknix includes a sophisticated multi-tier caching system that provides **9.4x faster database queries** with zero code changes required.

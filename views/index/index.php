@@ -21,6 +21,23 @@
     </div>
 </div>
 
+<!-- Tutorials Callout -->
+<div class="bg-success text-white py-4">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h3 class="mb-1"><i class="bi bi-mortarboard"></i> New to Tiknix?</h3>
+                <p class="mb-0">Build a complete multi-user TODO app in ~90 minutes with our step-by-step tutorial.</p>
+            </div>
+            <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                <a href="/docs/tutorials" class="btn btn-light btn-lg">
+                    <i class="bi bi-play-circle"></i> Start Tutorial
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- AI-First Section -->
 <div class="bg-dark text-white py-5">
     <div class="container">

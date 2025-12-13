@@ -25,5 +25,5 @@ uploads/
 .DS_Store
 Thumbs.db
 
-# Composer (optional - uncomment to ignore vendor)
-# vendor/
+# Composer
+vendor/

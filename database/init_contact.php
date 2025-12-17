@@ -24,30 +24,33 @@ try {
     $contact->message = 'This is a test message that can be deleted.';
     $contact->category = 'general';
     $contact->status = 'new';
-    $contact->ip_address = '127.0.0.1';
-    $contact->user_agent = 'CLI/Init';
-    $contact->member_id = null;
-    $contact->created_at = date('Y-m-d H:i:s');
-    $contact->read_at = null;
-    $contact->responded_at = null;
-    $contact->responded_by = null;
-    $contact->updated_at = null;
+    $contact->ipAddress = '127.0.0.1';
+    $contact->userAgent = 'CLI/Init';
+    $contact->memberId = null;
+    $contact->createdAt = date('Y-m-d H:i:s');
+    $contact->readAt = null;
+    $contact->respondedAt = null;
+    $contact->respondedBy = null;
+    $contact->updatedAt = null;
     $id = R::store($contact);
     
     echo "✓ Created contact table\n";
     
     // Create a sample response to force table creation
     $response = R::dispense('contactresponse');
-    $response->contact_id = $id;
-    $response->admin_id = 1;
+    $response->contactId = $id;
+    $response->adminId = 1;
     $response->response = 'Test response';
-    $response->created_at = date('Y-m-d H:i:s');
+    $response->createdAt = date('Y-m-d H:i:s');
     R::store($response);
-    
+
     echo "✓ Created contactresponse table\n";
-    
-    // Clean up test data
-    R::exec('DELETE FROM contactresponse WHERE contact_id = ?', [$id]);
+
+    // Clean up test data using beans
+    $responses = R::find('contactresponse', 'contact_id = ?', [$id]);
+    foreach ($responses as $resp) {
+        R::trash($resp);
+    }
     R::trash($contact);
     
     echo "✓ Cleaned up test data\n";

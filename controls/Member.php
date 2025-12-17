@@ -58,8 +58,8 @@ class Member extends Control {
                 } else {
                     // Update allowed fields
                     $member->email = $email;
-                    $member->first_name = $first_name;
-                    $member->last_name = $last_name;
+                    $member->firstName = $first_name;
+                    $member->lastName = $last_name;
                     $member->bio = $bio;
                 }
             }
@@ -84,7 +84,7 @@ class Member extends Control {
             }
             
             if (empty($this->viewData['error'])) {
-                $member->updated_at = date('Y-m-d H:i:s');
+                $member->updatedAt = date('Y-m-d H:i:s');
                 
                 try {
                     R::store($member);

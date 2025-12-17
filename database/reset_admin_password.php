@@ -17,7 +17,7 @@ $admin = R::findOne('member', 'username = ?', ['admin']);
 if ($admin) {
     $newPassword = 'admin123';
     $admin->password = password_hash($newPassword, PASSWORD_DEFAULT);
-    $admin->updated_at = date('Y-m-d H:i:s');
+    $admin->updatedAt = date('Y-m-d H:i:s');
     R::store($admin);
     echo "Admin password reset to: $newPassword\n";
 } else {

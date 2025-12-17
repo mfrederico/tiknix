@@ -146,8 +146,8 @@ class Admin extends Control {
                         }
                         
                         if (empty($this->viewData['error'])) {
-                            $member->updated_at = date('Y-m-d H:i:s');
-                            
+                            $member->updatedAt = date('Y-m-d H:i:s');
+
                             try {
                                 R::store($member);
                                 $this->viewData['success'] = 'Member updated successfully';
@@ -221,9 +221,9 @@ class Admin extends Control {
                         $member->password = password_hash($password, PASSWORD_DEFAULT);
                         $member->level = $level;
                         $member->status = $status;
-                        $member->created_at = date('Y-m-d H:i:s');
-                        $member->updated_at = date('Y-m-d H:i:s');
-                        
+                        $member->createdAt = date('Y-m-d H:i:s');
+                        $member->updatedAt = date('Y-m-d H:i:s');
+
                         try {
                             R::store($member);
                             $this->logger->info('New member created by admin', [
@@ -313,7 +313,7 @@ class Admin extends Control {
                 
                 if (!$permission->id) {
                     $permission->validcount = 0;
-                    $permission->created_at = date('Y-m-d H:i:s');
+                    $permission->createdAt = date('Y-m-d H:i:s');
                 }
                 
                 try {
@@ -442,7 +442,7 @@ class Admin extends Control {
                         $member = R::load('member', $memberId);
                         if ($member->id && $member->username !== 'public-user-entity') {
                             $member->status = 'active';
-                            $member->updated_at = date('Y-m-d H:i:s');
+                            $member->updatedAt = date('Y-m-d H:i:s');
                             R::store($member);
                             $count++;
                         }
@@ -457,7 +457,7 @@ class Admin extends Control {
                         $member = R::load('member', $memberId);
                         if ($member->id && $member->username !== 'public-user-entity') {
                             $member->status = 'suspended';
-                            $member->updated_at = date('Y-m-d H:i:s');
+                            $member->updatedAt = date('Y-m-d H:i:s');
                             R::store($member);
                             $count++;
                         }

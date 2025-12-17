@@ -289,7 +289,7 @@ Flight::map('getSetting', function($key, $memberId = null) {
     }
     
     $setting = R::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
-    return $setting ? $setting->setting_value : null;
+    return $setting ? $setting->settingValue : null;
 });
 
 Flight::map('setSetting', function($key, $value, $memberId = null) {
@@ -301,11 +301,11 @@ Flight::map('setSetting', function($key, $value, $memberId = null) {
     $setting = R::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
     if (!$setting) {
         $setting = R::dispense('settings');
-        $setting->member_id = $memberId;
-        $setting->setting_key = $key;
+        $setting->memberId = $memberId;
+        $setting->settingKey = $key;
     }
-    $setting->setting_value = $value;
-    $setting->updated_at = date('Y-m-d H:i:s');
+    $setting->settingValue = $value;
+    $setting->updatedAt = date('Y-m-d H:i:s');
     
     return R::store($setting);
 });

@@ -22,8 +22,8 @@ if (!$admin) {
     $admin->password = password_hash('admin123', PASSWORD_DEFAULT); // Change this password!
     $admin->level = 0; // Root level
     $admin->status = 'active';
-    $admin->created_at = date('Y-m-d H:i:s');
-    $admin->updated_at = date('Y-m-d H:i:s');
+    $admin->createdAt = date('Y-m-d H:i:s');
+    $admin->updatedAt = date('Y-m-d H:i:s');
     $adminId = R::store($admin);
     echo "Created admin user with ID: $adminId\n";
     echo "Default password: admin123 (PLEASE CHANGE THIS!)\n";
@@ -40,8 +40,8 @@ if (!$publicUser) {
     $publicUser->password = ''; // No password for public entity
     $publicUser->level = 101; // Public level
     $publicUser->status = 'active'; // Use 'active' instead of 'system'
-    $publicUser->created_at = date('Y-m-d H:i:s');
-    $publicUser->updated_at = date('Y-m-d H:i:s');
+    $publicUser->createdAt = date('Y-m-d H:i:s');
+    $publicUser->updatedAt = date('Y-m-d H:i:s');
     $publicId = R::store($publicUser);
     echo "Created public-user-entity with ID: $publicId\n";
 } else {
@@ -72,7 +72,7 @@ foreach ($permissions as $perm) {
         $authControl->description = $perm['description'];
         $authControl->linkorder = 0;
         $authControl->validcount = 0;
-        $authControl->created_at = date('Y-m-d H:i:s');
+        $authControl->createdAt = date('Y-m-d H:i:s');
         R::store($authControl);
         echo "Created permission: {$perm['control']}/{$perm['method']}\n";
     }

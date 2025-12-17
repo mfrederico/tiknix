@@ -203,12 +203,12 @@ class GoogleAuth {
 
         if ($member) {
             // Update last login
-            $member->last_login = date('Y-m-d H:i:s');
-            $member->login_count = ($member->login_count ?? 0) + 1;
+            $member->lastLogin = date('Y-m-d H:i:s');
+            $member->loginCount = ($member->loginCount ?? 0) + 1;
 
             // Update avatar if changed
             if (!empty($googleUser['picture'])) {
-                $member->avatar_url = $googleUser['picture'];
+                $member->avatarUrl = $googleUser['picture'];
             }
 
             R::store($member);
@@ -220,12 +220,12 @@ class GoogleAuth {
 
         if ($member) {
             // Link Google ID to existing account
-            $member->google_id = $googleId;
-            $member->last_login = date('Y-m-d H:i:s');
-            $member->login_count = ($member->login_count ?? 0) + 1;
+            $member->googleId = $googleId;
+            $member->lastLogin = date('Y-m-d H:i:s');
+            $member->loginCount = ($member->loginCount ?? 0) + 1;
 
-            if (!empty($googleUser['picture']) && empty($member->avatar_url)) {
-                $member->avatar_url = $googleUser['picture'];
+            if (!empty($googleUser['picture']) && empty($member->avatarUrl)) {
+                $member->avatarUrl = $googleUser['picture'];
             }
 
             R::store($member);
@@ -240,16 +240,16 @@ class GoogleAuth {
 
         // Create new member
         $member = R::dispense('member');
-        $member->google_id = $googleId;
+        $member->googleId = $googleId;
         $member->email = $email;
         $member->username = self::generateUsername($googleUser);
-        $member->display_name = $googleUser['name'] ?? '';
-        $member->avatar_url = $googleUser['picture'] ?? '';
+        $member->displayName = $googleUser['name'] ?? '';
+        $member->avatarUrl = $googleUser['picture'] ?? '';
         $member->level = LEVELS['MEMBER'] ?? 100;
         $member->status = 'active';
-        $member->created_at = date('Y-m-d H:i:s');
-        $member->last_login = date('Y-m-d H:i:s');
-        $member->login_count = 1;
+        $member->createdAt = date('Y-m-d H:i:s');
+        $member->lastLogin = date('Y-m-d H:i:s');
+        $member->loginCount = 1;
 
         // No password for OAuth users
         $member->password = null;
@@ -301,15 +301,15 @@ class GoogleAuth {
     public static function getMemberGoogleInfo(int $memberId): ?array {
         $member = R::load('member', $memberId);
 
-        if (!$member || empty($member->google_id)) {
+        if (!$member || empty($member->googleId)) {
             return null;
         }
 
         return [
-            'google_id' => $member->google_id,
+            'googleId' => $member->googleId,
             'email' => $member->email,
-            'display_name' => $member->display_name,
-            'avatar_url' => $member->avatar_url
+            'displayName' => $member->displayName,
+            'avatarUrl' => $member->avatarUrl
         ];
     }
 }

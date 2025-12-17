@@ -340,7 +340,7 @@ class PermissionCache {
             $auth->level = LEVELS['ADMIN']; // Default to admin level
             $auth->description = "Auto-generated permission for {$control}::{$method}";
             $auth->validcount = 0;
-            $auth->created_at = date('Y-m-d H:i:s');
+            $auth->createdAt = date('Y-m-d H:i:s');
             R::store($auth);
 
             // Add to local cache immediately

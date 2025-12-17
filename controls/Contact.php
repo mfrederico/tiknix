@@ -60,15 +60,15 @@ class Contact extends BaseControls\Control {
             $contact->message = $message;
             $contact->category = $category ?: 'general';
             $contact->status = 'new';
-            $contact->ip_address = $_SERVER['REMOTE_ADDR'] ?? '';
-            $contact->user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-            
+            $contact->ipAddress = $_SERVER['REMOTE_ADDR'] ?? '';
+            $contact->userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+
             // If user is logged in, link to their account
             if (isset($_SESSION['member']['id'])) {
-                $contact->member_id = $_SESSION['member']['id'];
+                $contact->memberId = $_SESSION['member']['id'];
             }
-            
-            $contact->created_at = date('Y-m-d H:i:s');
+
+            $contact->createdAt = date('Y-m-d H:i:s');
             R::store($contact);
             
             // Log the submission
@@ -153,14 +153,14 @@ class Contact extends BaseControls\Control {
         // Mark as read if new
         if ($message->status === 'new') {
             $message->status = 'read';
-            $message->read_at = date('Y-m-d H:i:s');
+            $message->readAt = date('Y-m-d H:i:s');
             R::store($message);
         }
-        
+
         // Get member info if linked
         $member = null;
-        if ($message->member_id) {
-            $member = R::load('member', $message->member_id);
+        if ($message->memberId) {
+            $member = R::load('member', $message->memberId);
         }
         
         // Get responses
@@ -205,16 +205,16 @@ class Contact extends BaseControls\Control {
         try {
             // Save response
             $response = R::dispense('contactresponse');
-            $response->contact_id = $messageId;
-            $response->admin_id = $_SESSION['member']['id'];
+            $response->contactId = $messageId;
+            $response->adminId = $_SESSION['member']['id'];
             $response->response = $responseText;
-            $response->created_at = date('Y-m-d H:i:s');
+            $response->createdAt = date('Y-m-d H:i:s');
             R::store($response);
-            
+
             // Update message status
             $message->status = $status;
-            $message->responded_at = date('Y-m-d H:i:s');
-            $message->responded_by = $_SESSION['member']['id'];
+            $message->respondedAt = date('Y-m-d H:i:s');
+            $message->respondedBy = $_SESSION['member']['id'];
             R::store($message);
             
             // TODO: Send email to user if configured
@@ -253,7 +253,7 @@ class Contact extends BaseControls\Control {
         }
         
         $message->status = $status;
-        $message->updated_at = date('Y-m-d H:i:s');
+        $message->updatedAt = date('Y-m-d H:i:s');
         R::store($message);
         
         $this->json(['success' => true]);
@@ -276,9 +276,12 @@ class Contact extends BaseControls\Control {
             return;
         }
         
-        // Delete related responses first
-        R::exec('DELETE FROM contactresponse WHERE contact_id = ?', [$id]);
-        
+        // Delete related responses first using beans
+        $responses = R::find('contactresponse', 'contact_id = ?', [$id]);
+        foreach ($responses as $response) {
+            R::trash($response);
+        }
+
         // Delete message
         R::trash($message);
         

@@ -77,8 +77,8 @@ class Auth extends BaseControls\Control {
             }
             
             // Update last login
-            $member->last_login = date('Y-m-d H:i:s');
-            $member->login_count = ($member->login_count ?? 0) + 1;
+            $member->lastLogin = date('Y-m-d H:i:s');
+            $member->loginCount = ($member->loginCount ?? 0) + 1;
             R::store($member);
             
             // Set session
@@ -203,7 +203,7 @@ class Auth extends BaseControls\Control {
             $member->password = password_hash($password, PASSWORD_DEFAULT);
             $member->level = LEVELS['MEMBER'];
             $member->status = 'active'; // Active immediately - no email verification
-            $member->created_at = date('Y-m-d H:i:s');
+            $member->createdAt = date('Y-m-d H:i:s');
             
             $id = R::store($member);
             
@@ -258,8 +258,8 @@ class Auth extends BaseControls\Control {
             if ($member) {
                 // Generate reset token
                 $token = bin2hex(random_bytes(32));
-                $member->reset_token = $token;
-                $member->reset_expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
+                $member->resetToken = $token;
+                $member->resetExpires = date('Y-m-d H:i:s', strtotime('+1 hour'));
                 R::store($member);
                 
                 // Send reset email (implement your email service)
@@ -350,8 +350,8 @@ class Auth extends BaseControls\Control {
             
             // Update password
             $member->password = password_hash($password, PASSWORD_DEFAULT);
-            $member->reset_token = null;
-            $member->reset_expires = null;
+            $member->resetToken = null;
+            $member->resetExpires = null;
             R::store($member);
             
             $this->logger->info('Password reset completed', ['id' => $member->id]);

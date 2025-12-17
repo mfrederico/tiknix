@@ -75,7 +75,7 @@ class Permissions extends BaseControls\Control {
             $auth->method = $method;
             $auth->level = LEVELS['ADMIN']; // Default to admin
             $auth->description = "Auto-generated permission for {$control}:{$method}";
-            $auth->created_at = date('Y-m-d H:i:s');
+            $auth->createdAt = date('Y-m-d H:i:s');
             R::store($auth);
 
             // Clear cache after creating permission
@@ -164,14 +164,14 @@ class Permissions extends BaseControls\Control {
                 }
             } else {
                 $permission = R::dispense('authcontrol');
-                $permission->created_at = date('Y-m-d H:i:s');
+                $permission->createdAt = date('Y-m-d H:i:s');
             }
-            
+
             $permission->control = strtolower($this->sanitize($this->getParam('control')));
             $permission->method = strtolower($this->sanitize($this->getParam('method')));
             $permission->level = (int)$this->getParam('level');
             $permission->description = $this->sanitize($this->getParam('description'));
-            $permission->updated_at = date('Y-m-d H:i:s');
+            $permission->updatedAt = date('Y-m-d H:i:s');
             
             R::store($permission);
 

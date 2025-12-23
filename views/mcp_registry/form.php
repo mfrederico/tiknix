@@ -85,6 +85,53 @@
                             </div>
                         </div>
 
+                        <h5 class="border-bottom pb-2 mb-3 mt-4">
+                            <i class="bi bi-shield-lock"></i> Gateway/Proxy Settings
+                        </h5>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Proxy Mode:</strong> Tiknix acts as a gateway, routing requests to this backend server.
+                            Configure authentication credentials that Tiknix will use when connecting to this server.
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="backendAuthHeader" class="form-label">Backend Auth Header</label>
+                                <select class="form-select" id="backendAuthHeader" name="backendAuthHeader">
+                                    <option value="Authorization" <?= ($server->backendAuthHeader ?? 'Authorization') === 'Authorization' ? 'selected' : '' ?>>Authorization</option>
+                                    <option value="X-API-Key" <?= ($server->backendAuthHeader ?? '') === 'X-API-Key' ? 'selected' : '' ?>>X-API-Key</option>
+                                    <option value="X-MCP-Token" <?= ($server->backendAuthHeader ?? '') === 'X-MCP-Token' ? 'selected' : '' ?>>X-MCP-Token</option>
+                                    <option value="custom" <?= !in_array($server->backendAuthHeader ?? 'Authorization', ['Authorization', 'X-API-Key', 'X-MCP-Token', '']) ? 'selected' : '' ?>>Custom...</option>
+                                </select>
+                                <input type="text" class="form-control mt-2 d-none" id="backendAuthHeaderCustom"
+                                       placeholder="Custom header name"
+                                       value="<?= !in_array($server->backendAuthHeader ?? '', ['Authorization', 'X-API-Key', 'X-MCP-Token', '']) ? htmlspecialchars($server->backendAuthHeader ?? '') : '' ?>">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="backendAuthToken" class="form-label">Backend Auth Token</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="backendAuthToken" name="backendAuthToken"
+                                           value="<?= htmlspecialchars($server->backendAuthToken ?? '') ?>"
+                                           placeholder="Bearer token or API key for backend">
+                                    <button type="button" class="btn btn-outline-secondary" id="toggleTokenVisibility">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                                <small class="form-text text-muted">Token sent to the backend server (stored securely)</small>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="isProxyEnabled" name="isProxyEnabled" value="1"
+                                           <?= ($server->isProxyEnabled ?? 1) ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="isProxyEnabled">
+                                        <strong>Enable Proxy</strong> - Route requests through Tiknix gateway
+                                    </label>
+                                </div>
+                                <small class="form-text text-muted">When enabled, users access this server via Tiknix with their API keys</small>
+                            </div>
+                        </div>
+
                         <h5 class="border-bottom pb-2 mb-3 mt-4">Author Information</h5>
                         <div class="row mb-3">
                             <div class="col-md-6">
@@ -198,6 +245,41 @@ document.getElementById('name').addEventListener('blur', function() {
             .replace(/^-|-$/g, '');
     }
 });
+
+// Toggle backend auth token visibility
+document.getElementById('toggleTokenVisibility').addEventListener('click', function() {
+    const tokenField = document.getElementById('backendAuthToken');
+    const icon = this.querySelector('i');
+    if (tokenField.type === 'password') {
+        tokenField.type = 'text';
+        icon.classList.remove('bi-eye');
+        icon.classList.add('bi-eye-slash');
+    } else {
+        tokenField.type = 'password';
+        icon.classList.remove('bi-eye-slash');
+        icon.classList.add('bi-eye');
+    }
+});
+
+// Show/hide custom header input
+document.getElementById('backendAuthHeader').addEventListener('change', function() {
+    const customInput = document.getElementById('backendAuthHeaderCustom');
+    if (this.value === 'custom') {
+        customInput.classList.remove('d-none');
+        customInput.focus();
+    } else {
+        customInput.classList.add('d-none');
+    }
+});
+
+// Initialize custom header visibility on page load
+(function() {
+    const headerSelect = document.getElementById('backendAuthHeader');
+    const customInput = document.getElementById('backendAuthHeaderCustom');
+    if (headerSelect.value === 'custom') {
+        customInput.classList.remove('d-none');
+    }
+})();
 
 // Validate JSON fields before submit
 document.querySelector('form').addEventListener('submit', function(e) {

@@ -251,6 +251,20 @@ class Mcpregistry extends Control {
         $server->featured = (int)($request->data->featured ?? 0);
         $server->sortOrder = (int)($request->data->sortOrder ?? 0);
 
+        // Gateway/Proxy fields
+        $backendAuthHeader = $request->data->backendAuthHeader ?? 'Authorization';
+        if ($backendAuthHeader === 'custom') {
+            $backendAuthHeader = trim($request->data->backendAuthHeaderCustom ?? 'Authorization');
+        }
+        $server->backendAuthHeader = $backendAuthHeader;
+        $server->backendAuthToken = trim($request->data->backendAuthToken ?? '');
+        $server->isProxyEnabled = (int)($request->data->isProxyEnabled ?? 1);
+
+        // Registry fields (set defaults for local servers)
+        if ($isNew && empty($server->registrySource)) {
+            $server->registrySource = 'local';
+        }
+
         if ($isNew) {
             $server->createdAt = date('Y-m-d H:i:s');
             $server->createdBy = $this->member->id;

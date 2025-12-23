@@ -1,9 +1,14 @@
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">MCP Server Registry</h1>
-        <a href="/mcp/registry/add" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Add New Server
-        </a>
+        <div>
+            <a href="/apikeys" class="btn btn-outline-secondary me-2">
+                <i class="bi bi-key"></i> API Keys
+            </a>
+            <a href="/mcp/registry/add" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> Add New Server
+            </a>
+        </div>
     </div>
 
     <?php if (!empty($success)): ?>

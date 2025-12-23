@@ -1,9 +1,14 @@
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">API Keys</h1>
-        <a href="/apikeys/add" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> Create New Key
-        </a>
+        <div>
+            <a href="/mcp/registry" class="btn btn-outline-secondary me-2">
+                <i class="bi bi-plug"></i> MCP Registry
+            </a>
+            <a href="/apikeys/add" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> Create New Key
+            </a>
+        </div>
     </div>
 
     <?php if (!empty($_SESSION['new_api_key'])): ?>

@@ -22,12 +22,12 @@ try {
     echo "Creating MCP Registry permissions...\n";
 
     $permissions = [
-        ['control' => 'mcpRegistry', 'method' => '*', 'level' => 50, 'description' => 'MCP Server Registry management'],
-        ['control' => 'mcpRegistry', 'method' => 'index', 'level' => 50, 'description' => 'List all MCP servers'],
-        ['control' => 'mcpRegistry', 'method' => 'add', 'level' => 50, 'description' => 'Add new MCP server'],
-        ['control' => 'mcpRegistry', 'method' => 'edit', 'level' => 50, 'description' => 'Edit MCP server'],
-        ['control' => 'mcpRegistry', 'method' => 'fetchTools', 'level' => 50, 'description' => 'Fetch tools from remote server'],
-        ['control' => 'mcpRegistry', 'method' => 'api', 'level' => 101, 'description' => 'Public JSON API for MCP servers'],
+        ['control' => 'mcpregistry', 'method' => '*', 'level' => 50, 'description' => 'MCP Server Registry management'],
+        ['control' => 'mcpregistry', 'method' => 'index', 'level' => 50, 'description' => 'List all MCP servers'],
+        ['control' => 'mcpregistry', 'method' => 'add', 'level' => 50, 'description' => 'Add new MCP server'],
+        ['control' => 'mcpregistry', 'method' => 'edit', 'level' => 50, 'description' => 'Edit MCP server'],
+        ['control' => 'mcpregistry', 'method' => 'fetchTools', 'level' => 50, 'description' => 'Fetch tools from remote server'],
+        ['control' => 'mcpregistry', 'method' => 'api', 'level' => 101, 'description' => 'Public JSON API for MCP servers'],
     ];
 
     foreach ($permissions as $perm) {
@@ -87,8 +87,8 @@ try {
     echo "✓ MCP Registry initialization complete!\n";
     echo "========================================\n\n";
 
-    echo "Access the registry at: /mcpRegistry\n";
-    echo "Public API available at: /mcpRegistry/api\n";
+    echo "Access the registry at: /mcpregistry\n";
+    echo "Public API available at: /mcpregistry/api\n";
 
 } catch (\Exception $e) {
     echo "\n❌ Error: " . $e->getMessage() . "\n";

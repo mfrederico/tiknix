@@ -13,22 +13,27 @@ use \RedBeanPHP\R as R;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
-class McpRegistry extends Control {
+class Mcpregistry extends Control {
 
     const ADMIN_LEVEL = 50;
 
     public function __construct() {
         parent::__construct();
 
+        // Allow public access to API endpoint
+        $url = Flight::request()->url;
+        if (strpos($url, '/mcpregistry/api') !== false) {
+            return; // Public endpoint, no auth required
+        }
+
         // Check if user is logged in
         if (!Flight::isLoggedIn()) {
-            Flight::redirect('/auth/login?redirect=' . urlencode(Flight::request()->url));
+            Flight::redirect('/auth/login?redirect=' . urlencode($url));
             exit;
         }
 
-        // Check if user has admin level (except for api endpoint)
-        $method = Flight::request()->url;
-        if (strpos($method, '/mcpRegistry/api') === false && $this->member->level > self::ADMIN_LEVEL) {
+        // Check if user has admin level
+        if ($this->member->level > self::ADMIN_LEVEL) {
             $this->logger->warning('Unauthorized MCP Registry access attempt', [
                 'member_id' => $this->member->id,
                 'member_level' => $this->member->level,
@@ -58,7 +63,7 @@ class McpRegistry extends Control {
                 ]);
                 R::trash($server);
             }
-            Flight::redirect('/mcpRegistry');
+            Flight::redirect('/mcpregistry');
             return;
         }
 
@@ -88,7 +93,7 @@ class McpRegistry extends Control {
             } else {
                 $result = $this->processServerForm($request);
                 if ($result['success']) {
-                    Flight::redirect('/mcpRegistry');
+                    Flight::redirect('/mcpregistry');
                     return;
                 }
                 $this->viewData['error'] = $result['error'];
@@ -108,13 +113,13 @@ class McpRegistry extends Control {
         $serverId = $request->query->id ?? null;
 
         if (!$serverId) {
-            Flight::redirect('/mcpRegistry');
+            Flight::redirect('/mcpregistry');
             return;
         }
 
         $server = R::load('mcpserver', $serverId);
         if (!$server->id) {
-            Flight::redirect('/mcpRegistry');
+            Flight::redirect('/mcpregistry');
             return;
         }
 

@@ -344,7 +344,7 @@ class Mcp extends BaseControls\Control {
      * GET /mcp/config
      *
      * Returns a ready-to-use configuration for ~/.claude/settings.json or .mcp.json
-     * Requires authentication to include the user's API token
+     * Requires authentication to include the user's API token and accessible servers
      */
     public function config($params = null): void {
         header('Content-Type: application/json');
@@ -354,29 +354,95 @@ class Mcp extends BaseControls\Control {
         $hasAuth = $this->authenticate();
 
         $mcpUrl = $this->getMcpUrl();
-        $config = [
+
+        // Build the MCP server config
+        $serverConfig = [
+            'type' => 'http',
+            'url' => $mcpUrl
+        ];
+
+        // Response structure
+        $response = [
             'mcpServers' => [
-                self::SERVER_NAME => [
-                    'type' => 'http',
-                    'url' => $mcpUrl
-                ]
+                self::SERVER_NAME => $serverConfig
             ]
         ];
 
-        // Add auth header if user is authenticated and has a token
-        if ($hasAuth && $this->authMember && !empty($this->authMember->api_token)) {
-            $config['mcpServers'][self::SERVER_NAME]['headers'] = [
-                'Authorization' => 'Bearer ' . $this->authMember->api_token
+        if ($hasAuth && $this->authMember) {
+            // Get API key token (prefer new apikey table, fall back to legacy)
+            $token = null;
+            $keyName = null;
+            $keyScopes = [];
+            $allowedServerSlugs = [];
+
+            if ($this->authApiKey) {
+                // Using new API key system
+                $token = $this->authApiKey->token;
+                $keyName = $this->authApiKey->name;
+                $keyScopes = json_decode($this->authApiKey->scopes, true) ?: [];
+                $allowedServerSlugs = json_decode($this->authApiKey->allowedServers, true) ?: [];
+            } elseif (!empty($this->authMember->api_token)) {
+                // Legacy api_token
+                $token = $this->authMember->api_token;
+                $keyName = 'Legacy Token';
+                $keyScopes = ['mcp:*'];
+            }
+
+            if ($token) {
+                $response['mcpServers'][self::SERVER_NAME]['headers'] = [
+                    'Authorization' => 'Bearer ' . $token
+                ];
+            }
+
+            // Get accessible backend servers
+            $servers = $this->getAllowedServers();
+            $accessibleServers = [];
+
+            foreach ($servers as $server) {
+                $tools = json_decode($server->tools, true) ?: [];
+                $toolNames = array_map(fn($t) => $t['name'] ?? 'unknown', $tools);
+
+                $accessibleServers[] = [
+                    'slug' => $server->slug,
+                    'name' => $server->name,
+                    'description' => $server->description,
+                    'tool_count' => count($tools),
+                    'tools' => $toolNames,
+                    'status' => $server->status
+                ];
+            }
+
+            // Add metadata about the authenticated user's access
+            $response['_meta'] = [
+                'authenticated' => true,
+                'user' => $this->authMember->username ?? $this->authMember->email,
+                'api_key' => [
+                    'name' => $keyName,
+                    'scopes' => $keyScopes,
+                    'server_restrictions' => empty($allowedServerSlugs) ? 'none (full access)' : $allowedServerSlugs
+                ],
+                'accessible_servers' => $accessibleServers,
+                'total_tools' => count($this->tools) + array_sum(array_column($accessibleServers, 'tool_count')),
+                'instructions' => [
+                    'global' => 'Save to ~/.claude/settings.json for all projects',
+                    'project' => 'Save to .mcp.json in your project root',
+                    'copy_config' => 'Copy the "mcpServers" object into your config file'
+                ]
             ];
         } else {
-            // Show placeholder for unauthenticated requests
-            $config['mcpServers'][self::SERVER_NAME]['headers'] = [
+            // Unauthenticated - show placeholder
+            $response['mcpServers'][self::SERVER_NAME]['headers'] = [
                 'Authorization' => 'Bearer YOUR_API_TOKEN'
             ];
-            $config['_note'] = 'Authenticate to get your personalized config with API token';
+            $response['_meta'] = [
+                'authenticated' => false,
+                'note' => 'Authenticate with Basic Auth or API key to get your personalized config',
+                'example' => 'curl -u username:password ' . rtrim($mcpUrl, '/message') . '/config',
+                'get_api_key' => rtrim($mcpUrl, '/message') . '/../apikeys'
+            ];
         }
 
-        echo json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     /**

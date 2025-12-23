@@ -4,7 +4,7 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h4 class="mb-0"><?= htmlspecialchars($title) ?></h4>
-                    <a href="/mcpregistry" class="btn btn-outline-secondary btn-sm">Back to List</a>
+                    <a href="/mcp/registry" class="btn btn-outline-secondary btn-sm">Back to List</a>
                 </div>
                 <div class="card-body">
                     <?php if (!empty($error)): ?>
@@ -147,7 +147,7 @@
                         </div>
 
                         <div class="d-flex justify-content-between mt-4">
-                            <a href="/mcpregistry" class="btn btn-secondary">Cancel</a>
+                            <a href="/mcp/registry" class="btn btn-secondary">Cancel</a>
                             <button type="submit" class="btn btn-primary">
                                 <?= isset($server->id) ? 'Update Server' : 'Create Server' ?>
                             </button>
@@ -171,7 +171,7 @@ document.getElementById('fetchToolsBtn').addEventListener('click', async functio
     this.textContent = 'Fetching...';
 
     try {
-        const response = await fetch('/mcpregistry/fetchTools?url=' + encodeURIComponent(url));
+        const response = await fetch('/mcp/registry/fetchTools?url=' + encodeURIComponent(url));
         const data = await response.json();
 
         if (data.success) {

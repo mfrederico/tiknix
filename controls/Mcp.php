@@ -7,10 +7,45 @@
  *
  * Endpoint: POST /mcp/message
  *
+ * ============================================================================
+ * SECURITY MODEL - TWO-LAYER AUTHENTICATION
+ * ============================================================================
+ *
+ * This endpoint uses a two-layer security model:
+ *
+ * LAYER 1: Route-Level (authcontrol table)
+ * -----------------------------------------
+ * The permission for mcp::message is set to PUBLIC (level 101).
+ * This is INTENTIONAL - MCP clients need to reach this endpoint to authenticate.
+ * The route being "public" just means it's reachable, not that it's unprotected.
+ *
+ * LAYER 2: Controller-Level (API Key/Token Auth)
+ * -----------------------------------------------
+ * This controller implements its own authentication using API keys/tokens.
+ * This is the REAL security layer for MCP operations.
+ *
+ * Method-level access control:
+ * - PUBLIC methods (no API key required):
+ *   - initialize  : MCP protocol handshake
+ *   - tools/list  : Discovery of available tools (metadata only)
+ *   - ping        : Health check
+ *
+ * - PROTECTED methods (API key required):
+ *   - tools/call  : Actually execute tools
+ *   - Any future methods that perform actions
+ *
+ * WHY tools/list IS PUBLIC:
+ * - Listing tools is discovery/documentation, not execution
+ * - Standard MCP client flow: connect -> list tools -> authenticate -> call tools
+ * - The MCP Registry's "Fetch Tools" feature needs to discover tools
+ * - Tool names/descriptions are not sensitive (treat them as public docs)
+ *
  * Authentication methods (in order of precedence):
  * 1. Basic Auth: Authorization: Basic base64(username:password)
- * 2. Bearer Token: Authorization: Bearer <token>
+ * 2. Bearer Token: Authorization: Bearer <token>  (checks apikey table first)
  * 3. Custom Header: X-MCP-Token: <token>
+ *
+ * ============================================================================
  *
  * @see https://modelcontextprotocol.io/
  */
@@ -178,13 +213,7 @@ class Mcp extends BaseControls\Control {
             return;
         }
 
-        // Authenticate the request
-        if (!$this->authenticate()) {
-            $this->sendError(-32000, 'Authentication required', null, 401);
-            return;
-        }
-
-        // Parse JSON-RPC request
+        // Parse JSON-RPC request first (before auth check)
         $rawBody = file_get_contents('php://input');
         $request = json_decode($rawBody, true);
 
@@ -193,15 +222,33 @@ class Mcp extends BaseControls\Control {
             return;
         }
 
-        $this->logger->debug('MCP request received', [
-            'method' => $request['method'] ?? 'unknown',
-            'member_id' => $this->authMember->id ?? 0
-        ]);
-
         // Route to appropriate handler
         $method = $request['method'] ?? '';
         $id = $request['id'] ?? null;
         $params = $request['params'] ?? [];
+
+        // =====================================================================
+        // PUBLIC METHODS - No API key required (see security docs at top of file)
+        // These are discovery/handshake methods, not execution methods.
+        // Modify this list carefully - adding methods here makes them public!
+        // =====================================================================
+        $publicMethods = ['initialize', 'tools/list', 'ping'];
+
+        // Authenticate for non-public methods
+        if (!in_array($method, $publicMethods)) {
+            if (!$this->authenticate()) {
+                $this->sendError(-32000, 'Authentication required', null, 401);
+                return;
+            }
+        } else {
+            // Try to authenticate anyway for personalization, but don't require it
+            $this->authenticate();
+        }
+
+        $this->logger->debug('MCP request received', [
+            'method' => $method,
+            'member_id' => $this->authMember->id ?? 0
+        ]);
 
         switch ($method) {
             case 'initialize':
@@ -254,6 +301,30 @@ class Mcp extends BaseControls\Control {
             'protocolVersion' => self::PROTOCOL_VERSION,
             'mcpUrl' => $this->getMcpUrl()
         ]);
+    }
+
+    /**
+     * MCP Registry - forwards to Mcpregistry controller
+     * GET /mcp/registry[/method]
+     */
+    public function registry($params = null): void {
+        $instance = new Mcpregistry();
+
+        // Get the method from operation, default to index
+        $method = $params['operation']->name ?? 'index';
+
+        // Forward the params, shifting operation down
+        $forwardParams = $params;
+        $forwardParams['operation'] = new \stdClass();
+        $forwardParams['operation']->name = $params['operation']->type ?? null;
+        $forwardParams['operation']->type = null;
+
+        if (method_exists($instance, $method) && (new \ReflectionMethod($instance, $method))->isPublic()) {
+            $instance->$method($forwardParams);
+        } else {
+            // Default to index if method doesn't exist
+            $instance->index($params);
+        }
     }
 
     /**

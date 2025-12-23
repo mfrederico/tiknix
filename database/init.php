@@ -97,7 +97,7 @@ try {
     echo "  Admin:       /admin\n";
     echo "  API Keys:    /apikeys\n";
     echo "  MCP Server:  /mcp\n";
-    echo "  MCP Registry:/mcpregistry\n";
+    echo "  MCP Registry:/mcp/registry\n";
 
 } catch (\Exception $e) {
     echo "\n❌ Error: " . $e->getMessage() . "\n";

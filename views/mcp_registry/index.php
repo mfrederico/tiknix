@@ -1,7 +1,7 @@
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">MCP Server Registry</h1>
-        <a href="/mcpregistry/add" class="btn btn-primary">
+        <a href="/mcp/registry/add" class="btn btn-primary">
             <i class="fas fa-plus"></i> Add New Server
         </a>
     </div>
@@ -36,7 +36,7 @@
             </select>
         </div>
         <div class="col-md-2">
-            <a href="/mcpregistry/api" target="_blank" class="btn btn-outline-info">View API</a>
+            <a href="/mcp/registry/api" target="_blank" class="btn btn-outline-info">View API</a>
         </div>
     </div>
 
@@ -58,7 +58,7 @@
                 <?php if (empty($servers)): ?>
                     <tr>
                         <td colspan="8" class="text-center text-muted py-4">
-                            No MCP servers registered yet. <a href="/mcpregistry/add">Add your first server</a>.
+                            No MCP servers registered yet. <a href="/mcp/registry/add">Add your first server</a>.
                         </td>
                     </tr>
                 <?php else: ?>
@@ -106,8 +106,8 @@
                                 </span>
                             </td>
                             <td>
-                                <a href="/mcpregistry/edit?id=<?= $server->id ?>" class="btn btn-sm btn-outline-primary">Edit</a>
-                                <a href="/mcpregistry?delete=<?= $server->id ?>"
+                                <a href="/mcp/registry/edit?id=<?= $server->id ?>" class="btn btn-sm btn-outline-primary">Edit</a>
+                                <a href="/mcp/registry?delete=<?= $server->id ?>"
                                    class="btn btn-sm btn-outline-danger"
                                    onclick="return confirm('Delete this MCP server?')">Delete</a>
                             </td>
@@ -123,7 +123,7 @@
         <p class="text-muted">
             The MCP Server Registry tracks Model Context Protocol servers that integrate with Tiknix.
             Registered servers can be discovered via the <code>list_mcp_servers</code> MCP tool or the
-            <a href="/mcpregistry/api">public JSON API</a>.
+            <a href="/mcp/registry/api">public JSON API</a>.
         </p>
         <h5>Auth Types</h5>
         <ul class="list-group mb-3">

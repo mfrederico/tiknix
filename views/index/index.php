@@ -77,6 +77,55 @@
     </div>
 </div>
 
+<!-- MCP Server Section -->
+<div class="bg-info bg-gradient text-white py-5">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h2><i class="bi bi-hdd-network"></i> Built-in MCP Server</h2>
+                <p class="lead">Expose your PHP application to AI agents via the Model Context Protocol. Let Claude and other AI assistants interact directly with your data and business logic.</p>
+                <ul class="list-unstyled">
+                    <li class="mb-2"><i class="bi bi-check-circle"></i> Full MCP protocol implementation</li>
+                    <li class="mb-2"><i class="bi bi-check-circle"></i> Expose custom tools for AI agents</li>
+                    <li class="mb-2"><i class="bi bi-check-circle"></i> Secure API key authentication</li>
+                    <li class="mb-2"><i class="bi bi-check-circle"></i> Works with Claude Code, Cursor, and more</li>
+                </ul>
+                <div class="mt-4">
+                    <a href="/mcp" class="btn btn-light btn-lg me-2">
+                        <i class="bi bi-gear"></i> MCP Dashboard
+                    </a>
+                    <a href="/mcp/registry" class="btn btn-outline-light btn-lg">
+                        <i class="bi bi-collection"></i> Server Registry
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card bg-dark border-0 shadow">
+                    <div class="card-header bg-dark text-light border-bottom border-secondary">
+                        <i class="bi bi-terminal"></i> claude_desktop_config.json
+                    </div>
+                    <div class="card-body">
+                        <pre class="text-light mb-0" style="font-size: 0.85rem;"><code>{
+  "mcpServers": {
+    "tiknix": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://your-app.com/mcp/sse"
+      ]
+    }
+  }
+}</code></pre>
+                    </div>
+                </div>
+                <p class="text-center mt-3 small opacity-75">
+                    <i class="bi bi-lightbulb"></i> Add your Tiknix app as an MCP server in seconds
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Features Section -->
 <div class="py-5">
     <div class="container">
@@ -141,6 +190,26 @@
                     </div>
                 </div>
             </div>
+
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm border-info">
+                    <div class="card-body text-center">
+                        <i class="bi bi-hdd-network text-info" style="font-size: 3rem;"></i>
+                        <h4 class="card-title mt-3">MCP Server</h4>
+                        <p class="card-text">Built-in Model Context Protocol server. Connect AI agents directly to your app.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <i class="bi bi-key text-secondary" style="font-size: 3rem;"></i>
+                        <h4 class="card-title mt-3">Scoped API Keys</h4>
+                        <p class="card-text">Generate API keys with granular permissions. Control exactly what each key can access.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -159,11 +228,19 @@
                             </div>
                             <ul class="list-group list-group-flush">
                                 <li class="list-group-item d-flex justify-content-between">
+                                    <span><i class="bi bi-hdd-network"></i> MCP Server</span>
+                                    <span class="badge bg-success">Active</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
                                     <span><i class="bi bi-google"></i> GoogleAuth</span>
                                     <span class="badge bg-success">Active</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between">
                                     <span><i class="bi bi-shield-lock"></i> PermissionCache</span>
+                                    <span class="badge bg-success">Active</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span><i class="bi bi-key"></i> Scoped API Keys</span>
                                     <span class="badge bg-success">Active</span>
                                 </li>
                             </ul>

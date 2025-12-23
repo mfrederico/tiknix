@@ -66,7 +66,8 @@ class Bean {
      * @return \RedBeanPHP\OODBBean|null
      */
     public static function findOne(string $type, ?string $sql = null, array $params = []) {
-        return R::findOne(self::normalize($type), $sql, $params);
+        // Convert null to empty string for PHP 8.1+ compatibility with RedBeanPHP
+        return R::findOne(self::normalize($type), $sql ?? '', $params);
     }
 
     /**
@@ -78,7 +79,8 @@ class Bean {
      * @return array Array of beans
      */
     public static function find(string $type, ?string $sql = null, array $params = []) {
-        return R::find(self::normalize($type), $sql, $params);
+        // Convert null to empty string for PHP 8.1+ compatibility with RedBeanPHP
+        return R::find(self::normalize($type), $sql ?? '', $params);
     }
 
     /**
@@ -90,7 +92,8 @@ class Bean {
      * @return array Array of beans
      */
     public static function findAll(string $type, ?string $sql = null, array $params = []) {
-        return R::findAll(self::normalize($type), $sql, $params);
+        // Convert null to empty string for PHP 8.1+ compatibility with RedBeanPHP
+        return R::findAll(self::normalize($type), $sql ?? '', $params);
     }
 
     /**
@@ -102,7 +105,8 @@ class Bean {
      * @return int Count
      */
     public static function count(string $type, ?string $sql = null, array $params = []) {
-        return R::count(self::normalize($type), $sql, $params);
+        // Convert null to empty string for PHP 8.1+ compatibility with RedBeanPHP
+        return R::count(self::normalize($type), $sql ?? '', $params);
     }
 
     /**

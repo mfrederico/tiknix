@@ -15,17 +15,26 @@ class Index extends BaseControls\Control {
      * Home page
      */
     public function index() {
-        // Example of loading data
-        $stats = [
-            'total_users' => Bean::count('member'),
-            'active_users' => Bean::count('member', 'status = ?', ['active']),
-            'total_permissions' => Bean::count('authcontrol')
-        ];
-        
-        $this->render('index/index', [
-            'title' => 'Welcome',
-            'stats' => $stats
-        ]);
+        try {
+            // Example of loading data
+            $stats = [
+                'total_users' => Bean::count('member'),
+                'active_users' => Bean::count('member', 'status = ?', ['active']),
+                'total_permissions' => Bean::count('authcontrol')
+            ];
+
+            $this->render('index/index', [
+                'title' => 'Welcome',
+                'stats' => $stats
+            ]);
+        } catch (\Throwable $e) {
+            Flight::get('log')->error('Index error: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
     }
     
     /**

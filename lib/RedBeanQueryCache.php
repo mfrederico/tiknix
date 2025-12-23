@@ -208,7 +208,7 @@ class RedBeanQueryCache implements Plugin {
      * Generate cache key from query and bindings
      */
     private static function getCacheKey($sql, $bindings = []) {
-        $normalized = strtolower(trim(preg_replace('/\s+/', ' ', $sql)));
+        $normalized = strtolower(trim(preg_replace('/\s+/', ' ', $sql ?? '')));
         return self::$cachePrefix . md5($normalized . serialize($bindings));
     }
 
@@ -351,7 +351,7 @@ class RedBeanQueryCache implements Plugin {
      * Check if query is SELECT
      */
     private static function isSelectQuery($sql) {
-        $sql = strtoupper(trim($sql));
+        $sql = strtoupper(trim($sql ?? ''));
         return strpos($sql, 'SELECT') === 0;
     }
 

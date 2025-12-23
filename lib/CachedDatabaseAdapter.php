@@ -190,7 +190,7 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Generate cache key from query
      */
     private function getCacheKey($sql, $bindings = array()) {
-        $normalized = strtolower(trim(preg_replace('/\s+/', ' ', $sql)));
+        $normalized = strtolower(trim(preg_replace('/\s+/', ' ', $sql ?? '')));
         return $this->cachePrefix . md5($normalized . serialize($bindings));
     }
 
@@ -333,7 +333,7 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Check if query is SELECT
      */
     private function isSelectQuery($sql) {
-        $sql = strtoupper(trim($sql));
+        $sql = strtoupper(trim($sql ?? ''));
         return strpos($sql, 'SELECT') === 0 || strpos($sql, 'SHOW') === 0;
     }
 

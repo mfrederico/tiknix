@@ -7,7 +7,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Exception as Exception;
 
 class Auth extends BaseControls\Control {
@@ -67,7 +67,7 @@ class Auth extends BaseControls\Control {
             }
             
             // Find member by username or email
-            $member = R::findOne('member', '(username = ? OR email = ?) AND status = ?', [$login, $login, 'active']);
+            $member = Bean::findOne('member', '(username = ? OR email = ?) AND status = ?', [$login, $login, 'active']);
             
             if (!$member || !password_verify($password, $member->password)) {
                 $this->logger->warning('Failed login attempt', ['login' => $login]);
@@ -79,7 +79,7 @@ class Auth extends BaseControls\Control {
             // Update last login
             $member->lastLogin = date('Y-m-d H:i:s');
             $member->loginCount = ($member->loginCount ?? 0) + 1;
-            R::store($member);
+            Bean::store($member);
             
             // Set session
             $_SESSION['member'] = $member->export();
@@ -177,12 +177,12 @@ class Auth extends BaseControls\Control {
         }
         
         // Check if email exists
-        if (R::count('member', 'email = ?', [$email]) > 0) {
+        if (Bean::count('member', 'email = ?', [$email]) > 0) {
             $errors[] = 'Email already registered';
         }
         
         // Check if username exists
-        if (R::count('member', 'username = ?', [$username]) > 0) {
+        if (Bean::count('member', 'username = ?', [$username]) > 0) {
             $errors[] = 'Username already taken';
         }
         
@@ -197,7 +197,7 @@ class Auth extends BaseControls\Control {
         
         try {
             // Create member
-            $member = R::dispense('member');
+            $member = Bean::dispense('member');
             $member->email = $email;
             $member->username = $username;
             $member->password = password_hash($password, PASSWORD_DEFAULT);
@@ -205,7 +205,7 @@ class Auth extends BaseControls\Control {
             $member->status = 'active'; // Active immediately - no email verification
             $member->createdAt = date('Y-m-d H:i:s');
             
-            $id = R::store($member);
+            $id = Bean::store($member);
             
             Flight::get('log')->info('New user registered', ['id' => $id, 'username' => $username]);
             
@@ -253,14 +253,14 @@ class Auth extends BaseControls\Control {
                 return;
             }
             
-            $member = R::findOne('member', 'email = ? AND status = ?', [$email, 'active']);
+            $member = Bean::findOne('member', 'email = ? AND status = ?', [$email, 'active']);
             
             if ($member) {
                 // Generate reset token
                 $token = bin2hex(random_bytes(32));
                 $member->resetToken = $token;
                 $member->resetExpires = date('Y-m-d H:i:s', strtotime('+1 hour'));
-                R::store($member);
+                Bean::store($member);
                 
                 // Send reset email (implement your email service)
                 $resetUrl = Flight::get('app.baseurl') . "/auth/reset?token={$token}";
@@ -290,7 +290,7 @@ class Auth extends BaseControls\Control {
             return;
         }
         
-        $member = R::findOne('member', 'reset_token = ? AND reset_expires > ?', 
+        $member = Bean::findOne('member', 'reset_token = ? AND reset_expires > ?', 
             [$token, date('Y-m-d H:i:s')]);
         
         if (!$member) {
@@ -339,7 +339,7 @@ class Auth extends BaseControls\Control {
             }
             
             // Find member
-            $member = R::findOne('member', 'reset_token = ? AND reset_expires > ?', 
+            $member = Bean::findOne('member', 'reset_token = ? AND reset_expires > ?', 
                 [$token, date('Y-m-d H:i:s')]);
             
             if (!$member) {
@@ -352,7 +352,7 @@ class Auth extends BaseControls\Control {
             $member->password = password_hash($password, PASSWORD_DEFAULT);
             $member->resetToken = null;
             $member->resetExpires = null;
-            R::store($member);
+            Bean::store($member);
             
             $this->logger->info('Password reset completed', ['id' => $member->id]);
             

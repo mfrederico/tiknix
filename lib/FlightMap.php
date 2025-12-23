@@ -1,6 +1,6 @@
 <?php
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Exception as Exception;
 use \ParagonIE\AntiCSRF\AntiCSRF;
 
@@ -129,7 +129,7 @@ Flight::map('getMember', function() {
     }
     
     // Refresh member data from database
-    $member = R::load('member', $_SESSION['member']['id']);
+    $member = Bean::load('member', $_SESSION['member']['id']);
     if ($member->id) {
         $_SESSION['member'] = $member->export();
         return $member;
@@ -288,7 +288,7 @@ Flight::map('getSetting', function($key, $memberId = null) {
         $memberId = $member->id;
     }
     
-    $setting = R::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
+    $setting = Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
     return $setting ? $setting->settingValue : null;
 });
 
@@ -298,14 +298,14 @@ Flight::map('setSetting', function($key, $value, $memberId = null) {
         $memberId = $member->id;
     }
     
-    $setting = R::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
+    $setting = Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
     if (!$setting) {
-        $setting = R::dispense('settings');
+        $setting = Bean::dispense('settings');
         $setting->memberId = $memberId;
         $setting->settingKey = $key;
     }
     $setting->settingValue = $value;
     $setting->updatedAt = date('Y-m-d H:i:s');
     
-    return R::store($setting);
+    return Bean::store($setting);
 });

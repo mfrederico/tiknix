@@ -7,52 +7,102 @@ This project uses FlightPHP and RedBeanPHP. You MUST follow these conventions st
 > **Official Documentation**: https://redbeanphp.com/
 > Always refer to the official docs for the most accurate information.
 
-### Naming Conventions (IMPORTANT)
+### Bean Wrapper Class (lib/Bean.php)
 
-RedBeanPHP automatically converts camelCase in PHP to underscore_case in the database.
+The `Bean` class normalizes bean type names for R::dispense() which requires all lowercase.
+It accepts camelCase, snake_case, or lowercase and converts them:
 
-**In PHP code, use camelCase:**
 ```php
-// Table names - use camelCase (NO underscores)
-$bean = R::dispense('orderItem');     // Creates table: order_item
-$bean = R::dispense('userProfile');   // Creates table: user_profile
-$bean = R::dispense('member');        // Creates table: member
+use \app\Bean;
 
-// Column names - use camelCase
-$bean->firstName = 'John';            // Creates column: first_name
-$bean->createdAt = date('Y-m-d');     // Creates column: created_at
-$bean->userId = 5;                    // Creates column: user_id
+// Bean:: normalizes the type name automatically
+$key = Bean::dispense('apiKey');        // → 'apikey'
+$key = Bean::dispense('api_key');       // → 'apikey'
+$setting = Bean::findOne('userSettings', 'key = ?', ['theme']);
+
+// All Bean methods: dispense, load, findOne, find, findAll, count, store, trash
 ```
 
-**WRONG - Don't use underscore_case in PHP:**
+### Naming Conventions (CRITICAL)
+
+**R::dispense() requires ALL LOWERCASE bean types - no underscores, no uppercase!**
+
 ```php
-// WRONG - Don't use underscores in PHP bean code
-$bean = R::dispense('order_item');    // WRONG!
-$bean->first_name = 'John';           // WRONG!
-$bean->created_at = date('Y-m-d');    // WRONG!
+// CORRECT - all lowercase for dispense
+$bean = R::dispense('member');          // OK
+$bean = R::dispense('apikey');          // OK
+$bean = R::dispense('contactresponse'); // OK
+
+// WRONG - will throw "Invalid bean type" error!
+$bean = R::dispense('orderItem');       // WRONG - uppercase!
+$bean = R::dispense('order_item');      // WRONG - underscore!
+$bean = R::dispense('ApiKey');          // WRONG - uppercase!
+
+// Use Bean:: wrapper to auto-normalize:
+$bean = Bean::dispense('orderItem');    // OK - normalizes to 'orderitem'
 ```
 
-### Relations (One-to-Many)
+**Column names - use camelCase (RedBeanPHP converts to snake_case):**
+```php
+$bean->firstName = 'John';            // Column: first_name
+$bean->createdAt = date('Y-m-d');     // Column: created_at
+$bean->memberId = 5;                  // Column: member_id
+```
 
-Use `own[BeanType]List` for one-to-many relationships:
+### FUSE Models
+
+FUSE models in `models/` enable associations and hooks. They must be named `Model_Beantype`:
 
 ```php
-// Parent has many children
-$shop = R::dispense('shop');
-$shop->name = 'My Shop';
+// models/Model_Member.php - enables ownApikeyList, ownContactList, etc.
+class Model_Member extends \RedBeanPHP\SimpleModel {
+    // Associations work automatically once this class exists
+}
 
-$product = R::dispense('product');
-$product->name = 'Vase';
+// models/Model_Contact.php - enables ownContactresponseList
+class Model_Contact extends \RedBeanPHP\SimpleModel {
+    // Use xownContactresponseList for cascade delete
+}
+```
 
-// Add product to shop (creates shop_id foreign key in product table)
-$shop->ownProductList[] = $product;
-R::store($shop);
+**Current FUSE models:**
+- `Model_Member` - member associations (apikeys, contacts, settings)
+- `Model_Contact` - contact associations (responses with cascade delete)
 
-// Retrieve children
-$products = $shop->ownProductList;
+### Relations (One-to-Many) - USE ASSOCIATIONS
 
-// Use xownProductList for CASCADE DELETE (deletes children when parent deleted)
-$shop->xownProductList[] = $product;
+**ALWAYS prefer associations over manual FK management:**
+
+```php
+// Member has many API keys - use association instead of manual FK query
+$member = R::load('member', $memberId);
+
+// BAD - manual FK query
+$keys = R::find('apikey', 'member_id = ?', [$memberId]);
+
+// GOOD - use association (lazy loaded, cached)
+$keys = $member->ownApikeyList;
+
+// Creating with association - FK set automatically
+$key = R::dispense('apikey');
+$key->name = 'My API Key';
+$member->ownApikeyList[] = $key;
+R::store($member);  // Saves both member and new key
+
+// CASCADE DELETE with xown prefix
+$contact = R::load('contact', $id);
+$contact->xownContactresponseList;  // Marks for cascade
+R::trash($contact);  // Deletes contact AND all its responses
+```
+
+**Ordering and filtering associations:**
+```php
+// Use with() for ORDER BY, LIMIT, etc.
+$keys = $member->with(' ORDER BY created_at DESC ')->ownApikeyList;
+$keys = $member->with(' ORDER BY name ASC LIMIT 10 ')->ownApikeyList;
+
+// Use withCondition() for WHERE + ORDER BY
+$activeKeys = $member->withCondition(' is_active = ? ORDER BY created_at DESC ', [1])->ownApikeyList;
 ```
 
 ### Relations (Many-to-Many)
@@ -206,6 +256,13 @@ Lower number = higher privilege. Check with `Flight::hasLevel(LEVELS['ADMIN'])`.
 /routes         - Custom route definitions
 /conf           - Configuration files
 ```
+
+## Code Validation Hook
+
+A validation hook at `.claude/hooks/validate-tiknix-php.py` enforces these standards:
+- **Blocks** on invalid R::dispense bean names (underscores, uppercase)
+- **Warns** on R::exec for CRUD (should use beans)
+- **Warns** on manual FK assignments (should use associations)
 
 ## See Also
 

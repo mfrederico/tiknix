@@ -3,6 +3,7 @@ namespace app;
 
 use \Flight as Flight;
 use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -42,8 +43,8 @@ class Admin extends Control {
 
         // Get system stats
         $this->viewData['stats'] = [
-            'members' => R::count('member'),
-            'permissions' => R::count('authcontrol'),
+            'members' => Bean::count('member'),
+            'permissions' => Bean::count('authcontrol'),
             'active_sessions' => $this->getActiveSessions(),
         ];
 
@@ -78,7 +79,7 @@ class Admin extends Control {
         }
         
         // Get all members
-        $this->viewData['members'] = R::findAll('member', 'ORDER BY created_at DESC');
+        $this->viewData['members'] = Bean::findAll('member', 'ORDER BY created_at DESC');
         
         $this->render('admin/members', $this->viewData);
     }
@@ -95,7 +96,7 @@ class Admin extends Control {
             return;
         }
         
-        $member = R::load('member', $memberId);
+        $member = Bean::load('member', $memberId);
         if (!$member->id) {
             Flight::redirect('/admin/members');
             return;
@@ -122,8 +123,8 @@ class Admin extends Control {
                     $this->viewData['error'] = 'Username must be at least 3 characters long';
                 } else {
                     // Check for duplicate username/email (excluding current member)
-                    $existingUsername = R::findOne('member', 'username = ? AND id != ?', [$username, $member->id]);
-                    $existingEmail = R::findOne('member', 'email = ? AND id != ?', [$email, $member->id]);
+                    $existingUsername = Bean::findOne('member', 'username = ? AND id != ?', [$username, $member->id]);
+                    $existingEmail = Bean::findOne('member', 'email = ? AND id != ?', [$email, $member->id]);
                     
                     if ($existingUsername) {
                         $this->viewData['error'] = 'Username already exists';
@@ -149,7 +150,7 @@ class Admin extends Control {
                             $member->updatedAt = date('Y-m-d H:i:s');
 
                             try {
-                                R::store($member);
+                                Bean::store($member);
                                 $this->viewData['success'] = 'Member updated successfully';
                                 $this->logger->info('Member updated by admin', [
                                     'member_id' => $member->id,
@@ -206,8 +207,8 @@ class Admin extends Control {
                     $this->viewData['error'] = 'Password must be at least 8 characters long';
                 } else {
                     // Check for duplicate username/email
-                    $existingUsername = R::findOne('member', 'username = ?', [$username]);
-                    $existingEmail = R::findOne('member', 'email = ?', [$email]);
+                    $existingUsername = Bean::findOne('member', 'username = ?', [$username]);
+                    $existingEmail = Bean::findOne('member', 'email = ?', [$email]);
                     
                     if ($existingUsername) {
                         $this->viewData['error'] = 'Username already exists';
@@ -215,7 +216,7 @@ class Admin extends Control {
                         $this->viewData['error'] = 'Email already exists';
                     } else {
                         // Create new member
-                        $member = R::dispense('member');
+                        $member = Bean::dispense('member');
                         $member->username = $username;
                         $member->email = $email;
                         $member->password = password_hash($password, PASSWORD_DEFAULT);
@@ -225,7 +226,7 @@ class Admin extends Control {
                         $member->updatedAt = date('Y-m-d H:i:s');
 
                         try {
-                            R::store($member);
+                            Bean::store($member);
                             $this->logger->info('New member created by admin', [
                                 'member_id' => $member->id,
                                 'username' => $username,
@@ -259,9 +260,9 @@ class Admin extends Control {
         
         // Handle delete action
         if ($request->query->delete && is_numeric($request->query->delete)) {
-            $auth = R::load('authcontrol', $request->query->delete);
+            $auth = Bean::load('authcontrol', $request->query->delete);
             if ($auth->id) {
-                R::trash($auth);
+                Bean::trash($auth);
                 $this->logger->info('Deleted permission', ['id' => $request->query->delete]);
             }
             Flight::redirect('/admin/permissions');
@@ -269,7 +270,7 @@ class Admin extends Control {
         }
         
         // Get all permissions grouped by control
-        $_auths = R::findAll('authcontrol', 'ORDER BY control ASC, method ASC');
+        $_auths = Bean::findAll('authcontrol', 'ORDER BY control ASC, method ASC');
         $auths = [];
         
         foreach ($_auths as $_control) {
@@ -290,9 +291,9 @@ class Admin extends Control {
         
         if (!$permId) {
             // Create new permission
-            $permission = R::dispense('authcontrol');
+            $permission = Bean::dispense('authcontrol');
         } else {
-            $permission = R::load('authcontrol', $permId);
+            $permission = Bean::load('authcontrol', $permId);
             if (!$permission->id && $permId) {
                 Flight::redirect('/admin/permissions');
                 return;
@@ -317,7 +318,7 @@ class Admin extends Control {
                 }
                 
                 try {
-                    R::store($permission);
+                    Bean::store($permission);
                     Flight::redirect('/admin/permissions');
                     return;
                 } catch (Exception $e) {
@@ -354,7 +355,7 @@ class Admin extends Control {
         }
         
         // Get current settings
-        $this->viewData['settings'] = R::findAll('settings', 'member_id = 0');
+        $this->viewData['settings'] = Bean::findAll('settings', 'member_id = 0');
         
         $this->render('admin/settings', $this->viewData);
     }
@@ -369,7 +370,7 @@ class Admin extends Control {
             return;
         }
         
-        $member = R::load('member', $id);
+        $member = Bean::load('member', $id);
         if ($member->id && $member->username !== 'public-user-entity') {
             // Additional protection for critical accounts
             if ($member->level <= self::ADMIN_LEVEL && $member->id != $this->member->id) {
@@ -395,7 +396,7 @@ class Admin extends Control {
                     'deleted_by' => $this->member->id
                 ]);
                 
-                R::trash($member);
+                Bean::trash($member);
                 
                 $this->logger->info('Member deleted successfully', ['id' => $id]);
             } catch (Exception $e) {
@@ -439,11 +440,11 @@ class Admin extends Control {
             case 'activate':
                 foreach ($selectedMembers as $memberId) {
                     if (is_numeric($memberId)) {
-                        $member = R::load('member', $memberId);
+                        $member = Bean::load('member', $memberId);
                         if ($member->id && $member->username !== 'public-user-entity') {
                             $member->status = 'active';
                             $member->updatedAt = date('Y-m-d H:i:s');
-                            R::store($member);
+                            Bean::store($member);
                             $count++;
                         }
                     }
@@ -454,11 +455,11 @@ class Admin extends Control {
             case 'suspend':
                 foreach ($selectedMembers as $memberId) {
                     if (is_numeric($memberId) && $memberId != $this->member->id) {
-                        $member = R::load('member', $memberId);
+                        $member = Bean::load('member', $memberId);
                         if ($member->id && $member->username !== 'public-user-entity') {
                             $member->status = 'suspended';
                             $member->updatedAt = date('Y-m-d H:i:s');
-                            R::store($member);
+                            Bean::store($member);
                             $count++;
                         }
                     }
@@ -469,13 +470,13 @@ class Admin extends Control {
             case 'delete':
                 foreach ($selectedMembers as $memberId) {
                     if (is_numeric($memberId) && $memberId != $this->member->id) {
-                        $member = R::load('member', $memberId);
+                        $member = Bean::load('member', $memberId);
                         if ($member->id && $member->username !== 'public-user-entity') {
                             // Same protection as single delete
                             if ($member->level <= self::ADMIN_LEVEL && $this->member->level > self::ROOT_LEVEL) {
                                 continue; // Skip admin deletion by non-root
                             }
-                            R::trash($member);
+                            Bean::trash($member);
                             $count++;
                         }
                     }
@@ -504,9 +505,9 @@ class Admin extends Control {
                     \app\PermissionCache::clear();
 
                     // Clear query cache if available
-                    $dbAdapter = R::getDatabaseAdapter();
-                    if ($dbAdapter instanceof \app\CachedDatabaseAdapter) {
-                        $dbAdapter->clearAllCache();
+                    $cachedAdapter = Flight::get('cachedDatabaseAdapter');
+                    if ($cachedAdapter instanceof \app\CachedDatabaseAdapter) {
+                        $cachedAdapter->clearAllCache();
                         $this->flash('success', 'Permission and query caches cleared successfully');
                     } else {
                         $this->flash('success', 'Permission cache cleared successfully');
@@ -517,9 +518,9 @@ class Admin extends Control {
 
                 case 'clear_query':
                     // Clear only query cache
-                    $dbAdapter = R::getDatabaseAdapter();
-                    if ($dbAdapter instanceof \app\CachedDatabaseAdapter) {
-                        $dbAdapter->clearAllCache();
+                    $cachedAdapter = Flight::get('cachedDatabaseAdapter');
+                    if ($cachedAdapter instanceof \app\CachedDatabaseAdapter) {
+                        $cachedAdapter->clearAllCache();
                         $this->flash('success', 'Query cache cleared successfully');
                     } else {
                         $this->flash('error', 'Query cache not available');
@@ -546,9 +547,11 @@ class Admin extends Control {
         $this->viewData['permissions'] = \app\PermissionCache::getAll();
 
         // Get query cache statistics from CachedDatabaseAdapter
-        $dbAdapter = R::getDatabaseAdapter();
-        if ($dbAdapter instanceof \app\CachedDatabaseAdapter) {
-            $this->viewData['query_cache_stats'] = $dbAdapter->getCacheStats();
+        // Note: Bean::getDatabaseAdapter() may not return CachedDatabaseAdapter after R::selectDatabase() calls
+        // So we check Flight storage first
+        $cachedAdapter = Flight::get('cachedDatabaseAdapter');
+        if ($cachedAdapter instanceof \app\CachedDatabaseAdapter) {
+            $this->viewData['query_cache_stats'] = $cachedAdapter->getCacheStats();
         } else {
             $this->viewData['query_cache_stats'] = null;
         }

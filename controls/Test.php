@@ -6,7 +6,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 
 class Test extends BaseControls\Control {
     
@@ -51,8 +51,8 @@ class Test extends BaseControls\Control {
      */
     public function dbtest() {
         try {
-            $memberCount = R::count('member');
-            $members = R::findAll('member', 'LIMIT 5');
+            $memberCount = Bean::count('member');
+            $members = Bean::findAll('member', 'LIMIT 5');
             
             if (Flight::get('cli_mode')) {
                 echo "Database test results:\n";

@@ -7,7 +7,7 @@
 
 namespace app;
 
-use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Flight as Flight;
 
 class PermissionCache {
@@ -162,7 +162,7 @@ class PermissionCache {
             $startTime = microtime(true);
 
             // Load all permissions from database
-            $permissions = R::findAll('authcontrol');
+            $permissions = Bean::findAll('authcontrol');
 
             self::$localCache = [];
 
@@ -334,14 +334,14 @@ class PermissionCache {
         try {
             Flight::get('log')->info("PermissionCache: Auto-creating permission for {$control}->{$method}");
 
-            $auth = R::dispense('authcontrol');
+            $auth = Bean::dispense('authcontrol');
             $auth->control = $control;
             $auth->method = $method;
             $auth->level = LEVELS['ADMIN']; // Default to admin level
             $auth->description = "Auto-generated permission for {$control}::{$method}";
             $auth->validcount = 0;
             $auth->createdAt = date('Y-m-d H:i:s');
-            R::store($auth);
+            Bean::store($auth);
 
             // Add to local cache immediately
             $key = strtolower("{$control}::{$method}");
@@ -445,7 +445,7 @@ class PermissionCache {
 
         try {
             // Use a simple SQL UPDATE for better performance
-            R::exec(
+            Bean::exec(
                 'UPDATE authcontrol SET validcount = validcount + 1 WHERE LOWER(control) = ? AND LOWER(method) = ?',
                 [strtolower($control), strtolower($method)]
             );

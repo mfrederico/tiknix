@@ -7,7 +7,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 
 class Index extends BaseControls\Control {
     
@@ -17,9 +17,9 @@ class Index extends BaseControls\Control {
     public function index() {
         // Example of loading data
         $stats = [
-            'total_users' => R::count('member'),
-            'active_users' => R::count('member', 'status = ?', ['active']),
-            'total_permissions' => R::count('authcontrol')
+            'total_users' => Bean::count('member'),
+            'active_users' => Bean::count('member', 'status = ?', ['active']),
+            'total_permissions' => Bean::count('authcontrol')
         ];
         
         $this->render('index/index', [

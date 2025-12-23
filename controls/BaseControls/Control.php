@@ -7,7 +7,7 @@
 namespace app\BaseControls;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Exception as Exception;
 
 abstract class Control {
@@ -257,7 +257,7 @@ abstract class Control {
      * Start database transaction
      */
     protected function beginTransaction() {
-        R::begin();
+        Bean::begin();
         $this->logger->debug('Transaction started');
     }
     
@@ -265,7 +265,7 @@ abstract class Control {
      * Commit database transaction
      */
     protected function commit() {
-        R::commit();
+        Bean::commit();
         $this->logger->debug('Transaction committed');
     }
     
@@ -273,7 +273,7 @@ abstract class Control {
      * Rollback database transaction
      */
     protected function rollback() {
-        R::rollback();
+        Bean::rollback();
         $this->logger->debug('Transaction rolled back');
     }
     

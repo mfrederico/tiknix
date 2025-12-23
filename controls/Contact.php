@@ -7,7 +7,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 
 class Contact extends BaseControls\Control {
     
@@ -53,7 +53,7 @@ class Contact extends BaseControls\Control {
         
         // Save to database
         try {
-            $contact = R::dispense('contact');
+            $contact = Bean::dispense('contact');
             $contact->name = $name;
             $contact->email = $email;
             $contact->subject = $subject;
@@ -69,7 +69,7 @@ class Contact extends BaseControls\Control {
             }
 
             $contact->createdAt = date('Y-m-d H:i:s');
-            R::store($contact);
+            Bean::store($contact);
             
             // Log the submission
             Flight::get('log')->info('Contact form submitted', [
@@ -114,14 +114,14 @@ class Contact extends BaseControls\Control {
         }
         
         // Get total count
-        $total = R::count('contact', $where, $params);
+        $total = Bean::count('contact', $where, $params);
         
         // Get messages with parameterized LIMIT and OFFSET
         $offset = ($page - 1) * $perPage;
         $sql = ($where ? $where . ' ' : '') . "ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
         $params[':limit'] = $perPage;
         $params[':offset'] = $offset;
-        $messages = R::findAll('contact', $sql, $params);
+        $messages = Bean::findAll('contact', $sql, $params);
         
         $this->render('contact/admin', [
             'title' => 'Contact Messages',
@@ -143,31 +143,28 @@ class Contact extends BaseControls\Control {
         $request = Flight::request();
         $id = $request->query->id ?? 0;
         
-        $message = R::load('contact', $id);
+        $message = Bean::load('contact', $id);
         if (!$message->id) {
             $this->flash('error', 'Message not found');
             Flight::redirect('/contact/admin');
             return;
         }
-        
+
         // Mark as read if new
         if ($message->status === 'new') {
             $message->status = 'read';
             $message->readAt = date('Y-m-d H:i:s');
-            R::store($message);
+            Bean::store($message);
         }
 
         // Get member info if linked
         $member = null;
         if ($message->memberId) {
-            $member = R::load('member', $message->memberId);
+            $member = Bean::load('member', $message->memberId);
         }
         
-        // Get responses
-        $responses = R::find('contactresponse', 
-            'contact_id = ? ORDER BY created_at DESC', 
-            [$message->id]
-        );
+        // Get responses via association with ordering
+        $responses = $message->with(' ORDER BY created_at DESC ')->ownContactresponseList;
         
         $this->render('contact/view', [
             'title' => 'View Message',
@@ -189,33 +186,33 @@ class Contact extends BaseControls\Control {
         $responseText = $this->sanitize($request->data->response);
         $status = $request->data->status ?? 'responded';
         
-        $message = R::load('contact', $messageId);
+        $message = Bean::load('contact', $messageId);
         if (!$message->id) {
             $this->flash('error', 'Message not found');
             Flight::redirect('/contact/admin');
             return;
         }
-        
+
         if (empty($responseText)) {
             $this->flash('error', 'Response cannot be empty');
             Flight::redirect('/contact/view?id=' . $messageId);
             return;
         }
-        
+
         try {
             // Save response
-            $response = R::dispense('contactresponse');
+            $response = Bean::dispense('contactresponse');
             $response->contactId = $messageId;
             $response->adminId = $_SESSION['member']['id'];
             $response->response = $responseText;
             $response->createdAt = date('Y-m-d H:i:s');
-            R::store($response);
+            Bean::store($response);
 
             // Update message status
             $message->status = $status;
             $message->respondedAt = date('Y-m-d H:i:s');
             $message->respondedBy = $_SESSION['member']['id'];
-            R::store($message);
+            Bean::store($message);
             
             // TODO: Send email to user if configured
             
@@ -240,21 +237,21 @@ class Contact extends BaseControls\Control {
         $id = $request->data->id ?? 0;
         $status = $request->data->status ?? '';
         
-        $message = R::load('contact', $id);
+        $message = Bean::load('contact', $id);
         if (!$message->id) {
             $this->json(['success' => false, 'error' => 'Message not found']);
             return;
         }
-        
+
         $validStatuses = ['new', 'read', 'responded', 'closed', 'spam'];
         if (!in_array($status, $validStatuses)) {
             $this->json(['success' => false, 'error' => 'Invalid status']);
             return;
         }
-        
+
         $message->status = $status;
         $message->updatedAt = date('Y-m-d H:i:s');
-        R::store($message);
+        Bean::store($message);
         
         $this->json(['success' => true]);
     }
@@ -269,21 +266,17 @@ class Contact extends BaseControls\Control {
         $request = Flight::request();
         $id = $request->data->id ?? 0;
         
-        $message = R::load('contact', $id);
+        $message = Bean::load('contact', $id);
         if (!$message->id) {
             $this->flash('error', 'Message not found');
             Flight::redirect('/contact/admin');
             return;
         }
-        
-        // Delete related responses first using beans
-        $responses = R::find('contactresponse', 'contact_id = ?', [$id]);
-        foreach ($responses as $response) {
-            R::trash($response);
-        }
 
-        // Delete message
-        R::trash($message);
+        // Use xown for cascade delete - responses are auto-deleted with message
+        // Accessing xownContactresponseList tells RedBeanPHP to cascade delete
+        $message->xownContactresponseList;
+        Bean::trash($message);
         
         $this->flash('success', 'Message deleted');
         Flight::redirect('/contact/admin');

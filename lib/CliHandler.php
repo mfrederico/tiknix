@@ -7,7 +7,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Exception as Exception;
 
 class CliHandler {
@@ -154,7 +154,7 @@ class CliHandler {
     public function setupMember() {
         if (!empty($this->options['member'])) {
             try {
-                $member = R::load('member', $this->options['member']);
+                $member = Bean::load('member', $this->options['member']);
                 if ($member && $member->id) {
                     // Set as current member
                     $_SESSION['member'] = $member->export();
@@ -176,7 +176,7 @@ class CliHandler {
             }
         } else {
             // Use public-user-entity by default
-            $publicUser = R::findOne('member', 'username = ?', ['public-user-entity']);
+            $publicUser = Bean::findOne('member', 'username = ?', ['public-user-entity']);
             if ($publicUser) {
                 $_SESSION['member'] = $publicUser->export();
                 $_SESSION['member']['id'] = $publicUser->id;

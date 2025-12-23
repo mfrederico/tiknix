@@ -1,6 +1,10 @@
 # Configuration (contains credentials)
 conf/config.ini
 
+# Python cache
+__pycache__/
+*.pyc
+
 # Database files
 database/*.db
 database/*.sqlite

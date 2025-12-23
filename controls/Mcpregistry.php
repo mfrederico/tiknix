@@ -9,7 +9,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -54,14 +54,14 @@ class Mcpregistry extends Control {
 
         // Handle delete action
         if ($request->query->delete && is_numeric($request->query->delete)) {
-            $server = R::load('mcpserver', $request->query->delete);
+            $server = Bean::load('mcpserver', $request->query->delete);
             if ($server->id) {
                 $this->logger->info('MCP server deleted', [
                     'id' => $server->id,
                     'name' => $server->name,
                     'deleted_by' => $this->member->id
                 ]);
-                R::trash($server);
+                Bean::trash($server);
             }
             Flight::redirect('/mcpregistry');
             return;
@@ -70,9 +70,9 @@ class Mcpregistry extends Control {
         // Filter by status if provided
         $status = $request->query->status ?? '';
         if ($status && in_array($status, ['active', 'inactive', 'deprecated'])) {
-            $servers = R::find('mcpserver', 'status = ? ORDER BY sort_order ASC, name ASC', [$status]);
+            $servers = Bean::find('mcpserver', 'status = ? ORDER BY sort_order ASC, name ASC', [$status]);
         } else {
-            $servers = R::findAll('mcpserver', 'ORDER BY sort_order ASC, name ASC');
+            $servers = Bean::findAll('mcpserver', 'ORDER BY sort_order ASC, name ASC');
         }
 
         $this->viewData['servers'] = $servers;
@@ -117,7 +117,7 @@ class Mcpregistry extends Control {
             return;
         }
 
-        $server = R::load('mcpserver', $serverId);
+        $server = Bean::load('mcpserver', $serverId);
         if (!$server->id) {
             Flight::redirect('/mcpregistry');
             return;
@@ -131,7 +131,7 @@ class Mcpregistry extends Control {
                 if ($result['success']) {
                     $this->viewData['success'] = 'MCP server updated successfully';
                     // Reload server to get updated data
-                    $server = R::load('mcpserver', $serverId);
+                    $server = Bean::load('mcpserver', $serverId);
                 } else {
                     $this->viewData['error'] = $result['error'];
                 }
@@ -149,7 +149,7 @@ class Mcpregistry extends Control {
     private function processServerForm($request, $server = null): array {
         $isNew = ($server === null);
         if ($isNew) {
-            $server = R::dispense('mcpserver');
+            $server = Bean::dispense('mcpserver');
         }
 
         // Validate required fields
@@ -185,9 +185,9 @@ class Mcpregistry extends Control {
 
         // Check for duplicate slug
         if ($isNew) {
-            $existing = R::findOne('mcpserver', 'slug = ?', [$slug]);
+            $existing = Bean::findOne('mcpserver', 'slug = ?', [$slug]);
         } else {
-            $existing = R::findOne('mcpserver', 'slug = ? AND id != ?', [$slug, $server->id]);
+            $existing = Bean::findOne('mcpserver', 'slug = ? AND id != ?', [$slug, $server->id]);
         }
 
         if ($existing) {
@@ -246,7 +246,7 @@ class Mcpregistry extends Control {
         }
 
         try {
-            R::store($server);
+            Bean::store($server);
             $this->logger->info($isNew ? 'MCP server created' : 'MCP server updated', [
                 'id' => $server->id,
                 'name' => $name,
@@ -341,7 +341,7 @@ class Mcpregistry extends Control {
         header('Access-Control-Allow-Origin: *');
 
         // Only return active servers
-        $servers = R::find('mcpserver', 'status = ? ORDER BY featured DESC, sort_order ASC, name ASC', ['active']);
+        $servers = Bean::find('mcpserver', 'status = ? ORDER BY featured DESC, sort_order ASC, name ASC', ['active']);
 
         $result = [];
         foreach ($servers as $server) {

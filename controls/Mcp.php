@@ -18,7 +18,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 
 class Mcp extends BaseControls\Control {
 
@@ -318,7 +318,7 @@ class Mcp extends BaseControls\Control {
         // Generate new token
         $token = bin2hex(random_bytes(32));
         $this->authMember->api_token = $token;
-        R::store($this->authMember);
+        Bean::store($this->authMember);
 
         $this->logger->info('MCP token generated', ['member_id' => $this->authMember->id]);
 
@@ -507,7 +507,7 @@ class Mcp extends BaseControls\Control {
 
         $limit = min((int)($args['limit'] ?? 10), 100);
 
-        $users = R::find('member', 'ORDER BY id LIMIT ?', [$limit]);
+        $users = Bean::find('member', 'ORDER BY id LIMIT ?', [$limit]);
 
         $result = [];
         foreach ($users as $user) {
@@ -562,9 +562,9 @@ class Mcp extends BaseControls\Control {
         $sql .= ' LIMIT ' . $limit;
 
         if (empty($conditions)) {
-            $servers = R::findAll('mcpserver', 'ORDER BY featured DESC, sort_order ASC, name ASC LIMIT ' . $limit);
+            $servers = Bean::findAll('mcpserver', 'ORDER BY featured DESC, sort_order ASC, name ASC LIMIT ' . $limit);
         } else {
-            $servers = R::find('mcpserver', $sql, $params);
+            $servers = Bean::find('mcpserver', $sql, $params);
         }
 
         $result = [];
@@ -653,7 +653,7 @@ class Mcp extends BaseControls\Control {
         list($username, $password) = explode(':', $decoded, 2);
 
         // Find member by username or email
-        $member = R::findOne('member', 'username = ? OR email = ?', [$username, $username]);
+        $member = Bean::findOne('member', 'username = ? OR email = ?', [$username, $username]);
 
         if (!$member) {
             $this->logger->warning('MCP auth failed: user not found', ['username' => $username]);
@@ -690,7 +690,7 @@ class Mcp extends BaseControls\Control {
         }
 
         // Fall back to legacy member.api_token field
-        $member = R::findOne('member', 'api_token = ? AND api_token IS NOT NULL', [$token]);
+        $member = Bean::findOne('member', 'api_token = ? AND api_token IS NOT NULL', [$token]);
 
         if (!$member) {
             $this->logger->warning('MCP auth failed: invalid bearer token');
@@ -719,7 +719,7 @@ class Mcp extends BaseControls\Control {
         }
 
         // Fall back to legacy member.api_token field
-        $member = R::findOne('member', 'api_token = ? AND api_token IS NOT NULL', [$token]);
+        $member = Bean::findOne('member', 'api_token = ? AND api_token IS NOT NULL', [$token]);
 
         if (!$member) {
             $this->logger->warning('MCP auth failed: invalid X-MCP-Token');
@@ -741,7 +741,7 @@ class Mcp extends BaseControls\Control {
         }
 
         // Find the API key
-        $key = R::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
+        $key = Bean::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
 
         if (!$key) {
             return false;
@@ -754,7 +754,7 @@ class Mcp extends BaseControls\Control {
         }
 
         // Load the member associated with this key
-        $member = R::load('member', $key->memberId);
+        $member = Bean::load('member', $key->memberId);
         if (!$member->id) {
             $this->logger->warning('MCP auth failed: API key member not found', ['key_id' => $key->id]);
             return false;
@@ -764,7 +764,7 @@ class Mcp extends BaseControls\Control {
         $key->lastUsedAt = date('Y-m-d H:i:s');
         $key->lastUsedIp = $_SERVER['REMOTE_ADDR'] ?? null;
         $key->usageCount = ($key->usageCount ?? 0) + 1;
-        R::store($key);
+        Bean::store($key);
 
         $this->authMember = $member;
         $this->authApiKey = $key;

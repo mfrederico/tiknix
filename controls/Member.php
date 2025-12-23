@@ -2,7 +2,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -37,7 +37,7 @@ class Member extends Control {
             } else {
             
             $request = Flight::request();
-            $member = R::load('member', $this->member->id);
+            $member = Bean::load('member', $this->member->id);
             
             // Validate input
             $email = trim($request->data->email ?? '');
@@ -51,7 +51,7 @@ class Member extends Control {
                 $this->viewData['error'] = 'Invalid email format';
             } else {
                 // Check for duplicate email (excluding current member)
-                $existingEmail = R::findOne('member', 'email = ? AND id != ?', [$email, $member->id]);
+                $existingEmail = Bean::findOne('member', 'email = ? AND id != ?', [$email, $member->id]);
                 
                 if ($existingEmail) {
                     $this->viewData['error'] = 'Email already exists';
@@ -87,7 +87,7 @@ class Member extends Control {
                 $member->updatedAt = date('Y-m-d H:i:s');
                 
                 try {
-                    R::store($member);
+                    Bean::store($member);
                     $_SESSION['member'] = $member->export();
                     $this->member = $member; // Update current member object
                     if (empty($this->viewData['success'])) {
@@ -133,7 +133,7 @@ class Member extends Control {
         }
         
         // Get user settings
-        $this->viewData['settings'] = R::findAll('settings', 'member_id = ?', [$this->member->id]);
+        $this->viewData['settings'] = Bean::findAll('settings', 'member_id = ?', [$this->member->id]);
         $this->viewData['title'] = 'Settings';
         $this->render('member/settings', $this->viewData);
     }

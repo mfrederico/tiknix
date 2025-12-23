@@ -9,7 +9,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -31,8 +31,8 @@ class Apikeys extends Control {
     public function index($params = []) {
         $this->viewData['title'] = 'API Keys';
 
-        // Get only keys belonging to current user
-        $keys = R::find('apikey', 'member_id = ? ORDER BY created_at DESC', [$this->member->id]);
+        // Get API keys via association with ordering
+        $keys = $this->member->with(' ORDER BY created_at DESC ')->ownApikeyList;
 
         $this->viewData['keys'] = $keys;
         $this->viewData['mcpServers'] = $this->getActiveMcpServers();
@@ -83,7 +83,7 @@ class Apikeys extends Control {
         }
 
         // Load key and verify ownership
-        $key = R::load('apikey', $keyId);
+        $key = Bean::load('apikey', $keyId);
         if (!$key->id || $key->memberId != $this->member->id) {
             $this->viewData['error'] = 'API key not found';
             Flight::redirect('/apikeys');
@@ -97,7 +97,7 @@ class Apikeys extends Control {
                 $result = $this->processKeyForm($request, $key);
                 if ($result['success']) {
                     $this->viewData['success'] = 'API key updated successfully';
-                    $key = R::load('apikey', $keyId);
+                    $key = Bean::load('apikey', $keyId);
                 } else {
                     $this->viewData['error'] = $result['error'];
                 }
@@ -125,7 +125,7 @@ class Apikeys extends Control {
         }
 
         // Load key and verify ownership
-        $key = R::load('apikey', $keyId);
+        $key = Bean::load('apikey', $keyId);
         if (!$key->id || $key->memberId != $this->member->id) {
             Flight::redirect('/apikeys');
             return;
@@ -137,7 +137,7 @@ class Apikeys extends Control {
             'member_id' => $this->member->id
         ]);
 
-        R::trash($key);
+        Bean::trash($key);
         Flight::redirect('/apikeys');
     }
 
@@ -160,7 +160,7 @@ class Apikeys extends Control {
         }
 
         // Load key and verify ownership
-        $key = R::load('apikey', $keyId);
+        $key = Bean::load('apikey', $keyId);
         if (!$key->id || $key->memberId != $this->member->id) {
             Flight::jsonError('API key not found', 404);
             return;
@@ -170,7 +170,7 @@ class Apikeys extends Control {
         $newToken = $this->generateToken();
         $key->token = $newToken;
         $key->updatedAt = date('Y-m-d H:i:s');
-        R::store($key);
+        Bean::store($key);
 
         $this->logger->info('API key regenerated', [
             'key_id' => $key->id,
@@ -192,7 +192,7 @@ class Apikeys extends Control {
     private function processKeyForm($request, $key = null): array {
         $isNew = ($key === null);
         if ($isNew) {
-            $key = R::dispense('apikey');
+            $key = Bean::dispense('apikey');
             $key->memberId = $this->member->id;
             $key->token = $this->generateToken();
             $key->usageCount = 0;
@@ -210,9 +210,9 @@ class Apikeys extends Control {
 
         // Check for duplicate name for this user
         if ($isNew) {
-            $existing = R::findOne('apikey', 'member_id = ? AND name = ?', [$this->member->id, $name]);
+            $existing = Bean::findOne('apikey', 'member_id = ? AND name = ?', [$this->member->id, $name]);
         } else {
-            $existing = R::findOne('apikey', 'member_id = ? AND name = ? AND id != ?', [$this->member->id, $name, $key->id]);
+            $existing = Bean::findOne('apikey', 'member_id = ? AND name = ? AND id != ?', [$this->member->id, $name, $key->id]);
         }
 
         if ($existing) {
@@ -273,7 +273,7 @@ class Apikeys extends Control {
         }
 
         try {
-            R::store($key);
+            Bean::store($key);
             $this->logger->info($isNew ? 'API key created' : 'API key updated', [
                 'key_id' => $key->id,
                 'key_name' => $name,
@@ -300,7 +300,7 @@ class Apikeys extends Control {
      * Get active MCP servers for scope selection
      */
     private function getActiveMcpServers(): array {
-        return R::find('mcpserver', 'status = ? ORDER BY name ASC', ['active']);
+        return Bean::find('mcpserver', 'status = ? ORDER BY name ASC', ['active']);
     }
 
     /**
@@ -323,7 +323,7 @@ class Apikeys extends Control {
             return null;
         }
 
-        $key = R::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
+        $key = Bean::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
 
         if (!$key) {
             return null;
@@ -352,7 +352,7 @@ class Apikeys extends Control {
         $key->lastUsedAt = date('Y-m-d H:i:s');
         $key->lastUsedIp = $_SERVER['REMOTE_ADDR'] ?? null;
         $key->usageCount = ($key->usageCount ?? 0) + 1;
-        R::store($key);
+        Bean::store($key);
 
         return $key;
     }
@@ -366,6 +366,6 @@ class Apikeys extends Control {
             return null;
         }
 
-        return R::load('member', $key->memberId);
+        return Bean::load('member', $key->memberId);
     }
 }

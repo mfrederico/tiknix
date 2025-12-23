@@ -21,11 +21,15 @@
                 </tr>
                 <tr>
                     <th>Endpoint</th>
-                    <td><code>POST <?= htmlspecialchars($baseurl ?? '') ?>/mcp/message</code></td>
+                    <td><code>POST <?= htmlspecialchars($mcpUrl ?? '') ?></code></td>
                 </tr>
                 <tr>
                     <th>Health Check</th>
-                    <td><code>GET <?= htmlspecialchars($baseurl ?? '') ?>/mcp/health</code></td>
+                    <td><code>GET <?= htmlspecialchars(dirname($mcpUrl ?? '')) ?>/health</code></td>
+                </tr>
+                <tr>
+                    <th>Auto-Config</th>
+                    <td><code>GET <?= htmlspecialchars(dirname($mcpUrl ?? '')) ?>/config</code></td>
                 </tr>
             </table>
         </div>
@@ -84,12 +88,17 @@
             <h5 class="mb-0">Claude Code Configuration</h5>
         </div>
         <div class="card-body">
-            <p>Add this to your <code>~/.claude/settings.json</code> or project <code>.mcp.json</code>:</p>
+            <div class="alert alert-info">
+                <strong>Quick Setup:</strong> Get your personalized config with your API token:
+                <code>curl -u username:password <?= htmlspecialchars(dirname($mcpUrl ?? '')) ?>/config</code>
+            </div>
+
+            <p>Or manually add this to your <code>~/.claude/settings.json</code> or project <code>.mcp.json</code>:</p>
             <pre class="bg-dark text-light p-3 rounded"><code>{
   "mcpServers": {
     "<?= htmlspecialchars($serverName) ?>": {
       "type": "http",
-      "url": "<?= htmlspecialchars($baseurl ?? 'https://your-domain.com') ?>/mcp/message",
+      "url": "<?= htmlspecialchars($mcpUrl ?? '') ?>",
       "headers": {
         "Authorization": "Bearer YOUR_API_TOKEN"
       }
@@ -104,9 +113,9 @@
                 <li><strong>Custom Header:</strong> <code>X-MCP-Token: &lt;api_token&gt;</code></li>
             </ul>
 
-            <p class="mb-0">
-                <a href="/docs/mcp-server" class="btn btn-outline-primary">View Full Documentation</a>
-            </p>
+            <h6 class="mt-4">Generate API Token</h6>
+            <p>Generate a new API token (POST with Basic Auth):</p>
+            <pre class="bg-dark text-light p-3 rounded"><code>curl -X POST -u username:password <?= htmlspecialchars(dirname($mcpUrl ?? '')) ?>/token</code></pre>
         </div>
     </div>
 
@@ -116,10 +125,10 @@
         </div>
         <div class="card-body">
             <pre class="bg-dark text-light p-3 rounded"><code># Health check
-curl <?= htmlspecialchars($baseurl ?? 'https://your-domain.com') ?>/mcp/health
+curl <?= htmlspecialchars(dirname($mcpUrl ?? '')) ?>/health
 
 # Test hello tool
-curl -X POST <?= htmlspecialchars($baseurl ?? 'https://your-domain.com') ?>/mcp/message \
+curl -X POST <?= htmlspecialchars($mcpUrl ?? '') ?> \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{

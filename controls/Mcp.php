@@ -196,6 +196,7 @@ class Mcp extends BaseControls\Control {
             'server' => self::SERVER_NAME,
             'version' => self::SERVER_VERSION,
             'protocol' => self::PROTOCOL_VERSION,
+            'url' => $this->getMcpUrl(),
             'timestamp' => date('c')
         ]);
     }
@@ -210,8 +211,92 @@ class Mcp extends BaseControls\Control {
             'tools' => $this->tools,
             'serverName' => self::SERVER_NAME,
             'serverVersion' => self::SERVER_VERSION,
-            'protocolVersion' => self::PROTOCOL_VERSION
+            'protocolVersion' => self::PROTOCOL_VERSION,
+            'mcpUrl' => $this->getMcpUrl()
         ]);
+    }
+
+    /**
+     * Claude Code configuration endpoint
+     * GET /mcp/config
+     *
+     * Returns a ready-to-use configuration for ~/.claude/settings.json or .mcp.json
+     * Requires authentication to include the user's API token
+     */
+    public function config($params = null): void {
+        header('Content-Type: application/json');
+        $this->setCorsHeaders();
+
+        // Check if user is authenticated (for personalized config with token)
+        $hasAuth = $this->authenticate();
+
+        $mcpUrl = $this->getMcpUrl();
+        $config = [
+            'mcpServers' => [
+                self::SERVER_NAME => [
+                    'type' => 'http',
+                    'url' => $mcpUrl
+                ]
+            ]
+        ];
+
+        // Add auth header if user is authenticated and has a token
+        if ($hasAuth && $this->authMember && !empty($this->authMember->api_token)) {
+            $config['mcpServers'][self::SERVER_NAME]['headers'] = [
+                'Authorization' => 'Bearer ' . $this->authMember->api_token
+            ];
+        } else {
+            // Show placeholder for unauthenticated requests
+            $config['mcpServers'][self::SERVER_NAME]['headers'] = [
+                'Authorization' => 'Bearer YOUR_API_TOKEN'
+            ];
+            $config['_note'] = 'Authenticate to get your personalized config with API token';
+        }
+
+        echo json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Generate API token for current user
+     * POST /mcp/token
+     */
+    public function token($params = null): void {
+        header('Content-Type: application/json');
+
+        if (!$this->authenticate()) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Authentication required']);
+            return;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(['error' => 'Use POST to generate a new token']);
+            return;
+        }
+
+        // Generate new token
+        $token = bin2hex(random_bytes(32));
+        $this->authMember->api_token = $token;
+        R::store($this->authMember);
+
+        $this->logger->info('MCP token generated', ['member_id' => $this->authMember->id]);
+
+        echo json_encode([
+            'success' => true,
+            'api_token' => $token,
+            'config' => [
+                'mcpServers' => [
+                    self::SERVER_NAME => [
+                        'type' => 'http',
+                        'url' => $this->getMcpUrl(),
+                        'headers' => [
+                            'Authorization' => 'Bearer ' . $token
+                        ]
+                    ]
+                ]
+            ]
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     // =========================================
@@ -561,5 +646,22 @@ class Mcp extends BaseControls\Control {
         header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
         header('Access-Control-Allow-Headers: Content-Type, Authorization, X-MCP-Token');
         header('Access-Control-Max-Age: 86400');
+    }
+
+    /**
+     * Get the full MCP endpoint URL from config
+     */
+    private function getMcpUrl(): string {
+        $baseUrl = Flight::get('app.baseurl') ?? Flight::get('baseurl') ?? '';
+
+        // Remove trailing slash if present
+        $baseUrl = rtrim($baseUrl, '/');
+
+        // Ensure HTTPS in production
+        if (Flight::get('app.environment') === 'production' && strpos($baseUrl, 'http://') === 0) {
+            $baseUrl = 'https://' . substr($baseUrl, 7);
+        }
+
+        return $baseUrl . '/mcp/message';
     }
 }

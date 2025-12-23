@@ -20,11 +20,27 @@ MCP (Model Context Protocol) is an open protocol that allows AI assistants to in
 
 ## Connecting Claude Code
 
-### 1. Generate an API Token
+### Quick Setup (Recommended)
 
-RedBeanPHP will auto-create the `api_token` column when you first set it.
+The easiest way to get your configuration is to use the auto-config endpoint:
 
-Generate a token for your user (run in a PHP script or controller):
+```bash
+# Get your personalized config with API token
+curl -u username:password https://your-domain.com/mcp/config
+```
+
+This returns a ready-to-use JSON configuration with your domain and API token.
+
+### Generate API Token
+
+If you need to generate a new API token:
+
+```bash
+# Generate new token via API
+curl -X POST -u username:password https://your-domain.com/mcp/token
+```
+
+Or programmatically:
 
 ```php
 use \RedBeanPHP\R as R;
@@ -36,12 +52,7 @@ R::store($member);
 echo "Your API token: {$member->api_token}";
 ```
 
-Or via CLI (if your app supports it):
-```bash
-php bootstrap.php --member=1 --eval="echo Flight::getMember()->api_token = bin2hex(random_bytes(32));"
-```
-
-### 2. Configure Claude Code
+### Configure Claude Code
 
 Add the MCP server to your Claude Code settings. Edit `~/.claude/settings.json`:
 

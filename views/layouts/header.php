@@ -76,6 +76,11 @@
                                     <i class="bi bi-gear"></i> Settings
                                 </a>
                             </li>
+                            <li>
+                                <a class="dropdown-item" href="/apikeys">
+                                    <i class="bi bi-key"></i> API Keys
+                                </a>
+                            </li>
                             <?php if (($member['level'] ?? 100) <= 50): ?>
                                 <li><hr class="dropdown-divider"></li>
                                 <li>

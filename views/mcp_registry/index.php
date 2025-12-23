@@ -132,6 +132,47 @@
             <li class="list-group-item"><span class="badge bg-info">bearer</span> Bearer token authentication</li>
             <li class="list-group-item"><span class="badge bg-info">apikey</span> API key authentication</li>
         </ul>
+
+        <h4 class="mt-4"><i class="bi bi-terminal"></i> Installing in Claude Code</h4>
+        <p class="text-muted">To connect Claude Code to an MCP server from this registry, add the server configuration to your settings.</p>
+
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Global Settings</h6>
+                <p class="small text-muted">Edit <code>~/.claude/settings.json</code> to make the server available in all projects:</p>
+                <pre class="bg-dark text-light p-3 rounded small"><code>{
+  "mcpServers": {
+    "server-name": {
+      "type": "http",
+      "url": "https://example.com/mcp/message",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_TOKEN"
+      }
+    }
+  }
+}</code></pre>
+            </div>
+            <div class="col-md-6">
+                <h6>Project Settings</h6>
+                <p class="small text-muted">Create <code>.mcp.json</code> in your project root for project-specific servers:</p>
+                <pre class="bg-dark text-light p-3 rounded small"><code>{
+  "mcpServers": {
+    "server-name": {
+      "type": "http",
+      "url": "https://example.com/mcp/message",
+      "headers": {
+        "X-API-Key": "YOUR_API_KEY"
+      }
+    }
+  }
+}</code></pre>
+            </div>
+        </div>
+
+        <div class="alert alert-info mt-3">
+            <i class="bi bi-lightbulb"></i> <strong>Tip:</strong> After adding a server, restart Claude Code or run <code>/mcp</code> to refresh the server list.
+            For the built-in Tiknix server, visit <a href="/mcp">/mcp</a> for auto-config and token generation.
+        </div>
     </div>
 </div>
 

@@ -145,6 +145,11 @@ class Mcp extends BaseControls\Control {
      */
     private ?object $authMember = null;
 
+    /**
+     * API key used for authentication (if applicable)
+     */
+    private ?object $authApiKey = null;
+
     public function __construct() {
         // Skip parent constructor to avoid session/CSRF for API endpoints
         $this->logger = Flight::get('log');
@@ -668,7 +673,7 @@ class Mcp extends BaseControls\Control {
 
     /**
      * Bearer Token: Authorization: Bearer <token>
-     * Token can be stored in member.api_token field
+     * Checks apikey table first, then falls back to member.api_token
      */
     private function authenticateBearer(): bool {
         $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
@@ -679,7 +684,12 @@ class Mcp extends BaseControls\Control {
 
         $token = trim($matches[1]);
 
-        // Find member by API token
+        // First, try the new apikey table
+        if ($this->authenticateApiKey($token)) {
+            return true;
+        }
+
+        // Fall back to legacy member.api_token field
         $member = R::findOne('member', 'api_token = ? AND api_token IS NOT NULL', [$token]);
 
         if (!$member) {
@@ -688,12 +698,13 @@ class Mcp extends BaseControls\Control {
         }
 
         $this->authMember = $member;
-        $this->logger->debug('MCP authenticated via Bearer token', ['member_id' => $member->id]);
+        $this->logger->debug('MCP authenticated via Bearer token (legacy)', ['member_id' => $member->id]);
         return true;
     }
 
     /**
      * Custom Header: X-MCP-Token: <token>
+     * Checks apikey table first, then falls back to member.api_token
      */
     private function authenticateCustomHeader(): bool {
         $token = $_SERVER['HTTP_X_MCP_TOKEN'] ?? '';
@@ -702,7 +713,12 @@ class Mcp extends BaseControls\Control {
             return false;
         }
 
-        // Find member by API token
+        // First, try the new apikey table
+        if ($this->authenticateApiKey($token)) {
+            return true;
+        }
+
+        // Fall back to legacy member.api_token field
         $member = R::findOne('member', 'api_token = ? AND api_token IS NOT NULL', [$token]);
 
         if (!$member) {
@@ -711,8 +727,91 @@ class Mcp extends BaseControls\Control {
         }
 
         $this->authMember = $member;
-        $this->logger->debug('MCP authenticated via X-MCP-Token', ['member_id' => $member->id]);
+        $this->logger->debug('MCP authenticated via X-MCP-Token (legacy)', ['member_id' => $member->id]);
         return true;
+    }
+
+    /**
+     * Authenticate using the new apikey table
+     * Validates token, expiration, and updates usage stats
+     */
+    private function authenticateApiKey(string $token): bool {
+        if (empty($token)) {
+            return false;
+        }
+
+        // Find the API key
+        $key = R::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
+
+        if (!$key) {
+            return false;
+        }
+
+        // Check expiration
+        if ($key->expiresAt && strtotime($key->expiresAt) < time()) {
+            $this->logger->warning('MCP auth failed: API key expired', ['key_id' => $key->id]);
+            return false;
+        }
+
+        // Load the member associated with this key
+        $member = R::load('member', $key->memberId);
+        if (!$member->id) {
+            $this->logger->warning('MCP auth failed: API key member not found', ['key_id' => $key->id]);
+            return false;
+        }
+
+        // Update usage stats
+        $key->lastUsedAt = date('Y-m-d H:i:s');
+        $key->lastUsedIp = $_SERVER['REMOTE_ADDR'] ?? null;
+        $key->usageCount = ($key->usageCount ?? 0) + 1;
+        R::store($key);
+
+        $this->authMember = $member;
+        $this->authApiKey = $key;
+        $this->logger->debug('MCP authenticated via API key', [
+            'member_id' => $member->id,
+            'key_id' => $key->id,
+            'key_name' => $key->name
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Check if current API key has access to a specific server
+     */
+    public function hasServerAccess(string $serverSlug): bool {
+        // If no API key (using legacy auth), allow all
+        if (!$this->authApiKey) {
+            return true;
+        }
+
+        $scopes = json_decode($this->authApiKey->scopes, true) ?: [];
+        $allowedServers = json_decode($this->authApiKey->allowedServers, true) ?: [];
+
+        // Full access scope allows everything
+        if (in_array('mcp:*', $scopes)) {
+            return true;
+        }
+
+        // If no server restrictions, allow all
+        if (empty($allowedServers)) {
+            return true;
+        }
+
+        // Check if server is in allowed list
+        return in_array($serverSlug, $allowedServers);
+    }
+
+    /**
+     * Get current API key scopes
+     */
+    public function getKeyScopes(): array {
+        if (!$this->authApiKey) {
+            return ['mcp:*']; // Legacy auth has full access
+        }
+
+        return json_decode($this->authApiKey->scopes, true) ?: [];
     }
 
     // =========================================

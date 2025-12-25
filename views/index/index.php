@@ -7,7 +7,7 @@
                 <p class="lead">A modern PHP foundation with clean architecture and pluggable components. Designed for clarity - whether you're coding solo or with AI assistance.</p>
                 <div class="d-grid gap-2 d-md-flex">
                     <?php if (!$isLoggedIn): ?>
-                        <a href="/auth/register" class="btn btn-light btn-lg">Get Started</a>
+                        <a href="https://github.com/mfrederico/tiknix/" class="btn btn-light btn-lg">Get Started</a>
                         <a href="/auth/login" class="btn btn-outline-light btn-lg">Login</a>
                     <?php else: ?>
                         <a href="/dashboard" class="btn btn-light btn-lg">Go to Dashboard</a>

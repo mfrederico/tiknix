@@ -1,16 +1,63 @@
 <?php
 /**
- * MCP (Model Context Protocol) Server Controller
+ * MCP Gateway/Proxy Controller
  *
- * Implements the MCP HTTP Streamable transport for AI tool integration.
- * This allows Claude Code and other MCP clients to interact with your application.
+ * Tiknix acts as an MCP Gateway, providing a single endpoint that:
+ * 1. Aggregates tools from multiple backend MCP servers
+ * 2. Routes tool calls to the appropriate backend
+ * 3. Handles authentication and access control
+ * 4. Logs all usage for analytics and auditing
  *
  * Endpoint: POST /mcp/message
  *
- * Authentication methods (in order of precedence):
- * 1. Basic Auth: Authorization: Basic base64(username:password)
- * 2. Bearer Token: Authorization: Bearer <token>
- * 3. Custom Header: X-MCP-Token: <token>
+ * ============================================================================
+ * GATEWAY ARCHITECTURE
+ * ============================================================================
+ *
+ *   Claude Code (single config) ──▶ Tiknix Gateway ──▶ Backend MCP Servers
+ *                                     │
+ *                                     ├── Built-in Tiknix tools
+ *                                     ├── Shopify MCP
+ *                                     ├── GitHub MCP
+ *                                     └── Custom MCP servers
+ *
+ * Benefits:
+ * - Single endpoint configuration for users
+ * - Centralized authentication via API keys
+ * - Per-user access control to specific backends
+ * - SSL/Security termination at gateway
+ * - Usage logging and analytics
+ * - Tool namespacing to avoid collisions (server:tool format)
+ *
+ * ============================================================================
+ * TOOL NAMESPACING
+ * ============================================================================
+ *
+ * All tools are prefixed with their server slug:
+ * - tiknix:hello       - Built-in Tiknix tools
+ * - shopify:get_products - Shopify MCP tools
+ * - github:list_repos  - GitHub MCP tools
+ *
+ * ============================================================================
+ * SECURITY MODEL - TWO-LAYER AUTHENTICATION
+ * ============================================================================
+ *
+ * LAYER 1: Route-Level (authcontrol table)
+ * - Permission mcp::message is PUBLIC (level 101)
+ * - This allows MCP clients to reach the endpoint
+ *
+ * LAYER 2: Controller-Level (API Key Auth)
+ * - tools/call requires valid API key
+ * - API keys can be restricted to specific backend servers
+ * - All calls are logged to mcpusage table
+ *
+ * PUBLIC methods (no API key required):
+ * - initialize, tools/list, ping
+ *
+ * PROTECTED methods (API key required):
+ * - tools/call
+ *
+ * ============================================================================
  *
  * @see https://modelcontextprotocol.io/
  */
@@ -178,13 +225,7 @@ class Mcp extends BaseControls\Control {
             return;
         }
 
-        // Authenticate the request
-        if (!$this->authenticate()) {
-            $this->sendError(-32000, 'Authentication required', null, 401);
-            return;
-        }
-
-        // Parse JSON-RPC request
+        // Parse JSON-RPC request first (before auth check)
         $rawBody = file_get_contents('php://input');
         $request = json_decode($rawBody, true);
 
@@ -193,15 +234,33 @@ class Mcp extends BaseControls\Control {
             return;
         }
 
-        $this->logger->debug('MCP request received', [
-            'method' => $request['method'] ?? 'unknown',
-            'member_id' => $this->authMember->id ?? 0
-        ]);
-
         // Route to appropriate handler
         $method = $request['method'] ?? '';
         $id = $request['id'] ?? null;
         $params = $request['params'] ?? [];
+
+        // =====================================================================
+        // PUBLIC METHODS - No API key required (see security docs at top of file)
+        // These are discovery/handshake methods, not execution methods.
+        // Modify this list carefully - adding methods here makes them public!
+        // =====================================================================
+        $publicMethods = ['initialize', 'tools/list', 'ping'];
+
+        // Authenticate for non-public methods
+        if (!in_array($method, $publicMethods)) {
+            if (!$this->authenticate()) {
+                $this->sendError(-32000, 'Authentication required', null, 401);
+                return;
+            }
+        } else {
+            // Try to authenticate anyway for personalization, but don't require it
+            $this->authenticate();
+        }
+
+        $this->logger->debug('MCP request received', [
+            'method' => $method,
+            'member_id' => $this->authMember->id ?? 0
+        ]);
 
         switch ($method) {
             case 'initialize':
@@ -257,11 +316,35 @@ class Mcp extends BaseControls\Control {
     }
 
     /**
+     * MCP Registry - forwards to Mcpregistry controller
+     * GET /mcp/registry[/method]
+     */
+    public function registry($params = null): void {
+        $instance = new Mcpregistry();
+
+        // Get the method from operation, default to index
+        $method = $params['operation']->name ?? 'index';
+
+        // Forward the params, shifting operation down
+        $forwardParams = $params;
+        $forwardParams['operation'] = new \stdClass();
+        $forwardParams['operation']->name = $params['operation']->type ?? null;
+        $forwardParams['operation']->type = null;
+
+        if (method_exists($instance, $method) && (new \ReflectionMethod($instance, $method))->isPublic()) {
+            $instance->$method($forwardParams);
+        } else {
+            // Default to index if method doesn't exist
+            $instance->index($params);
+        }
+    }
+
+    /**
      * Claude Code configuration endpoint
      * GET /mcp/config
      *
      * Returns a ready-to-use configuration for ~/.claude/settings.json or .mcp.json
-     * Requires authentication to include the user's API token
+     * Requires authentication to include the user's API token and accessible servers
      */
     public function config($params = null): void {
         header('Content-Type: application/json');
@@ -271,29 +354,95 @@ class Mcp extends BaseControls\Control {
         $hasAuth = $this->authenticate();
 
         $mcpUrl = $this->getMcpUrl();
-        $config = [
+
+        // Build the MCP server config
+        $serverConfig = [
+            'type' => 'http',
+            'url' => $mcpUrl
+        ];
+
+        // Response structure
+        $response = [
             'mcpServers' => [
-                self::SERVER_NAME => [
-                    'type' => 'http',
-                    'url' => $mcpUrl
-                ]
+                self::SERVER_NAME => $serverConfig
             ]
         ];
 
-        // Add auth header if user is authenticated and has a token
-        if ($hasAuth && $this->authMember && !empty($this->authMember->api_token)) {
-            $config['mcpServers'][self::SERVER_NAME]['headers'] = [
-                'Authorization' => 'Bearer ' . $this->authMember->api_token
+        if ($hasAuth && $this->authMember) {
+            // Get API key token (prefer new apikey table, fall back to legacy)
+            $token = null;
+            $keyName = null;
+            $keyScopes = [];
+            $allowedServerSlugs = [];
+
+            if ($this->authApiKey) {
+                // Using new API key system
+                $token = $this->authApiKey->token;
+                $keyName = $this->authApiKey->name;
+                $keyScopes = json_decode($this->authApiKey->scopes, true) ?: [];
+                $allowedServerSlugs = json_decode($this->authApiKey->allowedServers, true) ?: [];
+            } elseif (!empty($this->authMember->api_token)) {
+                // Legacy api_token
+                $token = $this->authMember->api_token;
+                $keyName = 'Legacy Token';
+                $keyScopes = ['mcp:*'];
+            }
+
+            if ($token) {
+                $response['mcpServers'][self::SERVER_NAME]['headers'] = [
+                    'Authorization' => 'Bearer ' . $token
+                ];
+            }
+
+            // Get accessible backend servers
+            $servers = $this->getAllowedServers();
+            $accessibleServers = [];
+
+            foreach ($servers as $server) {
+                $tools = json_decode($server->tools, true) ?: [];
+                $toolNames = array_map(fn($t) => $t['name'] ?? 'unknown', $tools);
+
+                $accessibleServers[] = [
+                    'slug' => $server->slug,
+                    'name' => $server->name,
+                    'description' => $server->description,
+                    'tool_count' => count($tools),
+                    'tools' => $toolNames,
+                    'status' => $server->status
+                ];
+            }
+
+            // Add metadata about the authenticated user's access
+            $response['_meta'] = [
+                'authenticated' => true,
+                'user' => $this->authMember->username ?? $this->authMember->email,
+                'api_key' => [
+                    'name' => $keyName,
+                    'scopes' => $keyScopes,
+                    'server_restrictions' => empty($allowedServerSlugs) ? 'none (full access)' : $allowedServerSlugs
+                ],
+                'accessible_servers' => $accessibleServers,
+                'total_tools' => count($this->tools) + array_sum(array_column($accessibleServers, 'tool_count')),
+                'instructions' => [
+                    'global' => 'Save to ~/.claude/settings.json for all projects',
+                    'project' => 'Save to .mcp.json in your project root',
+                    'copy_config' => 'Copy the "mcpServers" object into your config file'
+                ]
             ];
         } else {
-            // Show placeholder for unauthenticated requests
-            $config['mcpServers'][self::SERVER_NAME]['headers'] = [
+            // Unauthenticated - show placeholder
+            $response['mcpServers'][self::SERVER_NAME]['headers'] = [
                 'Authorization' => 'Bearer YOUR_API_TOKEN'
             ];
-            $config['_note'] = 'Authenticate to get your personalized config with API token';
+            $response['_meta'] = [
+                'authenticated' => false,
+                'note' => 'Authenticate with Basic Auth or API key to get your personalized config',
+                'example' => 'curl -u username:password ' . rtrim($mcpUrl, '/message') . '/config',
+                'get_api_key' => rtrim($mcpUrl, '/message') . '/../apikeys'
+            ];
         }
 
-        echo json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
     /**
@@ -361,47 +510,319 @@ class Mcp extends BaseControls\Control {
 
     /**
      * Handle tools/list request
+     * Aggregates tools from built-in Tiknix tools + all proxy-enabled backend servers
      */
     private function handleToolsList(mixed $id): void {
         $toolList = [];
 
+        // Add built-in Tiknix tools (prefixed with tiknix:)
         foreach ($this->tools as $name => $config) {
             $toolList[] = [
-                'name' => $name,
-                'description' => $config['description'],
+                'name' => 'tiknix:' . $name,
+                'description' => '[Tiknix] ' . $config['description'],
                 'inputSchema' => $config['inputSchema']
             ];
+        }
+
+        // Get tools from all proxy-enabled backend servers the user has access to
+        $servers = $this->getAllowedServers();
+        foreach ($servers as $server) {
+            // Skip the built-in tiknix server (already added above)
+            if ($server->slug === 'tiknix-mcp') {
+                continue;
+            }
+
+            $serverTools = $this->getServerTools($server);
+            foreach ($serverTools as $tool) {
+                $toolList[] = [
+                    'name' => $server->slug . ':' . $tool['name'],
+                    'description' => '[' . $server->name . '] ' . ($tool['description'] ?? ''),
+                    'inputSchema' => $tool['inputSchema'] ?? ['type' => 'object', 'properties' => []]
+                ];
+            }
         }
 
         $this->sendResult($id, ['tools' => $toolList]);
     }
 
     /**
-     * Handle tools/call request
+     * Get all servers the current user/API key has access to
      */
-    private function handleToolsCall(mixed $id, array $params): void {
-        $toolName = $params['name'] ?? '';
-        $arguments = $params['arguments'] ?? [];
+    private function getAllowedServers(): array {
+        // Get proxy-enabled active servers
+        $servers = Bean::find('mcpserver', 'status = ? AND is_proxy_enabled = ? ORDER BY featured DESC, sort_order ASC', ['active', 1]);
 
-        if (!isset($this->tools[$toolName])) {
-            $this->sendError(-32602, "Unknown tool: {$toolName}", $id);
-            return;
+        // Filter by API key permissions if applicable
+        if ($this->authApiKey) {
+            $allowedSlugs = json_decode($this->authApiKey->allowedServers, true) ?: [];
+
+            // If no restrictions, return all
+            if (empty($allowedSlugs)) {
+                return $servers;
+            }
+
+            // Filter to only allowed servers
+            return array_filter($servers, fn($s) => in_array($s->slug, $allowedSlugs));
         }
 
+        return $servers;
+    }
+
+    /**
+     * Get tools from a backend server (with caching)
+     */
+    private function getServerTools($server): array {
+        // Check cache first (1 hour TTL)
+        if ($server->toolsCache && $server->toolsCachedAt) {
+            $cacheAge = time() - strtotime($server->toolsCachedAt);
+            if ($cacheAge < 3600) { // 1 hour cache
+                $cached = json_decode($server->toolsCache, true);
+                if ($cached !== null) {
+                    return $cached;
+                }
+            }
+        }
+
+        // If endpoint is relative (built-in), use stored tools
+        if (strpos($server->endpointUrl, 'http') !== 0) {
+            return json_decode($server->tools, true) ?: [];
+        }
+
+        // Fetch fresh tools from backend
+        try {
+            $tools = $this->fetchBackendTools($server);
+
+            // Update cache
+            $server->toolsCache = json_encode($tools);
+            $server->toolsCachedAt = date('Y-m-d H:i:s');
+            Bean::store($server);
+
+            return $tools;
+        } catch (\Exception $e) {
+            $this->logger->warning('Failed to fetch tools from backend', [
+                'server' => $server->slug,
+                'error' => $e->getMessage()
+            ]);
+            // Fall back to stored tools
+            return json_decode($server->tools, true) ?: [];
+        }
+    }
+
+    /**
+     * Fetch tools from a backend MCP server
+     */
+    private function fetchBackendTools($server): array {
+        $request = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'tools/list',
+            'params' => []
+        ]);
+
+        $headers = ['Content-Type: application/json'];
+        if (!empty($server->backendAuthToken)) {
+            $headerName = $server->backendAuthHeader ?: 'Authorization';
+            $prefix = ($headerName === 'Authorization') ? 'Bearer ' : '';
+            $headers[] = "{$headerName}: {$prefix}{$server->backendAuthToken}";
+        }
+
+        $ch = curl_init($server->endpointUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $request,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => true
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($error) {
+            throw new \Exception("Connection error: {$error}");
+        }
+
+        if ($httpCode !== 200) {
+            throw new \Exception("HTTP {$httpCode}");
+        }
+
+        $data = json_decode($response, true);
+        return $data['result']['tools'] ?? [];
+    }
+
+    /**
+     * Handle tools/call request
+     * Routes to built-in Tiknix tools or proxies to backend servers
+     */
+    private function handleToolsCall(mixed $id, array $params): void {
+        $fullToolName = $params['name'] ?? '';
+        $arguments = $params['arguments'] ?? [];
+
+        // Parse "server:tool" format
+        $serverSlug = 'tiknix';
+        $toolName = $fullToolName;
+
+        if (strpos($fullToolName, ':') !== false) {
+            [$serverSlug, $toolName] = explode(':', $fullToolName, 2);
+        }
+
+        $startTime = microtime(true);
+        $responseStatus = 'success';
+        $errorMessage = null;
+
         $this->logger->info('MCP tool call', [
+            'full_tool' => $fullToolName,
+            'server' => $serverSlug,
             'tool' => $toolName,
             'member_id' => $this->authMember->id ?? 0
         ]);
 
         try {
-            $result = $this->executeTool($toolName, $arguments);
+            // Route to built-in Tiknix tools or proxy to backend
+            if ($serverSlug === 'tiknix') {
+                // Built-in Tiknix tools
+                if (!isset($this->tools[$toolName])) {
+                    throw new \Exception("Unknown Tiknix tool: {$toolName}");
+                }
+                $result = $this->executeTool($toolName, $arguments);
+            } else {
+                // Proxy to backend server
+                $result = $this->proxyToolCall($serverSlug, $toolName, $arguments);
+            }
+
             $this->sendToolResult($id, $result);
+
         } catch (\Exception $e) {
+            $responseStatus = 'error';
+            $errorMessage = $e->getMessage();
+
             $this->logger->error('MCP tool error', [
+                'server' => $serverSlug,
                 'tool' => $toolName,
                 'error' => $e->getMessage()
             ]);
             $this->sendToolResult($id, "Error: " . $e->getMessage(), true);
+        }
+
+        // Log usage
+        $this->logUsage($serverSlug, $toolName, $arguments, $responseStatus, $errorMessage, $startTime);
+    }
+
+    /**
+     * Proxy a tool call to a backend MCP server
+     */
+    private function proxyToolCall(string $serverSlug, string $toolName, array $arguments): string {
+        // Find the server
+        $server = Bean::findOne('mcpserver', 'slug = ? AND status = ?', [$serverSlug, 'active']);
+
+        if (!$server) {
+            throw new \Exception("Server not found: {$serverSlug}");
+        }
+
+        // Check access
+        if (!$this->hasServerAccess($serverSlug)) {
+            throw new \Exception("Access denied to server: {$serverSlug}");
+        }
+
+        // Check if proxy is enabled
+        if (!$server->isProxyEnabled) {
+            throw new \Exception("Proxy disabled for server: {$serverSlug}");
+        }
+
+        // Build JSON-RPC request
+        $request = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'tools/call',
+            'params' => [
+                'name' => $toolName,
+                'arguments' => $arguments
+            ]
+        ]);
+
+        // Set up headers with backend auth
+        $headers = ['Content-Type: application/json'];
+        if (!empty($server->backendAuthToken)) {
+            $headerName = $server->backendAuthHeader ?: 'Authorization';
+            $prefix = ($headerName === 'Authorization') ? 'Bearer ' : '';
+            $headers[] = "{$headerName}: {$prefix}{$server->backendAuthToken}";
+        }
+
+        $this->logger->debug('Proxying to backend', [
+            'server' => $serverSlug,
+            'endpoint' => $server->endpointUrl,
+            'tool' => $toolName
+        ]);
+
+        // Make request to backend
+        $ch = curl_init($server->endpointUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $request,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_SSL_VERIFYPEER => true
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($error) {
+            throw new \Exception("Backend connection error: {$error}");
+        }
+
+        if ($httpCode !== 200) {
+            throw new \Exception("Backend returned HTTP {$httpCode}");
+        }
+
+        $data = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \Exception("Invalid JSON from backend");
+        }
+
+        // Check for error response
+        if (isset($data['error'])) {
+            throw new \Exception($data['error']['message'] ?? 'Backend error');
+        }
+
+        // Extract text content from result
+        $content = $data['result']['content'] ?? [];
+        $texts = [];
+        foreach ($content as $item) {
+            if (($item['type'] ?? '') === 'text') {
+                $texts[] = $item['text'];
+            }
+        }
+
+        return implode("\n", $texts) ?: json_encode($data['result'] ?? []);
+    }
+
+    /**
+     * Log tool call usage to mcpusage table
+     */
+    private function logUsage(string $serverSlug, string $toolName, array $requestData, string $status, ?string $errorMessage, float $startTime): void {
+        try {
+            $usage = Bean::dispense('mcpusage');
+            $usage->apikeyId = $this->authApiKey->id ?? 0;
+            $usage->memberId = $this->authMember->id ?? 0;
+            $usage->serverSlug = $serverSlug;
+            $usage->toolName = $toolName;
+            $usage->requestData = json_encode($requestData);
+            $usage->responseStatus = $status;
+            $usage->responseTimeMs = (int)((microtime(true) - $startTime) * 1000);
+            $usage->errorMessage = $errorMessage;
+            $usage->ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
+            $usage->createdAt = date('Y-m-d H:i:s');
+            Bean::store($usage);
+        } catch (\Exception $e) {
+            // Don't let logging failures break the request
+            $this->logger->warning('Failed to log MCP usage', ['error' => $e->getMessage()]);
         }
     }
 

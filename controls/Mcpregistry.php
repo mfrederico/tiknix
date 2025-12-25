@@ -22,12 +22,20 @@ class Mcpregistry extends Control {
 
         // Allow public access to API endpoint
         $url = Flight::request()->url;
-        if (strpos($url, '/mcpregistry/api') !== false) {
+        if (strpos($url, '/mcp/registry/api') !== false || strpos($url, '/api') !== false) {
             return; // Public endpoint, no auth required
         }
 
+        $isAjax = Flight::request()->ajax ||
+                  (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false);
+
         // Check if user is logged in
         if (!Flight::isLoggedIn()) {
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'error' => 'Authentication required']);
+                exit;
+            }
             Flight::redirect('/auth/login?redirect=' . urlencode($url));
             exit;
         }
@@ -39,6 +47,11 @@ class Mcpregistry extends Control {
                 'member_level' => $this->member->level,
                 'ip' => Flight::request()->ip
             ]);
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'error' => 'Access denied']);
+                exit;
+            }
             Flight::redirect('/');
             exit;
         }
@@ -63,7 +76,7 @@ class Mcpregistry extends Control {
                 ]);
                 Bean::trash($server);
             }
-            Flight::redirect('/mcpregistry');
+            Flight::redirect('/mcp/registry');
             return;
         }
 
@@ -93,7 +106,7 @@ class Mcpregistry extends Control {
             } else {
                 $result = $this->processServerForm($request);
                 if ($result['success']) {
-                    Flight::redirect('/mcpregistry');
+                    Flight::redirect('/mcp/registry');
                     return;
                 }
                 $this->viewData['error'] = $result['error'];
@@ -113,13 +126,13 @@ class Mcpregistry extends Control {
         $serverId = $request->query->id ?? null;
 
         if (!$serverId) {
-            Flight::redirect('/mcpregistry');
+            Flight::redirect('/mcp/registry');
             return;
         }
 
         $server = Bean::load('mcpserver', $serverId);
         if (!$server->id) {
-            Flight::redirect('/mcpregistry');
+            Flight::redirect('/mcp/registry');
             return;
         }
 
@@ -238,6 +251,20 @@ class Mcpregistry extends Control {
         $server->featured = (int)($request->data->featured ?? 0);
         $server->sortOrder = (int)($request->data->sortOrder ?? 0);
 
+        // Gateway/Proxy fields
+        $backendAuthHeader = $request->data->backendAuthHeader ?? 'Authorization';
+        if ($backendAuthHeader === 'custom') {
+            $backendAuthHeader = trim($request->data->backendAuthHeaderCustom ?? 'Authorization');
+        }
+        $server->backendAuthHeader = $backendAuthHeader;
+        $server->backendAuthToken = trim($request->data->backendAuthToken ?? '');
+        $server->isProxyEnabled = (int)($request->data->isProxyEnabled ?? 1);
+
+        // Registry fields (set defaults for local servers)
+        if ($isNew && empty($server->registrySource)) {
+            $server->registrySource = 'local';
+        }
+
         if ($isNew) {
             $server->createdAt = date('Y-m-d H:i:s');
             $server->createdBy = $this->member->id;
@@ -280,8 +307,20 @@ class Mcpregistry extends Control {
 
         $endpointUrl = $this->getParam('url');
 
-        if (empty($endpointUrl) || !filter_var($endpointUrl, FILTER_VALIDATE_URL)) {
-            echo json_encode(['success' => false, 'error' => 'Invalid URL']);
+        if (empty($endpointUrl)) {
+            echo json_encode(['success' => false, 'error' => 'URL is required']);
+            return;
+        }
+
+        // Handle relative URLs by prepending base URL
+        if (strpos($endpointUrl, 'http') !== 0) {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $endpointUrl = $protocol . '://' . $host . '/' . ltrim($endpointUrl, '/');
+        }
+
+        if (!filter_var($endpointUrl, FILTER_VALIDATE_URL)) {
+            echo json_encode(['success' => false, 'error' => 'Invalid URL format']);
             return;
         }
 

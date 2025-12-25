@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS contactresponse (
 -- ============================================
 
 -- MCP Server Registry
+-- Stores both local and imported MCP servers for the gateway/proxy
 CREATE TABLE IF NOT EXISTS mcpserver (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -144,9 +145,36 @@ CREATE TABLE IF NOT EXISTS mcpserver (
     tags TEXT DEFAULT '[]',
     featured INTEGER DEFAULT 0,
     sort_order INTEGER DEFAULT 0,
+    -- Registry sync fields
+    registry_id TEXT,
+    registry_source TEXT DEFAULT 'local',
+    synced_at TEXT,
+    -- Gateway/Proxy fields
+    backend_auth_token TEXT,
+    backend_auth_header TEXT DEFAULT 'Authorization',
+    tools_cache TEXT,
+    tools_cached_at TEXT,
+    is_proxy_enabled INTEGER DEFAULT 1,
+    -- Timestamps
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER,
     updated_at TEXT
+);
+
+-- MCP Usage Logging
+-- Tracks all tool calls through the gateway for audit and analytics
+CREATE TABLE IF NOT EXISTS mcpusage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    apikey_id INTEGER NOT NULL,
+    member_id INTEGER NOT NULL,
+    server_slug TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    request_data TEXT,
+    response_status TEXT,
+    response_time_ms INTEGER,
+    error_message TEXT,
+    ip_address TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- API Keys (scoped access tokens)
@@ -197,6 +225,12 @@ CREATE INDEX IF NOT EXISTS idx_contactresponse_contact ON contactresponse(contac
 
 CREATE INDEX IF NOT EXISTS idx_mcpserver_slug ON mcpserver(slug);
 CREATE INDEX IF NOT EXISTS idx_mcpserver_status ON mcpserver(status);
+CREATE INDEX IF NOT EXISTS idx_mcpserver_registry ON mcpserver(registry_source);
+
+CREATE INDEX IF NOT EXISTS idx_mcpusage_apikey ON mcpusage(apikey_id);
+CREATE INDEX IF NOT EXISTS idx_mcpusage_member ON mcpusage(member_id);
+CREATE INDEX IF NOT EXISTS idx_mcpusage_server ON mcpusage(server_slug);
+CREATE INDEX IF NOT EXISTS idx_mcpusage_created ON mcpusage(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_apikey_token ON apikey(token);
 CREATE INDEX IF NOT EXISTS idx_apikey_member ON apikey(member_id);

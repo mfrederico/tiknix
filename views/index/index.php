@@ -77,49 +77,68 @@
     </div>
 </div>
 
-<!-- MCP Server Section -->
+<!-- MCP Gateway Section -->
 <div class="bg-info bg-gradient text-white py-5">
     <div class="container">
         <div class="row align-items-center">
             <div class="col-md-6">
-                <h2><i class="bi bi-hdd-network"></i> Built-in MCP Server</h2>
-                <p class="lead">Expose your PHP application to AI agents via the Model Context Protocol. Let Claude and other AI assistants interact directly with your data and business logic.</p>
+                <h2><i class="bi bi-diagram-3"></i> MCP Gateway</h2>
+                <p class="lead">One endpoint to rule them all. Tiknix acts as a gateway that aggregates multiple MCP servers into a single, authenticated endpoint for AI agents.</p>
+
+                <div class="mb-4">
+                    <h5><i class="bi bi-question-circle"></i> Why a Gateway?</h5>
+                    <p class="small opacity-90">AI assistants like Claude Code need to connect to MCP servers to use tools. Without a gateway, you'd need to configure each server separately, manage multiple API keys, and handle authentication for each one. Tiknix solves this.</p>
+                </div>
+
                 <ul class="list-unstyled">
-                    <li class="mb-2"><i class="bi bi-check-circle"></i> Full MCP protocol implementation</li>
-                    <li class="mb-2"><i class="bi bi-check-circle"></i> Expose custom tools for AI agents</li>
-                    <li class="mb-2"><i class="bi bi-check-circle"></i> Secure API key authentication</li>
-                    <li class="mb-2"><i class="bi bi-check-circle"></i> Works with Claude Code, Cursor, and more</li>
+                    <li class="mb-2"><i class="bi bi-check-circle"></i> <strong>Single Config</strong> - One endpoint, one API key for all your tools</li>
+                    <li class="mb-2"><i class="bi bi-check-circle"></i> <strong>Tool Namespacing</strong> - No collisions (<code class="bg-dark px-1">shopify:get_products</code>, <code class="bg-dark px-1">github:list_repos</code>)</li>
+                    <li class="mb-2"><i class="bi bi-check-circle"></i> <strong>Access Control</strong> - Restrict API keys to specific servers</li>
+                    <li class="mb-2"><i class="bi bi-check-circle"></i> <strong>Usage Analytics</strong> - Track every tool call</li>
                 </ul>
                 <div class="mt-4">
                     <a href="/mcp" class="btn btn-light btn-lg me-2">
                         <i class="bi bi-gear"></i> MCP Dashboard
                     </a>
-                    <a href="/mcp/registry" class="btn btn-outline-light btn-lg">
-                        <i class="bi bi-collection"></i> Server Registry
+                    <a href="/docs/mcp" class="btn btn-outline-light btn-lg">
+                        <i class="bi bi-book"></i> Documentation
                     </a>
                 </div>
             </div>
             <div class="col-md-6">
+                <div class="card bg-dark border-0 shadow mb-3">
+                    <div class="card-header bg-dark text-light border-bottom border-secondary">
+                        <i class="bi bi-diagram-3"></i> How It Works
+                    </div>
+                    <div class="card-body py-3">
+                        <pre class="text-light mb-0 small"><code>Claude Code ──► Tiknix Gateway ──► Backend Servers
+                    │
+                    ├── tiknix:hello
+                    ├── shopify:get_products
+                    ├── github:list_repos
+                    └── your-server:custom_tool</code></pre>
+                    </div>
+                </div>
                 <div class="card bg-dark border-0 shadow">
                     <div class="card-header bg-dark text-light border-bottom border-secondary">
-                        <i class="bi bi-terminal"></i> claude_desktop_config.json
+                        <i class="bi bi-file-code"></i> .mcp.json
                     </div>
                     <div class="card-body">
-                        <pre class="text-light mb-0" style="font-size: 0.85rem;"><code>{
+                        <pre class="text-light mb-0" style="font-size: 0.8rem;"><code>{
   "mcpServers": {
     "tiknix": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://your-app.com/mcp/sse"
-      ]
+      "type": "http",
+      "url": "https://tiknix.com/mcp/message",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
     }
   }
 }</code></pre>
                     </div>
                 </div>
-                <p class="text-center mt-3 small opacity-75">
-                    <i class="bi bi-lightbulb"></i> Add your Tiknix app as an MCP server in seconds
+                <p class="text-center mt-2 small opacity-75">
+                    <i class="bi bi-lightning-charge"></i> Get your config at <a href="/apikeys" class="text-white">/apikeys</a>
                 </p>
             </div>
         </div>
@@ -194,9 +213,9 @@
             <div class="col-md-4">
                 <div class="card h-100 shadow-sm border-info">
                     <div class="card-body text-center">
-                        <i class="bi bi-hdd-network text-info" style="font-size: 3rem;"></i>
-                        <h4 class="card-title mt-3">MCP Server</h4>
-                        <p class="card-text">Built-in Model Context Protocol server. Connect AI agents directly to your app.</p>
+                        <i class="bi bi-diagram-3 text-info" style="font-size: 3rem;"></i>
+                        <h4 class="card-title mt-3">MCP Gateway</h4>
+                        <p class="card-text">Aggregate multiple MCP servers into one endpoint. Single config, centralized auth.</p>
                     </div>
                 </div>
             </div>
@@ -228,7 +247,7 @@
                             </div>
                             <ul class="list-group list-group-flush">
                                 <li class="list-group-item d-flex justify-content-between">
-                                    <span><i class="bi bi-hdd-network"></i> MCP Server</span>
+                                    <span><i class="bi bi-diagram-3"></i> MCP Gateway</span>
                                     <span class="badge bg-success">Active</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between">

@@ -184,6 +184,305 @@ class Mcp extends BaseControls\Control {
                 ],
                 'required' => []
             ]
+        ],
+        // ==========================================
+        // VALIDATION TOOLS
+        // ==========================================
+        'validate_php' => [
+            'description' => 'Validate PHP syntax for one or more files. Returns syntax errors if any.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'file' => [
+                        'type' => 'string',
+                        'description' => 'Path to PHP file or directory to validate'
+                    ]
+                ],
+                'required' => ['file']
+            ]
+        ],
+        'security_scan' => [
+            'description' => 'Scan PHP code for security vulnerabilities (OWASP Top 10). Returns issues grouped by severity.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'file' => [
+                        'type' => 'string',
+                        'description' => 'Path to PHP file or directory to scan'
+                    ]
+                ],
+                'required' => ['file']
+            ]
+        ],
+        'check_redbean' => [
+            'description' => 'Check PHP code for RedBeanPHP convention violations (bean naming, associations, R::exec usage).',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'file' => [
+                        'type' => 'string',
+                        'description' => 'Path to PHP file or directory to check'
+                    ]
+                ],
+                'required' => ['file']
+            ]
+        ],
+        'check_flightphp' => [
+            'description' => 'Check PHP code for FlightPHP pattern compliance (controller conventions, routing).',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'file' => [
+                        'type' => 'string',
+                        'description' => 'Path to PHP file or directory to check'
+                    ]
+                ],
+                'required' => ['file']
+            ]
+        ],
+        'full_validation' => [
+            'description' => 'Run all validators (PHP syntax, security, RedBeanPHP, FlightPHP) on code.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'file' => [
+                        'type' => 'string',
+                        'description' => 'Path to PHP file or directory to validate'
+                    ]
+                ],
+                'required' => ['file']
+            ]
+        ],
+        // ==========================================
+        // WORKBENCH TASK TOOLS
+        // ==========================================
+        'list_tasks' => [
+            'description' => 'List workbench tasks visible to the authenticated user.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'status' => [
+                        'type' => 'string',
+                        'description' => 'Filter by status',
+                        'enum' => ['pending', 'queued', 'running', 'completed', 'failed', 'paused']
+                    ],
+                    'team_id' => [
+                        'type' => 'integer',
+                        'description' => 'Filter by team ID (null for personal tasks)'
+                    ],
+                    'limit' => [
+                        'type' => 'integer',
+                        'description' => 'Maximum number of tasks to return (default: 20)'
+                    ]
+                ],
+                'required' => []
+            ]
+        ],
+        'get_task' => [
+            'description' => 'Get details of a specific workbench task.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'task_id' => [
+                        'type' => 'integer',
+                        'description' => 'The task ID'
+                    ]
+                ],
+                'required' => ['task_id']
+            ]
+        ],
+        'update_task' => [
+            'description' => 'Update a workbench task. Use to report progress, set status, or record results.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'task_id' => [
+                        'type' => 'integer',
+                        'description' => 'The task ID'
+                    ],
+                    'status' => [
+                        'type' => 'string',
+                        'description' => 'New status',
+                        'enum' => ['running', 'completed', 'failed', 'paused']
+                    ],
+                    'branch_name' => [
+                        'type' => 'string',
+                        'description' => 'Git branch name'
+                    ],
+                    'pr_url' => [
+                        'type' => 'string',
+                        'description' => 'Pull request URL'
+                    ],
+                    'progress_message' => [
+                        'type' => 'string',
+                        'description' => 'Progress update message'
+                    ],
+                    'error_message' => [
+                        'type' => 'string',
+                        'description' => 'Error message (for failed status)'
+                    ]
+                ],
+                'required' => ['task_id']
+            ]
+        ],
+        'complete_task' => [
+            'description' => 'Mark a task as completed with results.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'task_id' => [
+                        'type' => 'integer',
+                        'description' => 'The task ID'
+                    ],
+                    'pr_url' => [
+                        'type' => 'string',
+                        'description' => 'Pull request URL (if applicable)'
+                    ],
+                    'branch_name' => [
+                        'type' => 'string',
+                        'description' => 'Git branch name'
+                    ],
+                    'summary' => [
+                        'type' => 'string',
+                        'description' => 'Summary of what was accomplished'
+                    ]
+                ],
+                'required' => ['task_id']
+            ]
+        ],
+        'add_task_log' => [
+            'description' => 'Add a log entry to a task.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'task_id' => [
+                        'type' => 'integer',
+                        'description' => 'The task ID'
+                    ],
+                    'level' => [
+                        'type' => 'string',
+                        'description' => 'Log level',
+                        'enum' => ['debug', 'info', 'warning', 'error']
+                    ],
+                    'message' => [
+                        'type' => 'string',
+                        'description' => 'Log message'
+                    ]
+                ],
+                'required' => ['task_id', 'message']
+            ]
+        ],
+
+        // Playwright Browser Automation Tools
+        'playwright_status' => [
+            'description' => 'Check the status of the Playwright browser automation server.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [],
+                'required' => []
+            ]
+        ],
+        'playwright_navigate' => [
+            'description' => 'Navigate to a URL in the browser.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'url' => [
+                        'type' => 'string',
+                        'description' => 'The URL to navigate to'
+                    ],
+                    'wait_until' => [
+                        'type' => 'string',
+                        'description' => 'When to consider navigation complete',
+                        'enum' => ['load', 'domcontentloaded', 'networkidle']
+                    ]
+                ],
+                'required' => ['url']
+            ]
+        ],
+        'playwright_screenshot' => [
+            'description' => 'Take a screenshot of the current page.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'name' => [
+                        'type' => 'string',
+                        'description' => 'Name for the screenshot'
+                    ],
+                    'full_page' => [
+                        'type' => 'boolean',
+                        'description' => 'Capture full scrollable page'
+                    ],
+                    'width' => [
+                        'type' => 'integer',
+                        'description' => 'Viewport width'
+                    ],
+                    'height' => [
+                        'type' => 'integer',
+                        'description' => 'Viewport height'
+                    ]
+                ],
+                'required' => ['name']
+            ]
+        ],
+        'playwright_click' => [
+            'description' => 'Click an element on the page.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'selector' => [
+                        'type' => 'string',
+                        'description' => 'CSS or XPath selector for the element'
+                    ]
+                ],
+                'required' => ['selector']
+            ]
+        ],
+        'playwright_fill' => [
+            'description' => 'Fill a form field with a value.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'selector' => [
+                        'type' => 'string',
+                        'description' => 'CSS selector for the input field'
+                    ],
+                    'value' => [
+                        'type' => 'string',
+                        'description' => 'Value to fill into the field'
+                    ]
+                ],
+                'required' => ['selector', 'value']
+            ]
+        ],
+        'playwright_snapshot' => [
+            'description' => 'Get an accessibility snapshot of the current page for understanding page structure.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [],
+                'required' => []
+            ]
+        ],
+        'playwright_evaluate' => [
+            'description' => 'Execute JavaScript code in the browser context.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'script' => [
+                        'type' => 'string',
+                        'description' => 'JavaScript code to execute'
+                    ]
+                ],
+                'required' => ['script']
+            ]
+        ],
+        'playwright_close' => [
+            'description' => 'Close the browser session.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [],
+                'required' => []
+            ]
         ]
     ];
 
@@ -853,6 +1152,63 @@ class Mcp extends BaseControls\Control {
             case 'list_mcp_servers':
                 return $this->toolListMcpServers($args);
 
+            // Validation tools
+            case 'validate_php':
+                return $this->toolValidatePhp($args);
+
+            case 'security_scan':
+                return $this->toolSecurityScan($args);
+
+            case 'check_redbean':
+                return $this->toolCheckRedbean($args);
+
+            case 'check_flightphp':
+                return $this->toolCheckFlightphp($args);
+
+            case 'full_validation':
+                return $this->toolFullValidation($args);
+
+            // Workbench tools
+            case 'list_tasks':
+                return $this->toolListTasks($args);
+
+            case 'get_task':
+                return $this->toolGetTask($args);
+
+            case 'update_task':
+                return $this->toolUpdateTask($args);
+
+            case 'complete_task':
+                return $this->toolCompleteTask($args);
+
+            case 'add_task_log':
+                return $this->toolAddTaskLog($args);
+
+            // Playwright browser automation tools
+            case 'playwright_status':
+                return $this->toolPlaywrightStatus($args);
+
+            case 'playwright_navigate':
+                return $this->toolPlaywrightNavigate($args);
+
+            case 'playwright_screenshot':
+                return $this->toolPlaywrightScreenshot($args);
+
+            case 'playwright_click':
+                return $this->toolPlaywrightClick($args);
+
+            case 'playwright_fill':
+                return $this->toolPlaywrightFill($args);
+
+            case 'playwright_snapshot':
+                return $this->toolPlaywrightSnapshot($args);
+
+            case 'playwright_evaluate':
+                return $this->toolPlaywrightEvaluate($args);
+
+            case 'playwright_close':
+                return $this->toolPlaywrightClose($args);
+
             default:
                 throw new \Exception("Tool not implemented: {$name}");
         }
@@ -1028,6 +1384,599 @@ class Mcp extends BaseControls\Control {
             'count' => count($result),
             'servers' => $result
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
+    // =========================================
+    // Validation Tools
+    // =========================================
+
+    /**
+     * Validate PHP syntax for a file or directory
+     */
+    private function toolValidatePhp(array $args): string {
+        $path = $args['path'] ?? null;
+        if (!$path) {
+            throw new \Exception("Path is required");
+        }
+
+        // Resolve path relative to project root
+        $projectRoot = \Flight::get('project_root') ?? dirname(__DIR__);
+        $fullPath = $this->resolvePath($path, $projectRoot);
+
+        $validator = new \app\ValidationService($projectRoot);
+        $result = $validator->validatePhpSyntax($fullPath);
+
+        return json_encode([
+            'path' => $path,
+            'valid' => $result['valid'],
+            'errors' => $result['errors']
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Scan code for security vulnerabilities
+     */
+    private function toolSecurityScan(array $args): string {
+        $path = $args['path'] ?? null;
+        $code = $args['code'] ?? null;
+
+        if (!$path && !$code) {
+            throw new \Exception("Either 'path' or 'code' is required");
+        }
+
+        $projectRoot = \Flight::get('project_root') ?? dirname(__DIR__);
+        $validator = new \app\ValidationService($projectRoot);
+
+        if ($path) {
+            $fullPath = $this->resolvePath($path, $projectRoot);
+            if (!file_exists($fullPath)) {
+                throw new \Exception("File not found: {$path}");
+            }
+            $code = file_get_contents($fullPath);
+        }
+
+        $issues = $validator->scanSecurity($code, $path ?? 'inline');
+
+        $totalIssues = count($issues['critical'] ?? [])
+            + count($issues['high'] ?? [])
+            + count($issues['medium'] ?? [])
+            + count($issues['low'] ?? []);
+
+        return json_encode([
+            'path' => $path ?? 'inline',
+            'has_issues' => $totalIssues > 0,
+            'issue_count' => $totalIssues,
+            'issues' => $issues
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Check RedBeanPHP conventions
+     */
+    private function toolCheckRedbean(array $args): string {
+        $path = $args['path'] ?? null;
+        $code = $args['code'] ?? null;
+
+        if (!$path && !$code) {
+            throw new \Exception("Either 'path' or 'code' is required");
+        }
+
+        $projectRoot = \Flight::get('project_root') ?? dirname(__DIR__);
+        $validator = new \app\ValidationService($projectRoot);
+
+        if ($path) {
+            $fullPath = $this->resolvePath($path, $projectRoot);
+            if (!file_exists($fullPath)) {
+                throw new \Exception("File not found: {$path}");
+            }
+            $code = file_get_contents($fullPath);
+        }
+
+        $result = $validator->checkRedBeanConventions($code, $path ?? 'inline');
+
+        return json_encode([
+            'path' => $path ?? 'inline',
+            'errors' => $result['errors'] ?? [],
+            'warnings' => $result['warnings'] ?? []
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Check FlightPHP patterns
+     */
+    private function toolCheckFlightphp(array $args): string {
+        $path = $args['path'] ?? null;
+        $code = $args['code'] ?? null;
+
+        if (!$path && !$code) {
+            throw new \Exception("Either 'path' or 'code' is required");
+        }
+
+        $projectRoot = \Flight::get('project_root') ?? dirname(__DIR__);
+        $validator = new \app\ValidationService($projectRoot);
+
+        if ($path) {
+            $fullPath = $this->resolvePath($path, $projectRoot);
+            if (!file_exists($fullPath)) {
+                throw new \Exception("File not found: {$path}");
+            }
+            $code = file_get_contents($fullPath);
+        }
+
+        $result = $validator->checkFlightPhpPatterns($code, $path ?? 'inline');
+
+        return json_encode([
+            'path' => $path ?? 'inline',
+            'warnings' => $result['warnings'] ?? [],
+            'info' => $result['info'] ?? []
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Run full validation on a path
+     */
+    private function toolFullValidation(array $args): string {
+        $path = $args['path'] ?? null;
+        if (!$path) {
+            throw new \Exception("Path is required");
+        }
+
+        $projectRoot = \Flight::get('project_root') ?? dirname(__DIR__);
+        $fullPath = $this->resolvePath($path, $projectRoot);
+
+        $validator = new \app\ValidationService($projectRoot);
+        $result = $validator->fullValidation($fullPath);
+
+        return json_encode([
+            'path' => $path,
+            'valid' => $result['valid'],
+            'errors' => $result['errors'],
+            'warnings' => $result['warnings'],
+            'info' => $result['info']
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Resolve a path relative to project root
+     */
+    private function resolvePath(string $path, string $projectRoot): string {
+        if (strpos($path, '/') === 0) {
+            return $path;
+        }
+        return $projectRoot . '/' . ltrim($path, './');
+    }
+
+    // =========================================
+    // Workbench Tools
+    // =========================================
+
+    /**
+     * List tasks for the authenticated user
+     */
+    private function toolListTasks(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required");
+        }
+
+        $status = $args['status'] ?? null;
+        $teamId = isset($args['team_id']) ? (int)$args['team_id'] : null;
+        $limit = min((int)($args['limit'] ?? 20), 100);
+
+        $accessControl = new \app\TaskAccessControl($this->authMember->id);
+        $tasks = $accessControl->getVisibleTasks($status, $teamId);
+
+        // Apply limit
+        $tasks = array_slice($tasks, 0, $limit);
+
+        $result = [];
+        foreach ($tasks as $task) {
+            $result[] = [
+                'id' => $task->id,
+                'title' => $task->title,
+                'task_type' => $task->taskType,
+                'status' => $task->status,
+                'priority' => $task->priority,
+                'team_id' => $task->teamId,
+                'created_at' => $task->createdAt,
+                'updated_at' => $task->updatedAt
+            ];
+        }
+
+        return json_encode([
+            'count' => count($result),
+            'tasks' => $result
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Get a specific task
+     */
+    private function toolGetTask(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required");
+        }
+
+        $taskId = (int)($args['task_id'] ?? 0);
+        if (!$taskId) {
+            throw new \Exception("task_id is required");
+        }
+
+        $accessControl = new \app\TaskAccessControl($this->authMember->id);
+        if (!$accessControl->canView($taskId)) {
+            throw new \Exception("Access denied to task {$taskId}");
+        }
+
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id) {
+            throw new \Exception("Task not found: {$taskId}");
+        }
+
+        return json_encode([
+            'id' => $task->id,
+            'title' => $task->title,
+            'description' => $task->description,
+            'task_type' => $task->taskType,
+            'status' => $task->status,
+            'priority' => $task->priority,
+            'acceptance_criteria' => $task->acceptanceCriteria,
+            'related_files' => json_decode($task->relatedFiles, true) ?: [],
+            'tags' => json_decode($task->tags, true) ?: [],
+            'member_id' => $task->memberId,
+            'team_id' => $task->teamId,
+            'branch_name' => $task->branchName,
+            'pr_url' => $task->prUrl,
+            'created_at' => $task->createdAt,
+            'updated_at' => $task->updatedAt
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Update a task's status or progress
+     */
+    private function toolUpdateTask(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required");
+        }
+
+        $taskId = (int)($args['task_id'] ?? 0);
+        if (!$taskId) {
+            throw new \Exception("task_id is required");
+        }
+
+        $accessControl = new \app\TaskAccessControl($this->authMember->id);
+        if (!$accessControl->canEdit($taskId)) {
+            throw new \Exception("No permission to update task {$taskId}");
+        }
+
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id) {
+            throw new \Exception("Task not found: {$taskId}");
+        }
+
+        // Update allowed fields
+        $allowedFields = ['status', 'branchName', 'prUrl', 'progressMessage', 'errorMessage'];
+        $updated = [];
+
+        foreach ($allowedFields as $field) {
+            $argKey = $this->camelToSnake($field);
+            if (isset($args[$argKey])) {
+                $task->$field = $args[$argKey];
+                $updated[] = $argKey;
+            }
+        }
+
+        if (empty($updated)) {
+            throw new \Exception("No valid fields to update");
+        }
+
+        $task->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($task);
+
+        return json_encode([
+            'success' => true,
+            'task_id' => $taskId,
+            'updated_fields' => $updated
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Mark a task as complete
+     */
+    private function toolCompleteTask(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required");
+        }
+
+        $taskId = (int)($args['task_id'] ?? 0);
+        if (!$taskId) {
+            throw new \Exception("task_id is required");
+        }
+
+        $accessControl = new \app\TaskAccessControl($this->authMember->id);
+        if (!$accessControl->canEdit($taskId)) {
+            throw new \Exception("No permission to complete task {$taskId}");
+        }
+
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id) {
+            throw new \Exception("Task not found: {$taskId}");
+        }
+
+        // Update task
+        $task->status = 'completed';
+        $task->completedAt = date('Y-m-d H:i:s');
+        $task->updatedAt = date('Y-m-d H:i:s');
+
+        if (isset($args['pr_url'])) {
+            $task->prUrl = $args['pr_url'];
+        }
+        if (isset($args['branch_name'])) {
+            $task->branchName = $args['branch_name'];
+        }
+        if (isset($args['results'])) {
+            $task->resultsJson = is_string($args['results'])
+                ? $args['results']
+                : json_encode($args['results']);
+        }
+
+        Bean::store($task);
+
+        // Log completion
+        $log = Bean::dispense('tasklog');
+        $log->taskId = $taskId;
+        $log->memberId = $this->authMember->id;
+        $log->logLevel = 'info';
+        $log->logType = 'status_change';
+        $log->message = 'Task completed';
+        $log->createdAt = date('Y-m-d H:i:s');
+        Bean::store($log);
+
+        return json_encode([
+            'success' => true,
+            'task_id' => $taskId,
+            'status' => 'completed',
+            'completed_at' => $task->completedAt,
+            'pr_url' => $task->prUrl
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Add a log entry to a task
+     */
+    private function toolAddTaskLog(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required");
+        }
+
+        $taskId = (int)($args['task_id'] ?? 0);
+        $message = $args['message'] ?? '';
+        $level = $args['level'] ?? 'info';
+        $type = $args['type'] ?? 'general';
+
+        if (!$taskId || !$message) {
+            throw new \Exception("task_id and message are required");
+        }
+
+        $accessControl = new \app\TaskAccessControl($this->authMember->id);
+        if (!$accessControl->canView($taskId)) {
+            throw new \Exception("Access denied to task {$taskId}");
+        }
+
+        // Validate level
+        $validLevels = ['debug', 'info', 'warning', 'error'];
+        if (!in_array($level, $validLevels)) {
+            $level = 'info';
+        }
+
+        $log = Bean::dispense('tasklog');
+        $log->taskId = $taskId;
+        $log->memberId = $this->authMember->id;
+        $log->logLevel = $level;
+        $log->logType = $type;
+        $log->message = $message;
+        $log->contextJson = isset($args['context'])
+            ? json_encode($args['context'])
+            : null;
+        $log->createdAt = date('Y-m-d H:i:s');
+        Bean::store($log);
+
+        return json_encode([
+            'success' => true,
+            'log_id' => $log->id,
+            'task_id' => $taskId
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Convert camelCase to snake_case
+     */
+    private function camelToSnake(string $input): string {
+        return strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $input));
+    }
+
+    // =========================================
+    // Playwright Browser Automation Tools
+    // =========================================
+
+    /**
+     * Get Playwright proxy instance
+     */
+    private function getPlaywrightProxy(): \app\PlaywrightProxy {
+        static $proxy = null;
+        if ($proxy === null) {
+            $proxy = new \app\PlaywrightProxy();
+        }
+        return $proxy;
+    }
+
+    /**
+     * Check Playwright server status
+     */
+    private function toolPlaywrightStatus(array $args): string {
+        $proxy = $this->getPlaywrightProxy();
+        $status = $proxy->getStatus();
+
+        return json_encode([
+            'server_url' => $status['server_url'],
+            'available' => $status['available'],
+            'message' => $status['available']
+                ? 'Playwright server is available'
+                : 'Playwright server is not available. Check PLAYWRIGHT_MCP_URL configuration.'
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Navigate to a URL
+     */
+    private function toolPlaywrightNavigate(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required for browser automation");
+        }
+
+        $url = $args['url'] ?? null;
+        if (!$url) {
+            throw new \Exception("URL is required");
+        }
+
+        $proxy = $this->getPlaywrightProxy();
+        $result = $proxy->navigate($url, [
+            'waitUntil' => $args['wait_until'] ?? 'load'
+        ]);
+
+        return json_encode([
+            'success' => true,
+            'url' => $url,
+            'result' => $result
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Take a screenshot
+     */
+    private function toolPlaywrightScreenshot(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required for browser automation");
+        }
+
+        $name = $args['name'] ?? 'screenshot';
+
+        $proxy = $this->getPlaywrightProxy();
+        $result = $proxy->screenshot($name, [
+            'fullPage' => $args['full_page'] ?? false,
+            'width' => $args['width'] ?? 1280,
+            'height' => $args['height'] ?? 720
+        ]);
+
+        return json_encode([
+            'success' => true,
+            'name' => $name,
+            'result' => $result
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Click an element
+     */
+    private function toolPlaywrightClick(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required for browser automation");
+        }
+
+        $selector = $args['selector'] ?? null;
+        if (!$selector) {
+            throw new \Exception("Selector is required");
+        }
+
+        $proxy = $this->getPlaywrightProxy();
+        $result = $proxy->click($selector);
+
+        return json_encode([
+            'success' => true,
+            'selector' => $selector,
+            'result' => $result
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Fill a form field
+     */
+    private function toolPlaywrightFill(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required for browser automation");
+        }
+
+        $selector = $args['selector'] ?? null;
+        $value = $args['value'] ?? null;
+
+        if (!$selector || $value === null) {
+            throw new \Exception("Selector and value are required");
+        }
+
+        $proxy = $this->getPlaywrightProxy();
+        $result = $proxy->fill($selector, $value);
+
+        return json_encode([
+            'success' => true,
+            'selector' => $selector,
+            'result' => $result
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Get page snapshot
+     */
+    private function toolPlaywrightSnapshot(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required for browser automation");
+        }
+
+        $proxy = $this->getPlaywrightProxy();
+        $result = $proxy->getSnapshot();
+
+        return json_encode([
+            'success' => true,
+            'result' => $result
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Evaluate JavaScript
+     */
+    private function toolPlaywrightEvaluate(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required for browser automation");
+        }
+
+        $script = $args['script'] ?? null;
+        if (!$script) {
+            throw new \Exception("Script is required");
+        }
+
+        $proxy = $this->getPlaywrightProxy();
+        $result = $proxy->evaluate($script);
+
+        return json_encode([
+            'success' => true,
+            'result' => $result
+        ], JSON_PRETTY_PRINT);
+    }
+
+    /**
+     * Close browser session
+     */
+    private function toolPlaywrightClose(array $args): string {
+        if (!$this->authMember) {
+            throw new \Exception("Authentication required for browser automation");
+        }
+
+        $proxy = $this->getPlaywrightProxy();
+        $result = $proxy->close();
+
+        return json_encode([
+            'success' => true,
+            'message' => 'Browser session closed',
+            'result' => $result
+        ], JSON_PRETTY_PRINT);
     }
 
     // =========================================

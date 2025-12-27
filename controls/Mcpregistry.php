@@ -825,7 +825,7 @@ class Mcpregistry extends Control {
         $logs = Bean::find('mcplog', "{$where} ORDER BY created_at DESC LIMIT {$limit} OFFSET {$offset}", $bindings);
 
         // Get unique methods for filter dropdown
-        $methods = \R::getCol('SELECT DISTINCT method FROM mcplog ORDER BY method');
+        $methods = \RedBeanPHP\R::getCol('SELECT DISTINCT method FROM mcplog ORDER BY method');
 
         $this->viewData['title'] = 'MCP Proxy Logs';
         $this->viewData['logs'] = $logs;
@@ -903,7 +903,7 @@ class Mcpregistry extends Control {
         $days = (int)($this->getParam('days') ?? 7);
         $cutoff = date('Y-m-d H:i:s', strtotime("-{$days} days"));
 
-        $deleted = \R::exec('DELETE FROM mcplog WHERE created_at < ?', [$cutoff]);
+        $deleted = \RedBeanPHP\R::exec('DELETE FROM mcplog WHERE created_at < ?', [$cutoff]);
 
         $this->logger->info('MCP logs cleared', [
             'days' => $days,

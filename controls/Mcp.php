@@ -82,6 +82,9 @@ class Mcp extends BaseControls\Control {
     /** @var int Current server ID for proxied requests */
     private int $currentServerId = 0;
 
+    /** @var string Current method for logging */
+    private string $currentMethod = '';
+
     /**
      * Available MCP tools
      */
@@ -2424,9 +2427,10 @@ class Mcp extends BaseControls\Control {
                 : 0;
 
             $log = Bean::dispense('mcplog');
-            $log->memberId = $this->authMember->id ?? 0;
-            $log->apiKeyId = $this->authApiKey->id ?? 0;
-            $log->serverId = $this->currentServerId;
+            // Use NULL instead of 0 for optional foreign keys to avoid FK constraint errors
+            $log->memberId = isset($this->authMember->id) && $this->authMember->id > 0 ? $this->authMember->id : null;
+            $log->apiKeyId = isset($this->authApiKey->id) && $this->authApiKey->id > 0 ? $this->authApiKey->id : null;
+            $log->serverId = $this->currentServerId > 0 ? $this->currentServerId : null;
             $log->method = $method;
             $log->requestBody = $this->currentRequestBody;
             $log->responseBody = $responseBody;

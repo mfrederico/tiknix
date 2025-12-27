@@ -27,7 +27,8 @@ class Mcpregistry extends Control {
         // - /mcp/registry (index - browse servers)
         // - /mcp/registry/api (JSON API)
         // - /mcp/registry/fetchTools (fetch tools from a server)
-        $publicPaths = ['/mcp/registry/api', '/mcp/registry/fetchTools'];
+        // - /mcp/registry/testConnection (test server connectivity)
+        $publicPaths = ['/mcp/registry/api', '/mcp/registry/fetchTools', '/mcp/registry/testConnection'];
 
         // Check if URL exactly matches /mcp/registry or /mcp/registry/
         $isRegistryIndex = preg_match('#^/mcp/registry/?$#', $url);
@@ -383,6 +384,103 @@ class Mcpregistry extends Control {
             $tools = $data['result']['tools'] ?? [];
 
             echo json_encode(['success' => true, 'tools' => $tools]);
+
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Test connection to an MCP server
+     * Public endpoint - anyone can test if a server is reachable
+     */
+    public function testConnection($params = []) {
+        header('Content-Type: application/json');
+
+        $serverId = $this->getParam('id');
+
+        if (empty($serverId)) {
+            echo json_encode(['success' => false, 'error' => 'Server ID is required']);
+            return;
+        }
+
+        $server = Bean::load('mcpserver', $serverId);
+        if (!$server || !$server->id) {
+            echo json_encode(['success' => false, 'error' => 'Server not found']);
+            return;
+        }
+
+        $endpointUrl = $server->endpointUrl;
+
+        // Handle relative URLs
+        if (strpos($endpointUrl, 'http') !== 0) {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $endpointUrl = $protocol . '://' . $host . '/' . ltrim($endpointUrl, '/');
+        }
+
+        try {
+            // Try to ping the server or get tools list
+            $request = json_encode([
+                'jsonrpc' => '2.0',
+                'id' => 1,
+                'method' => 'initialize',
+                'params' => [
+                    'protocolVersion' => '2024-11-05',
+                    'capabilities' => [],
+                    'clientInfo' => [
+                        'name' => 'Tiknix MCP Registry',
+                        'version' => '1.0.0'
+                    ]
+                ]
+            ]);
+
+            $ch = curl_init($endpointUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $request,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json'
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_CONNECTTIMEOUT => 5
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($error) {
+                echo json_encode([
+                    'success' => false,
+                    'error' => 'Connection failed: ' . $error,
+                    'endpoint' => $endpointUrl
+                ]);
+                return;
+            }
+
+            if ($httpCode >= 200 && $httpCode < 300) {
+                $data = json_decode($response, true);
+                $serverInfo = $data['result']['serverInfo'] ?? null;
+
+                echo json_encode([
+                    'success' => true,
+                    'message' => $serverInfo
+                        ? 'Connected to ' . ($serverInfo['name'] ?? 'MCP Server') . ' v' . ($serverInfo['version'] ?? '?')
+                        : 'Server is reachable (HTTP ' . $httpCode . ')',
+                    'httpCode' => $httpCode,
+                    'serverInfo' => $serverInfo
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'error' => 'Server returned HTTP ' . $httpCode,
+                    'httpCode' => $httpCode
+                ]);
+            }
 
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);

@@ -197,8 +197,14 @@
                                 </div>
                                 <?php endif; ?>
 
-                                <?php if ($isLoggedIn ?? false): ?>
                                 <div class="server-card-actions">
+                                    <button class="btn btn-sm btn-outline-success test-connection-btn"
+                                            data-server-id="<?= $server->id ?>"
+                                            data-endpoint="<?= htmlspecialchars($server->endpointUrl) ?>"
+                                            data-name="<?= htmlspecialchars($server->name) ?>">
+                                        <i class="bi bi-plug"></i> Test
+                                    </button>
+                                    <?php if ($isLoggedIn ?? false): ?>
                                     <button class="btn btn-sm btn-outline-primary fetch-tools-btn"
                                             data-server-id="<?= $server->id ?>"
                                             data-endpoint="<?= htmlspecialchars($server->endpointUrl) ?>">
@@ -212,8 +218,8 @@
                                        onclick="return confirm('Delete this MCP server?')">
                                         <i class="bi bi-trash"></i>
                                     </a>
+                                    <?php endif; ?>
                                 </div>
-                                <?php endif; ?>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -276,6 +282,40 @@ document.addEventListener('DOMContentLoaded', function() {
     if (statusFilter) statusFilter.addEventListener('change', filterServers);
     if (authFilter) authFilter.addEventListener('change', filterServers);
 
+    // Test connection functionality
+    document.querySelectorAll('.test-connection-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const serverId = this.dataset.serverId;
+            const endpoint = this.dataset.endpoint;
+            const serverName = this.dataset.name;
+            const originalHtml = this.innerHTML;
+
+            this.innerHTML = '<i class="bi bi-plug spin"></i> Testing...';
+            this.disabled = true;
+
+            logActivity('Testing connection to ' + serverName + '...');
+
+            try {
+                const response = await fetch('/mcp/registry/testConnection?id=' + serverId);
+                const data = await response.json();
+
+                if (data.success) {
+                    logActivity('<span class="text-success">Connected to ' + serverName + '</span> - ' + (data.message || 'Server is reachable'));
+                    notify('<span class="text-success">Connection successful!</span> ' + endpoint);
+                } else {
+                    logActivity('<span class="text-danger">Failed to connect to ' + serverName + '</span> - ' + (data.error || 'Server unreachable'));
+                    notify('<span class="text-danger">Connection failed:</span> ' + (data.error || 'Server unreachable'));
+                }
+            } catch (e) {
+                logActivity('<span class="text-danger">Error testing ' + serverName + ':</span> ' + e.message);
+                notify('<span class="text-danger">Error:</span> ' + e.message);
+            }
+
+            this.innerHTML = originalHtml;
+            this.disabled = false;
+        });
+    });
+
     // Fetch tools functionality
     document.querySelectorAll('.fetch-tools-btn').forEach(btn => {
         btn.addEventListener('click', async function() {
@@ -312,6 +352,16 @@ document.addEventListener('DOMContentLoaded', function() {
             activityLog.style.fontStyle = 'normal';
         }
         activityLog.innerHTML = '<div class="mb-1"><small class="text-muted">[' + time + ']</small> ' + message + '</div>' + activityLog.innerHTML;
+    }
+
+    const notifications = document.getElementById('notifications');
+    function notify(message) {
+        const time = new Date().toLocaleTimeString();
+        if (notifications.innerHTML === 'No notifications yet') {
+            notifications.innerHTML = '';
+            notifications.style.fontStyle = 'normal';
+        }
+        notifications.innerHTML = '<div class="mb-1"><small class="text-muted">[' + time + ']</small> ' + message + '</div>' + notifications.innerHTML;
     }
 });
 </script>

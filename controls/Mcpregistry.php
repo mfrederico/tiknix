@@ -323,10 +323,20 @@ class Mcpregistry extends Control {
     public function fetchTools($params = []) {
         header('Content-Type: application/json');
 
+        // Accept either server ID or direct URL
+        $serverId = $this->getParam('id');
         $endpointUrl = $this->getParam('url');
 
+        // If ID provided, look up the server
+        if (!empty($serverId)) {
+            $server = Bean::load('mcpserver', $serverId);
+            if ($server && $server->id) {
+                $endpointUrl = $server->endpointUrl;
+            }
+        }
+
         if (empty($endpointUrl)) {
-            echo json_encode(['success' => false, 'error' => 'URL is required']);
+            echo json_encode(['success' => false, 'error' => 'Server ID or URL is required']);
             return;
         }
 
@@ -383,7 +393,19 @@ class Mcpregistry extends Control {
 
             $tools = $data['result']['tools'] ?? [];
 
-            echo json_encode(['success' => true, 'tools' => $tools]);
+            // If we have a server ID, save the tools to the database
+            if (!empty($serverId) && !empty($server)) {
+                $server->tools = json_encode($tools);
+                $server->updatedAt = date('Y-m-d H:i:s');
+                Bean::store($server);
+            }
+
+            echo json_encode([
+                'success' => true,
+                'tools' => $tools,
+                'toolCount' => count($tools),
+                'saved' => !empty($serverId)
+            ]);
 
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);

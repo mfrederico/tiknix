@@ -82,7 +82,7 @@ $googleEnabled = !empty(Flight::get('social.google_client_id')) && !empty(Flight
                             <small>
                                 <strong>Dev Mode:</strong><br>
                                 Username: admin<br>
-                                Password: admin123
+                                Password: admin1234
                             </small>
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>

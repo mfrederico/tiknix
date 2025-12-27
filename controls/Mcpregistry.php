@@ -20,9 +20,26 @@ class Mcpregistry extends Control {
     public function __construct() {
         parent::__construct();
 
-        // Allow public access to API endpoint
+        // Allow public access to index and API endpoints
         $url = Flight::request()->url;
-        if (strpos($url, '/mcp/registry/api') !== false || strpos($url, '/api') !== false) {
+
+        // Public endpoints that don't require login:
+        // - /mcp/registry (index - browse servers)
+        // - /mcp/registry/api (JSON API)
+        // - /mcp/registry/fetchTools (fetch tools from a server)
+        $publicPaths = ['/mcp/registry/api', '/mcp/registry/fetchTools'];
+
+        // Check if URL exactly matches /mcp/registry or /mcp/registry/
+        $isRegistryIndex = preg_match('#^/mcp/registry/?$#', $url);
+        $isPublicPath = false;
+        foreach ($publicPaths as $path) {
+            if (strpos($url, $path) !== false) {
+                $isPublicPath = true;
+                break;
+            }
+        }
+
+        if ($isRegistryIndex || $isPublicPath) {
             return; // Public endpoint, no auth required
         }
 

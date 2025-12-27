@@ -33,7 +33,8 @@ class Auth extends BaseControls\Control {
         
         $this->render('auth/login', [
             'title' => 'Login',
-            'redirect' => $redirect
+            'redirect' => $redirect,
+            'csrf' => Flight::csrf()->getTokenArray('/auth/dologin')
         ]);
     }
     

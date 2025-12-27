@@ -101,7 +101,7 @@ abstract class Control {
             try {
                 if (!Flight::csrf()->validateRequest()) {
                     $this->logger->warning('CSRF validation failed');
-                    
+
                     if (Flight::request()->ajax) {
                         Flight::jsonError('CSRF validation failed', 403);
                     } else {

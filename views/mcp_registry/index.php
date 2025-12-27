@@ -177,9 +177,13 @@
                                         <?php
                                         $authClass = $server->authType === 'none' ? 'success' : 'info';
                                         ?>
-                                        <span class="badge bg-<?= $authClass ?>"><?= htmlspecialchars($server->authType) ?></span>
-                                        <span class="badge bg-secondary"><?= count($tools) ?> tools</span>
-                                        <code class="ms-1 small">v<?= htmlspecialchars($server->version) ?></code>
+                                        <span class="badge bg-<?= $authClass ?>" title="Authentication type">
+                                            <i class="bi bi-shield-lock"></i> <?= $server->authType === 'none' ? 'no auth' : htmlspecialchars($server->authType) ?>
+                                        </span>
+                                        <span class="badge bg-secondary" title="Available tools">
+                                            <i class="bi bi-tools"></i> <?= count($tools) ?>
+                                        </span>
+                                        <code class="ms-1 small" title="Server version">v<?= htmlspecialchars($server->version) ?></code>
                                     </div>
                                 </div>
 

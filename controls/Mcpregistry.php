@@ -498,30 +498,39 @@ class Mcpregistry extends Control {
     /**
      * Test connection to an MCP server
      * Public endpoint - anyone can test if a server is reachable
+     * Accepts either 'id' (server ID) or 'url' (direct URL) parameter
      */
     public function testConnection($params = []) {
         header('Content-Type: application/json');
 
         $serverId = $this->getParam('id');
+        $endpointUrl = $this->getParam('url');
 
-        if (empty($serverId)) {
-            echo json_encode(['success' => false, 'error' => 'Server ID is required']);
-            return;
+        // If ID provided, look up the server
+        if (!empty($serverId)) {
+            $server = Bean::load('mcpserver', $serverId);
+            if (!$server || !$server->id) {
+                echo json_encode(['success' => false, 'error' => 'Server not found']);
+                return;
+            }
+            $endpointUrl = $server->endpointUrl;
         }
 
-        $server = Bean::load('mcpserver', $serverId);
-        if (!$server || !$server->id) {
-            echo json_encode(['success' => false, 'error' => 'Server not found']);
+        if (empty($endpointUrl)) {
+            echo json_encode(['success' => false, 'error' => 'Server ID or URL is required']);
             return;
         }
-
-        $endpointUrl = $server->endpointUrl;
 
         // Handle relative URLs
         if (strpos($endpointUrl, 'http') !== 0) {
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
             $endpointUrl = $protocol . '://' . $host . '/' . ltrim($endpointUrl, '/');
+        }
+
+        if (!filter_var($endpointUrl, FILTER_VALIDATE_URL)) {
+            echo json_encode(['success' => false, 'error' => 'Invalid URL format']);
+            return;
         }
 
         try {

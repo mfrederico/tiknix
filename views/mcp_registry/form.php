@@ -52,10 +52,14 @@
                                     <input type="url" class="form-control" id="endpointUrl" name="endpointUrl"
                                            value="<?= htmlspecialchars($server->endpointUrl ?? '') ?>" required
                                            placeholder="https://example.com/mcp/message">
+                                    <button type="button" class="btn btn-outline-success" id="testConnectionBtn">
+                                        <i class="bi bi-plug"></i> Test
+                                    </button>
                                     <button type="button" class="btn btn-outline-secondary" id="fetchToolsBtn">
-                                        Fetch Tools
+                                        <i class="bi bi-download"></i> Fetch Tools
                                     </button>
                                 </div>
+                                <div id="connectionStatus" class="mt-2" style="display: none;"></div>
                             </div>
                             <div class="col-md-4">
                                 <label for="version" class="form-label">Version</label>
@@ -207,6 +211,50 @@
 </div>
 
 <script>
+// Test Connection button
+document.getElementById('testConnectionBtn').addEventListener('click', async function() {
+    const url = document.getElementById('endpointUrl').value;
+    const statusDiv = document.getElementById('connectionStatus');
+
+    if (!url) {
+        alert('Please enter an endpoint URL first');
+        return;
+    }
+
+    this.disabled = true;
+    const originalHtml = this.innerHTML;
+    this.innerHTML = '<i class="bi bi-hourglass-split"></i> Testing...';
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '<span class="text-muted"><i class="bi bi-hourglass-split"></i> Connecting...</span>';
+
+    try {
+        // We need to use URL-based test since we might not have a server ID yet
+        const response = await fetch('/mcp/registry/testConnection?url=' + encodeURIComponent(url));
+        const data = await response.json();
+
+        if (data.success) {
+            statusDiv.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> ' +
+                (data.message || 'Connection successful') + '</span>';
+
+            // If we got server info, update the version field
+            if (data.serverInfo && data.serverInfo.version) {
+                const versionField = document.getElementById('version');
+                if (!versionField.value || confirm('Update version to ' + data.serverInfo.version + '?')) {
+                    versionField.value = data.serverInfo.version;
+                }
+            }
+        } else {
+            statusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ' +
+                (data.error || 'Connection failed') + '</span>';
+        }
+    } catch (e) {
+        statusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Error: ' + e.message + '</span>';
+    }
+
+    this.disabled = false;
+    this.innerHTML = originalHtml;
+});
+
 document.getElementById('fetchToolsBtn').addEventListener('click', async function() {
     const url = document.getElementById('endpointUrl').value;
     if (!url) {

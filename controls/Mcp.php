@@ -73,6 +73,15 @@ class Mcp extends BaseControls\Control {
     private const SERVER_NAME = 'tiknix-mcp';
     private const SERVER_VERSION = '1.0.0';
 
+    /** @var float Request start time for duration tracking */
+    private float $requestStartTime = 0;
+
+    /** @var string Current request body for logging */
+    private string $currentRequestBody = '';
+
+    /** @var int Current server ID for proxied requests */
+    private int $currentServerId = 0;
+
     /**
      * Available MCP tools
      */
@@ -506,6 +515,9 @@ class Mcp extends BaseControls\Control {
      * POST /mcp/message
      */
     public function message($params = null): void {
+        // Start request timing for logging
+        $this->requestStartTime = microtime(true);
+
         // Set JSON content type
         header('Content-Type: application/json');
 
@@ -526,6 +538,7 @@ class Mcp extends BaseControls\Control {
 
         // Parse JSON-RPC request first (before auth check)
         $rawBody = file_get_contents('php://input');
+        $this->currentRequestBody = $rawBody; // Store for logging
         $request = json_decode($rawBody, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -561,6 +574,9 @@ class Mcp extends BaseControls\Control {
             'member_id' => $this->authMember->id ?? 0
         ]);
 
+        // Use output buffering to capture response for logging
+        ob_start();
+
         switch ($method) {
             case 'initialize':
                 $this->handleInitialize($id, $params);
@@ -581,6 +597,16 @@ class Mcp extends BaseControls\Control {
             default:
                 $this->sendError(-32601, "Method not found: {$method}", $id);
         }
+
+        // Capture response and log it
+        $responseBody = ob_get_flush();
+        $httpCode = http_response_code() ?: 200;
+
+        // Check if response contains an error
+        $responseData = json_decode($responseBody, true);
+        $error = isset($responseData['error']) ? ($responseData['error']['message'] ?? null) : null;
+
+        $this->logMcpRequest($method, $responseBody, $httpCode, $error);
     }
 
     /**
@@ -2386,5 +2412,70 @@ class Mcp extends BaseControls\Control {
         }
 
         return $baseUrl . '/mcp/message';
+    }
+
+    /**
+     * Log MCP request/response to database
+     */
+    private function logMcpRequest(string $method, string $responseBody, int $httpCode = 200, ?string $error = null): void {
+        try {
+            $duration = $this->requestStartTime > 0
+                ? round((microtime(true) - $this->requestStartTime) * 1000)
+                : 0;
+
+            $log = Bean::dispense('mcplog');
+            $log->memberId = $this->authMember->id ?? 0;
+            $log->apiKeyId = $this->authApiKey->id ?? 0;
+            $log->serverId = $this->currentServerId;
+            $log->method = $method;
+            $log->requestBody = $this->currentRequestBody;
+            $log->responseBody = $responseBody;
+            $log->httpCode = $httpCode;
+            $log->duration = $duration;
+            $log->ipAddress = $_SERVER['REMOTE_ADDR'] ?? '';
+            $log->userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+            $log->error = $error;
+            $log->createdAt = date('Y-m-d H:i:s');
+
+            Bean::store($log);
+        } catch (\Exception $e) {
+            // Don't let logging errors break the request
+            $this->logger->error('Failed to log MCP request', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Send result and log it
+     */
+    private function sendResultWithLog(mixed $id, mixed $result, string $method): void {
+        $response = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => $id,
+            'result' => $result
+        ]);
+
+        $this->logMcpRequest($method, $response, 200);
+        echo $response;
+    }
+
+    /**
+     * Send error and log it
+     */
+    private function sendErrorWithLog(int $code, string $message, mixed $id, string $method, int $httpCode = 200): void {
+        if ($httpCode !== 200) {
+            http_response_code($httpCode);
+        }
+
+        $response = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => $id,
+            'error' => [
+                'code' => $code,
+                'message' => $message
+            ]
+        ]);
+
+        $this->logMcpRequest($method, $response, $httpCode, $message);
+        echo $response;
     }
 }

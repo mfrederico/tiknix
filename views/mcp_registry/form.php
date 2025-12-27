@@ -90,6 +90,46 @@
                         </div>
 
                         <h5 class="border-bottom pb-2 mb-3 mt-4">
+                            <i class="bi bi-terminal"></i> Server Startup
+                        </h5>
+                        <div class="alert alert-secondary">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Optional:</strong> Configure how to start this MCP server if it's not running.
+                            Leave blank if the server is managed externally or always running.
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="startupCommand" class="form-label">Command</label>
+                                <input type="text" class="form-control" id="startupCommand" name="startupCommand"
+                                       value="<?= htmlspecialchars($server->startupCommand ?? '') ?>"
+                                       placeholder="npx, node, php, python...">
+                                <small class="form-text text-muted">The executable to run</small>
+                            </div>
+                            <div class="col-md-8">
+                                <label for="startupArgs" class="form-label">Arguments</label>
+                                <input type="text" class="form-control" id="startupArgs" name="startupArgs"
+                                       value="<?= htmlspecialchars($server->startupArgs ?? '') ?>"
+                                       placeholder="@playwright/mcp@latest --port 3000 --headless">
+                                <small class="form-text text-muted">Command-line arguments (space-separated)</small>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="startupWorkingDir" class="form-label">Working Directory</label>
+                                <input type="text" class="form-control" id="startupWorkingDir" name="startupWorkingDir"
+                                       value="<?= htmlspecialchars($server->startupWorkingDir ?? '') ?>"
+                                       placeholder="/path/to/server (optional)">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="startupPort" class="form-label">Expected Port</label>
+                                <input type="number" class="form-control" id="startupPort" name="startupPort"
+                                       value="<?= htmlspecialchars($server->startupPort ?? '') ?>"
+                                       placeholder="3000">
+                                <small class="form-text text-muted">Port the server will listen on</small>
+                            </div>
+                        </div>
+
+                        <h5 class="border-bottom pb-2 mb-3 mt-4">
                             <i class="bi bi-shield-lock"></i> Gateway/Proxy Settings
                         </h5>
                         <div class="alert alert-info">

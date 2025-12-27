@@ -36,6 +36,9 @@
             <a href="/mcp/registry/add" class="btn btn-connect btn-sm w-100 mb-2">
                 <i class="bi bi-plus-lg"></i> Add Server
             </a>
+            <a href="/mcp/registry/logs" class="btn btn-outline-secondary btn-sm w-100 mb-2">
+                <i class="bi bi-journal-text"></i> Proxy Logs
+            </a>
             <a href="/apikeys" class="btn btn-outline-secondary btn-sm w-100 mb-2">
                 <i class="bi bi-key"></i> API Keys
             </a>
@@ -208,6 +211,14 @@
                                             data-name="<?= htmlspecialchars($server->name) ?>">
                                         <i class="bi bi-plug"></i> Test
                                     </button>
+                                    <?php if (!empty($server->startupCommand) && ($isLoggedIn ?? false)): ?>
+                                    <button class="btn btn-sm btn-outline-warning start-server-btn"
+                                            data-server-id="<?= $server->id ?>"
+                                            data-name="<?= htmlspecialchars($server->name) ?>"
+                                            title="Start server: <?= htmlspecialchars($server->startupCommand . ' ' . ($server->startupArgs ?? '')) ?>">
+                                        <i class="bi bi-play-fill"></i> Start
+                                    </button>
+                                    <?php endif; ?>
                                     <?php if ($isLoggedIn ?? false): ?>
                                     <button class="btn btn-sm btn-outline-primary fetch-tools-btn"
                                             data-server-id="<?= $server->id ?>"
@@ -342,6 +353,44 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             } catch (e) {
                 logActivity('Error: ' + e.message);
+            }
+
+            this.innerHTML = originalHtml;
+            this.disabled = false;
+        });
+    });
+
+    // Start server functionality
+    document.querySelectorAll('.start-server-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const serverId = this.dataset.serverId;
+            const serverName = this.dataset.name;
+            const originalHtml = this.innerHTML;
+
+            this.innerHTML = '<i class="bi bi-hourglass-split spin"></i> Starting...';
+            this.disabled = true;
+
+            logActivity('Starting server ' + serverName + '...');
+
+            try {
+                const response = await fetch('/mcp/registry/startServer?id=' + serverId);
+                const data = await response.json();
+
+                if (data.success) {
+                    if (data.isRunning) {
+                        logActivity('<span class="text-success">' + serverName + ' started successfully!</span>');
+                        notify('<span class="text-success">Server started!</span> ' + serverName + ' is now running');
+                    } else {
+                        logActivity('<span class="text-warning">' + serverName + ' command executed</span> - Server not yet responding, may still be starting');
+                        notify('<span class="text-warning">Command executed</span> - Check log: ' + (data.logFile || ''));
+                    }
+                } else {
+                    logActivity('<span class="text-danger">Failed to start ' + serverName + ':</span> ' + (data.error || 'Unknown error'));
+                    notify('<span class="text-danger">Start failed:</span> ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                logActivity('<span class="text-danger">Error starting ' + serverName + ':</span> ' + e.message);
+                notify('<span class="text-danger">Error:</span> ' + e.message);
             }
 
             this.innerHTML = originalHtml;

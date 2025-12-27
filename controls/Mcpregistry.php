@@ -278,6 +278,12 @@ class Mcpregistry extends Control {
         $server->backendAuthToken = trim($request->data->backendAuthToken ?? '');
         $server->isProxyEnabled = (int)($request->data->isProxyEnabled ?? 1);
 
+        // Startup command fields
+        $server->startupCommand = trim($request->data->startupCommand ?? '');
+        $server->startupArgs = trim($request->data->startupArgs ?? '');
+        $server->startupWorkingDir = trim($request->data->startupWorkingDir ?? '');
+        $server->startupPort = (int)($request->data->startupPort ?? 0) ?: null;
+
         // Registry fields (set defaults for local servers)
         if ($isNew && empty($server->registrySource)) {
             $server->registrySource = 'local';
@@ -616,6 +622,126 @@ class Mcpregistry extends Control {
     }
 
     /**
+     * Start an MCP server using its configured startup command
+     * Requires authentication - only admins can start servers
+     */
+    public function startServer($params = []) {
+        header('Content-Type: application/json');
+
+        // Require admin access
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) {
+            echo json_encode(['success' => false, 'error' => 'Admin access required']);
+            return;
+        }
+
+        $serverId = $this->getParam('id');
+
+        if (empty($serverId)) {
+            echo json_encode(['success' => false, 'error' => 'Server ID is required']);
+            return;
+        }
+
+        $server = Bean::load('mcpserver', $serverId);
+        if (!$server || !$server->id) {
+            echo json_encode(['success' => false, 'error' => 'Server not found']);
+            return;
+        }
+
+        if (empty($server->startupCommand)) {
+            echo json_encode(['success' => false, 'error' => 'No startup command configured for this server']);
+            return;
+        }
+
+        // Whitelist of allowed commands for security
+        $allowedCommands = ['npx', 'node', 'php', 'python', 'python3', 'ruby', 'java', 'go', 'deno', 'bun'];
+        $command = trim($server->startupCommand);
+
+        if (!in_array($command, $allowedCommands)) {
+            echo json_encode(['success' => false, 'error' => 'Command not in allowed list: ' . implode(', ', $allowedCommands)]);
+            return;
+        }
+
+        // Build the full command
+        $args = trim($server->startupArgs ?? '');
+        $fullCommand = escapeshellcmd($command);
+        if (!empty($args)) {
+            // Split args and escape each one
+            $argParts = preg_split('/\s+/', $args);
+            foreach ($argParts as $arg) {
+                $fullCommand .= ' ' . escapeshellarg($arg);
+            }
+        }
+
+        // Add output redirection to run in background
+        $logFile = '/tmp/mcp-server-' . $server->slug . '.log';
+        $fullCommand .= ' > ' . escapeshellarg($logFile) . ' 2>&1 &';
+
+        // Change to working directory if specified
+        $workingDir = trim($server->startupWorkingDir ?? '');
+        if (!empty($workingDir) && is_dir($workingDir)) {
+            $fullCommand = 'cd ' . escapeshellarg($workingDir) . ' && ' . $fullCommand;
+        }
+
+        try {
+            // Execute the command
+            exec($fullCommand, $output, $returnCode);
+
+            // Give it a moment to start
+            usleep(500000); // 0.5 seconds
+
+            // Check if server is responding
+            $endpointUrl = $server->endpointUrl;
+            $isRunning = false;
+
+            $ch = curl_init($endpointUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode([
+                    'jsonrpc' => '2.0',
+                    'id' => 1,
+                    'method' => 'initialize',
+                    'params' => [
+                        'protocolVersion' => '2024-11-05',
+                        'capabilities' => new \stdClass(),
+                        'clientInfo' => ['name' => 'Tiknix', 'version' => '1.0.0']
+                    ]
+                ]),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json, text/event-stream'
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5,
+                CURLOPT_CONNECTTIMEOUT => 3
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            $isRunning = ($httpCode >= 200 && $httpCode < 300);
+
+            $this->logger->info('MCP server start attempted', [
+                'id' => $server->id,
+                'name' => $server->name,
+                'command' => $command,
+                'isRunning' => $isRunning,
+                'by' => $this->member->id
+            ]);
+
+            echo json_encode([
+                'success' => true,
+                'message' => $isRunning ? 'Server started successfully' : 'Command executed, but server not yet responding',
+                'isRunning' => $isRunning,
+                'logFile' => $logFile
+            ]);
+
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'error' => 'Failed to start server: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
      * Public JSON API - returns active MCP servers
      */
     public function api($params = []) {
@@ -649,5 +775,146 @@ class Mcpregistry extends Control {
             'count' => count($result),
             'servers' => $result
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * View MCP proxy logs
+     * GET /mcp/registry/logs
+     */
+    public function logs($params = []) {
+        // Require admin access
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) {
+            Flight::redirect('/auth/login?redirect=' . urlencode('/mcp/registry/logs'));
+            return;
+        }
+
+        $page = (int)($this->getParam('page') ?? 1);
+        $limit = 50;
+        $offset = ($page - 1) * $limit;
+
+        // Filters
+        $method = $this->getParam('method') ?? '';
+        $memberId = $this->getParam('member_id') ?? '';
+        $hasError = $this->getParam('has_error') ?? '';
+
+        // Build query
+        $where = '1=1';
+        $bindings = [];
+
+        if (!empty($method)) {
+            $where .= ' AND method = ?';
+            $bindings[] = $method;
+        }
+
+        if (!empty($memberId)) {
+            $where .= ' AND member_id = ?';
+            $bindings[] = (int)$memberId;
+        }
+
+        if ($hasError === '1') {
+            $where .= ' AND (error IS NOT NULL OR http_code >= 400)';
+        } elseif ($hasError === '0') {
+            $where .= ' AND error IS NULL AND http_code < 400';
+        }
+
+        // Get total count
+        $total = Bean::count('mcplog', $where, $bindings);
+        $totalPages = ceil($total / $limit);
+
+        // Get logs
+        $logs = Bean::find('mcplog', "{$where} ORDER BY created_at DESC LIMIT {$limit} OFFSET {$offset}", $bindings);
+
+        // Get unique methods for filter dropdown
+        $methods = \R::getCol('SELECT DISTINCT method FROM mcplog ORDER BY method');
+
+        $this->viewData['title'] = 'MCP Proxy Logs';
+        $this->viewData['logs'] = $logs;
+        $this->viewData['page'] = $page;
+        $this->viewData['totalPages'] = $totalPages;
+        $this->viewData['total'] = $total;
+        $this->viewData['methods'] = $methods;
+        $this->viewData['filters'] = [
+            'method' => $method,
+            'member_id' => $memberId,
+            'has_error' => $hasError
+        ];
+
+        $this->render('mcp_registry/logs', $this->viewData);
+    }
+
+    /**
+     * View single log entry details (AJAX)
+     * GET /mcp/registry/logDetail?id=X
+     */
+    public function logDetail($params = []) {
+        header('Content-Type: application/json');
+
+        // Require admin access
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) {
+            echo json_encode(['success' => false, 'error' => 'Access denied']);
+            return;
+        }
+
+        $logId = $this->getParam('id');
+        if (empty($logId)) {
+            echo json_encode(['success' => false, 'error' => 'Log ID required']);
+            return;
+        }
+
+        $log = Bean::load('mcplog', $logId);
+        if (!$log || !$log->id) {
+            echo json_encode(['success' => false, 'error' => 'Log not found']);
+            return;
+        }
+
+        echo json_encode([
+            'success' => true,
+            'log' => [
+                'id' => $log->id,
+                'memberId' => $log->memberId,
+                'apiKeyId' => $log->apiKeyId,
+                'serverId' => $log->serverId,
+                'method' => $log->method,
+                'requestBody' => $log->requestBody,
+                'responseBody' => $log->responseBody,
+                'httpCode' => $log->httpCode,
+                'duration' => $log->duration,
+                'ipAddress' => $log->ipAddress,
+                'userAgent' => $log->userAgent,
+                'error' => $log->error,
+                'createdAt' => $log->createdAt
+            ]
+        ]);
+    }
+
+    /**
+     * Clear old logs
+     * POST /mcp/registry/clearLogs
+     */
+    public function clearLogs($params = []) {
+        header('Content-Type: application/json');
+
+        // Require admin access
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) {
+            echo json_encode(['success' => false, 'error' => 'Access denied']);
+            return;
+        }
+
+        $days = (int)($this->getParam('days') ?? 7);
+        $cutoff = date('Y-m-d H:i:s', strtotime("-{$days} days"));
+
+        $deleted = \R::exec('DELETE FROM mcplog WHERE created_at < ?', [$cutoff]);
+
+        $this->logger->info('MCP logs cleared', [
+            'days' => $days,
+            'deleted' => $deleted,
+            'by' => $this->member->id
+        ]);
+
+        echo json_encode([
+            'success' => true,
+            'deleted' => $deleted,
+            'message' => "Deleted {$deleted} logs older than {$days} days"
+        ]);
     }
 }

@@ -353,20 +353,82 @@ class Mcpregistry extends Control {
         }
 
         try {
-            // Send tools/list request to remote MCP server
-            $request = json_encode([
+            // MCP protocol requires initialization before other calls
+            // Step 1: Initialize the MCP session
+            $initRequest = json_encode([
                 'jsonrpc' => '2.0',
                 'id' => 1,
-                'method' => 'tools/list',
-                'params' => []
+                'method' => 'initialize',
+                'params' => [
+                    'protocolVersion' => '2024-11-05',
+                    'capabilities' => new \stdClass(),
+                    'clientInfo' => [
+                        'name' => 'Tiknix MCP Registry',
+                        'version' => '1.0.0'
+                    ]
+                ]
             ]);
+
+            $ch = curl_init($endpointUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $initRequest,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HEADER => true,  // Include headers to capture mcp-session-id
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json, text/event-stream'
+                ],
+                CURLOPT_TIMEOUT => 10
+            ]);
+
+            $initResponse = curl_exec($ch);
+            $initHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $initError = curl_error($ch);
+            curl_close($ch);
+
+            if ($initError) {
+                echo json_encode(['success' => false, 'error' => "Connection error: {$initError}"]);
+                return;
+            }
+
+            if ($initHttpCode < 200 || $initHttpCode >= 300) {
+                echo json_encode(['success' => false, 'error' => "Server initialization failed (HTTP {$initHttpCode})"]);
+                return;
+            }
+
+            // Extract mcp-session-id from response headers (MCP session tracking)
+            $initHeaders = substr($initResponse, 0, $headerSize);
+            $sessionId = null;
+            if (preg_match('/mcp-session-id:\s*([^\r\n]+)/i', $initHeaders, $matches)) {
+                $sessionId = trim($matches[1]);
+            }
+
+            // Step 2: Send tools/list request with session ID
+            // Note: params must be {} not [] - use stdClass to force object encoding
+            $request = json_encode([
+                'jsonrpc' => '2.0',
+                'id' => 2,
+                'method' => 'tools/list',
+                'params' => new \stdClass()
+            ]);
+
+            // Build headers, include session ID if we have one
+            $headers = [
+                'Content-Type: application/json',
+                'Accept: application/json, text/event-stream'
+            ];
+            if ($sessionId) {
+                $headers[] = 'mcp-session-id: ' . $sessionId;
+            }
 
             $ch = curl_init($endpointUrl);
             curl_setopt_array($ch, [
                 CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS => $request,
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                CURLOPT_HTTPHEADER => $headers,
                 CURLOPT_TIMEOUT => 10
             ]);
 
@@ -381,12 +443,33 @@ class Mcpregistry extends Control {
             }
 
             if ($httpCode !== 200) {
+                // Check for "Server not initialized" error - indicates stateful MCP server
+                $errorData = json_decode($response, true);
+                $errorMsg = $errorData['error']['message'] ?? '';
+                if (stripos($errorMsg, 'not initialized') !== false) {
+                    echo json_encode([
+                        'success' => false,
+                        'error' => 'This MCP server requires persistent sessions. Tools cannot be fetched via HTTP. Please add tools manually or use a WebSocket client.',
+                        'stateful' => true
+                    ]);
+                    return;
+                }
                 echo json_encode(['success' => false, 'error' => "HTTP {$httpCode}"]);
                 return;
             }
 
-            $data = json_decode($response, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
+            // Handle SSE format (event: message\ndata: {...})
+            if (strpos($response, 'event:') !== false || strpos($response, 'data:') !== false) {
+                if (preg_match('/data:\s*(\{.*\})/s', $response, $matches)) {
+                    $data = json_decode($matches[1], true);
+                } else {
+                    $data = null;
+                }
+            } else {
+                $data = json_decode($response, true);
+            }
+
+            if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
                 echo json_encode(['success' => false, 'error' => 'Invalid JSON response']);
                 return;
             }
@@ -443,13 +526,14 @@ class Mcpregistry extends Control {
 
         try {
             // Try to ping the server or get tools list
+            // Note: capabilities must be {} not [] - use stdClass to force object encoding
             $request = json_encode([
                 'jsonrpc' => '2.0',
                 'id' => 1,
                 'method' => 'initialize',
                 'params' => [
                     'protocolVersion' => '2024-11-05',
-                    'capabilities' => [],
+                    'capabilities' => new \stdClass(),
                     'clientInfo' => [
                         'name' => 'Tiknix MCP Registry',
                         'version' => '1.0.0'
@@ -463,7 +547,7 @@ class Mcpregistry extends Control {
                 CURLOPT_POSTFIELDS => $request,
                 CURLOPT_HTTPHEADER => [
                     'Content-Type: application/json',
-                    'Accept: application/json'
+                    'Accept: application/json, text/event-stream'
                 ],
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => 10,
@@ -472,6 +556,7 @@ class Mcpregistry extends Control {
 
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
             $error = curl_error($ch);
             curl_close($ch);
 
@@ -485,7 +570,19 @@ class Mcpregistry extends Control {
             }
 
             if ($httpCode >= 200 && $httpCode < 300) {
-                $data = json_decode($response, true);
+                // Handle SSE format (event: message\ndata: {...})
+                if (strpos($response, 'event:') !== false || strpos($response, 'data:') !== false) {
+                    // Parse SSE response
+                    if (preg_match('/data:\s*(\{.*\})/s', $response, $matches)) {
+                        $data = json_decode($matches[1], true);
+                    } else {
+                        $data = null;
+                    }
+                } else {
+                    // Plain JSON response
+                    $data = json_decode($response, true);
+                }
+
                 $serverInfo = $data['result']['serverInfo'] ?? null;
 
                 echo json_encode([

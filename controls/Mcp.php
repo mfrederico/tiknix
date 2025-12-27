@@ -909,20 +909,78 @@ class Mcp extends BaseControls\Control {
 
     /**
      * Fetch tools from a backend MCP server
+     * Handles MCP session initialization and SSE response format
      */
     private function fetchBackendTools($server): array {
-        $request = json_encode([
-            'jsonrpc' => '2.0',
-            'id' => 1,
-            'method' => 'tools/list',
-            'params' => []
-        ]);
-
-        $headers = ['Content-Type: application/json'];
+        // Build base headers
+        $baseHeaders = [
+            'Content-Type: application/json',
+            'Accept: application/json, text/event-stream'
+        ];
         if (!empty($server->backendAuthToken)) {
             $headerName = $server->backendAuthHeader ?: 'Authorization';
             $prefix = ($headerName === 'Authorization') ? 'Bearer ' : '';
-            $headers[] = "{$headerName}: {$prefix}{$server->backendAuthToken}";
+            $baseHeaders[] = "{$headerName}: {$prefix}{$server->backendAuthToken}";
+        }
+
+        // Step 1: Initialize MCP session to get session ID
+        $initRequest = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => '2024-11-05',
+                'capabilities' => new \stdClass(),
+                'clientInfo' => [
+                    'name' => 'Tiknix MCP Proxy',
+                    'version' => '1.0.0'
+                ]
+            ]
+        ]);
+
+        $ch = curl_init($server->endpointUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $initRequest,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER => true,
+            CURLOPT_HTTPHEADER => $baseHeaders,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => true
+        ]);
+
+        $initResponse = curl_exec($ch);
+        $initHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $initError = curl_error($ch);
+        curl_close($ch);
+
+        if ($initError) {
+            throw new \Exception("Connection error: {$initError}");
+        }
+
+        if ($initHttpCode < 200 || $initHttpCode >= 300) {
+            throw new \Exception("Initialize failed: HTTP {$initHttpCode}");
+        }
+
+        // Extract mcp-session-id from response headers
+        $initHeaders = substr($initResponse, 0, $headerSize);
+        $sessionId = null;
+        if (preg_match('/mcp-session-id:\s*([^\r\n]+)/i', $initHeaders, $matches)) {
+            $sessionId = trim($matches[1]);
+        }
+
+        // Step 2: Fetch tools list with session ID
+        $request = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/list',
+            'params' => new \stdClass()
+        ]);
+
+        $headers = $baseHeaders;
+        if ($sessionId) {
+            $headers[] = 'mcp-session-id: ' . $sessionId;
         }
 
         $ch = curl_init($server->endpointUrl);
@@ -948,7 +1006,17 @@ class Mcp extends BaseControls\Control {
             throw new \Exception("HTTP {$httpCode}");
         }
 
-        $data = json_decode($response, true);
+        // Handle SSE format (event: message\ndata: {...})
+        if (strpos($response, 'event:') !== false || strpos($response, 'data:') !== false) {
+            if (preg_match('/data:\s*(\{.*\})/s', $response, $matches)) {
+                $data = json_decode($matches[1], true);
+            } else {
+                $data = null;
+            }
+        } else {
+            $data = json_decode($response, true);
+        }
+
         return $data['result']['tools'] ?? [];
     }
 
@@ -1031,23 +1099,15 @@ class Mcp extends BaseControls\Control {
             throw new \Exception("Proxy disabled for server: {$serverSlug}");
         }
 
-        // Build JSON-RPC request
-        $request = json_encode([
-            'jsonrpc' => '2.0',
-            'id' => 1,
-            'method' => 'tools/call',
-            'params' => [
-                'name' => $toolName,
-                'arguments' => $arguments
-            ]
-        ]);
-
-        // Set up headers with backend auth
-        $headers = ['Content-Type: application/json'];
+        // Set up base headers with backend auth
+        $baseHeaders = [
+            'Content-Type: application/json',
+            'Accept: application/json, text/event-stream'
+        ];
         if (!empty($server->backendAuthToken)) {
             $headerName = $server->backendAuthHeader ?: 'Authorization';
             $prefix = ($headerName === 'Authorization') ? 'Bearer ' : '';
-            $headers[] = "{$headerName}: {$prefix}{$server->backendAuthToken}";
+            $baseHeaders[] = "{$headerName}: {$prefix}{$server->backendAuthToken}";
         }
 
         $this->logger->debug('Proxying to backend', [
@@ -1056,7 +1116,69 @@ class Mcp extends BaseControls\Control {
             'tool' => $toolName
         ]);
 
-        // Make request to backend
+        // Step 1: Initialize MCP session to get session ID
+        $initRequest = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => '2024-11-05',
+                'capabilities' => new \stdClass(),
+                'clientInfo' => [
+                    'name' => 'Tiknix MCP Proxy',
+                    'version' => '1.0.0'
+                ]
+            ]
+        ]);
+
+        $ch = curl_init($server->endpointUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $initRequest,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER => true,
+            CURLOPT_HTTPHEADER => $baseHeaders,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => true
+        ]);
+
+        $initResponse = curl_exec($ch);
+        $initHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $initError = curl_error($ch);
+        curl_close($ch);
+
+        if ($initError) {
+            throw new \Exception("Backend connection error: {$initError}");
+        }
+
+        if ($initHttpCode < 200 || $initHttpCode >= 300) {
+            throw new \Exception("Backend initialize failed: HTTP {$initHttpCode}");
+        }
+
+        // Extract mcp-session-id from response headers
+        $initHeaders = substr($initResponse, 0, $headerSize);
+        $sessionId = null;
+        if (preg_match('/mcp-session-id:\s*([^\r\n]+)/i', $initHeaders, $matches)) {
+            $sessionId = trim($matches[1]);
+        }
+
+        // Step 2: Build and send tools/call request with session ID
+        $request = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 2,
+            'method' => 'tools/call',
+            'params' => [
+                'name' => $toolName,
+                'arguments' => empty($arguments) ? new \stdClass() : $arguments
+            ]
+        ]);
+
+        $headers = $baseHeaders;
+        if ($sessionId) {
+            $headers[] = 'mcp-session-id: ' . $sessionId;
+        }
+
         $ch = curl_init($server->endpointUrl);
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
@@ -1080,8 +1202,18 @@ class Mcp extends BaseControls\Control {
             throw new \Exception("Backend returned HTTP {$httpCode}");
         }
 
-        $data = json_decode($response, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
+        // Handle SSE format (event: message\ndata: {...})
+        if (strpos($response, 'event:') !== false || strpos($response, 'data:') !== false) {
+            if (preg_match('/data:\s*(\{.*\})/s', $response, $matches)) {
+                $data = json_decode($matches[1], true);
+            } else {
+                throw new \Exception("Invalid SSE response from backend");
+            }
+        } else {
+            $data = json_decode($response, true);
+        }
+
+        if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
             throw new \Exception("Invalid JSON from backend");
         }
 

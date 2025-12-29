@@ -1,0 +1,54 @@
+# Systemd service file for Tiknix OpenSwoole Server
+#
+# Installation:
+#   1. Copy to /etc/systemd/system/tiknix.service
+#   2. Update paths and user as needed
+#   3. systemctl daemon-reload
+#   4. systemctl enable tiknix
+#   5. systemctl start tiknix
+#
+# Commands:
+#   systemctl start tiknix
+#   systemctl stop tiknix
+#   systemctl restart tiknix
+#   systemctl status tiknix
+#   journalctl -u tiknix -f
+
+[Unit]
+Description=Tiknix OpenSwoole Server
+After=network.target mysql.service redis.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+
+# Working directory
+WorkingDirectory=/var/www/tiknix
+
+# Start command
+ExecStart=/usr/bin/php /var/www/tiknix/swoole/bin/unified-server.php --port=9501 --workers=4
+
+# Reload command (graceful restart)
+ExecReload=/bin/kill -USR1 $MAINPID
+
+# Stop command
+ExecStop=/bin/kill -TERM $MAINPID
+
+# Restart on failure
+Restart=always
+RestartSec=5
+
+# Resource limits
+LimitNOFILE=65535
+
+# Environment
+Environment=APP_ENV=production
+
+# Logging
+StandardOutput=append:/var/log/tiknix/stdout.log
+StandardError=append:/var/log/tiknix/stderr.log
+
+[Install]
+WantedBy=multi-user.target

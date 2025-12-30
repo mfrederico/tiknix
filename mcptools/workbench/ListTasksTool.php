@@ -39,8 +39,15 @@ class ListTasksTool extends BaseTool {
         $teamId = isset($args['team_id']) ? (int)$args['team_id'] : null;
         $limit = min((int)($args['limit'] ?? 20), 100);
 
-        $accessControl = new \app\TaskAccessControl($this->member->id);
-        $tasks = $accessControl->getVisibleTasks($status, $teamId);
+        $accessControl = new \app\TaskAccessControl();
+        $filters = [];
+        if ($status) {
+            $filters['status'] = $status;
+        }
+        if ($teamId !== null) {
+            $filters['team_id'] = $teamId;
+        }
+        $tasks = $accessControl->getVisibleTasks((int)$this->member->id, $filters);
 
         // Apply limit
         $tasks = array_slice($tasks, 0, $limit);

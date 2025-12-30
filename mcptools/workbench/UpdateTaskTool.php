@@ -52,14 +52,14 @@ class UpdateTaskTool extends BaseTool {
             throw new \Exception("task_id is required");
         }
 
-        $accessControl = new \app\TaskAccessControl($this->member->id);
-        if (!$accessControl->canEdit($taskId)) {
-            throw new \Exception("No permission to update task {$taskId}");
-        }
-
         $task = Bean::load('workbenchtask', $taskId);
         if (!$task->id) {
             throw new \Exception("Task not found: {$taskId}");
+        }
+
+        $accessControl = new \app\TaskAccessControl();
+        if (!$accessControl->canEdit((int)$this->member->id, $task)) {
+            throw new \Exception("No permission to update task {$taskId}");
         }
 
         // Update allowed fields

@@ -52,8 +52,13 @@ class AddTaskLogTool extends BaseTool {
             throw new \Exception("task_id and message are required");
         }
 
-        $accessControl = new \app\TaskAccessControl($this->member->id);
-        if (!$accessControl->canView($taskId)) {
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id) {
+            throw new \Exception("Task not found: {$taskId}");
+        }
+
+        $accessControl = new \app\TaskAccessControl();
+        if (!$accessControl->canView((int)$this->member->id, $task)) {
             throw new \Exception("Access denied to task {$taskId}");
         }
 

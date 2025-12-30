@@ -194,12 +194,18 @@
                     </div>
                     <div class="card-body">
                         <p class="mb-3">Claude has completed work and is waiting for your review or further instructions.</p>
+
+                        <!-- Inline instruction form -->
+                        <div class="mb-3">
+                            <textarea class="form-control" id="inlineCommentContent" rows="3" placeholder="Send instructions to Claude..."></textarea>
+                        </div>
+
                         <div class="d-flex gap-2">
+                            <button class="btn btn-primary" onclick="sendInlineComment()">
+                                <i class="bi bi-send me-1"></i> Send Instructions
+                            </button>
                             <button class="btn btn-success" onclick="markComplete(<?= $task->id ?>)">
                                 <i class="bi bi-check-circle me-1"></i> Mark Complete
-                            </button>
-                            <button class="btn btn-outline-primary" onclick="document.getElementById('commentContent').focus()">
-                                <i class="bi bi-chat-dots me-1"></i> Send Instructions
                             </button>
                         </div>
                     </div>
@@ -769,6 +775,73 @@ document.getElementById('commentForm').addEventListener('submit', async function
         alert('Error posting comment');
     }
 });
+
+// Send inline comment (from Your Turn card)
+async function sendInlineComment() {
+    const textarea = document.getElementById('inlineCommentContent');
+    const content = textarea.value.trim();
+    if (!content) {
+        textarea.focus();
+        return;
+    }
+
+    const btn = event.target.closest('button');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', taskId);
+        formData.append('content', content);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/comment', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // Clear the inline textarea
+            textarea.value = '';
+
+            // Add to comments list
+            const noComments = document.getElementById('noComments');
+            if (noComments) noComments.remove();
+
+            const html = `
+                <div class="d-flex mb-3" data-comment-id="${data.comment.id}">
+                    <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 40px; height: 40px;">
+                        ${data.comment.author.charAt(0).toUpperCase()}
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="bg-light border rounded p-3 position-relative">
+                            <div class="d-flex justify-content-between mb-1 pe-4">
+                                <strong>${data.comment.author}</strong>
+                                <small class="text-muted">Just now</small>
+                            </div>
+                            <div>${data.comment.content.replace(/\n/g, '<br>')}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('commentsList').insertAdjacentHTML('beforeend', html);
+
+            // If sent to session, status might change - reload after short delay
+            if (data.sent_to_session) {
+                setTimeout(() => location.reload(), 1500);
+            }
+        } else {
+            alert('Error: ' + data.message);
+        }
+    } catch (e) {
+        alert('Error sending instructions');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
 
 // Delete comment
 async function deleteComment(commentId) {

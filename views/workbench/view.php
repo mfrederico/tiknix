@@ -146,28 +146,79 @@
                 </div>
             <?php endif; ?>
 
-            <!-- Live Progress (when running or awaiting) -->
-            <?php if (in_array($task->status, ['running', 'queued', 'awaiting'])): ?>
-                <div class="card mb-4 <?= $task->status === 'awaiting' ? 'border-warning' : '' ?>" id="progressCard">
-                    <div class="card-header d-flex justify-content-between align-items-center <?= $task->status === 'awaiting' ? 'bg-warning bg-opacity-25' : '' ?>">
+            <?php
+            // Find the last Claude message for display
+            $lastClaudeMessage = null;
+            if (!empty($comments)) {
+                foreach (array_reverse($comments) as $c) {
+                    if (!empty($c['is_from_claude'])) {
+                        $lastClaudeMessage = $c;
+                        break;
+                    }
+                }
+            }
+            ?>
+
+            <!-- Last Claude Message (when awaiting) -->
+            <?php if ($task->status === 'awaiting' && $lastClaudeMessage): ?>
+                <div class="card mb-4 border-primary" id="lastClaudeCard">
+                    <div class="card-header bg-primary bg-opacity-10 d-flex align-items-center">
+                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
+                            <i class="bi bi-robot"></i>
+                        </div>
+                        <h5 class="mb-0">Claude's Last Message</h5>
+                        <small class="text-muted ms-auto"><?= date('M j, g:i A', strtotime($lastClaudeMessage['created_at'])) ?></small>
+                    </div>
+                    <div class="card-body">
+                        <?php
+                        $content = htmlspecialchars($lastClaudeMessage['content']);
+                        $content = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $content);
+                        $content = preg_replace('/\*(.+?)\*/', '<em>$1</em>', $content);
+                        $content = preg_replace('/^- (.+)$/m', '<li>$1</li>', $content);
+                        $content = nl2br($content);
+                        ?>
+                        <div class="comment-content"><?= $content ?></div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Your Turn Card (when awaiting) -->
+            <?php if ($task->status === 'awaiting'): ?>
+                <div class="card mb-4 border-warning" id="progressCard">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-warning bg-opacity-25">
                         <h5 class="mb-0">
-                            <?php if ($task->status === 'awaiting'): ?>
-                                <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
-                                Your Turn
-                            <?php else: ?>
-                                <span class="spinner-border spinner-border-sm me-2" id="progressSpinner"></span>
-                                Claude is Working
-                            <?php endif; ?>
+                            <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+                            Your Turn
+                        </h5>
+                        <small class="text-muted" id="lastUpdate"></small>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-3">Claude has completed work and is waiting for your review or further instructions.</p>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success" onclick="markComplete(<?= $task->id ?>)">
+                                <i class="bi bi-check-circle me-1"></i> Mark Complete
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="document.getElementById('commentContent').focus()">
+                                <i class="bi bi-chat-dots me-1"></i> Send Instructions
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Live Progress (when running) -->
+            <?php if (in_array($task->status, ['running', 'queued'])): ?>
+                <div class="card mb-4" id="progressCard">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <span class="spinner-border spinner-border-sm me-2" id="progressSpinner"></span>
+                            Claude is Working
                         </h5>
                         <small class="text-muted" id="lastUpdate">Updating...</small>
                     </div>
                     <div class="card-body">
                         <div id="progressContent">
-                            <?php if ($task->status === 'awaiting'): ?>
-                                <p class="text-muted mb-0">Claude has completed work and is waiting for your review or further instructions.</p>
-                            <?php else: ?>
-                                <p class="text-muted">Connecting to Claude runner...</p>
-                            <?php endif; ?>
+                            <p class="text-muted">Connecting to Claude runner...</p>
                         </div>
                         <div id="snapshotContent" class="mt-3" style="display: none;">
                             <strong>Latest Activity:</strong>
@@ -227,19 +278,24 @@
                                 ?>
                                 <div class="d-flex mb-3 <?= $isFromClaude ? 'flex-row-reverse' : '' ?>" data-comment-id="<?= $comment['id'] ?>">
                                     <?php if ($isFromClaude): ?>
-                                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center ms-2" style="width: 40px; height: 40px;">
+                                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center ms-2 flex-shrink-0" style="width: 40px; height: 40px;">
                                             <i class="bi bi-robot"></i>
                                         </div>
                                     <?php elseif (!empty($comment['avatar_url'])): ?>
-                                        <img src="<?= htmlspecialchars($comment['avatar_url']) ?>" class="rounded-circle me-2" width="40" height="40">
+                                        <img src="<?= htmlspecialchars($comment['avatar_url']) ?>" class="rounded-circle me-2 flex-shrink-0" width="40" height="40">
                                     <?php else: ?>
-                                        <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
+                                        <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 40px; height: 40px;">
                                             <?= strtoupper(substr($authorName, 0, 1)) ?>
                                         </div>
                                     <?php endif; ?>
                                     <div class="flex-grow-1">
-                                        <div class="<?= $isFromClaude ? 'bg-primary bg-opacity-10 border border-primary' : 'bg-light border' ?> rounded p-3" style="<?= $isFromClaude ? '' : 'background-color: #f8f9fa !important;' ?>">
-                                            <div class="d-flex justify-content-between mb-1">
+                                        <div class="<?= $isFromClaude ? 'bg-primary bg-opacity-10 border border-primary' : 'bg-light border' ?> rounded p-3 position-relative" style="<?= $isFromClaude ? '' : 'background-color: #f8f9fa !important;' ?>">
+                                            <?php if ($canEdit): ?>
+                                                <button type="button" class="btn btn-sm btn-link text-danger position-absolute p-0" style="top: 8px; right: 8px; opacity: 0.5;" onclick="deleteComment(<?= $comment['id'] ?>)" title="Delete">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <div class="d-flex justify-content-between mb-1 pe-4">
                                                 <strong><?= $isFromClaude ? '<i class="bi bi-robot me-1"></i>' : '' ?><?= htmlspecialchars($authorName) ?></strong>
                                                 <small class="text-muted"><?= date('M j, g:i A', strtotime($comment['created_at'])) ?></small>
                                             </div>
@@ -713,4 +769,34 @@ document.getElementById('commentForm').addEventListener('submit', async function
         alert('Error posting comment');
     }
 });
+
+// Delete comment
+async function deleteComment(commentId) {
+    if (!confirm('Delete this message?')) return;
+
+    try {
+        const formData = new FormData();
+        formData.append('id', taskId);
+        formData.append('comment_id', commentId);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/deletecomment', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // Remove the comment from DOM
+            const commentEl = document.querySelector(`[data-comment-id="${commentId}"]`);
+            if (commentEl) {
+                commentEl.remove();
+            }
+        } else {
+            alert('Error: ' + data.message);
+        }
+    } catch (e) {
+        alert('Error deleting comment');
+    }
+}
 </script>

@@ -1051,6 +1051,51 @@ class Workbench extends Control {
     }
 
     /**
+     * Delete a comment from a task
+     */
+    public function deletecomment($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::jsonError('POST required', 405);
+            return;
+        }
+
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        $commentId = (int)$this->getParam('comment_id');
+
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id || !$this->access->canEdit($this->member->id, $task)) {
+            Flight::jsonError('Access denied', 403);
+            return;
+        }
+
+        $comment = Bean::load('taskcomment', $commentId);
+        if (!$comment->id || $comment->taskId != $taskId) {
+            Flight::jsonError('Comment not found', 404);
+            return;
+        }
+
+        try {
+            Bean::trash($comment);
+            $this->logTaskEvent($taskId, 'info', 'user', 'Comment deleted');
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Comment deleted'
+            ]);
+        } catch (Exception $e) {
+            Flight::jsonError('Failed to delete comment', 500);
+        }
+    }
+
+    /**
      * View task logs
      */
     public function logs($params = []) {

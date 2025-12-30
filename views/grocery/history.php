@@ -149,6 +149,12 @@
                                 </div>
                             </div>
                             <div class="d-flex gap-1">
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-success"
+                                        onclick="reloadList(<?= $list->id ?>)"
+                                        title="Reload as Template">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
                                 <a href="/grocery/view/<?= $list->id ?>" class="btn btn-sm btn-outline-primary" title="View">
                                     <i class="bi bi-eye"></i>
                                 </a>
@@ -169,6 +175,38 @@
 
 <script>
 const csrfToken = <?= json_encode($csrf) ?>;
+
+async function reloadList(listId) {
+    if (!confirm('Add items from this list to your current grocery list?')) return;
+
+    try {
+        const formData = new FormData();
+        formData.append('id', listId);
+        Object.entries(csrfToken).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
+
+        const response = await fetch('/grocery/reloadList', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('success', data.message);
+            // Redirect to grocery list after short delay
+            setTimeout(() => {
+                window.location.href = '/grocery';
+            }, 1000);
+        } else {
+            showToast('error', data.message || 'Failed to reload list');
+        }
+    } catch (error) {
+        console.error('Error reloading list:', error);
+        showToast('error', 'Failed to reload list');
+    }
+}
 
 async function deleteList(listId) {
     if (!confirm('Delete this saved list? This cannot be undone.')) return;

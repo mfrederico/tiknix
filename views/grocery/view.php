@@ -190,13 +190,54 @@
         </div>
 
         <!-- Actions -->
-        <div class="d-flex gap-2 mt-3">
+        <div class="d-flex gap-2 mt-3 flex-wrap">
             <a href="/grocery/history" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> Back to History
             </a>
+            <?php if (!empty($items)): ?>
+            <button type="button" class="btn btn-primary" onclick="reloadList(<?= $list->id ?>)">
+                <i class="bi bi-arrow-repeat"></i> Reload as Template
+            </button>
+            <?php endif; ?>
             <a href="/grocery" class="btn btn-success">
                 <i class="bi bi-cart3"></i> Current List
             </a>
         </div>
     </div>
 </div>
+
+<script>
+const csrfToken = <?= json_encode($csrf) ?>;
+
+async function reloadList(listId) {
+    if (!confirm('Add these items to your current grocery list?')) return;
+
+    try {
+        const formData = new FormData();
+        formData.append('id', listId);
+        Object.entries(csrfToken).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
+
+        const response = await fetch('/grocery/reloadList', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('success', data.message);
+            // Redirect to grocery list after short delay
+            setTimeout(() => {
+                window.location.href = '/grocery';
+            }, 1000);
+        } else {
+            showToast('error', data.message || 'Failed to reload list');
+        }
+    } catch (error) {
+        console.error('Error reloading list:', error);
+        showToast('error', 'Failed to reload list');
+    }
+}
+</script>

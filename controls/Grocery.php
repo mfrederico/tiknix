@@ -608,6 +608,101 @@ class Grocery extends Control {
     }
 
     /**
+     * Reload items from a saved list back to active list (AJAX)
+     * This copies items from a saved grocerylist back to active items
+     */
+    public function reloadList($params = []) {
+        $request = Flight::request();
+
+        if ($request->method !== 'POST') {
+            Flight::jsonError('Method not allowed', 405);
+            return;
+        }
+
+        if (!Flight::csrf()->validateRequest()) {
+            Flight::jsonError('Invalid CSRF token', 403);
+            return;
+        }
+
+        $listId = $request->data->id ?? null;
+
+        if (!$listId) {
+            Flight::jsonError('List ID is required', 400);
+            return;
+        }
+
+        try {
+            $list = Bean::load('grocerylist', $listId);
+
+            if (!$list->id || $list->memberId != $this->member->id) {
+                Flight::jsonError('List not found', 404);
+                return;
+            }
+
+            // Get items from the saved list
+            $savedItems = $list->ownGroceryitemList;
+
+            if (empty($savedItems)) {
+                Flight::jsonError('No items in this list', 400);
+                return;
+            }
+
+            $this->beginTransaction();
+
+            // Get max sort order for current active items
+            $maxSort = Bean::getCell(
+                'SELECT MAX(sort_order) FROM groceryitem WHERE member_id = ? AND grocerylist_id IS NULL',
+                [$this->member->id]
+            ) ?? 0;
+
+            $addedItems = [];
+            $sortOrder = $maxSort + 1;
+
+            // Copy each item to active list (create new items, don't move originals)
+            foreach ($savedItems as $savedItem) {
+                $newItem = Bean::dispense('groceryitem');
+                $newItem->memberId = $this->member->id;
+                $newItem->name = $savedItem->name;
+                // Restore quantity to at least 1 (saved items have quantity 0 when checked off)
+                $newItem->quantity = max(1, (int)$savedItem->quantity);
+                $newItem->isChecked = 0;
+                $newItem->sortOrder = $sortOrder++;
+                $newItem->createdAt = date('Y-m-d H:i:s');
+                // grocerylistId stays NULL (active list)
+                Bean::store($newItem);
+
+                $addedItems[] = [
+                    'id' => $newItem->id,
+                    'name' => $newItem->name,
+                    'quantity' => (int)$newItem->quantity,
+                    'isChecked' => false,
+                    'sortOrder' => (int)$newItem->sortOrder
+                ];
+            }
+
+            $this->commit();
+
+            $this->logger->info('Grocery list reloaded', [
+                'source_list_id' => $list->id,
+                'items_count' => count($addedItems),
+                'member_id' => $this->member->id
+            ]);
+
+            Flight::json([
+                'success' => true,
+                'items' => $addedItems,
+                'message' => 'Added ' . count($addedItems) . ' item' . (count($addedItems) != 1 ? 's' : '') . ' to your active list'
+            ]);
+        } catch (Exception $e) {
+            $this->rollback();
+            $this->logger->error('Failed to reload grocery list', [
+                'error' => $e->getMessage()
+            ]);
+            Flight::jsonError('Error reloading list', 500);
+        }
+    }
+
+    /**
      * Clear all items from active list (AJAX)
      */
     public function clearAll($params = []) {

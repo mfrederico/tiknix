@@ -77,6 +77,9 @@ class Mcp extends BaseControls\Control {
     /** @var float Request start time for duration tracking */
     private float $requestStartTime = 0;
 
+    /** @var bool Whether to use plain JSON responses instead of SSE */
+    private bool $useJsonResponse = false;
+
     /** @var string Current request body for logging */
     private string $currentRequestBody = '';
 
@@ -548,8 +551,20 @@ class Mcp extends BaseControls\Control {
         // Start request timing for logging
         $this->requestStartTime = microtime(true);
 
-        // Set SSE content type for MCP protocol
-        header('Content-Type: text/event-stream');
+        // Check Accept header to determine response format
+        // Claude Code sends "Accept: application/json" for plain JSON responses
+        // Default to SSE for backwards compatibility
+        $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? 'text/event-stream';
+        $this->useJsonResponse = (
+            strpos($acceptHeader, 'application/json') !== false &&
+            strpos($acceptHeader, 'text/event-stream') === false
+        );
+
+        if ($this->useJsonResponse) {
+            header('Content-Type: application/json');
+        } else {
+            header('Content-Type: text/event-stream');
+        }
         header('Cache-Control: no-cache');
         header('Connection: keep-alive');
         header('X-Accel-Buffering: no'); // Disable nginx buffering
@@ -2742,7 +2757,13 @@ class Mcp extends BaseControls\Control {
             'jsonrpc' => '2.0',
             'id' => $id
         ], JSON_UNESCAPED_UNICODE);
-        echo "event: message\ndata: {$json}\n\n";
+
+        // Use plain JSON or SSE based on Accept header
+        if ($this->useJsonResponse) {
+            echo $json;
+        } else {
+            echo "event: message\ndata: {$json}\n\n";
+        }
         if (ob_get_level() > 0) {
             ob_flush();
         }
@@ -2750,7 +2771,7 @@ class Mcp extends BaseControls\Control {
     }
 
     /**
-     * Send JSON-RPC error in SSE format
+     * Send JSON-RPC error (SSE or plain JSON based on Accept header)
      */
     private function sendError(int $code, string $message, mixed $id, int $httpCode = 200): void {
         http_response_code($httpCode);
@@ -2762,7 +2783,13 @@ class Mcp extends BaseControls\Control {
                 'message' => $message
             ]
         ], JSON_UNESCAPED_UNICODE);
-        echo "event: message\ndata: {$json}\n\n";
+
+        // Use plain JSON or SSE based on Accept header
+        if ($this->useJsonResponse) {
+            echo $json;
+        } else {
+            echo "event: message\ndata: {$json}\n\n";
+        }
         if (ob_get_level() > 0) {
             ob_flush();
         }

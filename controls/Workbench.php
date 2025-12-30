@@ -924,6 +924,29 @@ class Workbench extends Control {
             ];
         }, $logs);
 
+        // Get recent comments for live updates
+        $comments = Bean::getAll(
+            "SELECT tc.id, tc.content, tc.is_from_claude, tc.created_at,
+                    m.first_name, m.last_name, m.username
+             FROM taskcomment tc
+             JOIN member m ON tc.member_id = m.id
+             WHERE tc.task_id = ?
+             ORDER BY tc.created_at ASC",
+            [$taskId]
+        );
+        $progress['comments'] = array_map(function($c) {
+            $author = $c['is_from_claude'] ? 'Claude' :
+                      (trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? '')) ?:
+                      ($c['username'] ?? 'Unknown'));
+            return [
+                'id' => $c['id'],
+                'author' => $author,
+                'is_from_claude' => (bool)$c['is_from_claude'],
+                'content' => $c['content'],
+                'created_at' => $c['created_at']
+            ];
+        }, $comments);
+
         Flight::json($progress);
     }
 

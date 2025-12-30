@@ -225,7 +225,7 @@
                                         </div>
                                     <?php endif; ?>
                                     <div class="flex-grow-1">
-                                        <div class="<?= $isFromClaude ? 'bg-primary bg-opacity-10 border border-primary' : 'bg-light' ?> rounded p-3">
+                                        <div class="<?= $isFromClaude ? 'bg-primary bg-opacity-10 border border-primary' : 'bg-light border' ?> rounded p-3" style="<?= $isFromClaude ? '' : 'background-color: #f8f9fa !important;' ?>">
                                             <div class="d-flex justify-content-between mb-1">
                                                 <strong><?= $isFromClaude ? '<i class="bi bi-robot me-1"></i>' : '' ?><?= htmlspecialchars($authorName) ?></strong>
                                                 <small class="text-muted"><?= date('M j, g:i A', strtotime($comment['created_at'])) ?></small>
@@ -508,7 +508,7 @@ async function pollProgress() {
 
         document.getElementById('lastUpdate').textContent = 'Updated ' + new Date().toLocaleTimeString();
 
-        if (data.status !== 'running' && data.status !== 'queued') {
+        if (data.status !== 'running' && data.status !== 'queued' && data.status !== 'awaiting') {
             clearInterval(pollInterval);
             location.reload();
             return;
@@ -542,9 +542,56 @@ async function pollProgress() {
 
         document.getElementById('progressContent').innerHTML = html || '<p class="text-muted">Waiting for activity...</p>';
 
+        // Also refresh comments if there are new ones
+        if (data.comments && data.comments.length > 0) {
+            updateCommentsList(data.comments);
+        }
+
     } catch (e) {
         console.error('Poll error:', e);
     }
+}
+
+// Update comments list without full page reload
+function updateCommentsList(comments) {
+    const list = document.getElementById('commentsList');
+    const noComments = document.getElementById('noComments');
+    if (noComments) noComments.remove();
+
+    // Get existing comment IDs
+    const existingIds = new Set();
+    list.querySelectorAll('[data-comment-id]').forEach(el => {
+        existingIds.add(el.getAttribute('data-comment-id'));
+    });
+
+    // Add new comments
+    comments.forEach(comment => {
+        if (!existingIds.has(String(comment.id))) {
+            const isFromClaude = comment.is_from_claude;
+            const html = `
+                <div class="d-flex mb-3 ${isFromClaude ? 'flex-row-reverse' : ''}" data-comment-id="${comment.id}">
+                    ${isFromClaude ?
+                        `<div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center ms-2" style="width: 40px; height: 40px;">
+                            <i class="bi bi-robot"></i>
+                        </div>` :
+                        `<div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
+                            ${comment.author.charAt(0).toUpperCase()}
+                        </div>`
+                    }
+                    <div class="flex-grow-1">
+                        <div class="${isFromClaude ? 'bg-primary bg-opacity-10 border border-primary' : 'bg-light border'} rounded p-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <strong>${isFromClaude ? '<i class="bi bi-robot me-1"></i>' : ''}${comment.author}</strong>
+                                <small class="text-muted">${new Date(comment.created_at).toLocaleString()}</small>
+                            </div>
+                            <div class="comment-content">${comment.content.replace(/\n/g, '<br>')}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            list.insertAdjacentHTML('beforeend', html);
+        }
+    });
 }
 
 // Start polling if task is running or awaiting

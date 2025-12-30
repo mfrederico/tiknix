@@ -328,16 +328,30 @@ INSTRUCTIONS;
         }
 
         return <<<INSTRUCTIONS
-## Progress Reporting
+## Progress Reporting & Communication
 
-Use the MCP tools to update task progress:
+Use these MCP tools to communicate with the user and report progress:
+
+**Communication:**
+- `tiknix:ask_question` - Ask the user a clarifying question. Parameters:
+  - `task_id` (required): {$taskId}
+  - `question` (required): Your question text
+  - `context` (optional): Why you're asking
+  - `options` (optional): Array of suggested answers
+  Use this when you need more information, are unsure about requirements, or want to confirm an approach. The question will appear in the task UI and the task will pause until the user responds.
+
+**Progress Updates:**
+- `tiknix:add_task_log` - Add log entries for significant events or milestones
 - `tiknix:update_task` - Update status, branch name, or progress message
-- `tiknix:add_task_log` - Add log entries for significant events
-- `tiknix:complete_task` - Mark the task as complete with results
+
+**Completion:**
+- `tiknix:complete_task` - Report work is done and await user review
 
 Task ID: {$taskId}
 
-When done, call `tiknix:complete_task` with the task ID, PR URL (if applicable), and any relevant results.
+**IMPORTANT**: If you are unsure about anything, use `tiknix:ask_question` to get clarification from the user rather than making assumptions.
+
+When done, call `tiknix:complete_task` with task_id, summary, branch_name, and pr_url if applicable.
 INSTRUCTIONS;
     }
 }

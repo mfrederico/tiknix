@@ -82,7 +82,7 @@ class ClaudeRunner {
         $projectRoot = dirname(__DIR__);
 
         // Build Claude command to run interactively
-        $claudeCmd = 'claude';
+        $claudeCmd = 'claude --debug';
         if ($skipPermissions) {
             $claudeCmd .= ' --dangerously-skip-permissions';
         }
@@ -128,6 +128,8 @@ class ClaudeRunner {
     private function buildInvocationScript(string $claudeCmd, string $projectRoot): string {
         $timestamp = date('Y-m-d H:i:s');
         $teamInfo = $this->teamId ? "Team ID: {$this->teamId}" : "Personal task";
+        $taskId = $this->taskId;
+        $callbackScript = $projectRoot . '/cli/task-complete.php';
 
         return <<<BASH
 #!/bin/bash
@@ -155,7 +157,25 @@ echo ""
 
 # Change to project directory and run Claude
 cd "{$projectRoot}"
-exec {$claudeCmd}
+{$claudeCmd}
+EXIT_CODE=\$?
+
+echo ""
+echo "────────────────────────────────────────────────────────────────────"
+echo "  Claude exited with code: \$EXIT_CODE"
+echo "  Updating task status..."
+echo "────────────────────────────────────────────────────────────────────"
+
+# Update task status based on exit code
+if [ \$EXIT_CODE -eq 0 ]; then
+    php "{$callbackScript}" --task={$taskId} --status=completed
+else
+    php "{$callbackScript}" --task={$taskId} --status=failed --error="Claude exited with code \$EXIT_CODE"
+fi
+
+echo ""
+echo "Session complete. Press Enter to close."
+read
 BASH;
     }
 

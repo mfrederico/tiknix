@@ -556,10 +556,15 @@ class Mcp extends BaseControls\Control {
 
         // Detect content type preference from Accept header
         // Claude Code's Streamable HTTP transport sends: "application/json, text/event-stream"
-        // When JSON is requested, prefer JSON responses (required for capability detection)
-        // Default to SSE for backwards compatibility with legacy clients
+        // When BOTH are present, prefer SSE (this matches Playwright MCP behavior)
+        // Only use JSON when application/json is present WITHOUT text/event-stream
         $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? 'text/event-stream';
-        $this->useJsonResponse = strpos($acceptHeader, 'application/json') !== false;
+        $hasJson = strpos($acceptHeader, 'application/json') !== false;
+        $hasSse = strpos($acceptHeader, 'text/event-stream') !== false;
+
+        // Prefer SSE when both are present (Streamable HTTP transport)
+        // Only use JSON when it's the sole preference
+        $this->useJsonResponse = $hasJson && !$hasSse;
 
         if ($this->useJsonResponse) {
             header('Content-Type: application/json; charset=utf-8');

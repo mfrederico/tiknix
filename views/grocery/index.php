@@ -548,10 +548,14 @@ function restoreActiveListFromLocalStorage() {
     }
 }
 
-// Restore items to the list (add via server to get proper IDs)
+// Restore items to the list (add via server to get proper IDs, then sync checked state)
 async function restoreItemsToList(items) {
     for (const item of items) {
-        await addItemFromLocalStorage(item.name, item.quantity || 1);
+        const newId = await addItemFromLocalStorage(item.name, item.quantity || 1);
+        // If item was checked in localStorage, toggle it on server too
+        if (newId && item.isChecked) {
+            await toggleItemById(newId);
+        }
     }
 }
 
@@ -651,7 +655,7 @@ function loadSavedList(key) {
     showToast('success', `Loaded ${list.items.length} items from saved list`);
 }
 
-// Add item from localStorage (without server call, just to DOM and then sync)
+// Add item from localStorage - returns the new item ID
 async function addItemFromLocalStorage(name, quantity) {
     try {
         const formData = new FormData();
@@ -718,10 +722,52 @@ async function addItemFromLocalStorage(name, quantity) {
             }
 
             updateStats();
-            saveActiveListToLocalStorage();
+            return data.item.id; // Return the new item ID
         }
     } catch (error) {
         console.error('Error adding item from localStorage:', error);
+    }
+    return null;
+}
+
+// Toggle item by ID (used when restoring checked state from localStorage)
+async function toggleItemById(itemId) {
+    const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
+    if (!li) return;
+
+    const checkbox = li.querySelector('.item-checkbox');
+    const qtyBadge = li.querySelector('.item-quantity');
+
+    try {
+        const formData = new FormData();
+        formData.append('id', itemId);
+        Object.entries(csrfToken).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
+
+        const response = await fetch('/grocery/toggle', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            li.dataset.quantity = data.quantity;
+            qtyBadge.textContent = data.quantity;
+
+            if (data.isChecked) {
+                li.classList.add('checked');
+                checkbox.checked = true;
+                qtyBadge.classList.add('depleted');
+                qtyBadge.title = 'Checked off';
+                const list = document.getElementById('groceryList');
+                list.appendChild(li);
+            }
+            updateStats();
+        }
+    } catch (error) {
+        console.error('Error toggling item:', error);
     }
 }
 

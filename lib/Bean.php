@@ -166,6 +166,39 @@ class Bean {
     }
 
     /**
+     * Get a single cell value from a query
+     *
+     * @param string $sql SQL statement
+     * @param array $params Bound parameters
+     * @return mixed Single value
+     */
+    public static function getCell(string $sql, array $params = []) {
+        return R::getCell($sql, $params);
+    }
+
+    /**
+     * Get a single column as an array
+     *
+     * @param string $sql SQL statement
+     * @param array $params Bound parameters
+     * @return array Column values
+     */
+    public static function getCol(string $sql, array $params = []) {
+        return R::getCol($sql, $params);
+    }
+
+    /**
+     * Get a single row as an array
+     *
+     * @param string $sql SQL statement
+     * @param array $params Bound parameters
+     * @return array|null Row data
+     */
+    public static function getRow(string $sql, array $params = []) {
+        return R::getRow($sql, $params);
+    }
+
+    /**
      * Add a database connection
      *
      * @param string $key Database key

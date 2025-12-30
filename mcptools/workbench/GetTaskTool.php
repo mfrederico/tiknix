@@ -41,6 +41,33 @@ class GetTaskTool extends BaseTool {
             throw new \Exception("Task not found: {$taskId}");
         }
 
+        // Get recent comments (last 10)
+        $comments = Bean::getAll(
+            "SELECT tc.id, tc.content, tc.is_from_claude, tc.created_at,
+                    m.first_name, m.last_name, m.username
+             FROM taskcomment tc
+             JOIN member m ON tc.member_id = m.id
+             WHERE tc.task_id = ?
+             ORDER BY tc.created_at DESC
+             LIMIT 10",
+            [$taskId]
+        );
+
+        // Format comments for output
+        $formattedComments = [];
+        foreach (array_reverse($comments) as $c) {
+            $author = $c['is_from_claude'] ? 'Claude' :
+                      (trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? '')) ?:
+                      ($c['username'] ?? 'Unknown'));
+            $formattedComments[] = [
+                'id' => $c['id'],
+                'author' => $author,
+                'is_from_claude' => (bool)$c['is_from_claude'],
+                'content' => $c['content'],
+                'created_at' => $c['created_at']
+            ];
+        }
+
         return json_encode([
             'id' => $task->id,
             'title' => $task->title,
@@ -56,7 +83,8 @@ class GetTaskTool extends BaseTool {
             'branch_name' => $task->branchName,
             'pr_url' => $task->prUrl,
             'created_at' => $task->createdAt,
-            'updated_at' => $task->updatedAt
+            'updated_at' => $task->updatedAt,
+            'recent_comments' => $formattedComments
         ], JSON_PRETTY_PRINT);
     }
 }

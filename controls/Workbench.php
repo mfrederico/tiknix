@@ -1000,8 +1000,8 @@ class Workbench extends Control {
                     if ($sentToSession) {
                         $this->logTaskEvent($taskId, 'info', 'user', 'Message sent to Claude: ' . substr($content, 0, 100) . (strlen($content) > 100 ? '...' : ''));
 
-                        // If task was completed/failed but session is still active, mark as running
-                        if (in_array($task->status, ['completed', 'failed'])) {
+                        // If task was awaiting/completed/failed but session is still active, mark as running
+                        if (in_array($task->status, ['awaiting', 'completed', 'failed'])) {
                             $task->status = 'running';
                             $task->updatedAt = date('Y-m-d H:i:s');
                             Bean::store($task);

@@ -1151,6 +1151,33 @@ class TiknixBridge
                 return ['error' => 'Task not found or access denied'];
             }
 
+            // Get recent comments (last 10)
+            $comments = R::getAll(
+                "SELECT tc.id, tc.content, tc.is_from_claude, tc.created_at,
+                        m.first_name, m.last_name, m.username
+                 FROM taskcomment tc
+                 JOIN member m ON tc.member_id = m.id
+                 WHERE tc.task_id = ?
+                 ORDER BY tc.created_at DESC
+                 LIMIT 10",
+                [$taskId]
+            );
+
+            // Format comments (reverse to show oldest first)
+            $formattedComments = [];
+            foreach (array_reverse($comments) as $c) {
+                $author = $c['is_from_claude'] ? 'Claude' :
+                          (trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? '')) ?:
+                          ($c['username'] ?? 'Unknown'));
+                $formattedComments[] = [
+                    'id' => $c['id'],
+                    'author' => $author,
+                    'is_from_claude' => (bool)$c['is_from_claude'],
+                    'content' => $c['content'],
+                    'created_at' => $c['created_at']
+                ];
+            }
+
             $result = [
                 'id' => (int)$task->id,
                 'title' => $task->title,
@@ -1161,6 +1188,7 @@ class TiknixBridge
                 'pr_url' => $task->prUrl ?? $task->pr_url ?? null,
                 'created_at' => $task->createdAt ?? $task->created_at,
                 'updated_at' => $task->updatedAt ?? $task->updated_at ?? null,
+                'recent_comments' => $formattedComments
             ];
 
             return ['content' => [['type' => 'text', 'text' => json_encode($result, JSON_PRETTY_PRINT)]]];

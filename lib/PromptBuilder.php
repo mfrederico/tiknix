@@ -340,6 +340,9 @@ Use these MCP tools to communicate with the user and report progress:
   - `options` (optional): Array of suggested answers
   Use this when you need more information, are unsure about requirements, or want to confirm an approach. The question will appear in the task UI and the task will pause until the user responds.
 
+- `tiknix:get_task` - Get current task details including latest comments. Use this to check for user responses after asking a question. Parameters:
+  - `task_id` (required): {$taskId}
+
 **Progress Updates:**
 - `tiknix:add_task_log` - Add log entries for significant events or milestones
 - `tiknix:update_task` - Update status, branch name, or progress message

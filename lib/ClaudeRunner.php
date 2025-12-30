@@ -87,12 +87,18 @@ class ClaudeRunner {
             $claudeCmd .= ' --dangerously-skip-permissions';
         }
 
-        // Create tmux session running Claude in the project directory
+        // Build a wrapper script that shows invocation info then runs Claude
+        $invocationScript = $this->buildInvocationScript($claudeCmd, $projectRoot);
+        $scriptFile = $this->workDir . '/run-claude.sh';
+        file_put_contents($scriptFile, $invocationScript);
+        chmod($scriptFile, 0755);
+
+        // Create tmux session running the wrapper script
         $tmuxCmd = sprintf(
             'tmux new-session -d -s %s -c %s %s 2>&1',
             escapeshellarg($this->sessionName),
             escapeshellarg($projectRoot),
-            escapeshellarg($claudeCmd)
+            escapeshellarg($scriptFile)
         );
 
         exec($tmuxCmd, $output, $returnCode);
@@ -110,6 +116,47 @@ class ClaudeRunner {
         }
 
         return true;
+    }
+
+    /**
+     * Build the invocation script that displays info and runs Claude
+     *
+     * @param string $claudeCmd The claude command to run
+     * @param string $projectRoot The project root directory
+     * @return string Shell script content
+     */
+    private function buildInvocationScript(string $claudeCmd, string $projectRoot): string {
+        $timestamp = date('Y-m-d H:i:s');
+        $teamInfo = $this->teamId ? "Team ID: {$this->teamId}" : "Personal task";
+
+        return <<<BASH
+#!/bin/bash
+#
+# Tiknix Claude Worker Session
+#
+
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║                    TIKNIX CLAUDE WORKER                          ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
+echo ""
+echo "  Session:     {$this->sessionName}"
+echo "  Task ID:     {$this->taskId}"
+echo "  Member ID:   {$this->memberId}"
+echo "  {$teamInfo}"
+echo "  Started:     {$timestamp}"
+echo ""
+echo "  Project:     {$projectRoot}"
+echo "  Work Dir:    {$this->workDir}"
+echo ""
+echo "────────────────────────────────────────────────────────────────────"
+echo "  Invoking: {$claudeCmd}"
+echo "────────────────────────────────────────────────────────────────────"
+echo ""
+
+# Change to project directory and run Claude
+cd "{$projectRoot}"
+exec {$claudeCmd}
+BASH;
     }
 
     /**

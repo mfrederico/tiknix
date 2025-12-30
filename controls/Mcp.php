@@ -983,7 +983,23 @@ class Mcp extends BaseControls\Control {
             }
         }
 
+        // Fix empty properties arrays to be objects for JSON Schema compliance
+        $toolList = array_map([$this, 'fixToolSchema'], $toolList);
+
         $this->sendResult($id, ['tools' => $toolList]);
+    }
+
+    /**
+     * Fix inputSchema.properties to be an object (not array) when empty
+     * JSON Schema requires properties to be a record/object, not an array
+     */
+    private function fixToolSchema(array $tool): array {
+        if (isset($tool['inputSchema']['properties']) &&
+            is_array($tool['inputSchema']['properties']) &&
+            empty($tool['inputSchema']['properties'])) {
+            $tool['inputSchema']['properties'] = (object)[];
+        }
+        return $tool;
     }
 
     /**

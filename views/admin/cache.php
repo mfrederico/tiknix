@@ -86,7 +86,7 @@
                     <h5 class="mb-0">Query Cache</h5>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted">Query cache is not enabled. Using legacy RedBeanQueryCache or no query caching.</p>
+                    <p class="text-muted">Query cache is not enabled.</p>
                 </div>
             </div>
         </div>
@@ -271,14 +271,24 @@
                             </thead>
                             <tbody>
                                 <?php foreach ($permissions as $key => $perm):
-                                    if (is_array($perm) && isset($perm['control'], $perm['method'], $perm['level'])):
+                                    // Handle both formats: simple (key::method => level) and expanded array
+                                    if (is_array($perm) && isset($perm['control'], $perm['method'], $perm['level'])) {
+                                        $control = $perm['control'];
+                                        $method = $perm['method'];
+                                        $level = $perm['level'];
+                                    } elseif (is_numeric($perm) && strpos($key, '::') !== false) {
+                                        // Simple format: "control::method" => level
+                                        list($control, $method) = explode('::', $key, 2);
+                                        $level = $perm;
+                                    } else {
+                                        continue; // Skip invalid entries
+                                    }
                                 ?>
                                 <tr>
-                                    <td><code><?= htmlspecialchars($perm['control']) ?></code></td>
-                                    <td><code><?= htmlspecialchars($perm['method']) ?></code></td>
+                                    <td><code><?= htmlspecialchars($control) ?></code></td>
+                                    <td><code><?= htmlspecialchars($method) ?></code></td>
                                     <td>
                                         <?php
-                                        $level = $perm['level'];
                                         if ($level <= 1) {
                                             echo '<span class="badge bg-danger">ROOT (1)</span>';
                                         } elseif ($level <= 50) {
@@ -302,10 +312,7 @@
                                         <?php endif; ?>
                                     </td>
                                 </tr>
-                                <?php
-                                    endif;
-                                endforeach;
-                                ?>
+                                <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>

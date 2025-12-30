@@ -338,10 +338,13 @@ class CachedDatabaseAdapter extends DBAdapter {
     }
 
     /**
-     * Check if APCu is available
+     * Check if APCu is available and properly enabled
+     * Note: In CLI/Swoole mode, apc.enable_cli must also be enabled
      */
     private function hasAPCu() {
-        return function_exists('apcu_fetch') && ini_get('apc.enabled');
+        return function_exists('apcu_fetch')
+            && ini_get('apc.enabled')
+            && (php_sapi_name() !== 'cli' || ini_get('apc.enable_cli'));
     }
 
     /**
@@ -352,9 +355,14 @@ class CachedDatabaseAdapter extends DBAdapter {
             return;
         }
 
-        $iterator = new \APCUIterator('/^' . preg_quote($this->cachePrefix, '/') . '/');
-        foreach ($iterator as $item) {
-            apcu_delete($item['key']);
+        try {
+            $iterator = new \APCUIterator('/^' . preg_quote($this->cachePrefix, '/') . '/');
+            foreach ($iterator as $item) {
+                apcu_delete($item['key']);
+            }
+        } catch (\Throwable $e) {
+            // APCu not fully enabled (e.g., CLI without apc.enable_cli)
+            $this->log('Failed to clear cache: ' . $e->getMessage());
         }
 
         $this->hits = 0;
@@ -391,7 +399,8 @@ class CachedDatabaseAdapter extends DBAdapter {
 
                 $stats['cached_queries'] = $count;
                 $stats['cache_size_kb'] = round($size / 1024, 2);
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
+                // APCu not fully enabled (e.g., CLI without apc.enable_cli)
                 $stats['cached_queries'] = 0;
                 $stats['cache_size_kb'] = 0;
             }

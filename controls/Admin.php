@@ -558,13 +558,27 @@ class Admin extends Control {
 
         // Get OPcache stats if available
         if (function_exists('opcache_get_status')) {
-            $this->viewData['opcache_stats'] = opcache_get_status(false);
+            try {
+                $this->viewData['opcache_stats'] = @opcache_get_status(false);
+            } catch (\Throwable $e) {
+                $this->viewData['opcache_stats'] = null;
+            }
         }
 
-        // Check if APCu is available
-        $this->viewData['apcu_available'] = function_exists('apcu_cache_info');
+        // Check if APCu is available and working
+        // Note: APCu functions may exist but require apc.enable_cli=1 for CLI/Swoole
+        $this->viewData['apcu_available'] = function_exists('apcu_cache_info')
+            && ini_get('apc.enabled')
+            && (php_sapi_name() !== 'cli' || ini_get('apc.enable_cli'));
+
         if ($this->viewData['apcu_available']) {
-            $this->viewData['apcu_info'] = apcu_cache_info();
+            try {
+                $this->viewData['apcu_info'] = @apcu_cache_info();
+            } catch (\Throwable $e) {
+                // APCu function exists but is not fully enabled (e.g., in Swoole/CLI)
+                $this->viewData['apcu_available'] = false;
+                $this->viewData['apcu_info'] = null;
+            }
         }
 
         $this->render('admin/cache', $this->viewData);

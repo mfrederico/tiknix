@@ -131,9 +131,9 @@
 }
 
 .alert-info {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
+    background-color: #1e293b;
+    color: #ffffff;
+    border: 1px solid #334155;
 }
 
 .btn-outline-success:hover,

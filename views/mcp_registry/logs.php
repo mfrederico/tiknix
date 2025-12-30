@@ -8,9 +8,9 @@
         <!-- Filters -->
         <div class="sidebar-section">
             <div class="sidebar-section-title">Filters</div>
-            <form method="get" action="/mcp/registry/logs">
+            <form method="get" action="/mcpregistry/logs">
                 <select name="method" class="form-select form-select-sm mb-2" onchange="this.form.submit()">
-                    <option value="">All Methods</option>
+                    <option value="">All Tools</option>
                     <?php foreach ($methods ?? [] as $method): ?>
                     <option value="<?= htmlspecialchars($method) ?>" <?= ($filters['method'] ?? '') === $method ? 'selected' : '' ?>>
                         <?= htmlspecialchars($method) ?>
@@ -31,7 +31,7 @@
         <!-- Quick Actions -->
         <div class="sidebar-section">
             <div class="sidebar-section-title">Actions</div>
-            <a href="/mcp/registry" class="btn btn-outline-secondary btn-sm w-100 mb-2">
+            <a href="/mcpregistry" class="btn btn-outline-secondary btn-sm w-100 mb-2">
                 <i class="bi bi-arrow-left"></i> Back to Registry
             </a>
             <button type="button" class="btn btn-outline-danger btn-sm w-100" id="clearLogsBtn">
@@ -83,7 +83,7 @@
                         <?php endif; ?>
                     </p>
                     <?php if (!empty($filters['method']) || !empty($filters['has_error']) || !empty($filters['member_id'])): ?>
-                    <a href="/mcp/registry/logs" class="btn btn-outline-secondary">
+                    <a href="/mcpregistry/logs" class="btn btn-outline-secondary">
                         <i class="bi bi-x-circle"></i> Clear Filters
                     </a>
                     <?php endif; ?>
@@ -95,7 +95,7 @@
                         <thead class="table-dark">
                             <tr>
                                 <th width="140">Time</th>
-                                <th width="100">Method</th>
+                                <th width="150">Tool</th>
                                 <th width="80">Status</th>
                                 <th width="70">Duration</th>
                                 <th>Request Preview</th>
@@ -115,7 +115,7 @@
                                         <small class="text-muted"><?= date('M j H:i:s', strtotime($log->createdAt)) ?></small>
                                     </td>
                                     <td>
-                                        <code class="small"><?= htmlspecialchars($log->method ?? 'unknown') ?></code>
+                                        <code class="small"><?= htmlspecialchars($log->toolName ?? $log->method ?? 'unknown') ?></code>
                                     </td>
                                     <td>
                                         <span class="badge bg-<?= $statusClass ?>"><?= $httpCode ?></span>
@@ -224,11 +224,15 @@
             <div class="modal-body">
                 <div class="row mb-3">
                     <div class="col-md-3">
-                        <label class="form-label text-muted small">Method</label>
+                        <label class="form-label text-muted small">Tool</label>
                         <div id="logMethod" class="fw-bold"></div>
                     </div>
+                    <div class="col-md-3">
+                        <label class="form-label text-muted small">Server</label>
+                        <div id="logServer" class="text-info"></div>
+                    </div>
                     <div class="col-md-2">
-                        <label class="form-label text-muted small">HTTP Code</label>
+                        <label class="form-label text-muted small">Status</label>
                         <div id="logHttpCode"></div>
                     </div>
                     <div class="col-md-2">
@@ -236,20 +240,20 @@
                         <div id="logDuration"></div>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label text-muted small">Member ID</label>
-                        <div id="logMemberId"></div>
-                    </div>
-                    <div class="col-md-3">
                         <label class="form-label text-muted small">Timestamp</label>
                         <div id="logTimestamp"></div>
                     </div>
                 </div>
                 <div class="row mb-3">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">API Key ID</label>
+                        <div id="logApiKeyId"></div>
+                    </div>
+                    <div class="col-md-4">
                         <label class="form-label text-muted small">IP Address</label>
                         <div id="logIpAddress"></div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label class="form-label text-muted small">User Agent</label>
                         <div id="logUserAgent" class="text-truncate small"></div>
                     </div>
@@ -262,7 +266,7 @@
                 <div class="row">
                     <div class="col-md-6">
                         <label class="form-label text-muted small d-flex justify-content-between">
-                            <span>Request Body</span>
+                            <span>Arguments</span>
                             <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="copyJson('logRequestBody')">
                                 <i class="bi bi-clipboard"></i>
                             </button>
@@ -271,7 +275,7 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-muted small d-flex justify-content-between">
-                            <span>Response Body</span>
+                            <span>Result</span>
                             <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="copyJson('logResponseBody')">
                                 <i class="bi bi-clipboard"></i>
                             </button>
@@ -326,22 +330,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const logId = this.dataset.logId;
 
             try {
-                const response = await fetch('/mcp/registry/logDetail?id=' + logId);
+                const response = await fetch('/mcpregistry/logDetail?id=' + logId, {
+                    credentials: 'include'
+                });
                 const data = await response.json();
 
                 if (data.success) {
                     const log = data.log;
 
-                    document.getElementById('logMethod').textContent = log.method || 'unknown';
+                    document.getElementById('logMethod').textContent = log.toolName || log.method || 'unknown';
+                    document.getElementById('logServer').textContent = log.serverSlug || '-';
 
-                    const httpCode = log.httpCode || 200;
-                    const statusClass = httpCode >= 500 ? 'danger' : (httpCode >= 400 ? 'warning' : 'success');
-                    document.getElementById('logHttpCode').innerHTML = '<span class="badge bg-' + statusClass + '">' + httpCode + '</span>';
+                    // Status badge - show success/failure
+                    const isSuccess = log.success;
+                    const statusClass = isSuccess ? 'success' : 'danger';
+                    const statusText = isSuccess ? 'Success' : 'Failed';
+                    document.getElementById('logHttpCode').innerHTML = '<span class="badge bg-' + statusClass + '">' + statusText + '</span>';
 
                     const duration = log.duration || 0;
                     document.getElementById('logDuration').textContent = duration < 1000 ? duration + 'ms' : (duration / 1000).toFixed(2) + 's';
 
-                    document.getElementById('logMemberId').textContent = log.memberId || '0 (unauthenticated)';
+                    document.getElementById('logApiKeyId').textContent = log.apiKeyId || '-';
                     document.getElementById('logTimestamp').textContent = log.createdAt;
                     document.getElementById('logIpAddress').textContent = log.ipAddress || '-';
                     document.getElementById('logUserAgent').textContent = log.userAgent || '-';
@@ -354,9 +363,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         document.getElementById('logError').classList.add('d-none');
                     }
 
-                    // Format JSON bodies
-                    document.getElementById('logRequestBody').textContent = formatJson(log.requestBody);
-                    document.getElementById('logResponseBody').textContent = formatJson(log.responseBody);
+                    // Format JSON bodies - use arguments/result if available, fall back to requestBody/responseBody
+                    document.getElementById('logRequestBody').textContent = formatJson(log.arguments || log.requestBody);
+                    document.getElementById('logResponseBody').textContent = formatJson(log.result || log.responseBody);
 
                     logDetailModal.show();
                 } else {
@@ -383,7 +392,9 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.disabled = true;
 
         try {
-            const response = await fetch('/mcp/registry/clearLogs?days=' + days);
+            const response = await fetch('/mcpregistry/clearLogs?days=' + days, {
+                credentials: 'include'
+            });
             const data = await response.json();
 
             if (data.success) {

@@ -86,7 +86,6 @@ class Auth extends BaseControls\Control {
             $_SESSION['member'] = $member->export();
             
             $this->logger->info('User logged in', ['id' => $member->id, 'username' => $member->username]);
-            $this->flash('success', 'Welcome back, ' . ($member->username ?? $member->email) . '!');
             
             Flight::redirect($redirect);
             

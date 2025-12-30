@@ -111,7 +111,7 @@
                     <p class="mb-1">View and respond to contact form submissions</p>
                 </a>
 
-                <a href="/mcp/registry" class="list-group-item list-group-item-action">
+                <a href="/mcpregistry" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1"><i class="bi bi-plug"></i> MCP Server Registry</h5>
                         <?php

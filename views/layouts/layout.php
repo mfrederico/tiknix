@@ -48,6 +48,13 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             <?php foreach ($_SESSION['flash'] as $flash): ?>
+                <?php
+                // Clear toast history on logout so welcome message shows on next login
+                $isLogoutMessage = stripos($flash['message'], 'logged out') !== false;
+                ?>
+                <?php if ($isLogoutMessage): ?>
+                clearToastHistory();
+                <?php endif; ?>
                 showToast('<?= $flash['type'] ?>', '<?= addslashes($flash['message']) ?>');
             <?php endforeach; ?>
             <?php unset($_SESSION['flash']); ?>

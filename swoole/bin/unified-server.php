@@ -371,8 +371,19 @@ function handleFlightRequest(Request $swooleRequest, Response $swooleResponse, ?
         $app->run();
 
         // Save $_SESSION changes back to Swoole session (for CSRF tokens, etc.)
+        // Get original keys before saving changes
+        $originalKeys = array_keys($swooleSession->all());
+
+        // Save current $_SESSION values
         foreach ($_SESSION as $key => $value) {
             $swooleSession->set($key, $value);
+        }
+
+        // Remove keys that were deleted from $_SESSION (like flash messages)
+        $currentKeys = array_keys($_SESSION);
+        $deletedKeys = array_diff($originalKeys, $currentKeys);
+        foreach ($deletedKeys as $key) {
+            $swooleSession->remove($key);
         }
 
     } catch (\Throwable $e) {

@@ -23,7 +23,9 @@
                 </div>
                 <div class="card-body">
                     <form method="POST" action="/workbench/update">
-                        <input type="hidden" name="<?= $csrf['name'] ?>" value="<?= $csrf['value'] ?>">
+                        <?php foreach ($csrf as $name => $value): ?>
+                            <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
+                        <?php endforeach; ?>
                         <input type="hidden" name="id" value="<?= $task->id ?>">
 
                         <!-- Title -->

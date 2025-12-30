@@ -306,7 +306,9 @@
                     </div>
                     <div class="card-body">
                         <form method="POST" action="/workbench/delete" onsubmit="return confirm('Delete this task? This cannot be undone.');">
-                            <input type="hidden" name="<?= $csrf['name'] ?>" value="<?= $csrf['value'] ?>">
+                            <?php foreach ($csrf as $name => $value): ?>
+                                <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
+                            <?php endforeach; ?>
                             <input type="hidden" name="id" value="<?= $task->id ?>">
                             <button type="submit" class="btn btn-danger btn-sm w-100">
                                 <i class="bi bi-trash"></i> Delete Task

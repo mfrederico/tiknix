@@ -90,6 +90,7 @@ class Member extends Control {
                     Bean::store($member);
                     $_SESSION['member'] = $member->export();
                     $this->member = $member; // Update current member object
+                    $this->viewData['member'] = $member; // Update view data with new member
                     if (empty($this->viewData['success'])) {
                         $this->viewData['success'] = 'Profile updated successfully';
                     }

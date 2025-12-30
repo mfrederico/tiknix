@@ -33,17 +33,17 @@
         <div class="sidebar-section">
             <div class="sidebar-section-title">Actions</div>
             <?php if ($isLoggedIn ?? false): ?>
-            <a href="/mcp/registry/add" class="btn btn-connect btn-sm w-100 mb-2">
+            <a href="/mcpregistry/add" class="btn btn-connect btn-sm w-100 mb-2">
                 <i class="bi bi-plus-lg"></i> Add Server
             </a>
-            <a href="/mcp/registry/logs" class="btn btn-outline-secondary btn-sm w-100 mb-2">
+            <a href="/mcpregistry/logs" class="btn btn-outline-secondary btn-sm w-100 mb-2">
                 <i class="bi bi-journal-text"></i> Proxy Logs
             </a>
             <a href="/apikeys" class="btn btn-outline-secondary btn-sm w-100 mb-2">
                 <i class="bi bi-key"></i> API Keys
             </a>
             <?php endif; ?>
-            <a href="/mcp/registry/api" target="_blank" class="btn btn-outline-secondary btn-sm w-100">
+            <a href="/mcpregistry/api" target="_blank" class="btn btn-outline-secondary btn-sm w-100">
                 <i class="bi bi-code-slash"></i> View API
             </a>
         </div>
@@ -124,7 +124,7 @@
                         Connect your first MCP server to start inspecting
                     </p>
                     <?php if ($isLoggedIn ?? false): ?>
-                    <a href="/mcp/registry/add" class="btn btn-connect">
+                    <a href="/mcpregistry/add" class="btn btn-connect">
                         <i class="bi bi-plus-lg"></i> Add Your First Server
                     </a>
                     <?php else: ?>
@@ -212,11 +212,13 @@
                                         <i class="bi bi-plug"></i> Test
                                     </button>
                                     <?php if (!empty($server->startupCommand) && ($isLoggedIn ?? false)): ?>
-                                    <button class="btn btn-sm btn-outline-warning start-server-btn"
+                                    <button class="btn btn-sm btn-outline-warning server-control-btn"
                                             data-server-id="<?= $server->id ?>"
+                                            data-slug="<?= htmlspecialchars($server->slug) ?>"
                                             data-name="<?= htmlspecialchars($server->name) ?>"
+                                            data-action="start"
                                             title="Start server: <?= htmlspecialchars($server->startupCommand . ' ' . ($server->startupArgs ?? '')) ?>">
-                                        <i class="bi bi-play-fill"></i> Start
+                                        <i class="bi bi-play-fill"></i> <span class="btn-text">Start</span>
                                     </button>
                                     <?php endif; ?>
                                     <?php if ($isLoggedIn ?? false): ?>
@@ -225,10 +227,10 @@
                                             data-endpoint="<?= htmlspecialchars($server->endpointUrl) ?>">
                                         <i class="bi bi-arrow-repeat"></i> Fetch Tools
                                     </button>
-                                    <a href="/mcp/registry/edit?id=<?= $server->id ?>" class="btn btn-sm btn-outline-secondary">
+                                    <a href="/mcpregistry/edit?id=<?= $server->id ?>" class="btn btn-sm btn-outline-secondary">
                                         <i class="bi bi-pencil"></i> Edit
                                     </a>
-                                    <a href="/mcp/registry?delete=<?= $server->id ?>"
+                                    <a href="/mcpregistry?delete=<?= $server->id ?>"
                                        class="btn btn-sm btn-outline-danger"
                                        onclick="return confirm('Delete this MCP server?')">
                                         <i class="bi bi-trash"></i>
@@ -311,7 +313,9 @@ document.addEventListener('DOMContentLoaded', function() {
             logActivity('Testing connection to ' + serverName + '...');
 
             try {
-                const response = await fetch('/mcp/registry/testConnection?id=' + serverId);
+                const response = await fetch('/mcpregistry/testConnection?id=' + serverId, {
+                    credentials: 'include'
+                });
                 const data = await response.json();
 
                 if (data.success) {
@@ -342,7 +346,9 @@ document.addEventListener('DOMContentLoaded', function() {
             this.disabled = true;
 
             try {
-                const response = await fetch('/mcp/registry/fetchTools?id=' + serverId);
+                const response = await fetch('/mcpregistry/fetchTools?id=' + serverId, {
+                    credentials: 'include'
+                });
                 const data = await response.json();
 
                 if (data.success) {
@@ -360,40 +366,105 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Start server functionality
-    document.querySelectorAll('.start-server-btn').forEach(btn => {
+    // Server control (Start/Stop) functionality
+    function updateServerButton(btn, isRunning) {
+        const textSpan = btn.querySelector('.btn-text');
+        const icon = btn.querySelector('i');
+
+        if (isRunning) {
+            btn.dataset.action = 'stop';
+            btn.classList.remove('btn-outline-warning');
+            btn.classList.add('btn-outline-danger');
+            icon.className = 'bi bi-stop-fill';
+            textSpan.textContent = 'Stop';
+            btn.title = 'Stop running server';
+        } else {
+            btn.dataset.action = 'start';
+            btn.classList.remove('btn-outline-danger');
+            btn.classList.add('btn-outline-warning');
+            icon.className = 'bi bi-play-fill';
+            textSpan.textContent = 'Start';
+        }
+    }
+
+    // Check status of all servers with startup commands on page load
+    document.querySelectorAll('.server-control-btn').forEach(async btn => {
+        const serverId = btn.dataset.serverId;
+        try {
+            const response = await fetch('/mcpregistry/checkStatus?id=' + serverId, {
+                credentials: 'include'
+            });
+            const data = await response.json();
+            if (data.success && data.isRunning) {
+                updateServerButton(btn, true);
+            }
+        } catch (e) {
+            // Ignore errors on status check
+        }
+    });
+
+    document.querySelectorAll('.server-control-btn').forEach(btn => {
         btn.addEventListener('click', async function() {
             const serverId = this.dataset.serverId;
             const serverName = this.dataset.name;
-            const originalHtml = this.innerHTML;
+            const action = this.dataset.action;
+            const isStart = action === 'start';
 
-            this.innerHTML = '<i class="bi bi-hourglass-split spin"></i> Starting...';
+            const icon = this.querySelector('i');
+            const textSpan = this.querySelector('.btn-text');
+            const originalIcon = icon.className;
+            const originalText = textSpan.textContent;
+
+            icon.className = 'bi bi-hourglass-split spin';
+            textSpan.textContent = isStart ? 'Starting...' : 'Stopping...';
             this.disabled = true;
 
-            logActivity('Starting server ' + serverName + '...');
+            logActivity((isStart ? 'Starting' : 'Stopping') + ' server ' + serverName + '...');
 
             try {
-                const response = await fetch('/mcp/registry/startServer?id=' + serverId);
+                const endpoint = isStart ? '/mcpregistry/startServer' : '/mcpregistry/stopServer';
+                const response = await fetch(endpoint + '?id=' + serverId, {
+                    credentials: 'include'
+                });
                 const data = await response.json();
 
                 if (data.success) {
-                    if (data.isRunning) {
-                        logActivity('<span class="text-success">' + serverName + ' started successfully!</span>');
-                        notify('<span class="text-success">Server started!</span> ' + serverName + ' is now running');
+                    if (isStart) {
+                        if (data.isRunning) {
+                            logActivity('<span class="text-success">' + serverName + ' started successfully!</span>');
+                            notify('<span class="text-success">Server started!</span> ' + serverName + ' is now running');
+                            updateServerButton(this, true);
+                        } else {
+                            logActivity('<span class="text-warning">' + serverName + ' command executed</span> - Server not yet responding');
+                            notify('<span class="text-warning">Command executed</span> - Check log: ' + (data.logFile || ''));
+                            // Check status again after a delay
+                            setTimeout(async () => {
+                                const statusResp = await fetch('/mcpregistry/checkStatus?id=' + serverId, { credentials: 'include' });
+                                const statusData = await statusResp.json();
+                                if (statusData.success && statusData.isRunning) {
+                                    updateServerButton(this, true);
+                                    logActivity('<span class="text-success">' + serverName + ' is now running!</span>');
+                                }
+                            }, 3000);
+                        }
                     } else {
-                        logActivity('<span class="text-warning">' + serverName + ' command executed</span> - Server not yet responding, may still be starting');
-                        notify('<span class="text-warning">Command executed</span> - Check log: ' + (data.logFile || ''));
+                        logActivity('<span class="text-success">' + serverName + ' stopped.</span>');
+                        notify('<span class="text-success">Server stopped!</span> ' + serverName);
+                        updateServerButton(this, false);
                     }
                 } else {
-                    logActivity('<span class="text-danger">Failed to start ' + serverName + ':</span> ' + (data.error || 'Unknown error'));
-                    notify('<span class="text-danger">Start failed:</span> ' + (data.error || 'Unknown error'));
+                    logActivity('<span class="text-danger">Failed to ' + action + ' ' + serverName + ':</span> ' + (data.error || 'Unknown error'));
+                    notify('<span class="text-danger">' + (isStart ? 'Start' : 'Stop') + ' failed:</span> ' + (data.error || 'Unknown error'));
+                    icon.className = originalIcon;
+                    textSpan.textContent = originalText;
                 }
             } catch (e) {
-                logActivity('<span class="text-danger">Error starting ' + serverName + ':</span> ' + e.message);
+                logActivity('<span class="text-danger">Error:</span> ' + e.message);
                 notify('<span class="text-danger">Error:</span> ' + e.message);
+                icon.className = originalIcon;
+                textSpan.textContent = originalText;
             }
 
-            this.innerHTML = originalHtml;
             this.disabled = false;
         });
     });

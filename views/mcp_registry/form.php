@@ -4,7 +4,7 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h4 class="mb-0"><?= htmlspecialchars($title) ?></h4>
-                    <a href="/mcp/registry" class="btn btn-outline-secondary btn-sm">Back to List</a>
+                    <a href="/mcpregistry" class="btn btn-outline-secondary btn-sm">Back to List</a>
                 </div>
                 <div class="card-body">
                     <?php if (!empty($error)): ?>
@@ -238,7 +238,7 @@
                         </div>
 
                         <div class="d-flex justify-content-between mt-4">
-                            <a href="/mcp/registry" class="btn btn-secondary">Cancel</a>
+                            <a href="/mcpregistry" class="btn btn-secondary">Cancel</a>
                             <button type="submit" class="btn btn-primary">
                                 <?= isset($server->id) ? 'Update Server' : 'Create Server' ?>
                             </button>
@@ -269,19 +269,31 @@ document.getElementById('testConnectionBtn').addEventListener('click', async fun
 
     try {
         // We need to use URL-based test since we might not have a server ID yet
-        const response = await fetch('/mcp/registry/testConnection?url=' + encodeURIComponent(url));
+        const response = await fetch('/mcpregistry/testConnection?url=' + encodeURIComponent(url), {
+            credentials: 'include'
+        });
         const data = await response.json();
 
         if (data.success) {
             statusDiv.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> ' +
                 (data.message || 'Connection successful') + '</span>';
 
-            // If we got server info, update the version field
+            // If we got server info, update the version field only if different
             if (data.serverInfo && data.serverInfo.version) {
                 const versionField = document.getElementById('version');
-                if (!versionField.value || confirm('Update version to ' + data.serverInfo.version + '?')) {
-                    versionField.value = data.serverInfo.version;
+                const currentVersion = versionField.value.trim();
+                const newVersion = data.serverInfo.version;
+
+                if (!currentVersion) {
+                    // No version set, auto-populate
+                    versionField.value = newVersion;
+                } else if (currentVersion !== newVersion) {
+                    // Version is different, ask user
+                    if (confirm('Update version from ' + currentVersion + ' to ' + newVersion + '?')) {
+                        versionField.value = newVersion;
+                    }
                 }
+                // If versions match, do nothing (no prompt)
             }
         } else {
             statusDiv.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ' +
@@ -306,7 +318,9 @@ document.getElementById('fetchToolsBtn').addEventListener('click', async functio
     this.textContent = 'Fetching...';
 
     try {
-        const response = await fetch('/mcp/registry/fetchTools?url=' + encodeURIComponent(url));
+        const response = await fetch('/mcpregistry/fetchTools?url=' + encodeURIComponent(url), {
+            credentials: 'include'
+        });
         const data = await response.json();
 
         if (data.success) {

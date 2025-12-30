@@ -17,45 +17,102 @@ class Mcpregistry extends Control {
 
     const ADMIN_LEVEL = 50;
 
+    /** @var bool Flag to indicate if auth failed and response was already sent */
+    private bool $authHandled = false;
+
     public function __construct() {
         parent::__construct();
 
         // Allow public access to index and API endpoints
         $url = Flight::request()->url;
 
-        // Public endpoints that don't require login:
-        // - /mcp/registry (index - browse servers)
-        // - /mcp/registry/api (JSON API)
-        // - /mcp/registry/fetchTools (fetch tools from a server)
-        // - /mcp/registry/testConnection (test server connectivity)
-        $publicPaths = ['/mcp/registry/api', '/mcp/registry/fetchTools', '/mcp/registry/testConnection'];
+        // Truly public endpoints (no auth at all - for discovery):
+        $trulyPublicPaths = [
+            '/mcpregistry/api',  // Server listing API for discovery
+            '/mcpregistry/checkStatus',  // Server status check (not sensitive)
+        ];
 
-        // Check if URL exactly matches /mcp/registry or /mcp/registry/
-        $isRegistryIndex = preg_match('#^/mcp/registry/?$#', $url);
-        $isPublicPath = false;
-        foreach ($publicPaths as $path) {
+        // Endpoints that require API key OR user login:
+        $apiKeyOrLoginPaths = [
+            '/mcpregistry/fetchTools',
+            '/mcpregistry/testConnection',
+            '/mcpregistry/fixSlug',
+            '/mcpregistry/fixApiKey',
+            '/mcpregistry/checkStatus',
+            '/mcpregistry/stopServer',
+            '/mcpregistry/startServer',
+        ];
+
+        // Check if URL exactly matches /mcpregistry or /mcpregistry/
+        $isRegistryIndex = preg_match('#^/mcpregistry/?$#', $url);
+
+        // Check if truly public
+        $isTrulyPublic = false;
+        foreach ($trulyPublicPaths as $path) {
             if (strpos($url, $path) !== false) {
-                $isPublicPath = true;
+                $isTrulyPublic = true;
                 break;
             }
         }
 
-        if ($isRegistryIndex || $isPublicPath) {
-            return; // Public endpoint, no auth required
+        // Check if requires API key or login
+        $requiresApiKeyOrLogin = false;
+        foreach ($apiKeyOrLoginPaths as $path) {
+            if (strpos($url, $path) !== false) {
+                $requiresApiKeyOrLogin = true;
+                break;
+            }
         }
 
-        $isAjax = Flight::request()->ajax ||
-                  (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false);
+        // Truly public endpoints - no auth required
+        if ($isTrulyPublic) {
+            return;
+        }
 
-        // Check if user is logged in
-        if (!Flight::isLoggedIn()) {
-            if ($isAjax) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'error' => 'Authentication required']);
-                exit;
+        // Registry index (browsing) requires login
+        if ($isRegistryIndex) {
+            // Fall through to login check below
+        }
+
+        // Detect AJAX/JSON requests - check various header formats
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
+        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+        $isAjax = Flight::request()->ajax ||
+                  strpos($accept, 'application/json') !== false ||
+                  strpos($contentType, 'application/json') !== false;
+
+        // API key or login protected endpoints (no admin level required)
+        if ($requiresApiKeyOrLogin) {
+            // Check for API key first
+            $apiKey = $this->getApiKeyFromRequest();
+            if ($apiKey && $this->validateApiKey($apiKey)) {
+                return; // Valid API key, allow access
             }
-            Flight::redirect('/auth/login?redirect=' . urlencode($url));
-            exit;
+
+            // Check if user is logged in (no admin level required for these endpoints)
+            if (Flight::isLoggedIn()) {
+                return; // Logged in user, allow access
+            }
+
+            // Not authenticated
+            $this->authHandled = true;
+            if ($isAjax) {
+                Flight::jsonError('Authentication required', 401);
+            } else {
+                Flight::redirect('/auth/login?redirect=' . urlencode($url));
+            }
+            return;
+        }
+
+        // All other endpoints require login + admin level
+        if (!Flight::isLoggedIn()) {
+            $this->authHandled = true;
+            if ($isAjax) {
+                Flight::jsonError('Authentication required', 401);
+            } else {
+                Flight::redirect('/auth/login?redirect=' . urlencode($url));
+            }
+            return;
         }
 
         // Check if user has admin level
@@ -65,20 +122,102 @@ class Mcpregistry extends Control {
                 'member_level' => $this->member->level,
                 'ip' => Flight::request()->ip
             ]);
+            $this->authHandled = true;
             if ($isAjax) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'error' => 'Access denied']);
-                exit;
+                Flight::jsonError('Access denied', 403);
+            } else {
+                Flight::redirect('/');
             }
-            Flight::redirect('/');
-            exit;
+            return;
         }
+    }
+
+    /**
+     * Check if auth was handled in constructor (and action should not run)
+     */
+    private function shouldSkipAction(): bool {
+        return $this->authHandled;
+    }
+
+    /**
+     * Get API key from request headers
+     * Uses $_SERVER which works in both FPM and CLI/Swoole environments
+     */
+    private function getApiKeyFromRequest(): ?string {
+        // Authorization: Bearer <token> or Basic auth
+        $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        if (!empty($auth)) {
+            if (preg_match('/Bearer\s+(.+)/i', $auth, $matches)) {
+                return $matches[1];
+            }
+            // Basic auth - extract from base64
+            if (preg_match('/Basic\s+(.+)/i', $auth, $matches)) {
+                $decoded = base64_decode($matches[1]);
+                if (strpos($decoded, ':') !== false) {
+                    // username:password format - use password as token
+                    return explode(':', $decoded, 2)[1];
+                }
+            }
+        }
+
+        // X-API-Key header (HTTP_X_API_KEY in $_SERVER)
+        if (!empty($_SERVER['HTTP_X_API_KEY'])) {
+            return $_SERVER['HTTP_X_API_KEY'];
+        }
+
+        // X-MCP-Token header (HTTP_X_MCP_TOKEN in $_SERVER)
+        if (!empty($_SERVER['HTTP_X_MCP_TOKEN'])) {
+            return $_SERVER['HTTP_X_MCP_TOKEN'];
+        }
+
+        // Query parameter fallback (for testing)
+        if (isset($_GET['api_key'])) {
+            return $_GET['api_key'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate API key
+     */
+    private function validateApiKey(string $token): bool {
+        if (empty($token)) {
+            return false;
+        }
+
+        // Find the API key
+        $key = Bean::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
+
+        if (!$key) {
+            return false;
+        }
+
+        // Check expiration
+        if ($key->expiresAt && strtotime($key->expiresAt) < time()) {
+            $this->logger->warning('MCP Registry auth failed: API key expired', ['key_id' => $key->id]);
+            return false;
+        }
+
+        // Update usage stats
+        $key->lastUsedAt = date('Y-m-d H:i:s');
+        $key->lastUsedIp = $_SERVER['REMOTE_ADDR'] ?? null;
+        $key->usageCount = ($key->usageCount ?? 0) + 1;
+        Bean::store($key);
+
+        $this->logger->debug('MCP Registry authenticated via API key', [
+            'key_id' => $key->id,
+            'key_name' => $key->name
+        ]);
+
+        return true;
     }
 
     /**
      * List all MCP servers
      */
     public function index($params = []) {
+        if ($this->shouldSkipAction()) return;
         $this->viewData['title'] = 'MCP Server Registry';
 
         $request = Flight::request();
@@ -94,7 +233,7 @@ class Mcpregistry extends Control {
                 ]);
                 Bean::trash($server);
             }
-            Flight::redirect('/mcp/registry');
+            Flight::redirect('/mcpregistry');
             return;
         }
 
@@ -116,6 +255,7 @@ class Mcpregistry extends Control {
      * Add new MCP server
      */
     public function add($params = []) {
+        if ($this->shouldSkipAction()) return;
         $request = Flight::request();
 
         if ($request->method === 'POST') {
@@ -124,7 +264,7 @@ class Mcpregistry extends Control {
             } else {
                 $result = $this->processServerForm($request);
                 if ($result['success']) {
-                    Flight::redirect('/mcp/registry');
+                    Flight::redirect('/mcpregistry');
                     return;
                 }
                 $this->viewData['error'] = $result['error'];
@@ -140,17 +280,18 @@ class Mcpregistry extends Control {
      * Edit existing MCP server
      */
     public function edit($params = []) {
+        if ($this->shouldSkipAction()) return;
         $request = Flight::request();
         $serverId = $request->query->id ?? null;
 
         if (!$serverId) {
-            Flight::redirect('/mcp/registry');
+            Flight::redirect('/mcpregistry');
             return;
         }
 
         $server = Bean::load('mcpserver', $serverId);
         if (!$server->id) {
-            Flight::redirect('/mcp/registry');
+            Flight::redirect('/mcpregistry');
             return;
         }
 
@@ -327,8 +468,7 @@ class Mcpregistry extends Control {
      * Fetch tools from remote MCP server (AJAX)
      */
     public function fetchTools($params = []) {
-        header('Content-Type: application/json');
-
+        if ($this->shouldSkipAction()) return;
         // Accept either server ID or direct URL
         $serverId = $this->getParam('id');
         $endpointUrl = $this->getParam('url');
@@ -342,7 +482,7 @@ class Mcpregistry extends Control {
         }
 
         if (empty($endpointUrl)) {
-            echo json_encode(['success' => false, 'error' => 'Server ID or URL is required']);
+            Flight::json(['success' => false, 'error' => 'Server ID or URL is required']);
             return;
         }
 
@@ -354,7 +494,7 @@ class Mcpregistry extends Control {
         }
 
         if (!filter_var($endpointUrl, FILTER_VALIDATE_URL)) {
-            echo json_encode(['success' => false, 'error' => 'Invalid URL format']);
+            Flight::json(['success' => false, 'error' => 'Invalid URL format']);
             return;
         }
 
@@ -395,12 +535,12 @@ class Mcpregistry extends Control {
             curl_close($ch);
 
             if ($initError) {
-                echo json_encode(['success' => false, 'error' => "Connection error: {$initError}"]);
+                Flight::json(['success' => false, 'error' => "Connection error: {$initError}"]);
                 return;
             }
 
             if ($initHttpCode < 200 || $initHttpCode >= 300) {
-                echo json_encode(['success' => false, 'error' => "Server initialization failed (HTTP {$initHttpCode})"]);
+                Flight::json(['success' => false, 'error' => "Server initialization failed (HTTP {$initHttpCode})"]);
                 return;
             }
 
@@ -444,7 +584,7 @@ class Mcpregistry extends Control {
             curl_close($ch);
 
             if ($error) {
-                echo json_encode(['success' => false, 'error' => "Connection error: {$error}"]);
+                Flight::json(['success' => false, 'error' => "Connection error: {$error}"]);
                 return;
             }
 
@@ -453,14 +593,14 @@ class Mcpregistry extends Control {
                 $errorData = json_decode($response, true);
                 $errorMsg = $errorData['error']['message'] ?? '';
                 if (stripos($errorMsg, 'not initialized') !== false) {
-                    echo json_encode([
+                    Flight::json([
                         'success' => false,
                         'error' => 'This MCP server requires persistent sessions. Tools cannot be fetched via HTTP. Please add tools manually or use a WebSocket client.',
                         'stateful' => true
                     ]);
                     return;
                 }
-                echo json_encode(['success' => false, 'error' => "HTTP {$httpCode}"]);
+                Flight::json(['success' => false, 'error' => "HTTP {$httpCode}"]);
                 return;
             }
 
@@ -476,7 +616,7 @@ class Mcpregistry extends Control {
             }
 
             if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
-                echo json_encode(['success' => false, 'error' => 'Invalid JSON response']);
+                Flight::json(['success' => false, 'error' => 'Invalid JSON response']);
                 return;
             }
 
@@ -489,7 +629,7 @@ class Mcpregistry extends Control {
                 Bean::store($server);
             }
 
-            echo json_encode([
+            Flight::json([
                 'success' => true,
                 'tools' => $tools,
                 'toolCount' => count($tools),
@@ -497,7 +637,7 @@ class Mcpregistry extends Control {
             ]);
 
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            Flight::json(['success' => false, 'error' => $e->getMessage()]);
         }
     }
 
@@ -507,7 +647,7 @@ class Mcpregistry extends Control {
      * Accepts either 'id' (server ID) or 'url' (direct URL) parameter
      */
     public function testConnection($params = []) {
-        header('Content-Type: application/json');
+        if ($this->shouldSkipAction()) return;
 
         $serverId = $this->getParam('id');
         $endpointUrl = $this->getParam('url');
@@ -516,14 +656,14 @@ class Mcpregistry extends Control {
         if (!empty($serverId)) {
             $server = Bean::load('mcpserver', $serverId);
             if (!$server || !$server->id) {
-                echo json_encode(['success' => false, 'error' => 'Server not found']);
+                Flight::json(['success' => false, 'error' => 'Server not found']);
                 return;
             }
             $endpointUrl = $server->endpointUrl;
         }
 
         if (empty($endpointUrl)) {
-            echo json_encode(['success' => false, 'error' => 'Server ID or URL is required']);
+            Flight::json(['success' => false, 'error' => 'Server ID or URL is required']);
             return;
         }
 
@@ -535,7 +675,7 @@ class Mcpregistry extends Control {
         }
 
         if (!filter_var($endpointUrl, FILTER_VALIDATE_URL)) {
-            echo json_encode(['success' => false, 'error' => 'Invalid URL format']);
+            Flight::json(['success' => false, 'error' => 'Invalid URL format']);
             return;
         }
 
@@ -576,7 +716,7 @@ class Mcpregistry extends Control {
             curl_close($ch);
 
             if ($error) {
-                echo json_encode([
+                Flight::json([
                     'success' => false,
                     'error' => 'Connection failed: ' . $error,
                     'endpoint' => $endpointUrl
@@ -600,7 +740,7 @@ class Mcpregistry extends Control {
 
                 $serverInfo = $data['result']['serverInfo'] ?? null;
 
-                echo json_encode([
+                Flight::json([
                     'success' => true,
                     'message' => $serverInfo
                         ? 'Connected to ' . ($serverInfo['name'] ?? 'MCP Server') . ' v' . ($serverInfo['version'] ?? '?')
@@ -609,7 +749,7 @@ class Mcpregistry extends Control {
                     'serverInfo' => $serverInfo
                 ]);
             } else {
-                echo json_encode([
+                Flight::json([
                     'success' => false,
                     'error' => 'Server returned HTTP ' . $httpCode,
                     'httpCode' => $httpCode
@@ -617,7 +757,7 @@ class Mcpregistry extends Control {
             }
 
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            Flight::json(['success' => false, 'error' => $e->getMessage()]);
         }
     }
 
@@ -626,29 +766,29 @@ class Mcpregistry extends Control {
      * Requires authentication - only admins can start servers
      */
     public function startServer($params = []) {
-        header('Content-Type: application/json');
+        if ($this->shouldSkipAction()) return;
 
         // Require admin access
         if (!Flight::hasLevel(LEVELS['ADMIN'])) {
-            echo json_encode(['success' => false, 'error' => 'Admin access required']);
+            Flight::json(['success' => false, 'error' => 'Admin access required']);
             return;
         }
 
         $serverId = $this->getParam('id');
 
         if (empty($serverId)) {
-            echo json_encode(['success' => false, 'error' => 'Server ID is required']);
+            Flight::json(['success' => false, 'error' => 'Server ID is required']);
             return;
         }
 
         $server = Bean::load('mcpserver', $serverId);
         if (!$server || !$server->id) {
-            echo json_encode(['success' => false, 'error' => 'Server not found']);
+            Flight::json(['success' => false, 'error' => 'Server not found']);
             return;
         }
 
         if (empty($server->startupCommand)) {
-            echo json_encode(['success' => false, 'error' => 'No startup command configured for this server']);
+            Flight::json(['success' => false, 'error' => 'No startup command configured for this server']);
             return;
         }
 
@@ -657,7 +797,7 @@ class Mcpregistry extends Control {
         $command = trim($server->startupCommand);
 
         if (!in_array($command, $allowedCommands)) {
-            echo json_encode(['success' => false, 'error' => 'Command not in allowed list: ' . implode(', ', $allowedCommands)]);
+            Flight::json(['success' => false, 'error' => 'Command not in allowed list: ' . implode(', ', $allowedCommands)]);
             return;
         }
 
@@ -729,7 +869,7 @@ class Mcpregistry extends Control {
                 'by' => $this->member->id
             ]);
 
-            echo json_encode([
+            Flight::json([
                 'success' => true,
                 'message' => $isRunning ? 'Server started successfully' : 'Command executed, but server not yet responding',
                 'isRunning' => $isRunning,
@@ -737,16 +877,184 @@ class Mcpregistry extends Control {
             ]);
 
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'error' => 'Failed to start server: ' . $e->getMessage()]);
+            Flight::json(['success' => false, 'error' => 'Failed to start server: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * Check if an MCP server is running
+     * GET /mcpregistry/checkStatus?id=1
+     */
+    public function checkStatus($params = []) {
+        if ($this->shouldSkipAction()) return;
+
+        $serverId = $this->getParam('id');
+
+        if (empty($serverId)) {
+            Flight::json(['success' => false, 'error' => 'Server ID is required']);
+            return;
+        }
+
+        $server = Bean::load('mcpserver', $serverId);
+        if (!$server || !$server->id) {
+            Flight::json(['success' => false, 'error' => 'Server not found']);
+            return;
+        }
+
+        $isRunning = false;
+        $pid = null;
+
+        // Check PID file
+        $pidFile = '/tmp/mcp-server-' . $server->slug . '.pid';
+        if (file_exists($pidFile)) {
+            $pid = (int)trim(file_get_contents($pidFile));
+            if ($pid > 0 && file_exists("/proc/{$pid}")) {
+                $isRunning = true;
+            }
+        }
+
+        // Also try connecting to the endpoint as a backup check
+        if (!$isRunning && !empty($server->endpointUrl)) {
+            $ch = curl_init($server->endpointUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode([
+                    'jsonrpc' => '2.0',
+                    'id' => 1,
+                    'method' => 'initialize',
+                    'params' => [
+                        'protocolVersion' => '2024-11-05',
+                        'capabilities' => new \stdClass(),
+                        'clientInfo' => ['name' => 'Tiknix', 'version' => '1.0.0']
+                    ]
+                ]),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json, text/event-stream'
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 3,
+                CURLOPT_CONNECTTIMEOUT => 2
+            ]);
+            curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+
+            // Any HTTP response (even error codes) means server is running
+            // Only connection failures (code 0) mean server is down
+            if ($httpCode > 0) {
+                $isRunning = true;
+            }
+        }
+
+        Flight::json([
+            'success' => true,
+            'isRunning' => $isRunning,
+            'pid' => $pid,
+            'hasStartupCommand' => !empty($server->startupCommand)
+        ]);
+    }
+
+    /**
+     * Stop a running MCP server
+     * POST /mcpregistry/stopServer?id=1
+     */
+    public function stopServer($params = []) {
+        if ($this->shouldSkipAction()) return;
+
+        $serverId = $this->getParam('id');
+
+        if (empty($serverId)) {
+            Flight::json(['success' => false, 'error' => 'Server ID is required']);
+            return;
+        }
+
+        $server = Bean::load('mcpserver', $serverId);
+        if (!$server || !$server->id) {
+            Flight::json(['success' => false, 'error' => 'Server not found']);
+            return;
+        }
+
+        $pidFile = '/tmp/mcp-server-' . $server->slug . '.pid';
+        $stopped = false;
+        $pid = null;
+
+        if (file_exists($pidFile)) {
+            $pid = (int)trim(file_get_contents($pidFile));
+            if ($pid > 0 && file_exists("/proc/{$pid}")) {
+                // Kill the process
+                posix_kill($pid, SIGTERM);
+                usleep(500000); // Wait 0.5s
+
+                // Check if still running, force kill if needed
+                if (file_exists("/proc/{$pid}")) {
+                    posix_kill($pid, SIGKILL);
+                    usleep(500000);
+                }
+
+                // Verify it's stopped
+                $stopped = !file_exists("/proc/{$pid}");
+
+                if ($stopped) {
+                    unlink($pidFile);
+                }
+            } else {
+                // PID file exists but process not running - clean up
+                unlink($pidFile);
+                $stopped = true;
+            }
+        } else {
+            // No PID file - try to find process by startup command/args or endpoint port
+            $killed = false;
+
+            // Try to kill by startup args (e.g., @playwright/mcp)
+            if (!empty($server->startupArgs)) {
+                $pattern = escapeshellarg(trim(explode(' ', $server->startupArgs)[0]));
+                exec("pkill -f {$pattern} 2>/dev/null", $output, $returnCode);
+                $killed = ($returnCode === 0);
+            }
+
+            // If that didn't work and we have a port, try to find and kill by port
+            if (!$killed && !empty($server->startupPort)) {
+                $port = (int)$server->startupPort;
+                // Find PID listening on the port
+                exec("lsof -t -i:{$port} 2>/dev/null", $pids, $returnCode);
+                if (!empty($pids)) {
+                    foreach ($pids as $p) {
+                        $p = (int)trim($p);
+                        if ($p > 0) {
+                            posix_kill($p, SIGTERM);
+                            $killed = true;
+                        }
+                    }
+                }
+            }
+
+            $stopped = $killed;
+        }
+
+        $this->logger->info('MCP server stop attempted', [
+            'id' => $server->id,
+            'name' => $server->name,
+            'pid' => $pid,
+            'stopped' => $stopped,
+            'by' => $this->member->id
+        ]);
+
+        Flight::json([
+            'success' => $stopped,
+            'message' => $stopped ? 'Server stopped' : 'Failed to stop server',
+            'pid' => $pid
+        ]);
     }
 
     /**
      * Public JSON API - returns active MCP servers
      */
     public function api($params = []) {
-        header('Content-Type: application/json');
-        header('Access-Control-Allow-Origin: *');
+        if ($this->shouldSkipAction()) return;
+        Flight::response()->header('Access-Control-Allow-Origin', '*');
 
         // Only return active servers
         $servers = Bean::find('mcpserver', 'status = ? ORDER BY featured DESC, sort_order ASC, name ASC', ['active']);
@@ -766,25 +1074,27 @@ class Mcpregistry extends Control {
                 'documentation_url' => $server->documentationUrl,
                 'icon_url' => $server->iconUrl,
                 'tags' => json_decode($server->tags, true) ?: [],
-                'featured' => (bool)$server->featured
+                'featured' => (bool)$server->featured,
+                'is_proxy_enabled' => (bool)$server->isProxyEnabled
             ];
         }
 
-        echo json_encode([
+        Flight::json([
             'success' => true,
             'count' => count($result),
             'servers' => $result
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        ]);
     }
 
     /**
      * View MCP proxy logs
-     * GET /mcp/registry/logs
+     * GET /mcpregistry/logs
      */
     public function logs($params = []) {
+        if ($this->shouldSkipAction()) return;
         // Require admin access
         if (!Flight::hasLevel(LEVELS['ADMIN'])) {
-            Flight::redirect('/auth/login?redirect=' . urlencode('/mcp/registry/logs'));
+            Flight::redirect('/auth/login?redirect=' . urlencode('/mcpregistry/logs'));
             return;
         }
 
@@ -802,7 +1112,7 @@ class Mcpregistry extends Control {
         $bindings = [];
 
         if (!empty($method)) {
-            $where .= ' AND method = ?';
+            $where .= ' AND tool_name = ?';
             $bindings[] = $method;
         }
 
@@ -824,8 +1134,8 @@ class Mcpregistry extends Control {
         // Get logs
         $logs = Bean::find('mcplog', "{$where} ORDER BY created_at DESC LIMIT {$limit} OFFSET {$offset}", $bindings);
 
-        // Get unique methods for filter dropdown
-        $methods = \RedBeanPHP\R::getCol('SELECT DISTINCT method FROM mcplog ORDER BY method');
+        // Get unique tool names for filter dropdown
+        $methods = \RedBeanPHP\R::getCol('SELECT DISTINCT tool_name FROM mcplog WHERE tool_name IS NOT NULL AND tool_name != \'\' ORDER BY tool_name');
 
         $this->viewData['title'] = 'MCP Proxy Logs';
         $this->viewData['logs'] = $logs;
@@ -844,44 +1154,49 @@ class Mcpregistry extends Control {
 
     /**
      * View single log entry details (AJAX)
-     * GET /mcp/registry/logDetail?id=X
+     * GET /mcpregistry/logDetail?id=X
      */
     public function logDetail($params = []) {
-        header('Content-Type: application/json');
-
+        if ($this->shouldSkipAction()) return;
         // Require admin access
         if (!Flight::hasLevel(LEVELS['ADMIN'])) {
-            echo json_encode(['success' => false, 'error' => 'Access denied']);
+            Flight::json(['success' => false, 'error' => 'Access denied']);
             return;
         }
 
         $logId = $this->getParam('id');
         if (empty($logId)) {
-            echo json_encode(['success' => false, 'error' => 'Log ID required']);
+            Flight::json(['success' => false, 'error' => 'Log ID required']);
             return;
         }
 
         $log = Bean::load('mcplog', $logId);
         if (!$log || !$log->id) {
-            echo json_encode(['success' => false, 'error' => 'Log not found']);
+            Flight::json(['success' => false, 'error' => 'Log not found']);
             return;
         }
 
-        echo json_encode([
+        Flight::json([
             'success' => true,
             'log' => [
                 'id' => $log->id,
                 'memberId' => $log->memberId,
-                'apiKeyId' => $log->apiKeyId,
+                'apiKeyId' => $log->apikeyId,
                 'serverId' => $log->serverId,
+                'serverSlug' => $log->serverSlug,
+                'toolName' => $log->toolName,
                 'method' => $log->method,
+                'arguments' => $log->arguments,
+                'result' => $log->result,
                 'requestBody' => $log->requestBody,
                 'responseBody' => $log->responseBody,
-                'httpCode' => $log->httpCode,
-                'duration' => $log->duration,
+                'httpCode' => $log->httpCode ?: 200,
+                'duration' => $log->duration ?: 0,
                 'ipAddress' => $log->ipAddress,
                 'userAgent' => $log->userAgent,
                 'error' => $log->error,
+                'success' => (bool)$log->success,
+                'sessionId' => $log->sessionId,
                 'createdAt' => $log->createdAt
             ]
         ]);
@@ -889,14 +1204,13 @@ class Mcpregistry extends Control {
 
     /**
      * Clear old logs
-     * POST /mcp/registry/clearLogs
+     * POST /mcpregistry/clearLogs
      */
     public function clearLogs($params = []) {
-        header('Content-Type: application/json');
-
+        if ($this->shouldSkipAction()) return;
         // Require admin access
         if (!Flight::hasLevel(LEVELS['ADMIN'])) {
-            echo json_encode(['success' => false, 'error' => 'Access denied']);
+            Flight::json(['success' => false, 'error' => 'Access denied']);
             return;
         }
 
@@ -911,10 +1225,155 @@ class Mcpregistry extends Control {
             'by' => $this->member->id
         ]);
 
-        echo json_encode([
+        Flight::json([
             'success' => true,
             'deleted' => $deleted,
             'message' => "Deleted {$deleted} logs older than {$days} days"
+        ]);
+    }
+
+    /**
+     * Fix doubled slug for a server (admin only)
+     * GET /mcpregistry/fixSlug?id=1&slug=playwright-mcp
+     */
+    public function fixSlug($params = []) {
+        if ($this->shouldSkipAction()) return;
+        // Check session auth or API key
+        $isAuthed = Flight::hasLevel(LEVELS['ADMIN']);
+
+        if (!$isAuthed) {
+            // Try API key auth
+            $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+            if (preg_match('/Bearer\s+(\S+)/', $authHeader, $matches)) {
+                $token = $matches[1];
+                $apiKey = Bean::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
+                if ($apiKey && $apiKey->id) {
+                    $member = Bean::load('member', $apiKey->memberId);
+                    if ($member && $member->level <= LEVELS['ADMIN']) {
+                        $isAuthed = true;
+                    }
+                }
+            }
+        }
+
+        if (!$isAuthed) {
+            Flight::json(['success' => false, 'error' => 'Admin access required']);
+            return;
+        }
+
+        $serverId = (int)($this->getParam('id') ?? 0);
+        $newSlug = trim($this->getParam('slug') ?? '');
+
+        if (!$serverId || !$newSlug) {
+            Flight::json(['success' => false, 'error' => 'Both id and slug parameters are required']);
+            return;
+        }
+
+        // Validate slug format
+        if (!preg_match('/^[a-z0-9-]+$/', $newSlug)) {
+            Flight::json(['success' => false, 'error' => 'Slug must contain only lowercase letters, numbers, and hyphens']);
+            return;
+        }
+
+        $server = Bean::load('mcpserver', $serverId);
+        if (!$server || !$server->id) {
+            Flight::json(['success' => false, 'error' => 'Server not found']);
+            return;
+        }
+
+        $oldSlug = $server->slug;
+        $server->slug = $newSlug;
+        // Clear tools cache so new slug takes effect
+        $server->toolsCachedAt = null;
+        $server->toolsCache = null;
+        // Enable proxy if requested
+        if ($this->getParam('enableProxy')) {
+            $server->isProxyEnabled = 1;
+        }
+        Bean::store($server);
+
+        $this->logger->info('MCP server slug fixed', [
+            'server_id' => $serverId,
+            'old_slug' => $oldSlug,
+            'new_slug' => $newSlug,
+            'by' => $this->member->id ?? 0
+        ]);
+
+        Flight::json([
+            'success' => true,
+            'server_id' => $serverId,
+            'old_slug' => $oldSlug,
+            'new_slug' => $newSlug,
+            'is_proxy_enabled' => $server->isProxyEnabled
+        ]);
+    }
+
+    /**
+     * Fix API key's allowedServers (admin only)
+     * GET /mcpregistry/fixApiKey?id=1&allowedServers=playwright-mcp
+     */
+    public function fixApiKey($params = []) {
+        if ($this->shouldSkipAction()) return;
+        // Check session auth or API key
+        $isAuthed = Flight::hasLevel(LEVELS['ADMIN']);
+
+        if (!$isAuthed) {
+            // Try API key auth
+            $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+            if (preg_match('/Bearer\s+(\S+)/', $authHeader, $matches)) {
+                $token = $matches[1];
+                $apiKey = Bean::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
+                if ($apiKey && $apiKey->id) {
+                    $member = Bean::load('member', $apiKey->memberId);
+                    if ($member && $member->level <= LEVELS['ADMIN']) {
+                        $isAuthed = true;
+                    }
+                }
+            }
+        }
+
+        if (!$isAuthed) {
+            Flight::json(['success' => false, 'error' => 'Admin access required']);
+            return;
+        }
+
+        $apiKeyId = (int)($this->getParam('id') ?? 0);
+        $allowedServers = trim($this->getParam('allowedServers') ?? '');
+
+        if (!$apiKeyId) {
+            Flight::json(['success' => false, 'error' => 'API key id is required']);
+            return;
+        }
+
+        $apiKey = Bean::load('apikey', $apiKeyId);
+        if (!$apiKey || !$apiKey->id) {
+            Flight::json(['success' => false, 'error' => 'API key not found']);
+            return;
+        }
+
+        $oldAllowedServers = $apiKey->allowedServers;
+
+        // Parse new allowed servers (comma-separated or empty for no restrictions)
+        if (empty($allowedServers)) {
+            $apiKey->allowedServers = null;
+        } else {
+            $serverList = array_map('trim', explode(',', $allowedServers));
+            $apiKey->allowedServers = json_encode($serverList);
+        }
+
+        Bean::store($apiKey);
+
+        $this->logger->info('API key allowedServers fixed', [
+            'apikey_id' => $apiKeyId,
+            'old_allowed_servers' => $oldAllowedServers,
+            'new_allowed_servers' => $apiKey->allowedServers
+        ]);
+
+        Flight::json([
+            'success' => true,
+            'apikey_id' => $apiKeyId,
+            'old_allowed_servers' => $oldAllowedServers,
+            'new_allowed_servers' => $apiKey->allowedServers
         ]);
     }
 }

@@ -8,6 +8,7 @@ namespace app\BaseControls;
 
 use \Flight as Flight;
 use \app\Bean;
+use \app\SimpleCsrf;
 use \Exception as Exception;
 
 abstract class Control {
@@ -26,7 +27,7 @@ abstract class Control {
             'isLoggedIn' => Flight::isLoggedIn(),
             'menu' => Flight::loadMenu(),
             'title' => 'App',
-            'csrf' => Flight::csrf()->getTokenArray()
+            'csrf' => SimpleCsrf::getTokenArray()
         ];
         
         $this->logger->debug('Controller initialized: ' . get_class($this));
@@ -98,19 +99,14 @@ abstract class Control {
      */
     protected function validateCSRF() {
         if (Flight::request()->method !== 'GET') {
-            try {
-                if (!Flight::csrf()->validateRequest()) {
-                    $this->logger->warning('CSRF validation failed');
+            if (!SimpleCsrf::validateRequest()) {
+                $this->logger->warning('CSRF validation failed');
 
-                    if (Flight::request()->ajax) {
-                        Flight::jsonError('CSRF validation failed', 403);
-                    } else {
-                        Flight::redirect('/error/forbidden');
-                    }
-                    return false;
+                if (Flight::request()->ajax) {
+                    Flight::jsonError('CSRF validation failed', 403);
+                } else {
+                    Flight::redirect('/error/forbidden');
                 }
-            } catch (Exception $e) {
-                $this->logger->error('CSRF validation error: ' . $e->getMessage());
                 return false;
             }
         }

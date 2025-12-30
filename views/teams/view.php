@@ -180,7 +180,9 @@
                 <div class="card mt-4 border-danger">
                     <div class="card-body">
                         <form method="POST" action="/teams/leave" onsubmit="return confirm('Are you sure you want to leave this team?');">
-                            <input type="hidden" name="<?= $csrf['name'] ?>" value="<?= $csrf['value'] ?>">
+                            <?php foreach ($csrf as $name => $value): ?>
+                                <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
+                            <?php endforeach; ?>
                             <input type="hidden" name="id" value="<?= $team->id ?>">
                             <button type="submit" class="btn btn-outline-danger btn-sm w-100">
                                 <i class="bi bi-box-arrow-left"></i> Leave Team

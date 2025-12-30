@@ -169,7 +169,7 @@ curl -X POST <?= htmlspecialchars($mcpUrl ?? '') ?> \
   "mcpServers": {
     "tiknix-registry": {
       "type": "http",
-      "url": "<?= htmlspecialchars(rtrim($_SERVER['REQUEST_SCHEME'] ?? 'https', '/')) ?>://<?= htmlspecialchars($_SERVER['HTTP_HOST'] ?? 'localhost') ?>/mcp/registry/api"
+      "url": "<?= htmlspecialchars(rtrim($_SERVER['REQUEST_SCHEME'] ?? 'https', '/')) ?>://<?= htmlspecialchars($_SERVER['HTTP_HOST'] ?? 'localhost') ?>/mcpregistry/api"
     }
   }
 }</code></pre>
@@ -193,15 +193,15 @@ curl -X POST <?= htmlspecialchars($mcpUrl ?? '') ?> \
                         <div class="accordion-body">
                             <table class="table table-sm">
                                 <tr>
-                                    <td><code>GET /mcp/registry/api</code></td>
+                                    <td><code>GET /mcpregistry/api</code></td>
                                     <td>List all active MCP servers (JSON)</td>
                                 </tr>
                                 <tr>
-                                    <td><code>GET /mcp/registry/api?status=all</code></td>
+                                    <td><code>GET /mcpregistry/api?status=all</code></td>
                                     <td>Include inactive/deprecated servers</td>
                                 </tr>
                                 <tr>
-                                    <td><code>GET /mcp/registry/api?featured=1</code></td>
+                                    <td><code>GET /mcpregistry/api?featured=1</code></td>
                                     <td>Only featured servers</td>
                                 </tr>
                             </table>
@@ -211,7 +211,7 @@ curl -X POST <?= htmlspecialchars($mcpUrl ?? '') ?> \
             </div>
 
             <div class="mt-3">
-                <a href="/mcp/registry" class="btn btn-outline-primary">
+                <a href="/mcpregistry" class="btn btn-outline-primary">
                     <i class="bi bi-gear"></i> Manage Registry
                 </a>
                 <a href="/apikeys" class="btn btn-outline-secondary">

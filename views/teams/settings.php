@@ -24,7 +24,9 @@
                 </div>
                 <div class="card-body">
                     <form method="POST" action="/teams/update">
-                        <input type="hidden" name="<?= $csrf['name'] ?>" value="<?= $csrf['value'] ?>">
+                        <?php foreach ($csrf as $name => $value): ?>
+                            <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
+                        <?php endforeach; ?>
                         <input type="hidden" name="id" value="<?= $team->id ?>">
 
                         <div class="mb-3">
@@ -80,7 +82,9 @@
                         Tasks will be converted to personal tasks for their original creators.
                     </p>
                     <form method="POST" action="/teams/delete" onsubmit="return confirmDelete();">
-                        <input type="hidden" name="<?= $csrf['name'] ?>" value="<?= $csrf['value'] ?>">
+                        <?php foreach ($csrf as $name => $value): ?>
+                            <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
+                        <?php endforeach; ?>
                         <input type="hidden" name="id" value="<?= $team->id ?>">
                         <button type="submit" class="btn btn-danger">
                             <i class="bi bi-trash"></i> Delete Team

@@ -23,7 +23,9 @@
                     <?php endforeach; ?>
 
                     <form method="POST" action="/teams/store">
-                        <input type="hidden" name="<?= $csrf['name'] ?>" value="<?= $csrf['value'] ?>">
+                        <?php foreach ($csrf as $name => $value): ?>
+                            <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
+                        <?php endforeach; ?>
 
                         <div class="mb-3">
                             <label for="name" class="form-label">Team Name <span class="text-danger">*</span></label>

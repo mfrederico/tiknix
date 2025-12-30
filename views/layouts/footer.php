@@ -83,13 +83,46 @@ document.getElementById("btn-back-to-top").addEventListener("click", function() 
     document.documentElement.scrollTop = 0;
 });
 
-// Toast notification function
-function showToast(type, message) {
+// Toast notification function with localStorage deduplication
+function showToast(type, message, options = {}) {
     const toastEl = document.getElementById('liveToast');
+    if (!toastEl) return;
 
-    // Disable autohide to prevent layout shift - user must manually dismiss
+    // Deduplication: prevent showing same message multiple times
+    const messageKey = 'toast_' + btoa(unescape(encodeURIComponent(type + ':' + message))).slice(0, 32);
+    const now = Date.now();
+    const dedupWindow = options.dedupMs || 60000; // Default: 1 minute dedup window
+
+    // Check if we've shown this message recently
+    const lastShown = localStorage.getItem(messageKey);
+    if (lastShown && (now - parseInt(lastShown)) < dedupWindow) {
+        console.log('Toast deduplicated:', message);
+        return; // Skip showing duplicate
+    }
+
+    // Mark as shown
+    localStorage.setItem(messageKey, now.toString());
+
+    // Clean up old toast keys (keep localStorage tidy)
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('toast_')) {
+            const timestamp = parseInt(localStorage.getItem(key));
+            if (now - timestamp > 300000) { // Remove after 5 minutes
+                keysToRemove.push(key);
+            }
+        }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+
+    // Configure toast behavior based on type
+    const autohide = options.autohide !== undefined ? options.autohide : (type !== 'error');
+    const delay = options.delay || 5000;
+
     const toast = new bootstrap.Toast(toastEl, {
-        autohide: false
+        autohide: autohide,
+        delay: delay
     });
     const toastBody = toastEl.querySelector('.toast-body');
     const toastHeader = toastEl.querySelector('.toast-header');
@@ -114,5 +147,17 @@ function showToast(type, message) {
     }
 
     toast.show();
+}
+
+// Clear all toast dedup keys on logout
+function clearToastHistory() {
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('toast_')) {
+            keysToRemove.push(key);
+        }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
 }
 </script>

@@ -66,6 +66,7 @@ namespace app;
 
 use \Flight as Flight;
 use \app\Bean;
+use \app\mcptools\ToolLoader;
 
 class Mcp extends BaseControls\Control {
 
@@ -85,8 +86,15 @@ class Mcp extends BaseControls\Control {
     /** @var string Current method for logging */
     private string $currentMethod = '';
 
+    /** @var array Cached MCP session IDs per server (serverSlug => sessionId) */
+    private array $mcpSessions = [];
+
+    /** @var ToolLoader Tool loader instance */
+    private ?ToolLoader $toolLoader = null;
+
     /**
-     * Available MCP tools
+     * Available MCP tools (legacy - now loaded via ToolLoader)
+     * @deprecated Use ToolLoader instead
      */
     private array $tools = [
         'hello' => [
@@ -99,6 +107,14 @@ class Mcp extends BaseControls\Control {
                         'description' => 'Name to greet (optional)'
                     ]
                 ],
+                'required' => []
+            ]
+        ],
+        'mcp_session_info' => [
+            'description' => 'Returns info about stored MCP sessions for debugging.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [],
                 'required' => []
             ]
         ],
@@ -511,6 +527,17 @@ class Mcp extends BaseControls\Control {
     public function __construct() {
         // Skip parent constructor to avoid session/CSRF for API endpoints
         $this->logger = Flight::get('log');
+
+        // Initialize tool loader
+        $this->toolLoader = new ToolLoader(dirname(__DIR__) . '/mcptools');
+        $this->toolLoader->setMcp($this);
+    }
+
+    /**
+     * Get the tool loader instance
+     */
+    public function getToolLoader(): ToolLoader {
+        return $this->toolLoader;
     }
 
     /**
@@ -843,12 +870,12 @@ class Mcp extends BaseControls\Control {
     private function handleToolsList(mixed $id): void {
         $toolList = [];
 
-        // Add built-in Tiknix tools (prefixed with tiknix:)
-        foreach ($this->tools as $name => $config) {
+        // Add built-in Tiknix tools from ToolLoader (prefixed with tiknix:)
+        foreach ($this->toolLoader->getDefinitions() as $toolDef) {
             $toolList[] = [
-                'name' => 'tiknix:' . $name,
-                'description' => '[Tiknix] ' . $config['description'],
-                'inputSchema' => $config['inputSchema']
+                'name' => 'tiknix:' . $toolDef['name'],
+                'description' => '[Tiknix] ' . $toolDef['description'],
+                'inputSchema' => $toolDef['inputSchema']
             ];
         }
 
@@ -1079,11 +1106,13 @@ class Mcp extends BaseControls\Control {
         try {
             // Route to built-in Tiknix tools or proxy to backend
             if ($serverSlug === 'tiknix') {
-                // Built-in Tiknix tools
-                if (!isset($this->tools[$toolName])) {
+                // Built-in Tiknix tools via ToolLoader
+                $this->toolLoader->setAuth($this->authMember, $this->authApiKey);
+
+                if (!$this->toolLoader->has($toolName)) {
                     throw new \Exception("Unknown Tiknix tool: {$toolName}");
                 }
-                $result = $this->executeTool($toolName, $arguments);
+                $result = $this->toolLoader->execute($toolName, $arguments);
             } else {
                 // Proxy to backend server
                 $result = $this->proxyToolCall($serverSlug, $toolName, $arguments);
@@ -1109,6 +1138,7 @@ class Mcp extends BaseControls\Control {
 
     /**
      * Proxy a tool call to a backend MCP server
+     * Uses session persistence for stateful servers like Playwright
      */
     private function proxyToolCall(string $serverSlug, string $toolName, array $arguments): string {
         // Find the server
@@ -1139,60 +1169,27 @@ class Mcp extends BaseControls\Control {
             $baseHeaders[] = "{$headerName}: {$prefix}{$server->backendAuthToken}";
         }
 
-        $this->logger->debug('Proxying to backend', [
+        // Check for existing session ID
+        $sessionId = $this->getMcpSessionId($serverSlug);
+        $needsInit = ($sessionId === null);
+
+        $this->logger->info('Proxy session check', [
             'server' => $serverSlug,
-            'endpoint' => $server->endpointUrl,
-            'tool' => $toolName
+            'tool' => $toolName,
+            'has_session' => !$needsInit,
+            'session_id' => $sessionId ? substr($sessionId, 0, 12) . '...' : null,
+            'apikey_id' => $this->authApiKey->id ?? 0
         ]);
 
-        // Step 1: Initialize MCP session to get session ID
-        $initRequest = json_encode([
-            'jsonrpc' => '2.0',
-            'id' => 1,
-            'method' => 'initialize',
-            'params' => [
-                'protocolVersion' => '2024-11-05',
-                'capabilities' => new \stdClass(),
-                'clientInfo' => [
-                    'name' => 'Tiknix MCP Proxy',
-                    'version' => '1.0.0'
-                ]
-            ]
-        ]);
-
-        $ch = curl_init($server->endpointUrl);
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $initRequest,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HEADER => true,
-            CURLOPT_HTTPHEADER => $baseHeaders,
-            CURLOPT_TIMEOUT => 10,
-            CURLOPT_SSL_VERIFYPEER => true
-        ]);
-
-        $initResponse = curl_exec($ch);
-        $initHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-        $initError = curl_error($ch);
-        curl_close($ch);
-
-        if ($initError) {
-            throw new \Exception("Backend connection error: {$initError}");
+        // Initialize session if needed
+        if ($needsInit) {
+            $sessionId = $this->initializeMcpSession($server, $baseHeaders);
+            if ($sessionId) {
+                $this->storeMcpSessionId($serverSlug, $sessionId);
+            }
         }
 
-        if ($initHttpCode < 200 || $initHttpCode >= 300) {
-            throw new \Exception("Backend initialize failed: HTTP {$initHttpCode}");
-        }
-
-        // Extract mcp-session-id from response headers
-        $initHeaders = substr($initResponse, 0, $headerSize);
-        $sessionId = null;
-        if (preg_match('/mcp-session-id:\s*([^\r\n]+)/i', $initHeaders, $matches)) {
-            $sessionId = trim($matches[1]);
-        }
-
-        // Step 2: Build and send tools/call request with session ID
+        // Build and send tools/call request with session ID
         $request = json_encode([
             'jsonrpc' => '2.0',
             'id' => 2,
@@ -1207,6 +1204,13 @@ class Mcp extends BaseControls\Control {
         if ($sessionId) {
             $headers[] = 'mcp-session-id: ' . $sessionId;
         }
+
+        $this->logger->info('Sending proxy request', [
+            'url' => $server->endpointUrl,
+            'session_id' => $sessionId ? substr($sessionId, 0, 12) . '...' : null,
+            'tool' => $toolName,
+            'headers_count' => count($headers)
+        ]);
 
         $ch = curl_init($server->endpointUrl);
         curl_setopt_array($ch, [
@@ -1223,12 +1227,98 @@ class Mcp extends BaseControls\Control {
         $error = curl_error($ch);
         curl_close($ch);
 
+        $this->logger->info('Proxy response', [
+            'httpCode' => $httpCode,
+            'response_length' => strlen($response),
+            'error' => $error ?: null
+        ]);
+
+        // If connection failed, try to auto-start the server
         if ($error) {
-            throw new \Exception("Backend connection error: {$error}");
+            $this->logger->info('Proxy connection failed, attempting auto-start', [
+                'server' => $serverSlug,
+                'error' => $error
+            ]);
+
+            if ($this->tryStartServer($server)) {
+                // Server started, reinitialize session and retry
+                $this->clearMcpSessionId($serverSlug);
+                $sessionId = $this->initializeMcpSession($server, $baseHeaders, true);
+                if ($sessionId) {
+                    $this->storeMcpSessionId($serverSlug, $sessionId);
+                }
+
+                // Retry the request
+                $headers = $baseHeaders;
+                if ($sessionId) {
+                    $headers[] = 'mcp-session-id: ' . $sessionId;
+                }
+
+                $ch = curl_init($server->endpointUrl);
+                curl_setopt_array($ch, [
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => $request,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_HTTPHEADER => $headers,
+                    CURLOPT_TIMEOUT => 30,
+                    CURLOPT_SSL_VERIFYPEER => true
+                ]);
+
+                $response = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $error = curl_error($ch);
+                curl_close($ch);
+
+                if ($error) {
+                    throw new \Exception("Backend connection error after auto-start: {$error}");
+                }
+            } else {
+                throw new \Exception("Backend connection error: {$error}");
+            }
+        }
+
+        // If session expired/invalid (404 or session error), retry with new session
+        if ($httpCode === 404 || $httpCode === 400) {
+            $this->logger->debug('Session may be invalid, reinitializing', ['httpCode' => $httpCode]);
+            $this->clearMcpSessionId($serverSlug);
+            $sessionId = $this->initializeMcpSession($server, $baseHeaders);
+            if ($sessionId) {
+                $this->storeMcpSessionId($serverSlug, $sessionId);
+            }
+
+            // Retry the request
+            $headers = $baseHeaders;
+            if ($sessionId) {
+                $headers[] = 'mcp-session-id: ' . $sessionId;
+            }
+
+            $ch = curl_init($server->endpointUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $request,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_SSL_VERIFYPEER => true
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($error) {
+                throw new \Exception("Backend connection error: {$error}");
+            }
         }
 
         if ($httpCode !== 200) {
             throw new \Exception("Backend returned HTTP {$httpCode}");
+        }
+
+        // Update session expiry on successful call
+        if ($sessionId) {
+            $this->storeMcpSessionId($serverSlug, $sessionId);
         }
 
         // Handle SSE format (event: message\ndata: {...})
@@ -1261,6 +1351,213 @@ class Mcp extends BaseControls\Control {
         }
 
         return implode("\n", $texts) ?: json_encode($data['result'] ?? []);
+    }
+
+    /**
+     * Try to start an MCP server using its configured startup command
+     * Returns true if server was started successfully, false otherwise
+     */
+    private function tryStartServer($server, int $maxWaitSeconds = 10): bool {
+        // Check if server has a startup command configured
+        if (empty($server->startupCommand)) {
+            $this->logger->debug('No startup command configured for server', [
+                'server' => $server->slug
+            ]);
+            return false;
+        }
+
+        // Whitelist of allowed commands for security
+        $allowedCommands = ['npx', 'node', 'php', 'python', 'python3', 'ruby', 'java', 'go', 'deno', 'bun'];
+        $command = trim($server->startupCommand);
+
+        if (!in_array($command, $allowedCommands)) {
+            $this->logger->warning('Startup command not in allowed list', [
+                'server' => $server->slug,
+                'command' => $command
+            ]);
+            return false;
+        }
+
+        // Build the full command
+        $args = trim($server->startupArgs ?? '');
+        $fullCommand = escapeshellcmd($command);
+        if (!empty($args)) {
+            $argParts = preg_split('/\s+/', $args);
+            foreach ($argParts as $arg) {
+                $fullCommand .= ' ' . escapeshellarg($arg);
+            }
+        }
+
+        // Add nohup and output redirection to run in background (survives parent exit)
+        $logFile = '/tmp/mcp-server-' . $server->slug . '.log';
+        $pidFile = '/tmp/mcp-server-' . $server->slug . '.pid';
+        $fullCommand = 'nohup ' . $fullCommand . ' > ' . escapeshellarg($logFile) . ' 2>&1 & echo $! > ' . escapeshellarg($pidFile);
+
+        // Change to working directory if specified
+        $workingDir = trim($server->startupWorkingDir ?? '');
+        if (!empty($workingDir) && is_dir($workingDir)) {
+            $fullCommand = 'cd ' . escapeshellarg($workingDir) . ' && ' . $fullCommand;
+        }
+
+        // Check if already running via PID file
+        if (file_exists($pidFile)) {
+            $existingPid = (int)trim(file_get_contents($pidFile));
+            if ($existingPid > 0 && file_exists("/proc/{$existingPid}")) {
+                $this->logger->info('MCP server already running', [
+                    'server' => $server->slug,
+                    'pid' => $existingPid
+                ]);
+                // Give it a moment and check if it responds
+                usleep(500000);
+                return true;
+            }
+        }
+
+        $this->logger->info('Auto-starting MCP server', [
+            'server' => $server->slug,
+            'command' => $command,
+            'args' => $args,
+            'logFile' => $logFile,
+            'pidFile' => $pidFile
+        ]);
+
+        // Execute the command
+        exec($fullCommand, $output, $returnCode);
+
+        // Wait for server to become available
+        $startTime = time();
+        $isRunning = false;
+
+        while ((time() - $startTime) < $maxWaitSeconds) {
+            usleep(500000); // 0.5 seconds
+
+            // Try to connect to the endpoint
+            $ch = curl_init($server->endpointUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode([
+                    'jsonrpc' => '2.0',
+                    'id' => 1,
+                    'method' => 'initialize',
+                    'params' => [
+                        'protocolVersion' => '2024-11-05',
+                        'capabilities' => new \stdClass(),
+                        'clientInfo' => ['name' => 'Tiknix', 'version' => '1.0.0']
+                    ]
+                ]),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json, text/event-stream'
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 3,
+                CURLOPT_CONNECTTIMEOUT => 2
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($httpCode >= 200 && $httpCode < 300) {
+                $isRunning = true;
+                break;
+            }
+
+            $this->logger->debug('Waiting for server to start', [
+                'server' => $server->slug,
+                'elapsed' => time() - $startTime,
+                'httpCode' => $httpCode,
+                'error' => $error ?: null
+            ]);
+        }
+
+        if ($isRunning) {
+            $this->logger->info('MCP server started successfully', [
+                'server' => $server->slug,
+                'startupTime' => time() - $startTime
+            ]);
+        } else {
+            $this->logger->warning('MCP server failed to start within timeout', [
+                'server' => $server->slug,
+                'timeout' => $maxWaitSeconds,
+                'logFile' => $logFile
+            ]);
+        }
+
+        return $isRunning;
+    }
+
+    /**
+     * Initialize MCP session with backend server
+     * Will auto-start the server if connection fails and startup command is configured
+     */
+    private function initializeMcpSession($server, array $baseHeaders, bool $isRetry = false): ?string {
+        $initRequest = json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => '2024-11-05',
+                'capabilities' => new \stdClass(),
+                'clientInfo' => [
+                    'name' => 'Tiknix MCP Proxy',
+                    'version' => '1.0.0'
+                ]
+            ]
+        ]);
+
+        $ch = curl_init($server->endpointUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $initRequest,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER => true,
+            CURLOPT_HTTPHEADER => $baseHeaders,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => true
+        ]);
+
+        $initResponse = curl_exec($ch);
+        $initHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $initError = curl_error($ch);
+        curl_close($ch);
+
+        // If connection failed and this is not already a retry, try to auto-start the server
+        if ($initError && !$isRetry) {
+            $this->logger->info('Connection failed, attempting auto-start', [
+                'server' => $server->slug,
+                'error' => $initError
+            ]);
+
+            if ($this->tryStartServer($server)) {
+                // Server started, retry the initialization
+                return $this->initializeMcpSession($server, $baseHeaders, true);
+            }
+        }
+
+        if ($initError) {
+            throw new \Exception("Backend connection error: {$initError}");
+        }
+
+        if ($initHttpCode < 200 || $initHttpCode >= 300) {
+            throw new \Exception("Backend initialize failed: HTTP {$initHttpCode}");
+        }
+
+        // Extract mcp-session-id from response headers
+        $initHeaders = substr($initResponse, 0, $headerSize);
+        $sessionId = null;
+        if (preg_match('/mcp-session-id:\s*([^\r\n]+)/i', $initHeaders, $matches)) {
+            $sessionId = trim($matches[1]);
+        }
+
+        $this->logger->debug('MCP session initialized', [
+            'server' => $server->slug,
+            'session_id' => $sessionId ? substr($sessionId, 0, 8) . '...' : null
+        ]);
+
+        return $sessionId;
     }
 
     /**
@@ -1297,6 +1594,9 @@ class Mcp extends BaseControls\Control {
         switch ($name) {
             case 'hello':
                 return $this->toolHello($args);
+
+            case 'mcp_session_info':
+                return $this->toolMcpSessionInfo($args);
 
             case 'echo':
                 return $this->toolEcho($args);
@@ -1381,6 +1681,87 @@ class Mcp extends BaseControls\Control {
     private function toolHello(array $args): string {
         $name = $args['name'] ?? 'World';
         return "Hello, {$name}! Welcome to the Tiknix MCP server.";
+    }
+
+    /**
+     * MCP Session Info - debug tool for session persistence
+     */
+    private function toolMcpSessionInfo(array $args): string {
+        $apiKeyId = $this->authApiKey->id ?? 0;
+
+        // Get in-memory sessions
+        $memorySessions = $this->mcpSessions;
+
+        // Test getMcpSessionId for playwright-mcp
+        $playwrightSessionId = $this->getMcpSessionId('playwright-mcp');
+
+        // Get database sessions
+        $dbSessions = [];
+        if ($apiKeyId) {
+            $sessions = Bean::find('mcpsession', 'apikey_id = ?', [$apiKeyId]);
+            foreach ($sessions as $s) {
+                $dbSessions[] = [
+                    'server_slug' => $s->serverSlug,
+                    'session_id' => substr($s->sessionId, 0, 12) . '...',
+                    'full_session_id' => $s->sessionId,
+                    'expires_at' => $s->expiresAt,
+                    'created_at' => $s->createdAt,
+                    'current_time' => date('Y-m-d H:i:s'),
+                    'is_expired' => $s->expiresAt < date('Y-m-d H:i:s'),
+                ];
+            }
+        }
+
+        // Test an actual proxy call to see what session is being used
+        $testResult = null;
+        try {
+            $server = Bean::findOne('mcpserver', 'slug = ?', ['playwright-mcp']);
+            if ($server) {
+                // Make a simple ping request using the stored session
+                $baseHeaders = [
+                    'Content-Type: application/json',
+                    'Accept: application/json, text/event-stream'
+                ];
+                $headers = $baseHeaders;
+                if ($playwrightSessionId) {
+                    $headers[] = 'mcp-session-id: ' . $playwrightSessionId;
+                }
+                $testRequest = json_encode([
+                    'jsonrpc' => '2.0',
+                    'id' => 99,
+                    'method' => 'tools/call',
+                    'params' => ['name' => 'browser_snapshot', 'arguments' => new \stdClass()]
+                ]);
+                $ch = curl_init($server->endpointUrl);
+                curl_setopt_array($ch, [
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => $testRequest,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_HTTPHEADER => $headers,
+                    CURLOPT_TIMEOUT => 10
+                ]);
+                $testResponse = curl_exec($ch);
+                $testHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                // Extract page URL from response
+                if (preg_match('/Page URL:\s*([^\n]+)/', $testResponse, $m)) {
+                    $testResult = ['page_url' => trim($m[1]), 'http_code' => $testHttpCode];
+                } else {
+                    $testResult = ['raw' => substr($testResponse, 0, 200), 'http_code' => $testHttpCode];
+                }
+            }
+        } catch (\Exception $e) {
+            $testResult = ['error' => $e->getMessage()];
+        }
+
+        return json_encode([
+            'apikey_id' => $apiKeyId,
+            'memory_sessions' => $memorySessions,
+            'playwright_session_id' => $playwrightSessionId,
+            'db_sessions' => $dbSessions,
+            'test_proxy_call' => $testResult,
+        ], JSON_PRETTY_PRINT);
     }
 
     /**
@@ -2398,6 +2779,84 @@ class Mcp extends BaseControls\Control {
         header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
         header('Access-Control-Allow-Headers: Content-Type, Authorization, X-MCP-Token');
         header('Access-Control-Max-Age: 86400');
+    }
+
+    /**
+     * Get stored MCP session ID for a server
+     * Sessions are stored per API key + server combination
+     */
+    private function getMcpSessionId(string $serverSlug): ?string {
+        // Check in-memory cache first
+        if (isset($this->mcpSessions[$serverSlug])) {
+            return $this->mcpSessions[$serverSlug];
+        }
+
+        // Check database
+        $apiKeyId = $this->authApiKey->id ?? 0;
+        if (!$apiKeyId) {
+            return null;
+        }
+
+        $session = Bean::findOne('mcpsession', 'apikey_id = ? AND server_slug = ? AND expires_at > ?',
+            [$apiKeyId, $serverSlug, date('Y-m-d H:i:s')]);
+
+        if ($session) {
+            $this->mcpSessions[$serverSlug] = $session->sessionId;
+            return $session->sessionId;
+        }
+
+        return null;
+    }
+
+    /**
+     * Store MCP session ID for a server
+     * Sessions expire after 30 minutes of inactivity
+     */
+    private function storeMcpSessionId(string $serverSlug, string $sessionId): void {
+        $this->mcpSessions[$serverSlug] = $sessionId;
+
+        $apiKeyId = $this->authApiKey->id ?? 0;
+        $this->logger->info('Storing MCP session', [
+            'server' => $serverSlug,
+            'session_id' => substr($sessionId, 0, 12) . '...',
+            'apikey_id' => $apiKeyId
+        ]);
+
+        if (!$apiKeyId) {
+            $this->logger->warning('No API key ID - session not persisted to database');
+            return;
+        }
+
+        // Find existing or create new
+        $session = Bean::findOne('mcpsession', 'apikey_id = ? AND server_slug = ?', [$apiKeyId, $serverSlug]);
+        if (!$session) {
+            $session = Bean::dispense('mcpsession');
+            $session->apikeyId = $apiKeyId;
+            $session->serverSlug = $serverSlug;
+            $session->createdAt = date('Y-m-d H:i:s');
+        }
+
+        $session->sessionId = $sessionId;
+        $session->expiresAt = date('Y-m-d H:i:s', time() + 1800); // 30 min
+        $session->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($session);
+    }
+
+    /**
+     * Clear stored MCP session ID for a server
+     */
+    private function clearMcpSessionId(string $serverSlug): void {
+        unset($this->mcpSessions[$serverSlug]);
+
+        $apiKeyId = $this->authApiKey->id ?? 0;
+        if (!$apiKeyId) {
+            return;
+        }
+
+        $session = Bean::findOne('mcpsession', 'apikey_id = ? AND server_slug = ?', [$apiKeyId, $serverSlug]);
+        if ($session) {
+            Bean::trash($session);
+        }
     }
 
     /**

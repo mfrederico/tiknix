@@ -74,7 +74,7 @@
                             ?>
                             <?php if (empty($mcpServers)): ?>
                                 <div class="alert alert-info">
-                                    No MCP servers registered yet. <a href="/mcp/registry/add">Add a server</a> to restrict access.
+                                    No MCP servers registered yet. <a href="/mcpregistry/add">Add a server</a> to restrict access.
                                 </div>
                             <?php else: ?>
                                 <div class="row">

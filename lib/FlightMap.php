@@ -2,7 +2,7 @@
 use \Flight as Flight;
 use \app\Bean;
 use \Exception as Exception;
-use \ParagonIE\AntiCSRF\AntiCSRF;
+use \app\SimpleCsrf;
 
 // Define permission levels - customize as needed
 define('LEVELS', ['ROOT'=>1, 'ADMIN'=>50, 'MEMBER'=>100, 'PUBLIC'=>101]);
@@ -156,14 +156,20 @@ Flight::map('hasLevel', function($requiredLevel) {
 });
 
 /**
- * CSRF Protection
+ * CSRF Protection - Simple session-based token
  */
 Flight::map('csrf', function() {
-    static $csrf = null;
-    if ($csrf === null) {
-        $csrf = new AntiCSRF();
-    }
-    return $csrf;
+    return new class {
+        public function getTokenArray(): array {
+            return SimpleCsrf::getTokenArray();
+        }
+        public function validateRequest(): bool {
+            return SimpleCsrf::validateRequest();
+        }
+        public function field(): string {
+            return SimpleCsrf::field();
+        }
+    };
 });
 
 /**
@@ -175,7 +181,7 @@ Flight::map('renderView', function($template, $data = []) {
     $data['isLoggedIn'] = Flight::isLoggedIn();
     $data['levels'] = LEVELS;
     $data['baseurl'] = Flight::get('baseurl');
-    $data['csrf'] = Flight::csrf()->getTokenArray();
+    $data['csrf'] = SimpleCsrf::getTokenArray();
     
     Flight::render($template, $data);
 });

@@ -61,12 +61,13 @@ class ClaudeRunner {
     }
 
     /**
-     * Spawn a new tmux session with Claude Code
+     * Spawn a new tmux session with Claude Code running interactively
      *
+     * @param bool $skipPermissions Use --dangerously-skip-permissions flag
      * @return bool Success
      */
-    public function spawn(): bool {
-        // Create work directory
+    public function spawn(bool $skipPermissions = true): bool {
+        // Create work directory for task files
         if (!is_dir($this->workDir)) {
             if (!mkdir($this->workDir, 0755, true)) {
                 throw new Exception("Failed to create work directory: {$this->workDir}");
@@ -78,32 +79,20 @@ class ClaudeRunner {
             throw new Exception("Session already exists: {$this->sessionName}");
         }
 
-        // Build the worker command
         $projectRoot = dirname(__DIR__);
-        $workerScript = "{$projectRoot}/cli/claude-worker.php";
 
-        // Ensure worker script exists
-        if (!file_exists($workerScript)) {
-            throw new Exception("Worker script not found: {$workerScript}");
+        // Build Claude command to run interactively
+        $claudeCmd = 'claude';
+        if ($skipPermissions) {
+            $claudeCmd .= ' --dangerously-skip-permissions';
         }
 
-        $workerArgs = [
-            '--task=' . escapeshellarg($this->taskId),
-            '--member=' . escapeshellarg($this->memberId),
-        ];
-
-        if ($this->teamId) {
-            $workerArgs[] = '--team=' . escapeshellarg($this->teamId);
-        }
-
-        $workerCmd = 'php ' . escapeshellarg($workerScript) . ' ' . implode(' ', $workerArgs);
-
-        // Create tmux session
+        // Create tmux session running Claude in the project directory
         $tmuxCmd = sprintf(
             'tmux new-session -d -s %s -c %s %s 2>&1',
             escapeshellarg($this->sessionName),
-            escapeshellarg($this->workDir),
-            escapeshellarg($workerCmd)
+            escapeshellarg($projectRoot),
+            escapeshellarg($claudeCmd)
         );
 
         exec($tmuxCmd, $output, $returnCode);
@@ -112,13 +101,64 @@ class ClaudeRunner {
             throw new Exception("Failed to create tmux session: " . implode("\n", $output));
         }
 
+        // Wait for Claude to initialize
+        usleep(500000); // 500ms delay
+
         // Verify session was created
-        usleep(100000); // 100ms delay
         if (!$this->exists()) {
             throw new Exception("Session created but not found: {$this->sessionName}");
         }
 
         return true;
+    }
+
+    /**
+     * Send a prompt to the running Claude session
+     *
+     * @param string $prompt The prompt to send
+     * @return bool Success
+     */
+    public function sendPrompt(string $prompt): bool {
+        if (!$this->exists()) {
+            return false;
+        }
+
+        // Write prompt to a temp file to avoid shell escaping issues with long prompts
+        $promptFile = $this->workDir . '/prompt.txt';
+        file_put_contents($promptFile, $prompt);
+
+        // Use tmux load-buffer and paste-buffer for reliable text input
+        // This avoids issues with special characters and long text
+        $loadCmd = sprintf(
+            'tmux load-buffer -b tiknix-prompt %s 2>&1',
+            escapeshellarg($promptFile)
+        );
+        exec($loadCmd, $output, $returnCode);
+
+        if ($returnCode !== 0) {
+            // Fallback to send-keys for shorter prompts
+            return $this->sendMessage($prompt);
+        }
+
+        // Paste the buffer into the session
+        $pasteCmd = sprintf(
+            'tmux paste-buffer -b tiknix-prompt -t %s 2>&1',
+            escapeshellarg($this->sessionName)
+        );
+        exec($pasteCmd, $output, $returnCode);
+
+        if ($returnCode !== 0) {
+            return false;
+        }
+
+        // Send Enter to submit
+        $enterCmd = sprintf(
+            'tmux send-keys -t %s Enter 2>&1',
+            escapeshellarg($this->sessionName)
+        );
+        exec($enterCmd, $output, $returnCode);
+
+        return $returnCode === 0;
     }
 
     /**

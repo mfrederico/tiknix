@@ -8,6 +8,7 @@ namespace app;
 
 use \Flight as Flight;
 use \app\Bean;
+use \app\RateLimiter;
 use \Exception as Exception;
 
 class Auth extends BaseControls\Control {
@@ -49,14 +50,23 @@ class Auth extends BaseControls\Control {
                 Flight::redirect('/auth/login');
                 return;
             }
-            
+
+            // Rate limiting - 5 attempts per 5 minutes per IP
+            if (!RateLimiter::check('login', 5, 300)) {
+                $retryAfter = RateLimiter::retryAfter('login', 300);
+                $minutes = ceil($retryAfter / 60);
+                $this->flash('error', "Too many login attempts. Please try again in {$minutes} minute(s).");
+                Flight::redirect('/auth/login');
+                return;
+            }
+
             // Accept either username or email
             $request = Flight::request();
             $username = $request->data->username ?? '';
             $email = $request->data->email ?? '';
             $password = $request->data->password ?? '';
             $redirect = $request->data->redirect ?? '/dashboard';
-            
+
             // Use username if provided, otherwise use email
             $login = $username ?: $email;
             
@@ -84,9 +94,12 @@ class Auth extends BaseControls\Control {
             
             // Set session
             $_SESSION['member'] = $member->export();
-            
+
+            // Clear rate limit on successful login
+            RateLimiter::clear('login');
+
             $this->logger->info('User logged in', ['id' => $member->id, 'username' => $member->username]);
-            
+
             Flight::redirect($redirect);
             
         } catch (Exception $e) {
@@ -144,13 +157,25 @@ class Auth extends BaseControls\Control {
      */
     public function doregister() {
         $request = Flight::request();
-        
+
         // Handle both GET and POST for easier testing
         if ($request->method === 'GET') {
             $this->register();
             return;
         }
-        
+
+        // Rate limiting - 5 registrations per hour per IP
+        if (!RateLimiter::check('register', 5, 3600)) {
+            $retryAfter = RateLimiter::retryAfter('register', 3600);
+            $minutes = ceil($retryAfter / 60);
+            $this->render('auth/register', [
+                'title' => 'Register',
+                'errors' => ["Too many registration attempts. Please try again in {$minutes} minute(s)."],
+                'data' => $request->data->getData()
+            ]);
+            return;
+        }
+
         // Get input
         $username = $this->sanitize($request->data->username);
         $email = $this->sanitize($request->data->email, 'email');
@@ -168,8 +193,8 @@ class Auth extends BaseControls\Control {
             $errors[] = 'Valid email is required';
         }
         
-        if (empty($password) || strlen($password) < 6) {
-            $errors[] = 'Password must be at least 6 characters';
+        if (empty($password) || strlen($password) < 8) {
+            $errors[] = 'Password must be at least 8 characters';
         }
         
         if ($password !== $password_confirm) {
@@ -244,7 +269,16 @@ class Auth extends BaseControls\Control {
             if (!$this->validateCSRF()) {
                 return;
             }
-            
+
+            // Rate limiting - 3 attempts per 15 minutes per IP
+            if (!RateLimiter::check('forgot_password', 3, 900)) {
+                $retryAfter = RateLimiter::retryAfter('forgot_password', 900);
+                $minutes = ceil($retryAfter / 60);
+                $this->flash('error', "Too many reset requests. Please try again in {$minutes} minute(s).");
+                Flight::redirect('/auth/forgot');
+                return;
+            }
+
             $email = $this->sanitize($this->getParam('email'), 'email');
             
             if (empty($email)) {

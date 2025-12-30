@@ -16,7 +16,15 @@
 
 // Bootstrap the application
 $projectRoot = dirname(__DIR__);
+
+// Capture the work directory before changing to project root
+$workDir = getcwd();
+
+chdir($projectRoot);
 require_once $projectRoot . '/bootstrap.php';
+
+// Initialize the application
+$app = new \app\Bootstrap('conf/config.ini');
 
 use \app\Bean;
 use \app\PromptBuilder;
@@ -30,6 +38,20 @@ $taskId = (int)($options['task'] ?? 0);
 $memberId = (int)($options['member'] ?? 0);
 $teamId = isset($options['team']) ? (int)$options['team'] : null;
 
+// Determine the work directory for task files
+// If we started in /tmp/tiknix-* use that, otherwise create one
+if (strpos($workDir, '/tmp/tiknix-') === 0) {
+    $taskWorkDir = $workDir;
+} else {
+    // Fallback - create work dir based on task/member
+    $taskWorkDir = $teamId
+        ? "/tmp/tiknix-team-{$teamId}-task-{$taskId}"
+        : "/tmp/tiknix-{$memberId}-task-{$taskId}";
+    if (!is_dir($taskWorkDir)) {
+        mkdir($taskWorkDir, 0755, true);
+    }
+}
+
 if (!$taskId || !$memberId) {
     echo "Error: --task and --member are required\n";
     exit(1);
@@ -39,7 +61,8 @@ echo "=== Tiknix Claude Worker ===\n";
 echo "Task ID: {$taskId}\n";
 echo "Member ID: {$memberId}\n";
 echo "Team ID: " . ($teamId ?? 'none') . "\n";
-echo "Work Dir: " . getcwd() . "\n";
+echo "Project Dir: {$projectRoot}\n";
+echo "Task Work Dir: {$taskWorkDir}\n";
 echo "Started: " . date('Y-m-d H:i:s') . "\n";
 echo str_repeat('=', 40) . "\n\n";
 
@@ -122,13 +145,13 @@ try {
     echo "Prompt built (" . strlen($prompt) . " chars)\n";
     logTaskEvent($taskId, 'debug', 'system', 'Prompt built', ['length' => strlen($prompt)]);
 
-    // Write the prompt to a file for Claude
-    $promptFile = getcwd() . '/prompt.txt';
+    // Write the prompt to a file for Claude (in task work directory)
+    $promptFile = $taskWorkDir . '/prompt.txt';
     file_put_contents($promptFile, $prompt);
 
     // Generate MCP configuration
     $mcpConfig = generateMcpConfig($taskId);
-    $mcpConfigFile = getcwd() . '/mcp-config.json';
+    $mcpConfigFile = $taskWorkDir . '/mcp-config.json';
     file_put_contents($mcpConfigFile, json_encode($mcpConfig, JSON_PRETTY_PRINT));
 
     echo "MCP config written\n";

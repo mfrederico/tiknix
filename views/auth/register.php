@@ -57,10 +57,10 @@
                                    class="form-control" 
                                    id="password" 
                                    name="password" 
-                                   required 
-                                   minlength="6"
+                                   required
+                                   minlength="8"
                                    placeholder="Create a password">
-                            <small class="form-text text-muted">At least 6 characters</small>
+                            <small class="form-text text-muted">At least 8 characters</small>
                         </div>
                         
                         <div class="mb-3">

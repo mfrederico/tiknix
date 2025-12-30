@@ -11,6 +11,9 @@ namespace app;
 use \Flight as Flight;
 use \app\Bean;
 use \app\TaskAccessControl;
+use \app\SimpleCsrf;
+use \app\ClaudeRunner;
+use \app\PromptBuilder;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -391,6 +394,12 @@ class Workbench extends Control {
             return;
         }
 
+        // Validate CSRF for AJAX requests
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
         $taskId = (int)$this->getParam('id');
         if (!$taskId) {
             Flight::jsonError('Task ID required', 400);
@@ -419,20 +428,20 @@ class Workbench extends Control {
             $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId);
 
             // Check if session already exists
-            if ($runner->isRunning()) {
+            if ($runner->exists()) {
                 Flight::jsonError('A session for this task is already active', 400);
                 return;
             }
 
-            // Spawn the runner
+            // Spawn Claude interactively in tmux
             $success = $runner->spawn();
 
             if (!$success) {
-                Flight::jsonError('Failed to start Claude runner', 500);
+                Flight::jsonError('Failed to start Claude session', 500);
                 return;
             }
 
-            // Update task status
+            // Update task status to queued
             $task->status = 'queued';
             $task->tmuxSession = $runner->getSessionName();
             $task->currentRunId = bin2hex(random_bytes(16));
@@ -442,23 +451,50 @@ class Workbench extends Control {
             $task->updatedAt = date('Y-m-d H:i:s');
             Bean::store($task);
 
-            $this->logTaskEvent($taskId, 'info', 'system', 'Claude runner started by ' . ($this->member->displayName ?? $this->member->email));
+            // Wait for Claude to initialize (give it time to start up)
+            usleep(2000000); // 2 seconds
 
-            $this->logger->info('Claude runner started', [
+            // Build the prompt using PromptBuilder
+            $prompt = PromptBuilder::build([
+                'id' => $task->id,
+                'title' => $task->title,
+                'description' => $task->description,
+                'task_type' => $task->taskType,
+                'acceptance_criteria' => $task->acceptanceCriteria,
+                'related_files' => json_decode($task->relatedFiles, true) ?: [],
+                'tags' => json_decode($task->tags, true) ?: [],
+            ]);
+
+            // Send the prompt to Claude
+            $promptSent = $runner->sendPrompt($prompt);
+
+            if (!$promptSent) {
+                $this->logger->warning('Failed to send prompt to Claude session', ['task_id' => $taskId]);
+            }
+
+            // Update status to running
+            $task->status = 'running';
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            $this->logTaskEvent($taskId, 'info', 'system', 'Claude session started by ' . ($this->member->displayName ?? $this->member->email));
+
+            $this->logger->info('Claude session started', [
                 'task_id' => $taskId,
                 'session' => $runner->getSessionName(),
-                'member_id' => $this->member->id
+                'member_id' => $this->member->id,
+                'prompt_sent' => $promptSent
             ]);
 
             Flight::json([
                 'success' => true,
-                'message' => 'Claude runner started',
+                'message' => 'Claude session started',
                 'session' => $runner->getSessionName()
             ]);
 
         } catch (Exception $e) {
-            $this->logger->error('Failed to start Claude runner', ['error' => $e->getMessage()]);
-            Flight::jsonError('Failed to start runner: ' . $e->getMessage(), 500);
+            $this->logger->error('Failed to start Claude session', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to start session: ' . $e->getMessage(), 500);
         }
     }
 
@@ -467,6 +503,12 @@ class Workbench extends Control {
      */
     public function pause($params = []) {
         if (!$this->requireLogin()) return;
+
+        // Validate CSRF for AJAX requests
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
 
         $taskId = (int)$this->getParam('id');
         $task = Bean::load('workbenchtask', $taskId);
@@ -496,6 +538,12 @@ class Workbench extends Control {
     public function resume($params = []) {
         if (!$this->requireLogin()) return;
 
+        // Validate CSRF for AJAX requests
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
         $taskId = (int)$this->getParam('id');
         $task = Bean::load('workbenchtask', $taskId);
 
@@ -523,6 +571,12 @@ class Workbench extends Control {
      */
     public function stop($params = []) {
         if (!$this->requireLogin()) return;
+
+        // Validate CSRF for AJAX requests
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
 
         $taskId = (int)$this->getParam('id');
         $task = Bean::load('workbenchtask', $taskId);
@@ -652,6 +706,12 @@ class Workbench extends Control {
         $request = Flight::request();
         if ($request->method !== 'POST') {
             Flight::redirect('/workbench');
+            return;
+        }
+
+        // Validate CSRF for AJAX requests
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
             return;
         }
 

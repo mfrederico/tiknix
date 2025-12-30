@@ -2741,7 +2741,7 @@ class Mcp extends BaseControls\Control {
             'result' => $result,
             'jsonrpc' => '2.0',
             'id' => $id
-        ]);
+        ], JSON_UNESCAPED_UNICODE);
         echo "event: message\ndata: {$json}\n\n";
         if (ob_get_level() > 0) {
             ob_flush();
@@ -2761,7 +2761,7 @@ class Mcp extends BaseControls\Control {
                 'code' => $code,
                 'message' => $message
             ]
-        ]);
+        ], JSON_UNESCAPED_UNICODE);
         echo "event: message\ndata: {$json}\n\n";
         if (ob_get_level() > 0) {
             ob_flush();

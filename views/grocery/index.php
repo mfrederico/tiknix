@@ -472,9 +472,11 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('newItemName').focus();
     saveListModal = new bootstrap.Modal(document.getElementById('saveListModal'));
 
-    // Initialize localStorage UI
+    // Initialize localStorage UI (completed lists dropdown)
     initLocalStorageUI();
-    saveActiveListToLocalStorage();
+
+    // Check if we should restore from localStorage
+    restoreActiveListFromLocalStorage();
 });
 
 // ============================================
@@ -502,6 +504,54 @@ function saveActiveListToLocalStorage() {
         localStorage.setItem(LS_ACTIVE_LIST, JSON.stringify(items));
     } catch (e) {
         console.warn('Failed to save to localStorage:', e);
+    }
+}
+
+// Get active list from localStorage
+function getActiveListFromLocalStorage() {
+    try {
+        const data = localStorage.getItem(LS_ACTIVE_LIST);
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        console.warn('Failed to read active list from localStorage:', e);
+        return [];
+    }
+}
+
+// Restore active list from localStorage on page load
+function restoreActiveListFromLocalStorage() {
+    const localItems = getActiveListFromLocalStorage();
+    const domItems = getActiveItemsFromDOM();
+
+    // If localStorage has items and DOM is empty, restore from localStorage
+    if (localItems.length > 0 && domItems.length === 0) {
+        console.log('Restoring', localItems.length, 'items from localStorage');
+        restoreItemsToList(localItems);
+        return;
+    }
+
+    // If both have items, check if localStorage has items not in DOM (by name)
+    if (localItems.length > 0 && domItems.length > 0) {
+        const domNames = new Set(domItems.map(i => i.name.toLowerCase()));
+        const missingItems = localItems.filter(i => !domNames.has(i.name.toLowerCase()));
+
+        if (missingItems.length > 0) {
+            console.log('Found', missingItems.length, 'items in localStorage not in server list');
+            // Restore missing items
+            restoreItemsToList(missingItems);
+        }
+    }
+
+    // If DOM has items but localStorage is empty, save DOM to localStorage
+    if (domItems.length > 0 && localItems.length === 0) {
+        saveActiveListToLocalStorage();
+    }
+}
+
+// Restore items to the list (add via server to get proper IDs)
+async function restoreItemsToList(items) {
+    for (const item of items) {
+        await addItemFromLocalStorage(item.name, item.quantity || 1);
     }
 }
 
@@ -719,6 +769,8 @@ function checkEmptyState() {
             </div>
         `;
         sortable = null;
+        // Clear localStorage active list when list is actually empty
+        saveActiveListToLocalStorage();
     }
 }
 

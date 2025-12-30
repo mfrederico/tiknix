@@ -30,6 +30,9 @@ $activeSection = $activeSection ?? 'index';
             <a href="/docs/tutorials" class="list-group-item list-group-item-action <?= $activeSection === 'tutorials' ? 'active' : '' ?>">
                 <i class="bi bi-mortarboard"></i> Tutorials
             </a>
+            <a href="/docs/workbench" class="list-group-item list-group-item-action <?= $activeSection === 'workbench' ? 'active' : '' ?>">
+                <i class="bi bi-robot"></i> Workbench
+            </a>
             <a href="/help" class="list-group-item list-group-item-action <?= $activeSection === 'help' ? 'active' : '' ?>">
                 <i class="bi bi-question-circle"></i> Help Center
             </a>

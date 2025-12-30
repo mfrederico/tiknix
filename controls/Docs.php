@@ -67,6 +67,26 @@ class Docs extends BaseControls\Control {
     }
 
     /**
+     * Display Workbench documentation
+     */
+    public function workbench() {
+        $workbenchPath = BASE_PATH . '/docs/WORKBENCH.md';
+        $content = '';
+
+        if (file_exists($workbenchPath)) {
+            $markdown = file_get_contents($workbenchPath);
+            $content = MarkdownParser::parse($markdown);
+        } else {
+            $content = '<div class="alert alert-warning">Workbench documentation not found.</div>';
+        }
+
+        $this->render('docs/workbench', [
+            'title' => 'Workbench Documentation',
+            'content' => $content
+        ]);
+    }
+
+    /**
      * Display Caching documentation
      */
     public function caching() {

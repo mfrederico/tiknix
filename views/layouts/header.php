@@ -81,6 +81,11 @@
                                     <i class="bi bi-key"></i> API Keys
                                 </a>
                             </li>
+                            <li>
+                                <a class="dropdown-item" href="/grocery">
+                                    <i class="bi bi-cart3"></i> Grocery List
+                                </a>
+                            </li>
                             <li><hr class="dropdown-divider"></li>
                             <li>
                                 <a class="dropdown-item" href="/workbench">

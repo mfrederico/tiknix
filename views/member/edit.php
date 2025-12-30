@@ -61,16 +61,16 @@
                         
                         <div class="mb-3">
                             <label for="first_name" class="form-label">First Name</label>
-                            <input type="text" class="form-control" id="first_name" name="first_name" 
-                                   value="<?= htmlspecialchars($member->first_name ?? '') ?>">
+                            <input type="text" class="form-control" id="first_name" name="first_name"
+                                   value="<?= htmlspecialchars($member->firstName ?? $member->first_name ?? '') ?>">
                         </div>
-                        
+
                         <div class="mb-3">
                             <label for="last_name" class="form-label">Last Name</label>
-                            <input type="text" class="form-control" id="last_name" name="last_name" 
-                                   value="<?= htmlspecialchars($member->last_name ?? '') ?>">
+                            <input type="text" class="form-control" id="last_name" name="last_name"
+                                   value="<?= htmlspecialchars($member->lastName ?? $member->last_name ?? '') ?>">
                         </div>
-                        
+
                         <div class="mb-3">
                             <label for="bio" class="form-label">Bio</label>
                             <textarea class="form-control" id="bio" name="bio" rows="3"><?= htmlspecialchars($member->bio ?? '') ?></textarea>

@@ -8,6 +8,15 @@
                     <h5 class="card-title">Profile Information</h5>
                     
                     <table class="table">
+                        <?php
+                        $fullName = trim(($member->firstName ?? $member->first_name ?? '') . ' ' . ($member->lastName ?? $member->last_name ?? ''));
+                        if (!empty($fullName)):
+                        ?>
+                        <tr>
+                            <th width="30%">Name:</th>
+                            <td><?= htmlspecialchars($fullName) ?></td>
+                        </tr>
+                        <?php endif; ?>
                         <tr>
                             <th width="30%">Username:</th>
                             <td><?= htmlspecialchars($member->username) ?></td>
@@ -16,6 +25,12 @@
                             <th>Email:</th>
                             <td><?= htmlspecialchars($member->email) ?></td>
                         </tr>
+                        <?php if (!empty($member->bio)): ?>
+                        <tr>
+                            <th>Bio:</th>
+                            <td><?= nl2br(htmlspecialchars($member->bio)) ?></td>
+                        </tr>
+                        <?php endif; ?>
                         <tr>
                             <th>Account Level:</th>
                             <td>

@@ -148,17 +148,30 @@
 
             <!-- Live Progress (when running or awaiting) -->
             <?php if (in_array($task->status, ['running', 'queued', 'awaiting'])): ?>
-                <div class="card mb-4" id="progressCard">
-                    <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="card mb-4 <?= $task->status === 'awaiting' ? 'border-warning' : '' ?>" id="progressCard">
+                    <div class="card-header d-flex justify-content-between align-items-center <?= $task->status === 'awaiting' ? 'bg-warning bg-opacity-25' : '' ?>">
                         <h5 class="mb-0">
-                            <span class="spinner-border spinner-border-sm me-2"></span>
-                            Live Progress
+                            <?php if ($task->status === 'awaiting'): ?>
+                                <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+                                Your Turn
+                            <?php else: ?>
+                                <span class="spinner-border spinner-border-sm me-2" id="progressSpinner"></span>
+                                Claude is Working
+                            <?php endif; ?>
                         </h5>
                         <small class="text-muted" id="lastUpdate">Updating...</small>
                     </div>
                     <div class="card-body">
                         <div id="progressContent">
-                            <p class="text-muted">Connecting to Claude runner...</p>
+                            <?php if ($task->status === 'awaiting'): ?>
+                                <p class="text-muted mb-0">Claude has completed work and is waiting for your review or further instructions.</p>
+                            <?php else: ?>
+                                <p class="text-muted">Connecting to Claude runner...</p>
+                            <?php endif; ?>
+                        </div>
+                        <div id="snapshotContent" class="mt-3" style="display: none;">
+                            <strong>Latest Activity:</strong>
+                            <pre class="bg-dark text-light p-3 rounded mt-2 small" style="max-height: 300px; overflow-y: auto;" id="snapshotText"></pre>
                         </div>
                     </div>
                 </div>
@@ -508,6 +521,12 @@ async function pollProgress() {
 
         document.getElementById('lastUpdate').textContent = 'Updated ' + new Date().toLocaleTimeString();
 
+        // Check for status change - reload page to update UI
+        if (data.status !== taskStatus) {
+            location.reload();
+            return;
+        }
+
         if (data.status !== 'running' && data.status !== 'queued' && data.status !== 'awaiting') {
             clearInterval(pollInterval);
             location.reload();
@@ -516,31 +535,44 @@ async function pollProgress() {
 
         let html = '';
 
-        if (data.live) {
-            html += '<div class="mb-2"><strong>Status:</strong> ' + (data.live.status || 'Running') + '</div>';
-            if (data.live.current_task) {
-                html += '<div class="mb-2"><strong>Current:</strong> ' + data.live.current_task + '</div>';
+        // For running status, show live progress
+        if (data.status === 'running' || data.status === 'queued') {
+            if (data.live) {
+                html += '<div class="mb-2"><strong>Status:</strong> ' + (data.live.status || 'Running') + '</div>';
+                if (data.live.current_task) {
+                    html += '<div class="mb-2"><strong>Current:</strong> ' + data.live.current_task + '</div>';
+                }
+                if (data.live.files_changed && data.live.files_changed.length > 0) {
+                    html += '<div class="mb-2"><strong>Files Changed:</strong></div>';
+                    html += '<ul class="list-unstyled ms-3">';
+                    data.live.files_changed.forEach(f => {
+                        html += '<li><code>' + f + '</code></li>';
+                    });
+                    html += '</ul>';
+                }
             }
-            if (data.live.files_changed && data.live.files_changed.length > 0) {
-                html += '<div class="mb-2"><strong>Files Changed:</strong></div>';
-                html += '<ul class="list-unstyled ms-3">';
-                data.live.files_changed.forEach(f => {
-                    html += '<li><code>' + f + '</code></li>';
+
+            if (data.recent_logs && data.recent_logs.length > 0) {
+                html += '<div class="mt-3"><strong>Recent Activity:</strong></div>';
+                html += '<div class="small text-muted mt-2">';
+                data.recent_logs.slice(0, 5).forEach(log => {
+                    html += '<div>' + log.message + '</div>';
                 });
-                html += '</ul>';
+                html += '</div>';
+            }
+
+            document.getElementById('progressContent').innerHTML = html || '<p class="text-muted">Waiting for activity...</p>';
+        }
+
+        // Show snapshot if available
+        if (data.snapshot && data.snapshot.content) {
+            const snapshotDiv = document.getElementById('snapshotContent');
+            const snapshotText = document.getElementById('snapshotText');
+            if (snapshotDiv && snapshotText) {
+                snapshotText.textContent = data.snapshot.content;
+                snapshotDiv.style.display = 'block';
             }
         }
-
-        if (data.recent_logs && data.recent_logs.length > 0) {
-            html += '<div class="mt-3"><strong>Recent Activity:</strong></div>';
-            html += '<div class="small text-muted mt-2">';
-            data.recent_logs.slice(0, 5).forEach(log => {
-                html += '<div>' + log.message + '</div>';
-            });
-            html += '</div>';
-        }
-
-        document.getElementById('progressContent').innerHTML = html || '<p class="text-muted">Waiting for activity...</p>';
 
         // Also refresh comments if there are new ones
         if (data.comments && data.comments.length > 0) {

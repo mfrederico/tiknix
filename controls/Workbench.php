@@ -40,7 +40,7 @@ class Workbench extends Control {
             'task_type' => $this->getParam('type'),
             'team_id' => $this->getParam('team_id'),
             'priority' => $this->getParam('priority'),
-            'order_by' => $this->getParam('order_by', 'created_at DESC')
+            'order_by' => $this->getParam('order_by', 'updated_at DESC')
         ];
 
         // Get visible tasks

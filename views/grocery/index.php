@@ -277,6 +277,19 @@
             </div>
         </div>
 
+        <!-- Load Saved List Dropdown -->
+        <div class="mb-2" id="savedListsDropdownContainer" style="display: none;">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text"><i class="bi bi-clock-history"></i></span>
+                <select class="form-select" id="savedListsDropdown" onchange="loadSavedList(this.value)">
+                    <option value="">Load a saved list...</option>
+                </select>
+                <button type="button" class="btn btn-outline-danger" onclick="clearSavedLists()" title="Clear all saved lists">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        </div>
+
         <!-- Add Item Form -->
         <div class="add-item-form">
             <form id="addItemForm" onsubmit="return addItem(event)">
@@ -433,6 +446,10 @@ const csrfToken = <?= json_encode($csrf) ?>;
 let sortable = null;
 let saveListModal = null;
 
+// LocalStorage keys
+const LS_ACTIVE_LIST = 'grocery_active_list';
+const LS_SAVED_LISTS = 'grocery_saved_lists';
+
 function initSortable() {
     const list = document.getElementById('groceryList');
     if (!list) return;
@@ -444,6 +461,7 @@ function initSortable() {
         chosenClass: 'sortable-chosen',
         onEnd: function(evt) {
             saveOrder();
+            saveActiveListToLocalStorage();
         }
     });
 }
@@ -453,7 +471,222 @@ document.addEventListener('DOMContentLoaded', function() {
     initSortable();
     document.getElementById('newItemName').focus();
     saveListModal = new bootstrap.Modal(document.getElementById('saveListModal'));
+
+    // Initialize localStorage UI
+    initLocalStorageUI();
+    saveActiveListToLocalStorage();
 });
+
+// ============================================
+// LocalStorage Functions
+// ============================================
+
+// Get current items from DOM as array
+function getActiveItemsFromDOM() {
+    const items = [];
+    document.querySelectorAll('.grocery-item').forEach(li => {
+        items.push({
+            id: li.dataset.id,
+            name: li.querySelector('.item-name')?.textContent || '',
+            quantity: parseInt(li.dataset.quantity) || 1,
+            isChecked: li.classList.contains('checked')
+        });
+    });
+    return items;
+}
+
+// Save active list to localStorage
+function saveActiveListToLocalStorage() {
+    try {
+        const items = getActiveItemsFromDOM();
+        localStorage.setItem(LS_ACTIVE_LIST, JSON.stringify(items));
+    } catch (e) {
+        console.warn('Failed to save to localStorage:', e);
+    }
+}
+
+// Get saved lists from localStorage
+function getSavedLists() {
+    try {
+        const data = localStorage.getItem(LS_SAVED_LISTS);
+        return data ? JSON.parse(data) : {};
+    } catch (e) {
+        console.warn('Failed to read saved lists:', e);
+        return {};
+    }
+}
+
+// Save completed list to localStorage by date
+function saveCompletedListToLocalStorage(listDate, storeName, totalCost, items) {
+    try {
+        const savedLists = getSavedLists();
+        const key = listDate; // Use date as key
+
+        savedLists[key] = {
+            date: listDate,
+            storeName: storeName,
+            totalCost: parseFloat(totalCost) || 0,
+            items: items,
+            savedAt: new Date().toISOString()
+        };
+
+        localStorage.setItem(LS_SAVED_LISTS, JSON.stringify(savedLists));
+        updateSavedListsDropdown();
+    } catch (e) {
+        console.warn('Failed to save completed list:', e);
+    }
+}
+
+// Initialize localStorage UI (dropdown)
+function initLocalStorageUI() {
+    updateSavedListsDropdown();
+}
+
+// Update the saved lists dropdown
+function updateSavedListsDropdown() {
+    const savedLists = getSavedLists();
+    const container = document.getElementById('savedListsDropdownContainer');
+    const dropdown = document.getElementById('savedListsDropdown');
+
+    // Get keys sorted by date descending
+    const keys = Object.keys(savedLists).sort((a, b) => b.localeCompare(a));
+
+    if (keys.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    dropdown.innerHTML = '<option value="">Load a saved list...</option>';
+
+    keys.forEach(key => {
+        const list = savedLists[key];
+        const date = new Date(list.date + 'T12:00:00');
+        const dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        const store = list.storeName ? ` @ ${list.storeName}` : '';
+        const cost = list.totalCost > 0 ? ` ($${list.totalCost.toFixed(2)})` : '';
+        const itemCount = list.items ? list.items.length : 0;
+
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = `${dateStr}${store} - ${itemCount} items${cost}`;
+        dropdown.appendChild(option);
+    });
+}
+
+// Load a saved list from localStorage
+function loadSavedList(key) {
+    if (!key) return;
+
+    const savedLists = getSavedLists();
+    const list = savedLists[key];
+
+    if (!list || !list.items || list.items.length === 0) {
+        showToast('error', 'No items in this saved list');
+        document.getElementById('savedListsDropdown').value = '';
+        return;
+    }
+
+    if (!confirm(`Load ${list.items.length} items from ${key}? This will add them to your current list.`)) {
+        document.getElementById('savedListsDropdown').value = '';
+        return;
+    }
+
+    // Add each item from the saved list
+    list.items.forEach(item => {
+        addItemFromLocalStorage(item.name, item.quantity);
+    });
+
+    document.getElementById('savedListsDropdown').value = '';
+    showToast('success', `Loaded ${list.items.length} items from saved list`);
+}
+
+// Add item from localStorage (without server call, just to DOM and then sync)
+async function addItemFromLocalStorage(name, quantity) {
+    try {
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('quantity', quantity || 1);
+        Object.entries(csrfToken).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
+
+        const response = await fetch('/grocery/add', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Remove empty state if present
+            const emptyState = document.getElementById('emptyState');
+            if (emptyState) {
+                document.getElementById('groceryListContainer').innerHTML = '<ul class="grocery-list" id="groceryList"></ul>';
+                initSortable();
+            }
+
+            // Add new item to list
+            const list = document.getElementById('groceryList');
+            const li = document.createElement('li');
+            li.className = 'grocery-item new-item';
+            li.dataset.id = data.item.id;
+            li.dataset.quantity = data.item.quantity;
+            li.innerHTML = `
+                <span class="drag-handle">
+                    <i class="bi bi-grip-vertical"></i>
+                </span>
+                <input type="checkbox"
+                       class="item-checkbox"
+                       onchange="toggleItem(${data.item.id})">
+                <span class="item-name">${escapeHtml(data.item.name)}</span>
+                <span class="item-quantity" title="Click ${data.item.quantity} more time(s) to check off">
+                    ${data.item.quantity}
+                </span>
+                <div class="item-actions">
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            onclick="editItem(${data.item.id}, this)"
+                            title="Edit">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button type="button"
+                            class="btn btn-sm btn-outline-danger"
+                            onclick="deleteItem(${data.item.id})"
+                            title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            `;
+
+            // Add at top of unchecked items
+            const firstChecked = list.querySelector('.grocery-item.checked');
+            if (firstChecked) {
+                list.insertBefore(li, firstChecked);
+            } else {
+                list.appendChild(li);
+            }
+
+            updateStats();
+            saveActiveListToLocalStorage();
+        }
+    } catch (error) {
+        console.error('Error adding item from localStorage:', error);
+    }
+}
+
+// Clear all saved lists from localStorage
+function clearSavedLists() {
+    if (!confirm('Delete ALL saved lists from this device? This cannot be undone.')) return;
+
+    try {
+        localStorage.removeItem(LS_SAVED_LISTS);
+        updateSavedListsDropdown();
+        showToast('success', 'All saved lists cleared');
+    } catch (e) {
+        console.warn('Failed to clear saved lists:', e);
+    }
+}
 
 // Update stats display
 function updateStats() {
@@ -467,6 +700,9 @@ function updateStats() {
     document.getElementById('clearCheckedBtn').disabled = checked.length === 0;
     document.getElementById('clearAllBtn').disabled = items.length === 0;
     document.getElementById('saveListBtn').disabled = checked.length === 0;
+
+    // Save to localStorage whenever stats update
+    saveActiveListToLocalStorage();
 }
 
 // Show/hide empty state
@@ -950,6 +1186,15 @@ async function saveList() {
     const storeName = document.getElementById('saveStoreName').value.trim();
     const totalCost = document.getElementById('saveTotalCost').value;
 
+    // Get checked items before saving (for localStorage)
+    const checkedItems = [];
+    document.querySelectorAll('.grocery-item.checked').forEach(li => {
+        checkedItems.push({
+            name: li.querySelector('.item-name')?.textContent || '',
+            quantity: parseInt(li.dataset.quantity) || 1
+        });
+    });
+
     try {
         const formData = new FormData();
         formData.append('listDate', listDate);
@@ -968,6 +1213,9 @@ async function saveList() {
 
         if (data.success) {
             saveListModal.hide();
+
+            // Save to localStorage for quick reload later
+            saveCompletedListToLocalStorage(listDate, storeName, totalCost, checkedItems);
 
             // Remove checked items from view
             document.querySelectorAll('.grocery-item.checked').forEach(li => {

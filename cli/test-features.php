@@ -6,7 +6,6 @@
  * Tests all the Claude Code integration features:
  * - MCP validation tools
  * - MCP workbench tools
- * - Playwright proxy
  * - Claude hooks
  * - Web UI endpoints
  *
@@ -47,7 +46,6 @@ require_once BASE_PATH . '/lib/Bean.php';
 require_once BASE_PATH . '/lib/ValidationService.php';
 require_once BASE_PATH . '/lib/TaskAccessControl.php';
 require_once BASE_PATH . '/lib/ClaudeRunner.php';
-require_once BASE_PATH . '/lib/PlaywrightProxy.php';
 
 // Define LEVELS if not defined
 if (!defined('LEVELS')) {
@@ -58,7 +56,6 @@ $projectRoot = BASE_PATH;
 
 use \app\Bean;
 use \app\ValidationService;
-use \app\PlaywrightProxy;
 use \app\TaskAccessControl;
 use \app\ClaudeRunner;
 
@@ -248,36 +245,6 @@ try {
 }
 
 // =========================================
-// Test: PlaywrightProxy
-// =========================================
-printHeader("PlaywrightProxy Tests");
-
-try {
-    $playwright = new PlaywrightProxy();
-    printTest("PlaywrightProxy instantiation", true);
-
-    $status = $playwright->getStatus();
-    printTest("PlaywrightProxy::getStatus()", isset($status['server_url']));
-    printInfo("Server URL: " . $status['server_url']);
-
-    // Check if Playwright server is available
-    $available = $playwright->isAvailable();
-    if ($available) {
-        printTest("Playwright server connection", true, "Server is available");
-
-        // Try to get tools
-        $tools = $playwright->getTools();
-        printTest("Playwright tools list", is_array($tools), "Got " . count($tools) . " tools");
-    } else {
-        printSkipped("Playwright server connection", "Server not available at " . $status['server_url']);
-        printSkipped("Playwright tools list", "Server not available");
-    }
-
-} catch (Exception $e) {
-    printTest("PlaywrightProxy", false, $e->getMessage());
-}
-
-// =========================================
 // Test: MCP Endpoint
 // =========================================
 printHeader("MCP Endpoint Tests (HTTP)");
@@ -351,7 +318,6 @@ try {
         printTest("Tool: validate_php exists", in_array('validate_php', $toolNames));
         printTest("Tool: security_scan exists", in_array('security_scan', $toolNames));
         printTest("Tool: list_tasks exists", in_array('list_tasks', $toolNames));
-        printTest("Tool: playwright_status exists", in_array('playwright_status', $toolNames));
     }
 
     // Test tools/call without auth (should fail for protected tools)

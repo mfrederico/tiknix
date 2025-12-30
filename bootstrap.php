@@ -142,7 +142,7 @@ class Bootstrap {
         }
         
         try {
-            // Check if RedBeanPHP is already connected (e.g., from OpenSwoole TiknixBridge)
+            // Check if RedBeanPHP is already connected
             $alreadyConnected = false;
             try {
                 $toolbox = R::getToolBox();
@@ -214,22 +214,12 @@ class Bootstrap {
     
     /**
      * Initialize PHP session with security settings
-     * Skips session initialization in CLI mode and OpenSwoole to avoid warnings
+     * Skips session initialization in CLI mode to avoid warnings
      */
     private function initSession() {
         // Skip session initialization in CLI mode
         if (php_sapi_name() === 'cli') {
             $this->logger->debug('Skipping session initialization in CLI mode');
-            return;
-        }
-
-        // Skip session initialization in OpenSwoole (uses its own session management)
-        if (class_exists('OpenSwoole\\Server', false) || defined('TIKNIX_OPENSWOOLE')) {
-            $this->logger->debug('Skipping session initialization in OpenSwoole mode');
-            // Initialize empty $_SESSION for compatibility
-            if (!isset($_SESSION)) {
-                $_SESSION = [];
-            }
             return;
         }
 

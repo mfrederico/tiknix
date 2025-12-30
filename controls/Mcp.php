@@ -405,118 +405,6 @@ class Mcp extends BaseControls\Control {
                 ],
                 'required' => ['task_id', 'message']
             ]
-        ],
-
-        // Playwright Browser Automation Tools
-        'playwright_status' => [
-            'description' => 'Check the status of the Playwright browser automation server.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [],
-                'required' => []
-            ]
-        ],
-        'playwright_navigate' => [
-            'description' => 'Navigate to a URL in the browser.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'url' => [
-                        'type' => 'string',
-                        'description' => 'The URL to navigate to'
-                    ],
-                    'wait_until' => [
-                        'type' => 'string',
-                        'description' => 'When to consider navigation complete',
-                        'enum' => ['load', 'domcontentloaded', 'networkidle']
-                    ]
-                ],
-                'required' => ['url']
-            ]
-        ],
-        'playwright_screenshot' => [
-            'description' => 'Take a screenshot of the current page.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'name' => [
-                        'type' => 'string',
-                        'description' => 'Name for the screenshot'
-                    ],
-                    'full_page' => [
-                        'type' => 'boolean',
-                        'description' => 'Capture full scrollable page'
-                    ],
-                    'width' => [
-                        'type' => 'integer',
-                        'description' => 'Viewport width'
-                    ],
-                    'height' => [
-                        'type' => 'integer',
-                        'description' => 'Viewport height'
-                    ]
-                ],
-                'required' => ['name']
-            ]
-        ],
-        'playwright_click' => [
-            'description' => 'Click an element on the page.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'selector' => [
-                        'type' => 'string',
-                        'description' => 'CSS or XPath selector for the element'
-                    ]
-                ],
-                'required' => ['selector']
-            ]
-        ],
-        'playwright_fill' => [
-            'description' => 'Fill a form field with a value.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'selector' => [
-                        'type' => 'string',
-                        'description' => 'CSS selector for the input field'
-                    ],
-                    'value' => [
-                        'type' => 'string',
-                        'description' => 'Value to fill into the field'
-                    ]
-                ],
-                'required' => ['selector', 'value']
-            ]
-        ],
-        'playwright_snapshot' => [
-            'description' => 'Get an accessibility snapshot of the current page for understanding page structure.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [],
-                'required' => []
-            ]
-        ],
-        'playwright_evaluate' => [
-            'description' => 'Execute JavaScript code in the browser context.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'script' => [
-                        'type' => 'string',
-                        'description' => 'JavaScript code to execute'
-                    ]
-                ],
-                'required' => ['script']
-            ]
-        ],
-        'playwright_close' => [
-            'description' => 'Close the browser session.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [],
-                'required' => []
-            ]
         ]
     ];
 
@@ -1747,31 +1635,6 @@ class Mcp extends BaseControls\Control {
             case 'add_task_log':
                 return $this->toolAddTaskLog($args);
 
-            // Playwright browser automation tools
-            case 'playwright_status':
-                return $this->toolPlaywrightStatus($args);
-
-            case 'playwright_navigate':
-                return $this->toolPlaywrightNavigate($args);
-
-            case 'playwright_screenshot':
-                return $this->toolPlaywrightScreenshot($args);
-
-            case 'playwright_click':
-                return $this->toolPlaywrightClick($args);
-
-            case 'playwright_fill':
-                return $this->toolPlaywrightFill($args);
-
-            case 'playwright_snapshot':
-                return $this->toolPlaywrightSnapshot($args);
-
-            case 'playwright_evaluate':
-                return $this->toolPlaywrightEvaluate($args);
-
-            case 'playwright_close':
-                return $this->toolPlaywrightClose($args);
-
             default:
                 throw new \Exception("Tool not implemented: {$name}");
         }
@@ -1794,9 +1657,6 @@ class Mcp extends BaseControls\Control {
         // Get in-memory sessions
         $memorySessions = $this->mcpSessions;
 
-        // Test getMcpSessionId for playwright-mcp
-        $playwrightSessionId = $this->getMcpSessionId('playwright-mcp');
-
         // Get database sessions
         $dbSessions = [];
         if ($apiKeyId) {
@@ -1805,64 +1665,17 @@ class Mcp extends BaseControls\Control {
                 $dbSessions[] = [
                     'server_slug' => $s->serverSlug,
                     'session_id' => substr($s->sessionId, 0, 12) . '...',
-                    'full_session_id' => $s->sessionId,
                     'expires_at' => $s->expiresAt,
                     'created_at' => $s->createdAt,
-                    'current_time' => date('Y-m-d H:i:s'),
                     'is_expired' => $s->expiresAt < date('Y-m-d H:i:s'),
                 ];
             }
         }
 
-        // Test an actual proxy call to see what session is being used
-        $testResult = null;
-        try {
-            $server = Bean::findOne('mcpserver', 'slug = ?', ['playwright-mcp']);
-            if ($server) {
-                // Make a simple ping request using the stored session
-                $baseHeaders = [
-                    'Content-Type: application/json',
-                    'Accept: application/json, text/event-stream'
-                ];
-                $headers = $baseHeaders;
-                if ($playwrightSessionId) {
-                    $headers[] = 'mcp-session-id: ' . $playwrightSessionId;
-                }
-                $testRequest = json_encode([
-                    'jsonrpc' => '2.0',
-                    'id' => 99,
-                    'method' => 'tools/call',
-                    'params' => ['name' => 'browser_snapshot', 'arguments' => new \stdClass()]
-                ]);
-                $ch = curl_init($server->endpointUrl);
-                curl_setopt_array($ch, [
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => $testRequest,
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_HTTPHEADER => $headers,
-                    CURLOPT_TIMEOUT => 10
-                ]);
-                $testResponse = curl_exec($ch);
-                $testHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
-
-                // Extract page URL from response
-                if (preg_match('/Page URL:\s*([^\n]+)/', $testResponse, $m)) {
-                    $testResult = ['page_url' => trim($m[1]), 'http_code' => $testHttpCode];
-                } else {
-                    $testResult = ['raw' => substr($testResponse, 0, 200), 'http_code' => $testHttpCode];
-                }
-            }
-        } catch (\Exception $e) {
-            $testResult = ['error' => $e->getMessage()];
-        }
-
         return json_encode([
             'apikey_id' => $apiKeyId,
             'memory_sessions' => $memorySessions,
-            'playwright_session_id' => $playwrightSessionId,
             'db_sessions' => $dbSessions,
-            'test_proxy_call' => $testResult,
         ], JSON_PRETTY_PRINT);
     }
 
@@ -2436,191 +2249,6 @@ class Mcp extends BaseControls\Control {
      */
     private function camelToSnake(string $input): string {
         return strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $input));
-    }
-
-    // =========================================
-    // Playwright Browser Automation Tools
-    // =========================================
-
-    /**
-     * Get Playwright proxy instance
-     */
-    private function getPlaywrightProxy(): \app\PlaywrightProxy {
-        static $proxy = null;
-        if ($proxy === null) {
-            $proxy = new \app\PlaywrightProxy();
-        }
-        return $proxy;
-    }
-
-    /**
-     * Check Playwright server status
-     */
-    private function toolPlaywrightStatus(array $args): string {
-        $proxy = $this->getPlaywrightProxy();
-        $status = $proxy->getStatus();
-
-        return json_encode([
-            'server_url' => $status['server_url'],
-            'available' => $status['available'],
-            'message' => $status['available']
-                ? 'Playwright server is available'
-                : 'Playwright server is not available. Check PLAYWRIGHT_MCP_URL configuration.'
-        ], JSON_PRETTY_PRINT);
-    }
-
-    /**
-     * Navigate to a URL
-     */
-    private function toolPlaywrightNavigate(array $args): string {
-        if (!$this->authMember) {
-            throw new \Exception("Authentication required for browser automation");
-        }
-
-        $url = $args['url'] ?? null;
-        if (!$url) {
-            throw new \Exception("URL is required");
-        }
-
-        $proxy = $this->getPlaywrightProxy();
-        $result = $proxy->navigate($url, [
-            'waitUntil' => $args['wait_until'] ?? 'load'
-        ]);
-
-        return json_encode([
-            'success' => true,
-            'url' => $url,
-            'result' => $result
-        ], JSON_PRETTY_PRINT);
-    }
-
-    /**
-     * Take a screenshot
-     */
-    private function toolPlaywrightScreenshot(array $args): string {
-        if (!$this->authMember) {
-            throw new \Exception("Authentication required for browser automation");
-        }
-
-        $name = $args['name'] ?? 'screenshot';
-
-        $proxy = $this->getPlaywrightProxy();
-        $result = $proxy->screenshot($name, [
-            'fullPage' => $args['full_page'] ?? false,
-            'width' => $args['width'] ?? 1280,
-            'height' => $args['height'] ?? 720
-        ]);
-
-        return json_encode([
-            'success' => true,
-            'name' => $name,
-            'result' => $result
-        ], JSON_PRETTY_PRINT);
-    }
-
-    /**
-     * Click an element
-     */
-    private function toolPlaywrightClick(array $args): string {
-        if (!$this->authMember) {
-            throw new \Exception("Authentication required for browser automation");
-        }
-
-        $selector = $args['selector'] ?? null;
-        if (!$selector) {
-            throw new \Exception("Selector is required");
-        }
-
-        $proxy = $this->getPlaywrightProxy();
-        $result = $proxy->click($selector);
-
-        return json_encode([
-            'success' => true,
-            'selector' => $selector,
-            'result' => $result
-        ], JSON_PRETTY_PRINT);
-    }
-
-    /**
-     * Fill a form field
-     */
-    private function toolPlaywrightFill(array $args): string {
-        if (!$this->authMember) {
-            throw new \Exception("Authentication required for browser automation");
-        }
-
-        $selector = $args['selector'] ?? null;
-        $value = $args['value'] ?? null;
-
-        if (!$selector || $value === null) {
-            throw new \Exception("Selector and value are required");
-        }
-
-        $proxy = $this->getPlaywrightProxy();
-        $result = $proxy->fill($selector, $value);
-
-        return json_encode([
-            'success' => true,
-            'selector' => $selector,
-            'result' => $result
-        ], JSON_PRETTY_PRINT);
-    }
-
-    /**
-     * Get page snapshot
-     */
-    private function toolPlaywrightSnapshot(array $args): string {
-        if (!$this->authMember) {
-            throw new \Exception("Authentication required for browser automation");
-        }
-
-        $proxy = $this->getPlaywrightProxy();
-        $result = $proxy->getSnapshot();
-
-        return json_encode([
-            'success' => true,
-            'result' => $result
-        ], JSON_PRETTY_PRINT);
-    }
-
-    /**
-     * Evaluate JavaScript
-     */
-    private function toolPlaywrightEvaluate(array $args): string {
-        if (!$this->authMember) {
-            throw new \Exception("Authentication required for browser automation");
-        }
-
-        $script = $args['script'] ?? null;
-        if (!$script) {
-            throw new \Exception("Script is required");
-        }
-
-        $proxy = $this->getPlaywrightProxy();
-        $result = $proxy->evaluate($script);
-
-        return json_encode([
-            'success' => true,
-            'result' => $result
-        ], JSON_PRETTY_PRINT);
-    }
-
-    /**
-     * Close browser session
-     */
-    private function toolPlaywrightClose(array $args): string {
-        if (!$this->authMember) {
-            throw new \Exception("Authentication required for browser automation");
-        }
-
-        $proxy = $this->getPlaywrightProxy();
-        $result = $proxy->close();
-
-        return json_encode([
-            'success' => true,
-            'message' => 'Browser session closed',
-            'result' => $result
-        ], JSON_PRETTY_PRINT);
     }
 
     // =========================================

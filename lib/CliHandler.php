@@ -23,14 +23,8 @@ class CliHandler {
     
     /**
      * Check if running in CLI mode
-     * Returns false if running under OpenSwoole (which uses CLI SAPI but handles web requests)
      */
     public static function isCli() {
-        // OpenSwoole runs as CLI but handles web requests - don't treat as CLI
-        if (defined('TIKNIX_OPENSWOOLE') || class_exists('OpenSwoole\\Server', false)) {
-            return false;
-        }
-
         return php_sapi_name() === 'cli' ||
                (defined('STDIN') && !empty($_SERVER['argv']));
     }

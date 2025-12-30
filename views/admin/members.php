@@ -89,8 +89,9 @@
                         </td>
                         <td>
                             <?php
+                            $status = $member->status ?? 'unknown';
                             $statusClass = 'secondary';
-                            switch($member->status) {
+                            switch($status) {
                                 case 'active':
                                     $statusClass = 'success';
                                     break;
@@ -107,7 +108,7 @@
                             }
                             ?>
                             <span class="badge bg-<?= $statusClass ?>">
-                                <?= htmlspecialchars($member->status) ?>
+                                <?= htmlspecialchars($status) ?>
                             </span>
                         </td>
                         <td>

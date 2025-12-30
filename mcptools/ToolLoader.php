@@ -87,7 +87,7 @@ class ToolLoader {
         $this->discoverInDir($this->baseDir);
 
         // Discover in subdirectories
-        $subdirs = ['workbench', 'playwright'];
+        $subdirs = ['workbench'];
         foreach ($subdirs as $subdir) {
             $path = $this->baseDir . '/' . $subdir;
             if (is_dir($path)) {

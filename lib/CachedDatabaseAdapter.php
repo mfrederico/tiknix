@@ -339,7 +339,7 @@ class CachedDatabaseAdapter extends DBAdapter {
 
     /**
      * Check if APCu is available and properly enabled
-     * Note: In CLI/Swoole mode, apc.enable_cli must also be enabled
+     * Note: In CLI mode, apc.enable_cli must also be enabled
      */
     private function hasAPCu() {
         return function_exists('apcu_fetch')

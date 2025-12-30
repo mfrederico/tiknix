@@ -566,7 +566,7 @@ class Admin extends Control {
         }
 
         // Check if APCu is available and working
-        // Note: APCu functions may exist but require apc.enable_cli=1 for CLI/Swoole
+        // Note: APCu functions may exist but require apc.enable_cli=1 for CLI
         $this->viewData['apcu_available'] = function_exists('apcu_cache_info')
             && ini_get('apc.enabled')
             && (php_sapi_name() !== 'cli' || ini_get('apc.enable_cli'));
@@ -575,7 +575,7 @@ class Admin extends Control {
             try {
                 $this->viewData['apcu_info'] = @apcu_cache_info();
             } catch (\Throwable $e) {
-                // APCu function exists but is not fully enabled (e.g., in Swoole/CLI)
+                // APCu function exists but is not fully enabled (e.g., in CLI mode)
                 $this->viewData['apcu_available'] = false;
                 $this->viewData['apcu_info'] = null;
             }

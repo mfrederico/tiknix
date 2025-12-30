@@ -141,7 +141,7 @@ class Mcpregistry extends Control {
 
     /**
      * Get API key from request headers
-     * Uses $_SERVER which works in both FPM and CLI/Swoole environments
+     * Uses $_SERVER which works in both FPM and CLI environments
      */
     private function getApiKeyFromRequest(): ?string {
         // Authorization: Bearer <token> or Basic auth

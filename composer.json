@@ -51,7 +51,6 @@
             "lib/PromptBuilder.php",
             "lib/TaskAccessControl.php",
             "lib/ValidationService.php",
-            "lib/PlaywrightProxy.php",
             "lib/RateLimiter.php",
             "lib/functions.php"
         ]

@@ -48,6 +48,12 @@
         padding: 1rem 1.5rem;
     }
 
+    .quantity-input {
+        width: 60px !important;
+        text-align: center;
+        border-left: 1px solid var(--bs-border-color) !important;
+    }
+
     .grocery-list {
         list-style: none;
         padding: 0;
@@ -103,6 +109,23 @@
         word-break: break-word;
     }
 
+    .item-quantity {
+        background: var(--bs-primary);
+        color: white;
+        border-radius: 50%;
+        min-width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-weight: bold;
+    }
+
+    .item-quantity.depleted {
+        background: var(--bs-secondary);
+    }
+
     .item-name-input {
         flex: 1;
         border: none;
@@ -151,6 +174,19 @@
         margin-top: 1rem;
     }
 
+    .save-list-section {
+        background: var(--bs-body-bg);
+        border: 2px dashed var(--bs-success);
+        border-radius: 1rem;
+        padding: 1rem;
+        margin-top: 1rem;
+    }
+
+    .save-list-section h5 {
+        color: var(--bs-success);
+        margin-bottom: 1rem;
+    }
+
     /* Touch-friendly on mobile */
     @media (max-width: 576px) {
         .grocery-container {
@@ -174,6 +210,10 @@
 
         .item-name {
             font-size: 1.1rem;
+        }
+
+        .quantity-input {
+            width: 50px !important;
         }
     }
 
@@ -223,9 +263,17 @@
                         <span id="checkedCount"><?= count(array_filter($items, fn($i) => $i->isChecked)) ?></span> checked
                     </div>
                 </div>
-                <a href="/dashboard" class="btn btn-outline-light btn-sm">
-                    <i class="bi bi-arrow-left"></i>
-                </a>
+                <div class="d-flex gap-2">
+                    <?php if ($savedListsCount > 0): ?>
+                    <a href="/grocery/history" class="btn btn-outline-light btn-sm" title="View History">
+                        <i class="bi bi-clock-history"></i>
+                        <span class="badge bg-light text-dark"><?= $savedListsCount ?></span>
+                    </a>
+                    <?php endif; ?>
+                    <a href="/dashboard" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+                </div>
             </div>
         </div>
 
@@ -240,6 +288,13 @@
                            autocomplete="off"
                            maxlength="255"
                            required>
+                    <input type="number"
+                           id="newItemQty"
+                           class="form-control quantity-input"
+                           value="1"
+                           min="1"
+                           max="999"
+                           title="Quantity">
                     <button type="submit" class="btn btn-success">
                         <i class="bi bi-plus-lg"></i>
                     </button>
@@ -259,7 +314,8 @@
                 <ul class="grocery-list" id="groceryList">
                     <?php foreach ($items as $item): ?>
                         <li class="grocery-item <?= $item->isChecked ? 'checked' : '' ?>"
-                            data-id="<?= $item->id ?>">
+                            data-id="<?= $item->id ?>"
+                            data-quantity="<?= (int)($item->quantity ?? 1) ?>">
                             <span class="drag-handle">
                                 <i class="bi bi-grip-vertical"></i>
                             </span>
@@ -268,6 +324,11 @@
                                    <?= $item->isChecked ? 'checked' : '' ?>
                                    onchange="toggleItem(<?= $item->id ?>)">
                             <span class="item-name"><?= htmlspecialchars($item->name) ?></span>
+                            <?php $qty = (int)($item->quantity ?? 1); ?>
+                            <span class="item-quantity <?= $qty <= 0 ? 'depleted' : '' ?>"
+                                  title="<?= $qty > 0 ? "Click {$qty} more time(s) to check off" : 'Checked off' ?>">
+                                <?= $qty ?>
+                            </span>
                             <div class="item-actions">
                                 <button type="button"
                                         class="btn btn-sm btn-outline-secondary"
@@ -304,6 +365,59 @@
                     <?= empty($items) ? 'disabled' : '' ?>>
                 <i class="bi bi-trash"></i> Clear All
             </button>
+            <button type="button"
+                    class="btn btn-success btn-sm"
+                    onclick="showSaveModal()"
+                    id="saveListBtn"
+                    <?= count(array_filter($items, fn($i) => $i->isChecked)) == 0 ? 'disabled' : '' ?>>
+                <i class="bi bi-save"></i> Save Checked Items
+            </button>
+        </div>
+
+        <!-- History Link -->
+        <?php if ($savedListsCount > 0): ?>
+        <div class="text-center mt-3">
+            <a href="/grocery/history" class="text-muted">
+                <i class="bi bi-clock-history"></i> View <?= $savedListsCount ?> saved list<?= $savedListsCount > 1 ? 's' : '' ?>
+            </a>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- Save List Modal -->
+<div class="modal fade" id="saveListModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-save"></i> Save Shopping Trip</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="saveListForm">
+                    <div class="mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" class="form-control" id="saveListDate" value="<?= date('Y-m-d') ?>" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Store Name (optional)</label>
+                        <input type="text" class="form-control" id="saveStoreName" placeholder="e.g., Walmart, Kroger..." maxlength="255">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Receipt Total (optional)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="saveTotalCost" step="0.01" min="0" placeholder="0.00">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="saveList()">
+                    <i class="bi bi-check-lg"></i> Save List
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -317,6 +431,7 @@ const csrfToken = <?= json_encode($csrf) ?>;
 
 // Initialize Sortable for drag/drop
 let sortable = null;
+let saveListModal = null;
 
 function initSortable() {
     const list = document.getElementById('groceryList');
@@ -337,6 +452,7 @@ function initSortable() {
 document.addEventListener('DOMContentLoaded', function() {
     initSortable();
     document.getElementById('newItemName').focus();
+    saveListModal = new bootstrap.Modal(document.getElementById('saveListModal'));
 });
 
 // Update stats display
@@ -350,6 +466,7 @@ function updateStats() {
     // Update button states
     document.getElementById('clearCheckedBtn').disabled = checked.length === 0;
     document.getElementById('clearAllBtn').disabled = items.length === 0;
+    document.getElementById('saveListBtn').disabled = checked.length === 0;
 }
 
 // Show/hide empty state
@@ -374,13 +491,16 @@ async function addItem(event) {
     event.preventDefault();
 
     const input = document.getElementById('newItemName');
+    const qtyInput = document.getElementById('newItemQty');
     const name = input.value.trim();
+    const quantity = parseInt(qtyInput.value) || 1;
 
     if (!name) return false;
 
     try {
         const formData = new FormData();
         formData.append('name', name);
+        formData.append('quantity', quantity);
         Object.entries(csrfToken).forEach(([key, value]) => {
             formData.append(key, value);
         });
@@ -405,6 +525,7 @@ async function addItem(event) {
             const li = document.createElement('li');
             li.className = 'grocery-item new-item';
             li.dataset.id = data.item.id;
+            li.dataset.quantity = data.item.quantity;
             li.innerHTML = `
                 <span class="drag-handle">
                     <i class="bi bi-grip-vertical"></i>
@@ -413,6 +534,9 @@ async function addItem(event) {
                        class="item-checkbox"
                        onchange="toggleItem(${data.item.id})">
                 <span class="item-name">${escapeHtml(data.item.name)}</span>
+                <span class="item-quantity" title="Click ${data.item.quantity} more time(s) to check off">
+                    ${data.item.quantity}
+                </span>
                 <div class="item-actions">
                     <button type="button"
                             class="btn btn-sm btn-outline-secondary"
@@ -438,6 +562,7 @@ async function addItem(event) {
             }
 
             input.value = '';
+            qtyInput.value = 1;
             input.focus();
             updateStats();
         } else {
@@ -451,10 +576,11 @@ async function addItem(event) {
     return false;
 }
 
-// Toggle item checked status
+// Toggle item checked status (with quantity decrement)
 async function toggleItem(itemId) {
     const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
     const checkbox = li.querySelector('.item-checkbox');
+    const qtyBadge = li.querySelector('.item-quantity');
 
     try {
         const formData = new FormData();
@@ -471,15 +597,23 @@ async function toggleItem(itemId) {
         const data = await response.json();
 
         if (data.success) {
+            // Update quantity badge
+            li.dataset.quantity = data.quantity;
+            qtyBadge.textContent = data.quantity;
+
             if (data.isChecked) {
                 li.classList.add('checked');
                 checkbox.checked = true;
+                qtyBadge.classList.add('depleted');
+                qtyBadge.title = 'Checked off';
                 // Move to bottom of list
                 const list = document.getElementById('groceryList');
                 list.appendChild(li);
             } else {
                 li.classList.remove('checked');
                 checkbox.checked = false;
+                qtyBadge.classList.remove('depleted');
+                qtyBadge.title = `Click ${data.quantity} more time(s) to check off`;
                 // Move to top of unchecked items
                 const list = document.getElementById('groceryList');
                 const firstChecked = list.querySelector('.grocery-item.checked');
@@ -502,22 +636,33 @@ async function toggleItem(itemId) {
     }
 }
 
-// Edit item name
+// Edit item name and quantity
 function editItem(itemId, button) {
     const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
     const nameSpan = li.querySelector('.item-name');
+    const qtyBadge = li.querySelector('.item-quantity');
     const currentName = nameSpan.textContent;
+    const currentQty = parseInt(li.dataset.quantity) || 1;
 
-    // Replace span with input
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'item-name-input form-control form-control-sm';
-    input.value = currentName;
-    input.maxLength = 255;
+    // Replace span with inputs
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'item-name-input form-control form-control-sm';
+    nameInput.value = currentName;
+    nameInput.maxLength = 255;
 
-    nameSpan.replaceWith(input);
-    input.focus();
-    input.select();
+    const qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.className = 'form-control form-control-sm';
+    qtyInput.style.width = '60px';
+    qtyInput.value = currentQty;
+    qtyInput.min = 1;
+    qtyInput.max = 999;
+
+    nameSpan.replaceWith(nameInput);
+    qtyBadge.replaceWith(qtyInput);
+    nameInput.focus();
+    nameInput.select();
 
     // Change edit button to save button
     const originalHtml = button.innerHTML;
@@ -526,14 +671,10 @@ function editItem(itemId, button) {
 
     // Save function
     async function saveEdit() {
-        const newName = input.value.trim();
+        const newName = nameInput.value.trim();
+        const newQty = parseInt(qtyInput.value) || 1;
 
         if (!newName) {
-            cancelEdit();
-            return;
-        }
-
-        if (newName === currentName) {
             cancelEdit();
             return;
         }
@@ -542,6 +683,7 @@ function editItem(itemId, button) {
             const formData = new FormData();
             formData.append('id', itemId);
             formData.append('name', newName);
+            formData.append('quantity', newQty);
             Object.entries(csrfToken).forEach(([key, value]) => {
                 formData.append(key, value);
             });
@@ -557,9 +699,29 @@ function editItem(itemId, button) {
                 const newSpan = document.createElement('span');
                 newSpan.className = 'item-name';
                 newSpan.textContent = data.item.name;
-                input.replaceWith(newSpan);
+
+                const newBadge = document.createElement('span');
+                newBadge.className = 'item-quantity' + (data.item.quantity <= 0 ? ' depleted' : '');
+                newBadge.textContent = data.item.quantity;
+                newBadge.title = data.item.quantity > 0 ? `Click ${data.item.quantity} more time(s) to check off` : 'Checked off';
+
+                nameInput.replaceWith(newSpan);
+                qtyInput.replaceWith(newBadge);
                 button.innerHTML = originalHtml;
                 button.className = 'btn btn-sm btn-outline-secondary';
+
+                li.dataset.quantity = data.item.quantity;
+
+                // Update checked state if changed
+                if (data.item.isChecked) {
+                    li.classList.add('checked');
+                    li.querySelector('.item-checkbox').checked = true;
+                } else {
+                    li.classList.remove('checked');
+                    li.querySelector('.item-checkbox').checked = false;
+                }
+
+                updateStats();
             } else {
                 showToast('error', data.message || 'Failed to update item');
                 cancelEdit();
@@ -576,7 +738,14 @@ function editItem(itemId, button) {
         const newSpan = document.createElement('span');
         newSpan.className = 'item-name';
         newSpan.textContent = currentName;
-        input.replaceWith(newSpan);
+
+        const newBadge = document.createElement('span');
+        newBadge.className = 'item-quantity' + (currentQty <= 0 ? ' depleted' : '');
+        newBadge.textContent = currentQty;
+        newBadge.title = currentQty > 0 ? `Click ${currentQty} more time(s) to check off` : 'Checked off';
+
+        nameInput.replaceWith(newSpan);
+        qtyInput.replaceWith(newBadge);
         button.innerHTML = originalHtml;
         button.className = 'btn btn-sm btn-outline-secondary';
     }
@@ -588,7 +757,16 @@ function editItem(itemId, button) {
     };
 
     // Handle enter key and escape
-    input.addEventListener('keydown', function(e) {
+    nameInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveEdit();
+        } else if (e.key === 'Escape') {
+            cancelEdit();
+        }
+    });
+
+    qtyInput.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') {
             e.preventDefault();
             saveEdit();
@@ -598,14 +776,21 @@ function editItem(itemId, button) {
     });
 
     // Handle blur
-    input.addEventListener('blur', function() {
-        // Small delay to allow button click to register
-        setTimeout(() => {
-            if (document.activeElement !== button) {
+    let blurTimeout;
+    function handleBlur() {
+        blurTimeout = setTimeout(() => {
+            if (document.activeElement !== button &&
+                document.activeElement !== nameInput &&
+                document.activeElement !== qtyInput) {
                 cancelEdit();
             }
         }, 100);
-    });
+    }
+
+    nameInput.addEventListener('blur', handleBlur);
+    qtyInput.addEventListener('blur', handleBlur);
+    nameInput.addEventListener('focus', () => clearTimeout(blurTimeout));
+    qtyInput.addEventListener('focus', () => clearTimeout(blurTimeout));
 }
 
 // Delete item
@@ -748,6 +933,60 @@ async function clearAll() {
     } catch (error) {
         console.error('Error clearing all items:', error);
         showToast('error', 'Failed to clear items');
+    }
+}
+
+// Show save list modal
+function showSaveModal() {
+    document.getElementById('saveListDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('saveStoreName').value = '';
+    document.getElementById('saveTotalCost').value = '';
+    saveListModal.show();
+}
+
+// Save list
+async function saveList() {
+    const listDate = document.getElementById('saveListDate').value;
+    const storeName = document.getElementById('saveStoreName').value.trim();
+    const totalCost = document.getElementById('saveTotalCost').value;
+
+    try {
+        const formData = new FormData();
+        formData.append('listDate', listDate);
+        formData.append('storeName', storeName);
+        formData.append('totalCost', totalCost || 0);
+        Object.entries(csrfToken).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
+
+        const response = await fetch('/grocery/saveList', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            saveListModal.hide();
+
+            // Remove checked items from view
+            document.querySelectorAll('.grocery-item.checked').forEach(li => {
+                li.classList.add('removing');
+                setTimeout(() => li.remove(), 300);
+            });
+
+            setTimeout(() => {
+                updateStats();
+                checkEmptyState();
+            }, 350);
+
+            showToast('success', `Saved ${data.list.itemsCount} item${data.list.itemsCount > 1 ? 's' : ''} to your history`);
+        } else {
+            showToast('error', data.message || 'Failed to save list');
+        }
+    } catch (error) {
+        console.error('Error saving list:', error);
+        showToast('error', 'Failed to save list');
     }
 }
 

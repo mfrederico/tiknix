@@ -4,8 +4,10 @@
  *
  * Enables RedBeanPHP associations for the groceryitem bean:
  * - Belongs to member (member_id)
+ * - Optionally belongs to grocerylist (grocerylist_id) for saved lists
  * - sortOrder for drag/drop reordering
  * - isChecked for strike-through functionality
+ * - quantity for tracking how many of an item to get
  */
 
 class Model_Groceryitem extends \RedBeanPHP\SimpleModel {
@@ -17,6 +19,11 @@ class Model_Groceryitem extends \RedBeanPHP\SimpleModel {
         // Set default sort order if not set
         if (!$this->bean->sortOrder) {
             $this->bean->sortOrder = 0;
+        }
+
+        // Set default quantity if not set
+        if (!$this->bean->quantity) {
+            $this->bean->quantity = 1;
         }
 
         // Set timestamps

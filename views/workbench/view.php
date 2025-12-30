@@ -212,7 +212,7 @@
                                 $authorName = $isFromClaude ? 'Claude' : trim(($comment['first_name'] ?? '') . ' ' . ($comment['last_name'] ?? ''));
                                 if (empty($authorName)) $authorName = $comment['username'] ?? $comment['email'] ?? 'Unknown';
                                 ?>
-                                <div class="d-flex mb-3 <?= $isFromClaude ? 'flex-row-reverse' : '' ?>">
+                                <div class="d-flex mb-3 <?= $isFromClaude ? 'flex-row-reverse' : '' ?>" data-comment-id="<?= $comment['id'] ?>">
                                     <?php if ($isFromClaude): ?>
                                         <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center ms-2" style="width: 40px; height: 40px;">
                                             <i class="bi bi-robot"></i>

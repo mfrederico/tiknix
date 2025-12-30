@@ -199,33 +199,51 @@
             <!-- Comments -->
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0">Comments</h5>
+                    <h5 class="mb-0"><i class="bi bi-chat-dots me-2"></i>Conversation</h5>
                 </div>
                 <div class="card-body">
                     <div id="commentsList">
                         <?php if (empty($comments)): ?>
-                            <p class="text-muted" id="noComments">No comments yet.</p>
+                            <p class="text-muted" id="noComments">No messages yet. Add instructions or context below.</p>
                         <?php else: ?>
                             <?php foreach ($comments as $comment): ?>
-                                <div class="d-flex mb-3">
-                                    <?php if (!empty($comment['avatar_url'])): ?>
+                                <?php
+                                $isFromClaude = !empty($comment['is_from_claude']);
+                                $authorName = $isFromClaude ? 'Claude' : trim(($comment['first_name'] ?? '') . ' ' . ($comment['last_name'] ?? ''));
+                                if (empty($authorName)) $authorName = $comment['username'] ?? $comment['email'] ?? 'Unknown';
+                                ?>
+                                <div class="d-flex mb-3 <?= $isFromClaude ? 'flex-row-reverse' : '' ?>">
+                                    <?php if ($isFromClaude): ?>
+                                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center ms-2" style="width: 40px; height: 40px;">
+                                            <i class="bi bi-robot"></i>
+                                        </div>
+                                    <?php elseif (!empty($comment['avatar_url'])): ?>
                                         <img src="<?= htmlspecialchars($comment['avatar_url']) ?>" class="rounded-circle me-2" width="40" height="40">
                                     <?php else: ?>
-                                        <?php
-                                        $authorName = trim(($comment['first_name'] ?? '') . ' ' . ($comment['last_name'] ?? ''));
-                                        if (empty($authorName)) $authorName = $comment['username'] ?? $comment['email'];
-                                        ?>
                                         <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
                                             <?= strtoupper(substr($authorName, 0, 1)) ?>
                                         </div>
                                     <?php endif; ?>
                                     <div class="flex-grow-1">
-                                        <div class="bg-light rounded p-3">
+                                        <div class="<?= $isFromClaude ? 'bg-primary bg-opacity-10 border border-primary' : 'bg-light' ?> rounded p-3">
                                             <div class="d-flex justify-content-between mb-1">
-                                                <strong><?= htmlspecialchars($authorName ?? $comment['username'] ?? $comment['email']) ?></strong>
+                                                <strong><?= $isFromClaude ? '<i class="bi bi-robot me-1"></i>' : '' ?><?= htmlspecialchars($authorName) ?></strong>
                                                 <small class="text-muted"><?= date('M j, g:i A', strtotime($comment['created_at'])) ?></small>
                                             </div>
-                                            <div><?= nl2br(htmlspecialchars($comment['content'])) ?></div>
+                                            <?php
+                                            // Simple markdown parsing for Claude messages
+                                            $content = htmlspecialchars($comment['content']);
+                                            if ($isFromClaude) {
+                                                // Bold: **text** or __text__
+                                                $content = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $content);
+                                                // Italic: *text* or _text_
+                                                $content = preg_replace('/\*(.+?)\*/', '<em>$1</em>', $content);
+                                                // Lists: - item
+                                                $content = preg_replace('/^- (.+)$/m', '<li>$1</li>', $content);
+                                            }
+                                            $content = nl2br($content);
+                                            ?>
+                                            <div class="comment-content"><?= $content ?></div>
                                         </div>
                                     </div>
                                 </div>
@@ -233,12 +251,12 @@
                         <?php endif; ?>
                     </div>
 
-                    <!-- Add Comment Form -->
+                    <!-- Add Message Form -->
                     <form id="commentForm" class="mt-3">
                         <div class="mb-2">
-                            <textarea class="form-control" id="commentContent" name="content" rows="2" placeholder="Add a comment..."></textarea>
+                            <textarea class="form-control" id="commentContent" name="content" rows="2" placeholder="Send instructions or respond to Claude..."></textarea>
                         </div>
-                        <button type="submit" class="btn btn-sm btn-primary">Post Comment</button>
+                        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-send me-1"></i>Send</button>
                     </form>
                 </div>
             </div>

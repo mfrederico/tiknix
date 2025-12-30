@@ -70,6 +70,12 @@
                             </button>
                         <?php endif; ?>
 
+                        <?php if ($canRun && $task->status === 'completed'): ?>
+                            <button class="btn btn-outline-success" onclick="rerunTask(<?= $task->id ?>)">
+                                <i class="bi bi-arrow-repeat"></i> Re-run
+                            </button>
+                        <?php endif; ?>
+
                         <?php if ($canRun && $task->status === 'running'): ?>
                             <button class="btn btn-warning" onclick="pauseTask(<?= $task->id ?>)">
                                 <i class="bi bi-pause-fill"></i> Pause
@@ -324,6 +330,7 @@
 <script>
 const taskId = <?= $task->id ?>;
 const taskStatus = '<?= $task->status ?>';
+const csrfToken = '<?= \app\SimpleCsrf::getToken() ?>';
 let pollInterval = null;
 
 // Task actions
@@ -335,6 +342,7 @@ async function runTask(id) {
     try {
         const formData = new FormData();
         formData.append('id', id);
+        formData.append('_csrf_token', csrfToken);
 
         const response = await fetch('/workbench/run', {
             method: 'POST',
@@ -357,9 +365,43 @@ async function runTask(id) {
     }
 }
 
+async function rerunTask(id) {
+    if (!confirm('Re-run this task with Claude?')) return;
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Starting...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/rerun', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Re-run';
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Re-run';
+    }
+}
+
 async function pauseTask(id) {
     const formData = new FormData();
     formData.append('id', id);
+    formData.append('_csrf_token', csrfToken);
     const response = await fetch('/workbench/pause', { method: 'POST', body: formData });
     const data = await response.json();
     if (data.success) location.reload();
@@ -369,6 +411,7 @@ async function pauseTask(id) {
 async function resumeTask(id) {
     const formData = new FormData();
     formData.append('id', id);
+    formData.append('_csrf_token', csrfToken);
     const response = await fetch('/workbench/resume', { method: 'POST', body: formData });
     const data = await response.json();
     if (data.success) location.reload();
@@ -379,6 +422,7 @@ async function stopTask(id) {
     if (!confirm('Stop the Claude runner? Progress may be lost.')) return;
     const formData = new FormData();
     formData.append('id', id);
+    formData.append('_csrf_token', csrfToken);
     const response = await fetch('/workbench/stop', { method: 'POST', body: formData });
     const data = await response.json();
     if (data.success) location.reload();
@@ -447,6 +491,7 @@ document.getElementById('commentForm').addEventListener('submit', async function
     const formData = new FormData();
     formData.append('id', taskId);
     formData.append('content', content);
+    formData.append('_csrf_token', csrfToken);
 
     try {
         const response = await fetch('/workbench/comment', {

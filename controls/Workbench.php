@@ -499,6 +499,118 @@ class Workbench extends Control {
     }
 
     /**
+     * Re-run a completed or failed task
+     */
+    public function rerun($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::redirect('/workbench');
+            return;
+        }
+
+        // Validate CSRF for AJAX requests
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        if (!$taskId) {
+            Flight::jsonError('Task ID required', 400);
+            return;
+        }
+
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id) {
+            Flight::jsonError('Task not found', 404);
+            return;
+        }
+
+        if (!$this->access->canRun($this->member->id, $task)) {
+            Flight::jsonError('Access denied', 403);
+            return;
+        }
+
+        // Only allow re-run on completed or failed tasks
+        if (!in_array($task->status, ['completed', 'failed'])) {
+            Flight::jsonError('Can only re-run completed or failed tasks', 400);
+            return;
+        }
+
+        // Kill any existing session for this task
+        $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId);
+        if ($runner->exists()) {
+            $runner->kill();
+            usleep(500000); // Wait 500ms
+        }
+
+        // Reset task to pending
+        $task->status = 'pending';
+        $task->errorMessage = null;
+        $task->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($task);
+
+        $this->logTaskEvent($taskId, 'info', 'system', 'Task reset for re-run by ' . ($this->member->displayName ?? $this->member->email));
+
+        // Now run the task (reuse run logic)
+        try {
+            // Spawn Claude interactively in tmux
+            $success = $runner->spawn();
+
+            if (!$success) {
+                Flight::jsonError('Failed to start Claude session', 500);
+                return;
+            }
+
+            // Update task status to queued
+            $task->status = 'queued';
+            $task->tmuxSession = $runner->getSessionName();
+            $task->currentRunId = bin2hex(random_bytes(16));
+            $task->runCount = ($task->runCount ?? 0) + 1;
+            $task->lastRunnerMemberId = $this->member->id;
+            $task->startedAt = date('Y-m-d H:i:s');
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            // Wait for Claude to initialize
+            usleep(2000000); // 2 seconds
+
+            // Build the prompt
+            $prompt = PromptBuilder::build([
+                'id' => $task->id,
+                'title' => $task->title,
+                'description' => $task->description,
+                'task_type' => $task->taskType,
+                'acceptance_criteria' => $task->acceptanceCriteria,
+                'related_files' => json_decode($task->relatedFiles, true) ?: [],
+                'tags' => json_decode($task->tags, true) ?: [],
+            ]);
+
+            // Send the prompt
+            $runner->sendPrompt($prompt);
+
+            // Update status to running
+            $task->status = 'running';
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            $this->logTaskEvent($taskId, 'info', 'system', 'Task re-run started');
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Task re-run started',
+                'session' => $runner->getSessionName()
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Failed to re-run task', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to re-run: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
      * Pause running task
      */
     public function pause($params = []) {

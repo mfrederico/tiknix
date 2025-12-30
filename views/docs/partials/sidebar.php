@@ -9,7 +9,7 @@
 $activeSection = $activeSection ?? 'index';
 ?>
 
-<div class="sticky-top pt-3">
+<div class="sticky-top pt-3 docs-sidebar">
     <div class="card shadow-sm">
         <div class="card-header bg-primary text-white">
             <h5 class="mb-0"><i class="bi bi-book"></i> Documentation</h5>
@@ -77,40 +77,4 @@ $activeSection = $activeSection ?? 'index';
     <?php endif; ?>
 </div>
 
-<style>
-/* Sidebar Component Styles */
-.sticky-top {
-    top: 20px;
-}
-
-.list-group-item {
-    border: none;
-    padding: 12px 20px;
-    transition: all 0.3s ease;
-}
-
-.list-group-item:hover {
-    background-color: #f8f9fa;
-    padding-left: 25px;
-}
-
-.list-group-item.active {
-    background-color: #007bff;
-    border-color: #007bff;
-    font-weight: 600;
-}
-
-.list-group-item i {
-    margin-right: 8px;
-}
-
-.nav-link {
-    color: #495057;
-    transition: all 0.2s ease;
-}
-
-.nav-link:hover {
-    color: #007bff;
-    padding-left: 20px !important;
-}
-</style>
+<!-- Sidebar styles are now in /public/css/app.css (see .docs-sidebar) -->

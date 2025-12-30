@@ -17,7 +17,7 @@ module.exports = defineConfig({
   ],
 
   use: {
-    baseURL: 'https://dev.tiknix.com',
+    baseURL: 'https://tiknix.com',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

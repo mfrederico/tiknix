@@ -9,7 +9,7 @@
  * - Claude hooks
  * - Web UI endpoints
  *
- * Usage: php cli/test-features.php [--base-url=https://dev.tiknix.com] [--api-key=xxx]
+ * Usage: php cli/test-features.php [--base-url=https://tiknix.com] [--api-key=xxx]
  */
 
 // Define base path

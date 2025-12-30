@@ -10,7 +10,7 @@
 
 const { test, expect } = require('@playwright/test');
 
-const BASE_URL = 'https://dev.tiknix.com';
+const BASE_URL = 'https://tiknix.com';
 const TEST_USER = { username: 'admin', password: 'admin1234' };
 
 // Helper to login

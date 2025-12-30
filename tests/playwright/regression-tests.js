@@ -4,7 +4,7 @@
  * Or manually: node regression-tests.js (for simple execution)
  */
 
-const BASE_URL = 'https://dev.tiknix.com';
+const BASE_URL = 'https://tiknix.com';
 
 // Test results tracking
 const testResults = {

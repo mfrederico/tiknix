@@ -33,7 +33,8 @@
         "psr-4": {
             "app\\": "controls/",
             "app\\Models\\": "models/",
-            "app\\BaseControls\\": "controls/BaseControls/"
+            "app\\BaseControls\\": "controls/BaseControls/",
+            "app\\mcptools\\": "mcptools/"
         },
         "classmap": [
             "models/"

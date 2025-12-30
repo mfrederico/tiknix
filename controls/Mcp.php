@@ -548,8 +548,11 @@ class Mcp extends BaseControls\Control {
         // Start request timing for logging
         $this->requestStartTime = microtime(true);
 
-        // Set JSON content type
-        header('Content-Type: application/json');
+        // Set SSE content type for MCP protocol
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('Connection: keep-alive');
+        header('X-Accel-Buffering: no'); // Disable nginx buffering
 
         // Handle CORS preflight
         if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -2731,22 +2734,27 @@ class Mcp extends BaseControls\Control {
     // =========================================
 
     /**
-     * Send JSON-RPC success result
+     * Send JSON-RPC success result in SSE format
      */
     private function sendResult(mixed $id, array $result): void {
-        echo json_encode([
+        $json = json_encode([
+            'result' => $result,
             'jsonrpc' => '2.0',
-            'id' => $id,
-            'result' => $result
+            'id' => $id
         ]);
+        echo "event: message\ndata: {$json}\n\n";
+        if (ob_get_level() > 0) {
+            ob_flush();
+        }
+        flush();
     }
 
     /**
-     * Send JSON-RPC error
+     * Send JSON-RPC error in SSE format
      */
     private function sendError(int $code, string $message, mixed $id, int $httpCode = 200): void {
         http_response_code($httpCode);
-        echo json_encode([
+        $json = json_encode([
             'jsonrpc' => '2.0',
             'id' => $id,
             'error' => [
@@ -2754,6 +2762,11 @@ class Mcp extends BaseControls\Control {
                 'message' => $message
             ]
         ]);
+        echo "event: message\ndata: {$json}\n\n";
+        if (ob_get_level() > 0) {
+            ob_flush();
+        }
+        flush();
     }
 
     /**
@@ -2908,21 +2921,25 @@ class Mcp extends BaseControls\Control {
     }
 
     /**
-     * Send result and log it
+     * Send result and log it (SSE format)
      */
     private function sendResultWithLog(mixed $id, mixed $result, string $method): void {
         $response = json_encode([
+            'result' => $result,
             'jsonrpc' => '2.0',
-            'id' => $id,
-            'result' => $result
+            'id' => $id
         ]);
 
         $this->logMcpRequest($method, $response, 200);
-        echo $response;
+        echo "event: message\ndata: {$response}\n\n";
+        if (ob_get_level() > 0) {
+            ob_flush();
+        }
+        flush();
     }
 
     /**
-     * Send error and log it
+     * Send error and log it (SSE format)
      */
     private function sendErrorWithLog(int $code, string $message, mixed $id, string $method, int $httpCode = 200): void {
         if ($httpCode !== 200) {
@@ -2939,6 +2956,10 @@ class Mcp extends BaseControls\Control {
         ]);
 
         $this->logMcpRequest($method, $response, $httpCode, $message);
-        echo $response;
+        echo "event: message\ndata: {$response}\n\n";
+        if (ob_get_level() > 0) {
+            ob_flush();
+        }
+        flush();
     }
 }

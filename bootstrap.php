@@ -283,6 +283,9 @@ class Bootstrap {
             require_once __DIR__ . '/routes/mcp.php';
         }
 
+        // Register default route handler (catch-all for /class/method pattern)
+        Flight::defaultRoute();
+
         $this->logger->info('Flight framework initialized');
     }
     

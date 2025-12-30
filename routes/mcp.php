@@ -6,6 +6,24 @@
 
 use \Flight as Flight;
 
+// MCP Message endpoint - main MCP protocol handler
+Flight::route('POST /mcp/message', function() {
+    $controller = new \app\Mcp();
+    $controller->message([]);
+});
+
+// MCP Health check
+Flight::route('GET /mcp/health', function() {
+    $controller = new \app\Mcp();
+    $controller->health([]);
+});
+
+// MCP Config endpoint
+Flight::route('GET /mcp/config', function() {
+    $controller = new \app\Mcp();
+    $controller->config([]);
+});
+
 // MCP Registry routes - maps /mcp/registry/* to Mcpregistry controller
 Flight::route('GET /mcp/registry', function() {
     $controller = new \app\Mcpregistry();
@@ -71,6 +89,3 @@ Flight::route('POST /mcp/registry/startServer', function() {
     $controller = new \app\Mcpregistry();
     $controller->startServer([]);
 });
-
-// Also include default routing for other URLs
-Flight::defaultRoute();

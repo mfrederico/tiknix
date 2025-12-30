@@ -149,6 +149,7 @@
                                                 'completed' => 'success',
                                                 'failed' => 'danger',
                                                 'paused' => 'warning',
+                                                'awaiting', 'waiting' => 'warning',
                                                 default => 'secondary'
                                             };
                                             ?>

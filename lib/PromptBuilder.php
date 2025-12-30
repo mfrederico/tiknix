@@ -328,45 +328,63 @@ INSTRUCTIONS;
         }
 
         return <<<INSTRUCTIONS
-## Progress Reporting & Communication
+## Progress Reporting & Communication (CRITICAL)
 
-Use these MCP tools (via the tiknix MCP server) to communicate with the user and report progress.
-Tool names use format: mcp__tiknix__<tool_name>
+You are running inside a workbench task. The user is monitoring your progress through a web UI.
 
-**Communication - IMPORTANT:**
-- `mcp__tiknix__ask_question` - Ask the user a clarifying question. Parameters:
+**MANDATORY: Use Tiknix MCP tools for ALL communication with the user.**
+Tool names use format: mcp__tiknix__tiknix_<tool_name>
+
+### Asking Questions - CRITICAL RULE
+
+**NEVER use the built-in AskUserQuestion tool. ALWAYS use `mcp__tiknix__tiknix_ask_question` instead.**
+
+The built-in tool does NOT update the workbench UI. If you use it, the user won't see your question
+and the task will appear stuck. The MCP tool properly updates the task status and shows the question
+in the web interface.
+
+**`mcp__tiknix__tiknix_ask_question`** - Ask the user a clarifying question
+  Parameters:
   - `task_id` (required): {$taskId}
   - `question` (required): Your question text
   - `context` (optional): Why you're asking
   - `options` (optional): Array of suggested answers
 
-  **Use this tool proactively when:**
+  Use this tool proactively when:
   - You need clarification on requirements
   - There are multiple valid approaches
   - You want to confirm your understanding before implementing
   - The task description is ambiguous
+  - You encounter an unexpected situation
 
-  The question will appear in the task UI and the task will pause until the user responds.
-
-- `mcp__tiknix__get_task` - Get current task details including latest comments and user responses. Parameters:
+**`mcp__tiknix__tiknix_get_task`** - Get current task details including user responses
+  Parameters:
   - `task_id` (required): {$taskId}
 
-  Call this after asking a question to see the user's response.
+  Call this after asking a question to see the user's response in the comments.
 
-**Progress Updates:**
-- `mcp__tiknix__add_task_log` - Add log entries for significant events or milestones
-- `mcp__tiknix__update_task` - Update status, branch name, or progress message
+### Progress Updates
 
-**Completion:**
-- `mcp__tiknix__complete_task` - Report work is done and await user review
+- `mcp__tiknix__tiknix_add_task_log` - Add log entries for significant events
+- `mcp__tiknix__tiknix_update_task` - Update progress message or status
+
+### Completion
+
+**`mcp__tiknix__tiknix_complete_task`** - Report work is done
+  Parameters:
+  - `task_id` (required): {$taskId}
+  - `summary`: What was accomplished
+  - `branch_name`: Git branch if applicable
+  - `pr_url`: Pull request URL if created
 
 Current Task ID: {$taskId}
 
-**IMPORTANT WORKFLOW**:
-1. Before making significant decisions, use `mcp__tiknix__ask_question` to confirm with the user
-2. After asking a question, wait for user response, then use `mcp__tiknix__get_task` to see their answer
-3. Report progress frequently with `mcp__tiknix__update_task`
-4. When done, call `mcp__tiknix__complete_task` with task_id, summary, branch_name, and pr_url if applicable
+### WORKFLOW RULES
+
+1. **ALWAYS** use `mcp__tiknix__tiknix_ask_question` instead of AskUserQuestion
+2. After asking, call `mcp__tiknix__tiknix_get_task` to read the user's response
+3. Report progress with `mcp__tiknix__tiknix_add_task_log` at key milestones
+4. When finished, call `mcp__tiknix__tiknix_complete_task` with a summary
 INSTRUCTIONS;
     }
 }

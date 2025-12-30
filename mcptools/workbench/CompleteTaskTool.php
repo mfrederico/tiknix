@@ -71,6 +71,17 @@ class CompleteTaskTool extends BaseTool {
 
         Bean::store($task);
 
+        // If summary provided, add it as a comment from Claude
+        if (!empty($args['summary'])) {
+            $comment = Bean::dispense('workbenchtaskcomment');
+            $comment->workbenchtaskId = $taskId;
+            $comment->memberId = $this->member->id;
+            $comment->isFromClaude = true;
+            $comment->content = "**Task Completion Summary:**\n\n" . $args['summary'];
+            $comment->createdAt = date('Y-m-d H:i:s');
+            Bean::store($comment);
+        }
+
         // Log status change
         $log = Bean::dispense('tasklog');
         $log->taskId = $taskId;

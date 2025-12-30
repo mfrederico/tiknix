@@ -81,6 +81,17 @@
                                     <i class="bi bi-key"></i> API Keys
                                 </a>
                             </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="/workbench">
+                                    <i class="bi bi-hammer"></i> Workbench
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/teams">
+                                    <i class="bi bi-people"></i> Teams
+                                </a>
+                            </li>
                             <?php if (($member['level'] ?? 100) <= 50): ?>
                                 <li><hr class="dropdown-divider"></li>
                                 <li>

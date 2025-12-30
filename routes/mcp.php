@@ -7,7 +7,8 @@
 use \Flight as Flight;
 
 // MCP Message endpoint - main MCP protocol handler
-Flight::route('POST /mcp/message', function() {
+// GET is for SSE stream (Streamable HTTP transport), POST for JSON-RPC requests
+Flight::route('GET|POST /mcp/message', function() {
     $controller = new \app\Mcp();
     $controller->message([]);
 });

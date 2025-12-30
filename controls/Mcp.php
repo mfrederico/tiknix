@@ -92,6 +92,9 @@ class Mcp extends BaseControls\Control {
     /** @var array Cached MCP session IDs per server (serverSlug => sessionId) */
     private array $mcpSessions = [];
 
+    /** @var string Current MCP session ID for this gateway */
+    private string $gatewaySessionId = '';
+
     /** @var ToolLoader Tool loader instance */
     private ?ToolLoader $toolLoader = null;
 
@@ -569,6 +572,17 @@ class Mcp extends BaseControls\Control {
         header('Connection: keep-alive');
         header('X-Accel-Buffering: no'); // Disable nginx buffering
 
+        // Handle MCP session ID for Streamable HTTP transport
+        // This is required for Claude Code to properly detect capabilities
+        $incomingSessionId = $_SERVER['HTTP_MCP_SESSION_ID'] ?? null;
+        if ($incomingSessionId) {
+            $this->gatewaySessionId = $incomingSessionId;
+        } else {
+            // Generate a new session ID for this connection
+            $this->gatewaySessionId = bin2hex(random_bytes(16));
+        }
+        header('mcp-session-id: ' . $this->gatewaySessionId);
+
         // Handle CORS preflight
         if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
             $this->setCorsHeaders();
@@ -578,9 +592,17 @@ class Mcp extends BaseControls\Control {
 
         $this->setCorsHeaders();
 
-        // Only accept POST requests
+        // Handle GET requests for SSE stream (Streamable HTTP transport)
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            // For GET requests, keep connection open for server-initiated messages
+            // This is used by Claude Code to maintain an SSE stream for notifications
+            $this->handleSseStream();
+            return;
+        }
+
+        // Only accept POST requests for JSON-RPC
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            $this->sendError(-32600, 'Method not allowed. Use POST.', null, 405);
+            $this->sendError(-32600, 'Method not allowed. Use POST or GET.', null, 405);
             return;
         }
 
@@ -655,6 +677,35 @@ class Mcp extends BaseControls\Control {
         $error = isset($responseData['error']) ? ($responseData['error']['message'] ?? null) : null;
 
         $this->logMcpRequest($method, $responseBody, $httpCode, $error);
+    }
+
+    /**
+     * Handle GET requests for SSE stream
+     * This keeps a connection open for server-initiated messages (notifications)
+     * Required for Streamable HTTP transport
+     */
+    private function handleSseStream(): void {
+        // Keep connection alive with periodic comments
+        // Claude Code uses this to maintain the SSE connection
+        ignore_user_abort(false);
+        set_time_limit(0);
+
+        // Send an initial comment to confirm connection
+        echo ": connected\n\n";
+        @ob_flush();
+        @flush();
+
+        // Keep connection alive for up to 30 seconds with periodic heartbeats
+        $startTime = time();
+        $timeout = 30; // seconds
+
+        while (connection_status() === CONNECTION_NORMAL && (time() - $startTime) < $timeout) {
+            // Send periodic keepalive comments
+            echo ": keepalive\n\n";
+            @ob_flush();
+            @flush();
+            sleep(5);
+        }
     }
 
     /**

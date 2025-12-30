@@ -554,19 +554,17 @@ class Mcp extends BaseControls\Control {
         // Start request timing for logging
         $this->requestStartTime = microtime(true);
 
-        // Check Accept header to determine response format
-        // Claude Code sends "Accept: application/json" for plain JSON responses
-        // Default to SSE for backwards compatibility
+        // Detect content type preference from Accept header
+        // Claude Code's Streamable HTTP transport sends: "application/json, text/event-stream"
+        // When JSON is requested, prefer JSON responses (required for capability detection)
+        // Default to SSE for backwards compatibility with legacy clients
         $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? 'text/event-stream';
-        $this->useJsonResponse = (
-            strpos($acceptHeader, 'application/json') !== false &&
-            strpos($acceptHeader, 'text/event-stream') === false
-        );
+        $this->useJsonResponse = strpos($acceptHeader, 'application/json') !== false;
 
         if ($this->useJsonResponse) {
-            header('Content-Type: application/json');
+            header('Content-Type: application/json; charset=utf-8');
         } else {
-            header('Content-Type: text/event-stream');
+            header('Content-Type: text/event-stream; charset=utf-8');
         }
         header('Cache-Control: no-cache');
         header('Connection: keep-alive');
@@ -578,8 +576,8 @@ class Mcp extends BaseControls\Control {
         if ($incomingSessionId) {
             $this->gatewaySessionId = $incomingSessionId;
         } else {
-            // Generate a new session ID for this connection
-            $this->gatewaySessionId = bin2hex(random_bytes(16));
+            // Generate a proper UUID v4 for the session ID
+            $this->gatewaySessionId = $this->generateUuid4();
         }
         header('mcp-session-id: ' . $this->gatewaySessionId);
 
@@ -677,6 +675,20 @@ class Mcp extends BaseControls\Control {
         $error = isset($responseData['error']) ? ($responseData['error']['message'] ?? null) : null;
 
         $this->logMcpRequest($method, $responseBody, $httpCode, $error);
+    }
+
+    /**
+     * Generate a UUID v4 string
+     * Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+     */
+    private function generateUuid4(): string {
+        $data = random_bytes(16);
+        // Set version to 0100 (UUID v4)
+        $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+        // Set bits 6-7 to 10 (RFC 4122)
+        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
 
     /**

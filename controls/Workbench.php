@@ -191,7 +191,7 @@ class Workbench extends Control {
 
         // Get task comments
         $comments = Bean::getAll(
-            "SELECT tc.*, m.display_name, m.username, m.email, m.avatar_url
+            "SELECT tc.*, m.first_name, m.last_name, m.username, m.email, m.avatar_url
              FROM taskcomment tc
              JOIN member m ON tc.member_id = m.id
              WHERE tc.task_id = ?
@@ -611,6 +611,146 @@ class Workbench extends Control {
     }
 
     /**
+     * Force reset a stuck queued/running task
+     */
+    public function forcereset($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::redirect('/workbench');
+            return;
+        }
+
+        // Validate CSRF for AJAX requests
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        if (!$taskId) {
+            Flight::jsonError('Task ID required', 400);
+            return;
+        }
+
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id) {
+            Flight::jsonError('Task not found', 404);
+            return;
+        }
+
+        if (!$this->access->canRun($this->member->id, $task)) {
+            Flight::jsonError('Access denied', 403);
+            return;
+        }
+
+        // Only allow force reset on queued/running tasks
+        if (!in_array($task->status, ['queued', 'running'])) {
+            Flight::jsonError('Can only force reset queued or running tasks', 400);
+            return;
+        }
+
+        try {
+            // Kill any existing tmux session
+            if ($task->tmuxSession) {
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId);
+                if ($runner->exists()) {
+                    $runner->kill();
+                    usleep(500000); // Wait 500ms for cleanup
+                }
+            }
+
+            // Reset task to pending
+            $task->status = 'pending';
+            $task->tmuxSession = null;
+            $task->errorMessage = null;
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            $this->logTaskEvent($taskId, 'warning', 'system', 'Task force reset by ' . ($this->member->displayName ?? $this->member->email));
+
+            $this->logger->info('Task force reset', [
+                'task_id' => $taskId,
+                'member_id' => $this->member->id
+            ]);
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Task has been reset to pending'
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Failed to force reset task', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to reset: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Mark task as complete (user action)
+     */
+    public function complete($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::redirect('/workbench');
+            return;
+        }
+
+        // Validate CSRF for AJAX requests
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        if (!$taskId) {
+            Flight::jsonError('Task ID required', 400);
+            return;
+        }
+
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id) {
+            Flight::jsonError('Task not found', 404);
+            return;
+        }
+
+        if (!$this->access->canRun($this->member->id, $task)) {
+            Flight::jsonError('Access denied', 403);
+            return;
+        }
+
+        try {
+            // Kill any existing tmux session
+            if ($task->tmuxSession) {
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId);
+                if ($runner->exists()) {
+                    $runner->kill();
+                }
+            }
+
+            // Mark as completed
+            $task->status = 'completed';
+            $task->completedAt = date('Y-m-d H:i:s');
+            $task->tmuxSession = null;
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            $this->logTaskEvent($taskId, 'info', 'user', 'Task marked complete by ' . ($this->member->displayName ?? $this->member->email));
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Task completed'
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Failed to complete task', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to complete: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
      * Pause running task
      */
     public function pause($params = []) {
@@ -850,8 +990,29 @@ class Workbench extends Control {
             $comment->createdAt = date('Y-m-d H:i:s');
             Bean::store($comment);
 
+            $sentToSession = false;
+
+            // If not an internal comment, try to send to Claude session if it exists
+            if (!$comment->isInternal) {
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId);
+                if ($runner->exists()) {
+                    $sentToSession = $runner->sendPrompt($content);
+                    if ($sentToSession) {
+                        $this->logTaskEvent($taskId, 'info', 'user', 'Message sent to Claude: ' . substr($content, 0, 100) . (strlen($content) > 100 ? '...' : ''));
+
+                        // If task was completed/failed but session is still active, mark as running
+                        if (in_array($task->status, ['completed', 'failed'])) {
+                            $task->status = 'running';
+                            $task->updatedAt = date('Y-m-d H:i:s');
+                            Bean::store($task);
+                        }
+                    }
+                }
+            }
+
             Flight::json([
                 'success' => true,
+                'sent_to_session' => $sentToSession,
                 'comment' => [
                     'id' => $comment->id,
                     'content' => $comment->content,

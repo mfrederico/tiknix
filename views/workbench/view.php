@@ -41,6 +41,7 @@
                                 'pending' => 'secondary',
                                 'queued' => 'info',
                                 'running' => 'primary',
+                                'awaiting' => 'warning',
                                 'completed' => 'success',
                                 'failed' => 'danger',
                                 'paused' => 'warning',
@@ -76,6 +77,12 @@
                             </button>
                         <?php endif; ?>
 
+                        <?php if ($canRun && in_array($task->status, ['queued', 'running'])): ?>
+                            <button class="btn btn-outline-warning" onclick="forceResetTask(<?= $task->id ?>)">
+                                <i class="bi bi-arrow-counterclockwise"></i> Force Reset
+                            </button>
+                        <?php endif; ?>
+
                         <?php if ($canRun && $task->status === 'running'): ?>
                             <button class="btn btn-warning" onclick="pauseTask(<?= $task->id ?>)">
                                 <i class="bi bi-pause-fill"></i> Pause
@@ -88,6 +95,15 @@
                         <?php if ($canRun && $task->status === 'paused'): ?>
                             <button class="btn btn-success" onclick="resumeTask(<?= $task->id ?>)">
                                 <i class="bi bi-play-fill"></i> Resume
+                            </button>
+                        <?php endif; ?>
+
+                        <?php if ($canRun && $task->status === 'awaiting'): ?>
+                            <button class="btn btn-success" onclick="markComplete(<?= $task->id ?>)">
+                                <i class="bi bi-check-circle"></i> Mark Complete
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="document.getElementById('commentContent').focus()">
+                                <i class="bi bi-chat-dots"></i> Send Instructions
                             </button>
                         <?php endif; ?>
 
@@ -130,8 +146,8 @@
                 </div>
             <?php endif; ?>
 
-            <!-- Live Progress (when running) -->
-            <?php if (in_array($task->status, ['running', 'queued'])): ?>
+            <!-- Live Progress (when running or awaiting) -->
+            <?php if (in_array($task->status, ['running', 'queued', 'awaiting'])): ?>
                 <div class="card mb-4" id="progressCard">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">
@@ -195,14 +211,18 @@
                                     <?php if (!empty($comment['avatar_url'])): ?>
                                         <img src="<?= htmlspecialchars($comment['avatar_url']) ?>" class="rounded-circle me-2" width="40" height="40">
                                     <?php else: ?>
+                                        <?php
+                                        $authorName = trim(($comment['first_name'] ?? '') . ' ' . ($comment['last_name'] ?? ''));
+                                        if (empty($authorName)) $authorName = $comment['username'] ?? $comment['email'];
+                                        ?>
                                         <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
-                                            <?= strtoupper(substr($comment['display_name'] ?? $comment['email'], 0, 1)) ?>
+                                            <?= strtoupper(substr($authorName, 0, 1)) ?>
                                         </div>
                                     <?php endif; ?>
                                     <div class="flex-grow-1">
                                         <div class="bg-light rounded p-3">
                                             <div class="d-flex justify-content-between mb-1">
-                                                <strong><?= htmlspecialchars($comment['display_name'] ?? $comment['username'] ?? $comment['email']) ?></strong>
+                                                <strong><?= htmlspecialchars($authorName ?? $comment['username'] ?? $comment['email']) ?></strong>
                                                 <small class="text-muted"><?= date('M j, g:i A', strtotime($comment['created_at'])) ?></small>
                                             </div>
                                             <div><?= nl2br(htmlspecialchars($comment['content'])) ?></div>
@@ -365,6 +385,39 @@ async function runTask(id) {
     }
 }
 
+async function forceResetTask(id) {
+    if (!confirm('Force reset this task? This will kill any running session and reset to pending.')) return;
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Resetting...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/forcereset', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Force Reset';
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Force Reset';
+    }
+}
+
 async function rerunTask(id) {
     if (!confirm('Re-run this task with Claude?')) return;
 
@@ -476,10 +529,44 @@ async function pollProgress() {
     }
 }
 
-// Start polling if task is running
-if (taskStatus === 'running' || taskStatus === 'queued') {
+// Start polling if task is running or awaiting
+if (taskStatus === 'running' || taskStatus === 'queued' || taskStatus === 'awaiting') {
     pollProgress();
     pollInterval = setInterval(pollProgress, 3000);
+}
+
+// Mark task as complete
+async function markComplete(id) {
+    if (!confirm('Mark this task as complete?')) return;
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Completing...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/complete', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> Mark Complete';
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> Mark Complete';
+    }
 }
 
 // Comment form

@@ -218,11 +218,22 @@ BASH;
             return false;
         }
 
-        // Send Enter to submit
+        // Small delay to ensure paste completes
+        usleep(100000); // 100ms
+
+        // Send Enter to submit the prompt to Claude
         $enterCmd = sprintf(
             'tmux send-keys -t %s Enter 2>&1',
             escapeshellarg($this->sessionName)
         );
+        exec($enterCmd, $output, $returnCode);
+
+        if ($returnCode !== 0) {
+            return false;
+        }
+
+        // Send a second Enter in case Claude needs confirmation
+        usleep(50000); // 50ms
         exec($enterCmd, $output, $returnCode);
 
         return $returnCode === 0;

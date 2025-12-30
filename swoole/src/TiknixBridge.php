@@ -206,7 +206,7 @@ class TiknixBridge
         ],
         'complete_task' => [
             'name' => 'complete_task',
-            'description' => 'Mark a task as completed with results.',
+            'description' => 'Report task work is done and await further instructions. Task remains open for user review.',
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [
@@ -229,6 +229,20 @@ class TiknixBridge
                     'message' => ['type' => 'string', 'description' => 'Log message']
                 ],
                 'required' => ['task_id', 'message']
+            ]
+        ],
+        'ask_question' => [
+            'name' => 'ask_question',
+            'description' => 'Ask the user a clarifying question. The question will be shown in the task UI and the task will be set to awaiting status until the user responds.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'task_id' => ['type' => 'integer', 'description' => 'The task ID'],
+                    'question' => ['type' => 'string', 'description' => 'The question to ask the user'],
+                    'context' => ['type' => 'string', 'description' => 'Optional context or explanation for why this question is needed'],
+                    'options' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'Optional list of suggested answers/options']
+                ],
+                'required' => ['task_id', 'question']
             ]
         ],
     ];
@@ -671,6 +685,9 @@ class TiknixBridge
 
                 case 'add_task_log':
                     return $this->executeAddTaskLog($arguments, $authContext);
+
+                case 'ask_question':
+                    return $this->executeAskQuestion($arguments, $authContext);
 
                 default:
                     return ['error' => "Tool '{$toolName}' not implemented"];
@@ -1194,11 +1211,56 @@ class TiknixBridge
 
     /**
      * Execute complete_task tool
+     * Sets status to 'awaiting' (not 'completed') - user must explicitly complete
      */
     private function executeCompleteTask(array $arguments, array $authContext): array
     {
-        $arguments['status'] = 'completed';
-        return $this->executeUpdateTask($arguments, $authContext);
+        $taskId = $arguments['task_id'] ?? 0;
+        $memberId = $authContext['member_id'] ?? 0;
+
+        try {
+            $task = R::findOne('workbenchtask', ' id = ? AND member_id = ? ', [$taskId, $memberId]);
+
+            if (!$task) {
+                return ['error' => 'Task not found or access denied'];
+            }
+
+            // Set to 'awaiting' - only user can mark as truly 'completed'
+            $task->status = 'awaiting';
+            $task->updatedAt = date('Y-m-d H:i:s');
+
+            if (isset($arguments['pr_url'])) {
+                $task->prUrl = $arguments['pr_url'];
+            }
+            if (isset($arguments['branch_name'])) {
+                $task->branchName = $arguments['branch_name'];
+            }
+            if (isset($arguments['summary'])) {
+                $task->resultsJson = json_encode(['summary' => $arguments['summary']]);
+            }
+
+            R::store($task);
+
+            // Log the status change
+            $log = R::dispense('tasklog');
+            $log->taskId = $taskId;
+            $log->memberId = $memberId;
+            $log->logLevel = 'info';
+            $log->logType = 'status_change';
+            $log->message = 'Work completed - awaiting review/further instructions';
+            $log->createdAt = date('Y-m-d H:i:s');
+            R::store($log);
+
+            return ['content' => [['type' => 'text', 'text' => json_encode([
+                'success' => true,
+                'task_id' => (int)$task->id,
+                'status' => 'awaiting',
+                'message' => 'Task work reported. Awaiting user review or further instructions.',
+                'pr_url' => $task->prUrl ?? null
+            ], JSON_PRETTY_PRINT)]]];
+        } catch (\Exception $e) {
+            return ['error' => 'Failed to complete task: ' . $e->getMessage()];
+        }
     }
 
     /**
@@ -1218,9 +1280,12 @@ class TiknixBridge
                 return ['error' => 'Task not found or access denied'];
             }
 
-            $log = R::dispense('workbenchtasklog');
-            $log->workbenchtaskId = $taskId;
-            $log->level = $level;
+            // Use 'tasklog' table to match PHP-FPM web app
+            $log = R::dispense('tasklog');
+            $log->taskId = $taskId;
+            $log->memberId = $memberId;
+            $log->logLevel = $level;
+            $log->logType = 'progress';
             $log->message = $message;
             $log->createdAt = date('Y-m-d H:i:s');
             R::store($log);
@@ -1228,6 +1293,78 @@ class TiknixBridge
             return ['content' => [['type' => 'text', 'text' => json_encode(['success' => true, 'log_id' => (int)$log->id])]]];
         } catch (\Exception $e) {
             return ['error' => 'Failed to add task log: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Execute ask_question tool
+     * Posts a question as a comment and sets task to awaiting status
+     */
+    private function executeAskQuestion(array $arguments, array $authContext): array
+    {
+        $taskId = $arguments['task_id'] ?? 0;
+        $memberId = $authContext['member_id'] ?? 0;
+        $question = trim($arguments['question'] ?? '');
+
+        if (empty($question)) {
+            return ['error' => 'Question is required'];
+        }
+
+        try {
+            $task = R::findOne('workbenchtask', ' id = ? AND member_id = ? ', [$taskId, $memberId]);
+
+            if (!$task) {
+                return ['error' => 'Task not found or access denied'];
+            }
+
+            // Build the question message
+            $message = "**Question from Claude:**\n\n" . $question;
+
+            if (!empty($arguments['context'])) {
+                $message .= "\n\n*Context:* " . $arguments['context'];
+            }
+
+            if (!empty($arguments['options']) && is_array($arguments['options'])) {
+                $message .= "\n\n*Suggested options:*\n";
+                foreach ($arguments['options'] as $option) {
+                    $message .= "- " . $option . "\n";
+                }
+            }
+
+            // Store as a comment from Claude
+            $comment = R::dispense('taskcomment');
+            $comment->taskId = $taskId;
+            $comment->memberId = $memberId;
+            $comment->content = $message;
+            $comment->isFromClaude = 1;
+            $comment->isInternal = 0;
+            $comment->createdAt = date('Y-m-d H:i:s');
+            R::store($comment);
+
+            // Update task status to awaiting
+            $task->status = 'awaiting';
+            $task->updatedAt = date('Y-m-d H:i:s');
+            R::store($task);
+
+            // Log the question
+            $log = R::dispense('tasklog');
+            $log->taskId = $taskId;
+            $log->memberId = $memberId;
+            $log->logLevel = 'info';
+            $log->logType = 'question';
+            $log->message = 'Claude asked: ' . substr($question, 0, 100) . (strlen($question) > 100 ? '...' : '');
+            $log->createdAt = date('Y-m-d H:i:s');
+            R::store($log);
+
+            return ['content' => [['type' => 'text', 'text' => json_encode([
+                'success' => true,
+                'task_id' => (int)$taskId,
+                'status' => 'awaiting',
+                'message' => 'Question posted. Waiting for user response.',
+                'comment_id' => (int)$comment->id
+            ], JSON_PRETTY_PRINT)]]];
+        } catch (\Exception $e) {
+            return ['error' => 'Failed to ask question: ' . $e->getMessage()];
         }
     }
 }

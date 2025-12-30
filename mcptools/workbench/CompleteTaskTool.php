@@ -73,8 +73,8 @@ class CompleteTaskTool extends BaseTool {
 
         // If summary provided, add it as a comment from Claude
         if (!empty($args['summary'])) {
-            $comment = Bean::dispense('workbenchtaskcomment');
-            $comment->workbenchtaskId = $taskId;
+            $comment = Bean::dispense('taskcomment');
+            $comment->taskId = $taskId;
             $comment->memberId = $this->member->id;
             $comment->isFromClaude = true;
             $comment->content = "**Task Completion Summary:**\n\n" . $args['summary'];

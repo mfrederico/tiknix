@@ -9,6 +9,9 @@
  * Usage: php cli/task-complete.php --task=123 --status=completed [--error="message"]
  */
 
+// Mark as standalone CLI script (bypass CliHandler validation)
+define('STANDALONE_CLI', true);
+
 // Bootstrap the application
 $projectRoot = dirname(__DIR__);
 chdir($projectRoot);

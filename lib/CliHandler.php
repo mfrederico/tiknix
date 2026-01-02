@@ -33,15 +33,20 @@ class CliHandler {
      * Process CLI arguments and set up environment
      */
     public function process() {
+        // Skip processing for standalone CLI scripts (they handle their own args)
+        if (defined('STANDALONE_CLI') && STANDALONE_CLI) {
+            return;
+        }
+
         // Show help if requested
         if ($this->hasArg('--help') || $this->hasArg('-h')) {
             $this->showHelp();
             exit(0);
         }
-        
+
         // Parse command line options
         $this->parseOptions();
-        
+
         // Validate required options for command execution
         if ($this->argc > 1 && !$this->isConfigOnly()) {
             if (!isset($this->options['control'])) {

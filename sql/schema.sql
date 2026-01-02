@@ -433,8 +433,9 @@ CREATE INDEX IF NOT EXISTS idx_groceryitem_list ON groceryitem(grocerylist_id);
 
 -- Default admin user (password: admin123)
 -- IMPORTANT: Change this password immediately after first login!
+-- Hash generated with: password_hash('admin123', PASSWORD_DEFAULT)
 INSERT OR IGNORE INTO member (email, username, password, level, status, created_at) VALUES
-    ('admin@example.com', 'admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 1, 'active', datetime('now'));
+    ('admin@example.com', 'admin', '$2y$10$jVz654DI7bX8e1Dh32O9suFcMW4x1V.0SrniJNpDyknwkzc6gM20a', 1, 'active', datetime('now'));
 
 -- Public user entity (system user for unauthenticated requests)
 INSERT OR IGNORE INTO member (email, username, password, level, status, created_at) VALUES

@@ -66,13 +66,19 @@ if [ -z "$API_TOKEN" ]; then
     exit 0
 fi
 
-# Get MCP URL - check .mcp_url file first (written by serve.sh), fallback to localhost:8080
+# Get MCP URL - priority: env var (set by ClaudeRunner) > .mcp_url file > default
 # Using localhost avoids nginx proxy issues with Authorization headers
-MCP_URL_FILE="$PROJECT_DIR/.mcp_url"
-if [ -f "$MCP_URL_FILE" ]; then
-    BASE_URL=$(cat "$MCP_URL_FILE" | tr -d '\n\r')
+if [ -n "$TIKNIX_HOOK_URL" ]; then
+    # ClaudeRunner sets this with full /mcp/message path
+    MCP_ENDPOINT="$TIKNIX_HOOK_URL"
 else
-    BASE_URL="http://localhost:8080"
+    MCP_URL_FILE="$PROJECT_DIR/.mcp_url"
+    if [ -f "$MCP_URL_FILE" ]; then
+        BASE_URL=$(cat "$MCP_URL_FILE" | tr -d '\n\r')
+    else
+        BASE_URL="http://localhost:8080"
+    fi
+    MCP_ENDPOINT="${BASE_URL}/mcp/message"
 fi
 
 # Make the file path relative to project for cleaner logging
@@ -88,7 +94,7 @@ else
 fi
 
 # Log the activity via MCP
-curl -s -X POST "${BASE_URL}/mcp/message" \
+curl -s -X POST "${MCP_ENDPOINT}" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $API_TOKEN" \
     -d "{

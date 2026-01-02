@@ -61,6 +61,24 @@ class ClaudeRunner {
     }
 
     /**
+     * Get the internal URL for hooks to call back to the MCP endpoint
+     * Checks .mcp_url file (written by serve.sh) or defaults to localhost:8080
+     */
+    private function getHookUrl(string $projectRoot): string {
+        // Check if serve.sh wrote a .mcp_url file
+        $mcpUrlFile = $projectRoot . '/.mcp_url';
+        if (file_exists($mcpUrlFile)) {
+            $url = trim(file_get_contents($mcpUrlFile));
+            if (!empty($url)) {
+                return $url . '/mcp/message';
+            }
+        }
+
+        // Default to localhost:8080 for production (nginx -> php-fpm)
+        return 'http://localhost:8080/mcp/message';
+    }
+
+    /**
      * Spawn a new tmux session with Claude Code running interactively
      *
      * @param bool $skipPermissions Use --dangerously-skip-permissions flag
@@ -132,6 +150,9 @@ class ClaudeRunner {
         $callbackScript = $projectRoot . '/cli/task-complete.php';
         $sessionName = $this->sessionName;
 
+        // Determine internal URL for hooks - check .mcp_url first, then use localhost
+        $hookUrl = $this->getHookUrl($projectRoot);
+
         return <<<BASH
 #!/bin/bash
 #
@@ -143,6 +164,7 @@ export TIKNIX_TASK_ID={$this->taskId}
 export TIKNIX_MEMBER_ID={$this->memberId}
 export TIKNIX_SESSION_NAME="{$sessionName}"
 export TIKNIX_PROJECT_ROOT="{$projectRoot}"
+export TIKNIX_HOOK_URL="{$hookUrl}"
 
 echo "╔══════════════════════════════════════════════════════════════════╗"
 echo "║                    TIKNIX CLAUDE WORKER                          ║"

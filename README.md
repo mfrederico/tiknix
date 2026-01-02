@@ -111,14 +111,62 @@ That's it! The caching system works transparently - no code changes needed.
 
 ### Requirements
 - PHP 8.1 or higher (uses modern PHP features)
-- MySQL/MariaDB, PostgreSQL, or SQLite
-- Composer
+- SQLite (default) or MySQL/MariaDB/PostgreSQL
+- Composer (will be installed automatically if missing)
 - Apache/Nginx with mod_rewrite (or PHP built-in server for development)
 - APCu extension (optional but recommended for 9.4x performance boost)
 
-### Installation
+### Installation (Recommended)
 
-1. **Clone or download the repository**
+The easiest way to install Tiknix is using the automated installer:
+
+```bash
+# Clone the repository
+git clone https://github.com/mfrederico/tiknix.git myapp
+cd myapp
+
+# Run the installer
+chmod +x install.sh
+./install.sh
+```
+
+The installer will:
+- Check and install required PHP extensions
+- Install Composer dependencies
+- Create configuration file (SQLite by default)
+- Initialize the database with admin user
+- Set up proper file permissions
+- Configure Claude Code MCP integration (optional)
+- Set up Claude Code hooks for task logging (optional)
+
+After installation, start the development server:
+
+```bash
+./serve.sh
+```
+
+Then open http://localhost:8080 in your browser.
+
+**Default login**: username `admin`, password `admin123` (change immediately!)
+
+### Installation Options
+
+```bash
+# Non-interactive install with defaults
+./install.sh --auto
+
+# Specify port for development server
+./install.sh --port=9000
+
+# Show all options
+./install.sh --help
+```
+
+### Manual Installation (Advanced)
+
+If you prefer manual setup:
+
+1. **Clone the repository**
 ```bash
 git clone https://github.com/mfrederico/tiknix.git myapp
 cd myapp
@@ -148,10 +196,7 @@ mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS tiknix"
 
 4. **Initialize the database**
 
-The framework uses RedBeanPHP which auto-creates tables. Run the initialization script:
-
 ```bash
-# This works for any database type (SQLite, MySQL, PostgreSQL)
 php database/init.php
 ```
 
@@ -159,7 +204,6 @@ This creates:
 - Admin user (username: `admin`, password: `admin123`) - **Change this immediately!**
 - Public user entity for guest permissions
 - Initial permission settings
-- Contact form and response tables
 
 5. **Set permissions**
 ```bash
@@ -186,13 +230,14 @@ location / {
 }
 ```
 
-7. **Start development server** (for testing)
+7. **Start development server**
 ```bash
-php -S localhost:8000 -t public/
+./serve.sh
+# Or manually: php -S localhost:8080 -t public/ server.php
 ```
 
 8. **Access the application**
-- Open http://localhost:8000
+- Open http://localhost:8080
 - **Register a new account**: Click "Register" - no email verification needed
 - **Or login with admin**: username `admin`, password `admin123` (change immediately!)
 - After login/registration, you'll be redirected to the main dashboard at `/dashboard`

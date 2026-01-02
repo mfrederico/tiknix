@@ -1143,29 +1143,29 @@ ROUTER
     success "Created server.php router"
 
     # Create convenience serve script
-    cat > "$SCRIPT_DIR/serve.sh" << SERVE
+    cat > "$SCRIPT_DIR/serve.sh" << 'SERVE'
 #!/bin/bash
 #
 # Tiknix Development Server
 # Run: ./serve.sh [OPTIONS]
 #
 # Options:
-#   --port=PORT   Set server port (default: ${DEFAULT_PORT})
-#   --host=HOST   Set server host (default: ${DEFAULT_HOST})
+#   --port=PORT   Set server port (default: 8000)
+#   --host=HOST   Set server host (default: localhost)
 #   --open        Open browser after starting
 #
 
-HOST="${DEFAULT_HOST}"
-PORT="${DEFAULT_PORT}"
+HOST="localhost"
+PORT="8000"
 OPEN_BROWSER=false
 
-for arg in "\$@"; do
-    case \$arg in
+for arg in "$@"; do
+    case $arg in
         --port=*)
-            PORT="\${arg#*=}"
+            PORT="${arg#*=}"
             ;;
         --host=*)
-            HOST="\${arg#*=}"
+            HOST="${arg#*=}"
             ;;
         --open)
             OPEN_BROWSER=true
@@ -1176,31 +1176,80 @@ for arg in "\$@"; do
             echo "Usage: ./serve.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --port=PORT   Server port (default: ${DEFAULT_PORT})"
-            echo "  --host=HOST   Server host (default: ${DEFAULT_HOST})"
+            echo "  --port=PORT   Server port (default: 8000)"
+            echo "  --host=HOST   Server host (default: localhost)"
             echo "  --open        Open browser after starting"
             exit 0
             ;;
     esac
 done
 
-SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Function to update MCP configuration when port changes
+update_mcp_config() {
+    local new_url="http://${HOST}:${PORT}/mcp/message"
+    local claude_settings="$HOME/.claude/settings.json"
+
+    # Check if Claude settings exist and contain tiknix MCP
+    if [ -f "$claude_settings" ] && grep -q '"tiknix"' "$claude_settings" 2>/dev/null; then
+        # Get current URL from settings
+        local current_url=$(grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$claude_settings" | head -1 | sed 's/.*"\([^"]*\)"/\1/')
+
+        if [ "$current_url" != "$new_url" ] && [ -n "$current_url" ]; then
+            echo "  Updating MCP URL: $new_url"
+
+            # Backup settings
+            cp "$claude_settings" "$claude_settings.bak" 2>/dev/null
+
+            # Update URL in settings.json
+            if command -v jq &>/dev/null; then
+                # Use jq for safe JSON manipulation
+                local temp_file=$(mktemp)
+                jq --arg url "$new_url" '.mcpServers.tiknix.url = $url' "$claude_settings" > "$temp_file" 2>/dev/null
+                if [ $? -eq 0 ]; then
+                    mv "$temp_file" "$claude_settings"
+                    echo "  ✓ MCP config updated (restart Claude to apply)"
+                else
+                    rm -f "$temp_file"
+                fi
+            else
+                # Fallback: sed replacement (less safe but works)
+                sed -i.tmp "s|\"url\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"url\": \"$new_url\"|" "$claude_settings" 2>/dev/null
+                rm -f "$claude_settings.tmp"
+                echo "  ✓ MCP config updated (restart Claude to apply)"
+            fi
+        fi
+    fi
+
+    # Also update config.ini baseurl
+    local config_file="$SCRIPT_DIR/conf/config.ini"
+    if [ -f "$config_file" ]; then
+        local new_baseurl="http://${HOST}:${PORT}"
+        sed -i.tmp "s|^baseurl[[:space:]]*=.*|baseurl = \"$new_baseurl\"|" "$config_file" 2>/dev/null
+        rm -f "$config_file.tmp"
+    fi
+}
+
+# Update MCP config before starting server
+update_mcp_config
 
 echo ""
 echo "  Tiknix Development Server"
 echo "  ========================="
 echo ""
-echo "  URL: http://\${HOST}:\${PORT}"
+echo "  URL: http://${HOST}:${PORT}"
+echo "  MCP: http://${HOST}:${PORT}/mcp/message"
 echo ""
 echo "  Press Ctrl+C to stop"
 echo ""
 
 # Open browser if requested
-if [ "\$OPEN_BROWSER" = true ]; then
-    sleep 1 && (xdg-open "http://\${HOST}:\${PORT}" 2>/dev/null || open "http://\${HOST}:\${PORT}" 2>/dev/null) &
+if [ "$OPEN_BROWSER" = true ]; then
+    sleep 1 && (xdg-open "http://${HOST}:${PORT}" 2>/dev/null || open "http://${HOST}:${PORT}" 2>/dev/null) &
 fi
 
-php -S "\${HOST}:\${PORT}" -t "\${SCRIPT_DIR}" "\${SCRIPT_DIR}/server.php"
+php -S "${HOST}:${PORT}" -t "${SCRIPT_DIR}" "${SCRIPT_DIR}/server.php"
 SERVE
 
     chmod +x "$SCRIPT_DIR/serve.sh"

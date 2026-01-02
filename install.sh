@@ -767,9 +767,33 @@ init_database() {
     fi
 
     if [ "$fresh_install" = true ]; then
-        php database/init.php
+        # Create database directory if needed
+        mkdir -p "$SCRIPT_DIR/database"
 
-        success "Database initialized"
+        # Check if schema file exists
+        if [ ! -f "$SCRIPT_DIR/sql/schema.sql" ]; then
+            error "Schema file not found at sql/schema.sql"
+            return 1
+        fi
+
+        info "Creating database from schema..."
+
+        # Use sqlite3 directly to import schema (more reliable than PHP)
+        if sqlite3 "$SCRIPT_DIR/database/tiknix.db" < "$SCRIPT_DIR/sql/schema.sql" 2>&1; then
+            success "Database schema loaded"
+        else
+            error "Failed to load database schema"
+            return 1
+        fi
+
+        # Verify tables were created
+        local table_count=$(sqlite3 "$SCRIPT_DIR/database/tiknix.db" "SELECT count(*) FROM sqlite_master WHERE type='table';")
+        if [ "$table_count" -gt 0 ]; then
+            success "Database initialized ($table_count tables created)"
+        else
+            error "No tables were created"
+            return 1
+        fi
 
         # Prompt for admin password on fresh install
         prompt_admin_password

@@ -110,11 +110,10 @@ That's it! The caching system works transparently - no code changes needed.
 ## Quick Start
 
 ### Requirements
-- PHP 8.1 or higher (uses modern PHP features)
+- PHP 8.1 or higher
 - SQLite (default) or MySQL/MariaDB/PostgreSQL
-- Composer (will be installed automatically if missing)
-- Apache/Nginx with mod_rewrite (or PHP built-in server for development)
-- APCu extension (optional but recommended for 9.4x performance boost)
+- Composer (installed automatically if missing)
+- Apache/Nginx or PHP built-in server for development
 
 ### Installation (Recommended)
 
@@ -861,6 +860,31 @@ php public/index.php --control=test --method=params --params='name=John&age=30' 
 # Test cron mode (should produce no output)
 php public/index.php --control=test --method=cleanup --member=1 --cron
 ```
+
+## Advanced: Performance Optimization
+
+### APCu Caching (Optional)
+
+For production environments, install APCu for a **9.4x performance boost**:
+
+```bash
+# Install APCu
+sudo apt-get install php8.1-apcu
+sudo systemctl restart php8.1-fpm
+
+# Enable for CLI (optional, for testing)
+echo "apc.enable_cli=1" | sudo tee -a /etc/php/8.1/cli/conf.d/20-apcu.ini
+```
+
+Enable in `conf/config.ini`:
+```ini
+[cache]
+enabled = true
+query_cache = true
+query_cache_ttl = 60
+```
+
+See the [Caching section](#high-performance-caching-system) for full details.
 
 ## Support
 

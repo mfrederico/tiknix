@@ -688,7 +688,7 @@ setup_claude_auth() {
     # Try to run a simple prompt - if it works, we're authenticated
     # Use timeout to prevent hanging, redirect to capture output
     local test_result
-    test_result=$(timeout 10 claude -p "respond with only the word: authenticated" 2>&1) || true
+    test_result=$(timeout 15 claude -p "respond with only the word: authenticated" 2>&1) || true
 
     if echo "$test_result" | grep -qi "authenticated"; then
         success "Claude CLI is already authenticated"
@@ -696,12 +696,9 @@ setup_claude_auth() {
     fi
 
     # Check if the error indicates we need to authenticate
-    if echo "$test_result" | grep -qi -E "(authorize|login|auth|OAuth|sign in)"; then
+    if echo "$test_result" | grep -qi -E "(authorize|login|auth|OAuth|sign in|API key|/login)"; then
         echo ""
         warn "Claude CLI needs to be authenticated"
-        echo ""
-        info "This will open a browser window for OAuth authorization."
-        info "If you're on a headless server, you'll get a URL to open manually."
         echo ""
 
         if [ "$AUTO_MODE" = true ]; then
@@ -712,17 +709,25 @@ setup_claude_auth() {
 
         if ask_yn "Authenticate Claude CLI now?" "y"; then
             echo ""
-            echo -e "${BOLD}Starting Claude authentication...${NC}"
-            echo -e "${CYAN}Follow the prompts below. Press Ctrl+C if you need to cancel.${NC}"
+            echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+            echo -e "${BOLD}  Claude CLI Authentication${NC}"
+            echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
+            echo ""
+            echo -e "  Claude CLI will now start in interactive mode."
+            echo ""
+            echo -e "  ${BOLD}Instructions:${NC}"
+            echo -e "  1. Type ${YELLOW}/login${NC} and press Enter"
+            echo -e "  2. A browser will open (or you'll get a URL to copy)"
+            echo -e "  3. Complete the OAuth authorization in your browser"
+            echo -e "  4. Once done, type ${YELLOW}/exit${NC} to return to the installer"
+            echo ""
+            echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
             echo ""
 
-            # Run claude interactively - this will show the OAuth URL and wait
-            # We use 'claude' without arguments which starts interactive mode and triggers auth
-            claude --version > /dev/null 2>&1  # Sometimes just this triggers auth
+            read -r -p "Press Enter to start Claude CLI..."
 
-            # Actually run claude to trigger the full OAuth flow
-            # The user will see the auth URL and need to complete it
-            timeout 300 claude -p "say hello" 2>&1 || true
+            # Run claude interactively so user can type /login
+            claude
 
             echo ""
 

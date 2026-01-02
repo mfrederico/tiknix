@@ -333,17 +333,17 @@ INSTRUCTIONS;
 You are running inside a workbench task. The user is monitoring your progress through a web UI.
 
 **MANDATORY: Use Tiknix MCP tools for ALL communication with the user.**
-Tool names use format: mcp__tiknix__tiknix_<tool_name>
+Tool names use format: mcp__tiknix__<tool_name>
 
 ### Asking Questions - CRITICAL RULE
 
-**NEVER use the built-in AskUserQuestion tool. ALWAYS use `mcp__tiknix__tiknix_ask_question` instead.**
+**NEVER use the built-in AskUserQuestion tool. ALWAYS use `mcp__tiknix__ask_question` instead.**
 
 The built-in tool does NOT update the workbench UI. If you use it, the user won't see your question
 and the task will appear stuck. The MCP tool properly updates the task status and shows the question
 in the web interface.
 
-**`mcp__tiknix__tiknix_ask_question`** - Ask the user a clarifying question
+**`mcp__tiknix__ask_question`** - Ask the user a clarifying question
   Parameters:
   - `task_id` (required): {$taskId}
   - `question` (required): Your question text
@@ -357,7 +357,7 @@ in the web interface.
   - The task description is ambiguous
   - You encounter an unexpected situation
 
-**`mcp__tiknix__tiknix_get_task`** - Get current task details including user responses
+**`mcp__tiknix__get_task`** - Get current task details including user responses
   Parameters:
   - `task_id` (required): {$taskId}
 
@@ -365,12 +365,12 @@ in the web interface.
 
 ### Progress Updates
 
-- `mcp__tiknix__tiknix_add_task_log` - Add log entries for significant events
-- `mcp__tiknix__tiknix_update_task` - Update progress message or status
+- `mcp__tiknix__add_task_log` - Add log entries for significant events
+- `mcp__tiknix__update_task` - Update progress message or status
 
 ### Completion
 
-**`mcp__tiknix__tiknix_complete_task`** - Report work is done
+**`mcp__tiknix__complete_task`** - Report work is done
   Parameters:
   - `task_id` (required): {$taskId}
   - `summary`: What was accomplished
@@ -381,10 +381,10 @@ Current Task ID: {$taskId}
 
 ### WORKFLOW RULES
 
-1. **ALWAYS** use `mcp__tiknix__tiknix_ask_question` instead of AskUserQuestion
-2. After asking, call `mcp__tiknix__tiknix_get_task` to read the user's response
-3. Report progress with `mcp__tiknix__tiknix_add_task_log` at key milestones
-4. When finished, call `mcp__tiknix__tiknix_complete_task` with a summary
+1. **ALWAYS** use `mcp__tiknix__ask_question` instead of AskUserQuestion
+2. After asking, call `mcp__tiknix__get_task` to read the user's response
+3. Report progress with `mcp__tiknix__add_task_log` at key milestones
+4. When finished, call `mcp__tiknix__complete_task` with a summary
 INSTRUCTIONS;
     }
 }

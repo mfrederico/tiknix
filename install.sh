@@ -1191,43 +1191,48 @@ update_mcp_config() {
     local new_url="http://${HOST}:${PORT}/mcp/message"
     local claude_settings="$HOME/.claude/settings.json"
 
-    # Check if Claude settings exist and contain tiknix MCP
-    if [ -f "$claude_settings" ] && grep -q '"tiknix"' "$claude_settings" 2>/dev/null; then
-        # Get current URL from settings
-        local current_url=$(grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$claude_settings" | head -1 | sed 's/.*"\([^"]*\)"/\1/')
-
-        if [ "$current_url" != "$new_url" ] && [ -n "$current_url" ]; then
-            echo "  Updating MCP URL: $new_url"
-
-            # Backup settings
-            cp "$claude_settings" "$claude_settings.bak" 2>/dev/null
-
-            # Update URL in settings.json
-            if command -v jq &>/dev/null; then
-                # Use jq for safe JSON manipulation
-                local temp_file=$(mktemp)
-                jq --arg url "$new_url" '.mcpServers.tiknix.url = $url' "$claude_settings" > "$temp_file" 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    mv "$temp_file" "$claude_settings"
-                    echo "  ✓ MCP config updated (restart Claude to apply)"
-                else
-                    rm -f "$temp_file"
-                fi
-            else
-                # Fallback: sed replacement (less safe but works)
-                sed -i.tmp "s|\"url\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"url\": \"$new_url\"|" "$claude_settings" 2>/dev/null
-                rm -f "$claude_settings.tmp"
-                echo "  ✓ MCP config updated (restart Claude to apply)"
-            fi
-        fi
-    fi
-
-    # Also update config.ini baseurl
+    # Update config.ini baseurl first
     local config_file="$SCRIPT_DIR/conf/config.ini"
     if [ -f "$config_file" ]; then
         local new_baseurl="http://${HOST}:${PORT}"
         sed -i.tmp "s|^baseurl[[:space:]]*=.*|baseurl = \"$new_baseurl\"|" "$config_file" 2>/dev/null
         rm -f "$config_file.tmp"
+    fi
+
+    # Check if claude CLI is available
+    if ! command -v claude &>/dev/null; then
+        return 0
+    fi
+
+    # Check if tiknix MCP server exists
+    if ! claude mcp get tiknix &>/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Get current URL from claude mcp get
+    local current_url=$(claude mcp get tiknix 2>/dev/null | grep -o 'http[s]*://[^"]*' | head -1)
+
+    if [ "$current_url" != "$new_url" ] && [ -n "$current_url" ]; then
+        echo "  Updating MCP URL: $new_url"
+
+        # Get the API token from settings.json
+        local api_token=""
+        if [ -f "$claude_settings" ]; then
+            api_token=$(grep -o 'Bearer [^"]*' "$claude_settings" 2>/dev/null | head -1 | sed 's/Bearer //')
+        fi
+
+        if [ -n "$api_token" ]; then
+            # Remove and re-add with new URL
+            claude mcp remove tiknix 2>/dev/null
+            if claude mcp add --transport http tiknix "$new_url" --header "Authorization: Bearer $api_token" 2>/dev/null; then
+                echo "  ✓ MCP server updated (restart Claude to apply)"
+            else
+                echo "  ⚠ Could not update MCP server automatically"
+            fi
+        else
+            echo "  ⚠ Could not find API token to update MCP server"
+            echo "  Run: claude mcp remove tiknix && claude mcp add --transport http tiknix \"$new_url\" --header \"Authorization: Bearer YOUR_TOKEN\""
+        fi
     fi
 }
 

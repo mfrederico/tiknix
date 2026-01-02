@@ -4,13 +4,13 @@
 # Run: ./serve.sh [OPTIONS]
 #
 # Options:
-#   --port=PORT   Set server port (default: 8000)
+#   --port=PORT   Set server port (default: 8080)
 #   --host=HOST   Set server host (default: localhost)
 #   --open        Open browser after starting
 #
 
 HOST="localhost"
-PORT="8000"
+PORT="8080"
 OPEN_BROWSER=false
 
 for arg in "$@"; do
@@ -30,7 +30,7 @@ for arg in "$@"; do
             echo "Usage: ./serve.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --port=PORT   Server port (default: 8000)"
+            echo "  --port=PORT   Server port (default: 8080)"
             echo "  --host=HOST   Server host (default: localhost)"
             echo "  --open        Open browser after starting"
             exit 0

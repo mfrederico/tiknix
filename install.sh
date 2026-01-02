@@ -36,7 +36,7 @@ NC='\033[0m' # No Color
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AUTO_MODE=false
-DEFAULT_PORT=8000
+DEFAULT_PORT=8080
 DEFAULT_HOST="localhost"
 
 # Parse arguments
@@ -531,6 +531,7 @@ setup_config() {
 
         # Update baseurl with the configured host and port
         sed -i "s|baseurl = \"http://localhost:8000\"|baseurl = \"http://${DEFAULT_HOST}:${DEFAULT_PORT}\"|" "$CONFIG_FILE"
+        sed -i "s|baseurl = \"http://localhost:8080\"|baseurl = \"http://${DEFAULT_HOST}:${DEFAULT_PORT}\"|" "$CONFIG_FILE"
         info "Base URL set to http://${DEFAULT_HOST}:${DEFAULT_PORT}"
     else
         error "SQLite example config not found at $EXAMPLE_FILE"

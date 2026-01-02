@@ -69,10 +69,14 @@ update_mcp_config() {
     if [ "$current_url" != "$new_url" ] && [ -n "$current_url" ]; then
         echo "  Updating MCP URL: $new_url"
 
-        # Get the API token from settings.json
+        # Get the API token - first try local .mcp_token file, then settings.json
         local api_token=""
-        if [ -f "$claude_settings" ]; then
-            api_token=$(grep -o 'Bearer [^"]*' "$claude_settings" 2>/dev/null | head -1 | sed 's/Bearer //')
+        local token_file="$SCRIPT_DIR/.mcp_token"
+        if [ -f "$token_file" ]; then
+            api_token=$(cat "$token_file" 2>/dev/null | tr -d '\n')
+        elif [ -f "$claude_settings" ]; then
+            # Fallback: extract from settings.json
+            api_token=$(grep -o 'Bearer tk_[^"]*' "$claude_settings" 2>/dev/null | head -1 | sed 's/Bearer //')
         fi
 
         if [ -n "$api_token" ]; then

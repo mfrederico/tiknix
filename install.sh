@@ -889,6 +889,11 @@ setup_mcp_connection() {
     TIKNIX_API_TOKEN="$api_token"
     TIKNIX_MCP_URL="$mcp_url"
 
+    # Save token to local file for serve.sh to use
+    echo "$api_token" > "$SCRIPT_DIR/.mcp_token"
+    chmod 600 "$SCRIPT_DIR/.mcp_token"
+    info "Token saved to .mcp_token"
+
     # Configure Claude Code MCP server
     echo ""
     info "Configuring Claude Code MCP server..."

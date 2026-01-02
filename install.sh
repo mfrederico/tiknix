@@ -152,6 +152,9 @@ version_gte() {
     [ "$(printf '%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]
 }
 
+# Global PHP version (detected during check)
+DETECTED_PHP_VERSION=""
+
 # Arrays to track missing dependencies
 MISSING_APT=()
 MISSING_NPM=()
@@ -223,16 +226,17 @@ install_missing_deps() {
         if [ $idx -ge 0 ] && [ $idx -lt ${#MISSING_NAMES[@]} ]; then
             local name="${MISSING_NAMES[$idx]}"
 
-            # Map names to packages
+            # Map names to packages (use detected PHP version)
+            local php_ver="${DETECTED_PHP_VERSION:-8.1}"
             case "$name" in
                 "PHP 8.1+")
-                    apt_to_install+=("php8.1" "php8.1-cli")
+                    apt_to_install+=("php${php_ver}" "php${php_ver}-cli")
                     ;;
                 "PHP SQLite")
-                    apt_to_install+=("php8.1-sqlite3")
+                    apt_to_install+=("php${php_ver}-sqlite3")
                     ;;
                 "PHP mbstring")
-                    apt_to_install+=("php8.1-mbstring")
+                    apt_to_install+=("php${php_ver}-mbstring")
                     ;;
                 "sqlite3")
                     apt_to_install+=("sqlite3")
@@ -319,17 +323,18 @@ check_requirements() {
     # Check PHP
     echo -n "Checking PHP... "
     if command_exists php; then
-        PHP_VERSION=$(get_php_version)
-        if version_gte "$PHP_VERSION" "8.1"; then
-            success "PHP $PHP_VERSION found"
+        DETECTED_PHP_VERSION=$(get_php_version)
+        if version_gte "$DETECTED_PHP_VERSION" "8.1"; then
+            success "PHP $DETECTED_PHP_VERSION found"
         else
-            error "PHP $PHP_VERSION found, but 8.1+ required"
+            error "PHP $DETECTED_PHP_VERSION found, but 8.1+ required"
             add_missing "PHP 8.1+"
             has_errors=true
         fi
     else
         error "PHP not found"
         add_missing "PHP 8.1+"
+        DETECTED_PHP_VERSION="8.1"  # Default for installation
         has_errors=true
     fi
 

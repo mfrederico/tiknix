@@ -66,9 +66,14 @@ if [ -z "$API_TOKEN" ]; then
     exit 0
 fi
 
-# Always use localhost for hooks running on the same server
-# This avoids nginx proxy issues with Authorization headers
-BASE_URL="http://localhost:8080"
+# Get MCP URL - check .mcp_url file first (written by serve.sh), fallback to localhost:8080
+# Using localhost avoids nginx proxy issues with Authorization headers
+MCP_URL_FILE="$PROJECT_DIR/.mcp_url"
+if [ -f "$MCP_URL_FILE" ]; then
+    BASE_URL=$(cat "$MCP_URL_FILE" | tr -d '\n\r')
+else
+    BASE_URL="http://localhost:8080"
+fi
 
 # Make the file path relative to project for cleaner logging
 RELATIVE_PATH="${FILE_PATH#$PROJECT_DIR/}"

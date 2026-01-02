@@ -93,6 +93,9 @@ if [ -x "$SCRIPT_DIR/cli/setup-hooks.sh" ]; then
     "$SCRIPT_DIR/cli/setup-hooks.sh" --quiet
 fi
 
+# Write current MCP URL for hooks to use
+echo "http://${HOST}:${PORT}" > "$SCRIPT_DIR/.mcp_url"
+
 # Update MCP config before starting server
 update_mcp_config
 

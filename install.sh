@@ -671,6 +671,85 @@ setup_ssh_key() {
     fi
 }
 
+# Setup Claude CLI authentication
+setup_claude_auth() {
+    step "Claude CLI Authentication"
+
+    # Check if claude is installed
+    if ! command_exists claude; then
+        warn "Claude CLI not installed, skipping authentication"
+        info "Install Claude CLI and run this installer again, or run 'claude' manually"
+        return 0
+    fi
+
+    # Test if Claude is already authenticated by running a simple command
+    info "Checking Claude CLI authentication status..."
+
+    # Try to run a simple prompt - if it works, we're authenticated
+    # Use timeout to prevent hanging, redirect to capture output
+    local test_result
+    test_result=$(timeout 10 claude -p "respond with only the word: authenticated" 2>&1) || true
+
+    if echo "$test_result" | grep -qi "authenticated"; then
+        success "Claude CLI is already authenticated"
+        return 0
+    fi
+
+    # Check if the error indicates we need to authenticate
+    if echo "$test_result" | grep -qi -E "(authorize|login|auth|OAuth|sign in)"; then
+        echo ""
+        warn "Claude CLI needs to be authenticated"
+        echo ""
+        info "This will open a browser window for OAuth authorization."
+        info "If you're on a headless server, you'll get a URL to open manually."
+        echo ""
+
+        if [ "$AUTO_MODE" = true ]; then
+            warn "Cannot authenticate Claude in auto mode - requires user interaction"
+            info "Run 'claude' manually after installation to authenticate"
+            return 0
+        fi
+
+        if ask_yn "Authenticate Claude CLI now?" "y"; then
+            echo ""
+            echo -e "${BOLD}Starting Claude authentication...${NC}"
+            echo -e "${CYAN}Follow the prompts below. Press Ctrl+C if you need to cancel.${NC}"
+            echo ""
+
+            # Run claude interactively - this will show the OAuth URL and wait
+            # We use 'claude' without arguments which starts interactive mode and triggers auth
+            claude --version > /dev/null 2>&1  # Sometimes just this triggers auth
+
+            # Actually run claude to trigger the full OAuth flow
+            # The user will see the auth URL and need to complete it
+            timeout 300 claude -p "say hello" 2>&1 || true
+
+            echo ""
+
+            # Verify authentication worked
+            info "Verifying authentication..."
+            local verify_result
+            verify_result=$(timeout 15 claude -p "respond with only: success" 2>&1) || true
+
+            if echo "$verify_result" | grep -qi "success"; then
+                echo ""
+                success "Claude CLI authenticated successfully!"
+            else
+                echo ""
+                warn "Claude authentication may not have completed"
+                info "You can run 'claude' manually later to complete authentication"
+            fi
+        else
+            warn "Skipping Claude authentication"
+            info "Run 'claude' manually when ready to authenticate"
+        fi
+    else
+        # Some other error or it might already be working
+        warn "Could not determine Claude auth status"
+        info "Run 'claude' manually to verify or authenticate"
+    fi
+}
+
 # Install dependencies
 install_dependencies() {
     step "Installing PHP Dependencies"
@@ -1080,6 +1159,7 @@ main() {
     install_dependencies
     init_database
     setup_ssh_key
+    setup_claude_auth
     create_server_router
     print_completion
 }

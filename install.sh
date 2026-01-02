@@ -831,6 +831,149 @@ set_admin_password() {
     fi
 }
 
+# Setup MCP connection for Claude Code
+setup_mcp_connection() {
+    step "Setting up MCP Connection for Claude Code"
+
+    # Check if Claude CLI is available
+    if ! command_exists claude; then
+        warn "Claude CLI not installed, skipping MCP setup"
+        info "Install Claude CLI and run: claude mcp add tiknix <url> --header 'Authorization: Bearer <token>'"
+        return 0
+    fi
+
+    # Get the base URL from config or use default
+    local base_url="http://localhost:8000"
+    if [ -f "$SCRIPT_DIR/conf/config.ini" ]; then
+        local config_url=$(grep -E "^baseurl\s*=" "$SCRIPT_DIR/conf/config.ini" | sed 's/.*=\s*"\?\([^"]*\)"\?/\1/' | tr -d ' ')
+        if [ -n "$config_url" ]; then
+            base_url="$config_url"
+        fi
+    fi
+    local mcp_url="${base_url}/mcp/message"
+
+    echo ""
+    info "MCP Server URL: $mcp_url"
+
+    # Generate API token
+    local api_token="tk_$(php -r "echo bin2hex(random_bytes(32));")"
+
+    # Get admin member ID (should be 1)
+    local admin_id=$(sqlite3 "$SCRIPT_DIR/database/tiknix.db" "SELECT id FROM member WHERE username = 'admin' LIMIT 1;")
+
+    if [ -z "$admin_id" ]; then
+        error "Could not find admin user in database"
+        return 1
+    fi
+
+    # Check if API key already exists for admin
+    local existing_key=$(sqlite3 "$SCRIPT_DIR/database/tiknix.db" "SELECT id FROM apikey WHERE member_id = $admin_id AND name = 'Tiknix Installer' LIMIT 1;")
+
+    if [ -n "$existing_key" ]; then
+        info "API key already exists, regenerating token..."
+        sqlite3 "$SCRIPT_DIR/database/tiknix.db" "UPDATE apikey SET token = '$api_token', updated_at = datetime('now') WHERE id = $existing_key;"
+    else
+        # Insert new API key
+        info "Creating API key for admin user..."
+        sqlite3 "$SCRIPT_DIR/database/tiknix.db" "INSERT INTO apikey (member_id, name, token, scopes, allowed_servers, is_active, created_at) VALUES ($admin_id, 'Tiknix Installer', '$api_token', '[\"mcp:*\"]', '[]', 1, datetime('now'));"
+    fi
+
+    if [ $? -ne 0 ]; then
+        error "Failed to create API key"
+        return 1
+    fi
+
+    success "API key created for MCP access"
+
+    # Store the token for later display
+    TIKNIX_API_TOKEN="$api_token"
+    TIKNIX_MCP_URL="$mcp_url"
+
+    # Configure Claude Code MCP server
+    echo ""
+    info "Configuring Claude Code MCP server..."
+
+    # Create Claude settings directory if needed
+    local claude_settings_dir="$HOME/.claude"
+    local claude_settings_file="$claude_settings_dir/settings.json"
+
+    mkdir -p "$claude_settings_dir"
+
+    # Check if settings.json exists
+    if [ -f "$claude_settings_file" ]; then
+        # Backup existing settings
+        cp "$claude_settings_file" "$claude_settings_file.backup.$(date +%Y%m%d_%H%M%S)"
+        info "Backed up existing Claude settings"
+
+        # Check if we can use jq for JSON manipulation
+        if command_exists jq; then
+            # Use jq to add/update the tiknix MCP server
+            local temp_file=$(mktemp)
+            jq --arg url "$mcp_url" --arg token "$api_token" '
+                .mcpServers.tiknix = {
+                    "type": "http",
+                    "url": $url,
+                    "headers": {
+                        "Authorization": ("Bearer " + $token)
+                    }
+                }
+            ' "$claude_settings_file" > "$temp_file" 2>/dev/null
+
+            if [ $? -eq 0 ]; then
+                mv "$temp_file" "$claude_settings_file"
+                success "Updated Claude settings.json with Tiknix MCP server"
+            else
+                rm -f "$temp_file"
+                warn "Could not update settings.json automatically"
+                info "Using claude mcp add command instead..."
+                use_claude_mcp_add=true
+            fi
+        else
+            # No jq, try to use claude mcp add
+            use_claude_mcp_add=true
+        fi
+    else
+        # Create new settings.json
+        cat > "$claude_settings_file" << SETTINGS_EOF
+{
+  "mcpServers": {
+    "tiknix": {
+      "type": "http",
+      "url": "$mcp_url",
+      "headers": {
+        "Authorization": "Bearer $api_token"
+      }
+    }
+  }
+}
+SETTINGS_EOF
+        success "Created Claude settings.json with Tiknix MCP server"
+    fi
+
+    # If we need to use claude mcp add command
+    if [ "$use_claude_mcp_add" = true ]; then
+        info "Adding MCP server via Claude CLI..."
+        if claude mcp add --transport http tiknix "$mcp_url" --header "Authorization: Bearer $api_token" 2>/dev/null; then
+            success "Added Tiknix MCP server to Claude Code"
+        else
+            warn "Could not add MCP server automatically"
+            echo ""
+            echo -e "${BOLD}Manual setup required:${NC}"
+            echo "Run this command to add the MCP server:"
+            echo ""
+            echo -e "${CYAN}claude mcp add --transport http tiknix \"$mcp_url\" --header \"Authorization: Bearer $api_token\"${NC}"
+            echo ""
+        fi
+    fi
+
+    echo ""
+    echo -e "${BOLD}${GREEN}MCP Connection Details:${NC}"
+    echo -e "  URL:   ${CYAN}$mcp_url${NC}"
+    echo -e "  Token: ${CYAN}${api_token:0:20}...${NC}"
+    echo ""
+    info "Restart Claude Code to load the MCP tools"
+}
+
 # Initialize database
 init_database() {
     step "Initializing Database"
@@ -1113,6 +1256,17 @@ print_completion() {
         echo -e "     ${CYAN}npm install -g @anthropic-ai/claude-code${NC}"
     fi
     echo ""
+    echo -e "${BOLD}MCP Tools Available:${NC}"
+    if [ -n "$TIKNIX_API_TOKEN" ]; then
+        echo -e "  ${GREEN}✓ MCP server configured for Claude Code${NC}"
+        echo "  Restart Claude to load tools:"
+        echo "    tiknix:hello, tiknix:validate_php, tiknix:security_scan"
+        echo "    tiknix:list_tasks, tiknix:get_task, tiknix:update_task"
+        echo "  Verify with: claude mcp list"
+    else
+        echo "  Configure MCP at: http://${DEFAULT_HOST}:${DEFAULT_PORT}/apikeys"
+    fi
+    echo ""
     echo -e "${BOLD}Remote Development (SSH+TMUX+CLAUDE):${NC}"
     local SSH_KEY="$HOME/.ssh/tiknix_ecdsa"
     if [ -f "$SSH_KEY" ]; then
@@ -1148,7 +1302,9 @@ main() {
     echo "  3. Set up configuration files"
     echo "  4. Initialize the SQLite database"
     echo "  5. Set up SSH key for remote development"
-    echo "  6. Create a development server script"
+    echo "  6. Authenticate Claude CLI (if needed)"
+    echo "  7. Configure MCP connection for Claude Code"
+    echo "  8. Create a development server script"
     echo ""
 
     if [ "$AUTO_MODE" = false ]; then
@@ -1165,6 +1321,7 @@ main() {
     init_database
     setup_ssh_key
     setup_claude_auth
+    setup_mcp_connection
     create_server_router
     print_completion
 }

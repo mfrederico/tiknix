@@ -449,9 +449,15 @@ BASH;
             }
         }
 
+        // Check for thinking indicator
+        $allText = implode("\n", $recentLines);
+        if (preg_match('/esc to interrupt/i', $allText)) {
+            return 'Thinking...';
+        }
+
         // If Claude is running, show generic status
         if ($this->isRunning()) {
-            return 'Processing...';
+            return 'Working...';
         }
 
         return null;
@@ -480,13 +486,13 @@ BASH;
      * Detect overall status
      */
     private function detectStatus(array $lines): string {
-        // If Claude process is running, default to 'running'
-        if ($this->isRunning()) {
-            return 'running';
-        }
+        // Check last few lines for status indicators
+        $lastLines = implode("\n", array_slice($lines, -15));
 
-        // Check last few lines for completion indicators
-        $lastLines = implode("\n", array_slice($lines, -10));
+        // "esc to interrupt" means Claude is actively thinking
+        if (preg_match('/esc to interrupt|thinking|processing/i', $lastLines)) {
+            return 'thinking';
+        }
 
         // Check for session complete message (from our wrapper script)
         if (preg_match('/Session complete|Claude exited with code: 0/i', $lastLines)) {
@@ -503,7 +509,12 @@ BASH;
             return 'waiting';
         }
 
-        // If session exists but Claude not running, check exit status
+        // If Claude process is running, it's working
+        if ($this->isRunning()) {
+            return 'running';
+        }
+
+        // If session exists but Claude not running, it completed
         if ($this->exists()) {
             return 'completed';
         }

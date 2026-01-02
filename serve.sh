@@ -88,6 +88,11 @@ update_mcp_config() {
     fi
 }
 
+# Ensure hooks are configured
+if [ -x "$SCRIPT_DIR/cli/setup-hooks.sh" ]; then
+    "$SCRIPT_DIR/cli/setup-hooks.sh" --quiet
+fi
+
 # Update MCP config before starting server
 update_mcp_config
 

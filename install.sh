@@ -1312,8 +1312,22 @@ main() {
     setup_ssh_key
     setup_claude_auth
     setup_mcp_connection
+    setup_claude_hooks
     create_server_router
     print_completion
+}
+
+# Setup Claude Code hooks using dedicated script
+setup_claude_hooks() {
+    step "Setting up Claude Code Hooks"
+
+    if [ -x "$SCRIPT_DIR/cli/setup-hooks.sh" ]; then
+        "$SCRIPT_DIR/cli/setup-hooks.sh" --quiet
+        success "Claude Code hooks configured"
+    else
+        warn "setup-hooks.sh not found or not executable"
+        info "Run ./cli/setup-hooks.sh manually to configure hooks"
+    fi
 }
 
 # Run main function

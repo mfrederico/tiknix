@@ -80,16 +80,10 @@ update_mcp_config() {
         fi
 
         if [ -n "$api_token" ]; then
-            # Remove and re-add with new URL
-            claude mcp remove tiknix 2>/dev/null
-            if claude mcp add --transport http tiknix "$new_url" --header "Authorization: Bearer $api_token" 2>/dev/null; then
-                echo "  ✓ MCP server updated (restart Claude to apply)"
-            else
-                echo "  ⚠ Could not update MCP server automatically"
-            fi
+            # Store the update command to show after server starts
+            MCP_UPDATE_CMD="claude mcp remove tiknix && claude mcp add --transport http tiknix \"$new_url\" --header \"Authorization: Bearer $api_token\""
         else
-            echo "  ⚠ Could not find API token to update MCP server"
-            echo "  Run: claude mcp remove tiknix && claude mcp add --transport http tiknix \"$new_url\" --header \"Authorization: Bearer YOUR_TOKEN\""
+            MCP_UPDATE_CMD="claude mcp remove tiknix && claude mcp add --transport http tiknix \"$new_url\" --header \"Authorization: Bearer YOUR_TOKEN\""
         fi
     fi
 }
@@ -104,6 +98,15 @@ echo ""
 echo "  URL: http://${HOST}:${PORT}"
 echo "  MCP: http://${HOST}:${PORT}/mcp/message"
 echo ""
+
+# Show MCP update command if port changed
+if [ -n "$MCP_UPDATE_CMD" ]; then
+    echo "  ⚠ MCP URL changed! Run this in another terminal:"
+    echo ""
+    echo "  $MCP_UPDATE_CMD"
+    echo ""
+fi
+
 echo "  Press Ctrl+C to stop"
 echo ""
 

@@ -66,9 +66,9 @@ if [ -z "$API_TOKEN" ]; then
     exit 0
 fi
 
-# Get base URL from config
-BASE_URL=$(grep -E "^baseurl" "$PROJECT_DIR/conf/config.ini" 2>/dev/null | sed 's/.*=\s*"\?\([^"]*\)"\?/\1/' | tr -d ' ')
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+# Always use localhost for hooks running on the same server
+# This avoids nginx proxy issues with Authorization headers
+BASE_URL="http://localhost:8080"
 
 # Make the file path relative to project for cleaner logging
 RELATIVE_PATH="${FILE_PATH#$PROJECT_DIR/}"

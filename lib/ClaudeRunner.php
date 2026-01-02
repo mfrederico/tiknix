@@ -138,6 +138,12 @@ class ClaudeRunner {
 # Tiknix Claude Worker Session
 #
 
+# Export task ID for hooks and child processes
+export TIKNIX_TASK_ID={$this->taskId}
+export TIKNIX_MEMBER_ID={$this->memberId}
+export TIKNIX_SESSION_NAME="{$sessionName}"
+export TIKNIX_PROJECT_ROOT="{$projectRoot}"
+
 echo "╔══════════════════════════════════════════════════════════════════╗"
 echo "║                    TIKNIX CLAUDE WORKER                          ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"

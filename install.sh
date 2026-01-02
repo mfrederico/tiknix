@@ -61,7 +61,7 @@ for arg in "$@"; do
             echo ""
             echo "Options:"
             echo "  --auto        Non-interactive mode with defaults"
-            echo "  --port=PORT   Set development server port (default: 8000)"
+            echo "  --port=PORT   Set development server port (default: 8080)"
             echo "  --host=HOST   Set development server host (default: localhost)"
             echo "  -h, --help    Show this help message"
             exit 0
@@ -844,7 +844,7 @@ setup_mcp_connection() {
     fi
 
     # Get the base URL from config or use default
-    local base_url="http://localhost:8000"
+    local base_url="http://localhost:8080"
     if [ -f "$SCRIPT_DIR/conf/config.ini" ]; then
         local config_url=$(grep -E "^baseurl\s*=" "$SCRIPT_DIR/conf/config.ini" | sed 's/.*=\s*"\?\([^"]*\)"\?/\1/' | tr -d ' ')
         if [ -n "$config_url" ]; then
@@ -913,21 +913,31 @@ setup_mcp_connection() {
 
         # Check if we can use jq for JSON manipulation
         if command_exists jq; then
-            # Use jq to add/update the tiknix MCP server
+            # Use jq to add/update the tiknix MCP server and hooks
             local temp_file=$(mktemp)
-            jq --arg url "$mcp_url" --arg token "$api_token" '
+            local hook_path="$SCRIPT_DIR/cli/log-activity.sh"
+            jq --arg url "$mcp_url" --arg token "$api_token" --arg hookPath "$hook_path" '
                 .mcpServers.tiknix = {
                     "type": "http",
                     "url": $url,
                     "headers": {
                         "Authorization": ("Bearer " + $token)
                     }
-                }
+                } |
+                .hooks.PostToolUse = (
+                    (.hooks.PostToolUse // []) |
+                    map(select(.command != $hookPath)) +
+                    [{
+                        "matcher": "Edit|Write",
+                        "command": $hookPath
+                    }]
+                )
             ' "$claude_settings_file" > "$temp_file" 2>/dev/null
 
             if [ $? -eq 0 ]; then
                 mv "$temp_file" "$claude_settings_file"
                 success "Updated Claude settings.json with Tiknix MCP server"
+                success "Configured Claude Code hooks for task activity logging"
             else
                 rm -f "$temp_file"
                 warn "Could not update settings.json automatically"
@@ -939,7 +949,8 @@ setup_mcp_connection() {
             use_claude_mcp_add=true
         fi
     else
-        # Create new settings.json
+        # Create new settings.json with MCP server and hooks
+        local hook_path="$SCRIPT_DIR/cli/log-activity.sh"
         cat > "$claude_settings_file" << SETTINGS_EOF
 {
   "mcpServers": {
@@ -950,10 +961,19 @@ setup_mcp_connection() {
         "Authorization": "Bearer $api_token"
       }
     }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "$hook_path"
+      }
+    ]
   }
 }
 SETTINGS_EOF
         success "Created Claude settings.json with Tiknix MCP server"
+        success "Configured Claude Code hooks for task activity logging"
     fi
 
     # If we need to use claude mcp add command
@@ -970,6 +990,22 @@ SETTINGS_EOF
             echo -e "${CYAN}claude mcp add --transport http tiknix \"$mcp_url\" --header \"Authorization: Bearer $api_token\"${NC}"
             echo ""
         fi
+
+        # Note about manual hooks setup
+        local hook_path="$SCRIPT_DIR/cli/log-activity.sh"
+        echo ""
+        warn "Hooks could not be configured automatically"
+        info "To enable task activity logging, add this to ~/.claude/settings.json:"
+        echo ""
+        echo -e "${CYAN}\"hooks\": {"
+        echo -e "  \"PostToolUse\": ["
+        echo -e "    {"
+        echo -e "      \"matcher\": \"Edit|Write\","
+        echo -e "      \"command\": \"$hook_path\""
+        echo -e "    }"
+        echo -e "  ]"
+        echo -e "}${NC}"
+        echo ""
     fi
 
     echo ""
@@ -977,7 +1013,10 @@ SETTINGS_EOF
     echo -e "  URL:   ${CYAN}$mcp_url${NC}"
     echo -e "  Token: ${CYAN}${api_token:0:20}...${NC}"
     echo ""
-    info "Restart Claude Code to load the MCP tools"
+    echo -e "${BOLD}Claude Code Hooks:${NC}"
+    echo -e "  File activity logging enabled for Edit/Write operations"
+    echo ""
+    info "Restart Claude Code to load the MCP tools and hooks"
 }
 
 # Initialize database

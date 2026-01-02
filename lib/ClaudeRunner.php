@@ -423,29 +423,35 @@ BASH;
      * Detect current task from output lines
      */
     private function detectCurrentTask(array $lines): ?string {
+        // More specific patterns to avoid false positives
+        // These match Claude's actual tool usage output
         $patterns = [
-            '/Creating pull request/i' => 'Creating pull request',
             '/gh pr create/i' => 'Creating pull request',
-            '/git push/i' => 'Pushing changes',
-            '/git commit/i' => 'Committing changes',
-            '/Reading file/i' => 'Reading files',
-            '/Writing to/i' => 'Writing files',
-            '/Editing/i' => 'Editing files',
-            '/Searching/i' => 'Searching codebase',
-            '/grep/i' => 'Searching codebase',
-            '/Running/i' => 'Running command',
-            '/Testing/i' => 'Running tests',
-            '/Waiting/i' => 'Waiting for input',
-            '/clarification/i' => 'Awaiting clarification',
+            '/git push /i' => 'Pushing changes',
+            '/git commit /i' => 'Committing changes',
+            '/Read\s+tool|Reading\s+\S+\.(php|js|ts|json)/i' => 'Reading files',
+            '/Write\s+tool|Writing\s+to\s+\S+/i' => 'Writing files',
+            '/Edit\s+tool|Editing\s+\S+\.(php|js|ts|json)/i' => 'Editing files',
+            '/Grep\s+tool|Glob\s+tool/i' => 'Searching codebase',
+            '/Bash\s+tool|Running\s+command/i' => 'Running command',
+            '/npm test|pytest|phpunit/i' => 'Running tests',
+            '/TodoWrite/i' => 'Planning tasks',
+            '/Task\s+tool|Agent/i' => 'Running sub-agent',
         ];
 
-        // Search from bottom up (most recent first)
-        foreach (array_reverse($lines) as $line) {
+        // Search from bottom up (most recent first), only last 20 lines
+        $recentLines = array_slice($lines, -20);
+        foreach (array_reverse($recentLines) as $line) {
             foreach ($patterns as $pattern => $task) {
                 if (preg_match($pattern, $line)) {
                     return $task;
                 }
             }
+        }
+
+        // If Claude is running, show generic status
+        if ($this->isRunning()) {
+            return 'Processing...';
         }
 
         return null;
@@ -474,21 +480,35 @@ BASH;
      * Detect overall status
      */
     private function detectStatus(array $lines): string {
-        $text = implode("\n", array_slice($lines, -20));
-
-        if (preg_match('/error|failed|exception/i', $text)) {
-            return 'error';
+        // If Claude process is running, default to 'running'
+        if ($this->isRunning()) {
+            return 'running';
         }
 
-        if (preg_match('/waiting|clarification|input needed/i', $text)) {
-            return 'waiting';
-        }
+        // Check last few lines for completion indicators
+        $lastLines = implode("\n", array_slice($lines, -10));
 
-        if (preg_match('/complete|done|finished|success/i', $text)) {
+        // Check for session complete message (from our wrapper script)
+        if (preg_match('/Session complete|Claude exited with code: 0/i', $lastLines)) {
             return 'completed';
         }
 
-        return 'running';
+        // Check for actual error exit
+        if (preg_match('/Claude exited with code: [1-9]|Fatal error:|PHP Parse error:/i', $lastLines)) {
+            return 'error';
+        }
+
+        // Check for waiting prompts (Claude's actual prompt indicators)
+        if (preg_match('/\?\s*$|>\s*$|Press Enter|waiting for (your |user )?input/i', $lastLines)) {
+            return 'waiting';
+        }
+
+        // If session exists but Claude not running, check exit status
+        if ($this->exists()) {
+            return 'completed';
+        }
+
+        return 'unknown';
     }
 
     /**

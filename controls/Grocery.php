@@ -36,7 +36,20 @@ class Grocery extends Control {
             'display' => 'standalone',
             'background_color' => '#198754',
             'theme_color' => '#198754',
-            'icons' => []
+            'icons' => [
+                [
+                    'src' => '/grocery/icon/192',
+                    'sizes' => '192x192',
+                    'type' => 'image/png',
+                    'purpose' => 'any maskable'
+                ],
+                [
+                    'src' => '/grocery/icon/512',
+                    'sizes' => '512x512',
+                    'type' => 'image/png',
+                    'purpose' => 'any maskable'
+                ]
+            ]
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         exit;
     }
@@ -121,6 +134,72 @@ self.addEventListener('fetch', event => {
     );
 });
 JS;
+    }
+
+    /**
+     * Generate PWA icon dynamically
+     * Creates a simple grocery cart icon with the app color
+     */
+    public function icon($params = []) {
+        $size = isset($params['size']) ? (int)$params['size'] : 192;
+        // Clamp size between 48 and 512
+        $size = max(48, min(512, $size));
+
+        // Create image
+        $img = imagecreatetruecolor($size, $size);
+
+        // Enable alpha blending
+        imagealphablending($img, false);
+        imagesavealpha($img, true);
+
+        // Colors - green theme (#198754)
+        $green = imagecolorallocate($img, 25, 135, 84);
+        $white = imagecolorallocate($img, 255, 255, 255);
+        $transparent = imagecolorallocatealpha($img, 0, 0, 0, 127);
+
+        // Fill with transparent (for maskable icon)
+        imagefill($img, 0, 0, $transparent);
+
+        // Draw filled circle as background
+        $center = $size / 2;
+        $radius = ($size / 2) - 2;
+        imagefilledellipse($img, (int)$center, (int)$center, (int)($radius * 2), (int)($radius * 2), $green);
+
+        // Draw a simple cart shape (basket icon)
+        $scale = $size / 100;
+        $offsetX = $size * 0.25;
+        $offsetY = $size * 0.28;
+
+        // Cart body (trapezoid-ish shape)
+        $cartPoints = [
+            (int)($offsetX + 15 * $scale), (int)($offsetY + 20 * $scale),  // top left
+            (int)($offsetX + 45 * $scale), (int)($offsetY + 20 * $scale),  // top right
+            (int)($offsetX + 40 * $scale), (int)($offsetY + 40 * $scale),  // bottom right
+            (int)($offsetX + 20 * $scale), (int)($offsetY + 40 * $scale),  // bottom left
+        ];
+        imagefilledpolygon($img, $cartPoints, $white);
+
+        // Handle
+        $handleWidth = (int)max(2, 3 * $scale);
+        imagesetthickness($img, $handleWidth);
+        imagearc($img,
+            (int)($offsetX + 30 * $scale),
+            (int)($offsetY + 12 * $scale),
+            (int)(24 * $scale),
+            (int)(20 * $scale),
+            180, 360, $white);
+
+        // Wheels
+        $wheelRadius = (int)max(3, 4 * $scale);
+        imagefilledellipse($img, (int)($offsetX + 23 * $scale), (int)($offsetY + 47 * $scale), $wheelRadius * 2, $wheelRadius * 2, $white);
+        imagefilledellipse($img, (int)($offsetX + 37 * $scale), (int)($offsetY + 47 * $scale), $wheelRadius * 2, $wheelRadius * 2, $white);
+
+        // Output as PNG
+        header('Content-Type: image/png');
+        header('Cache-Control: public, max-age=31536000');
+        imagepng($img);
+        imagedestroy($img);
+        exit;
     }
 
     // Legacy routes - redirect to main page

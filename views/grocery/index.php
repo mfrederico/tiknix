@@ -1,1345 +1,1093 @@
-<style>
-    /* Grocery List Styles - Mobile First */
-    .grocery-container {
-        max-width: 600px;
-        margin: 0 auto;
-    }
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Grocery List</title>
 
-    .grocery-header {
-        background: linear-gradient(135deg, #198754 0%, #157347 100%);
-        border-radius: 1rem;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        color: white;
-    }
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="/grocery/manifest">
+    <meta name="theme-color" content="#198754">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Grocery">
 
-    .grocery-header h1 {
-        font-size: 1.5rem;
-        margin: 0;
-    }
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
 
-    .grocery-stats {
-        font-size: 0.9rem;
-        opacity: 0.9;
-    }
+    <!-- Custom Tiknix CSS -->
+    <link href="/css/app.css" rel="stylesheet">
 
-    .add-item-form {
-        background: var(--bs-body-bg);
-        border-radius: 1rem;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        border: 1px solid var(--bs-border-color);
-    }
-
-    .add-item-form .input-group {
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        border-radius: 0.75rem;
-        overflow: hidden;
-    }
-
-    .add-item-form input {
-        border: none;
-        padding: 1rem;
-        font-size: 1rem;
-    }
-
-    .add-item-form button {
-        border: none;
-        padding: 1rem 1.5rem;
-    }
-
-    .quantity-input {
-        width: 60px !important;
-        text-align: center;
-        border-left: 1px solid var(--bs-border-color) !important;
-    }
-
-    .grocery-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-
-    .grocery-item {
-        background: var(--bs-body-bg);
-        border: 1px solid var(--bs-border-color);
-        border-radius: 0.75rem;
-        margin-bottom: 0.5rem;
-        padding: 0.75rem 1rem;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        transition: all 0.2s ease;
-        cursor: grab;
-    }
-
-    .grocery-item:active {
-        cursor: grabbing;
-    }
-
-    .grocery-item.sortable-ghost {
-        opacity: 0.4;
-        background: var(--bs-primary);
-    }
-
-    .grocery-item.sortable-chosen {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-
-    .grocery-item.checked {
-        opacity: 0.6;
-        background: var(--bs-secondary-bg);
-    }
-
-    .grocery-item.checked .item-name {
-        text-decoration: line-through;
-        color: var(--bs-secondary-color);
-    }
-
-    .item-checkbox {
-        width: 24px;
-        height: 24px;
-        cursor: pointer;
-        accent-color: #198754;
-    }
-
-    .item-name {
-        flex: 1;
-        font-size: 1rem;
-        word-break: break-word;
-    }
-
-    .item-quantity {
-        background: var(--bs-primary);
-        color: white;
-        border-radius: 50%;
-        min-width: 28px;
-        height: 28px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.85rem;
-        font-weight: bold;
-    }
-
-    .item-quantity.depleted {
-        background: var(--bs-secondary);
-    }
-
-    .item-name-input {
-        flex: 1;
-        border: none;
-        background: transparent;
-        font-size: 1rem;
-        padding: 0;
-        outline: none;
-    }
-
-    .item-actions {
-        display: flex;
-        gap: 0.25rem;
-    }
-
-    .item-actions .btn {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.9rem;
-    }
-
-    .drag-handle {
-        color: var(--bs-secondary-color);
-        cursor: grab;
-        padding: 0 0.25rem;
-    }
-
-    .drag-handle:active {
-        cursor: grabbing;
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 3rem 1rem;
-        color: var(--bs-secondary-color);
-    }
-
-    .empty-state i {
-        font-size: 4rem;
-        margin-bottom: 1rem;
-        opacity: 0.5;
-    }
-
-    .action-buttons {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-        margin-top: 1rem;
-    }
-
-    .save-list-section {
-        background: var(--bs-body-bg);
-        border: 2px dashed var(--bs-success);
-        border-radius: 1rem;
-        padding: 1rem;
-        margin-top: 1rem;
-    }
-
-    .save-list-section h5 {
-        color: var(--bs-success);
-        margin-bottom: 1rem;
-    }
-
-    /* Touch-friendly on mobile */
-    @media (max-width: 576px) {
-        .grocery-container {
-            padding: 0 0.5rem;
+    <style>
+        /* PWA Standalone Styles - Uses CSS variables from app.css for theme support */
+        .grocery-app {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 1rem;
+            min-height: 100vh;
         }
 
         .grocery-header {
-            border-radius: 0;
-            margin: -1rem -0.5rem 1rem;
+            background: linear-gradient(135deg, var(--success-color, #198754) 0%, #157347 100%);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            color: white;
+        }
+
+        .grocery-header h1 {
+            font-size: 1.5rem;
+            margin: 0;
+        }
+
+        .grocery-stats {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .offline-badge {
+            background: rgba(255,255,255,0.2);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .offline-badge.online { background: rgba(25, 135, 84, 0.3); }
+        .offline-badge.offline { background: rgba(220, 53, 69, 0.3); }
+
+        /* Tabs */
+        .grocery-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .grocery-tabs .tab-btn {
+            flex: 1;
+            padding: 0.75rem;
+            border: 2px solid var(--sidebar-border, #dee2e6);
+            background: var(--card-bg, white);
+            color: var(--bs-body-color);
+            border-radius: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .grocery-tabs .tab-btn.active {
+            border-color: var(--success-color, #198754);
+            background: rgba(25, 135, 84, 0.1);
+            color: var(--success-color, #198754);
+        }
+
+        .grocery-tabs .tab-btn .badge {
+            margin-left: 0.25rem;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .add-item-form {
+            background: var(--card-bg, white);
+            border-radius: 1rem;
             padding: 1rem;
+            margin-bottom: 1rem;
+            border: 1px solid var(--sidebar-border, #dee2e6);
         }
 
-        .grocery-item {
+        .add-item-form .input-group {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }
+
+        .add-item-form input {
+            border: none;
             padding: 1rem;
+            font-size: 1rem;
         }
 
-        .item-checkbox {
-            width: 28px;
-            height: 28px;
-        }
-
-        .item-name {
-            font-size: 1.1rem;
+        .add-item-form button {
+            border: none;
+            padding: 1rem 1.5rem;
         }
 
         .quantity-input {
-            width: 50px !important;
+            width: 60px !important;
+            text-align: center;
+            border-left: 1px solid var(--sidebar-border, #dee2e6) !important;
         }
-    }
 
-    /* Animation for adding items */
-    @keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: translateY(-10px);
+        .grocery-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
         }
-        to {
-            opacity: 1;
-            transform: translateY(0);
+
+        .grocery-item {
+            background: var(--card-bg, white);
+            border: 1px solid var(--sidebar-border, #dee2e6);
+            border-radius: 0.75rem;
+            margin-bottom: 0.5rem;
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.2s ease;
+            cursor: grab;
         }
-    }
 
-    .grocery-item.new-item {
-        animation: slideIn 0.3s ease;
-    }
+        .grocery-item:active { cursor: grabbing; }
+        .grocery-item.sortable-ghost { opacity: 0.4; background: var(--success-color, #198754); }
+        .grocery-item.sortable-chosen { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 
-    /* Animation for removing items */
-    @keyframes slideOut {
-        from {
-            opacity: 1;
-            transform: translateX(0);
+        .grocery-item.checked {
+            opacity: 0.6;
+            background: var(--sidebar-bg, #f8f9fa);
         }
-        to {
-            opacity: 0;
-            transform: translateX(100%);
+
+        .grocery-item.checked .item-name {
+            text-decoration: line-through;
+            color: var(--muted-color, #6c757d);
         }
-    }
 
-    .grocery-item.removing {
-        animation: slideOut 0.3s ease forwards;
-    }
-</style>
+        .item-checkbox {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            accent-color: var(--success-color, #198754);
+        }
 
-<div class="container py-4">
-    <div class="grocery-container">
+        .item-name {
+            flex: 1;
+            font-size: 1rem;
+            word-break: break-word;
+            cursor: pointer;
+        }
+
+        .item-name:hover {
+            color: var(--accent-color, #0d6efd);
+        }
+
+        .item-quantity {
+            background: var(--accent-color, #0d6efd);
+            color: white;
+            border-radius: 50%;
+            min-width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
+        .item-quantity.depleted { background: var(--muted-color, #6c757d); }
+
+        .item-name-input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            font-size: 1rem;
+            padding: 0;
+            outline: none;
+            color: var(--bs-body-color);
+        }
+
+        .item-actions {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .item-actions .btn {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .drag-handle {
+            color: var(--muted-color, #6c757d);
+            cursor: grab;
+            padding: 0 0.25rem;
+        }
+
+        .drag-handle:active { cursor: grabbing; }
+
+        .grocery-empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--muted-color, #6c757d);
+        }
+
+        .grocery-empty-state i {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        /* History styles */
+        .history-card {
+            background: var(--card-bg, white);
+            border: 1px solid var(--sidebar-border, #dee2e6);
+            border-radius: 0.75rem;
+            margin-bottom: 0.75rem;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .history-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .history-card.expanded { border-color: var(--success-color, #198754); }
+
+        .history-card .date { font-size: 1.1rem; font-weight: 600; }
+        .history-card .store { color: var(--muted-color, #6c757d); font-size: 0.9rem; }
+        .history-card .meta {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--muted-color, #6c757d);
+        }
+        .history-card .total { font-weight: 600; color: var(--success-color, #198754); }
+
+        .history-items {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--sidebar-border, #dee2e6);
+            display: none;
+        }
+
+        .history-card.expanded .history-items { display: block; }
+
+        .history-item {
+            padding: 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Toast notification */
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            left: 1rem;
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        .toast-notification {
+            background: var(--sidebar-bg, #333);
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s ease;
+            pointer-events: auto;
+        }
+
+        .toast-notification.success { background: var(--success-color, #198754); }
+        .toast-notification.error { background: var(--danger-color, #dc3545); }
+
+        /* Touch-friendly on mobile */
+        @media (max-width: 576px) {
+            .grocery-app { padding: 0.5rem; }
+            .grocery-header {
+                border-radius: 0;
+                margin: -0.5rem -0.5rem 1rem;
+                padding: 1rem;
+            }
+            .grocery-item { padding: 1rem; }
+            .item-checkbox { width: 28px; height: 28px; }
+            .item-name { font-size: 1.1rem; }
+            .quantity-input { width: 50px !important; }
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .grocery-item.new-item { animation: slideIn 0.3s ease; }
+
+        @keyframes slideOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(100%); }
+        }
+
+        .grocery-item.removing, .history-card.removing { animation: slideOut 0.3s ease forwards; }
+    </style>
+</head>
+<body>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <div class="grocery-app">
         <!-- Header -->
         <div class="grocery-header">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <h1><i class="bi bi-cart3"></i> Grocery List</h1>
                     <div class="grocery-stats">
-                        <span id="itemCount"><?= count($items) ?></span> items
-                        <span class="mx-1">|</span>
-                        <span id="checkedCount"><?= count(array_filter($items, fn($i) => $i->isChecked)) ?></span> checked
+                        <span id="itemCount">0</span> items |
+                        <span id="checkedCount">0</span> checked
+                        <span id="offlineBadge" class="offline-badge online ms-2">
+                            <i class="bi bi-wifi"></i> <span>Online</span>
+                        </span>
                     </div>
                 </div>
-                <div class="d-flex gap-2">
-                    <?php if ($savedListsCount > 0): ?>
-                    <a href="/grocery/history" class="btn btn-outline-light btn-sm" title="View History">
-                        <i class="bi bi-clock-history"></i>
-                        <span class="badge bg-light text-dark"><?= $savedListsCount ?></span>
-                    </a>
-                    <?php endif; ?>
-                    <a href="/dashboard" class="btn btn-outline-light btn-sm">
-                        <i class="bi bi-arrow-left"></i>
-                    </a>
-                </div>
             </div>
         </div>
 
-        <!-- Load Saved List Dropdown -->
-        <div class="mb-2" id="savedListsDropdownContainer" style="display: none;">
-            <div class="input-group input-group-sm">
-                <span class="input-group-text"><i class="bi bi-clock-history"></i></span>
-                <select class="form-select" id="savedListsDropdown" onchange="loadSavedList(this.value)">
-                    <option value="">Load a saved list...</option>
-                </select>
-                <button type="button" class="btn btn-outline-danger" onclick="clearSavedLists()" title="Clear all saved lists">
-                    <i class="bi bi-trash"></i>
-                </button>
+        <!-- Tabs -->
+        <div class="grocery-tabs">
+            <button class="tab-btn active" onclick="switchTab('list')" id="tabList">
+                <i class="bi bi-list-check"></i> List
+            </button>
+            <button class="tab-btn" onclick="switchTab('history')" id="tabHistory">
+                <i class="bi bi-clock-history"></i> History
+                <span class="badge bg-secondary" id="historyCount">0</span>
+            </button>
+        </div>
+
+        <!-- Active List Tab -->
+        <div class="tab-content active" id="contentList">
+            <!-- Add Item Form -->
+            <div class="add-item-form">
+                <form id="addItemForm" onsubmit="return addItem(event)">
+                    <div class="input-group">
+                        <input type="text"
+                               id="newItemName"
+                               class="form-control"
+                               placeholder="Add an item..."
+                               autocomplete="off"
+                               maxlength="255"
+                               required>
+                        <input type="number"
+                               id="newItemQty"
+                               class="form-control quantity-input"
+                               value="1"
+                               min="1"
+                               max="999"
+                               title="Quantity">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>
+                </form>
             </div>
-        </div>
 
-        <!-- Add Item Form -->
-        <div class="add-item-form">
-            <form id="addItemForm" onsubmit="return addItem(event)">
-                <div class="input-group">
-                    <input type="text"
-                           id="newItemName"
-                           class="form-control"
-                           placeholder="Add an item..."
-                           autocomplete="off"
-                           maxlength="255"
-                           required>
-                    <input type="number"
-                           id="newItemQty"
-                           class="form-control quantity-input"
-                           value="1"
-                           min="1"
-                           max="999"
-                           title="Quantity">
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-plus-lg"></i>
-                    </button>
-                </div>
-            </form>
-        </div>
-
-        <!-- Grocery List -->
-        <div id="groceryListContainer">
-            <?php if (empty($items)): ?>
-                <div class="empty-state" id="emptyState">
+            <!-- Grocery List -->
+            <div id="groceryListContainer">
+                <div class="grocery-empty-state" id="emptyState">
                     <i class="bi bi-basket"></i>
                     <p>Your grocery list is empty</p>
                     <p class="text-muted">Add items above to get started</p>
                 </div>
-            <?php else: ?>
-                <ul class="grocery-list" id="groceryList">
-                    <?php foreach ($items as $item): ?>
-                        <li class="grocery-item <?= $item->isChecked ? 'checked' : '' ?>"
-                            data-id="<?= $item->id ?>"
-                            data-quantity="<?= (int)($item->quantity ?? 1) ?>">
-                            <span class="drag-handle">
-                                <i class="bi bi-grip-vertical"></i>
-                            </span>
-                            <input type="checkbox"
-                                   class="item-checkbox"
-                                   <?= $item->isChecked ? 'checked' : '' ?>
-                                   onchange="toggleItem(<?= $item->id ?>)">
-                            <span class="item-name"><?= htmlspecialchars($item->name) ?></span>
-                            <?php $qty = (int)($item->quantity ?? 1); ?>
-                            <span class="item-quantity <?= $qty <= 0 ? 'depleted' : '' ?>"
-                                  title="<?= $qty > 0 ? "Click {$qty} more time(s) to check off" : 'Checked off' ?>">
-                                <?= $qty ?>
-                            </span>
-                            <div class="item-actions">
-                                <button type="button"
-                                        class="btn btn-sm btn-outline-secondary"
-                                        onclick="editItem(<?= $item->id ?>, this)"
-                                        title="Edit">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                <button type="button"
-                                        class="btn btn-sm btn-outline-danger"
-                                        onclick="deleteItem(<?= $item->id ?>)"
-                                        title="Delete">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-            <?php endif; ?>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="action-buttons">
-            <button type="button"
-                    class="btn btn-outline-warning btn-sm"
-                    onclick="clearChecked()"
-                    id="clearCheckedBtn"
-                    <?= count(array_filter($items, fn($i) => $i->isChecked)) == 0 ? 'disabled' : '' ?>>
-                <i class="bi bi-check2-square"></i> Clear Checked
-            </button>
-            <button type="button"
-                    class="btn btn-outline-danger btn-sm"
-                    onclick="clearAll()"
-                    id="clearAllBtn"
-                    <?= empty($items) ? 'disabled' : '' ?>>
-                <i class="bi bi-trash"></i> Clear All
-            </button>
-            <button type="button"
-                    class="btn btn-success btn-sm"
-                    onclick="showSaveModal()"
-                    id="saveListBtn"
-                    <?= count(array_filter($items, fn($i) => $i->isChecked)) == 0 ? 'disabled' : '' ?>>
-                <i class="bi bi-save"></i> Save Checked Items
-            </button>
-        </div>
-
-        <!-- History Link -->
-        <?php if ($savedListsCount > 0): ?>
-        <div class="text-center mt-3">
-            <a href="/grocery/history" class="text-muted">
-                <i class="bi bi-clock-history"></i> View <?= $savedListsCount ?> saved list<?= $savedListsCount > 1 ? 's' : '' ?>
-            </a>
-        </div>
-        <?php endif; ?>
-    </div>
-</div>
-
-<!-- Save List Modal -->
-<div class="modal fade" id="saveListModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-success text-white">
-                <h5 class="modal-title"><i class="bi bi-save"></i> Save Shopping Trip</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <form id="saveListForm">
-                    <div class="mb-3">
-                        <label class="form-label">Date</label>
-                        <input type="date" class="form-control" id="saveListDate" value="<?= date('Y-m-d') ?>" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Store Name (optional)</label>
-                        <input type="text" class="form-control" id="saveStoreName" placeholder="e.g., Walmart, Kroger..." maxlength="255">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Receipt Total (optional)</label>
-                        <div class="input-group">
-                            <span class="input-group-text">$</span>
-                            <input type="number" class="form-control" id="saveTotalCost" step="0.01" min="0" placeholder="0.00">
-                        </div>
-                    </div>
-                </form>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button type="button" class="btn btn-outline-warning btn-sm" onclick="clearChecked()" id="clearCheckedBtn" disabled>
+                    <i class="bi bi-check2-square"></i> Clear Checked
+                </button>
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="clearAll()" id="clearAllBtn" disabled>
+                    <i class="bi bi-trash"></i> Clear All
+                </button>
+                <button type="button" class="btn btn-success btn-sm" onclick="showSaveModal()" id="saveListBtn" disabled>
+                    <i class="bi bi-save"></i> Save Checked
+                </button>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-success" onclick="saveList()">
-                    <i class="bi bi-check-lg"></i> Save List
+        </div>
+
+        <!-- History Tab -->
+        <div class="tab-content" id="contentHistory">
+            <div id="historyContainer">
+                <div class="grocery-empty-state" id="emptyHistory">
+                    <i class="bi bi-inbox"></i>
+                    <p>No saved grocery lists yet</p>
+                    <p class="text-muted">Save your checked items to build history</p>
+                </div>
+            </div>
+            <div class="text-center mt-3">
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="clearAllHistory()" id="clearHistoryBtn" style="display:none;">
+                    <i class="bi bi-trash"></i> Clear All History
                 </button>
             </div>
         </div>
     </div>
-</div>
 
-<!-- SortableJS for drag/drop -->
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <!-- Save List Modal -->
+    <div class="modal fade" id="saveListModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="bi bi-save"></i> Save Shopping Trip</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="saveListForm">
+                        <div class="mb-3">
+                            <label class="form-label">Date</label>
+                            <input type="date" class="form-control" id="saveListDate" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Store Name (optional)</label>
+                            <input type="text" class="form-control" id="saveStoreName" placeholder="e.g., Walmart, Kroger..." maxlength="255">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Receipt Total (optional)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" class="form-control" id="saveTotalCost" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" onclick="saveList()">
+                        <i class="bi bi-check-lg"></i> Save List
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-<script>
-// CSRF token for AJAX requests
-const csrfToken = <?= json_encode($csrf) ?>;
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- SortableJS for drag/drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <!-- Custom Tiknix JS (for tooltips, etc) -->
+    <script src="/js/app.js"></script>
 
-// Initialize Sortable for drag/drop
-let sortable = null;
-let saveListModal = null;
+    <script>
+    // ============================================
+    // LocalStorage Keys & State
+    // ============================================
+    const LS_ACTIVE_LIST = 'grocery_pwa_items';
+    const LS_SAVED_LISTS = 'grocery_pwa_history';
 
-// LocalStorage keys
-const LS_ACTIVE_LIST = 'grocery_active_list';
-const LS_SAVED_LISTS = 'grocery_saved_lists';
+    let sortable = null;
+    let saveListModal = null;
+    let nextItemId = 1;
 
-function initSortable() {
-    const list = document.getElementById('groceryList');
-    if (!list) return;
+    // ============================================
+    // Initialization
+    // ============================================
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Bootstrap modal
+        saveListModal = new bootstrap.Modal(document.getElementById('saveListModal'));
 
-    sortable = Sortable.create(list, {
-        handle: '.drag-handle',
-        animation: 150,
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        onEnd: function(evt) {
-            saveOrder();
-            saveActiveListToLocalStorage();
+        // Set default date
+        document.getElementById('saveListDate').value = new Date().toISOString().split('T')[0];
+
+        // Load data from localStorage
+        loadItems();
+        loadHistory();
+
+        // Focus input
+        document.getElementById('newItemName').focus();
+
+        // Register service worker for offline support
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/grocery/sw')
+                .then(reg => console.log('Service Worker registered'))
+                .catch(err => console.log('Service Worker registration failed:', err));
         }
+
+        // Online/offline status
+        updateOnlineStatus();
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
     });
-}
 
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    initSortable();
-    document.getElementById('newItemName').focus();
-    saveListModal = new bootstrap.Modal(document.getElementById('saveListModal'));
-
-    // Initialize localStorage UI (completed lists dropdown)
-    initLocalStorageUI();
-
-    // Check if we should restore from localStorage
-    restoreActiveListFromLocalStorage();
-});
-
-// ============================================
-// LocalStorage Functions
-// ============================================
-
-// Get current items from DOM as array
-function getActiveItemsFromDOM() {
-    const items = [];
-    document.querySelectorAll('.grocery-item').forEach(li => {
-        items.push({
-            id: li.dataset.id,
-            name: li.querySelector('.item-name')?.textContent || '',
-            quantity: parseInt(li.dataset.quantity) || 1,
-            isChecked: li.classList.contains('checked')
-        });
-    });
-    return items;
-}
-
-// Save active list to localStorage
-function saveActiveListToLocalStorage() {
-    try {
-        const items = getActiveItemsFromDOM();
-        localStorage.setItem(LS_ACTIVE_LIST, JSON.stringify(items));
-    } catch (e) {
-        console.warn('Failed to save to localStorage:', e);
-    }
-}
-
-// Get active list from localStorage
-function getActiveListFromLocalStorage() {
-    try {
-        const data = localStorage.getItem(LS_ACTIVE_LIST);
-        return data ? JSON.parse(data) : [];
-    } catch (e) {
-        console.warn('Failed to read active list from localStorage:', e);
-        return [];
-    }
-}
-
-// Restore active list from localStorage on page load
-function restoreActiveListFromLocalStorage() {
-    const localItems = getActiveListFromLocalStorage();
-    const domItems = getActiveItemsFromDOM();
-
-    // If localStorage has items and DOM is empty, restore from localStorage
-    if (localItems.length > 0 && domItems.length === 0) {
-        console.log('Restoring', localItems.length, 'items from localStorage');
-        restoreItemsToList(localItems);
-        return;
-    }
-
-    // If both have items, check if localStorage has items not in DOM (by name)
-    if (localItems.length > 0 && domItems.length > 0) {
-        const domNames = new Set(domItems.map(i => i.name.toLowerCase()));
-        const missingItems = localItems.filter(i => !domNames.has(i.name.toLowerCase()));
-
-        if (missingItems.length > 0) {
-            console.log('Found', missingItems.length, 'items in localStorage not in server list');
-            // Restore missing items
-            restoreItemsToList(missingItems);
+    function updateOnlineStatus() {
+        const badge = document.getElementById('offlineBadge');
+        if (navigator.onLine) {
+            badge.className = 'offline-badge online ms-2';
+            badge.innerHTML = '<i class="bi bi-wifi"></i> <span>Online</span>';
+        } else {
+            badge.className = 'offline-badge offline ms-2';
+            badge.innerHTML = '<i class="bi bi-wifi-off"></i> <span>Offline</span>';
         }
     }
 
-    // If DOM has items but localStorage is empty, save DOM to localStorage
-    if (domItems.length > 0 && localItems.length === 0) {
-        saveActiveListToLocalStorage();
-    }
-}
+    // ============================================
+    // Toast Notifications
+    // ============================================
+    function showToast(type, message) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast-notification ${type}`;
+        toast.innerHTML = `
+            <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+            <span>${message}</span>
+        `;
+        container.appendChild(toast);
 
-// Restore items to the list (add via server to get proper IDs, then sync checked state)
-async function restoreItemsToList(items) {
-    for (const item of items) {
-        const newId = await addItemFromLocalStorage(item.name, item.quantity || 1);
-        // If item was checked in localStorage, toggle it on server too
-        if (newId && item.isChecked) {
-            await toggleItemById(newId);
+        setTimeout(() => {
+            toast.style.animation = 'slideOut 0.3s ease forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // ============================================
+    // Tab Switching
+    // ============================================
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+        if (tab === 'list') {
+            document.getElementById('tabList').classList.add('active');
+            document.getElementById('contentList').classList.add('active');
+        } else {
+            document.getElementById('tabHistory').classList.add('active');
+            document.getElementById('contentHistory').classList.add('active');
         }
     }
-}
 
-// Get saved lists from localStorage
-function getSavedLists() {
-    try {
-        const data = localStorage.getItem(LS_SAVED_LISTS);
-        return data ? JSON.parse(data) : {};
-    } catch (e) {
-        console.warn('Failed to read saved lists:', e);
-        return {};
+    // ============================================
+    // LocalStorage Operations
+    // ============================================
+    function getItems() {
+        try {
+            const data = localStorage.getItem(LS_ACTIVE_LIST);
+            const items = data ? JSON.parse(data) : [];
+            // Update nextItemId
+            items.forEach(item => {
+                if (item.id >= nextItemId) nextItemId = item.id + 1;
+            });
+            return items;
+        } catch (e) {
+            console.error('Error loading items:', e);
+            return [];
+        }
     }
-}
 
-// Save completed list to localStorage by date
-function saveCompletedListToLocalStorage(listDate, storeName, totalCost, items) {
-    try {
-        const savedLists = getSavedLists();
-        const key = listDate; // Use date as key
+    function saveItems(items) {
+        try {
+            localStorage.setItem(LS_ACTIVE_LIST, JSON.stringify(items));
+        } catch (e) {
+            console.error('Error saving items:', e);
+            showToast('error', 'Failed to save - storage may be full');
+        }
+    }
 
-        savedLists[key] = {
-            date: listDate,
-            storeName: storeName,
-            totalCost: parseFloat(totalCost) || 0,
-            items: items,
-            savedAt: new Date().toISOString()
+    function getHistory() {
+        try {
+            const data = localStorage.getItem(LS_SAVED_LISTS);
+            return data ? JSON.parse(data) : [];
+        } catch (e) {
+            console.error('Error loading history:', e);
+            return [];
+        }
+    }
+
+    function saveHistory(history) {
+        try {
+            localStorage.setItem(LS_SAVED_LISTS, JSON.stringify(history));
+        } catch (e) {
+            console.error('Error saving history:', e);
+            showToast('error', 'Failed to save - storage may be full');
+        }
+    }
+
+    // ============================================
+    // Render Functions
+    // ============================================
+    function loadItems() {
+        const items = getItems();
+        renderItems(items);
+    }
+
+    function renderItems(items) {
+        const container = document.getElementById('groceryListContainer');
+
+        if (items.length === 0) {
+            container.innerHTML = `
+                <div class="grocery-empty-state" id="emptyState">
+                    <i class="bi bi-basket"></i>
+                    <p>Your grocery list is empty</p>
+                    <p class="text-muted">Add items above to get started</p>
+                </div>
+            `;
+            sortable = null;
+        } else {
+            // Sort: unchecked first, then by sortOrder
+            items.sort((a, b) => {
+                if (a.isChecked !== b.isChecked) return a.isChecked ? 1 : -1;
+                return (a.sortOrder || 0) - (b.sortOrder || 0);
+            });
+
+            let html = '<ul class="grocery-list" id="groceryList">';
+            items.forEach(item => {
+                html += renderItemHtml(item);
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+            initSortable();
+        }
+
+        updateStats();
+    }
+
+    function renderItemHtml(item) {
+        const checkedClass = item.isChecked ? 'checked' : '';
+        const depletedClass = item.quantity <= 0 ? 'depleted' : '';
+        const title = item.quantity > 0 ? `Click ${item.quantity} more time(s) to check off` : 'Checked off';
+
+        return `
+            <li class="grocery-item ${checkedClass}" data-id="${item.id}" data-quantity="${item.quantity}">
+                <span class="drag-handle"><i class="bi bi-grip-vertical"></i></span>
+                <input type="checkbox" class="item-checkbox" ${item.isChecked ? 'checked' : ''} onchange="toggleItem(${item.id})">
+                <span class="item-name" onclick="editItemByName(${item.id})" title="Tap to edit">${escapeHtml(item.name)}</span>
+                <span class="item-quantity ${depletedClass}" title="${title}">${item.quantity}</span>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDelete(${item.id})" title="Delete">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </li>
+        `;
+    }
+
+    function loadHistory() {
+        const history = getHistory();
+        renderHistory(history);
+    }
+
+    function renderHistory(history) {
+        const container = document.getElementById('historyContainer');
+        const clearBtn = document.getElementById('clearHistoryBtn');
+
+        document.getElementById('historyCount').textContent = history.length;
+
+        if (history.length === 0) {
+            container.innerHTML = `
+                <div class="grocery-empty-state" id="emptyHistory">
+                    <i class="bi bi-inbox"></i>
+                    <p>No saved grocery lists yet</p>
+                    <p class="text-muted">Save your checked items to build history</p>
+                </div>
+            `;
+            clearBtn.style.display = 'none';
+        } else {
+            // Sort by date descending
+            history.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            let html = '';
+            history.forEach((list, index) => {
+                const date = new Date(list.date + 'T12:00:00');
+                const dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+                html += `
+                    <div class="history-card" data-index="${index}" onclick="toggleHistoryCard(this)">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <div class="date">${dateStr}</div>
+                                ${list.storeName ? `<div class="store"><i class="bi bi-shop"></i> ${escapeHtml(list.storeName)}</div>` : ''}
+                                <div class="meta">
+                                    <span><i class="bi bi-basket"></i> ${list.items.length} item${list.items.length !== 1 ? 's' : ''}</span>
+                                    ${list.totalCost > 0 ? `<span class="total">$${parseFloat(list.totalCost).toFixed(2)}</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="d-flex gap-1" onclick="event.stopPropagation()">
+                                <button type="button" class="btn btn-sm btn-outline-success" onclick="reloadHistoryList(${index})" title="Add to list">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem(${index})" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="history-items">
+                            ${list.items.map(item => `
+                                <div class="history-item">
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                    <span>${escapeHtml(item.name)}</span>
+                                    ${item.quantity > 1 ? `<span class="badge bg-secondary">${item.quantity}</span>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            clearBtn.style.display = 'inline-block';
+        }
+    }
+
+    function toggleHistoryCard(card) {
+        card.classList.toggle('expanded');
+    }
+
+    // ============================================
+    // Item Operations
+    // ============================================
+    function addItem(event) {
+        event.preventDefault();
+
+        const input = document.getElementById('newItemName');
+        const qtyInput = document.getElementById('newItemQty');
+        const name = input.value.trim();
+        const quantity = Math.max(1, Math.min(999, parseInt(qtyInput.value) || 1));
+
+        if (!name) return false;
+
+        const items = getItems();
+        const maxSort = items.reduce((max, item) => Math.max(max, item.sortOrder || 0), 0);
+
+        const newItem = {
+            id: nextItemId++,
+            name: name,
+            quantity: quantity,
+            isChecked: false,
+            sortOrder: maxSort + 1,
+            createdAt: new Date().toISOString()
         };
 
-        localStorage.setItem(LS_SAVED_LISTS, JSON.stringify(savedLists));
-        updateSavedListsDropdown();
-    } catch (e) {
-        console.warn('Failed to save completed list:', e);
-    }
-}
+        items.push(newItem);
+        saveItems(items);
 
-// Initialize localStorage UI (dropdown)
-function initLocalStorageUI() {
-    updateSavedListsDropdown();
-}
+        // Clear inputs
+        input.value = '';
+        qtyInput.value = 1;
+        input.focus();
 
-// Update the saved lists dropdown
-function updateSavedListsDropdown() {
-    const savedLists = getSavedLists();
-    const container = document.getElementById('savedListsDropdownContainer');
-    const dropdown = document.getElementById('savedListsDropdown');
+        // Re-render
+        renderItems(items);
+        showToast('success', `Added "${name}"`);
 
-    // Get keys sorted by date descending
-    const keys = Object.keys(savedLists).sort((a, b) => b.localeCompare(a));
-
-    if (keys.length === 0) {
-        container.style.display = 'none';
-        return;
+        return false;
     }
 
-    container.style.display = 'block';
-    dropdown.innerHTML = '<option value="">Load a saved list...</option>';
+    function toggleItem(itemId) {
+        const items = getItems();
+        const item = items.find(i => i.id === itemId);
 
-    keys.forEach(key => {
-        const list = savedLists[key];
-        const date = new Date(list.date + 'T12:00:00');
-        const dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        const store = list.storeName ? ` @ ${list.storeName}` : '';
-        const cost = list.totalCost > 0 ? ` ($${list.totalCost.toFixed(2)})` : '';
-        const itemCount = list.items ? list.items.length : 0;
+        if (!item) return;
 
-        const option = document.createElement('option');
-        option.value = key;
-        option.textContent = `${dateStr}${store} - ${itemCount} items${cost}`;
-        dropdown.appendChild(option);
-    });
-}
-
-// Load a saved list from localStorage
-function loadSavedList(key) {
-    if (!key) return;
-
-    const savedLists = getSavedLists();
-    const list = savedLists[key];
-
-    if (!list || !list.items || list.items.length === 0) {
-        showToast('error', 'No items in this saved list');
-        document.getElementById('savedListsDropdown').value = '';
-        return;
-    }
-
-    if (!confirm(`Load ${list.items.length} items from ${key}? This will add them to your current list.`)) {
-        document.getElementById('savedListsDropdown').value = '';
-        return;
-    }
-
-    // Add each item from the saved list
-    list.items.forEach(item => {
-        addItemFromLocalStorage(item.name, item.quantity);
-    });
-
-    document.getElementById('savedListsDropdown').value = '';
-    showToast('success', `Loaded ${list.items.length} items from saved list`);
-}
-
-// Add item from localStorage - returns the new item ID
-async function addItemFromLocalStorage(name, quantity) {
-    try {
-        const formData = new FormData();
-        formData.append('name', name);
-        formData.append('quantity', quantity || 1);
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
-
-        const response = await fetch('/grocery/add', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            // Remove empty state if present
-            const emptyState = document.getElementById('emptyState');
-            if (emptyState) {
-                document.getElementById('groceryListContainer').innerHTML = '<ul class="grocery-list" id="groceryList"></ul>';
-                initSortable();
-            }
-
-            // Add new item to list
-            const list = document.getElementById('groceryList');
-            const li = document.createElement('li');
-            li.className = 'grocery-item new-item';
-            li.dataset.id = data.item.id;
-            li.dataset.quantity = data.item.quantity;
-            li.innerHTML = `
-                <span class="drag-handle">
-                    <i class="bi bi-grip-vertical"></i>
-                </span>
-                <input type="checkbox"
-                       class="item-checkbox"
-                       onchange="toggleItem(${data.item.id})">
-                <span class="item-name">${escapeHtml(data.item.name)}</span>
-                <span class="item-quantity" title="Click ${data.item.quantity} more time(s) to check off">
-                    ${data.item.quantity}
-                </span>
-                <div class="item-actions">
-                    <button type="button"
-                            class="btn btn-sm btn-outline-secondary"
-                            onclick="editItem(${data.item.id}, this)"
-                            title="Edit">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button type="button"
-                            class="btn btn-sm btn-outline-danger"
-                            onclick="deleteItem(${data.item.id})"
-                            title="Delete">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            `;
-
-            // Add at top of unchecked items
-            const firstChecked = list.querySelector('.grocery-item.checked');
-            if (firstChecked) {
-                list.insertBefore(li, firstChecked);
-            } else {
-                list.appendChild(li);
-            }
-
-            updateStats();
-            return data.item.id; // Return the new item ID
-        }
-    } catch (error) {
-        console.error('Error adding item from localStorage:', error);
-    }
-    return null;
-}
-
-// Toggle item by ID (used when restoring checked state from localStorage)
-async function toggleItemById(itemId) {
-    const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
-    if (!li) return;
-
-    const checkbox = li.querySelector('.item-checkbox');
-    const qtyBadge = li.querySelector('.item-quantity');
-
-    try {
-        const formData = new FormData();
-        formData.append('id', itemId);
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
-
-        const response = await fetch('/grocery/toggle', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            li.dataset.quantity = data.quantity;
-            qtyBadge.textContent = data.quantity;
-
-            if (data.isChecked) {
-                li.classList.add('checked');
-                checkbox.checked = true;
-                qtyBadge.classList.add('depleted');
-                qtyBadge.title = 'Checked off';
-                const list = document.getElementById('groceryList');
-                list.appendChild(li);
-            }
-            updateStats();
-        }
-    } catch (error) {
-        console.error('Error toggling item:', error);
-    }
-}
-
-// Clear all saved lists from localStorage
-function clearSavedLists() {
-    if (!confirm('Delete ALL saved lists from this device? This cannot be undone.')) return;
-
-    try {
-        localStorage.removeItem(LS_SAVED_LISTS);
-        updateSavedListsDropdown();
-        showToast('success', 'All saved lists cleared');
-    } catch (e) {
-        console.warn('Failed to clear saved lists:', e);
-    }
-}
-
-// Update stats display
-function updateStats() {
-    const items = document.querySelectorAll('.grocery-item');
-    const checked = document.querySelectorAll('.grocery-item.checked');
-
-    document.getElementById('itemCount').textContent = items.length;
-    document.getElementById('checkedCount').textContent = checked.length;
-
-    // Update button states
-    document.getElementById('clearCheckedBtn').disabled = checked.length === 0;
-    document.getElementById('clearAllBtn').disabled = items.length === 0;
-    document.getElementById('saveListBtn').disabled = checked.length === 0;
-
-    // Save to localStorage whenever stats update
-    saveActiveListToLocalStorage();
-}
-
-// Show/hide empty state
-function checkEmptyState() {
-    const list = document.getElementById('groceryList');
-    const container = document.getElementById('groceryListContainer');
-
-    if (!list || list.children.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state" id="emptyState">
-                <i class="bi bi-basket"></i>
-                <p>Your grocery list is empty</p>
-                <p class="text-muted">Add items above to get started</p>
-            </div>
-        `;
-        sortable = null;
-        // Clear localStorage active list when list is actually empty
-        saveActiveListToLocalStorage();
-    }
-}
-
-// Add new item
-async function addItem(event) {
-    event.preventDefault();
-
-    const input = document.getElementById('newItemName');
-    const qtyInput = document.getElementById('newItemQty');
-    const name = input.value.trim();
-    const quantity = parseInt(qtyInput.value) || 1;
-
-    if (!name) return false;
-
-    try {
-        const formData = new FormData();
-        formData.append('name', name);
-        formData.append('quantity', quantity);
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
-
-        const response = await fetch('/grocery/add', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            // Remove empty state if present
-            const emptyState = document.getElementById('emptyState');
-            if (emptyState) {
-                document.getElementById('groceryListContainer').innerHTML = '<ul class="grocery-list" id="groceryList"></ul>';
-                initSortable();
-            }
-
-            // Add new item to list
-            const list = document.getElementById('groceryList');
-            const li = document.createElement('li');
-            li.className = 'grocery-item new-item';
-            li.dataset.id = data.item.id;
-            li.dataset.quantity = data.item.quantity;
-            li.innerHTML = `
-                <span class="drag-handle">
-                    <i class="bi bi-grip-vertical"></i>
-                </span>
-                <input type="checkbox"
-                       class="item-checkbox"
-                       onchange="toggleItem(${data.item.id})">
-                <span class="item-name">${escapeHtml(data.item.name)}</span>
-                <span class="item-quantity" title="Click ${data.item.quantity} more time(s) to check off">
-                    ${data.item.quantity}
-                </span>
-                <div class="item-actions">
-                    <button type="button"
-                            class="btn btn-sm btn-outline-secondary"
-                            onclick="editItem(${data.item.id}, this)"
-                            title="Edit">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button type="button"
-                            class="btn btn-sm btn-outline-danger"
-                            onclick="deleteItem(${data.item.id})"
-                            title="Delete">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            `;
-
-            // Add at top of unchecked items
-            const firstChecked = list.querySelector('.grocery-item.checked');
-            if (firstChecked) {
-                list.insertBefore(li, firstChecked);
-            } else {
-                list.appendChild(li);
-            }
-
-            input.value = '';
-            qtyInput.value = 1;
-            input.focus();
-            updateStats();
+        if (item.isChecked) {
+            // Unchecking - restore quantity to 1
+            item.isChecked = false;
+            item.quantity = 1;
         } else {
-            showToast('error', data.message || 'Failed to add item');
+            // Checking - decrement quantity
+            item.quantity = Math.max(0, item.quantity - 1);
+            if (item.quantity <= 0) {
+                item.isChecked = true;
+            }
         }
-    } catch (error) {
-        console.error('Error adding item:', error);
-        showToast('error', 'Failed to add item');
+
+        saveItems(items);
+        renderItems(items);
     }
 
-    return false;
-}
+    function deleteItem(itemId) {
+        const items = getItems();
+        const index = items.findIndex(i => i.id === itemId);
 
-// Toggle item checked status (with quantity decrement)
-async function toggleItem(itemId) {
-    const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
-    const checkbox = li.querySelector('.item-checkbox');
-    const qtyBadge = li.querySelector('.item-quantity');
+        if (index === -1) return;
 
-    try {
-        const formData = new FormData();
-        formData.append('id', itemId);
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
+        const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
+        if (li) {
+            li.classList.add('removing');
+            setTimeout(() => {
+                items.splice(index, 1);
+                saveItems(items);
+                renderItems(items);
+            }, 300);
+        }
+    }
 
-        const response = await fetch('/grocery/toggle', {
-            method: 'POST',
-            body: formData
-        });
+    function editItemByName(itemId) {
+        const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
+        if (!li) return;
 
-        const data = await response.json();
+        const nameSpan = li.querySelector('.item-name');
+        const qtyBadge = li.querySelector('.item-quantity');
+        const deleteBtn = li.querySelector('.btn-outline-danger');
+        const currentName = nameSpan.textContent;
+        const currentQty = parseInt(li.dataset.quantity) || 1;
 
-        if (data.success) {
-            // Update quantity badge
-            li.dataset.quantity = data.quantity;
-            qtyBadge.textContent = data.quantity;
+        // Create inputs
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'item-name-input form-control form-control-sm';
+        nameInput.value = currentName;
+        nameInput.maxLength = 255;
 
-            if (data.isChecked) {
-                li.classList.add('checked');
-                checkbox.checked = true;
-                qtyBadge.classList.add('depleted');
-                qtyBadge.title = 'Checked off';
-                // Move to bottom of list
-                const list = document.getElementById('groceryList');
-                list.appendChild(li);
-            } else {
-                li.classList.remove('checked');
-                checkbox.checked = false;
-                qtyBadge.classList.remove('depleted');
-                qtyBadge.title = `Click ${data.quantity} more time(s) to check off`;
-                // Move to top of unchecked items
-                const list = document.getElementById('groceryList');
-                const firstChecked = list.querySelector('.grocery-item.checked');
-                if (firstChecked) {
-                    list.insertBefore(li, firstChecked);
-                } else {
-                    list.insertBefore(li, list.firstChild);
+        const qtyInput = document.createElement('input');
+        qtyInput.type = 'number';
+        qtyInput.className = 'form-control form-control-sm';
+        qtyInput.style.width = '60px';
+        qtyInput.value = currentQty;
+        qtyInput.min = 1;
+        qtyInput.max = 999;
+
+        // Create save button
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.className = 'btn btn-sm btn-success';
+        saveBtn.innerHTML = '<i class="bi bi-check"></i>';
+
+        nameSpan.replaceWith(nameInput);
+        qtyBadge.replaceWith(qtyInput);
+        deleteBtn.replaceWith(saveBtn);
+        nameInput.focus();
+        nameInput.select();
+
+        function saveEdit() {
+            const newName = nameInput.value.trim();
+            const newQty = Math.max(1, Math.min(999, parseInt(qtyInput.value) || 1));
+
+            if (!newName) {
+                cancelEdit();
+                return;
+            }
+
+            const items = getItems();
+            const item = items.find(i => i.id === itemId);
+
+            if (item) {
+                item.name = newName;
+                item.quantity = newQty;
+                if (newQty > 0 && item.isChecked) {
+                    item.isChecked = false;
                 }
+                saveItems(items);
+                renderItems(items);
             }
-            updateStats();
-        } else {
-            // Revert checkbox
-            checkbox.checked = !checkbox.checked;
-            showToast('error', data.message || 'Failed to update item');
         }
-    } catch (error) {
-        console.error('Error toggling item:', error);
-        checkbox.checked = !checkbox.checked;
-        showToast('error', 'Failed to update item');
+
+        function cancelEdit() {
+            renderItems(getItems());
+        }
+
+        saveBtn.onclick = (e) => { e.preventDefault(); saveEdit(); };
+
+        [nameInput, qtyInput].forEach(input => {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); saveEdit(); }
+                else if (e.key === 'Escape') { cancelEdit(); }
+            });
+            input.addEventListener('blur', (e) => {
+                // Delay to allow click on save button
+                setTimeout(() => {
+                    if (!document.activeElement.classList.contains('form-control') &&
+                        !document.activeElement.classList.contains('btn-success')) {
+                        saveEdit();
+                    }
+                }, 150);
+            });
+        });
     }
-}
 
-// Edit item name and quantity
-function editItem(itemId, button) {
-    const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
-    const nameSpan = li.querySelector('.item-name');
-    const qtyBadge = li.querySelector('.item-quantity');
-    const currentName = nameSpan.textContent;
-    const currentQty = parseInt(li.dataset.quantity) || 1;
+    function confirmDelete(itemId) {
+        if (confirm('Delete this item?')) {
+            deleteItem(itemId);
+        }
+    }
 
-    // Replace span with inputs
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.className = 'item-name-input form-control form-control-sm';
-    nameInput.value = currentName;
-    nameInput.maxLength = 255;
+    function clearChecked() {
+        if (!confirm('Remove all checked items?')) return;
 
-    const qtyInput = document.createElement('input');
-    qtyInput.type = 'number';
-    qtyInput.className = 'form-control form-control-sm';
-    qtyInput.style.width = '60px';
-    qtyInput.value = currentQty;
-    qtyInput.min = 1;
-    qtyInput.max = 999;
+        let items = getItems();
+        items = items.filter(i => !i.isChecked);
+        saveItems(items);
+        renderItems(items);
+        showToast('success', 'Cleared checked items');
+    }
 
-    nameSpan.replaceWith(nameInput);
-    qtyBadge.replaceWith(qtyInput);
-    nameInput.focus();
-    nameInput.select();
+    function clearAll() {
+        if (!confirm('Remove ALL items from your grocery list?')) return;
 
-    // Change edit button to save button
-    const originalHtml = button.innerHTML;
-    button.innerHTML = '<i class="bi bi-check"></i>';
-    button.className = 'btn btn-sm btn-success';
+        saveItems([]);
+        renderItems([]);
+        showToast('success', 'List cleared');
+    }
 
-    // Save function
-    async function saveEdit() {
-        const newName = nameInput.value.trim();
-        const newQty = parseInt(qtyInput.value) || 1;
+    // ============================================
+    // Sorting
+    // ============================================
+    function initSortable() {
+        const list = document.getElementById('groceryList');
+        if (!list) return;
 
-        if (!newName) {
-            cancelEdit();
+        sortable = Sortable.create(list, {
+            handle: '.drag-handle',
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            onEnd: function() {
+                saveOrder();
+            }
+        });
+    }
+
+    function saveOrder() {
+        const list = document.getElementById('groceryList');
+        if (!list) return;
+
+        const items = getItems();
+        const itemElements = list.querySelectorAll('.grocery-item');
+
+        itemElements.forEach((li, index) => {
+            const id = parseInt(li.dataset.id);
+            const item = items.find(i => i.id === id);
+            if (item) {
+                item.sortOrder = index;
+            }
+        });
+
+        saveItems(items);
+    }
+
+    // ============================================
+    // Save to History
+    // ============================================
+    function showSaveModal() {
+        document.getElementById('saveListDate').value = new Date().toISOString().split('T')[0];
+        document.getElementById('saveStoreName').value = '';
+        document.getElementById('saveTotalCost').value = '';
+        saveListModal.show();
+    }
+
+    function saveList() {
+        const listDate = document.getElementById('saveListDate').value;
+        const storeName = document.getElementById('saveStoreName').value.trim();
+        const totalCost = parseFloat(document.getElementById('saveTotalCost').value) || 0;
+
+        const items = getItems();
+        const checkedItems = items.filter(i => i.isChecked);
+
+        if (checkedItems.length === 0) {
+            showToast('error', 'No checked items to save');
             return;
         }
 
-        try {
-            const formData = new FormData();
-            formData.append('id', itemId);
-            formData.append('name', newName);
-            formData.append('quantity', newQty);
-            Object.entries(csrfToken).forEach(([key, value]) => {
-                formData.append(key, value);
+        // Create history entry
+        const historyEntry = {
+            id: Date.now(),
+            date: listDate,
+            storeName: storeName,
+            totalCost: totalCost,
+            items: checkedItems.map(i => ({ name: i.name, quantity: i.quantity })),
+            savedAt: new Date().toISOString()
+        };
+
+        // Add to history
+        const history = getHistory();
+        history.push(historyEntry);
+        saveHistory(history);
+
+        // Remove checked items from active list
+        const remaining = items.filter(i => !i.isChecked);
+        saveItems(remaining);
+
+        saveListModal.hide();
+        renderItems(remaining);
+        loadHistory();
+
+        showToast('success', `Saved ${checkedItems.length} item${checkedItems.length !== 1 ? 's' : ''} to history`);
+    }
+
+    // ============================================
+    // History Operations
+    // ============================================
+    function reloadHistoryList(index) {
+        const history = getHistory();
+        const list = history[index];
+
+        if (!list || !list.items.length) {
+            showToast('error', 'No items in this list');
+            return;
+        }
+
+        if (!confirm(`Add ${list.items.length} items to your current list?`)) return;
+
+        const items = getItems();
+        const maxSort = items.reduce((max, item) => Math.max(max, item.sortOrder || 0), 0);
+
+        list.items.forEach((historyItem, i) => {
+            items.push({
+                id: nextItemId++,
+                name: historyItem.name,
+                quantity: Math.max(1, historyItem.quantity || 1),
+                isChecked: false,
+                sortOrder: maxSort + i + 1,
+                createdAt: new Date().toISOString()
             });
-
-            const response = await fetch('/grocery/edit', {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                const newSpan = document.createElement('span');
-                newSpan.className = 'item-name';
-                newSpan.textContent = data.item.name;
-
-                const newBadge = document.createElement('span');
-                newBadge.className = 'item-quantity' + (data.item.quantity <= 0 ? ' depleted' : '');
-                newBadge.textContent = data.item.quantity;
-                newBadge.title = data.item.quantity > 0 ? `Click ${data.item.quantity} more time(s) to check off` : 'Checked off';
-
-                nameInput.replaceWith(newSpan);
-                qtyInput.replaceWith(newBadge);
-                button.innerHTML = originalHtml;
-                button.className = 'btn btn-sm btn-outline-secondary';
-
-                li.dataset.quantity = data.item.quantity;
-
-                // Update checked state if changed
-                if (data.item.isChecked) {
-                    li.classList.add('checked');
-                    li.querySelector('.item-checkbox').checked = true;
-                } else {
-                    li.classList.remove('checked');
-                    li.querySelector('.item-checkbox').checked = false;
-                }
-
-                updateStats();
-            } else {
-                showToast('error', data.message || 'Failed to update item');
-                cancelEdit();
-            }
-        } catch (error) {
-            console.error('Error editing item:', error);
-            showToast('error', 'Failed to update item');
-            cancelEdit();
-        }
-    }
-
-    // Cancel function
-    function cancelEdit() {
-        const newSpan = document.createElement('span');
-        newSpan.className = 'item-name';
-        newSpan.textContent = currentName;
-
-        const newBadge = document.createElement('span');
-        newBadge.className = 'item-quantity' + (currentQty <= 0 ? ' depleted' : '');
-        newBadge.textContent = currentQty;
-        newBadge.title = currentQty > 0 ? `Click ${currentQty} more time(s) to check off` : 'Checked off';
-
-        nameInput.replaceWith(newSpan);
-        qtyInput.replaceWith(newBadge);
-        button.innerHTML = originalHtml;
-        button.className = 'btn btn-sm btn-outline-secondary';
-    }
-
-    // Handle save button click
-    button.onclick = function(e) {
-        e.preventDefault();
-        saveEdit();
-    };
-
-    // Handle enter key and escape
-    nameInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            saveEdit();
-        } else if (e.key === 'Escape') {
-            cancelEdit();
-        }
-    });
-
-    qtyInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            saveEdit();
-        } else if (e.key === 'Escape') {
-            cancelEdit();
-        }
-    });
-
-    // Handle blur
-    let blurTimeout;
-    function handleBlur() {
-        blurTimeout = setTimeout(() => {
-            if (document.activeElement !== button &&
-                document.activeElement !== nameInput &&
-                document.activeElement !== qtyInput) {
-                cancelEdit();
-            }
-        }, 100);
-    }
-
-    nameInput.addEventListener('blur', handleBlur);
-    qtyInput.addEventListener('blur', handleBlur);
-    nameInput.addEventListener('focus', () => clearTimeout(blurTimeout));
-    qtyInput.addEventListener('focus', () => clearTimeout(blurTimeout));
-}
-
-// Delete item
-async function deleteItem(itemId) {
-    const li = document.querySelector(`.grocery-item[data-id="${itemId}"]`);
-
-    try {
-        const formData = new FormData();
-        formData.append('id', itemId);
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
         });
 
-        // Animate removal
-        li.classList.add('removing');
+        saveItems(items);
+        renderItems(items);
+        switchTab('list');
+        showToast('success', `Added ${list.items.length} items to your list`);
+    }
 
-        const response = await fetch('/grocery/delete', {
-            method: 'POST',
-            body: formData
-        });
+    function deleteHistoryItem(index) {
+        if (!confirm('Delete this saved list?')) return;
 
-        const data = await response.json();
+        const history = getHistory();
+        const card = document.querySelector(`.history-card[data-index="${index}"]`);
 
-        if (data.success) {
+        if (card) {
+            card.classList.add('removing');
             setTimeout(() => {
-                li.remove();
-                updateStats();
-                checkEmptyState();
+                history.splice(index, 1);
+                saveHistory(history);
+                renderHistory(history);
             }, 300);
-        } else {
-            li.classList.remove('removing');
-            showToast('error', data.message || 'Failed to delete item');
         }
-    } catch (error) {
-        console.error('Error deleting item:', error);
-        li.classList.remove('removing');
-        showToast('error', 'Failed to delete item');
     }
-}
 
-// Save order after drag/drop
-async function saveOrder() {
-    const list = document.getElementById('groceryList');
-    if (!list) return;
+    function clearAllHistory() {
+        if (!confirm('Delete ALL saved lists? This cannot be undone.')) return;
 
-    const items = list.querySelectorAll('.grocery-item');
-    const order = Array.from(items).map(li => li.dataset.id);
-
-    try {
-        const formData = new FormData();
-        order.forEach((id, index) => {
-            formData.append('order[]', id);
-        });
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
-
-        await fetch('/grocery/reorder', {
-            method: 'POST',
-            body: formData
-        });
-    } catch (error) {
-        console.error('Error saving order:', error);
+        saveHistory([]);
+        renderHistory([]);
+        showToast('success', 'History cleared');
     }
-}
 
-// Clear checked items
-async function clearChecked() {
-    if (!confirm('Remove all checked items?')) return;
+    // ============================================
+    // Stats & Helpers
+    // ============================================
+    function updateStats() {
+        const items = getItems();
+        const checked = items.filter(i => i.isChecked);
 
-    try {
-        const formData = new FormData();
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
+        document.getElementById('itemCount').textContent = items.length;
+        document.getElementById('checkedCount').textContent = checked.length;
 
-        const response = await fetch('/grocery/clearChecked', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            document.querySelectorAll('.grocery-item.checked').forEach(li => {
-                li.classList.add('removing');
-                setTimeout(() => li.remove(), 300);
-            });
-
-            setTimeout(() => {
-                updateStats();
-                checkEmptyState();
-            }, 350);
-
-            if (data.cleared > 0) {
-                showToast('success', `Removed ${data.cleared} item${data.cleared > 1 ? 's' : ''}`);
-            }
-        } else {
-            showToast('error', data.message || 'Failed to clear items');
-        }
-    } catch (error) {
-        console.error('Error clearing checked items:', error);
-        showToast('error', 'Failed to clear items');
+        document.getElementById('clearCheckedBtn').disabled = checked.length === 0;
+        document.getElementById('clearAllBtn').disabled = items.length === 0;
+        document.getElementById('saveListBtn').disabled = checked.length === 0;
     }
-}
 
-// Clear all items
-async function clearAll() {
-    if (!confirm('Remove ALL items from your grocery list?')) return;
-
-    try {
-        const formData = new FormData();
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
-
-        const response = await fetch('/grocery/clearAll', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            document.querySelectorAll('.grocery-item').forEach(li => {
-                li.classList.add('removing');
-            });
-
-            setTimeout(() => {
-                checkEmptyState();
-                updateStats();
-            }, 350);
-
-            if (data.cleared > 0) {
-                showToast('success', `Removed ${data.cleared} item${data.cleared > 1 ? 's' : ''}`);
-            }
-        } else {
-            showToast('error', data.message || 'Failed to clear items');
-        }
-    } catch (error) {
-        console.error('Error clearing all items:', error);
-        showToast('error', 'Failed to clear items');
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
-}
-
-// Show save list modal
-function showSaveModal() {
-    document.getElementById('saveListDate').value = new Date().toISOString().split('T')[0];
-    document.getElementById('saveStoreName').value = '';
-    document.getElementById('saveTotalCost').value = '';
-    saveListModal.show();
-}
-
-// Save list
-async function saveList() {
-    const listDate = document.getElementById('saveListDate').value;
-    const storeName = document.getElementById('saveStoreName').value.trim();
-    const totalCost = document.getElementById('saveTotalCost').value;
-
-    // Get checked items before saving (for localStorage)
-    const checkedItems = [];
-    document.querySelectorAll('.grocery-item.checked').forEach(li => {
-        checkedItems.push({
-            name: li.querySelector('.item-name')?.textContent || '',
-            quantity: parseInt(li.dataset.quantity) || 1
-        });
-    });
-
-    try {
-        const formData = new FormData();
-        formData.append('listDate', listDate);
-        formData.append('storeName', storeName);
-        formData.append('totalCost', totalCost || 0);
-        Object.entries(csrfToken).forEach(([key, value]) => {
-            formData.append(key, value);
-        });
-
-        const response = await fetch('/grocery/saveList', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            saveListModal.hide();
-
-            // Save to localStorage for quick reload later
-            saveCompletedListToLocalStorage(listDate, storeName, totalCost, checkedItems);
-
-            // Remove checked items from view
-            document.querySelectorAll('.grocery-item.checked').forEach(li => {
-                li.classList.add('removing');
-                setTimeout(() => li.remove(), 300);
-            });
-
-            setTimeout(() => {
-                updateStats();
-                checkEmptyState();
-            }, 350);
-
-            showToast('success', `Saved ${data.list.itemsCount} item${data.list.itemsCount > 1 ? 's' : ''} to your history`);
-        } else {
-            showToast('error', data.message || 'Failed to save list');
-        }
-    } catch (error) {
-        console.error('Error saving list:', error);
-        showToast('error', 'Failed to save list');
-    }
-}
-
-// Escape HTML helper
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-</script>
+    </script>
+</body>
+</html>

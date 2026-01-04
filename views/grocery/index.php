@@ -339,9 +339,88 @@
         }
 
         .grocery-item.removing, .history-card.removing { animation: slideOut 0.3s ease forwards; }
+
+        /* Install Banner */
+        .install-banner {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, var(--success-color, #198754) 0%, #157347 100%);
+            color: white;
+            padding: 0.75rem 1rem;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            animation: slideUp 0.3s ease;
+        }
+
+        .install-banner.show { display: flex; }
+
+        .install-banner .install-text {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 500;
+        }
+
+        .install-banner .btn-install {
+            background: white;
+            color: var(--success-color, #198754);
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .install-banner .btn-install:hover {
+            background: #f0f0f0;
+        }
+
+        .install-banner .btn-dismiss {
+            background: transparent;
+            border: none;
+            color: white;
+            opacity: 0.7;
+            cursor: pointer;
+            padding: 0.25rem;
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+
+        .install-banner .btn-dismiss:hover { opacity: 1; }
+
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+
+        /* Add bottom padding to app when banner is visible */
+        body.has-install-banner .grocery-app {
+            padding-bottom: 70px;
+        }
     </style>
 </head>
 <body>
+    <!-- Install Banner (shown only when PWA is installable but not installed) -->
+    <div class="install-banner" id="installBanner">
+        <span class="install-text">
+            <i class="bi bi-phone"></i>
+            Install as an app for quick access
+        </span>
+        <button class="btn-install" id="installBtn">
+            <i class="bi bi-download"></i> Install
+        </button>
+        <button class="btn-dismiss" id="dismissInstall" title="Dismiss">
+            <i class="bi bi-x"></i>
+        </button>
+    </div>
+
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -496,6 +575,7 @@
     let sortable = null;
     let saveListModal = null;
     let nextItemId = 1;
+    let deferredInstallPrompt = null;
 
     // ============================================
     // Initialization
@@ -525,7 +605,88 @@
         updateOnlineStatus();
         window.addEventListener('online', updateOnlineStatus);
         window.addEventListener('offline', updateOnlineStatus);
+
+        // PWA Install prompt handling
+        initInstallPrompt();
     });
+
+    // ============================================
+    // PWA Install Prompt
+    // ============================================
+    function initInstallPrompt() {
+        const banner = document.getElementById('installBanner');
+        const installBtn = document.getElementById('installBtn');
+        const dismissBtn = document.getElementById('dismissInstall');
+
+        // Check if already installed (standalone mode)
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+            console.log('PWA is already installed');
+            return;
+        }
+
+        // Check if user previously dismissed the banner
+        if (localStorage.getItem('grocery_pwa_install_dismissed')) {
+            return;
+        }
+
+        // Listen for the beforeinstallprompt event
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevent the default browser prompt
+            e.preventDefault();
+            // Save the event for later
+            deferredInstallPrompt = e;
+            // Show our custom banner
+            showInstallBanner();
+        });
+
+        // Handle install button click
+        installBtn.addEventListener('click', async () => {
+            if (!deferredInstallPrompt) {
+                console.log('No install prompt available');
+                return;
+            }
+
+            // Show the browser's install prompt
+            deferredInstallPrompt.prompt();
+
+            // Wait for user response
+            const { outcome } = await deferredInstallPrompt.userChoice;
+            console.log('Install prompt outcome:', outcome);
+
+            if (outcome === 'accepted') {
+                showToast('success', 'App installed successfully!');
+            }
+
+            // Clear the prompt - can only be used once
+            deferredInstallPrompt = null;
+            hideInstallBanner();
+        });
+
+        // Handle dismiss button
+        dismissBtn.addEventListener('click', () => {
+            localStorage.setItem('grocery_pwa_install_dismissed', 'true');
+            hideInstallBanner();
+        });
+
+        // Listen for successful installation
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA installed');
+            hideInstallBanner();
+            deferredInstallPrompt = null;
+        });
+    }
+
+    function showInstallBanner() {
+        const banner = document.getElementById('installBanner');
+        banner.classList.add('show');
+        document.body.classList.add('has-install-banner');
+    }
+
+    function hideInstallBanner() {
+        const banner = document.getElementById('installBanner');
+        banner.classList.remove('show');
+        document.body.classList.remove('has-install-banner');
+    }
 
     function updateOnlineStatus() {
         const badge = document.getElementById('offlineBadge');

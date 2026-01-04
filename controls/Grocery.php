@@ -68,15 +68,18 @@ class Grocery extends Control {
      * Generate service worker JavaScript
      */
     private function getServiceWorkerCode(): string {
-        $version = 'v1';
+        $version = 'v2';
         return <<<JS
 const CACHE_NAME = 'grocery-cache-{$version}';
 const ASSETS_TO_CACHE = [
     '/grocery',
-    '/assets/css/bootstrap.min.css',
-    '/assets/js/bootstrap.bundle.min.js',
+    '/css/app.css',
+    '/js/app.js',
+    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
+    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js',
     'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css',
-    'https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js'
+    'https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js',
+    'https://code.jquery.com/jquery-3.7.1.min.js'
 ];
 
 // Install event - cache assets

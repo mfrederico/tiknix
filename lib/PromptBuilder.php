@@ -30,6 +30,9 @@ class PromptBuilder {
             default => self::buildGenericPrompt($task),
         };
 
+        // Append environment context (branch, port, authcontrol level)
+        $prompt .= "\n\n" . self::getEnvironmentContext($task);
+
         // Append validation instructions
         $prompt .= "\n\n" . self::getValidationInstructions();
 
@@ -37,6 +40,44 @@ class PromptBuilder {
         $prompt .= "\n\n" . self::getTaskUpdateInstructions($task['id'] ?? 0);
 
         return $prompt;
+    }
+
+    /**
+     * Get environment context (workspace, branch, port, authcontrol level)
+     */
+    private static function getEnvironmentContext(array $task): string {
+        $context = "## Environment Context\n\n";
+
+        // Workspace info (isolated project clone)
+        if (!empty($task['project_path'])) {
+            $context .= "**Workspace**: `{$task['project_path']}`\n";
+            $context .= "- You are working in an isolated clone of the repository\n";
+            $context .= "- All changes are contained within this workspace\n\n";
+        }
+
+        // Branch info
+        if (!empty($task['branch_name'])) {
+            $context .= "**Working Branch**: `{$task['branch_name']}`\n";
+            $context .= "- You are working on a feature branch, NOT main\n";
+            $context .= "- All changes should be committed to this branch\n";
+            $context .= "- A pull request will be created when the task is complete\n\n";
+        }
+
+        // Authcontrol level for new endpoints
+        if (!empty($task['authcontrol_level'])) {
+            $levelName = array_search($task['authcontrol_level'], LEVELS) ?: 'Custom';
+            $context .= "**Endpoint Access Level**: {$levelName} ({$task['authcontrol_level']})\n";
+            $context .= "- When creating new endpoints/routes, set authcontrol level to {$task['authcontrol_level']}\n";
+            $context .= "- This controls who can access the new endpoints\n\n";
+        }
+
+        // Test server port
+        if (!empty($task['assigned_port'])) {
+            $context .= "**Test Server Port**: {$task['assigned_port']}\n";
+            $context .= "- If testing is needed, the server can be run on port {$task['assigned_port']}\n\n";
+        }
+
+        return $context;
     }
 
     /**

@@ -14,6 +14,8 @@ use \app\TaskAccessControl;
 use \app\SimpleCsrf;
 use \app\ClaudeRunner;
 use \app\PromptBuilder;
+use \app\GitService;
+use \app\PortManager;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -80,6 +82,8 @@ class Workbench extends Control {
         $this->viewData['preselectedTeamId'] = $preselectedTeamId;
         $this->viewData['taskTypes'] = $this->getTaskTypes();
         $this->viewData['priorities'] = $this->getPriorities();
+        $this->viewData['authcontrolLevels'] = $this->getAuthcontrolLevels();
+        $this->viewData['memberLevel'] = $this->member->level;
 
         $this->render('workbench/create', $this->viewData);
     }
@@ -124,6 +128,12 @@ class Workbench extends Control {
             }
         }
 
+        // Validate authcontrol level (must be >= member's level)
+        $authcontrolLevel = (int)$this->getParam('authcontrol_level', $this->member->level);
+        if ($authcontrolLevel < $this->member->level) {
+            $authcontrolLevel = $this->member->level; // Can't assign higher privilege than you have
+        }
+
         try {
             $task = Bean::dispense('workbenchtask');
             $task->title = $title;
@@ -133,6 +143,7 @@ class Workbench extends Control {
             $task->status = 'pending';
             $task->memberId = $this->member->id;
             $task->teamId = $teamId;
+            $task->authcontrolLevel = $authcontrolLevel;
             $task->acceptanceCriteria = trim($this->getParam('acceptance_criteria', ''));
             $task->relatedFiles = json_encode(array_filter(explode("\n", $this->getParam('related_files', ''))));
             $task->tags = json_encode(array_filter(array_map('trim', explode(',', $this->getParam('tags', '')))));
@@ -260,6 +271,8 @@ class Workbench extends Control {
         $this->viewData['teams'] = $teams;
         $this->viewData['taskTypes'] = $this->getTaskTypes();
         $this->viewData['priorities'] = $this->getPriorities();
+        $this->viewData['authcontrolLevels'] = $this->getAuthcontrolLevels();
+        $this->viewData['memberLevel'] = $this->member->level;
 
         $this->render('workbench/edit', $this->viewData);
     }
@@ -308,11 +321,18 @@ class Workbench extends Control {
             return;
         }
 
+        // Validate authcontrol level (must be >= member's level)
+        $authcontrolLevel = (int)$this->getParam('authcontrol_level', $task->authcontrolLevel ?? $this->member->level);
+        if ($authcontrolLevel < $this->member->level) {
+            $authcontrolLevel = $this->member->level;
+        }
+
         try {
             $task->title = $title;
             $task->description = trim($this->getParam('description', ''));
             $task->taskType = $this->getParam('task_type', 'feature');
             $task->priority = (int)$this->getParam('priority', 3);
+            $task->authcontrolLevel = $authcontrolLevel;
             $task->acceptanceCriteria = trim($this->getParam('acceptance_criteria', ''));
             $task->relatedFiles = json_encode(array_filter(explode("\n", $this->getParam('related_files', ''))));
             $task->tags = json_encode(array_filter(array_map('trim', explode(',', $this->getParam('tags', '')))));
@@ -423,9 +443,63 @@ class Workbench extends Control {
             return;
         }
 
+        // Assign port for this member
+        $portInfo = PortManager::getTaskPortInfo($this->member->id);
+        $assignedPort = $portInfo['port'];
+        if (!$portInfo['available'] && $portInfo['fallback']) {
+            $assignedPort = $portInfo['fallback'];
+        }
+        $task->assignedPort = $assignedPort;
+
+        // Non-admin members must work on an isolated workspace with a branch
+        $isNonAdmin = $this->member->level > LEVELS['ADMIN'];
+        $workspacePath = null;
+
+        if ($isNonAdmin && empty($task->branchName)) {
+            try {
+                // Clone repository into isolated workspace
+                $mainGit = new GitService();
+                $workspacePath = $mainGit->cloneToWorkspace($this->member->id, $task->id);
+                $task->projectPath = $workspacePath;
+
+                $this->logTaskEvent($taskId, 'info', 'system', "Created workspace: {$workspacePath}");
+
+                // Create GitService for the workspace
+                $gitService = new GitService($workspacePath);
+
+                $branchName = GitService::generateBranchName(
+                    $this->member->username ?? $this->member->email,
+                    $task->id,
+                    $task->title
+                );
+
+                // Get base branch from team settings or default to main
+                $baseBranch = 'main';
+                if ($task->teamId) {
+                    $team = Bean::load('team', $task->teamId);
+                    if ($team->defaultBranch) {
+                        $baseBranch = $team->defaultBranch;
+                    }
+                }
+
+                $gitService->createBranch($branchName, $baseBranch);
+                $task->branchName = $branchName;
+
+                $this->logTaskEvent($taskId, 'info', 'system', "Created branch: {$branchName} from {$baseBranch}");
+
+            } catch (Exception $e) {
+                $this->logger->error('Failed to create workspace/branch', ['error' => $e->getMessage()]);
+                Flight::jsonError('Failed to create workspace: ' . $e->getMessage(), 500);
+                return;
+            }
+        } else if (!empty($task->projectPath)) {
+            // Re-running a task - use existing workspace
+            $workspacePath = $task->projectPath;
+        }
+
         try {
-            // Create Claude runner
-            $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId);
+            // Create Claude runner with workspace path (null = use main project)
+            $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $workspacePath);
 
             // Check if session already exists
             if ($runner->exists()) {
@@ -463,6 +537,10 @@ class Workbench extends Control {
                 'acceptance_criteria' => $task->acceptanceCriteria,
                 'related_files' => json_decode($task->relatedFiles, true) ?: [],
                 'tags' => json_decode($task->tags, true) ?: [],
+                'authcontrol_level' => $task->authcontrolLevel,
+                'branch_name' => $task->branchName,
+                'assigned_port' => $task->assignedPort,
+                'project_path' => $task->projectPath,
             ]);
 
             // Send the prompt to Claude
@@ -539,8 +617,11 @@ class Workbench extends Control {
             return;
         }
 
+        // Use existing workspace path if available
+        $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+
         // Kill any existing session for this task
-        $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId);
+        $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $workspacePath);
         if ($runner->exists()) {
             $runner->kill();
             usleep(500000); // Wait 500ms
@@ -556,7 +637,7 @@ class Workbench extends Control {
 
         // Now run the task (reuse run logic)
         try {
-            // Spawn Claude interactively in tmux
+            // Spawn Claude interactively in tmux (runner already has workspace path)
             $success = $runner->spawn();
 
             if (!$success) {
@@ -586,6 +667,10 @@ class Workbench extends Control {
                 'acceptance_criteria' => $task->acceptanceCriteria,
                 'related_files' => json_decode($task->relatedFiles, true) ?: [],
                 'tags' => json_decode($task->tags, true) ?: [],
+                'authcontrol_level' => $task->authcontrolLevel,
+                'branch_name' => $task->branchName,
+                'assigned_port' => $task->assignedPort,
+                'project_path' => $task->projectPath,
             ]);
 
             // Send the prompt
@@ -654,7 +739,8 @@ class Workbench extends Control {
         try {
             // Kill any existing tmux session
             if ($task->tmuxSession) {
-                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId);
+                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
                 if ($runner->exists()) {
                     $runner->kill();
                     usleep(500000); // Wait 500ms for cleanup
@@ -724,7 +810,8 @@ class Workbench extends Control {
         try {
             // Kill any existing tmux session
             if ($task->tmuxSession) {
-                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId);
+                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
                 if ($runner->exists()) {
                     $runner->kill();
                 }
@@ -846,7 +933,8 @@ class Workbench extends Control {
         try {
             // Kill tmux session if exists
             if ($task->tmuxSession) {
-                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId);
+                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
                 $runner->kill();
             }
 
@@ -861,6 +949,158 @@ class Workbench extends Control {
 
         } catch (Exception $e) {
             Flight::jsonError('Failed to stop task: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Start test server for a task's branch
+     * Creates a tmux session running serve.php on the assigned port
+     *
+     * TODO: Refactor tmux management into a TmuxManager service
+     */
+    public function startserver($params = []) {
+        if (!$this->requireLogin()) return;
+
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        $task = Bean::load('workbenchtask', $taskId);
+
+        if (!$task->id || !$this->access->canRun($this->member->id, $task)) {
+            Flight::jsonError('Access denied', 403);
+            return;
+        }
+
+        // Must have a branch and port assigned
+        if (empty($task->branchName)) {
+            Flight::jsonError('No branch assigned to this task', 400);
+            return;
+        }
+
+        if (empty($task->assignedPort)) {
+            Flight::jsonError('No port assigned to this task', 400);
+            return;
+        }
+
+        // Check if test server session already exists
+        if (!empty($task->testServerSession)) {
+            exec(sprintf('tmux has-session -t %s 2>/dev/null', escapeshellarg($task->testServerSession)), $output, $code);
+            if ($code === 0) {
+                Flight::jsonError('Test server is already running', 400);
+                return;
+            }
+            $task->testServerSession = null;
+        }
+
+        // Check if port is available
+        if (!PortManager::isPortAvailable($task->assignedPort)) {
+            Flight::jsonError("Port {$task->assignedPort} is already in use", 400);
+            return;
+        }
+
+        try {
+            $sessionName = "tiknix-serve-{$this->member->id}-{$task->id}";
+
+            // Use workspace path if available, otherwise default to main project
+            $projectPath = !empty($task->projectPath) ? $task->projectPath : dirname(__DIR__);
+
+            // Build the server command - only checkout branch if using main project
+            // In workspace mode, we're already on the correct branch
+            if (!empty($task->projectPath)) {
+                // Workspace mode - already in isolated clone on correct branch
+                $serverCmd = sprintf(
+                    'cd %s && php serve.php --port=%d; echo "Server stopped. Press Enter to close..."; read',
+                    escapeshellarg($projectPath),
+                    $task->assignedPort
+                );
+            } else {
+                // Main project mode - need to checkout branch
+                $serverCmd = sprintf(
+                    'cd %s && git checkout %s && php serve.php --port=%d; echo "Server stopped. Press Enter to close..."; read',
+                    escapeshellarg($projectPath),
+                    escapeshellarg($task->branchName),
+                    $task->assignedPort
+                );
+            }
+
+            $cmd = sprintf(
+                'tmux new-session -d -s %s %s',
+                escapeshellarg($sessionName),
+                escapeshellarg($serverCmd)
+            );
+
+            exec($cmd, $output, $code);
+
+            if ($code !== 0) {
+                throw new Exception('Failed to create tmux session');
+            }
+
+            $task->testServerSession = $sessionName;
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            $this->logTaskEvent($taskId, 'info', 'system', "Test server started on port {$task->assignedPort}");
+
+            Flight::json([
+                'success' => true,
+                'message' => "Test server started on port {$task->assignedPort}",
+                'session' => $sessionName,
+                'port' => $task->assignedPort,
+                'url' => "http://localhost:{$task->assignedPort}"
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Failed to start test server', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to start test server: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Stop test server for a task
+     *
+     * TODO: Refactor tmux management into a TmuxManager service
+     */
+    public function stopserver($params = []) {
+        if (!$this->requireLogin()) return;
+
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        $task = Bean::load('workbenchtask', $taskId);
+
+        if (!$task->id || !$this->access->canRun($this->member->id, $task)) {
+            Flight::jsonError('Access denied', 403);
+            return;
+        }
+
+        if (empty($task->testServerSession)) {
+            Flight::jsonError('No test server is running', 400);
+            return;
+        }
+
+        try {
+            exec(sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($task->testServerSession)), $output, $code);
+
+            $task->testServerSession = null;
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            $this->logTaskEvent($taskId, 'info', 'system', 'Test server stopped');
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Test server stopped'
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Failed to stop test server', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to stop test server: ' . $e->getMessage(), 500);
         }
     }
 
@@ -891,7 +1131,8 @@ class Workbench extends Control {
         // If running, get live progress from tmux
         if (in_array($task->status, ['running', 'queued']) && $task->tmuxSession) {
             try {
-                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId);
+                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
                 if ($runner->isRunning()) {
                     $progress['live'] = $runner->getProgress();
                 } else {
@@ -1017,7 +1258,8 @@ class Workbench extends Control {
 
             // If not an internal comment, try to send to Claude session if it exists
             if (!$comment->isInternal) {
-                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId);
+                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
                 if ($runner->exists()) {
                     $sentToSession = $runner->sendPrompt($content);
                     if ($sentToSession) {
@@ -1182,5 +1424,28 @@ class Workbench extends Control {
             3 => ['label' => 'Medium', 'color' => 'info'],
             4 => ['label' => 'Low', 'color' => 'secondary']
         ];
+    }
+
+    /**
+     * Get authcontrol levels available to current member
+     * Members can only assign levels >= their own level (lower privilege or equal)
+     *
+     * @return array Levels the member can assign
+     */
+    private function getAuthcontrolLevels(): array {
+        $memberLevel = $this->member->level ?? LEVELS['PUBLIC'];
+
+        $availableLevels = [];
+        foreach (LEVELS as $name => $value) {
+            if ($value >= $memberLevel) {
+                $availableLevels[$value] = [
+                    'label' => ucfirst(strtolower($name)),
+                    'value' => $value
+                ];
+            }
+        }
+
+        ksort($availableLevels);
+        return $availableLevels;
     }
 }

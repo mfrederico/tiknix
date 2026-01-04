@@ -385,9 +385,61 @@
                                 <?php endforeach; ?>
                             </dd>
                         <?php endif; ?>
+
+                        <?php if ($task->branchName): ?>
+                            <dt>Branch</dt>
+                            <dd><code class="small"><?= htmlspecialchars($task->branchName) ?></code></dd>
+                        <?php endif; ?>
+
+                        <?php if ($task->assignedPort): ?>
+                            <dt>Test Port</dt>
+                            <dd><?= $task->assignedPort ?></dd>
+                        <?php endif; ?>
+
+                        <?php if ($task->authcontrolLevel): ?>
+                            <dt>Endpoint Level</dt>
+                            <dd>
+                                <?php
+                                $levelName = array_search($task->authcontrolLevel, LEVELS) ?: 'Custom';
+                                ?>
+                                <?= ucfirst(strtolower($levelName)) ?> (<?= $task->authcontrolLevel ?>)
+                            </dd>
+                        <?php endif; ?>
                     </dl>
                 </div>
             </div>
+
+            <!-- Test Server Controls -->
+            <?php if ($task->branchName && $task->assignedPort && $canRun): ?>
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="bi bi-hdd-stack me-1"></i> Test Server</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted mb-2">
+                            Run the branch on port <?= $task->assignedPort ?> for testing.
+                        </p>
+                        <?php if ($task->testServerSession): ?>
+                            <div class="alert alert-success py-2 mb-2">
+                                <i class="bi bi-check-circle me-1"></i>
+                                Running on <a href="http://localhost:<?= $task->assignedPort ?>" target="_blank">localhost:<?= $task->assignedPort ?></a>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-danger btn-sm" onclick="stopTestServer(<?= $task->id ?>)">
+                                    <i class="bi bi-stop-fill"></i> Stop Server
+                                </button>
+                                <code class="small d-block text-center mt-1">tmux attach -t <?= htmlspecialchars($task->testServerSession) ?></code>
+                            </div>
+                        <?php else: ?>
+                            <div class="d-grid">
+                                <button class="btn btn-outline-primary btn-sm" onclick="startTestServer(<?= $task->id ?>)">
+                                    <i class="bi bi-play-fill"></i> Start Test Server
+                                </button>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
 
             <!-- Recent Logs -->
             <div class="card mb-4">
@@ -870,6 +922,70 @@ async function deleteComment(commentId) {
         }
     } catch (e) {
         alert('Error deleting comment');
+    }
+}
+
+// Start test server
+async function startTestServer(id) {
+    const btn = event.target.closest('button');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Starting...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/startserver', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+
+// Stop test server
+async function stopTestServer(id) {
+    const btn = event.target.closest('button');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Stopping...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/stopserver', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
     }
 }
 </script>

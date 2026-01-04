@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "php \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/workbench-response-capture.php",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

@@ -23,6 +23,7 @@ class ClaudeRunner {
     private ?int $teamId;
     private string $sessionName;
     private string $workDir;
+    private ?string $projectPath = null;
 
     /**
      * Create a new ClaudeRunner instance
@@ -30,11 +31,13 @@ class ClaudeRunner {
      * @param int $taskId The task ID
      * @param int $memberId The member who owns/triggered the task
      * @param int|null $teamId The team ID (null for personal tasks)
+     * @param string|null $projectPath Custom project path (workspace clone location)
      */
-    public function __construct(int $taskId, int $memberId, ?int $teamId = null) {
+    public function __construct(int $taskId, int $memberId, ?int $teamId = null, ?string $projectPath = null) {
         $this->taskId = $taskId;
         $this->memberId = $memberId;
         $this->teamId = $teamId;
+        $this->projectPath = $projectPath;
 
         // Session naming based on ownership
         if ($teamId) {
@@ -44,6 +47,13 @@ class ClaudeRunner {
             $this->sessionName = "tiknix-{$memberId}-task-{$taskId}";
             $this->workDir = "/tmp/tiknix-{$memberId}-task-{$taskId}";
         }
+    }
+
+    /**
+     * Get the project path (workspace or default)
+     */
+    public function getProjectPath(): string {
+        return $this->projectPath ?? dirname(__DIR__);
     }
 
     /**
@@ -97,7 +107,8 @@ class ClaudeRunner {
             throw new Exception("Session already exists: {$this->sessionName}");
         }
 
-        $projectRoot = dirname(__DIR__);
+        // Use custom project path (workspace) if provided, otherwise default to main project
+        $projectRoot = $this->getProjectPath();
 
         // Build Claude command to run interactively
         $claudeCmd = 'claude --debug';

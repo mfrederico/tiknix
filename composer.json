@@ -52,6 +52,8 @@
             "lib/TaskAccessControl.php",
             "lib/ValidationService.php",
             "lib/RateLimiter.php",
+            "lib/GitService.php",
+            "lib/PortManager.php",
             "lib/functions.php"
         ]
     },

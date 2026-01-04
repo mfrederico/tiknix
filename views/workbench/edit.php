@@ -67,6 +67,21 @@
                             </div>
                         </div>
 
+                        <div class="row">
+                            <!-- Authcontrol Level -->
+                            <div class="col-md-6 mb-3">
+                                <label for="authcontrol_level" class="form-label">Endpoint Access Level</label>
+                                <select class="form-select" id="authcontrol_level" name="authcontrol_level">
+                                    <?php foreach ($authcontrolLevels as $level => $info): ?>
+                                        <option value="<?= $level ?>" <?= (int)($task->authcontrolLevel ?? $memberLevel) == $level ? 'selected' : '' ?>>
+                                            <?= $info['label'] ?> (<?= $level ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">Access level for new endpoints created by this task.</div>
+                            </div>
+                        </div>
+
                         <!-- Acceptance Criteria -->
                         <div class="mb-3">
                             <label for="acceptance_criteria" class="form-label">Acceptance Criteria</label>

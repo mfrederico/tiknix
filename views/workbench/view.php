@@ -99,9 +99,22 @@
                         <?php endif; ?>
 
                         <?php if ($canRun && $task->status === 'awaiting'): ?>
-                            <button class="btn btn-success" onclick="markComplete(<?= $task->id ?>)">
-                                <i class="bi bi-check-circle"></i> Mark Complete
-                            </button>
+                            <?php
+                            // Check if current user is admin (can approve/decline)
+                            $isAdmin = isset($member) && $member->level <= LEVELS['ADMIN'];
+                            ?>
+                            <?php if ($isAdmin): ?>
+                                <button class="btn btn-success" onclick="approveTask(<?= $task->id ?>)">
+                                    <i class="bi bi-check-circle-fill"></i> Approve & Merge
+                                </button>
+                                <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#declineModal">
+                                    <i class="bi bi-x-circle"></i> Decline
+                                </button>
+                            <?php else: ?>
+                                <button class="btn btn-success" onclick="markComplete(<?= $task->id ?>)">
+                                    <i class="bi bi-check-circle"></i> Mark Complete
+                                </button>
+                            <?php endif; ?>
                             <button class="btn btn-outline-primary" onclick="document.getElementById('commentContent').focus()">
                                 <i class="bi bi-chat-dots"></i> Send Instructions
                             </button>
@@ -988,4 +1001,111 @@ async function stopTestServer(id) {
         btn.innerHTML = originalHtml;
     }
 }
+
+// Approve task (admin only) - merge PR and complete
+async function approveTask(id) {
+    if (!confirm('Approve this task? This will squash-merge the PR and mark the task complete.')) {
+        return;
+    }
+
+    const btn = event.target.closest('button');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Approving...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/approve', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            if (data.pr_merged) {
+                alert('Task approved! PR has been squash-merged.');
+            } else if (data.merge_error) {
+                alert('Task approved but PR merge failed: ' + data.merge_error);
+            } else {
+                alert('Task approved!');
+            }
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+
+// Decline task (admin only) - close PR and send back for revision
+async function declineTask(id) {
+    const reason = document.getElementById('declineReason').value.trim();
+
+    const btn = document.getElementById('declineSubmitBtn');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Declining...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('reason', reason);
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/decline', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('declineModal')).hide();
+            alert('Task declined and sent back for revision.');
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
 </script>
+
+<!-- Decline Modal -->
+<div class="modal fade" id="declineModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Decline Task</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>This will close the PR and send the task back for revision.</p>
+                <div class="mb-3">
+                    <label for="declineReason" class="form-label">Reason for declining (optional)</label>
+                    <textarea class="form-control" id="declineReason" rows="4"
+                              placeholder="Explain what needs to be changed..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="declineSubmitBtn"
+                        onclick="declineTask(<?= $task->id ?>)">
+                    <i class="bi bi-x-circle"></i> Decline Task
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

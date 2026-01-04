@@ -53,6 +53,7 @@
             "lib/ValidationService.php",
             "lib/RateLimiter.php",
             "lib/GitService.php",
+            "lib/GitHubService.php",
             "lib/PortManager.php",
             "lib/functions.php"
         ]

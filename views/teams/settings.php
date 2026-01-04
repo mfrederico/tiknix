@@ -47,6 +47,47 @@
                             <textarea class="form-control" id="description" name="description" rows="3"><?= htmlspecialchars($team->description ?? '') ?></textarea>
                         </div>
 
+                        <hr class="my-4">
+
+                        <h5 class="mb-3"><i class="bi bi-github"></i> GitHub Integration</h5>
+                        <p class="text-muted small mb-3">
+                            Configure GitHub to enable automatic PR creation when tasks are completed.
+                        </p>
+
+                        <div class="mb-3">
+                            <label for="github_owner" class="form-label">Repository Owner</label>
+                            <input type="text" class="form-control" id="github_owner" name="github_owner"
+                                   value="<?= htmlspecialchars($team->githubOwner ?? '') ?>"
+                                   placeholder="e.g., your-username or your-org">
+                            <div class="form-text">GitHub username or organization that owns the repository</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="github_repo" class="form-label">Repository Name</label>
+                            <input type="text" class="form-control" id="github_repo" name="github_repo"
+                                   value="<?= htmlspecialchars($team->githubRepo ?? '') ?>"
+                                   placeholder="e.g., my-project">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="github_token" class="form-label">Personal Access Token</label>
+                            <input type="password" class="form-control" id="github_token" name="github_token"
+                                   value="<?= htmlspecialchars($team->githubToken ?? '') ?>"
+                                   placeholder="ghp_xxxxxxxxxxxx">
+                            <div class="form-text">
+                                Token needs <code>repo</code> scope.
+                                <a href="https://github.com/settings/tokens/new?scopes=repo" target="_blank">Create token</a>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="default_branch" class="form-label">Default Base Branch</label>
+                            <input type="text" class="form-control" id="default_branch" name="default_branch"
+                                   value="<?= htmlspecialchars($team->defaultBranch ?? 'main') ?>"
+                                   placeholder="main">
+                            <div class="form-text">Branch that PRs will be merged into (usually <code>main</code> or <code>master</code>)</div>
+                        </div>
+
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-check-lg"></i> Save Changes
                         </button>

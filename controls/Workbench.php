@@ -838,6 +838,217 @@ class Workbench extends Control {
     }
 
     /**
+     * Approve task - merge PR and mark complete
+     * Only admins can approve non-admin member tasks
+     */
+    public function approve($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::redirect('/workbench');
+            return;
+        }
+
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        $task = Bean::load('workbenchtask', $taskId);
+
+        if (!$task->id) {
+            Flight::jsonError('Task not found', 404);
+            return;
+        }
+
+        // Only admins can approve
+        if ($this->member->level > LEVELS['ADMIN']) {
+            Flight::jsonError('Only admins can approve tasks', 403);
+            return;
+        }
+
+        // Task must be in awaiting status with a PR
+        if ($task->status !== 'awaiting') {
+            Flight::jsonError('Task is not awaiting review', 400);
+            return;
+        }
+
+        try {
+            $prMerged = false;
+            $mergeError = null;
+
+            // Merge PR if exists
+            if (!empty($task->prUrl) && !empty($task->prNumber)) {
+                try {
+                    $github = $this->getGitHubService($task);
+                    if ($github) {
+                        $mergeResult = $github->mergePullRequest(
+                            (int)$task->prNumber,
+                            "Merge: {$task->title}",
+                            "Approved via Tiknix Workbench\n\nTask #{$task->id}",
+                            'squash'
+                        );
+                        $prMerged = !empty($mergeResult['merged']);
+                    }
+                } catch (Exception $e) {
+                    $mergeError = $e->getMessage();
+                    $this->logger->error('Failed to merge PR', [
+                        'task_id' => $taskId,
+                        'pr_number' => $task->prNumber,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            // Mark task as completed
+            $task->status = 'completed';
+            $task->completedAt = date('Y-m-d H:i:s');
+            $task->reviewedBy = $this->member->id;
+            $task->reviewedAt = date('Y-m-d H:i:s');
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            $message = 'Task approved by ' . ($this->member->displayName ?? $this->member->email);
+            if ($prMerged) {
+                $message .= ' (PR squash-merged)';
+            } elseif ($mergeError) {
+                $message .= " (PR merge failed: {$mergeError})";
+            }
+
+            $this->logTaskEvent($taskId, 'info', 'review', $message);
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Task approved',
+                'pr_merged' => $prMerged,
+                'merge_error' => $mergeError
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Failed to approve task', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to approve: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Decline task - close PR and send back for revision
+     */
+    public function decline($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::redirect('/workbench');
+            return;
+        }
+
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        $task = Bean::load('workbenchtask', $taskId);
+
+        if (!$task->id) {
+            Flight::jsonError('Task not found', 404);
+            return;
+        }
+
+        // Only admins can decline
+        if ($this->member->level > LEVELS['ADMIN']) {
+            Flight::jsonError('Only admins can decline tasks', 403);
+            return;
+        }
+
+        // Task must be in awaiting status
+        if ($task->status !== 'awaiting') {
+            Flight::jsonError('Task is not awaiting review', 400);
+            return;
+        }
+
+        $reason = trim($this->getParam('reason', ''));
+
+        try {
+            // Close PR if exists
+            if (!empty($task->prUrl) && !empty($task->prNumber)) {
+                try {
+                    $github = $this->getGitHubService($task);
+                    if ($github) {
+                        // Add decline comment
+                        if ($reason) {
+                            $github->addComment(
+                                (int)$task->prNumber,
+                                "**Changes requested**\n\n{$reason}\n\n_Declined via Tiknix Workbench_"
+                            );
+                        }
+                        // Close the PR
+                        $github->closePullRequest((int)$task->prNumber);
+                    }
+                } catch (Exception $e) {
+                    $this->logger->warning('Failed to close PR', [
+                        'task_id' => $taskId,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            // Reset task to pending for revision
+            $task->status = 'pending';
+            $task->prUrl = null;
+            $task->prNumber = null;
+            $task->reviewedBy = $this->member->id;
+            $task->reviewedAt = date('Y-m-d H:i:s');
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            // Add decline reason as comment
+            if ($reason) {
+                $comment = Bean::dispense('taskcomment');
+                $comment->taskId = $taskId;
+                $comment->memberId = $this->member->id;
+                $comment->content = "**Changes Requested:**\n\n{$reason}";
+                $comment->createdAt = date('Y-m-d H:i:s');
+                Bean::store($comment);
+            }
+
+            $this->logTaskEvent($taskId, 'warning', 'review',
+                'Task declined by ' . ($this->member->displayName ?? $this->member->email) .
+                ($reason ? ": {$reason}" : '')
+            );
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Task declined and sent back for revision'
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Failed to decline task', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to decline: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get GitHub service for a task
+     *
+     * @param object $task Task bean
+     * @return GitHubService|null
+     */
+    private function getGitHubService(object $task): ?GitHubService {
+        if ($task->teamId) {
+            $team = Bean::load('team', $task->teamId);
+            $github = GitHubService::fromTeam($team);
+            if ($github) {
+                return $github;
+            }
+        }
+
+        return GitHubService::fromConfig();
+    }
+
+    /**
      * Pause running task
      */
     public function pause($params = []) {

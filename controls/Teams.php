@@ -279,8 +279,18 @@ class Teams extends Control {
             return;
         }
 
+        // GitHub integration settings
+        $githubOwner = trim($this->getParam('github_owner', ''));
+        $githubRepo = trim($this->getParam('github_repo', ''));
+        $githubToken = trim($this->getParam('github_token', ''));
+        $defaultBranch = trim($this->getParam('default_branch', 'main'));
+
         $team->name = $name;
         $team->description = $description;
+        $team->githubOwner = $githubOwner;
+        $team->githubRepo = $githubRepo;
+        $team->githubToken = $githubToken;
+        $team->defaultBranch = $defaultBranch ?: 'main';
         $team->updatedAt = date('Y-m-d H:i:s');
         Bean::store($team);
 

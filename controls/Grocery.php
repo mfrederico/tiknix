@@ -36,20 +36,7 @@ class Grocery extends Control {
             'display' => 'standalone',
             'background_color' => '#198754',
             'theme_color' => '#198754',
-            'icons' => [
-                [
-                    'src' => '/assets/icons/grocery-192.png',
-                    'sizes' => '192x192',
-                    'type' => 'image/png',
-                    'purpose' => 'any maskable'
-                ],
-                [
-                    'src' => '/assets/icons/grocery-512.png',
-                    'sizes' => '512x512',
-                    'type' => 'image/png',
-                    'purpose' => 'any maskable'
-                ]
-            ]
+            'icons' => []
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         exit;
     }

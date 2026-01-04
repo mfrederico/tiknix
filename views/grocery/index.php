@@ -111,15 +111,23 @@
             font-size: 1rem;
         }
 
+        .add-item-form input[type="text"] {
+            flex: 1 1 auto !important;
+        }
+
         .add-item-form button {
             border: none;
             padding: 1rem 1.5rem;
         }
 
         .quantity-input {
-            width: 60px !important;
+            width: 50px !important;
+            min-width: 50px !important;
+            max-width: 50px !important;
+            flex: 0 0 50px !important;
             text-align: center;
             border-left: 1px solid var(--sidebar-border, #dee2e6) !important;
+            padding: 1rem 0.25rem !important;
         }
 
         .grocery-list {
@@ -314,7 +322,7 @@
             .grocery-item { padding: 1rem; }
             .item-checkbox { width: 28px; height: 28px; }
             .item-name { font-size: 1.1rem; }
-            .quantity-input { width: 50px !important; }
+            .quantity-input { width: 36px !important; }
         }
 
         /* Animations */

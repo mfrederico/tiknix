@@ -1,3 +1,8 @@
+<?php
+// Extract domain from baseurl for subdomain URLs
+$baseUrl = \Flight::get('baseurl') ?? 'https://localhost';
+$baseDomain = preg_replace('#^https?://#', '', $baseUrl);
+?>
 <div class="container-fluid py-4">
     <div class="row">
         <!-- Main Content -->
@@ -436,8 +441,8 @@
                             <div class="alert alert-success py-2 mb-2">
                                 <i class="bi bi-check-circle me-1"></i>
                                 <?php if ($task->proxyHash): ?>
-                                    Running at <a href="https://<?= htmlspecialchars($task->proxyHash) ?>.dev.tiknix.com" target="_blank" class="fw-bold">
-                                        <?= htmlspecialchars($task->proxyHash) ?>.dev.tiknix.com
+                                    Running at <a href="https://<?= htmlspecialchars($task->proxyHash) ?>.<?= $baseDomain ?>" target="_blank" class="fw-bold">
+                                        <?= htmlspecialchars($task->proxyHash) ?>.<?= $baseDomain ?>
                                     </a>
                                 <?php else: ?>
                                     Running on <a href="http://localhost:<?= $task->assignedPort ?>" target="_blank">localhost:<?= $task->assignedPort ?></a>
@@ -453,7 +458,7 @@
                             <?php if ($task->proxyHash): ?>
                                 <p class="small text-muted mb-2">
                                     <i class="bi bi-globe me-1"></i>
-                                    Test URL: <code><?= htmlspecialchars($task->proxyHash) ?>.dev.tiknix.com</code>
+                                    Test URL: <code><?= htmlspecialchars($task->proxyHash) ?>.<?= $baseDomain ?></code>
                                 </p>
                             <?php endif; ?>
                             <div class="d-grid">

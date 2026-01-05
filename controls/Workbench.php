@@ -1275,9 +1275,10 @@ class Workbench extends Control {
 
             // Create .proxy file for nginx subdomain routing (if proxyHash exists)
             // File format: proxyhost=X\nproxyport=Y (lua loadEnvFile expects key=value)
-            // Filename: .proxy.{hash}.dev.tiknix (no TLD - nginx lua strips it)
+            // Filename: .proxy.{hash}.{domain} (no TLD - nginx lua strips it)
             if (!empty($task->proxyHash)) {
-                $proxyFile = "/var/www/html/.proxy.{$task->proxyHash}.dev.tiknix";
+                $baseDomain = preg_replace('#^https?://#', '', Flight::get('baseurl') ?? 'https://localhost');
+                $proxyFile = "/var/www/html/.proxy.{$task->proxyHash}.{$baseDomain}";
                 $proxyContent = "proxyhost=127.0.0.1\nproxyport={$task->assignedPort}";
                 if (file_put_contents($proxyFile, $proxyContent) !== false) {
                     $task->proxyFile = $proxyFile;
@@ -1292,9 +1293,10 @@ class Workbench extends Control {
             $this->logTaskEvent($taskId, 'info', 'system', "Test server started on port {$task->assignedPort}");
 
             // Build response with subdomain URL if available
+            $baseDomain = preg_replace('#^https?://#', '', Flight::get('baseurl') ?? 'https://localhost');
             $testUrl = "http://localhost:{$task->assignedPort}";
             if (!empty($task->proxyHash)) {
-                $testUrl = "https://{$task->proxyHash}.dev.tiknix.com";
+                $testUrl = "https://{$task->proxyHash}.{$baseDomain}";
             }
 
             Flight::json([
@@ -1303,7 +1305,7 @@ class Workbench extends Control {
                 'session' => $sessionName,
                 'port' => $task->assignedPort,
                 'url' => $testUrl,
-                'subdomain' => !empty($task->proxyHash) ? "{$task->proxyHash}.dev.tiknix.com" : null
+                'subdomain' => !empty($task->proxyHash) ? "{$task->proxyHash}.{$baseDomain}" : null
             ]);
 
         } catch (Exception $e) {
@@ -1719,9 +1721,10 @@ class Workbench extends Control {
 
             // Create .proxy file for subdomain routing
             // File format: proxyhost=X\nproxyport=Y (lua loadEnvFile expects key=value)
-            // Filename: .proxy.{hash}.dev.tiknix (no TLD - nginx lua strips it)
+            // Filename: .proxy.{hash}.{domain} (no TLD - nginx lua strips it)
             if (!empty($task->proxyHash)) {
-                $proxyFile = "/var/www/html/.proxy.{$task->proxyHash}.dev.tiknix";
+                $baseDomain = preg_replace('#^https?://#', '', Flight::get('baseurl') ?? 'https://localhost');
+                $proxyFile = "/var/www/html/.proxy.{$task->proxyHash}.{$baseDomain}";
                 $proxyContent = "proxyhost=127.0.0.1\nproxyport={$task->assignedPort}";
                 if (file_put_contents($proxyFile, $proxyContent) !== false) {
                     $task->proxyFile = $proxyFile;
@@ -1730,8 +1733,9 @@ class Workbench extends Control {
 
             Bean::store($task);
 
+            $baseDomain = $baseDomain ?? preg_replace('#^https?://#', '', Flight::get('baseurl') ?? 'https://localhost');
             $testUrl = !empty($task->proxyHash)
-                ? "https://{$task->proxyHash}.dev.tiknix.com"
+                ? "https://{$task->proxyHash}.{$baseDomain}"
                 : "http://localhost:{$task->assignedPort}";
 
             $this->logTaskEvent($task->id, 'info', 'system', "Test server auto-started on port {$task->assignedPort}");

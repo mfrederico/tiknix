@@ -78,7 +78,9 @@ class PromptBuilder {
 
             // Include subdomain test URL if proxy hash is available
             if (!empty($task['proxy_hash'])) {
-                $testUrl = "https://{$task['proxy_hash']}.dev.tiknix.com";
+                $baseUrl = \Flight::get('baseurl') ?? 'https://localhost';
+                $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
+                $testUrl = "https://{$task['proxy_hash']}.{$baseDomain}";
                 $context .= "- **Test URL**: `{$testUrl}` (available when test server is running)\n";
             }
             $context .= "\n";

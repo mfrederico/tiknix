@@ -384,6 +384,23 @@ class Workbench extends Control {
         }
 
         try {
+            // Kill any running sessions
+            if ($task->tmuxSession) {
+                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
+                if ($runner->exists()) {
+                    $runner->kill();
+                }
+            }
+            if ($task->testServerSession) {
+                TmuxManager::kill($task->testServerSession);
+            }
+
+            // Delete proxy file for nginx subdomain routing
+            if (!empty($task->proxyFile) && file_exists($task->proxyFile)) {
+                unlink($task->proxyFile);
+            }
+
             // Delete related records with cascade
             $logs = $task->xownTasklogList;
             $snapshots = $task->xownTasksnapshotList;
@@ -849,10 +866,23 @@ class Workbench extends Control {
                 }
             }
 
-            // Mark as completed
+            // Kill test server if running
+            if ($task->testServerSession) {
+                TmuxManager::kill($task->testServerSession);
+            }
+
+            // Delete proxy file for nginx subdomain routing
+            if (!empty($task->proxyFile) && file_exists($task->proxyFile)) {
+                unlink($task->proxyFile);
+                $this->logTaskEvent($taskId, 'info', 'system', "Deleted proxy file: {$task->proxyFile}");
+            }
+
+            // Mark as completed and clear session fields
             $task->status = 'completed';
             $task->completedAt = date('Y-m-d H:i:s');
             $task->tmuxSession = null;
+            $task->testServerSession = null;
+            $task->proxyFile = null;
             $task->updatedAt = date('Y-m-d H:i:s');
             Bean::store($task);
 

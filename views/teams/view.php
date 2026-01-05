@@ -66,13 +66,15 @@
                     <?php else: ?>
                         <div class="list-group list-group-flush">
                             <?php foreach ($tasks as $task): ?>
+                                <?php $creator = $task->member; ?>
                                 <a href="/workbench/view?id=<?= $task->id ?>" class="list-group-item list-group-item-action">
                                     <div class="d-flex justify-content-between align-items-start">
                                         <div>
                                             <h6 class="mb-1"><?= htmlspecialchars($task->title) ?></h6>
                                             <small class="text-muted">
                                                 <?= ucfirst($task->taskType) ?> &bull;
-                                                Created <?= date('M j', strtotime($task->createdAt)) ?>
+                                                by <?= htmlspecialchars($creator ? $creator->displayName() : 'Unknown') ?> &bull;
+                                                <?= date('M j', strtotime($task->createdAt)) ?>
                                             </small>
                                         </div>
                                         <span class="badge bg-<?= match($task->status) {
@@ -121,7 +123,7 @@
             <!-- Team Members -->
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0">Members (<?= count($members) ?>)</h6>
+                    <h6 class="mb-0">Members (<?= count($memberships) ?>)</h6>
                     <?php if ($isAdmin): ?>
                         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#inviteModal">
                             <i class="bi bi-person-plus"></i>
@@ -129,28 +131,30 @@
                     <?php endif; ?>
                 </div>
                 <div class="list-group list-group-flush">
-                    <?php foreach (array_slice($members, 0, 5) as $m): ?>
+                    <?php $count = 0; foreach ($memberships as $tm): ?>
+                        <?php if ($count++ >= 5) break; ?>
+                        <?php $member = $tm->member; ?>
                         <div class="list-group-item d-flex align-items-center">
-                            <?php if (!empty($m['avatar_url'])): ?>
-                                <img src="<?= htmlspecialchars($m['avatar_url']) ?>" class="rounded-circle me-2" width="32" height="32">
+                            <?php if (!empty($member->avatarUrl)): ?>
+                                <img src="<?= htmlspecialchars($member->avatarUrl) ?>" class="rounded-circle me-2" width="32" height="32">
                             <?php else: ?>
                                 <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
-                                    <?= strtoupper(substr($m['display_name'] ?? $m['username'] ?? $m['email'], 0, 1)) ?>
+                                    <?= $member->initials() ?>
                                 </div>
                             <?php endif; ?>
                             <div class="flex-grow-1">
                                 <div class="fw-medium small">
-                                    <?= htmlspecialchars($m['display_name'] ?? $m['username'] ?? $m['email']) ?>
+                                    <?= htmlspecialchars($member->displayName()) ?>
                                 </div>
                             </div>
-                            <span class="badge bg-<?= $m['role'] === 'owner' ? 'primary' : ($m['role'] === 'admin' ? 'info' : 'secondary') ?> small">
-                                <?= ucfirst($m['role']) ?>
+                            <span class="badge bg-<?= $tm->role === 'owner' ? 'primary' : ($tm->role === 'admin' ? 'info' : 'secondary') ?> small">
+                                <?= ucfirst($tm->role) ?>
                             </span>
                         </div>
                     <?php endforeach; ?>
-                    <?php if (count($members) > 5): ?>
+                    <?php if (count($memberships) > 5): ?>
                         <a href="/teams/members?id=<?= $team->id ?>" class="list-group-item list-group-item-action text-center small text-muted">
-                            View all <?= count($members) ?> members
+                            View all <?= count($memberships) ?> members
                         </a>
                     <?php endif; ?>
                 </div>
@@ -180,9 +184,7 @@
                 <div class="card mt-4 border-danger">
                     <div class="card-body">
                         <form method="POST" action="/teams/leave" onsubmit="return confirm('Are you sure you want to leave this team?');">
-                            <?php foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
-                            <?php endforeach; ?>
+                            <?= csrf_field() ?>
                             <input type="hidden" name="id" value="<?= $team->id ?>">
                             <button type="submit" class="btn btn-outline-danger btn-sm w-100">
                                 <i class="bi bi-box-arrow-left"></i> Leave Team

@@ -170,29 +170,21 @@ class Teams extends Control {
             return;
         }
 
-        // Get team members
-        $members = Bean::getAll(
-            "SELECT m.id, m.email, m.username, m.display_name, m.avatar_url,
-                    tm.role, tm.can_run_tasks, tm.can_edit_tasks, tm.can_delete_tasks, tm.joined_at
-             FROM teammember tm
-             JOIN member m ON tm.member_id = m.id
-             WHERE tm.team_id = ?
-             ORDER BY tm.role ASC, tm.joined_at ASC",
-            [$teamId]
-        );
+        // Get team members using bean associations
+        $memberships = $team->with(' ORDER BY role ASC, joined_at ASC ')->ownTeammemberList;
 
-        // Get recent tasks
-        $tasks = Bean::find('workbenchtask', 'team_id = ? ORDER BY created_at DESC LIMIT 10', [$teamId]);
+        // Get recent tasks (beans include member association for creator)
+        $tasks = $team->with(' ORDER BY created_at DESC LIMIT 10 ')->ownWorkbenchtaskList;
 
         // Get pending invitations
         $invitations = [];
         if ($this->access->isTeamAdmin($teamId, $this->member->id)) {
-            $invitations = Bean::find('teaminvitation', 'team_id = ? AND accepted_at IS NULL ORDER BY created_at DESC', [$teamId]);
+            $invitations = $team->withCondition(' accepted_at IS NULL ORDER BY created_at DESC ')->ownTeaminvitationList;
         }
 
         $this->viewData['title'] = $team->name;
         $this->viewData['team'] = $team;
-        $this->viewData['members'] = $members;
+        $this->viewData['memberships'] = $memberships;
         $this->viewData['tasks'] = $tasks;
         $this->viewData['invitations'] = $invitations;
         $this->viewData['userRole'] = $this->access->getTeamRole($teamId, $this->member->id);
@@ -326,23 +318,15 @@ class Teams extends Control {
             return;
         }
 
-        // Get team members with details
-        $members = Bean::getAll(
-            "SELECT m.id, m.email, m.username, m.display_name, m.avatar_url,
-                    tm.id as membership_id, tm.role, tm.can_run_tasks, tm.can_edit_tasks, tm.can_delete_tasks, tm.joined_at
-             FROM teammember tm
-             JOIN member m ON tm.member_id = m.id
-             WHERE tm.team_id = ?
-             ORDER BY tm.role ASC, tm.joined_at ASC",
-            [$teamId]
-        );
+        // Get team members using bean associations
+        $memberships = $team->with(' ORDER BY role ASC, joined_at ASC ')->ownTeammemberList;
 
         // Get pending invitations
         $invitations = Bean::find('teaminvitation', 'team_id = ? AND accepted_at IS NULL ORDER BY created_at DESC', [$teamId]);
 
         $this->viewData['title'] = $team->name . ' - Members';
         $this->viewData['team'] = $team;
-        $this->viewData['members'] = $members;
+        $this->viewData['memberships'] = $memberships;
         $this->viewData['invitations'] = $invitations;
         $this->viewData['isOwner'] = $this->access->isTeamOwner($teamId, $this->member->id);
 

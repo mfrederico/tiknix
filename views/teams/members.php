@@ -25,7 +25,7 @@
     <!-- Current Members -->
     <div class="card mb-4">
         <div class="card-header">
-            <h5 class="mb-0">Members (<?= count($members) ?>)</h5>
+            <h5 class="mb-0">Members (<?= count($memberships) ?>)</h5>
         </div>
         <div class="table-responsive">
             <table class="table table-hover mb-0">
@@ -39,60 +39,61 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($members as $m): ?>
+                    <?php foreach ($memberships as $tm): ?>
+                        <?php $member = $tm->member; ?>
                         <tr>
                             <td>
                                 <div class="d-flex align-items-center">
-                                    <?php if (!empty($m['avatar_url'])): ?>
-                                        <img src="<?= htmlspecialchars($m['avatar_url']) ?>" class="rounded-circle me-2" width="40" height="40">
+                                    <?php if (!empty($member->avatarUrl)): ?>
+                                        <img src="<?= htmlspecialchars($member->avatarUrl) ?>" class="rounded-circle me-2" width="40" height="40">
                                     <?php else: ?>
                                         <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
-                                            <?= strtoupper(substr($m['display_name'] ?? $m['username'] ?? $m['email'], 0, 1)) ?>
+                                            <?= $member->initials() ?>
                                         </div>
                                     <?php endif; ?>
                                     <div>
-                                        <div class="fw-medium"><?= htmlspecialchars($m['display_name'] ?? $m['username'] ?? 'Unknown') ?></div>
-                                        <small class="text-muted"><?= htmlspecialchars($m['email']) ?></small>
+                                        <div class="fw-medium"><?= htmlspecialchars($member->displayName()) ?></div>
+                                        <small class="text-muted"><?= htmlspecialchars($member->email) ?></small>
                                     </div>
                                 </div>
                             </td>
                             <td>
-                                <?php if ($isOwner && $m['role'] !== 'owner'): ?>
+                                <?php if ($isOwner && $tm->role !== 'owner'): ?>
                                     <select class="form-select form-select-sm" style="width: auto;"
-                                            onchange="updateRole(<?= $m['id'] ?>, this.value)">
-                                        <option value="admin" <?= $m['role'] === 'admin' ? 'selected' : '' ?>>Admin</option>
-                                        <option value="member" <?= $m['role'] === 'member' ? 'selected' : '' ?>>Member</option>
-                                        <option value="viewer" <?= $m['role'] === 'viewer' ? 'selected' : '' ?>>Viewer</option>
+                                            onchange="updateRole(<?= $member->id ?>, this.value)">
+                                        <option value="admin" <?= $tm->role === 'admin' ? 'selected' : '' ?>>Admin</option>
+                                        <option value="member" <?= $tm->role === 'member' ? 'selected' : '' ?>>Member</option>
+                                        <option value="viewer" <?= $tm->role === 'viewer' ? 'selected' : '' ?>>Viewer</option>
                                     </select>
                                 <?php else: ?>
-                                    <span class="badge bg-<?= $m['role'] === 'owner' ? 'primary' : ($m['role'] === 'admin' ? 'info' : 'secondary') ?>">
-                                        <?= ucfirst($m['role']) ?>
+                                    <span class="badge bg-<?= $tm->role === 'owner' ? 'primary' : ($tm->role === 'admin' ? 'info' : 'secondary') ?>">
+                                        <?= ucfirst($tm->role) ?>
                                     </span>
                                 <?php endif; ?>
                             </td>
                             <td>
                                 <small>
-                                    <?php if ($m['can_run_tasks']): ?>
+                                    <?php if ($tm->canRunTasks): ?>
                                         <span class="badge bg-success-subtle text-success">Run</span>
                                     <?php endif; ?>
-                                    <?php if ($m['can_edit_tasks']): ?>
+                                    <?php if ($tm->canEditTasks): ?>
                                         <span class="badge bg-info-subtle text-info">Edit</span>
                                     <?php endif; ?>
-                                    <?php if ($m['can_delete_tasks']): ?>
+                                    <?php if ($tm->canDeleteTasks): ?>
                                         <span class="badge bg-warning-subtle text-warning">Delete</span>
                                     <?php endif; ?>
                                 </small>
                             </td>
                             <td>
-                                <small class="text-muted"><?= date('M j, Y', strtotime($m['joined_at'])) ?></small>
+                                <small class="text-muted"><?= date('M j, Y', strtotime($tm->joinedAt)) ?></small>
                             </td>
                             <td>
-                                <?php if ($m['role'] !== 'owner' && $isOwner): ?>
+                                <?php if ($tm->role !== 'owner' && $isOwner): ?>
                                     <button class="btn btn-sm btn-outline-danger"
-                                            onclick="removeMember(<?= $m['id'] ?>, '<?= htmlspecialchars($m['display_name'] ?? $m['email'], ENT_QUOTES) ?>')">
+                                            onclick="removeMember(<?= $member->id ?>, '<?= htmlspecialchars($member->displayName(), ENT_QUOTES) ?>')">
                                         <i class="bi bi-person-x"></i>
                                     </button>
-                                <?php elseif ($m['role'] === 'owner'): ?>
+                                <?php elseif ($tm->role === 'owner'): ?>
                                     <span class="text-muted small">Owner</span>
                                 <?php endif; ?>
                             </td>

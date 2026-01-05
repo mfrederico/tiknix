@@ -171,6 +171,9 @@ export TIKNIX_SESSION_NAME="{$sessionName}"
 export TIKNIX_PROJECT_ROOT="{$projectRoot}"
 export TIKNIX_HOOK_URL="{$hookUrl}"
 
+# Allow larger Claude outputs (default is 32000, set to ~250k tokens = ~1MB text)
+export CLAUDE_CODE_MAX_OUTPUT_TOKENS=250000
+
 echo "╔══════════════════════════════════════════════════════════════════╗"
 echo "║                    TIKNIX CLAUDE WORKER                          ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
@@ -465,8 +468,8 @@ BASH;
             return 'completed';
         }
 
-        // Check for actual error exit
-        if (preg_match('/Claude exited with code: [1-9]|Fatal error:|PHP Parse error:/i', $lastLines)) {
+        // Check for actual error exit or API errors
+        if (preg_match('/Claude exited with code: [1-9]|Fatal error:|PHP Parse error:|API Error:/i', $lastLines)) {
             return 'error';
         }
 
@@ -486,6 +489,93 @@ BASH;
         }
 
         return 'unknown';
+    }
+
+    /**
+     * Check if the session is hung (error + waiting at prompt)
+     *
+     * @return bool True if session appears hung
+     */
+    public function isHung(): bool {
+        if (!$this->exists()) {
+            return false;
+        }
+
+        $progress = $this->getProgress();
+
+        // Session is hung if it's in error state or waiting after an error
+        if ($progress['status'] === 'error') {
+            return true;
+        }
+
+        // Check if waiting at prompt after an API error
+        if ($progress['status'] === 'waiting') {
+            $snapshot = $this->captureSnapshot(100);
+            if (preg_match('/API Error:/i', $snapshot)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Extract error message from session output if present
+     *
+     * @return string|null Error message or null
+     */
+    public function getErrorMessage(): ?string {
+        if (!$this->exists()) {
+            return null;
+        }
+
+        $snapshot = $this->captureSnapshot(100);
+
+        // Look for API Error
+        if (preg_match('/API Error:\s*(.+?)(?:\.\s*To configure|$)/i', $snapshot, $matches)) {
+            return 'API Error: ' . trim($matches[1]);
+        }
+
+        // Look for Claude exit code
+        if (preg_match('/Claude exited with code:\s*(\d+)/i', $snapshot, $matches)) {
+            return 'Claude exited with code: ' . $matches[1];
+        }
+
+        // Look for PHP errors
+        if (preg_match('/(Fatal error:|PHP Parse error:)\s*(.+)/i', $snapshot, $matches)) {
+            return $matches[1] . ' ' . trim($matches[2]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Check and update task status if session is hung or errored
+     *
+     * @return array Status info with 'is_hung', 'error_message', 'updated'
+     */
+    public function checkHealth(): array {
+        $result = [
+            'is_hung' => false,
+            'error_message' => null,
+            'status' => 'running',
+            'updated' => false
+        ];
+
+        if (!$this->exists()) {
+            $result['status'] = 'session_not_found';
+            return $result;
+        }
+
+        $progress = $this->getProgress();
+        $result['status'] = $progress['status'];
+
+        if ($this->isHung()) {
+            $result['is_hung'] = true;
+            $result['error_message'] = $this->getErrorMessage();
+        }
+
+        return $result;
     }
 
     /**

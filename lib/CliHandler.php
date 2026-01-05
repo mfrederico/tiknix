@@ -30,11 +30,33 @@ class CliHandler {
     }
     
     /**
+     * Check if this is a standalone CLI script (not index.php)
+     */
+    public static function isStandaloneCli(): bool {
+        // If explicitly marked as standalone
+        if (defined('STANDALONE_CLI') && STANDALONE_CLI) {
+            return true;
+        }
+
+        // Check if running from CLI
+        if (php_sapi_name() !== 'cli') {
+            return false;
+        }
+
+        // Get the script being executed
+        $script = $_SERVER['SCRIPT_FILENAME'] ?? $_SERVER['argv'][0] ?? '';
+        $script = basename($script);
+
+        // If it's not index.php, it's a standalone script
+        return $script !== 'index.php';
+    }
+
+    /**
      * Process CLI arguments and set up environment
      */
     public function process() {
         // Skip processing for standalone CLI scripts (they handle their own args)
-        if (defined('STANDALONE_CLI') && STANDALONE_CLI) {
+        if (self::isStandaloneCli()) {
             return;
         }
 

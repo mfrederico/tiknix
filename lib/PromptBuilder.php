@@ -366,6 +366,26 @@ Use the following MCP tools for validation:
 - `tiknix:full_validation` - Run all validators
 
 Fix any issues before committing.
+
+## CRITICAL: Large Output Handling
+
+**To avoid API token limit errors, NEVER generate large files in a single operation.**
+
+When creating large files (SVGs, HTML templates, data files, etc.):
+
+1. **Split into multiple steps**: Write a skeleton/structure first, then add content incrementally
+2. **Use multiple tool calls**: Instead of one massive Write, use several smaller Writes or Edits
+3. **Create helper files**: For complex SVG/HTML, create separate CSS/JS files
+4. **Use PHP to generate content**: Instead of hardcoding large data, write PHP code that generates it
+5. **Fetch external resources**: For maps/icons/data, use CDN links or fetch from URLs
+
+Example approach for a USA map:
+- Step 1: Create basic HTML structure with map container
+- Step 2: Add CSS styling in separate file or style block
+- Step 3: Use a JavaScript library (like Leaflet, D3.js) that fetches map data
+- Or: Use an iframe with an external map service
+
+**If you hit a token limit, the task will fail. Plan incrementally!**
 INSTRUCTIONS;
     }
 

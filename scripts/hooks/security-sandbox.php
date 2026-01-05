@@ -43,6 +43,12 @@ $memberLevel = (int)(getenv('TIKNIX_MEMBER_LEVEL') ?: 100);
 $memberId = (int)(getenv('TIKNIX_MEMBER_ID') ?: 0);
 $taskId = (int)(getenv('TIKNIX_TASK_ID') ?: 0);
 
+// Workspace isolation - if set, writes are restricted to this folder
+$workspaceRoot = getenv('TIKNIX_PROJECT_ROOT') ?: '';
+if ($workspaceRoot) {
+    $workspaceRoot = rtrim(realpath($workspaceRoot) ?: $workspaceRoot, '/');
+}
+
 // Security log file
 $securityLogPath = $projectDir . '/log/security.log';
 
@@ -111,6 +117,30 @@ function normalizePath(string $path): string {
     $path = str_replace('//', '/', $path);
     $realPath = realpath($path);
     return $realPath ?: $path;
+}
+
+/**
+ * Check if a path is within the allowed workspace
+ * Returns true if no workspace restriction or path is within workspace
+ */
+function isWithinWorkspace(string $path, string $workspaceRoot): bool {
+    if (empty($workspaceRoot)) {
+        return true; // No workspace restriction
+    }
+
+    $normalizedPath = normalizePath($path);
+
+    // For new files that don't exist yet, check the directory
+    if (!file_exists($path)) {
+        $dir = dirname($path);
+        $normalizedPath = normalizePath($dir);
+        if (!$normalizedPath || $normalizedPath === '.') {
+            $normalizedPath = $path; // Use original path if dir doesn't resolve
+        }
+    }
+
+    // Check if path starts with workspace root
+    return strpos($normalizedPath, $workspaceRoot) === 0;
 }
 
 /**
@@ -255,6 +285,11 @@ switch ($toolName) {
     case 'Edit':
         $filePath = $toolInput['file_path'] ?? $toolInput['path'] ?? '';
         if ($filePath) {
+            // Workspace isolation - block writes outside the workspace
+            if (!isWithinWorkspace($filePath, $workspaceRoot)) {
+                blockTool("Cannot write outside workspace. File '{$filePath}' is not within '{$workspaceRoot}'");
+            }
+
             $result = checkPath($filePath, $rulesArray, $memberLevel, true);
             if (!$result['allowed']) {
                 blockTool("Cannot write/edit file: {$result['reason']}");

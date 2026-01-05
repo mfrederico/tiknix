@@ -474,7 +474,8 @@ BASH;
         }
 
         // Check for waiting prompts (Claude's actual prompt indicators)
-        if (preg_match('/\?\s*$|>\s*$|Press Enter|waiting for (your |user )?input/i', $lastLines)) {
+        // Look for: ">" prompt, "↵ send" indicator, or question mark at end
+        if (preg_match('/↵ send|^\s*>\s|>\s*$|Press Enter|waiting for (your |user )?input/im', $lastLines)) {
             return 'waiting';
         }
 

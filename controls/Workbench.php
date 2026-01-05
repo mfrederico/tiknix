@@ -877,6 +877,19 @@ class Workbench extends Control {
                 $this->logTaskEvent($taskId, 'info', 'system', "Deleted proxy file: {$task->proxyFile}");
             }
 
+            // Create PR if task has a branch, workspace, and no PR yet
+            $prUrl = null;
+            $prError = null;
+            if (!empty($task->branchName) && !empty($task->projectPath) && empty($task->prUrl)) {
+                $prResult = $this->createPRViaCli($task);
+                $prUrl = $prResult['url'] ?? null;
+                $prError = $prResult['error'] ?? null;
+
+                if ($prUrl) {
+                    $task->prUrl = $prUrl;
+                }
+            }
+
             // Mark as completed and clear session fields
             $task->status = 'completed';
             $task->completedAt = date('Y-m-d H:i:s');
@@ -888,10 +901,18 @@ class Workbench extends Control {
 
             $this->logTaskEvent($taskId, 'info', 'user', 'Task marked complete by ' . ($this->member->displayName ?? $this->member->email));
 
-            Flight::json([
+            $response = [
                 'success' => true,
                 'message' => 'Task completed'
-            ]);
+            ];
+            if ($prUrl) {
+                $response['pr_url'] = $prUrl;
+                $response['message'] = 'Task completed - PR created';
+            } elseif ($prError) {
+                $response['pr_error'] = $prError;
+            }
+
+            Flight::json($response);
 
         } catch (Exception $e) {
             $this->logger->error('Failed to complete task', ['error' => $e->getMessage()]);
@@ -1693,6 +1714,97 @@ class Workbench extends Control {
         } catch (Exception $e) {
             $this->logger->error('Failed to log task event', ['error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * Create a PR using the gh CLI
+     *
+     * @param object $task The task bean
+     * @return array ['url' => string|null, 'error' => string|null]
+     */
+    private function createPRViaCli(object $task): array {
+        $workspacePath = $task->projectPath;
+
+        if (!is_dir($workspacePath)) {
+            return ['url' => null, 'error' => 'Workspace not found'];
+        }
+
+        // Build PR title based on task type
+        $typePrefix = match($task->taskType) {
+            'bugfix' => 'fix',
+            'feature' => 'feat',
+            'refactor' => 'refactor',
+            'security' => 'security',
+            'docs' => 'docs',
+            'test' => 'test',
+            default => 'task'
+        };
+        $title = "{$typePrefix}: {$task->title}";
+
+        // Build PR body
+        $body = "## Task #{$task->id}\n\n";
+        if (!empty($task->description)) {
+            $body .= "{$task->description}\n\n";
+        }
+        if (!empty($task->acceptanceCriteria)) {
+            $body .= "## Acceptance Criteria\n{$task->acceptanceCriteria}\n\n";
+        }
+        $body .= "---\n*Created via Tiknix Workbench*";
+
+        // Escape for shell
+        $escapedTitle = escapeshellarg($title);
+        $escapedBody = escapeshellarg($body);
+
+        // Run gh pr create
+        $cmd = "cd " . escapeshellarg($workspacePath) . " && gh pr create --title {$escapedTitle} --body {$escapedBody} 2>&1";
+
+        $output = [];
+        $returnCode = 0;
+        exec($cmd, $output, $returnCode);
+
+        $outputStr = implode("\n", $output);
+
+        if ($returnCode === 0) {
+            // gh pr create outputs the PR URL on success
+            $prUrl = trim($outputStr);
+            if (filter_var($prUrl, FILTER_VALIDATE_URL)) {
+                $this->logTaskEvent($task->id, 'info', 'github', "PR created: {$prUrl}");
+                return ['url' => $prUrl, 'error' => null];
+            }
+        }
+
+        // Check for common errors
+        if (strpos($outputStr, 'already exists') !== false) {
+            // PR already exists - try to get its URL
+            $prUrl = $this->getExistingPrUrl($workspacePath, $task->branchName);
+            if ($prUrl) {
+                $this->logTaskEvent($task->id, 'info', 'github', "PR already exists: {$prUrl}");
+                return ['url' => $prUrl, 'error' => null];
+            }
+            return ['url' => null, 'error' => 'PR already exists'];
+        }
+
+        $this->logger->warning('gh pr create failed', [
+            'task_id' => $task->id,
+            'output' => $outputStr,
+            'return_code' => $returnCode
+        ]);
+
+        return ['url' => null, 'error' => $outputStr ?: 'Failed to create PR'];
+    }
+
+    /**
+     * Get existing PR URL for a branch
+     */
+    private function getExistingPrUrl(string $workspacePath, string $branchName): ?string {
+        $cmd = "cd " . escapeshellarg($workspacePath) . " && gh pr view " . escapeshellarg($branchName) . " --json url -q .url 2>&1";
+        $output = trim(shell_exec($cmd) ?? '');
+
+        if (filter_var($output, FILTER_VALIDATE_URL)) {
+            return $output;
+        }
+
+        return null;
     }
 
     /**

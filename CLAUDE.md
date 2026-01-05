@@ -1,5 +1,13 @@
 # Tiknix Development Standards
 
+## Git Commit Rules
+
+- Do NOT add Claude Code footer or co-author lines to commits
+- Keep commit messages concise and descriptive
+- No emojis in commit messages
+
+## Framework Standards
+
 This project uses FlightPHP and RedBeanPHP. You MUST follow these conventions strictly.
 
 ## RedBeanPHP Rules (CRITICAL)

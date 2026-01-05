@@ -304,6 +304,76 @@ The Mcp controller implements its own auth using API keys/tokens.
 
 See `controls/Mcp.php` header comments for full security documentation.
 
+## Two-Factor Authentication (2FA)
+
+TOTP-based 2FA is **required** for admin users (level ≤ 50). Configuration in `lib/TwoFactorAuth.php`:
+
+```php
+public const TRUST_DURATION = 30 * 24 * 60 * 60;  // 30 days device trust
+public const REQUIRED_LEVELS = [1, 50];            // ROOT, ADMIN require 2FA
+```
+
+**Login flow for admin users:**
+1. Enter username/password → redirects to `/auth/twofasetup` (first time) or `/auth/twofaverify`
+2. Scan QR code with authenticator app (Google Authenticator, Authy, etc.)
+3. Enter 6-digit TOTP code
+4. First setup shows recovery codes (10 single-use codes)
+5. Device trusted for 30 days (no 2FA prompt on same device)
+
+**Key files:**
+- `lib/TwoFactorAuth.php` - Core 2FA logic
+- `views/auth/2fa-setup.php` - QR code setup page
+- `views/auth/2fa-verify.php` - Login verification page
+- `views/auth/2fa-recovery-codes.php` - Recovery codes display
+
+## Global Helper Functions
+
+Available in all views via `lib/functions.php`:
+
+```php
+// CSRF protection in forms
+<?= csrf_field() ?>     // Outputs: <input type="hidden" name="_csrf_token" value="...">
+<?= csrf_token() ?>     // Returns just the token value (for AJAX X-CSRF-TOKEN header)
+```
+
+## Email (Mailer)
+
+Mailgun integration via `lib/Mailer.php`. Configure in `conf/config.ini`:
+
+```ini
+[mail]
+enabled = true
+driver = "mailgun"
+mailgun_domain = "your-domain.com"
+mailgun_api_key = "key-xxx"
+from_email = "noreply@example.com"
+from_name = "App Name"
+```
+
+**Available methods:**
+```php
+Mailer::sendPasswordReset($email, $resetUrl);
+Mailer::sendContactResponse($email, $subject, $message);
+Mailer::sendTeamInvite($email, $teamName, $inviterName, $acceptUrl);
+Mailer::sendWelcome($email, $username);
+```
+
+## Useful Scripts
+
+### Permission Cache Reset
+When modifying `authcontrol` table entries directly (adding/removing route permissions), the APCu cache needs to be refreshed:
+
+```bash
+php scripts/resetcache.php
+```
+
+This clears and reloads the permission cache without requiring a PHP-FPM restart. The cache uses versioning, so web requests will automatically pick up the new permissions.
+
+**When to use:**
+- After manually editing authcontrol records in the database
+- When permission changes don't seem to take effect
+- After deleting duplicate/conflicting authcontrol entries
+
 ## See Also
 
 - `REDBEAN_README.md` - Detailed RedBeanPHP reference

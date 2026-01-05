@@ -86,4 +86,12 @@ class SimpleCsrf
         $_SESSION[self::SESSION_KEY] = bin2hex(random_bytes(32));
         return $_SESSION[self::SESSION_KEY];
     }
+
+    /**
+     * Alias for field() - get HTML input field for forms
+     */
+    public static function getTokenField(): string
+    {
+        return self::field();
+    }
 }

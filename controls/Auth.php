@@ -9,6 +9,8 @@ namespace app;
 use \Flight as Flight;
 use \app\Bean;
 use \app\RateLimiter;
+use \app\Mailer;
+use \app\TwoFactorAuth;
 use \Exception as Exception;
 
 class Auth extends BaseControls\Control {
@@ -106,12 +108,31 @@ class Auth extends BaseControls\Control {
             $member->lastLogin = date('Y-m-d H:i:s');
             $member->loginCount = ($member->loginCount ?? 0) + 1;
             Bean::store($member);
-            
-            // Set session
-            $_SESSION['member'] = $member->export();
 
             // Clear rate limit on successful login
             RateLimiter::clear('login');
+
+            // Check 2FA requirements
+            if (TwoFactorAuth::needsSetup($member)) {
+                // User needs to set up 2FA before continuing
+                $_SESSION['2fa_pending_member_id'] = $member->id;
+                $_SESSION['2fa_pending_redirect'] = $redirect;
+                $this->logger->info('2FA setup required', ['id' => $member->id]);
+                Flight::redirect('/auth/twofasetup');
+                return;
+            }
+
+            if (TwoFactorAuth::needsVerification($member)) {
+                // User needs to verify 2FA
+                $_SESSION['2fa_pending_member_id'] = $member->id;
+                $_SESSION['2fa_pending_redirect'] = $redirect;
+                $this->logger->info('2FA verification required', ['id' => $member->id]);
+                Flight::redirect('/auth/twofaverify');
+                return;
+            }
+
+            // No 2FA needed or already trusted - complete login
+            $_SESSION['member'] = $member->export();
 
             $this->logger->info('User logged in', ['id' => $member->id, 'username' => $member->username]);
 
@@ -303,18 +324,35 @@ class Auth extends BaseControls\Control {
             }
             
             $member = Bean::findOne('member', 'email = ? AND status = ?', [$email, 'active']);
-            
+
             if ($member) {
+                // Block password reset for OAuth-only users (they have no password set)
+                // They should add a password from Account Settings while logged in
+                if ($member->googleId && !$member->password) {
+                    $this->logger->info('OAuth user attempted password reset', ['email' => $email]);
+                    // Still show generic message to prevent email enumeration
+                    $this->flash('success', 'If the email exists, a reset link has been sent');
+                    Flight::redirect('/auth/login');
+                    return;
+                }
+
                 // Generate reset token
                 $token = bin2hex(random_bytes(32));
                 $member->resetToken = $token;
                 $member->resetExpires = date('Y-m-d H:i:s', strtotime('+1 hour'));
                 Bean::store($member);
                 
-                // Send reset email (implement your email service)
+                // Send reset email
                 $resetUrl = Flight::get('app.baseurl') . "/auth/reset?token={$token}";
-                
-                // TODO: Send email with $resetUrl
+
+                // Send the password reset email
+                $name = $member->displayName ?? $member->username ?? $email;
+                if (Mailer::isConfigured()) {
+                    Mailer::sendPasswordReset($email, $name, $resetUrl);
+                } else {
+                    $this->logger->warning('Mailer not configured - password reset email not sent');
+                }
+
                 $this->logger->info('Password reset requested', ['email' => $email]);
             }
             
@@ -473,6 +511,23 @@ class Auth extends BaseControls\Control {
             return;
         }
 
+        // Check 2FA requirements for Google OAuth users too
+        if (TwoFactorAuth::needsSetup($member)) {
+            $_SESSION['2fa_pending_member_id'] = $member->id;
+            $_SESSION['2fa_pending_redirect'] = '/dashboard';
+            $this->logger->info('2FA setup required for OAuth user', ['id' => $member->id]);
+            Flight::redirect('/auth/2fa-setup');
+            return;
+        }
+
+        if (TwoFactorAuth::needsVerification($member)) {
+            $_SESSION['2fa_pending_member_id'] = $member->id;
+            $_SESSION['2fa_pending_redirect'] = '/dashboard';
+            $this->logger->info('2FA verification required for OAuth user', ['id' => $member->id]);
+            Flight::redirect('/auth/2fa-verify');
+            return;
+        }
+
         // Set session
         $_SESSION['member'] = $member->export();
 
@@ -485,5 +540,296 @@ class Auth extends BaseControls\Control {
         $this->flash('success', "Welcome, {$displayName}!");
 
         Flight::redirect('/dashboard');
+    }
+
+    // ==================== Two-Factor Authentication ====================
+
+    /**
+     * Show 2FA setup page with QR code
+     */
+    public function twofaSetup() {
+        // Must have pending 2FA setup
+        $memberId = $_SESSION['2fa_pending_member_id'] ?? null;
+        if (!$memberId) {
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) {
+            unset($_SESSION['2fa_pending_member_id']);
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $request = Flight::request();
+
+        if ($request->method === 'POST') {
+            // Verify the code and enable 2FA
+            if (!$this->validateCSRF()) {
+                return;
+            }
+
+            $secret = $this->getParam('secret');
+            $code = $this->getParam('code');
+
+            if (empty($secret) || empty($code)) {
+                $this->render('auth/2fa-setup', [
+                    'title' => 'Set Up Two-Factor Authentication',
+                    'secret' => $secret ?: TwoFactorAuth::generateSecret(),
+                    'qrCode' => TwoFactorAuth::generateQrCode($secret, $member->email),
+                    'errors' => ['Please enter the verification code']
+                ]);
+                return;
+            }
+
+            $result = TwoFactorAuth::enable($member, $secret, $code);
+
+            if (!$result['success']) {
+                $this->render('auth/2fa-setup', [
+                    'title' => 'Set Up Two-Factor Authentication',
+                    'secret' => $secret,
+                    'qrCode' => TwoFactorAuth::generateQrCode($secret, $member->email),
+                    'errors' => [$result['error']]
+                ]);
+                return;
+            }
+
+            // Show recovery codes
+            $_SESSION['2fa_recovery_codes'] = $result['recovery_codes'];
+            Flight::redirect('/auth/twofarecoverycodes');
+            return;
+        }
+
+        // Generate new secret for setup
+        $secret = TwoFactorAuth::generateSecret();
+        $qrCode = TwoFactorAuth::generateQrCode($secret, $member->email);
+
+        $this->render('auth/2fa-setup', [
+            'title' => 'Set Up Two-Factor Authentication',
+            'secret' => $secret,
+            'qrCode' => $qrCode
+        ]);
+    }
+
+    /**
+     * Show recovery codes after 2FA setup
+     */
+    public function twofaRecoveryCodes() {
+        $memberId = $_SESSION['2fa_pending_member_id'] ?? null;
+        $recoveryCodes = $_SESSION['2fa_recovery_codes'] ?? null;
+
+        if (!$memberId || !$recoveryCodes) {
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $this->render('auth/2fa-recovery-codes', [
+            'title' => 'Recovery Codes',
+            'recoveryCodes' => $recoveryCodes
+        ]);
+    }
+
+    /**
+     * Confirm recovery codes saved and complete login
+     */
+    public function twofaConfirmSaved() {
+        $memberId = $_SESSION['2fa_pending_member_id'] ?? null;
+        $redirect = $_SESSION['2fa_pending_redirect'] ?? '/dashboard';
+
+        if (!$memberId) {
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) {
+            unset($_SESSION['2fa_pending_member_id']);
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        // Clear pending state
+        unset($_SESSION['2fa_pending_member_id']);
+        unset($_SESSION['2fa_pending_redirect']);
+        unset($_SESSION['2fa_recovery_codes']);
+
+        // Complete login
+        $_SESSION['member'] = $member->export();
+
+        $this->logger->info('2FA setup completed', ['id' => $member->id]);
+        $this->flash('success', 'Two-factor authentication is now enabled!');
+
+        Flight::redirect($redirect);
+    }
+
+    /**
+     * Show 2FA verification page
+     */
+    public function twofaVerify() {
+        $memberId = $_SESSION['2fa_pending_member_id'] ?? null;
+        if (!$memberId) {
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) {
+            unset($_SESSION['2fa_pending_member_id']);
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $request = Flight::request();
+
+        if ($request->method === 'POST') {
+            if (!$this->validateCSRF()) {
+                return;
+            }
+
+            $code = $this->getParam('code');
+            $trustDevice = (bool)$this->getParam('trust_device');
+
+            if (empty($code)) {
+                $this->render('auth/2fa-verify', [
+                    'title' => 'Two-Factor Authentication',
+                    'errors' => ['Please enter the verification code']
+                ]);
+                return;
+            }
+
+            if (!TwoFactorAuth::verify($member, $code)) {
+                $this->logger->warning('2FA verification failed', ['id' => $member->id]);
+                $this->render('auth/2fa-verify', [
+                    'title' => 'Two-Factor Authentication',
+                    'errors' => ['Invalid verification code. Please try again.']
+                ]);
+                return;
+            }
+
+            // Trust device if requested
+            if ($trustDevice) {
+                TwoFactorAuth::trustDevice();
+            }
+
+            // Clear pending state and complete login
+            $redirect = $_SESSION['2fa_pending_redirect'] ?? '/dashboard';
+            unset($_SESSION['2fa_pending_member_id']);
+            unset($_SESSION['2fa_pending_redirect']);
+
+            $_SESSION['member'] = $member->export();
+
+            $this->logger->info('2FA verification successful', ['id' => $member->id]);
+
+            Flight::redirect($redirect);
+            return;
+        }
+
+        $this->render('auth/2fa-verify', [
+            'title' => 'Two-Factor Authentication'
+        ]);
+    }
+
+    /**
+     * Set password for new accounts (created via team invite)
+     */
+    public function setpassword() {
+        // Check for pending team join (from invite auto-creation)
+        $pendingJoin = $_SESSION['pending_team_join'] ?? null;
+
+        if (!$pendingJoin) {
+            $this->flash('error', 'Invalid request');
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $member = Bean::load('member', $pendingJoin['member_id']);
+        if (!$member->id || !$member->needsPasswordSetup) {
+            unset($_SESSION['pending_team_join']);
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $request = Flight::request();
+
+        if ($request->method === 'POST') {
+            if (!$this->validateCSRF()) {
+                return;
+            }
+
+            $password = $this->getParam('password');
+            $passwordConfirm = $this->getParam('password_confirm');
+            $errors = [];
+
+            // Validate password
+            if (empty($password)) {
+                $errors[] = 'Password is required';
+            } elseif (strlen($password) < 6) {
+                $errors[] = 'Password must be at least 6 characters';
+            } elseif ($password !== $passwordConfirm) {
+                $errors[] = 'Passwords do not match';
+            }
+
+            if (!empty($errors)) {
+                $this->render('auth/setpassword', [
+                    'title' => 'Set Your Password',
+                    'email' => $member->email,
+                    'errors' => $errors
+                ]);
+                return;
+            }
+
+            // Set password
+            $member->password = password_hash($password, PASSWORD_DEFAULT);
+            $member->needsPasswordSetup = 0;
+            $member->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($member);
+
+            // Complete the team join
+            $invitationToken = $pendingJoin['invitation_token'];
+            $invitation = Bean::findOne('teaminvitation', 'token = ? AND accepted_at IS NULL', [$invitationToken]);
+
+            if ($invitation) {
+                $team = Bean::load('team', $invitation->teamId);
+
+                if ($team->id && $team->isActive) {
+                    // Create membership
+                    $membership = Bean::dispense('teammember');
+                    $membership->teamId = $team->id;
+                    $membership->memberId = $member->id;
+                    $membership->role = $invitation->role;
+                    $membership->canRunTasks = in_array($invitation->role, ['admin', 'member']) ? 1 : 0;
+                    $membership->canEditTasks = in_array($invitation->role, ['admin', 'member']) ? 1 : 0;
+                    $membership->canDeleteTasks = $invitation->role === 'admin' ? 1 : 0;
+                    $membership->joinedAt = date('Y-m-d H:i:s');
+                    Bean::store($membership);
+
+                    // Mark invitation as accepted
+                    $invitation->acceptedAt = date('Y-m-d H:i:s');
+                    Bean::store($invitation);
+
+                    $this->logger->info('User joined team via invite', [
+                        'member_id' => $member->id,
+                        'team_id' => $team->id,
+                        'role' => $invitation->role
+                    ]);
+                }
+            }
+
+            // Clear pending state
+            unset($_SESSION['pending_team_join']);
+
+            $this->logger->info('Password set for new account', ['id' => $member->id]);
+
+            // Log them out and require full login (including 2FA if applicable)
+            $this->flash('success', 'Account created! Please log in with your new password.');
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $this->render('auth/setpassword', [
+            'title' => 'Set Your Password',
+            'email' => $member->email
+        ]);
     }
 }

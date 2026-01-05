@@ -11,6 +11,7 @@ namespace app;
 use \Flight as Flight;
 use \app\Bean;
 use \app\TaskAccessControl;
+use \app\Mailer;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -418,19 +419,40 @@ class Teams extends Control {
         $invitation->createdAt = date('Y-m-d H:i:s');
         Bean::store($invitation);
 
+        // Generate join link
+        $joinUrl = Flight::get('baseurl') . '/teams/join?token=' . $invitation->token;
+
+        // Send invitation email
+        $inviterName = $this->member->displayName ?? $this->member->username ?? 'A team admin';
+        $emailSent = false;
+
+        if (Mailer::isConfigured()) {
+            $emailSent = Mailer::sendTeamInvite(
+                $email,
+                $team->name,
+                $inviterName,
+                $role,
+                $joinUrl
+            );
+
+            if ($emailSent) {
+                $invitation->emailSent = 1;
+                $invitation->emailSentAt = date('Y-m-d H:i:s');
+                Bean::store($invitation);
+            }
+        }
+
         $this->logger->info('Team invitation sent', [
             'team_id' => $teamId,
             'email' => $email,
             'role' => $role,
-            'invited_by' => $this->member->id
+            'invited_by' => $this->member->id,
+            'email_sent' => $emailSent
         ]);
-
-        // Generate join link
-        $joinUrl = Flight::get('baseurl') . '/teams/join?token=' . $invitation->token;
 
         Flight::json([
             'success' => true,
-            'message' => 'Invitation sent',
+            'message' => $emailSent ? 'Invitation sent' : 'Invitation created (email not configured)',
             'join_url' => $joinUrl
         ]);
     }
@@ -471,10 +493,45 @@ class Teams extends Control {
             return;
         }
 
-        // If not logged in, redirect to login with return URL
+        // If not logged in, check if we need to auto-create account
         if (!Flight::isLoggedIn()) {
-            $returnUrl = '/teams/join?token=' . urlencode($token);
-            Flight::redirect('/auth/login?redirect=' . urlencode($returnUrl));
+            // Check if member exists with this email
+            $existingMember = Bean::findOne('member', 'email = ?', [$invitation->email]);
+
+            if ($existingMember) {
+                // Member exists, redirect to login
+                $returnUrl = '/teams/join?token=' . urlencode($token);
+                Flight::redirect('/auth/login?redirect=' . urlencode($returnUrl));
+                return;
+            }
+
+            // Auto-create member account
+            $member = Bean::dispense('member');
+            $member->email = $invitation->email;
+            $member->username = $this->generateUsernameFromEmail($invitation->email);
+            $member->level = 100; // Regular member level
+            $member->needsPasswordSetup = 1;
+            $member->status = 'active';
+            $member->isActive = 1;
+            $member->emailVerified = 1; // Email is verified by receiving invite
+            $member->createdAt = date('Y-m-d H:i:s');
+            Bean::store($member);
+
+            $this->logger->info('Auto-created member from team invite', [
+                'member_id' => $member->id,
+                'email' => $invitation->email,
+                'team_id' => $team->id
+            ]);
+
+            // Store pending join info and redirect to set password
+            $_SESSION['pending_team_join'] = [
+                'member_id' => $member->id,
+                'invitation_token' => $token,
+                'team_id' => $team->id
+            ];
+
+            $this->flash('info', 'Welcome! Please set a password to complete your account setup.');
+            Flight::redirect('/auth/setpassword');
             return;
         }
 
@@ -782,5 +839,25 @@ class Teams extends Control {
         $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
         $slug = trim($slug, '-');
         return substr($slug, 0, 50);
+    }
+
+    /**
+     * Generate a unique username from email address
+     */
+    private function generateUsernameFromEmail(string $email): string {
+        // Take part before @ and clean it
+        $username = strtolower(explode('@', $email)[0]);
+        $username = preg_replace('/[^a-z0-9]/', '', $username);
+        $username = substr($username, 0, 20);
+
+        // Ensure uniqueness
+        $baseUsername = $username;
+        $counter = 1;
+        while (Bean::findOne('member', 'username = ?', [$username])) {
+            $username = $baseUsername . $counter;
+            $counter++;
+        }
+
+        return $username;
     }
 }

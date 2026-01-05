@@ -2,6 +2,22 @@
 /********************************************************/
 /* List of functions really too odd to be anywhere else */
 /********************************************************/
+
+/**
+ * CSRF token field helper - use in any form
+ * Usage: <?= csrf_field() ?>
+ */
+function csrf_field(): string {
+    return \app\SimpleCsrf::field();
+}
+
+/**
+ * Get CSRF token value (for JavaScript/AJAX)
+ * Usage: var token = '<?= csrf_token() ?>';
+ */
+function csrf_token(): string {
+    return \app\SimpleCsrf::getToken();
+}
 function getOptionValue($opts,$key) {
 	foreach($opts as $opt) {
 		if ($opt->key == $key) return($opt);

@@ -8,6 +8,7 @@ namespace app;
 
 use \Flight as Flight;
 use \app\Bean;
+use \app\Mailer;
 
 class Contact extends BaseControls\Control {
     
@@ -213,9 +214,29 @@ class Contact extends BaseControls\Control {
             $message->respondedAt = date('Y-m-d H:i:s');
             $message->respondedBy = $_SESSION['member']['id'];
             Bean::store($message);
-            
-            // TODO: Send email to user if configured
-            
+
+            // Send email to user
+            if (Mailer::isConfigured()) {
+                $adminName = $_SESSION['member']['displayName']
+                    ?? $_SESSION['member']['username']
+                    ?? 'Support Team';
+
+                $sent = Mailer::sendContactResponse(
+                    $message->email,
+                    $message->name,
+                    $message->subject,
+                    $message->message,
+                    $responseText,
+                    $adminName
+                );
+
+                if ($sent) {
+                    $response->emailSent = 1;
+                    $response->emailSentAt = date('Y-m-d H:i:s');
+                    Bean::store($response);
+                }
+            }
+
             $this->flash('success', 'Response sent successfully');
             Flight::redirect('/contact/view?id=' . $messageId);
             

@@ -1,0 +1,332 @@
+<?php
+/**
+ * TwoFactorAuth - TOTP Two-Factor Authentication
+ *
+ * Provides TOTP-based 2FA using Google Authenticator compatible codes.
+ * Required for:
+ * - Admin users (level <= 50)
+ * - Users who run Claude tasks (workbench)
+ *
+ * Configuration:
+ * - TOTP re-auth duration: 30 days
+ * - Recovery codes: 10 single-use codes
+ */
+
+namespace app;
+
+use \Flight as Flight;
+use PragmaRX\Google2FA\Google2FA;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
+
+class TwoFactorAuth {
+
+    private static ?Google2FA $google2fa = null;
+
+    // 30 days in seconds
+    public const TRUST_DURATION = 30 * 24 * 60 * 60;
+
+    // Number of recovery codes to generate
+    public const RECOVERY_CODE_COUNT = 10;
+
+    // Levels that require 2FA (ADMIN and above)
+    public const REQUIRED_LEVELS = [1, 50]; // ROOT, ADMIN
+
+    /**
+     * Get Google2FA instance
+     */
+    private static function getGoogle2FA(): Google2FA {
+        if (self::$google2fa === null) {
+            self::$google2fa = new Google2FA();
+        }
+        return self::$google2fa;
+    }
+
+    /**
+     * Generate a new TOTP secret
+     */
+    public static function generateSecret(): string {
+        return self::getGoogle2FA()->generateSecretKey(32);
+    }
+
+    /**
+     * Generate QR code SVG for authenticator app
+     */
+    public static function generateQrCode(string $secret, string $email): string {
+        $appName = Flight::get('app.name') ?? 'Tiknix';
+
+        $qrCodeUrl = self::getGoogle2FA()->getQRCodeUrl(
+            $appName,
+            $email,
+            $secret
+        );
+
+        $renderer = new ImageRenderer(
+            new RendererStyle(200),
+            new SvgImageBackEnd()
+        );
+
+        $writer = new Writer($renderer);
+        return $writer->writeString($qrCodeUrl);
+    }
+
+    /**
+     * Verify a TOTP code
+     */
+    public static function verifyCode(string $secret, string $code): bool {
+        // Allow 1 period before/after for clock drift
+        return self::getGoogle2FA()->verifyKey($secret, $code, 1);
+    }
+
+    /**
+     * Generate recovery codes
+     */
+    public static function generateRecoveryCodes(): array {
+        $codes = [];
+        for ($i = 0; $i < self::RECOVERY_CODE_COUNT; $i++) {
+            // Format: XXXX-XXXX-XXXX
+            $codes[] = strtoupper(
+                bin2hex(random_bytes(2)) . '-' .
+                bin2hex(random_bytes(2)) . '-' .
+                bin2hex(random_bytes(2))
+            );
+        }
+        return $codes;
+    }
+
+    /**
+     * Hash recovery codes for storage
+     */
+    public static function hashRecoveryCodes(array $codes): string {
+        $hashed = array_map(function($code) {
+            return password_hash(str_replace('-', '', strtoupper($code)), PASSWORD_DEFAULT);
+        }, $codes);
+        return json_encode($hashed);
+    }
+
+    /**
+     * Verify a recovery code and remove it if valid
+     */
+    public static function verifyRecoveryCode(object $member, string $code): bool {
+        if (empty($member->recoveryCodes)) {
+            return false;
+        }
+
+        $hashedCodes = json_decode($member->recoveryCodes, true);
+        if (!is_array($hashedCodes)) {
+            return false;
+        }
+
+        $normalizedCode = str_replace('-', '', strtoupper($code));
+
+        foreach ($hashedCodes as $index => $hashedCode) {
+            if (password_verify($normalizedCode, $hashedCode)) {
+                // Remove used code
+                unset($hashedCodes[$index]);
+                $member->recoveryCodes = json_encode(array_values($hashedCodes));
+                Bean::store($member);
+
+                Flight::get('log')->info('Recovery code used', [
+                    'member_id' => $member->id,
+                    'remaining_codes' => count($hashedCodes)
+                ]);
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if user requires 2FA based on level or workbench access
+     */
+    public static function isRequired(object $member): bool {
+        // Admin level or higher requires 2FA
+        if ($member->level <= 50) {
+            return true;
+        }
+
+        // Users who have run workbench tasks require 2FA
+        if (self::hasWorkbenchAccess($member)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if user has workbench access (has run tasks or is team member who can run tasks)
+     */
+    private static function hasWorkbenchAccess(object $member): bool {
+        // Check if user has created any workbench tasks
+        $taskCount = Bean::count('workbenchtask', 'created_by = ?', [$member->id]);
+        if ($taskCount > 0) {
+            return true;
+        }
+
+        // Check if user is a team member with task running permissions
+        $teamMembership = Bean::findOne('teammember', 'member_id = ? AND can_run_tasks = 1', [$member->id]);
+        if ($teamMembership) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if 2FA is enabled for user
+     */
+    public static function isEnabled(object $member): bool {
+        return !empty($member->totpEnabled) && !empty($member->totpSecret);
+    }
+
+    /**
+     * Check if device is trusted (within 30-day window)
+     */
+    public static function isDeviceTrusted(): bool {
+        $trustedUntil = $_SESSION['2fa_trusted_until'] ?? 0;
+        return time() < $trustedUntil;
+    }
+
+    /**
+     * Mark device as trusted for 30 days
+     */
+    public static function trustDevice(): void {
+        $_SESSION['2fa_trusted_until'] = time() + self::TRUST_DURATION;
+    }
+
+    /**
+     * Clear device trust
+     */
+    public static function clearTrust(): void {
+        unset($_SESSION['2fa_trusted_until']);
+    }
+
+    /**
+     * Check if user needs to verify 2FA now
+     * Returns true if 2FA is required, enabled, and device not trusted
+     */
+    public static function needsVerification(object $member): bool {
+        // 2FA not required for this user
+        if (!self::isRequired($member)) {
+            return false;
+        }
+
+        // 2FA required but not set up yet - they need to set it up first
+        if (!self::isEnabled($member)) {
+            return false; // Will be caught by needsSetup()
+        }
+
+        // Device is trusted
+        if (self::isDeviceTrusted()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if user needs to set up 2FA
+     */
+    public static function needsSetup(object $member): bool {
+        return self::isRequired($member) && !self::isEnabled($member);
+    }
+
+    /**
+     * Enable 2FA for a member
+     */
+    public static function enable(object $member, string $secret, string $code): array {
+        // Verify the code first
+        if (!self::verifyCode($secret, $code)) {
+            return ['success' => false, 'error' => 'Invalid verification code'];
+        }
+
+        // Generate recovery codes
+        $recoveryCodes = self::generateRecoveryCodes();
+
+        // Save to member
+        $member->totpSecret = $secret;
+        $member->totpEnabled = 1;
+        $member->totpEnabledAt = date('Y-m-d H:i:s');
+        $member->recoveryCodes = self::hashRecoveryCodes($recoveryCodes);
+        Bean::store($member);
+
+        // Trust this device
+        self::trustDevice();
+
+        Flight::get('log')->info('2FA enabled', ['member_id' => $member->id]);
+
+        return [
+            'success' => true,
+            'recovery_codes' => $recoveryCodes
+        ];
+    }
+
+    /**
+     * Disable 2FA for a member (requires password verification)
+     */
+    public static function disable(object $member): bool {
+        $member->totpSecret = null;
+        $member->totpEnabled = 0;
+        $member->totpEnabledAt = null;
+        $member->recoveryCodes = null;
+        Bean::store($member);
+
+        self::clearTrust();
+
+        Flight::get('log')->info('2FA disabled', ['member_id' => $member->id]);
+
+        return true;
+    }
+
+    /**
+     * Verify 2FA code or recovery code
+     */
+    public static function verify(object $member, string $code): bool {
+        // Try TOTP code first
+        if (strlen($code) === 6 && ctype_digit($code)) {
+            if (self::verifyCode($member->totpSecret, $code)) {
+                self::trustDevice();
+                return true;
+            }
+        }
+
+        // Try recovery code (format: XXXX-XXXX-XXXX or XXXXXXXXXXXX)
+        if (strlen(str_replace('-', '', $code)) === 12) {
+            if (self::verifyRecoveryCode($member, $code)) {
+                self::trustDevice();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get remaining recovery code count
+     */
+    public static function getRemainingRecoveryCodeCount(object $member): int {
+        if (empty($member->recoveryCodes)) {
+            return 0;
+        }
+
+        $codes = json_decode($member->recoveryCodes, true);
+        return is_array($codes) ? count($codes) : 0;
+    }
+
+    /**
+     * Regenerate recovery codes
+     */
+    public static function regenerateRecoveryCodes(object $member): array {
+        $codes = self::generateRecoveryCodes();
+        $member->recoveryCodes = self::hashRecoveryCodes($codes);
+        Bean::store($member);
+
+        Flight::get('log')->info('Recovery codes regenerated', ['member_id' => $member->id]);
+
+        return $codes;
+    }
+}

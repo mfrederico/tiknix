@@ -80,8 +80,23 @@ class Auth extends BaseControls\Control {
             // Find member by username or email
             $member = Bean::findOne('member', '(username = ? OR email = ?) AND status = ?', [$login, $login, 'active']);
             
-            if (!$member || !password_verify($password, $member->password)) {
-                $this->logger->warning('Failed login attempt', ['login' => $login]);
+            if (!$member) {
+                $this->logger->warning('Failed login attempt - user not found', ['login' => $login]);
+                $this->flash('error', 'Invalid credentials');
+                Flight::redirect('/auth/login');
+                return;
+            }
+
+            // Check if user registered via OAuth and has no password
+            if (!$member->password) {
+                $this->logger->info('OAuth user attempted password login', ['login' => $login]);
+                $this->flash('info', 'This account uses Google sign-in. Please click "Sign in with Google" to login.');
+                Flight::redirect('/auth/login');
+                return;
+            }
+
+            if (!password_verify($password, $member->password)) {
+                $this->logger->warning('Failed login attempt - wrong password', ['login' => $login]);
                 $this->flash('error', 'Invalid credentials');
                 Flight::redirect('/auth/login');
                 return;

@@ -435,7 +435,13 @@
                         <?php if ($task->testServerSession): ?>
                             <div class="alert alert-success py-2 mb-2">
                                 <i class="bi bi-check-circle me-1"></i>
-                                Running on <a href="http://localhost:<?= $task->assignedPort ?>" target="_blank">localhost:<?= $task->assignedPort ?></a>
+                                <?php if ($task->proxyHash): ?>
+                                    Running at <a href="https://<?= htmlspecialchars($task->proxyHash) ?>.dev.tiknix.com" target="_blank" class="fw-bold">
+                                        <?= htmlspecialchars($task->proxyHash) ?>.dev.tiknix.com
+                                    </a>
+                                <?php else: ?>
+                                    Running on <a href="http://localhost:<?= $task->assignedPort ?>" target="_blank">localhost:<?= $task->assignedPort ?></a>
+                                <?php endif; ?>
                             </div>
                             <div class="d-grid gap-2">
                                 <button class="btn btn-danger btn-sm" onclick="stopTestServer(<?= $task->id ?>)">
@@ -444,6 +450,12 @@
                                 <code class="small d-block text-center mt-1">tmux attach -t <?= htmlspecialchars($task->testServerSession) ?></code>
                             </div>
                         <?php else: ?>
+                            <?php if ($task->proxyHash): ?>
+                                <p class="small text-muted mb-2">
+                                    <i class="bi bi-globe me-1"></i>
+                                    Test URL: <code><?= htmlspecialchars($task->proxyHash) ?>.dev.tiknix.com</code>
+                                </p>
+                            <?php endif; ?>
                             <div class="d-grid">
                                 <button class="btn btn-outline-primary btn-sm" onclick="startTestServer(<?= $task->id ?>)">
                                     <i class="bi bi-play-fill"></i> Start Test Server
@@ -793,7 +805,25 @@ async function markComplete(id) {
     }
 }
 
-// Comment form
+// Comment form - Ctrl+Enter to submit
+document.getElementById('commentContent').addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('commentForm').dispatchEvent(new Event('submit'));
+    }
+});
+
+// Inline comment - Ctrl+Enter to submit (if exists)
+const inlineComment = document.getElementById('inlineCommentContent');
+if (inlineComment) {
+    inlineComment.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            sendInlineComment();
+        }
+    });
+}
+
 document.getElementById('commentForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const content = document.getElementById('commentContent').value.trim();
@@ -816,17 +846,17 @@ document.getElementById('commentForm').addEventListener('submit', async function
             if (noComments) noComments.remove();
 
             const html = `
-                <div class="d-flex mb-3">
-                    <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
+                <div class="d-flex mb-3" data-comment-id="${data.comment.id}">
+                    <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 40px; height: 40px;">
                         ${data.comment.author.charAt(0).toUpperCase()}
                     </div>
                     <div class="flex-grow-1">
-                        <div class="bg-light rounded p-3">
-                            <div class="d-flex justify-content-between mb-1">
+                        <div class="bg-light border rounded p-3 position-relative">
+                            <div class="d-flex justify-content-between mb-1 pe-4">
                                 <strong>${data.comment.author}</strong>
                                 <small class="text-muted">Just now</small>
                             </div>
-                            <div>${data.comment.content.replace(/\n/g, '<br>')}</div>
+                            <div class="comment-content">${data.comment.content.replace(/\n/g, '<br>')}</div>
                         </div>
                     </div>
                 </div>

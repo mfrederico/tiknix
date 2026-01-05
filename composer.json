@@ -55,6 +55,7 @@
             "lib/GitService.php",
             "lib/GitHubService.php",
             "lib/PortManager.php",
+            "lib/TmuxManager.php",
             "lib/functions.php"
         ]
     },

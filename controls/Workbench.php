@@ -16,6 +16,7 @@ use \app\ClaudeRunner;
 use \app\PromptBuilder;
 use \app\GitService;
 use \app\PortManager;
+use \app\TmuxManager;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -497,9 +498,17 @@ class Workbench extends Control {
             $workspacePath = $task->projectPath;
         }
 
+        // Generate proxy hash if not exists (for subdomain routing)
+        if (empty($task->proxyHash)) {
+            $task->proxyHash = bin2hex(random_bytes(6)); // 12-char hex
+            Bean::store($task);
+            $this->logTaskEvent($taskId, 'info', 'system', "Generated proxy hash: {$task->proxyHash}");
+        }
+
         try {
             // Create Claude runner with workspace path (null = use main project)
-            $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $workspacePath);
+            // Pass member level for security sandbox hook
+            $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $workspacePath, $this->member->level);
 
             // Check if session already exists
             if ($runner->exists()) {
@@ -541,6 +550,7 @@ class Workbench extends Control {
                 'branch_name' => $task->branchName,
                 'assigned_port' => $task->assignedPort,
                 'project_path' => $task->projectPath,
+                'proxy_hash' => $task->proxyHash,
             ]);
 
             // Send the prompt to Claude
@@ -564,11 +574,21 @@ class Workbench extends Control {
                 'prompt_sent' => $promptSent
             ]);
 
-            Flight::json([
+            // Auto-start test server if task has branch and port
+            $serverInfo = $this->autoStartTestServer($task, $this->member->id);
+
+            $response = [
                 'success' => true,
                 'message' => 'Claude session started',
                 'session' => $runner->getSessionName()
-            ]);
+            ];
+
+            if ($serverInfo) {
+                $response['test_server'] = $serverInfo;
+                $response['message'] .= " (test server on port {$serverInfo['port']})";
+            }
+
+            Flight::json($response);
 
         } catch (Exception $e) {
             $this->logger->error('Failed to start Claude session', ['error' => $e->getMessage()]);
@@ -621,7 +641,8 @@ class Workbench extends Control {
         $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
 
         // Kill any existing session for this task
-        $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $workspacePath);
+        // Pass member level for security sandbox hook
+        $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $workspacePath, $this->member->level);
         if ($runner->exists()) {
             $runner->kill();
             usleep(500000); // Wait 500ms
@@ -671,6 +692,7 @@ class Workbench extends Control {
                 'branch_name' => $task->branchName,
                 'assigned_port' => $task->assignedPort,
                 'project_path' => $task->projectPath,
+                'proxy_hash' => $task->proxyHash,
             ]);
 
             // Send the prompt
@@ -683,11 +705,21 @@ class Workbench extends Control {
 
             $this->logTaskEvent($taskId, 'info', 'system', 'Task re-run started');
 
-            Flight::json([
+            // Auto-start test server if task has branch and port
+            $serverInfo = $this->autoStartTestServer($task, $this->member->id);
+
+            $response = [
                 'success' => true,
                 'message' => 'Task re-run started',
                 'session' => $runner->getSessionName()
-            ]);
+            ];
+
+            if ($serverInfo) {
+                $response['test_server'] = $serverInfo;
+                $response['message'] .= " (test server on port {$serverInfo['port']})";
+            }
+
+            Flight::json($response);
 
         } catch (Exception $e) {
             $this->logger->error('Failed to re-run task', ['error' => $e->getMessage()]);
@@ -1167,7 +1199,6 @@ class Workbench extends Control {
      * Start test server for a task's branch
      * Creates a tmux session running serve.php on the assigned port
      *
-     * TODO: Refactor tmux management into a TmuxManager service
      */
     public function startserver($params = []) {
         if (!$this->requireLogin()) return;
@@ -1198,8 +1229,7 @@ class Workbench extends Control {
 
         // Check if test server session already exists
         if (!empty($task->testServerSession)) {
-            exec(sprintf('tmux has-session -t %s 2>/dev/null', escapeshellarg($task->testServerSession)), $output, $code);
-            if ($code === 0) {
+            if (TmuxManager::exists($task->testServerSession)) {
                 Flight::jsonError('Test server is already running', 400);
                 return;
             }
@@ -1213,7 +1243,7 @@ class Workbench extends Control {
         }
 
         try {
-            $sessionName = "tiknix-serve-{$this->member->id}-{$task->id}";
+            $sessionName = TmuxManager::buildServerSessionName($this->member->id, $task->id);
 
             // Use workspace path if available, otherwise default to main project
             $projectPath = !empty($task->projectPath) ? $task->projectPath : dirname(__DIR__);
@@ -1237,30 +1267,43 @@ class Workbench extends Control {
                 );
             }
 
-            $cmd = sprintf(
-                'tmux new-session -d -s %s %s',
-                escapeshellarg($sessionName),
-                escapeshellarg($serverCmd)
-            );
-
-            exec($cmd, $output, $code);
-
-            if ($code !== 0) {
-                throw new Exception('Failed to create tmux session');
-            }
+            // Use TmuxManager to create the session
+            TmuxManager::create($sessionName, $serverCmd, $projectPath);
 
             $task->testServerSession = $sessionName;
             $task->updatedAt = date('Y-m-d H:i:s');
+
+            // Create .proxy file for nginx subdomain routing (if proxyHash exists)
+            // File format: proxyhost=X\nproxyport=Y (lua loadEnvFile expects key=value)
+            // Filename: .proxy.{hash}.dev.tiknix (no TLD - nginx lua strips it)
+            if (!empty($task->proxyHash)) {
+                $proxyFile = "/var/www/html/.proxy.{$task->proxyHash}.dev.tiknix";
+                $proxyContent = "proxyhost=127.0.0.1\nproxyport={$task->assignedPort}";
+                if (file_put_contents($proxyFile, $proxyContent) !== false) {
+                    $task->proxyFile = $proxyFile;
+                    $this->logTaskEvent($taskId, 'info', 'system', "Created proxy file: {$proxyFile}");
+                } else {
+                    $this->logger->warning("Failed to create proxy file: {$proxyFile}");
+                }
+            }
+
             Bean::store($task);
 
             $this->logTaskEvent($taskId, 'info', 'system', "Test server started on port {$task->assignedPort}");
+
+            // Build response with subdomain URL if available
+            $testUrl = "http://localhost:{$task->assignedPort}";
+            if (!empty($task->proxyHash)) {
+                $testUrl = "https://{$task->proxyHash}.dev.tiknix.com";
+            }
 
             Flight::json([
                 'success' => true,
                 'message' => "Test server started on port {$task->assignedPort}",
                 'session' => $sessionName,
                 'port' => $task->assignedPort,
-                'url' => "http://localhost:{$task->assignedPort}"
+                'url' => $testUrl,
+                'subdomain' => !empty($task->proxyHash) ? "{$task->proxyHash}.dev.tiknix.com" : null
             ]);
 
         } catch (Exception $e) {
@@ -1272,7 +1315,6 @@ class Workbench extends Control {
     /**
      * Stop test server for a task
      *
-     * TODO: Refactor tmux management into a TmuxManager service
      */
     public function stopserver($params = []) {
         if (!$this->requireLogin()) return;
@@ -1296,9 +1338,19 @@ class Workbench extends Control {
         }
 
         try {
-            exec(sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($task->testServerSession)), $output, $code);
+            TmuxManager::kill($task->testServerSession);
+
+            // Delete .proxy file for nginx subdomain routing
+            if (!empty($task->proxyFile) && file_exists($task->proxyFile)) {
+                if (unlink($task->proxyFile)) {
+                    $this->logTaskEvent($taskId, 'info', 'system', "Deleted proxy file: {$task->proxyFile}");
+                } else {
+                    $this->logger->warning("Failed to delete proxy file: {$task->proxyFile}");
+                }
+            }
 
             $task->testServerSession = null;
+            $task->proxyFile = null;
             $task->updatedAt = date('Y-m-d H:i:s');
             Bean::store($task);
 
@@ -1608,6 +1660,94 @@ class Workbench extends Control {
             Bean::store($log);
         } catch (Exception $e) {
             $this->logger->error('Failed to log task event', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Auto-start test server for a task (non-blocking)
+     * Called automatically when a task starts running
+     *
+     * @param object $task The task bean
+     * @param int $memberId The member starting the task
+     * @return array|null Server info if started, null if skipped/failed
+     */
+    private function autoStartTestServer($task, int $memberId): ?array {
+        // Skip if no branch or port assigned
+        if (empty($task->branchName) || empty($task->assignedPort)) {
+            return null;
+        }
+
+        // Skip if test server already running
+        if (!empty($task->testServerSession) && TmuxManager::exists($task->testServerSession)) {
+            return null;
+        }
+
+        // Skip if port is not available
+        if (!PortManager::isPortAvailable($task->assignedPort)) {
+            $this->logger->warning('Auto-start skipped: port in use', [
+                'task_id' => $task->id,
+                'port' => $task->assignedPort
+            ]);
+            return null;
+        }
+
+        try {
+            $sessionName = TmuxManager::buildServerSessionName($memberId, $task->id);
+            $projectPath = !empty($task->projectPath) ? $task->projectPath : dirname(__DIR__);
+
+            // Build the server command
+            if (!empty($task->projectPath)) {
+                // Workspace mode - already on correct branch
+                $serverCmd = sprintf(
+                    'cd %s && php serve.php --port=%d; echo "Server stopped. Press Enter to close..."; read',
+                    escapeshellarg($projectPath),
+                    $task->assignedPort
+                );
+            } else {
+                // Main project mode - checkout branch first
+                $serverCmd = sprintf(
+                    'cd %s && git checkout %s && php serve.php --port=%d; echo "Server stopped. Press Enter to close..."; read',
+                    escapeshellarg($projectPath),
+                    escapeshellarg($task->branchName),
+                    $task->assignedPort
+                );
+            }
+
+            TmuxManager::create($sessionName, $serverCmd, $projectPath);
+
+            $task->testServerSession = $sessionName;
+
+            // Create .proxy file for subdomain routing
+            // File format: proxyhost=X\nproxyport=Y (lua loadEnvFile expects key=value)
+            // Filename: .proxy.{hash}.dev.tiknix (no TLD - nginx lua strips it)
+            if (!empty($task->proxyHash)) {
+                $proxyFile = "/var/www/html/.proxy.{$task->proxyHash}.dev.tiknix";
+                $proxyContent = "proxyhost=127.0.0.1\nproxyport={$task->assignedPort}";
+                if (file_put_contents($proxyFile, $proxyContent) !== false) {
+                    $task->proxyFile = $proxyFile;
+                }
+            }
+
+            Bean::store($task);
+
+            $testUrl = !empty($task->proxyHash)
+                ? "https://{$task->proxyHash}.dev.tiknix.com"
+                : "http://localhost:{$task->assignedPort}";
+
+            $this->logTaskEvent($task->id, 'info', 'system', "Test server auto-started on port {$task->assignedPort}");
+
+            return [
+                'session' => $sessionName,
+                'port' => $task->assignedPort,
+                'url' => $testUrl
+            ];
+
+        } catch (Exception $e) {
+            $this->logger->warning('Auto-start test server failed', [
+                'task_id' => $task->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
         }
     }
 

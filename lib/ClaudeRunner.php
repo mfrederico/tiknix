@@ -9,7 +9,7 @@
  * - Personal tasks: tiknix-{member_id}-task-{task_id}
  * - Team tasks: tiknix-team-{team_id}-task-{task_id}
  *
- * Based on patterns from myctobot's TmuxService.
+ * Uses TmuxManager for low-level tmux operations.
  */
 
 namespace app;
@@ -21,6 +21,7 @@ class ClaudeRunner {
     private int $taskId;
     private int $memberId;
     private ?int $teamId;
+    private int $memberLevel;
     private string $sessionName;
     private string $workDir;
     private ?string $projectPath = null;
@@ -32,19 +33,22 @@ class ClaudeRunner {
      * @param int $memberId The member who owns/triggered the task
      * @param int|null $teamId The team ID (null for personal tasks)
      * @param string|null $projectPath Custom project path (workspace clone location)
+     * @param int $memberLevel The member's permission level (default 100 = MEMBER)
      */
-    public function __construct(int $taskId, int $memberId, ?int $teamId = null, ?string $projectPath = null) {
+    public function __construct(int $taskId, int $memberId, ?int $teamId = null, ?string $projectPath = null, int $memberLevel = 100) {
         $this->taskId = $taskId;
         $this->memberId = $memberId;
         $this->teamId = $teamId;
+        $this->memberLevel = $memberLevel;
         $this->projectPath = $projectPath;
 
-        // Session naming based on ownership
+        // Use TmuxManager to build session name
+        $this->sessionName = TmuxManager::buildTaskSessionName($memberId, $taskId, $teamId);
+
+        // Work directory based on ownership
         if ($teamId) {
-            $this->sessionName = "tiknix-team-{$teamId}-task-{$taskId}";
             $this->workDir = "/tmp/tiknix-team-{$teamId}-task-{$taskId}";
         } else {
-            $this->sessionName = "tiknix-{$memberId}-task-{$taskId}";
             $this->workDir = "/tmp/tiknix-{$memberId}-task-{$taskId}";
         }
     }
@@ -122,19 +126,8 @@ class ClaudeRunner {
         file_put_contents($scriptFile, $invocationScript);
         chmod($scriptFile, 0755);
 
-        // Create tmux session running the wrapper script
-        $tmuxCmd = sprintf(
-            'tmux new-session -d -s %s -c %s %s 2>&1',
-            escapeshellarg($this->sessionName),
-            escapeshellarg($projectRoot),
-            escapeshellarg($scriptFile)
-        );
-
-        exec($tmuxCmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
-            throw new Exception("Failed to create tmux session: " . implode("\n", $output));
-        }
+        // Use TmuxManager to create the session
+        TmuxManager::create($this->sessionName, $scriptFile, $projectRoot);
 
         // Wait for Claude to initialize
         usleep(500000); // 500ms delay
@@ -173,6 +166,7 @@ class ClaudeRunner {
 # Export task ID for hooks and child processes
 export TIKNIX_TASK_ID={$this->taskId}
 export TIKNIX_MEMBER_ID={$this->memberId}
+export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
 export TIKNIX_SESSION_NAME="{$sessionName}"
 export TIKNIX_PROJECT_ROOT="{$projectRoot}"
 export TIKNIX_HOOK_URL="{$hookUrl}"
@@ -268,49 +262,25 @@ BASH;
         $promptFile = $this->workDir . '/prompt.txt';
         file_put_contents($promptFile, $prompt);
 
-        // Use tmux load-buffer and paste-buffer for reliable text input
-        // This avoids issues with special characters and long text
-        $loadCmd = sprintf(
-            'tmux load-buffer -b tiknix-prompt %s 2>&1',
-            escapeshellarg($promptFile)
-        );
-        exec($loadCmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
+        // Use TmuxManager to load buffer and paste
+        if (!TmuxManager::sendTextViaBuffer($this->sessionName, $prompt, 'tiknix-prompt')) {
             // Fallback to send-keys for shorter prompts
             return $this->sendMessage($prompt);
-        }
-
-        // Paste the buffer into the session
-        $pasteCmd = sprintf(
-            'tmux paste-buffer -b tiknix-prompt -t %s 2>&1',
-            escapeshellarg($this->sessionName)
-        );
-        exec($pasteCmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
-            return false;
         }
 
         // Small delay to ensure paste completes
         usleep(100000); // 100ms
 
         // Send Enter to submit the prompt to Claude
-        $enterCmd = sprintf(
-            'tmux send-keys -t %s Enter 2>&1',
-            escapeshellarg($this->sessionName)
-        );
-        exec($enterCmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
+        if (!TmuxManager::sendKeys($this->sessionName, 'Enter')) {
             return false;
         }
 
         // Send a second Enter in case Claude needs confirmation
         usleep(50000); // 50ms
-        exec($enterCmd, $output, $returnCode);
+        TmuxManager::sendKeys($this->sessionName, 'Enter');
 
-        return $returnCode === 0;
+        return true;
     }
 
     /**
@@ -319,14 +289,7 @@ BASH;
      * @return bool Success
      */
     public function kill(): bool {
-        if (!$this->exists()) {
-            return true; // Already dead
-        }
-
-        $cmd = sprintf('tmux kill-session -t %s 2>&1', escapeshellarg($this->sessionName));
-        exec($cmd, $output, $returnCode);
-
-        return $returnCode === 0;
+        return TmuxManager::kill($this->sessionName);
     }
 
     /**
@@ -335,9 +298,7 @@ BASH;
      * @return bool
      */
     public function exists(): bool {
-        $cmd = sprintf('tmux has-session -t %s 2>&1', escapeshellarg($this->sessionName));
-        exec($cmd, $output, $returnCode);
-        return $returnCode === 0;
+        return TmuxManager::exists($this->sessionName);
     }
 
     /**
@@ -350,24 +311,7 @@ BASH;
             return false;
         }
 
-        // Get the pane PID
-        $cmd = sprintf(
-            'tmux list-panes -t %s -F "#{pane_pid}" 2>/dev/null | head -1',
-            escapeshellarg($this->sessionName)
-        );
-        exec($cmd, $output, $returnCode);
-
-        if ($returnCode !== 0 || empty($output[0])) {
-            return false;
-        }
-
-        $panePid = trim($output[0]);
-
-        // Check if claude process exists as child
-        $cmd = sprintf('pgrep -P %d -f claude 2>/dev/null', (int)$panePid);
-        exec($cmd, $claudeOutput, $claudeReturnCode);
-
-        return $claudeReturnCode === 0 && !empty($claudeOutput);
+        return TmuxManager::isProcessRunning($this->sessionName, 'claude');
     }
 
     /**
@@ -388,14 +332,12 @@ BASH;
             $message
         );
 
-        $cmd = sprintf(
-            'tmux send-keys -t %s %s Enter 2>&1',
-            escapeshellarg($this->sessionName),
-            escapeshellarg($escaped)
-        );
-        exec($cmd, $output, $returnCode);
+        // Send keys then Enter
+        if (!TmuxManager::sendKeys($this->sessionName, $escaped)) {
+            return false;
+        }
 
-        return $returnCode === 0;
+        return TmuxManager::sendKeys($this->sessionName, 'Enter');
     }
 
     /**
@@ -405,22 +347,7 @@ BASH;
      * @return string The captured content
      */
     public function captureSnapshot(int $lines = 100): string {
-        if (!$this->exists()) {
-            return '';
-        }
-
-        $cmd = sprintf(
-            'tmux capture-pane -t %s -p -S -%d 2>/dev/null',
-            escapeshellarg($this->sessionName),
-            $lines
-        );
-        exec($cmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
-            return '';
-        }
-
-        return implode("\n", $output);
+        return TmuxManager::capture($this->sessionName, $lines);
     }
 
     /**
@@ -562,31 +489,12 @@ BASH;
     }
 
     /**
-     * List all active tiknix sessions
+     * List all active tiknix task sessions
      *
      * @return array Session info
      */
     public static function listAllSessions(): array {
-        $cmd = 'tmux list-sessions -F "#{session_name}|#{session_created}|#{session_attached}" 2>/dev/null';
-        exec($cmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
-            return [];
-        }
-
-        $sessions = [];
-        foreach ($output as $line) {
-            $parts = explode('|', $line);
-            if (count($parts) >= 3 && strpos($parts[0], 'tiknix-') === 0) {
-                $sessions[] = [
-                    'name' => $parts[0],
-                    'created' => date('Y-m-d H:i:s', (int)$parts[1]),
-                    'attached' => $parts[2] === '1'
-                ];
-            }
-        }
-
-        return $sessions;
+        return TmuxManager::listTaskSessions();
     }
 
     /**
@@ -629,9 +537,10 @@ BASH;
         $all = self::listAllSessions();
 
         foreach ($all as $session) {
-            if (preg_match('/tiknix-(?:team-(\d+)-)?(\d+)-task-' . $taskId . '$/', $session['name'], $matches)) {
-                $teamId = !empty($matches[1]) ? (int)$matches[1] : null;
-                $memberId = (int)$matches[2];
+            $parsed = TmuxManager::parseSessionName($session['name']);
+            if ($parsed && $parsed['task_id'] === $taskId && $parsed['type'] === 'task') {
+                $memberId = $parsed['member_id'] ?? 0;
+                $teamId = $parsed['team_id'];
                 return new self($taskId, $memberId, $teamId);
             }
         }
@@ -657,10 +566,7 @@ BASH;
             if ($mtime && $mtime < $cutoff) {
                 // Check if there's an active session for this dir
                 $sessionName = basename($dir);
-                $cmd = sprintf('tmux has-session -t %s 2>&1', escapeshellarg($sessionName));
-                exec($cmd, $output, $returnCode);
-
-                if ($returnCode !== 0) {
+                if (!TmuxManager::exists($sessionName)) {
                     // No active session, safe to remove
                     self::removeDirectory($dir);
                 }

@@ -2,12 +2,34 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Read|Write|Edit|Bash|Glob|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/security-sandbox.php",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/validate-tiknix-php.py",
+            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/validate-tiknix-php.php",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/log-activity.php",
+            "timeout": 10
           }
         ]
       }
@@ -18,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "php \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/workbench-response-capture.php",
+            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/workbench-response-capture.php",
             "timeout": 5
           }
         ]

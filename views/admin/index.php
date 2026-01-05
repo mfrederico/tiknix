@@ -97,6 +97,24 @@
                     <p class="mb-1">View cache statistics and clear caches (APCu, OPcache, Query Cache)</p>
                 </a>
 
+                <a href="/security" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1"><i class="bi bi-shield-lock"></i> Security Sandbox Rules</h5>
+                        <?php
+                        // Connect to security database temporarily
+                        $securityDbPath = dirname(dirname(__DIR__)) . '/database/security.db';
+                        if (file_exists($securityDbPath)) {
+                            $secDb = new \PDO('sqlite:' . $securityDbPath);
+                            $ruleCount = $secDb->query('SELECT COUNT(*) FROM securitycontrol WHERE is_active = 1')->fetchColumn();
+                        } else {
+                            $ruleCount = 0;
+                        }
+                        ?>
+                        <span class="badge bg-warning text-dark"><?= $ruleCount ?> Active Rules</span>
+                    </div>
+                    <p class="mb-1">Manage Claude Code sandbox rules - block dangerous paths and commands</p>
+                </a>
+
                 <a href="/contact/admin" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1">Contact Messages</h5>

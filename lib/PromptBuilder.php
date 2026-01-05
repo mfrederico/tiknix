@@ -71,10 +71,17 @@ class PromptBuilder {
             $context .= "- This controls who can access the new endpoints\n\n";
         }
 
-        // Test server port
+        // Test server port and subdomain URL
         if (!empty($task['assigned_port'])) {
             $context .= "**Test Server Port**: {$task['assigned_port']}\n";
-            $context .= "- If testing is needed, the server can be run on port {$task['assigned_port']}\n\n";
+            $context .= "- If testing is needed, the server can be run on port {$task['assigned_port']}\n";
+
+            // Include subdomain test URL if proxy hash is available
+            if (!empty($task['proxy_hash'])) {
+                $testUrl = "https://{$task['proxy_hash']}.dev.tiknix.com";
+                $context .= "- **Test URL**: `{$testUrl}` (available when test server is running)\n";
+            }
+            $context .= "\n";
         }
 
         return $context;

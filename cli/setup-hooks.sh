@@ -124,111 +124,80 @@ setup_token() {
 setup_claude_settings() {
     local settings_dir="$PROJECT_DIR/.claude"
     local settings_file="$settings_dir/settings.json"
-    local hook_path="$PROJECT_DIR/cli/log-activity.sh"
+    local hooks_dir="$PROJECT_DIR/scripts/hooks"
 
     # Ensure .claude directory exists
     mkdir -p "$settings_dir"
 
-    # Make hook script executable
-    if [ -f "$hook_path" ]; then
-        chmod +x "$hook_path"
-    else
-        warn "Hook script not found: $hook_path"
+    # Make hook scripts executable
+    if [ -d "$hooks_dir" ]; then
+        chmod +x "$hooks_dir"/*.php 2>/dev/null || true
     fi
 
-    # Check if settings.json exists and has PostToolUse configured
-    if [ -f "$settings_file" ]; then
-        if command -v jq &> /dev/null; then
-            # Check if PostToolUse hook for log-activity already exists
-            local has_hook=$(jq -r '.hooks.PostToolUse // [] | map(select(.hooks[]?.command | contains("log-activity"))) | length' "$settings_file" 2>/dev/null)
-
-            if [ "$has_hook" != "0" ] && [ "$FORCE" = false ]; then
-                success "Claude hooks already configured"
-                return 0
-            fi
-
-            # Backup and update settings
-            cp "$settings_file" "$settings_file.backup.$(date +%Y%m%d_%H%M%S)"
-
-            # Add/update PostToolUse hook
-            local temp_file=$(mktemp)
-            jq --arg hookPath "$hook_path" '
-                .hooks.PostToolUse = (
-                    (.hooks.PostToolUse // []) |
-                    map(select(.hooks[]?.command | contains("log-activity") | not)) +
-                    [{
-                        "matcher": "Edit|Write",
-                        "hooks": [{
-                            "type": "command",
-                            "command": $hookPath,
-                            "timeout": 10
-                        }]
-                    }]
-                )
-            ' "$settings_file" > "$temp_file" 2>/dev/null
-
-            if [ $? -eq 0 ]; then
-                mv "$temp_file" "$settings_file"
-                success "Updated Claude settings with PostToolUse hook"
-            else
-                rm -f "$temp_file"
-                warn "Could not update settings.json with jq, using fallback"
-                create_settings_file
-            fi
-        else
-            # No jq, recreate file
-            warn "jq not available, recreating settings.json"
-            cp "$settings_file" "$settings_file.backup.$(date +%Y%m%d_%H%M%S)"
-            create_settings_file
+    # Check if settings.json exists with correct hooks
+    if [ -f "$settings_file" ] && [ "$FORCE" = false ]; then
+        if grep -q "scripts/hooks" "$settings_file"; then
+            success "Claude hooks already configured"
+            return 0
         fi
-    else
-        create_settings_file
     fi
+
+    # Backup existing settings
+    if [ -f "$settings_file" ]; then
+        cp "$settings_file" "$settings_file.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+
+    # Create new settings file with all PHP hooks
+    create_settings_file
 }
 
 # Create settings.json from scratch
 create_settings_file() {
     local settings_file="$PROJECT_DIR/.claude/settings.json"
-    local hook_path="$PROJECT_DIR/cli/log-activity.sh"
-    local validation_hook="$PROJECT_DIR/.claude/hooks/validate-tiknix-php.py"
 
-    # Check if validation hook exists
-    local pre_tool_hooks=""
-    if [ -f "$validation_hook" ]; then
-        pre_tool_hooks=',
+    cat > "$settings_file" << 'EOF'
+{
+  "hooks": {
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/validate-tiknix-php.py",
+            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/validate-tiknix-php.php",
             "timeout": 30
           }
         ]
       }
-    ]'
-    fi
-
-    cat > "$settings_file" << EOF
-{
-  "hooks": {
+    ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "$hook_path",
+            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/log-activity.php",
             "timeout": 10
           }
         ]
       }
-    ]$pre_tool_hooks
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/workbench-response-capture.php",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }
 EOF
-    success "Created Claude settings.json with hooks"
+    success "Created Claude settings.json with PHP hooks"
 }
 
 # Verify baseurl is accessible

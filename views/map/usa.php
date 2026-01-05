@@ -75,25 +75,21 @@
     </div>
 </div>
 
-<!-- jvectormap CSS -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsvectormap@1.6.0/dist/css/jsvectormap.min.css">
-
 <style>
 #usa-map {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     border-radius: 0.375rem;
 }
 
-.jvm-container {
-    touch-action: none;
-}
-
-.jvm-tooltip {
-    background: #333 !important;
-    color: #fff !important;
-    border-radius: 4px;
+.datamaps-hoverover {
+    position: absolute;
+    background: #333;
+    color: #fff;
     padding: 5px 10px;
+    border-radius: 4px;
     font-size: 12px;
+    z-index: 1000;
+    pointer-events: none;
 }
 
 .offcanvas {
@@ -124,59 +120,44 @@
 }
 </style>
 
-<!-- jvectormap JS -->
-<script src="https://cdn.jsdelivr.net/npm/jsvectormap@1.6.0/dist/jsvectormap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsvectormap@1.6.0/dist/maps/us-merc.js"></script>
+<!-- D3.js and DataMaps -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/1.6.20/topojson.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/datamaps/0.5.9/datamaps.usa.min.js"></script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // State code mapping from jsvectormap to our format
-    const stateCodeMap = {
-        'US-AL': 'AL', 'US-AK': 'AK', 'US-AZ': 'AZ', 'US-AR': 'AR', 'US-CA': 'CA',
-        'US-CO': 'CO', 'US-CT': 'CT', 'US-DE': 'DE', 'US-FL': 'FL', 'US-GA': 'GA',
-        'US-HI': 'HI', 'US-ID': 'ID', 'US-IL': 'IL', 'US-IN': 'IN', 'US-IA': 'IA',
-        'US-KS': 'KS', 'US-KY': 'KY', 'US-LA': 'LA', 'US-ME': 'ME', 'US-MD': 'MD',
-        'US-MA': 'MA', 'US-MI': 'MI', 'US-MN': 'MN', 'US-MS': 'MS', 'US-MO': 'MO',
-        'US-MT': 'MT', 'US-NE': 'NE', 'US-NV': 'NV', 'US-NH': 'NH', 'US-NJ': 'NJ',
-        'US-NM': 'NM', 'US-NY': 'NY', 'US-NC': 'NC', 'US-ND': 'ND', 'US-OH': 'OH',
-        'US-OK': 'OK', 'US-OR': 'OR', 'US-PA': 'PA', 'US-RI': 'RI', 'US-SC': 'SC',
-        'US-SD': 'SD', 'US-TN': 'TN', 'US-TX': 'TX', 'US-UT': 'UT', 'US-VT': 'VT',
-        'US-VA': 'VA', 'US-WA': 'WA', 'US-WV': 'WV', 'US-WI': 'WI', 'US-WY': 'WY',
-        'US-DC': 'DC'
-    };
+    const states = <?= json_encode($states) ?>;
 
-    // Initialize the map
-    const map = new jsVectorMap({
-        selector: '#usa-map',
-        map: 'us_merc',
-        zoomOnScroll: true,
-        zoomButtons: true,
-        regionStyle: {
-            initial: {
-                fill: '#4a90d9',
-                stroke: '#1a1a2e',
-                strokeWidth: 0.5
-            },
-            hover: {
-                fill: '#67b26f',
-                cursor: 'pointer'
-            },
-            selected: {
-                fill: '#ffd700'
+    // Initialize DataMaps
+    const map = new Datamap({
+        element: document.getElementById('usa-map'),
+        scope: 'usa',
+        responsive: true,
+        fills: {
+            defaultFill: '#4a90d9'
+        },
+        geographyConfig: {
+            highlightOnHover: true,
+            highlightFillColor: '#67b26f',
+            highlightBorderColor: '#1a1a2e',
+            highlightBorderWidth: 1,
+            popupOnHover: true,
+            popupTemplate: function(geo) {
+                return '<div class="datamaps-hoverover">' + geo.properties.name + '</div>';
             }
         },
-        onRegionTooltipShow: function(event, tooltip, code) {
-            const stateCode = stateCodeMap[code] || code.replace('US-', '');
-            const states = <?= json_encode($states) ?>;
-            const state = states[stateCode];
-            if (state) {
-                tooltip.text(state.name);
-            }
-        },
-        onRegionClick: function(event, code) {
-            const stateCode = stateCodeMap[code] || code.replace('US-', '');
-            showStateDetails(stateCode);
+        done: function(datamap) {
+            datamap.svg.selectAll('.datamaps-subunit').on('click', function(geo) {
+                const stateCode = geo.id;
+                showStateDetails(stateCode);
+            });
         }
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', function() {
+        map.resize();
     });
 
     // Show state details in offcanvas

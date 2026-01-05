@@ -3,6 +3,7 @@ namespace app;
 
 use \Flight as Flight;
 use \app\Bean;
+use \app\TwoFactorAuth;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -132,10 +133,140 @@ class Member extends Control {
             }
             $this->viewData['success'] = 'Settings saved successfully';
         }
-        
+
         // Get user settings
         $this->viewData['settings'] = Bean::findAll('settings', 'member_id = ?', [$this->member->id]);
+
+        // 2FA status
+        $this->viewData['twofa_enabled'] = TwoFactorAuth::isEnabled($this->member);
+        $this->viewData['twofa_required'] = TwoFactorAuth::isRequired($this->member);
+        $this->viewData['twofa_required_reason'] = TwoFactorAuth::getRequiredReason($this->member);
+        $this->viewData['recovery_code_count'] = TwoFactorAuth::getRemainingRecoveryCodeCount($this->member);
+
         $this->viewData['title'] = 'Settings';
         $this->render('member/settings', $this->viewData);
+    }
+
+    /**
+     * Start 2FA setup - generate secret and show QR code
+     */
+    public function setup2fa($params = []) {
+        if (TwoFactorAuth::isEnabled($this->member)) {
+            Flight::redirect('/member/settings');
+            return;
+        }
+
+        // Generate new secret
+        $secret = TwoFactorAuth::generateSecret();
+        $_SESSION['2fa_setup_secret'] = $secret;
+
+        // Generate QR code
+        $qrCode = TwoFactorAuth::generateQrCode($secret, $this->member->email);
+
+        $this->viewData['title'] = 'Setup Two-Factor Authentication';
+        $this->viewData['secret'] = $secret;
+        $this->viewData['qr_code'] = $qrCode;
+        $this->render('member/setup2fa', $this->viewData);
+    }
+
+    /**
+     * Verify and enable 2FA
+     */
+    public function enable2fa($params = []) {
+        $request = Flight::request();
+
+        if ($request->method !== 'POST') {
+            Flight::redirect('/member/setup2fa');
+            return;
+        }
+
+        $secret = $_SESSION['2fa_setup_secret'] ?? null;
+        $code = trim($request->data->code ?? '');
+
+        if (!$secret) {
+            Flight::redirect('/member/setup2fa');
+            return;
+        }
+
+        $result = TwoFactorAuth::enable($this->member, $secret, $code);
+
+        if ($result['success']) {
+            unset($_SESSION['2fa_setup_secret']);
+
+            // Show recovery codes
+            $this->viewData['title'] = 'Two-Factor Authentication Enabled';
+            $this->viewData['recovery_codes'] = $result['recovery_codes'];
+            $this->render('member/2fa_enabled', $this->viewData);
+        } else {
+            $this->viewData['error'] = $result['error'];
+            $this->viewData['title'] = 'Setup Two-Factor Authentication';
+            $this->viewData['secret'] = $secret;
+            $this->viewData['qr_code'] = TwoFactorAuth::generateQrCode($secret, $this->member->email);
+            $this->render('member/setup2fa', $this->viewData);
+        }
+    }
+
+    /**
+     * Disable 2FA
+     */
+    public function disable2fa($params = []) {
+        $request = Flight::request();
+
+        if ($request->method !== 'POST') {
+            Flight::redirect('/member/settings');
+            return;
+        }
+
+        // Require password confirmation
+        $password = $request->data->password ?? '';
+
+        if (!password_verify($password, $this->member->password)) {
+            $_SESSION['flash_error'] = 'Incorrect password';
+            Flight::redirect('/member/settings');
+            return;
+        }
+
+        // Check if 2FA is required for this user
+        if (TwoFactorAuth::isRequired($this->member)) {
+            $_SESSION['flash_error'] = 'Two-factor authentication is required for your account and cannot be disabled';
+            Flight::redirect('/member/settings');
+            return;
+        }
+
+        TwoFactorAuth::disable($this->member);
+        $_SESSION['flash_success'] = 'Two-factor authentication has been disabled';
+        Flight::redirect('/member/settings');
+    }
+
+    /**
+     * Regenerate recovery codes
+     */
+    public function regenerateCodes($params = []) {
+        $request = Flight::request();
+
+        if ($request->method !== 'POST') {
+            Flight::redirect('/member/settings');
+            return;
+        }
+
+        if (!TwoFactorAuth::isEnabled($this->member)) {
+            Flight::redirect('/member/settings');
+            return;
+        }
+
+        // Require password confirmation
+        $password = $request->data->password ?? '';
+
+        if (!password_verify($password, $this->member->password)) {
+            $_SESSION['flash_error'] = 'Incorrect password';
+            Flight::redirect('/member/settings');
+            return;
+        }
+
+        $codes = TwoFactorAuth::regenerateRecoveryCodes($this->member);
+
+        $this->viewData['title'] = 'New Recovery Codes';
+        $this->viewData['recovery_codes'] = $codes;
+        $this->render('member/2fa_enabled', $this->viewData);
     }
 }

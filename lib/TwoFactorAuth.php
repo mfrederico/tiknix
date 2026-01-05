@@ -144,17 +144,24 @@ class TwoFactorAuth {
      * Check if user requires 2FA based on level or workbench access
      */
     public static function isRequired(object $member): bool {
+        return self::getRequiredReason($member) !== null;
+    }
+
+    /**
+     * Get the reason why 2FA is required, or null if not required
+     */
+    public static function getRequiredReason(object $member): ?string {
         // Admin level or higher requires 2FA
         if ($member->level <= 50) {
-            return true;
+            return 'admin';
         }
 
         // Users who have run workbench tasks require 2FA
         if (self::hasWorkbenchAccess($member)) {
-            return true;
+            return 'workbench';
         }
 
-        return false;
+        return null;
     }
 
     /**

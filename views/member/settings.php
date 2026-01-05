@@ -69,7 +69,72 @@
                         </div>
                         
                         <hr class="my-4">
-                        
+
+                        <h5 class="mb-3">Two-Factor Authentication</h5>
+
+                        <?php if (!empty($_SESSION['flash_error'])): ?>
+                            <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['flash_error']) ?></div>
+                            <?php unset($_SESSION['flash_error']); ?>
+                        <?php endif; ?>
+
+                        <?php if (!empty($_SESSION['flash_success'])): ?>
+                            <div class="alert alert-success"><?= htmlspecialchars($_SESSION['flash_success']) ?></div>
+                            <?php unset($_SESSION['flash_success']); ?>
+                        <?php endif; ?>
+
+                        <div class="card mb-3 <?= $twofa_enabled ? 'border-success' : 'border-secondary' ?>">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-1">
+                                            <?php if ($twofa_enabled): ?>
+                                                <i class="bi bi-shield-check text-success"></i> 2FA Enabled
+                                            <?php else: ?>
+                                                <i class="bi bi-shield text-muted"></i> 2FA Disabled
+                                            <?php endif; ?>
+                                        </h6>
+                                        <small class="text-muted">
+                                            <?php if ($twofa_required_reason === 'admin'): ?>
+                                                Required for admin accounts
+                                            <?php elseif ($twofa_required_reason === 'workbench'): ?>
+                                                Required for workbench access
+                                            <?php else: ?>
+                                                Adds an extra layer of security
+                                            <?php endif; ?>
+                                        </small>
+                                    </div>
+                                    <div>
+                                        <?php if ($twofa_enabled): ?>
+                                            <?php if (!$twofa_required): ?>
+                                                <button type="button" class="btn btn-outline-danger btn-sm"
+                                                        data-bs-toggle="modal" data-bs-target="#disable2faModal">
+                                                    Disable
+                                                </button>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <a href="/member/setup2fa" class="btn btn-primary btn-sm">Enable 2FA</a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+
+                                <?php if ($twofa_enabled): ?>
+                                <hr class="my-2">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small>
+                                        <i class="bi bi-key"></i>
+                                        <?= $recovery_code_count ?> recovery codes remaining
+                                    </small>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm"
+                                            data-bs-toggle="modal" data-bs-target="#regenerateCodesModal">
+                                        Regenerate Codes
+                                    </button>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+
                         <h5 class="mb-3">Display Settings</h5>
                         
                         <div class="mb-3">
@@ -140,6 +205,72 @@
                 </div>
             </div>
             <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<!-- Disable 2FA Modal -->
+<div class="modal fade" id="disable2faModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/member/disable2fa">
+                <?php if (!empty($csrf) && is_array($csrf)): ?>
+                    <?php foreach ($csrf as $name => $value): ?>
+                        <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                    <?php endforeach; ?>
+                <?php endif; ?>
+                <div class="modal-header">
+                    <h5 class="modal-title">Disable Two-Factor Authentication</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Disabling 2FA will make your account less secure.
+                    </div>
+                    <div class="mb-3">
+                        <label for="disable_password" class="form-label">Enter your password to confirm</label>
+                        <input type="password" class="form-control" id="disable_password" name="password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Disable 2FA</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Regenerate Codes Modal -->
+<div class="modal fade" id="regenerateCodesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/member/regenerateCodes">
+                <?php if (!empty($csrf) && is_array($csrf)): ?>
+                    <?php foreach ($csrf as $name => $value): ?>
+                        <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                    <?php endforeach; ?>
+                <?php endif; ?>
+                <div class="modal-header">
+                    <h5 class="modal-title">Regenerate Recovery Codes</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        This will invalidate all existing recovery codes and generate new ones.
+                    </div>
+                    <div class="mb-3">
+                        <label for="regen_password" class="form-label">Enter your password to confirm</label>
+                        <input type="password" class="form-control" id="regen_password" name="password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Generate New Codes</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

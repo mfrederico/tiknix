@@ -297,11 +297,35 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                     <h5 class="mb-0"><i class="bi bi-chat-dots me-2"></i>Conversation</h5>
                 </div>
                 <div class="card-body">
+                    <!-- Add Message Form (at top) -->
+                    <form id="commentForm" class="mb-4">
+                        <div class="mb-2">
+                            <textarea class="form-control" id="commentContent" name="content" rows="2" placeholder="Send instructions or respond to Claude..."></textarea>
+                        </div>
+                        <!-- Image preview area -->
+                        <div id="imagePreviewContainer" class="mb-2" style="display: none;">
+                            <div class="position-relative d-inline-block">
+                                <img id="imagePreview" src="" class="img-thumbnail" style="max-height: 150px;">
+                                <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1" onclick="clearImagePreview()">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 align-items-center">
+                            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-send me-1"></i>Send</button>
+                            <label class="btn btn-sm btn-outline-secondary mb-0" for="imageUpload" title="Attach image">
+                                <i class="bi bi-image"></i>
+                                <span class="d-none d-sm-inline ms-1">Image</span>
+                            </label>
+                            <input type="file" id="imageUpload" accept="image/png,image/jpeg,image/gif,image/webp" class="d-none">
+                        </div>
+                    </form>
+
                     <div id="commentsList">
                         <?php if (empty($comments)): ?>
-                            <p class="text-muted" id="noComments">No messages yet. Add instructions or context below.</p>
+                            <p class="text-muted" id="noComments">No messages yet.</p>
                         <?php else: ?>
-                            <?php foreach ($comments as $comment): ?>
+                            <?php foreach (array_reverse($comments) as $comment): ?>
                                 <?php
                                 $isFromClaude = !empty($comment['is_from_claude']);
                                 $authorName = $isFromClaude ? 'Claude' : trim(($comment['first_name'] ?? '') . ' ' . ($comment['last_name'] ?? ''));
@@ -362,30 +386,6 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </div>
-
-                    <!-- Add Message Form -->
-                    <form id="commentForm" class="mt-3">
-                        <div class="mb-2">
-                            <textarea class="form-control" id="commentContent" name="content" rows="2" placeholder="Send instructions or respond to Claude..."></textarea>
-                        </div>
-                        <!-- Image preview area -->
-                        <div id="imagePreviewContainer" class="mb-2" style="display: none;">
-                            <div class="position-relative d-inline-block">
-                                <img id="imagePreview" src="" class="img-thumbnail" style="max-height: 150px;">
-                                <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1" onclick="clearImagePreview()">
-                                    <i class="bi bi-x"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="d-flex gap-2 align-items-center">
-                            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-send me-1"></i>Send</button>
-                            <label class="btn btn-sm btn-outline-secondary mb-0" for="imageUpload" title="Attach image">
-                                <i class="bi bi-image"></i>
-                                <span class="d-none d-sm-inline ms-1">Image</span>
-                            </label>
-                            <input type="file" id="imageUpload" accept="image/png,image/jpeg,image/gif,image/webp" class="d-none">
-                        </div>
-                    </form>
                 </div>
             </div>
         </div>

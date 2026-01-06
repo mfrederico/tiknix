@@ -57,7 +57,11 @@ class Bootstrap {
         }
         
         $this->config = parse_ini_file($configFile, true);
-        
+
+        // Set timezone from config (defaults to UTC)
+        $timezone = $this->config['app']['timezone'] ?? 'UTC';
+        date_default_timezone_set($timezone);
+
         // Set configuration in Flight
         foreach ($this->config as $section => $values) {
             if (is_array($values)) {

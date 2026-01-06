@@ -81,30 +81,15 @@
 #usa-map-container {
     position: relative;
     width: 100%;
-    aspect-ratio: 1.6 / 1;
-    min-height: 300px;
-    max-height: 80vh;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     border-radius: 0.375rem;
 }
 
 #usa-map {
     width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-#usa-map svg {
-    max-width: 100%;
-    max-height: 100%;
-    width: auto !important;
-    height: auto !important;
+    /* Height scales with container width, capped at 80vh */
+    height: min(calc(100vw * 0.5), 80vh);
+    min-height: 300px;
 }
 
 .datamaps-hoverover {
@@ -135,16 +120,10 @@
     border-color: rgba(255,255,255,0.1);
 }
 
-@media (max-width: 992px) {
-    #usa-map-container {
-        aspect-ratio: 1.4 / 1;
-    }
-}
-
 @media (max-width: 768px) {
-    #usa-map-container {
-        aspect-ratio: 1.2 / 1;
-        min-height: 250px;
+    #usa-map {
+        height: min(calc(100vw * 0.6), 70vh);
+        min-height: 280px;
     }
 
     .offcanvas {
@@ -153,9 +132,9 @@
 }
 
 @media (max-width: 576px) {
-    #usa-map-container {
-        aspect-ratio: 1 / 1;
-        min-height: 200px;
+    #usa-map {
+        height: min(calc(100vw * 0.7), 60vh);
+        min-height: 250px;
     }
 }
 </style>

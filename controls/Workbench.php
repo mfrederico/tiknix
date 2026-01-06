@@ -1131,6 +1131,32 @@ class Workbench extends Control {
             $task->updatedAt = date('Y-m-d H:i:s');
             Bean::store($task);
 
+            // Kill tmux session if still running
+            if ($task->tmuxSession) {
+                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
+                if ($runner->exists()) {
+                    $runner->kill();
+                    $this->logTaskEvent($taskId, 'info', 'system', 'Killed tmux session on approve');
+                }
+            }
+
+            // Kill test server if running
+            if ($task->testServerSession) {
+                TmuxManager::kill($task->testServerSession);
+            }
+
+            // Delete proxy file for nginx subdomain routing
+            if (!empty($task->proxyFile) && file_exists($task->proxyFile)) {
+                unlink($task->proxyFile);
+            }
+
+            // Clear session fields and save
+            $task->tmuxSession = null;
+            $task->testServerSession = null;
+            $task->proxyFile = null;
+            Bean::store($task);
+
             $message = 'Task approved by ' . ($this->member->displayName ?? $this->member->email);
             if ($prMerged) {
                 $message .= ' (PR squash-merged)';

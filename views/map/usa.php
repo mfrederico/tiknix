@@ -85,21 +85,26 @@
     min-height: 300px;
     max-height: 80vh;
     overflow: hidden;
-}
-
-#usa-map {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     border-radius: 0.375rem;
 }
 
+#usa-map {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 #usa-map svg {
-    width: 100% !important;
-    height: 100% !important;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto !important;
+    height: auto !important;
 }
 
 .datamaps-hoverover {

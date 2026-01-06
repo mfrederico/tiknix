@@ -42,6 +42,7 @@ require_once $mainProject . '/vendor/autoload.php';
 require_once $mainProject . '/bootstrap.php';
 
 use RedBeanPHP\R as R;
+use \app\Bean;
 
 // Initialize database
 try {
@@ -146,19 +147,19 @@ function truncateMessage(string $text, int $maxLength = 2000): string {
 function addTaskLog(string $taskId, string $message): bool {
     try {
         // Get the task to find the member_id
-        $task = R::load('workbenchtask', (int)$taskId);
+        $task = Bean::load('workbenchtask', (int)$taskId);
         if (!$task->id) {
             return false;
         }
 
-        $comment = R::dispense('taskcomment');
+        $comment = Bean::dispense('taskcomment');
         $comment->taskId = (int)$taskId;
         $comment->memberId = $task->memberId; // Use task owner as author
         $comment->content = truncateMessage($message);
         $comment->isFromClaude = 1; // Mark as Claude's response
         $comment->isInternal = 0;
         $comment->createdAt = date('Y-m-d H:i:s');
-        R::store($comment);
+        Bean::store($comment);
         return true;
     } catch (Exception $e) {
         // Silently fail - don't interrupt Claude's work
@@ -171,7 +172,7 @@ function addTaskLog(string $taskId, string $message): bool {
  */
 function updateTaskStatus(string $taskId): bool {
     try {
-        $task = R::load('workbenchtask', (int)$taskId);
+        $task = Bean::load('workbenchtask', (int)$taskId);
         if (!$task->id) {
             return false;
         }
@@ -181,7 +182,7 @@ function updateTaskStatus(string $taskId): bool {
             $task->status = 'awaiting';
             $task->progressMessage = 'Waiting for user input';
             $task->updatedAt = date('Y-m-d H:i:s');
-            R::store($task);
+            Bean::store($task);
         }
         return true;
     } catch (Exception $e) {

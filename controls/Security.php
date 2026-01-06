@@ -13,7 +13,7 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R as R;
+use \app\Bean as Bean;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -31,17 +31,17 @@ class Security extends Control {
      */
     private function useSecurityDb(): void {
         // Add security database if not already added
-        if (!in_array('security', R::$toolboxes ?? [])) {
-            R::addDatabase('security', 'sqlite:' . $this->securityDbPath);
+        if (!in_array('security', \RedBeanPHP\R::$toolboxes ?? [])) {
+            Bean::addDatabase('security', 'sqlite:' . $this->securityDbPath);
         }
-        R::selectDatabase('security');
+        Bean::selectDatabase('security');
     }
 
     /**
      * Switch back to default database
      */
     private function useDefaultDb(): void {
-        R::selectDatabase('default');
+        Bean::selectDatabase('default');
     }
 
     /**
@@ -74,7 +74,7 @@ class Security extends Control {
             }
         }
 
-        $rules = R::findAll('securitycontrol', $sql, $bindings);
+        $rules = Bean::findAll('securitycontrol', $sql, $bindings);
 
         // Group by target type
         $pathRules = [];
@@ -125,7 +125,7 @@ class Security extends Control {
         }
 
         $this->useSecurityDb();
-        $rule = R::load('securitycontrol', $id);
+        $rule = Bean::load('securitycontrol', $id);
         $this->useDefaultDb();
 
         if (!$rule->id) {
@@ -201,12 +201,12 @@ class Security extends Control {
 
         try {
             if ($id) {
-                $rule = R::load('securitycontrol', $id);
+                $rule = Bean::load('securitycontrol', $id);
                 if (!$rule->id) {
                     throw new Exception('Rule not found');
                 }
             } else {
-                $rule = R::dispense('securitycontrol');
+                $rule = Bean::dispense('securitycontrol');
                 $rule->createdAt = date('Y-m-d H:i:s');
             }
 
@@ -220,7 +220,7 @@ class Security extends Control {
             $rule->isActive = $isActive;
             $rule->updatedAt = date('Y-m-d H:i:s');
 
-            R::store($rule);
+            Bean::store($rule);
 
             $this->useDefaultDb();
 
@@ -257,9 +257,9 @@ class Security extends Control {
         $this->useSecurityDb();
 
         try {
-            $rule = R::load('securitycontrol', $id);
+            $rule = Bean::load('securitycontrol', $id);
             if ($rule->id) {
-                R::trash($rule);
+                Bean::trash($rule);
                 $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Rule deleted'];
             }
         } catch (Exception $e) {
@@ -292,14 +292,14 @@ class Security extends Control {
         $this->useSecurityDb();
 
         try {
-            $rule = R::load('securitycontrol', $id);
+            $rule = Bean::load('securitycontrol', $id);
             if (!$rule->id) {
                 throw new Exception('Rule not found');
             }
 
             $rule->isActive = $rule->isActive ? 0 : 1;
             $rule->updatedAt = date('Y-m-d H:i:s');
-            R::store($rule);
+            Bean::store($rule);
 
             $this->useDefaultDb();
 
@@ -400,7 +400,7 @@ class Security extends Control {
 
         $this->useSecurityDb();
 
-        $rules = R::findAll('securitycontrol', 'is_active = 1 ORDER BY priority ASC');
+        $rules = Bean::findAll('securitycontrol', 'is_active = 1 ORDER BY priority ASC');
 
         $matchedRules = [];
         $result = ['allowed' => true, 'reason' => 'No blocking rules matched'];

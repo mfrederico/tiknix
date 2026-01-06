@@ -65,13 +65,14 @@ if (!file_exists($securityDbPath)) {
 // Load RedBeanPHP
 require_once $projectDir . '/vendor/autoload.php';
 use RedBeanPHP\R;
+use \app\Bean;
 
 try {
     R::setup('sqlite:' . $securityDbPath);
     R::freeze(true); // Read-only mode
 
     // Load all active rules, ordered by priority
-    $rules = R::find('securitycontrol', 'is_active = 1 ORDER BY priority ASC');
+    $rules = Bean::find('securitycontrol', 'is_active = 1 ORDER BY priority ASC');
 } catch (Exception $e) {
     fwrite(STDERR, "WARNING: Failed to load security rules: " . $e->getMessage() . "\n");
     exit(0); // Allow on error - fail open (could change to fail closed with exit(2))

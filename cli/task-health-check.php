@@ -16,7 +16,7 @@
 require_once __DIR__ . '/../bootstrap.php';
 
 use app\ClaudeRunner;
-use \RedBeanPHP\R as R;
+use \app\Bean;
 
 // Initialize application (loads database, etc.)
 $bootstrap = new \app\Bootstrap('conf/config.ini');
@@ -35,13 +35,13 @@ if ($verbose) {
 
 // Find all tasks with status 'running'
 if ($specificTask) {
-    $tasks = [R::load('workbenchtask', (int)$specificTask)];
+    $tasks = [Bean::load('workbenchtask', (int)$specificTask)];
     if (!$tasks[0]->id) {
         echo "Task not found: $specificTask\n";
         exit(1);
     }
 } else {
-    $tasks = R::find('workbenchtask', 'status = ?', ['running']);
+    $tasks = Bean::find('workbenchtask', 'status = ?', ['running']);
 }
 
 if (empty($tasks)) {
@@ -85,16 +85,16 @@ foreach ($tasks as $task) {
                 $task->status = 'failed';
                 $task->errorMessage = 'Session ended unexpectedly';
                 $task->updatedAt = date('Y-m-d H:i:s');
-                R::store($task);
+                Bean::store($task);
 
                 // Log it
-                $log = R::dispense('workbenchtasklog');
+                $log = Bean::dispense('workbenchtasklog');
                 $log->workbenchtask = $task;
                 $log->type = 'status_change';
                 $log->level = 'error';
                 $log->message = 'Task marked as failed: session ended unexpectedly';
                 $log->createdAt = date('Y-m-d H:i:s');
-                R::store($log);
+                Bean::store($log);
             }
             $updated++;
         }
@@ -124,16 +124,16 @@ foreach ($tasks as $task) {
             $task->status = 'failed';
             $task->errorMessage = $health['error_message'] ?? 'Claude session hung';
             $task->updatedAt = date('Y-m-d H:i:s');
-            R::store($task);
+            Bean::store($task);
 
             // Log it
-            $log = R::dispense('workbenchtasklog');
+            $log = Bean::dispense('workbenchtasklog');
             $log->workbenchtask = $task;
             $log->type = 'status_change';
             $log->level = 'error';
             $log->message = 'Task marked as failed: ' . ($health['error_message'] ?? 'session hung');
             $log->createdAt = date('Y-m-d H:i:s');
-            R::store($log);
+            Bean::store($log);
 
             // Kill the hung session
             $runner->kill();

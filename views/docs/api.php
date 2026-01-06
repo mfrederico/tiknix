@@ -39,6 +39,8 @@
                 <pre><code class="language-php">&lt;?php
 namespace app;
 
+use \app\Bean;
+
 class Api extends BaseControls\Control {
 
     public function __construct() {
@@ -77,16 +79,16 @@ class Api extends BaseControls\Control {
         $offset = ($page - 1) * $limit;
 
         // Get users (automatically cached!)
-        $users = R::find('member',
+        $users = Bean::find('member',
             'status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
             ['active', $limit, $offset]
         );
 
-        $total = R::count('member', 'status = ?', ['active']);
+        $total = Bean::count('member', 'status = ?', ['active']);
 
         $this->json([
             'success' => true,
-            'data' => array_values(R::exportAll($users)),
+            'data' => array_values(\RedBeanPHP\R::exportAll($users)),
             'meta' => [
                 'total' => $total,
                 'page' => $page,
@@ -104,7 +106,7 @@ class Api extends BaseControls\Control {
         }
 
         // Check API key (cached!)
-        $member = R::findOne('member', 'api_key = ? AND status = ?',
+        $member = Bean::findOne('member', 'api_key = ? AND status = ?',
             [$apiKey, 'active']
         );
 

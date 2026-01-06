@@ -52,7 +52,8 @@ class PromptBuilder {
         if (!empty($task['project_path'])) {
             $context .= "**Workspace**: `{$task['project_path']}`\n";
             $context .= "- You are working in an isolated clone of the repository\n";
-            $context .= "- All changes are contained within this workspace\n\n";
+            $context .= "- All changes are contained within this workspace\n";
+            $context .= "- **NEVER commit**: `.claude/`, `.mcp.json`, `.playwright-mcp/` (workspace config files)\n\n";
         }
 
         // Branch info

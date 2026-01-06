@@ -103,7 +103,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             </button>
                         <?php endif; ?>
 
-                        <?php if ($canRun && $task->status === 'awaiting'): ?>
+                        <?php if ($canRun && in_array($task->status, ['awaiting', 'completed'])): ?>
                             <?php
                             // Check if current user is admin (can approve/decline)
                             $isAdmin = isset($member) && $member->level <= LEVELS['ADMIN'];
@@ -116,13 +116,17 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                     <i class="bi bi-x-circle"></i> Decline
                                 </button>
                             <?php else: ?>
+                                <?php if ($task->status !== 'completed'): ?>
                                 <button class="btn btn-success" onclick="markComplete(<?= $task->id ?>)">
                                     <i class="bi bi-check-circle"></i> Mark Complete
                                 </button>
+                                <?php endif; ?>
                             <?php endif; ?>
+                            <?php if ($task->status === 'awaiting'): ?>
                             <button class="btn btn-outline-primary" onclick="document.getElementById('commentContent').focus()">
                                 <i class="bi bi-chat-dots"></i> Send Instructions
                             </button>
+                            <?php endif; ?>
                         <?php endif; ?>
 
                         <?php if ($canEdit): ?>

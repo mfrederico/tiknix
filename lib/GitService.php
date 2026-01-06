@@ -177,10 +177,12 @@ class GitService {
         ];
 
         // Add tiknix MCP if API key is provided
+        // Use HTTP transport with /mcp/message endpoint
         if ($apiKey) {
             $baseUrl = $mcpUrl ?? (Flight::get('app.baseurl') ?? 'https://dev.tiknix.com');
             $mcpConfig['mcpServers']['tiknix'] = [
-                'url' => rtrim($baseUrl, '/') . '/mcp/sse',
+                'type' => 'http',
+                'url' => rtrim($baseUrl, '/') . '/mcp/message',
                 'headers' => [
                     'Authorization' => 'Bearer ' . $apiKey
                 ]

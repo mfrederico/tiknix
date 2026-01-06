@@ -2149,9 +2149,11 @@ class Workbench extends Control {
         ];
 
         // Add tiknix MCP if we have an API key
+        // Use HTTP transport with /mcp/message endpoint (matches working config)
         if ($apiKey) {
             $mcpConfig['mcpServers']['tiknix'] = [
-                'url' => rtrim($baseUrl, '/') . '/mcp/sse',
+                'type' => 'http',
+                'url' => rtrim($baseUrl, '/') . '/mcp/message',
                 'headers' => [
                     'Authorization' => 'Bearer ' . $apiKey
                 ]

@@ -1090,9 +1090,9 @@ class Workbench extends Control {
             return;
         }
 
-        // Task must be in awaiting status
-        if ($task->status !== 'awaiting') {
-            Flight::jsonError('Task is not awaiting review', 400);
+        // Task must be in awaiting or completed status
+        if (!in_array($task->status, ['awaiting', 'completed'])) {
+            Flight::jsonError('Task is not ready for approval', 400);
             return;
         }
 
@@ -1249,9 +1249,9 @@ class Workbench extends Control {
             return;
         }
 
-        // Task must be in awaiting status
-        if ($task->status !== 'awaiting') {
-            Flight::jsonError('Task is not awaiting review', 400);
+        // Task must be in awaiting or completed status
+        if (!in_array($task->status, ['awaiting', 'completed'])) {
+            Flight::jsonError('Task is not ready for review', 400);
             return;
         }
 

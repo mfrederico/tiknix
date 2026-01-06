@@ -1819,7 +1819,9 @@ class Workbench extends Control {
                 $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
                 $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
                 if ($runner->exists()) {
-                    $sentToSession = $runner->sendPrompt($content);
+                    // Append reminder about tiknix MCP tools
+                    $messageWithReminder = $content . "\n\n[REMINDER: Use the tiknix MCP tools to update the project status]";
+                    $sentToSession = $runner->sendPrompt($messageWithReminder);
                     if ($sentToSession) {
                         $this->logTaskEvent($taskId, 'info', 'user', 'Message sent to Claude: ' . substr($content, 0, 100) . (strlen($content) > 100 ? '...' : ''));
 
@@ -1967,7 +1969,7 @@ class Workbench extends Control {
                     if ($content) {
                         $message .= " with message: {$content}";
                     }
-                    $message .= ". View it in the task UI.]";
+                    $message .= ". View it in the task UI.]\n\n[REMINDER: Use the tiknix MCP tools to update the project status]";
                     $sentToSession = $runner->sendPrompt($message);
 
                     // If task was awaiting, mark as running

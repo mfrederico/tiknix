@@ -1918,8 +1918,11 @@ class Workbench extends Control {
         }
 
         try {
+            // Public path is where index.php lives (DOCUMENT_ROOT from nginx)
+            $publicRoot = rtrim($_SERVER['DOCUMENT_ROOT'] ?? dirname(__DIR__) . '/public', '/');
+
             // Create upload directory
-            $uploadsDir = dirname(__DIR__) . '/uploads/workbench/' . $taskId;
+            $uploadsDir = $publicRoot . '/uploads/workbench/' . $taskId;
             if (!is_dir($uploadsDir)) {
                 if (!mkdir($uploadsDir, 0755, true)) {
                     throw new Exception("Failed to create uploads directory");

@@ -68,10 +68,12 @@ class UploadScreenshotTool extends BaseTool {
             throw new \Exception("Either file_path or base64_data is required");
         }
 
-        // Ensure uploads directory exists
-        // From mcptools/workbench/UploadScreenshotTool.php -> project root is 2 levels up
-        $projectRoot = defined('PROJECT_ROOT') ? PROJECT_ROOT : dirname(__DIR__, 2);
-        $uploadsDir = $projectRoot . '/uploads/workbench/' . $taskId;
+        // Public path is where index.php lives (project_root/public)
+        $projectRoot = dirname(__DIR__, 2);
+        $publicRoot = $projectRoot . '/public';
+
+        // Ensure uploads directory exists - use public web-accessible path
+        $uploadsDir = $publicRoot . '/uploads/workbench/' . $taskId;
         if (!is_dir($uploadsDir)) {
             if (!mkdir($uploadsDir, 0755, true)) {
                 throw new \Exception("Failed to create uploads directory");

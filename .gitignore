@@ -26,9 +26,13 @@ projects/
 # IDE
 .idea/
 .vscode/
-.playwright-mcp/
 *.swp
 *.swo
+
+# Claude Code workspace files (auto-generated for each workspace)
+.claude/
+.mcp.json
+.playwright-mcp/
 
 # OS
 .DS_Store

@@ -465,7 +465,9 @@ in the web interface.
 1. **ALWAYS** use `mcp__tiknix__ask_question` instead of AskUserQuestion
 2. After asking, call `mcp__tiknix__get_task` to read the user's response
 3. Report progress with `mcp__tiknix__add_task_log` at key milestones
-4. When finished, call `mcp__tiknix__complete_task` with a summary
+4. **CRITICAL: After committing, YOU MUST call `mcp__tiknix__complete_task`** with a summary
+   - The task is NOT complete until you call this tool
+   - This notifies the user and triggers the PR creation workflow
 INSTRUCTIONS;
     }
 }

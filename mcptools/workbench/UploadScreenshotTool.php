@@ -69,7 +69,8 @@ class UploadScreenshotTool extends BaseTool {
         }
 
         // Ensure uploads directory exists
-        $projectRoot = defined('PROJECT_ROOT') ? PROJECT_ROOT : dirname(dirname(dirname(__DIR__)));
+        // From mcptools/workbench/UploadScreenshotTool.php -> project root is 2 levels up
+        $projectRoot = defined('PROJECT_ROOT') ? PROJECT_ROOT : dirname(__DIR__, 2);
         $uploadsDir = $projectRoot . '/uploads/workbench/' . $taskId;
         if (!is_dir($uploadsDir)) {
             if (!mkdir($uploadsDir, 0755, true)) {

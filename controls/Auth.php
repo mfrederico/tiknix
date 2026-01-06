@@ -682,6 +682,27 @@ class Auth extends BaseControls\Control {
 
         $request = Flight::request();
 
+        // Check for localStorage trust token (sent via hidden field or query param)
+        $trustToken = $this->getParam('trust_token');
+        if ($trustToken) {
+            $trustedMemberId = TwoFactorAuth::validateTrustToken($trustToken);
+            if ($trustedMemberId === (int)$member->id) {
+                // Valid trust token - skip 2FA
+                $redirect = $_SESSION['2fa_pending_redirect'] ?? '/dashboard';
+                unset($_SESSION['2fa_pending_member_id']);
+                unset($_SESSION['2fa_pending_redirect']);
+
+                $_SESSION['member'] = $member->export();
+                TwoFactorAuth::trustDevice(); // Also set session for this login
+
+                $this->logger->info('2FA skipped via trust token', ['id' => $member->id]);
+                Flight::redirect($redirect);
+                return;
+            }
+            // Invalid token - continue to show form
+            $this->logger->debug('Invalid 2FA trust token', ['id' => $member->id]);
+        }
+
         if ($request->method === 'POST') {
             if (!$this->validateCSRF()) {
                 return;
@@ -707,9 +728,11 @@ class Auth extends BaseControls\Control {
                 return;
             }
 
-            // Trust device if requested
+            // Generate trust token for localStorage if requested
+            $newTrustToken = null;
             if ($trustDevice) {
-                TwoFactorAuth::trustDevice();
+                TwoFactorAuth::trustDevice(); // Also set session
+                $newTrustToken = TwoFactorAuth::generateTrustToken($member->id);
             }
 
             // Clear pending state and complete login
@@ -720,6 +743,16 @@ class Auth extends BaseControls\Control {
             $_SESSION['member'] = $member->export();
 
             $this->logger->info('2FA verification successful', ['id' => $member->id]);
+
+            // If we have a trust token, show success page with JS to store it
+            if ($newTrustToken) {
+                $this->render('auth/2fa-success', [
+                    'title' => 'Verification Successful',
+                    'trustToken' => $newTrustToken,
+                    'redirect' => $redirect
+                ]);
+                return;
+            }
 
             Flight::redirect($redirect);
             return;

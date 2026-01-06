@@ -632,6 +632,19 @@ class Workbench extends Control {
                 $this->logger->warning('Workspace initialization warning', ['error' => $e->getMessage()]);
                 // Continue - workspace may still work without full initialization
             }
+
+            // Set up tiknix MCP access for workspace with API key
+            try {
+                $apiKey = $this->getOrCreateWorkbenchApiKey($this->member->id);
+                if ($apiKey) {
+                    $wsGit = new GitService($workspacePath);
+                    $wsGit->setWorkspaceMcpKey($workspacePath, $apiKey);
+                    $this->logTaskEvent($taskId, 'info', 'system', "Configured tiknix MCP access for workspace");
+                }
+            } catch (Exception $e) {
+                $this->logger->warning('Failed to set workspace MCP key', ['error' => $e->getMessage()]);
+                // Continue - workspace may work without tiknix MCP tools
+            }
         }
 
         try {
@@ -2100,5 +2113,56 @@ class Workbench extends Control {
 
         ksort($availableLevels);
         return $availableLevels;
+    }
+
+    /**
+     * Get or create a workbench API key for the member
+     *
+     * Creates an API key specifically for Claude workspace workers to access
+     * tiknix MCP tools (check_flightphp, check_redbean, etc.)
+     *
+     * @param int $memberId Member ID
+     * @return string|null API key token or null if creation failed
+     */
+    private function getOrCreateWorkbenchApiKey(int $memberId): ?string {
+        $keyName = 'Workbench Auto-Key';
+
+        // Check for existing workbench key
+        $existingKey = Bean::findOne('apikey',
+            'member_id = ? AND name = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > ?)',
+            [$memberId, $keyName, date('Y-m-d H:i:s')]
+        );
+
+        if ($existingKey) {
+            return $existingKey->token;
+        }
+
+        // Create new workbench API key
+        try {
+            $key = Bean::dispense('apikey');
+            $key->memberId = $memberId;
+            $key->name = $keyName;
+            $key->token = 'tk_' . bin2hex(random_bytes(32));
+            $key->scopes = json_encode(['mcp:tools']); // Limited to MCP tools only
+            $key->allowedServers = json_encode([]); // All servers
+            $key->isActive = 1;
+            $key->expiresAt = date('Y-m-d H:i:s', strtotime('+1 year')); // 1 year expiry
+            $key->createdAt = date('Y-m-d H:i:s');
+            $key->usageCount = 0;
+            Bean::store($key);
+
+            $this->logger->info('Created workbench API key', [
+                'member_id' => $memberId,
+                'key_id' => $key->id
+            ]);
+
+            return $key->token;
+        } catch (Exception $e) {
+            $this->logger->error('Failed to create workbench API key', [
+                'member_id' => $memberId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 }

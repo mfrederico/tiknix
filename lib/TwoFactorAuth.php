@@ -31,6 +31,11 @@ class TwoFactorAuth {
     // Number of recovery codes to generate
     public const RECOVERY_CODE_COUNT = 10;
 
+    // Secret key for signing trust tokens (uses app secret or fallback)
+    private static function getTrustSecret(): string {
+        return Flight::get('app.secret') ?? 'tiknix-2fa-trust-default-key';
+    }
+
     // Levels that require 2FA (ADMIN and above)
     public const REQUIRED_LEVELS = [1, 50]; // ROOT, ADMIN
 
@@ -192,14 +197,20 @@ class TwoFactorAuth {
 
     /**
      * Check if device is trusted (within 30-day window)
+     * Checks both session and localStorage token (via request parameter)
      */
     public static function isDeviceTrusted(): bool {
+        // Check session first (legacy/fallback)
         $trustedUntil = $_SESSION['2fa_trusted_until'] ?? 0;
-        return time() < $trustedUntil;
+        if (time() < $trustedUntil) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
-     * Mark device as trusted for 30 days
+     * Mark device as trusted for 30 days (session-based, legacy)
      */
     public static function trustDevice(): void {
         $_SESSION['2fa_trusted_until'] = time() + self::TRUST_DURATION;
@@ -210,6 +221,61 @@ class TwoFactorAuth {
      */
     public static function clearTrust(): void {
         unset($_SESSION['2fa_trusted_until']);
+    }
+
+    /**
+     * Generate a signed trust token for localStorage storage
+     * Token format: base64(memberId:expiry):signature
+     */
+    public static function generateTrustToken(int $memberId): string {
+        $expiry = time() + self::TRUST_DURATION;
+        $payload = $memberId . ':' . $expiry;
+        $signature = hash_hmac('sha256', $payload, self::getTrustSecret());
+
+        return base64_encode($payload) . '.' . $signature;
+    }
+
+    /**
+     * Validate a trust token from localStorage
+     * Returns member_id if valid, null if invalid/expired
+     */
+    public static function validateTrustToken(?string $token): ?int {
+        if (empty($token)) {
+            return null;
+        }
+
+        $parts = explode('.', $token);
+        if (count($parts) !== 2) {
+            return null;
+        }
+
+        [$encodedPayload, $signature] = $parts;
+        $payload = base64_decode($encodedPayload);
+
+        if ($payload === false) {
+            return null;
+        }
+
+        // Verify signature
+        $expectedSignature = hash_hmac('sha256', $payload, self::getTrustSecret());
+        if (!hash_equals($expectedSignature, $signature)) {
+            return null;
+        }
+
+        // Parse payload
+        $payloadParts = explode(':', $payload);
+        if (count($payloadParts) !== 2) {
+            return null;
+        }
+
+        [$memberId, $expiry] = $payloadParts;
+
+        // Check expiry
+        if (time() > (int)$expiry) {
+            return null;
+        }
+
+        return (int)$memberId;
     }
 
     /**

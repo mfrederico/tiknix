@@ -5,6 +5,25 @@
  */
 ?>
 
+<!-- Check localStorage for trust token and auto-submit -->
+<script>
+(function() {
+    // Don't auto-submit if we already tried (prevents infinite loop on invalid token)
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('trust_token') || url.searchParams.has('token_checked')) {
+        // Token was invalid, clear it from storage
+        localStorage.removeItem('tiknix_2fa_trust');
+        return;
+    }
+
+    const trustToken = localStorage.getItem('tiknix_2fa_trust');
+    if (trustToken) {
+        // Redirect with trust token to validate it
+        window.location.href = '/auth/twofaverify?trust_token=' + encodeURIComponent(trustToken);
+    }
+})();
+</script>
+
 <div class="container py-5">
     <div class="row justify-content-center">
         <div class="col-md-6 col-lg-5">

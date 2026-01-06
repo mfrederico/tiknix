@@ -104,10 +104,21 @@ class GitService {
 
         // Copy main project's .claude and .mcp.json to workspace
         $this->copyClaudeFolder($workspacePath);
-        $this->copyMcpConfig($workspacePath);
+        $this->copyMcpConfig($workspacePath, null); // API key set later if needed
 
         $this->log("Workspace created at: {$workspacePath}");
         return $workspacePath;
+    }
+
+    /**
+     * Set MCP config for workspace with API key for tiknix tools
+     *
+     * @param string $workspacePath Path to workspace
+     * @param string $apiKey API key for tiknix MCP authentication
+     * @param string|null $mcpUrl Base URL for tiknix MCP (defaults to app.baseurl)
+     */
+    public function setWorkspaceMcpKey(string $workspacePath, string $apiKey, ?string $mcpUrl = null): void {
+        $this->copyMcpConfig($workspacePath, $apiKey, $mcpUrl);
     }
 
     /**
@@ -148,12 +159,13 @@ class GitService {
      * Generate .mcp.json for workspace with valid MCP server configurations
      *
      * @param string $workspacePath Path to the workspace
+     * @param string|null $apiKey API key for tiknix MCP (if provided, tiknix tools are enabled)
+     * @param string|null $mcpUrl Base URL for tiknix MCP
      */
-    private function copyMcpConfig(string $workspacePath): void {
+    private function copyMcpConfig(string $workspacePath, ?string $apiKey = null, ?string $mcpUrl = null): void {
         $workspaceMcpJson = $workspacePath . '/.mcp.json';
 
         // Generate a valid .mcp.json with known-good configurations
-        // Only include servers that don't require user-specific authentication
         $mcpConfig = [
             'mcpServers' => [
                 // Playwright for browser automation testing
@@ -163,6 +175,18 @@ class GitService {
                 ]
             ]
         ];
+
+        // Add tiknix MCP if API key is provided
+        if ($apiKey) {
+            $baseUrl = $mcpUrl ?? (Flight::get('app.baseurl') ?? 'https://dev.tiknix.com');
+            $mcpConfig['mcpServers']['tiknix'] = [
+                'url' => rtrim($baseUrl, '/') . '/mcp/sse',
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $apiKey
+                ]
+            ];
+            $this->log("Added tiknix MCP to workspace config");
+        }
 
         file_put_contents(
             $workspaceMcpJson,

@@ -160,6 +160,7 @@
                                                 'queued' => 'info',
                                                 'running' => 'primary',
                                                 'completed' => 'success',
+                                                'merged' => 'success',
                                                 'failed' => 'danger',
                                                 'paused' => 'warning',
                                                 'awaiting', 'waiting' => 'warning',
@@ -169,6 +170,8 @@
                                             <span class="badge bg-<?= $statusBadge ?>">
                                                 <?php if ($task->status === 'running'): ?>
                                                     <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                                <?php elseif ($task->status === 'merged'): ?>
+                                                    <i class="bi bi-git me-1"></i>
                                                 <?php endif; ?>
                                                 <?= ucfirst($task->status) ?>
                                             </span>

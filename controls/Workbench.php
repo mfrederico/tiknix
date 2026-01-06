@@ -1177,11 +1177,14 @@ class Workbench extends Control {
                 $workspaceDeleted = true;
             }
 
-            // Mark task as completed
-            $task->status = 'completed';
+            // Mark task as merged or completed
+            $task->status = $prMerged ? 'merged' : 'completed';
             $task->completedAt = date('Y-m-d H:i:s');
             $task->reviewedBy = $this->member->id;
             $task->reviewedAt = date('Y-m-d H:i:s');
+            if ($prMerged) {
+                $task->mergedAt = date('Y-m-d H:i:s');
+            }
             $task->updatedAt = date('Y-m-d H:i:s');
             Bean::store($task);
 

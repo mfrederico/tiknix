@@ -48,6 +48,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                 'running' => 'primary',
                                 'awaiting' => 'warning',
                                 'completed' => 'success',
+                                'merged' => 'success',
                                 'failed' => 'danger',
                                 'paused' => 'warning',
                                 default => 'secondary'
@@ -62,6 +63,8 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             <span class="badge bg-<?= $statusBadge ?> fs-6">
                                 <?php if ($task->status === 'running'): ?>
                                     <span class="spinner-border spinner-border-sm me-1"></span>
+                                <?php elseif ($task->status === 'merged'): ?>
+                                    <i class="bi bi-git me-1"></i>
                                 <?php endif; ?>
                                 <?= ucfirst($task->status) ?>
                             </span>

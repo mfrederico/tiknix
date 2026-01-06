@@ -10,7 +10,9 @@
         <div class="col-12">
             <div class="card">
                 <div class="card-body p-0">
-                    <div id="usa-map" style="height: 600px; width: 100%;"></div>
+                    <div id="usa-map-container">
+                        <div id="usa-map"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -76,9 +78,28 @@
 </div>
 
 <style>
+#usa-map-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1.6 / 1;
+    min-height: 300px;
+    max-height: 80vh;
+    overflow: hidden;
+}
+
 #usa-map {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     border-radius: 0.375rem;
+}
+
+#usa-map svg {
+    width: 100% !important;
+    height: 100% !important;
 }
 
 .datamaps-hoverover {
@@ -109,13 +130,27 @@
     border-color: rgba(255,255,255,0.1);
 }
 
+@media (max-width: 992px) {
+    #usa-map-container {
+        aspect-ratio: 1.4 / 1;
+    }
+}
+
 @media (max-width: 768px) {
-    #usa-map {
-        height: 400px !important;
+    #usa-map-container {
+        aspect-ratio: 1.2 / 1;
+        min-height: 250px;
     }
 
     .offcanvas {
         width: 100% !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #usa-map-container {
+        aspect-ratio: 1 / 1;
+        min-height: 200px;
     }
 }
 </style>
@@ -128,37 +163,62 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const states = <?= json_encode($states) ?>;
+    const mapContainer = document.getElementById('usa-map');
+    let map = null;
+    let resizeTimeout = null;
 
-    // Initialize DataMaps
-    const map = new Datamap({
-        element: document.getElementById('usa-map'),
-        scope: 'usa',
-        responsive: true,
-        fills: {
-            defaultFill: '#4a90d9'
-        },
-        geographyConfig: {
-            highlightOnHover: true,
-            highlightFillColor: '#67b26f',
-            highlightBorderColor: '#1a1a2e',
-            highlightBorderWidth: 1,
-            popupOnHover: true,
-            popupTemplate: function(geo) {
-                return '<div class="datamaps-hoverover">' + geo.properties.name + '</div>';
-            }
-        },
-        done: function(datamap) {
-            datamap.svg.selectAll('.datamaps-subunit').on('click', function(geo) {
-                const stateCode = geo.id;
-                showStateDetails(stateCode);
-            });
+    // Debounce function to limit resize calls
+    function debounce(func, wait) {
+        return function executedFunction(...args) {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+
+    // Initialize or reinitialize the map
+    function initMap() {
+        // Clear existing map if present
+        if (map) {
+            mapContainer.innerHTML = '';
         }
-    });
 
-    // Handle window resize
-    window.addEventListener('resize', function() {
-        map.resize();
-    });
+        map = new Datamap({
+            element: mapContainer,
+            scope: 'usa',
+            responsive: true,
+            fills: {
+                defaultFill: '#4a90d9'
+            },
+            geographyConfig: {
+                highlightOnHover: true,
+                highlightFillColor: '#67b26f',
+                highlightBorderColor: '#1a1a2e',
+                highlightBorderWidth: 1,
+                popupOnHover: true,
+                popupTemplate: function(geo) {
+                    return '<div class="datamaps-hoverover">' + geo.properties.name + '</div>';
+                }
+            },
+            done: function(datamap) {
+                datamap.svg.selectAll('.datamaps-subunit').on('click', function(geo) {
+                    const stateCode = geo.id;
+                    showStateDetails(stateCode);
+                });
+            }
+        });
+    }
+
+    // Handle window resize with debouncing
+    const handleResize = debounce(function() {
+        if (map) {
+            map.resize();
+        }
+    }, 150);
+
+    window.addEventListener('resize', handleResize);
+
+    // Initialize map
+    initMap();
 
     // Show state details in offcanvas
     function showStateDetails(stateCode) {

@@ -264,9 +264,9 @@ class Workbench extends Control {
         // Get task logs
         $logs = Bean::find('tasklog', 'task_id = ? ORDER BY created_at DESC LIMIT 50', [$taskId]);
 
-        // Get task comments
+        // Get task comments (including image_path for attached images)
         $comments = Bean::getAll(
-            "SELECT tc.*, m.first_name, m.last_name, m.username, m.email, m.avatar_url
+            "SELECT tc.*, tc.image_path, m.first_name, m.last_name, m.username, m.email, m.avatar_url
              FROM taskcomment tc
              JOIN member m ON tc.member_id = m.id
              WHERE tc.task_id = ?
@@ -1724,7 +1724,7 @@ class Workbench extends Control {
 
         // Get recent comments for live updates
         $comments = Bean::getAll(
-            "SELECT tc.id, tc.content, tc.is_from_claude, tc.created_at,
+            "SELECT tc.id, tc.content, tc.image_path, tc.is_from_claude, tc.created_at,
                     m.first_name, m.last_name, m.username
              FROM taskcomment tc
              JOIN member m ON tc.member_id = m.id
@@ -1741,6 +1741,7 @@ class Workbench extends Control {
                 'author' => $author,
                 'is_from_claude' => (bool)$c['is_from_claude'],
                 'content' => $c['content'],
+                'image_path' => $c['image_path'] ?? null,
                 'created_at' => $c['created_at']
             ];
         }, $comments);
@@ -1846,6 +1847,151 @@ class Workbench extends Control {
 
         } catch (Exception $e) {
             Flight::jsonError('Failed to add comment', 500);
+        }
+    }
+
+    /**
+     * Upload an image to a task comment
+     * Supports both standalone image uploads and image+text comments
+     */
+    public function uploadimage($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::jsonError('POST required', 405);
+            return;
+        }
+
+        if (!SimpleCsrf::validate()) {
+            Flight::jsonError('CSRF validation failed', 403);
+            return;
+        }
+
+        $taskId = (int)$this->getParam('id');
+        $task = Bean::load('workbenchtask', $taskId);
+
+        if (!$task->id || !$this->access->canComment($this->member->id, $task)) {
+            Flight::jsonError('Access denied', 403);
+            return;
+        }
+
+        // Check for uploaded file
+        if (empty($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+            $errorMessages = [
+                UPLOAD_ERR_INI_SIZE => 'File exceeds max upload size',
+                UPLOAD_ERR_FORM_SIZE => 'File exceeds form max size',
+                UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
+                UPLOAD_ERR_NO_FILE => 'No file was uploaded',
+                UPLOAD_ERR_NO_TMP_DIR => 'Missing temp folder',
+                UPLOAD_ERR_CANT_WRITE => 'Failed to write file',
+                UPLOAD_ERR_EXTENSION => 'Upload blocked by extension'
+            ];
+            $error = $_FILES['image']['error'] ?? UPLOAD_ERR_NO_FILE;
+            Flight::jsonError($errorMessages[$error] ?? 'File upload failed', 400);
+            return;
+        }
+
+        $file = $_FILES['image'];
+
+        // Validate file type
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->file($file['tmp_name']);
+
+        $allowedTypes = [
+            'image/png' => 'png',
+            'image/jpeg' => 'jpeg',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp'
+        ];
+
+        if (!isset($allowedTypes[$mimeType])) {
+            Flight::jsonError('Invalid image type. Allowed: PNG, JPEG, GIF, WEBP', 400);
+            return;
+        }
+
+        // Validate file size (max 10MB)
+        $maxSize = 10 * 1024 * 1024;
+        if ($file['size'] > $maxSize) {
+            Flight::jsonError('Image too large. Max size: 10MB', 400);
+            return;
+        }
+
+        try {
+            // Create upload directory
+            $uploadsDir = dirname(__DIR__) . '/uploads/workbench/' . $taskId;
+            if (!is_dir($uploadsDir)) {
+                if (!mkdir($uploadsDir, 0755, true)) {
+                    throw new Exception("Failed to create uploads directory");
+                }
+            }
+
+            // Generate unique filename
+            $extension = $allowedTypes[$mimeType];
+            $filename = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $extension;
+            $savePath = $uploadsDir . '/' . $filename;
+
+            if (!move_uploaded_file($file['tmp_name'], $savePath)) {
+                throw new Exception("Failed to save uploaded file");
+            }
+
+            // Relative path for database
+            $relativePath = 'uploads/workbench/' . $taskId . '/' . $filename;
+
+            // Get optional caption/content
+            $content = trim($this->getParam('content', ''));
+
+            // Create comment with image
+            $comment = Bean::dispense('taskcomment');
+            $comment->taskId = $taskId;
+            $comment->memberId = $this->member->id;
+            $comment->content = $content ?: null;
+            $comment->imagePath = $relativePath;
+            $comment->isFromClaude = 0;
+            $comment->isInternal = 0;
+            $comment->createdAt = date('Y-m-d H:i:s');
+            Bean::store($comment);
+
+            $this->logTaskEvent($taskId, 'info', 'user', 'Image uploaded' . ($content ? " with caption" : ''));
+
+            // Try to send notification to Claude session if running
+            $sentToSession = false;
+            if (!empty($task->tmuxSession)) {
+                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
+                if ($runner->exists()) {
+                    $message = "[User uploaded an image";
+                    if ($content) {
+                        $message .= " with message: {$content}";
+                    }
+                    $message .= ". View it in the task UI.]";
+                    $sentToSession = $runner->sendPrompt($message);
+
+                    // If task was awaiting, mark as running
+                    if ($sentToSession && $task->status === 'awaiting') {
+                        $task->status = 'running';
+                        $task->updatedAt = date('Y-m-d H:i:s');
+                        Bean::store($task);
+                    }
+                }
+            }
+
+            Flight::json([
+                'success' => true,
+                'sent_to_session' => $sentToSession,
+                'comment' => [
+                    'id' => $comment->id,
+                    'content' => $comment->content,
+                    'image_path' => $relativePath,
+                    'image_url' => '/' . $relativePath,
+                    'author' => $this->member->displayName ?? $this->member->email,
+                    'created_at' => $comment->createdAt
+                ]
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Failed to upload image', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to upload image: ' . $e->getMessage(), 500);
         }
     }
 

@@ -438,6 +438,18 @@ in the web interface.
 - `mcp__tiknix__add_task_log` - Add log entries for significant events
 - `mcp__tiknix__update_task` - Update progress message or status
 
+### Screenshots
+
+**`mcp__tiknix__upload_screenshot`** - Upload a screenshot to show the user
+  Parameters:
+  - `task_id` (required): {$taskId}
+  - `file_path`: Path to screenshot file (from browser_take_screenshot)
+  - `base64_data`: Alternatively, base64-encoded image data
+  - `caption`: Optional description of what the screenshot shows
+
+  Use this to share visual progress, show UI changes, or demonstrate issues.
+  After taking a screenshot with Playwright, upload it so the user can see it.
+
 ### Completion
 
 **`mcp__tiknix__complete_task`** - Report work is done

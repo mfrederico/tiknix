@@ -325,7 +325,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                             </div>
                                             <?php
                                             // Simple markdown parsing for Claude messages
-                                            $content = htmlspecialchars($comment['content']);
+                                            $content = htmlspecialchars($comment['content'] ?? '');
                                             if ($isFromClaude) {
                                                 // Bold: **text** or __text__
                                                 $content = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $content);
@@ -336,7 +336,19 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                             }
                                             $content = nl2br($content);
                                             ?>
-                                            <div class="comment-content"><?= $content ?></div>
+                                            <?php if (!empty($content)): ?>
+                                                <div class="comment-content"><?= $content ?></div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($comment['image_path'])): ?>
+                                                <div class="comment-image mt-2">
+                                                    <a href="/<?= htmlspecialchars($comment['image_path']) ?>" target="_blank" class="d-block">
+                                                        <img src="/<?= htmlspecialchars($comment['image_path']) ?>"
+                                                             class="img-fluid rounded border"
+                                                             style="max-height: 300px; cursor: zoom-in;"
+                                                             alt="Attached image">
+                                                    </a>
+                                                </div>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>
@@ -349,7 +361,23 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <div class="mb-2">
                             <textarea class="form-control" id="commentContent" name="content" rows="2" placeholder="Send instructions or respond to Claude..."></textarea>
                         </div>
-                        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-send me-1"></i>Send</button>
+                        <!-- Image preview area -->
+                        <div id="imagePreviewContainer" class="mb-2" style="display: none;">
+                            <div class="position-relative d-inline-block">
+                                <img id="imagePreview" src="" class="img-thumbnail" style="max-height: 150px;">
+                                <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1" onclick="clearImagePreview()">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 align-items-center">
+                            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-send me-1"></i>Send</button>
+                            <label class="btn btn-sm btn-outline-secondary mb-0" for="imageUpload" title="Attach image">
+                                <i class="bi bi-image"></i>
+                                <span class="d-none d-sm-inline ms-1">Image</span>
+                            </label>
+                            <input type="file" id="imageUpload" accept="image/png,image/jpeg,image/gif,image/webp" class="d-none">
+                        </div>
                     </form>
                 </div>
             </div>
@@ -749,6 +777,23 @@ function updateCommentsList(comments) {
     comments.forEach(comment => {
         if (!existingIds.has(String(comment.id))) {
             const isFromClaude = comment.is_from_claude;
+
+            // Build comment content with optional image
+            let contentHtml = '';
+            if (comment.content) {
+                contentHtml += `<div class="comment-content">${comment.content.replace(/\n/g, '<br>')}</div>`;
+            }
+            if (comment.image_path) {
+                const imgUrl = '/' + comment.image_path;
+                contentHtml += `
+                    <div class="comment-image mt-2">
+                        <a href="${imgUrl}" target="_blank" class="d-block">
+                            <img src="${imgUrl}" class="img-fluid rounded border" style="max-height: 300px; cursor: zoom-in;" alt="Attached image">
+                        </a>
+                    </div>
+                `;
+            }
+
             const html = `
                 <div class="d-flex mb-3 ${isFromClaude ? 'flex-row-reverse' : ''}" data-comment-id="${comment.id}">
                     ${isFromClaude ?
@@ -765,7 +810,7 @@ function updateCommentsList(comments) {
                                 <strong>${isFromClaude ? '<i class="bi bi-robot me-1"></i>' : ''}${comment.author}</strong>
                                 <small class="text-muted">${new Date(comment.created_at).toLocaleString()}</small>
                             </div>
-                            <div class="comment-content">${comment.content.replace(/\n/g, '<br>')}</div>
+                            ${contentHtml}
                         </div>
                     </div>
                 </div>
@@ -834,18 +879,71 @@ if (inlineComment) {
     });
 }
 
+// Image upload handling
+let selectedImageFile = null;
+
+document.getElementById('imageUpload').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+        alert('Invalid image type. Please use PNG, JPEG, GIF, or WEBP.');
+        e.target.value = '';
+        return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('Image too large. Max size: 10MB');
+        e.target.value = '';
+        return;
+    }
+
+    selectedImageFile = file;
+
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        document.getElementById('imagePreview').src = e.target.result;
+        document.getElementById('imagePreviewContainer').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+});
+
+function clearImagePreview() {
+    selectedImageFile = null;
+    document.getElementById('imageUpload').value = '';
+    document.getElementById('imagePreviewContainer').style.display = 'none';
+    document.getElementById('imagePreview').src = '';
+}
+
 document.getElementById('commentForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const content = document.getElementById('commentContent').value.trim();
-    if (!content) return;
+
+    // If no content and no image, do nothing
+    if (!content && !selectedImageFile) return;
 
     const formData = new FormData();
     formData.append('id', taskId);
-    formData.append('content', content);
     formData.append('_csrf_token', csrfToken);
 
+    // Determine which endpoint to use
+    let endpoint = '/workbench/comment';
+    if (selectedImageFile) {
+        endpoint = '/workbench/uploadimage';
+        formData.append('image', selectedImageFile);
+        if (content) {
+            formData.append('content', content);
+        }
+    } else {
+        formData.append('content', content);
+    }
+
     try {
-        const response = await fetch('/workbench/comment', {
+        const response = await fetch(endpoint, {
             method: 'POST',
             body: formData
         });
@@ -854,6 +952,21 @@ document.getElementById('commentForm').addEventListener('submit', async function
         if (data.success) {
             const noComments = document.getElementById('noComments');
             if (noComments) noComments.remove();
+
+            let commentHtml = '';
+            if (data.comment.content) {
+                commentHtml += `<div class="comment-content">${data.comment.content.replace(/\n/g, '<br>')}</div>`;
+            }
+            if (data.comment.image_url || data.comment.image_path) {
+                const imgUrl = data.comment.image_url || '/' + data.comment.image_path;
+                commentHtml += `
+                    <div class="comment-image mt-2">
+                        <a href="${imgUrl}" target="_blank" class="d-block">
+                            <img src="${imgUrl}" class="img-fluid rounded border" style="max-height: 300px; cursor: zoom-in;" alt="Attached image">
+                        </a>
+                    </div>
+                `;
+            }
 
             const html = `
                 <div class="d-flex mb-3" data-comment-id="${data.comment.id}">
@@ -866,13 +979,14 @@ document.getElementById('commentForm').addEventListener('submit', async function
                                 <strong>${data.comment.author}</strong>
                                 <small class="text-muted">Just now</small>
                             </div>
-                            <div class="comment-content">${data.comment.content.replace(/\n/g, '<br>')}</div>
+                            ${commentHtml}
                         </div>
                     </div>
                 </div>
             `;
             document.getElementById('commentsList').insertAdjacentHTML('beforeend', html);
             document.getElementById('commentContent').value = '';
+            clearImagePreview();
         } else {
             alert('Error: ' + data.message);
         }

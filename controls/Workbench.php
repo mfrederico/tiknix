@@ -633,17 +633,18 @@ class Workbench extends Control {
                 // Continue - workspace may still work without full initialization
             }
 
-            // Set up tiknix MCP access for workspace with API key
+        }
+
+        // Always regenerate .mcp.json at run time with current config
+        // This ensures correct baseurl from config.ini and fresh API key
+        if ($workspacePath && is_dir($workspacePath)) {
             try {
                 $apiKey = $this->getOrCreateWorkbenchApiKey($this->member->id);
-                if ($apiKey) {
-                    $wsGit = new GitService($workspacePath);
-                    $wsGit->setWorkspaceMcpKey($workspacePath, $apiKey);
-                    $this->logTaskEvent($taskId, 'info', 'system', "Configured tiknix MCP access for workspace");
-                }
+                $baseUrl = Flight::get('app.baseurl') ?? 'https://dev.tiknix.com';
+                $this->generateWorkspaceMcpConfig($workspacePath, $apiKey, $baseUrl);
+                $this->logTaskEvent($taskId, 'info', 'system', "Generated .mcp.json with baseurl: {$baseUrl}");
             } catch (Exception $e) {
-                $this->logger->warning('Failed to set workspace MCP key', ['error' => $e->getMessage()]);
-                // Continue - workspace may work without tiknix MCP tools
+                $this->logger->warning('Failed to generate workspace MCP config', ['error' => $e->getMessage()]);
             }
         }
 
@@ -797,6 +798,18 @@ class Workbench extends Control {
         Bean::store($task);
 
         $this->logTaskEvent($taskId, 'info', 'system', 'Task reset for re-run by ' . ($this->member->displayName ?? $this->member->email));
+
+        // Regenerate .mcp.json with current config before running
+        if ($workspacePath && is_dir($workspacePath)) {
+            try {
+                $apiKey = $this->getOrCreateWorkbenchApiKey($this->member->id);
+                $baseUrl = Flight::get('app.baseurl') ?? 'https://dev.tiknix.com';
+                $this->generateWorkspaceMcpConfig($workspacePath, $apiKey, $baseUrl);
+                $this->logTaskEvent($taskId, 'info', 'system', "Regenerated .mcp.json for re-run");
+            } catch (Exception $e) {
+                $this->logger->warning('Failed to regenerate workspace MCP config', ['error' => $e->getMessage()]);
+            }
+        }
 
         // Now run the task (reuse run logic)
         try {
@@ -2113,6 +2126,43 @@ class Workbench extends Control {
 
         ksort($availableLevels);
         return $availableLevels;
+    }
+
+    /**
+     * Generate .mcp.json for a workspace at run time
+     *
+     * Called every time a task is run to ensure fresh config with
+     * correct baseurl from config.ini and valid API key.
+     *
+     * @param string $workspacePath Path to the workspace
+     * @param string|null $apiKey API key for tiknix MCP auth
+     * @param string $baseUrl Base URL from config.ini
+     */
+    private function generateWorkspaceMcpConfig(string $workspacePath, ?string $apiKey, string $baseUrl): void {
+        $mcpConfig = [
+            'mcpServers' => [
+                'playwright' => [
+                    'command' => 'npx',
+                    'args' => ['@playwright/mcp@latest', '--headless']
+                ]
+            ]
+        ];
+
+        // Add tiknix MCP if we have an API key
+        if ($apiKey) {
+            $mcpConfig['mcpServers']['tiknix'] = [
+                'url' => rtrim($baseUrl, '/') . '/mcp/sse',
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $apiKey
+                ]
+            ];
+        }
+
+        $mcpJsonPath = rtrim($workspacePath, '/') . '/.mcp.json';
+        file_put_contents(
+            $mcpJsonPath,
+            json_encode($mcpConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
+        );
     }
 
     /**

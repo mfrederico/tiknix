@@ -84,11 +84,22 @@ class UploadScreenshotTool extends BaseTool {
             // Handle file path - could be absolute or relative to workspace
             $actualPath = $filePath;
 
-            // If relative, try workspace path first
+            // If relative, try various locations in workspace
             if (!str_starts_with($filePath, '/') && !empty($task->projectPath)) {
-                $workspacePath = rtrim($task->projectPath, '/') . '/' . $filePath;
-                if (file_exists($workspacePath)) {
-                    $actualPath = $workspacePath;
+                $workspaceRoot = rtrim($task->projectPath, '/');
+
+                // Try locations in order of likelihood:
+                $possiblePaths = [
+                    $workspaceRoot . '/' . $filePath,                           // Direct relative path
+                    $workspaceRoot . '/.playwright-mcp/' . $filePath,           // Playwright MCP output dir
+                    $workspaceRoot . '/.playwright-mcp/' . basename($filePath), // Just filename in playwright dir
+                ];
+
+                foreach ($possiblePaths as $tryPath) {
+                    if (file_exists($tryPath)) {
+                        $actualPath = $tryPath;
+                        break;
+                    }
                 }
             }
 

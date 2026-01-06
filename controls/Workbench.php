@@ -1090,18 +1090,41 @@ class Workbench extends Control {
             return;
         }
 
-        // Task must be in awaiting status with a PR
+        // Task must be in awaiting status
         if ($task->status !== 'awaiting') {
             Flight::jsonError('Task is not awaiting review', 400);
             return;
         }
 
+        // Get options from request
+        $createPr = $this->getParam('create_pr') === '1';
+        $mergePr = $this->getParam('merge_pr') === '1';
+        $stopSession = $this->getParam('stop_session') === '1';
+        $stopServer = $this->getParam('stop_server') === '1';
+        $deleteWorkspace = $this->getParam('delete_workspace') === '1';
+        $notes = $this->sanitize($this->getParam('notes', ''));
+
         try {
+            $prCreated = false;
             $prMerged = false;
             $mergeError = null;
+            $workspaceDeleted = false;
+            $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
 
-            // Merge PR if exists
-            if (!empty($task->prUrl) && !empty($task->prNumber)) {
+            // Create PR if requested and doesn't exist
+            if ($createPr && empty($task->prUrl) && !empty($task->branchName) && $workspacePath) {
+                $prResult = $this->createPRViaCli($task);
+                if (!empty($prResult['url'])) {
+                    $task->prUrl = $prResult['url'];
+                    $prCreated = true;
+                    $this->logTaskEvent($taskId, 'info', 'system', "Created PR: {$prResult['url']}");
+                } elseif (!empty($prResult['error'])) {
+                    $this->logTaskEvent($taskId, 'warning', 'system', "PR creation failed: {$prResult['error']}");
+                }
+            }
+
+            // Merge PR if requested and exists
+            if ($mergePr && !empty($task->prUrl) && !empty($task->prNumber)) {
                 try {
                     $github = $this->getGitHubService($task);
                     if ($github) {
@@ -1123,6 +1146,37 @@ class Workbench extends Control {
                 }
             }
 
+            // Stop tmux session if requested
+            if ($stopSession && $task->tmuxSession) {
+                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
+                if ($runner->exists()) {
+                    $runner->kill();
+                    $this->logTaskEvent($taskId, 'info', 'system', 'Stopped Claude session');
+                }
+                $task->tmuxSession = null;
+            }
+
+            // Stop test server if requested
+            if ($stopServer && $task->testServerSession) {
+                TmuxManager::kill($task->testServerSession);
+                $this->logTaskEvent($taskId, 'info', 'system', 'Stopped test server');
+                $task->testServerSession = null;
+            }
+
+            // Delete proxy file
+            if (!empty($task->proxyFile) && file_exists($task->proxyFile)) {
+                unlink($task->proxyFile);
+                $task->proxyFile = null;
+            }
+
+            // Delete workspace if requested
+            if ($deleteWorkspace && $workspacePath && is_dir($workspacePath)) {
+                $this->recursiveDelete($workspacePath);
+                $this->logTaskEvent($taskId, 'info', 'system', "Deleted workspace: {$workspacePath}");
+                $task->projectPath = null;
+                $workspaceDeleted = true;
+            }
+
             // Mark task as completed
             $task->status = 'completed';
             $task->completedAt = date('Y-m-d H:i:s');
@@ -1131,37 +1185,20 @@ class Workbench extends Control {
             $task->updatedAt = date('Y-m-d H:i:s');
             Bean::store($task);
 
-            // Kill tmux session if still running
-            if ($task->tmuxSession) {
-                $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
-                $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
-                if ($runner->exists()) {
-                    $runner->kill();
-                    $this->logTaskEvent($taskId, 'info', 'system', 'Killed tmux session on approve');
-                }
-            }
-
-            // Kill test server if running
-            if ($task->testServerSession) {
-                TmuxManager::kill($task->testServerSession);
-            }
-
-            // Delete proxy file for nginx subdomain routing
-            if (!empty($task->proxyFile) && file_exists($task->proxyFile)) {
-                unlink($task->proxyFile);
-            }
-
-            // Clear session fields and save
-            $task->tmuxSession = null;
-            $task->testServerSession = null;
-            $task->proxyFile = null;
-            Bean::store($task);
-
+            // Build log message
             $message = 'Task approved by ' . ($this->member->displayName ?? $this->member->email);
-            if ($prMerged) {
-                $message .= ' (PR squash-merged)';
-            } elseif ($mergeError) {
-                $message .= " (PR merge failed: {$mergeError})";
+            $actions = [];
+            if ($prCreated) $actions[] = 'PR created';
+            if ($prMerged) $actions[] = 'PR merged';
+            if ($mergeError) $actions[] = "PR merge failed: {$mergeError}";
+            if ($stopSession) $actions[] = 'session stopped';
+            if ($stopServer) $actions[] = 'server stopped';
+            if ($workspaceDeleted) $actions[] = 'workspace deleted';
+            if (!empty($actions)) {
+                $message .= ' (' . implode(', ', $actions) . ')';
+            }
+            if (!empty($notes)) {
+                $message .= "\nNotes: {$notes}";
             }
 
             $this->logTaskEvent($taskId, 'info', 'review', $message);
@@ -1169,8 +1206,10 @@ class Workbench extends Control {
             Flight::json([
                 'success' => true,
                 'message' => 'Task approved',
+                'pr_created' => $prCreated,
                 'pr_merged' => $prMerged,
-                'merge_error' => $mergeError
+                'merge_error' => $mergeError,
+                'workspace_deleted' => $workspaceDeleted
             ]);
 
         } catch (Exception $e) {
@@ -2152,6 +2191,28 @@ class Workbench extends Control {
 
         ksort($availableLevels);
         return $availableLevels;
+    }
+
+    /**
+     * Recursively delete a directory
+     *
+     * @param string $dir Directory path to delete
+     */
+    private function recursiveDelete(string $dir): void {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . '/' . $file;
+            if (is_dir($path)) {
+                $this->recursiveDelete($path);
+            } else {
+                unlink($path);
+            }
+        }
+        rmdir($dir);
     }
 
     /**

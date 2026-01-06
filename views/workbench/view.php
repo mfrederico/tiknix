@@ -109,7 +109,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             $isAdmin = isset($member) && $member->level <= LEVELS['ADMIN'];
                             ?>
                             <?php if ($isAdmin): ?>
-                                <button class="btn btn-success" onclick="approveTask(<?= $task->id ?>)">
+                                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#approveModal">
                                     <i class="bi bi-check-circle-fill"></i> Approve & Merge
                                 </button>
                                 <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#declineModal">
@@ -1042,21 +1042,33 @@ async function stopTestServer(id) {
     }
 }
 
-// Approve task (admin only) - merge PR and complete
+// Approve task (admin only) - with options from modal
 async function approveTask(id) {
-    if (!confirm('Approve this task? This will squash-merge the PR and mark the task complete.')) {
-        return;
-    }
-
-    const btn = event.target.closest('button');
+    const btn = document.getElementById('approveSubmitBtn');
     const originalHtml = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Approving...';
+
+    // Get checkbox values (only if not disabled)
+    const createPrCheckbox = document.getElementById('approveCreatePr');
+    const mergePrCheckbox = document.getElementById('approveMergePr');
+    const stopSessionCheckbox = document.getElementById('approveStopSession');
+    const stopServerCheckbox = document.getElementById('approveStopServer');
+    const deleteWorkspaceCheckbox = document.getElementById('approveDeleteWorkspace');
+    const notesField = document.getElementById('approveNotes');
 
     try {
         const formData = new FormData();
         formData.append('id', id);
         formData.append('_csrf_token', csrfToken);
+
+        // Add options
+        formData.append('create_pr', createPrCheckbox && !createPrCheckbox.disabled && createPrCheckbox.checked ? '1' : '0');
+        formData.append('merge_pr', mergePrCheckbox && !mergePrCheckbox.disabled && mergePrCheckbox.checked ? '1' : '0');
+        formData.append('stop_session', stopSessionCheckbox && !stopSessionCheckbox.disabled && stopSessionCheckbox.checked ? '1' : '0');
+        formData.append('stop_server', stopServerCheckbox && !stopServerCheckbox.disabled && stopServerCheckbox.checked ? '1' : '0');
+        formData.append('delete_workspace', deleteWorkspaceCheckbox && !deleteWorkspaceCheckbox.disabled && deleteWorkspaceCheckbox.checked ? '1' : '0');
+        formData.append('notes', notesField ? notesField.value : '');
 
         const response = await fetch('/workbench/approve', {
             method: 'POST',
@@ -1065,13 +1077,15 @@ async function approveTask(id) {
         const data = await response.json();
 
         if (data.success) {
-            if (data.pr_merged) {
-                alert('Task approved! PR has been squash-merged.');
-            } else if (data.merge_error) {
-                alert('Task approved but PR merge failed: ' + data.merge_error);
-            } else {
-                alert('Task approved!');
-            }
+            bootstrap.Modal.getInstance(document.getElementById('approveModal')).hide();
+
+            let message = 'Task approved!';
+            if (data.pr_created) message += ' PR created.';
+            if (data.pr_merged) message += ' PR merged.';
+            if (data.merge_error) message += ' (PR merge failed: ' + data.merge_error + ')';
+            if (data.workspace_deleted) message += ' Workspace deleted.';
+
+            alert(message);
             location.reload();
         } else {
             alert('Error: ' + data.message);
@@ -1144,6 +1158,91 @@ async function declineTask(id) {
                 <button type="button" class="btn btn-danger" id="declineSubmitBtn"
                         onclick="declineTask(<?= $task->id ?>)">
                     <i class="bi bi-x-circle"></i> Decline Task
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Approve Modal -->
+<div class="modal fade" id="approveModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-check-circle-fill me-2"></i>Approve Task</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Select the actions to perform when approving this task:</p>
+
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="approveCreatePr" checked
+                           <?= !empty($task->prUrl) ? 'disabled' : '' ?>>
+                    <label class="form-check-label" for="approveCreatePr">
+                        <i class="bi bi-git me-1"></i>
+                        <?php if (!empty($task->prUrl)): ?>
+                            PR already exists
+                        <?php else: ?>
+                            Create Pull Request
+                        <?php endif; ?>
+                    </label>
+                </div>
+
+                <?php if (!empty($task->prUrl)): ?>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="approveMergePr" checked>
+                    <label class="form-check-label" for="approveMergePr">
+                        <i class="bi bi-arrow-down-circle me-1"></i>
+                        Merge Pull Request (squash)
+                    </label>
+                </div>
+                <?php endif; ?>
+
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="approveStopSession" checked
+                           <?= empty($task->tmuxSession) ? 'disabled' : '' ?>>
+                    <label class="form-check-label" for="approveStopSession">
+                        <i class="bi bi-terminal me-1"></i>
+                        Stop Claude session
+                        <?= empty($task->tmuxSession) ? '<span class="text-muted">(not running)</span>' : '' ?>
+                    </label>
+                </div>
+
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="approveStopServer" checked
+                           <?= empty($task->testServerSession) ? 'disabled' : '' ?>>
+                    <label class="form-check-label" for="approveStopServer">
+                        <i class="bi bi-hdd-stack me-1"></i>
+                        Stop test server
+                        <?= empty($task->testServerSession) ? '<span class="text-muted">(not running)</span>' : '' ?>
+                    </label>
+                </div>
+
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="approveDeleteWorkspace"
+                           <?= empty($task->projectPath) ? 'disabled' : '' ?>>
+                    <label class="form-check-label" for="approveDeleteWorkspace">
+                        <i class="bi bi-folder-x me-1 text-danger"></i>
+                        Delete workspace files
+                        <?= empty($task->projectPath) ? '<span class="text-muted">(no workspace)</span>' : '' ?>
+                    </label>
+                    <?php if (!empty($task->projectPath)): ?>
+                    <small class="d-block text-muted ms-4"><?= htmlspecialchars($task->projectPath) ?></small>
+                    <?php endif; ?>
+                </div>
+
+                <hr>
+                <div class="mb-3">
+                    <label for="approveNotes" class="form-label">Notes (optional)</label>
+                    <textarea class="form-control" id="approveNotes" rows="2"
+                              placeholder="Add any notes about this approval..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="approveSubmitBtn"
+                        onclick="approveTask(<?= $task->id ?>)">
+                    <i class="bi bi-check-circle-fill"></i> Approve Task
                 </button>
             </div>
         </div>

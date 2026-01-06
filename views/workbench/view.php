@@ -409,6 +409,11 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             <dd><code class="small"><?= htmlspecialchars($task->branchName) ?></code></dd>
                         <?php endif; ?>
 
+                        <?php if ($task->baseBranch): ?>
+                            <dt>Base Branch</dt>
+                            <dd><code class="small"><?= htmlspecialchars($task->baseBranch) ?></code> <small class="text-muted">(PR target)</small></dd>
+                        <?php endif; ?>
+
                         <?php if ($task->assignedPort): ?>
                             <dt>Test Port</dt>
                             <dd><?= $task->assignedPort ?></dd>

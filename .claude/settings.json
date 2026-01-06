@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/security-sandbox.php",
+            "command": "/usr/bin/php \"${TIKNIX_PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}\"/scripts/hooks/security-sandbox.php",
             "timeout": 5
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/validate-tiknix-php.php",
+            "command": "/usr/bin/php \"${TIKNIX_PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}\"/scripts/hooks/validate-tiknix-php.php",
             "timeout": 30
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/log-activity.php",
+            "command": "/usr/bin/php \"${TIKNIX_PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}\"/scripts/hooks/log-activity.php",
             "timeout": 10
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/workbench-response-capture.php",
+            "command": "/usr/bin/php \"${TIKNIX_PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}\"/scripts/hooks/workbench-response-capture.php",
             "timeout": 5
           }
         ]

@@ -19,7 +19,13 @@ class Bootstrap {
     private $logger;
     private $cliHandler;
     
-    public function __construct($configFile = 'conf/config.ini') {
+    public function __construct($configFile = null) {
+        // Default config path relative to this file
+        if ($configFile === null) {
+            $configFile = __DIR__ . '/conf/config.ini';
+        } elseif ($configFile[0] !== '/') {
+            $configFile = __DIR__ . '/' . $configFile;
+        }
         // Initialize autoloader first - this must come before any framework usage
         $this->initAutoloader();
         
@@ -159,8 +165,11 @@ class Bootstrap {
                 $type = $dbConfig['type'] ?? 'mysql';
 
                 if ($type === 'sqlite') {
-                    // SQLite configuration
+                    // SQLite configuration - use absolute path relative to project root
                     $dbPath = $dbConfig['path'] ?? 'database/tiknix.db';
+                    if ($dbPath[0] !== '/') {
+                        $dbPath = __DIR__ . '/' . $dbPath;
+                    }
                     // Create database directory if it doesn't exist
                     $dbDir = dirname($dbPath);
                     if (!is_dir($dbDir)) {

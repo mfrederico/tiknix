@@ -447,6 +447,11 @@ in the web interface.
   - `branch_name`: Git branch if applicable
   - `pr_url`: Pull request URL if created
 
+**CLI Fallback** (if MCP tools aren't available):
+```bash
+php cli/task-complete.php --task={$taskId} --status=completed
+```
+
 Current Task ID: {$taskId}
 
 ### WORKFLOW RULES

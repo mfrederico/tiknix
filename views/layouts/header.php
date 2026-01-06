@@ -49,6 +49,13 @@
                         </li>
                     <?php endif; ?>
                 <?php endforeach; ?>
+                <?php if ($isLoggedIn ?? false): ?>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/workbench">
+                            <i class="bi bi-hammer"></i> Workbench
+                        </a>
+                    </li>
+                <?php endif; ?>
             </ul>
             
             <!-- Right Side Menu -->
@@ -67,11 +74,6 @@
                                 </a>
                             </li>
                             <li>
-                                <a class="dropdown-item" href="/member/profile">
-                                    <i class="bi bi-person"></i> Profile
-                                </a>
-                            </li>
-                            <li>
                                 <a class="dropdown-item" href="/member/settings">
                                     <i class="bi bi-gear"></i> Settings
                                 </a>
@@ -79,17 +81,6 @@
                             <li>
                                 <a class="dropdown-item" href="/apikeys">
                                     <i class="bi bi-key"></i> API Keys
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/grocery">
-                                    <i class="bi bi-cart3"></i> Grocery List
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item" href="/workbench">
-                                    <i class="bi bi-hammer"></i> Workbench
                                 </a>
                             </li>
                             <li>

@@ -1,5 +1,6 @@
 # Configuration (contains credentials)
 conf/config.ini
+conf/mailgun.ini
 
 # Python cache
 __pycache__/
@@ -18,6 +19,9 @@ log/*.log
 
 # Uploads
 uploads/
+
+# Workbench project workspaces (cloned repos)
+projects/
 
 # IDE
 .idea/

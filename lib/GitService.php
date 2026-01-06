@@ -59,10 +59,11 @@ class GitService {
      * @param int $memberId Member ID
      * @param int $taskId Task ID
      * @param string|null $remoteUrl Remote URL (defaults to origin of main repo)
+     * @param string $baseBranch Branch to clone (defaults to 'main')
      * @return string Path to cloned workspace
      * @throws \Exception on failure
      */
-    public function cloneToWorkspace(int $memberId, int $taskId, ?string $remoteUrl = null): string {
+    public function cloneToWorkspace(int $memberId, int $taskId, ?string $remoteUrl = null, string $baseBranch = 'main'): string {
         $workspacePath = self::getWorkspacePath($memberId, $taskId);
 
         // Get remote URL from main repo if not provided
@@ -70,7 +71,7 @@ class GitService {
             $remoteUrl = $this->getRemoteUrl();
         }
 
-        $this->log("Cloning to workspace: {$workspacePath}");
+        $this->log("Cloning to workspace: {$workspacePath} (branch: {$baseBranch})");
 
         // Create parent directories
         $parentDir = dirname($workspacePath);
@@ -83,10 +84,11 @@ class GitService {
             $this->removeDirectory($workspacePath);
         }
 
-        // Shallow clone
+        // Shallow clone of specific branch
         $result = $this->executeInDir(
             sprintf(
-                'git clone --depth 1 %s %s 2>&1',
+                'git clone --depth 1 --branch %s %s %s 2>&1',
+                escapeshellarg($baseBranch),
                 escapeshellarg($remoteUrl),
                 escapeshellarg($workspacePath)
             ),
@@ -100,8 +102,74 @@ class GitService {
         // Update repoPath to the new workspace
         $this->repoPath = $workspacePath;
 
+        // Copy main project's .claude and .mcp.json to workspace
+        $this->copyClaudeFolder($workspacePath);
+        $this->copyMcpConfig($workspacePath);
+
         $this->log("Workspace created at: {$workspacePath}");
         return $workspacePath;
+    }
+
+    /**
+     * Copy main project's .claude folder to workspace
+     *
+     * Ensures workspace has current hooks configuration.
+     * Hooks use TIKNIX_PROJECT_ROOT env var to find the main project.
+     *
+     * @param string $workspacePath Path to the workspace
+     */
+    private function copyClaudeFolder(string $workspacePath): void {
+        $workspaceClaudeDir = $workspacePath . '/.claude';
+        $mainClaudeDir = dirname(__DIR__) . '/.claude';
+
+        if (!is_dir($mainClaudeDir)) {
+            return;
+        }
+
+        // Remove workspace's .claude folder if it exists
+        if (is_dir($workspaceClaudeDir)) {
+            $this->removeDirectory($workspaceClaudeDir);
+        } elseif (is_link($workspaceClaudeDir)) {
+            unlink($workspaceClaudeDir);
+        }
+
+        // Copy main project's .claude to workspace
+        mkdir($workspaceClaudeDir, 0755, true);
+        foreach (glob($mainClaudeDir . '/*') as $file) {
+            $dest = $workspaceClaudeDir . '/' . basename($file);
+            if (is_file($file)) {
+                copy($file, $dest);
+            }
+        }
+        $this->log("Copied .claude from main project");
+    }
+
+    /**
+     * Generate .mcp.json for workspace with valid MCP server configurations
+     *
+     * @param string $workspacePath Path to the workspace
+     */
+    private function copyMcpConfig(string $workspacePath): void {
+        $workspaceMcpJson = $workspacePath . '/.mcp.json';
+
+        // Generate a valid .mcp.json with known-good configurations
+        // Only include servers that don't require user-specific authentication
+        $mcpConfig = [
+            'mcpServers' => [
+                // Playwright for browser automation testing
+                'playwright' => [
+                    'command' => 'npx',
+                    'args' => ['@playwright/mcp@latest', '--headless']
+                ]
+            ]
+        ];
+
+        file_put_contents(
+            $workspaceMcpJson,
+            json_encode($mcpConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
+        );
+
+        $this->log("Generated .mcp.json for workspace");
     }
 
     /**
@@ -256,6 +324,52 @@ class GitService {
         ));
 
         return $result['code'] === 0 && !empty(trim($result['output']));
+    }
+
+    /**
+     * Get list of branches (local and remote)
+     *
+     * @param bool $includeRemote Include remote branches
+     * @param string $remote Remote name for remote branches
+     * @return array ['local' => [...], 'remote' => [...], 'all' => [...]]
+     */
+    public function getBranches(bool $includeRemote = true, string $remote = 'origin'): array {
+        $branches = [
+            'local' => [],
+            'remote' => [],
+            'all' => []
+        ];
+
+        // Fetch latest from remote first
+        if ($includeRemote) {
+            $this->execute('git fetch --prune 2>&1');
+        }
+
+        // Get local branches
+        $result = $this->execute('git branch --format="%(refname:short)" 2>&1');
+        if ($result['code'] === 0) {
+            $branches['local'] = array_filter(array_map('trim', explode("\n", $result['output'])));
+        }
+
+        // Get remote branches
+        if ($includeRemote) {
+            $result = $this->execute(sprintf(
+                'git branch -r --format="%%(refname:short)" 2>&1 | grep "^%s/" | sed "s|^%s/||"',
+                $remote,
+                $remote
+            ));
+            if ($result['code'] === 0) {
+                $remoteBranches = array_filter(array_map('trim', explode("\n", $result['output'])));
+                // Filter out HEAD
+                $branches['remote'] = array_filter($remoteBranches, fn($b) => $b !== 'HEAD');
+            }
+        }
+
+        // Combine and deduplicate
+        $branches['all'] = array_unique(array_merge($branches['local'], $branches['remote']));
+        sort($branches['all']);
+
+        return $branches;
     }
 
     /**

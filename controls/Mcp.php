@@ -103,72 +103,12 @@ class Mcp extends BaseControls\Control {
      * @deprecated Use ToolLoader instead
      */
     private array $tools = [
-        'hello' => [
-            'description' => 'Returns a friendly greeting. Use this to test the MCP connection.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'name' => [
-                        'type' => 'string',
-                        'description' => 'Name to greet (optional)'
-                    ]
-                ],
-                'required' => []
-            ]
-        ],
         'mcp_session_info' => [
             'description' => 'Returns info about stored MCP sessions for debugging.',
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [],
                 'required' => []
-            ]
-        ],
-        'echo' => [
-            'description' => 'Echoes back the provided message. Useful for testing.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'message' => [
-                        'type' => 'string',
-                        'description' => 'Message to echo back'
-                    ]
-                ],
-                'required' => ['message']
-            ]
-        ],
-        'get_time' => [
-            'description' => 'Returns the current server date and time.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'timezone' => [
-                        'type' => 'string',
-                        'description' => 'Timezone (e.g., "America/New_York", "UTC"). Defaults to server timezone.'
-                    ],
-                    'format' => [
-                        'type' => 'string',
-                        'description' => 'Date format (PHP date format string). Defaults to "Y-m-d H:i:s".'
-                    ]
-                ],
-                'required' => []
-            ]
-        ],
-        'add_numbers' => [
-            'description' => 'Adds two numbers together and returns the result.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'a' => [
-                        'type' => 'number',
-                        'description' => 'First number'
-                    ],
-                    'b' => [
-                        'type' => 'number',
-                        'description' => 'Second number'
-                    ]
-                ],
-                'required' => ['a', 'b']
             ]
         ],
         'list_users' => [
@@ -230,19 +170,6 @@ class Mcp extends BaseControls\Control {
                     'file' => [
                         'type' => 'string',
                         'description' => 'Path to PHP file or directory to validate'
-                    ]
-                ],
-                'required' => ['file']
-            ]
-        ],
-        'security_scan' => [
-            'description' => 'Scan PHP code for security vulnerabilities (OWASP Top 10). Returns issues grouped by severity.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'file' => [
-                        'type' => 'string',
-                        'description' => 'Path to PHP file or directory to scan'
                     ]
                 ],
                 'required' => ['file']
@@ -1582,20 +1509,8 @@ class Mcp extends BaseControls\Control {
      */
     private function executeTool(string $name, array $args): string {
         switch ($name) {
-            case 'hello':
-                return $this->toolHello($args);
-
             case 'mcp_session_info':
                 return $this->toolMcpSessionInfo($args);
-
-            case 'echo':
-                return $this->toolEcho($args);
-
-            case 'get_time':
-                return $this->toolGetTime($args);
-
-            case 'add_numbers':
-                return $this->toolAddNumbers($args);
 
             case 'list_users':
                 return $this->toolListUsers($args);
@@ -1606,9 +1521,6 @@ class Mcp extends BaseControls\Control {
             // Validation tools
             case 'validate_php':
                 return $this->toolValidatePhp($args);
-
-            case 'security_scan':
-                return $this->toolSecurityScan($args);
 
             case 'check_redbean':
                 return $this->toolCheckRedbean($args);
@@ -1638,14 +1550,6 @@ class Mcp extends BaseControls\Control {
             default:
                 throw new \Exception("Tool not implemented: {$name}");
         }
-    }
-
-    /**
-     * Hello tool - returns a greeting
-     */
-    private function toolHello(array $args): string {
-        $name = $args['name'] ?? 'World';
-        return "Hello, {$name}! Welcome to the Tiknix MCP server.";
     }
 
     /**
@@ -1679,56 +1583,6 @@ class Mcp extends BaseControls\Control {
         ], JSON_PRETTY_PRINT);
     }
 
-    /**
-     * Echo tool - echoes back message
-     */
-    private function toolEcho(array $args): string {
-        $message = $args['message'] ?? '';
-        if (empty($message)) {
-            throw new \Exception("Message is required");
-        }
-        return "Echo: {$message}";
-    }
-
-    /**
-     * Get time tool - returns current server time
-     */
-    private function toolGetTime(array $args): string {
-        $timezone = $args['timezone'] ?? date_default_timezone_get();
-        $format = $args['format'] ?? 'Y-m-d H:i:s';
-
-        try {
-            $tz = new \DateTimeZone($timezone);
-            $dt = new \DateTime('now', $tz);
-            return json_encode([
-                'datetime' => $dt->format($format),
-                'timezone' => $timezone,
-                'unix_timestamp' => $dt->getTimestamp()
-            ], JSON_PRETTY_PRINT);
-        } catch (\Exception $e) {
-            throw new \Exception("Invalid timezone: {$timezone}");
-        }
-    }
-
-    /**
-     * Add numbers tool - adds two numbers
-     */
-    private function toolAddNumbers(array $args): string {
-        if (!isset($args['a']) || !isset($args['b'])) {
-            throw new \Exception("Both 'a' and 'b' parameters are required");
-        }
-
-        $a = (float)$args['a'];
-        $b = (float)$args['b'];
-        $result = $a + $b;
-
-        return json_encode([
-            'a' => $a,
-            'b' => $b,
-            'operation' => 'addition',
-            'result' => $result
-        ], JSON_PRETTY_PRINT);
-    }
 
     /**
      * List users tool - lists system users (example of authenticated tool)
@@ -1867,43 +1721,6 @@ class Mcp extends BaseControls\Control {
             'path' => $path,
             'valid' => $result['valid'],
             'errors' => $result['errors']
-        ], JSON_PRETTY_PRINT);
-    }
-
-    /**
-     * Scan code for security vulnerabilities
-     */
-    private function toolSecurityScan(array $args): string {
-        $path = $args['path'] ?? null;
-        $code = $args['code'] ?? null;
-
-        if (!$path && !$code) {
-            throw new \Exception("Either 'path' or 'code' is required");
-        }
-
-        $projectRoot = \Flight::get('project_root') ?? dirname(__DIR__);
-        $validator = new \app\ValidationService($projectRoot);
-
-        if ($path) {
-            $fullPath = $this->resolvePath($path, $projectRoot);
-            if (!file_exists($fullPath)) {
-                throw new \Exception("File not found: {$path}");
-            }
-            $code = file_get_contents($fullPath);
-        }
-
-        $issues = $validator->scanSecurity($code, $path ?? 'inline');
-
-        $totalIssues = count($issues['critical'] ?? [])
-            + count($issues['high'] ?? [])
-            + count($issues['medium'] ?? [])
-            + count($issues['low'] ?? []);
-
-        return json_encode([
-            'path' => $path ?? 'inline',
-            'has_issues' => $totalIssues > 0,
-            'issue_count' => $totalIssues,
-            'issues' => $issues
         ], JSON_PRETTY_PRINT);
     }
 

@@ -112,7 +112,7 @@ class ClaudeRunner {
         }
 
         // Use custom project path (workspace) if provided, otherwise default to main project
-        $projectRoot = $this->getProjectPath();
+        $workspaceRoot = $this->getProjectPath();
 
         // Build Claude command to run interactively
         $claudeCmd = 'claude --debug';
@@ -121,13 +121,13 @@ class ClaudeRunner {
         }
 
         // Build a wrapper script that shows invocation info then runs Claude
-        $invocationScript = $this->buildInvocationScript($claudeCmd, $projectRoot);
+        $invocationScript = $this->buildInvocationScript($claudeCmd, $workspaceRoot);
         $scriptFile = $this->workDir . '/run-claude.sh';
         file_put_contents($scriptFile, $invocationScript);
         chmod($scriptFile, 0755);
 
         // Use TmuxManager to create the session
-        TmuxManager::create($this->sessionName, $scriptFile, $projectRoot);
+        TmuxManager::create($this->sessionName, $scriptFile, $workspaceRoot);
 
         // Wait for Claude to initialize
         usleep(500000); // 500ms delay
@@ -144,18 +144,21 @@ class ClaudeRunner {
      * Build the invocation script that displays info and runs Claude
      *
      * @param string $claudeCmd The claude command to run
-     * @param string $projectRoot The project root directory
+     * @param string $workspaceRoot The workspace root directory (may differ from main project for isolated tasks)
      * @return string Shell script content
      */
-    private function buildInvocationScript(string $claudeCmd, string $projectRoot): string {
+    private function buildInvocationScript(string $claudeCmd, string $workspaceRoot): string {
+        // TIKNIX_PROJECT_ROOT always points to main project (for vendor, hooks, DB)
+        // The workspace may be different for isolated tasks
+        $mainProjectRoot = dirname(__DIR__);
         $timestamp = date('Y-m-d H:i:s');
         $teamInfo = $this->teamId ? "Team ID: {$this->teamId}" : "Personal task";
         $taskId = $this->taskId;
-        $callbackScript = $projectRoot . '/cli/task-complete.php';
+        $callbackScript = $mainProjectRoot . '/cli/task-complete.php';
         $sessionName = $this->sessionName;
 
         // Determine internal URL for hooks - check .mcp_url first, then use localhost
-        $hookUrl = $this->getHookUrl($projectRoot);
+        $hookUrl = $this->getHookUrl($mainProjectRoot);
 
         return <<<BASH
 #!/bin/bash
@@ -168,7 +171,8 @@ export TIKNIX_TASK_ID={$this->taskId}
 export TIKNIX_MEMBER_ID={$this->memberId}
 export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
 export TIKNIX_SESSION_NAME="{$sessionName}"
-export TIKNIX_PROJECT_ROOT="{$projectRoot}"
+export TIKNIX_PROJECT_ROOT="{$mainProjectRoot}"
+export TIKNIX_WORKSPACE="{$workspaceRoot}"
 export TIKNIX_HOOK_URL="{$hookUrl}"
 
 # Allow larger Claude outputs (default is 32000, set to ~250k tokens = ~1MB text)
@@ -184,7 +188,8 @@ echo "  Member ID:   {$this->memberId}"
 echo "  {$teamInfo}"
 echo "  Started:     {$timestamp}"
 echo ""
-echo "  Project:     {$projectRoot}"
+echo "  Project:     {$mainProjectRoot}"
+echo "  Workspace:   {$workspaceRoot}"
 echo "  Work Dir:    {$this->workDir}"
 echo ""
 echo "────────────────────────────────────────────────────────────────────"
@@ -223,8 +228,8 @@ auto_accept_permissions() {
 auto_accept_permissions &
 WATCHER_PID=\$!
 
-# Change to project directory and run Claude
-cd "{$projectRoot}"
+# Change to workspace directory and run Claude
+cd "{$workspaceRoot}"
 {$claudeCmd}
 EXIT_CODE=\$?
 
@@ -454,13 +459,53 @@ BASH;
     /**
      * Detect overall status
      */
-    private function detectStatus(array $lines): string {
-        // Check last few lines for status indicators
-        $lastLines = implode("\n", array_slice($lines, -15));
+    public function detectStatus(array $lines = []): string {
+        // If no lines provided, capture from tmux
+        if (empty($lines)) {
+            $content = TmuxManager::capture($this->sessionName, 50);
+            $lines = explode("\n", $content);
+        }
 
-        // "esc to interrupt" means Claude is actively thinking
-        if (preg_match('/esc to interrupt|thinking|processing/i', $lastLines)) {
-            return 'thinking';
+        // Check last few lines for status indicators
+        $recentLines = array_slice($lines, -15);
+
+        // Look for Claude's status line: "✶ Determining… (esc to interrupt · 12m 3s · ...)"
+        // The pattern matches any spinner char + status text + (esc to interrupt · info)
+        foreach ($recentLines as $line) {
+            if (preg_match('/^.\s+(.+?)\s+\(esc to interrupt\s*·\s*(.+)\)/u', $line, $matches)) {
+                $statusText = trim($matches[1], '…. '); // Remove trailing ellipsis/dots
+                // Map common status texts to simple status codes
+                $statusMap = [
+                    'determining' => 'determining',
+                    'thinking' => 'thinking',
+                    'processing' => 'processing',
+                    'analyzing' => 'analyzing',
+                    'exploring' => 'exploring',
+                    'searching' => 'searching',
+                    'reading' => 'reading',
+                    'writing' => 'writing',
+                ];
+                $lower = strtolower($statusText);
+                foreach ($statusMap as $key => $status) {
+                    if (str_starts_with($lower, $key)) {
+                        return $status;
+                    }
+                }
+                // Return first word if no match
+                return preg_match('/^(\w+)/', $lower, $m) ? $m[1] : 'working';
+            }
+        }
+
+        $lastLines = implode("\n", $recentLines);
+
+        // Check for "In progress" tool execution
+        if (preg_match('/In progress.*tool uses/i', $lastLines)) {
+            return 'executing';
+        }
+
+        // "esc to interrupt" means Claude is actively working (fallback)
+        if (preg_match('/esc to interrupt/i', $lastLines)) {
+            return 'working';
         }
 
         // Check for session complete message (from our wrapper script)

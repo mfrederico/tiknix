@@ -12,10 +12,16 @@
 // Mark as standalone CLI script (bypass CliHandler validation)
 define('STANDALONE_CLI', true);
 
-// Bootstrap the application
-$projectRoot = dirname(__DIR__);
-chdir($projectRoot);
-require_once $projectRoot . '/bootstrap.php';
+// Use TIKNIX_PROJECT_ROOT for database access (main project)
+// Fall back to script location if not set
+$mainProject = getenv('TIKNIX_PROJECT_ROOT') ?: dirname(__DIR__);
+
+// Workspace path for git operations (may be different from main project)
+$workspacePath = getenv('TIKNIX_WORKSPACE') ?: getenv('CLAUDE_PROJECT_DIR') ?: dirname(__DIR__);
+
+// Bootstrap from main project (for database access)
+chdir($mainProject);
+require_once $mainProject . '/bootstrap.php';
 
 // Initialize the application
 $app = new \app\Bootstrap('conf/config.ini');
@@ -56,9 +62,9 @@ try {
     if ($status === 'completed') {
         $task->completedAt = date('Y-m-d H:i:s');
 
-        // Try to extract PR URL and branch from git
-        $prUrl = extractPrUrl($projectRoot);
-        $branchName = extractBranchName($projectRoot);
+        // Try to extract PR URL and branch from git (use workspace path)
+        $prUrl = extractPrUrl($workspacePath);
+        $branchName = extractBranchName($workspacePath);
 
         if ($prUrl) {
             $task->prUrl = $prUrl;

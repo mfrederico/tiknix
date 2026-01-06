@@ -422,24 +422,21 @@ INI;
     }
 
     /**
-     * Set admin password using sqlite3 CLI
+     * Set admin password using PHP SQLite3
      */
     private function setAdminPassword(string $dbPath, string $password): void
     {
         // Generate password hash using PHP
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-        // Update admin user using sqlite3 CLI
-        $cmd = sprintf(
-            "sqlite3 %s \"UPDATE member SET password = '%s' WHERE username = 'admin';\"",
-            escapeshellarg($dbPath),
-            addslashes($hashedPassword)
-        );
-
-        exec($cmd, $output, $returnCode);
-
-        if ($returnCode !== 0) {
-            error_log("Failed to set admin password: " . implode("\n", $output));
+        try {
+            $db = new \SQLite3($dbPath);
+            $stmt = $db->prepare("UPDATE member SET password = :password WHERE username = 'admin'");
+            $stmt->bindValue(':password', $hashedPassword, SQLITE3_TEXT);
+            $stmt->execute();
+            $db->close();
+        } catch (\Exception $e) {
+            error_log("Failed to set admin password: " . $e->getMessage());
         }
     }
 

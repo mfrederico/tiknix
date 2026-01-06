@@ -35,7 +35,7 @@
     },
     "autoload": {
         "psr-4": {
-            "app\\": "controls/",
+            "app\\": ["controls/", "lib/"],
             "app\\Models\\": "models/",
             "app\\BaseControls\\": "controls/BaseControls/",
             "app\\mcptools\\": "mcptools/"
@@ -44,24 +44,6 @@
             "models/"
         ],
         "files": [
-            "lib/Bean.php",
-            "lib/SimpleCsrf.php",
-            "lib/FlightMap.php",
-            "lib/CliHandler.php",
-            "lib/PermissionCache.php",
-            "lib/MarkdownParser.php",
-            "lib/CachedDatabaseAdapter.php",
-            "lib/ClaudeRunner.php",
-            "lib/PromptBuilder.php",
-            "lib/TaskAccessControl.php",
-            "lib/ValidationService.php",
-            "lib/RateLimiter.php",
-            "lib/GitService.php",
-            "lib/GitHubService.php",
-            "lib/PortManager.php",
-            "lib/TmuxManager.php",
-            "lib/Mailer.php",
-            "lib/TwoFactorAuth.php",
             "lib/functions.php"
         ]
     },

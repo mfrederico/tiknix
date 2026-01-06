@@ -68,6 +68,24 @@
                         </div>
 
                         <div class="row">
+                            <!-- Base Branch -->
+                            <div class="col-md-6 mb-3">
+                                <label for="base_branch" class="form-label">Base Branch</label>
+                                <?php if (empty($task->branchName)): ?>
+                                    <select class="form-select" id="base_branch" name="base_branch">
+                                        <?php foreach ($branches ?? ['main'] as $branch): ?>
+                                            <option value="<?= htmlspecialchars($branch) ?>" <?= ($task->baseBranch ?? 'main') === $branch ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars($branch) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <div class="form-text">Branch to create this task from. PR will merge back into this branch. Only pushed branches are shown.</div>
+                                <?php else: ?>
+                                    <input type="text" class="form-control" value="<?= htmlspecialchars($task->baseBranch ?? 'main') ?>" disabled>
+                                    <div class="form-text text-muted">Cannot change base branch after task has been run.</div>
+                                <?php endif; ?>
+                            </div>
+
                             <!-- Authcontrol Level -->
                             <div class="col-md-6 mb-3">
                                 <label for="authcontrol_level" class="form-label">Endpoint Access Level</label>

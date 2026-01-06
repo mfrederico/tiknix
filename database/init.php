@@ -99,6 +99,9 @@ try {
     echo "  MCP Server:  /mcp\n";
     echo "  MCP Registry:/mcp/registry\n";
 
+    // Ensure database is properly closed/flushed
+    R::close();
+
 } catch (\Exception $e) {
     echo "\n❌ Error: " . $e->getMessage() . "\n";
     exit(1);

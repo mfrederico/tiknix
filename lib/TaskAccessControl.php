@@ -380,6 +380,45 @@ class TaskAccessControl {
     }
 
     /**
+     * Get task counts grouped by team
+     *
+     * @param int $memberId The member ID
+     * @return array ['personal' => count, 'total' => count, team_id => count, ...]
+     */
+    public function getTeamTaskCounts(int $memberId): array {
+        $teamIds = $this->getMemberTeamIds($memberId);
+
+        $counts = [
+            'personal' => 0,
+            'total' => 0
+        ];
+
+        // Get personal task count
+        $sql = "SELECT COUNT(*) as count FROM workbenchtask WHERE member_id = ? AND team_id IS NULL";
+        $result = Bean::getAll($sql, [$memberId]);
+        $counts['personal'] = (int)($result[0]['count'] ?? 0);
+        $counts['total'] = $counts['personal'];
+
+        // Get team task counts
+        if (!empty($teamIds)) {
+            $teamIds = array_values($teamIds); // Ensure sequential keys for SQL binding
+            $placeholders = implode(',', array_fill(0, count($teamIds), '?'));
+            $sql = "SELECT team_id, COUNT(*) as count
+                    FROM workbenchtask
+                    WHERE team_id IN ($placeholders)
+                    GROUP BY team_id";
+            $results = Bean::getAll($sql, $teamIds);
+
+            foreach ($results as $row) {
+                $counts[$row['team_id']] = (int)$row['count'];
+                $counts['total'] += (int)$row['count'];
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
      * Convert bean to array if needed
      *
      * @param object|array $item Bean or array

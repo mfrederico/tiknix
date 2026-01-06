@@ -17,6 +17,7 @@ use \app\PromptBuilder;
 use \app\GitService;
 use \app\PortManager;
 use \app\TmuxManager;
+use \app\WorkspaceManager;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -55,9 +56,13 @@ class Workbench extends Control {
         // Get user's teams for filter dropdown
         $teams = $this->access->getMemberTeams($this->member->id);
 
+        // Get task counts per team for tab badges
+        $teamCounts = $this->access->getTeamTaskCounts($this->member->id);
+
         $this->viewData['tasks'] = $tasks;
         $this->viewData['counts'] = $counts;
         $this->viewData['teams'] = $teams;
+        $this->viewData['teamCounts'] = $teamCounts;
         $this->viewData['filters'] = $filters;
         $this->viewData['taskTypes'] = $this->getTaskTypes();
         $this->viewData['priorities'] = $this->getPriorities();
@@ -79,12 +84,25 @@ class Workbench extends Control {
         // Get user's teams
         $teams = $this->access->getMemberTeams($this->member->id);
 
+        // Get available branches from git (only remote branches - local-only won't work for cloning)
+        $gitService = new GitService();
+        $branchData = $gitService->getBranches();
+        $currentBranch = $gitService->getCurrentBranch();
+
+        // Use remote branches only - local-only branches can't be used as base for new workspaces
+        $remoteBranches = $branchData['remote'];
+        if (empty($remoteBranches)) {
+            $remoteBranches = ['main']; // Fallback
+        }
+
         $this->viewData['teams'] = $teams;
         $this->viewData['preselectedTeamId'] = $preselectedTeamId;
         $this->viewData['taskTypes'] = $this->getTaskTypes();
         $this->viewData['priorities'] = $this->getPriorities();
         $this->viewData['authcontrolLevels'] = $this->getAuthcontrolLevels();
         $this->viewData['memberLevel'] = $this->member->level;
+        $this->viewData['branches'] = $remoteBranches;
+        $this->viewData['currentBranch'] = in_array($currentBranch, $remoteBranches) ? $currentBranch : 'main';
 
         $this->render('workbench/create', $this->viewData);
     }
@@ -148,6 +166,7 @@ class Workbench extends Control {
             $task->acceptanceCriteria = trim($this->getParam('acceptance_criteria', ''));
             $task->relatedFiles = json_encode(array_filter(explode("\n", $this->getParam('related_files', ''))));
             $task->tags = json_encode(array_filter(array_map('trim', explode(',', $this->getParam('tags', '')))));
+            $task->baseBranch = trim($this->getParam('base_branch', 'main'));
             $task->runCount = 0;
             $task->createdAt = date('Y-m-d H:i:s');
             Bean::store($task);
@@ -198,8 +217,52 @@ class Workbench extends Control {
             return;
         }
 
+        // Sync tmux status to database for running tasks
+        if ($task->status === 'running') {
+            $workspacePath = $task->projectPath ?: Flight::get('project_root');
+            $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
+
+            if ($runner->exists()) {
+                $tmuxStatus = $runner->detectStatus();
+
+                // Map detected status to display message
+                $statusMessages = [
+                    'determining' => 'Determining next action...',
+                    'thinking' => 'Thinking...',
+                    'processing' => 'Processing...',
+                    'analyzing' => 'Analyzing code...',
+                    'exploring' => 'Exploring codebase...',
+                    'searching' => 'Searching...',
+                    'reading' => 'Reading files...',
+                    'writing' => 'Writing code...',
+                    'executing' => 'Executing tools...',
+                    'working' => 'Working...',
+                    'waiting' => 'Waiting for user input',
+                ];
+
+                if ($tmuxStatus === 'waiting') {
+                    // User's turn
+                    $task->status = 'awaiting';
+                    $task->progressMessage = 'Waiting for user input';
+                    $task->updatedAt = date('Y-m-d H:i:s');
+                    Bean::store($task);
+                } elseif (isset($statusMessages[$tmuxStatus])) {
+                    // Update progress message but keep status as running
+                    $task->progressMessage = $statusMessages[$tmuxStatus];
+                    $task->updatedAt = date('Y-m-d H:i:s');
+                    Bean::store($task);
+                }
+            } else {
+                // Session ended but status not updated - check if completed or failed
+                $task->status = 'failed';
+                $task->progressMessage = 'Session ended unexpectedly';
+                $task->updatedAt = date('Y-m-d H:i:s');
+                Bean::store($task);
+            }
+        }
+
         // Get task logs
-        $logs = $task->with(' ORDER BY created_at DESC LIMIT 50 ')->ownTasklogList;
+        $logs = Bean::find('tasklog', 'task_id = ? ORDER BY created_at DESC LIMIT 50', [$taskId]);
 
         // Get task comments
         $comments = Bean::getAll(
@@ -267,6 +330,23 @@ class Workbench extends Control {
         // Get user's teams
         $teams = $this->access->getMemberTeams($this->member->id);
 
+        // Get available branches from git (only if task hasn't been run yet)
+        // Only show remote branches - local-only branches can't be used as base for new workspaces
+        $branches = [];
+        $currentBranch = 'main';
+        if (empty($task->branchName)) {
+            $gitService = new GitService();
+            $branchData = $gitService->getBranches();
+            $branches = $branchData['remote'];
+            if (empty($branches)) {
+                $branches = ['main']; // Fallback
+            }
+            $currentBranch = $gitService->getCurrentBranch();
+            if (!in_array($currentBranch, $branches)) {
+                $currentBranch = 'main';
+            }
+        }
+
         $this->viewData['title'] = 'Edit Task';
         $this->viewData['task'] = $task;
         $this->viewData['teams'] = $teams;
@@ -274,6 +354,8 @@ class Workbench extends Control {
         $this->viewData['priorities'] = $this->getPriorities();
         $this->viewData['authcontrolLevels'] = $this->getAuthcontrolLevels();
         $this->viewData['memberLevel'] = $this->member->level;
+        $this->viewData['branches'] = $branches;
+        $this->viewData['currentBranch'] = $currentBranch;
 
         $this->render('workbench/edit', $this->viewData);
     }
@@ -337,6 +419,12 @@ class Workbench extends Control {
             $task->acceptanceCriteria = trim($this->getParam('acceptance_criteria', ''));
             $task->relatedFiles = json_encode(array_filter(explode("\n", $this->getParam('related_files', ''))));
             $task->tags = json_encode(array_filter(array_map('trim', explode(',', $this->getParam('tags', '')))));
+
+            // Only allow changing base branch if task hasn't been run yet
+            if (empty($task->branchName)) {
+                $task->baseBranch = trim($this->getParam('base_branch', $task->baseBranch ?? 'main'));
+            }
+
             $task->updatedAt = date('Y-m-d H:i:s');
             Bean::store($task);
 
@@ -399,6 +487,17 @@ class Workbench extends Control {
             // Delete proxy file for nginx subdomain routing
             if (!empty($task->proxyFile) && file_exists($task->proxyFile)) {
                 unlink($task->proxyFile);
+            }
+
+            // Clean up workspace directory
+            if (!empty($task->projectPath) && is_dir($task->projectPath)) {
+                try {
+                    $wsManager = new WorkspaceManager();
+                    $wsManager->destroy($task->projectPath);
+                    $this->logger->info('Workspace deleted', ['path' => $task->projectPath]);
+                } catch (Exception $e) {
+                    $this->logger->warning('Failed to delete workspace', ['error' => $e->getMessage()]);
+                }
             }
 
             // Delete related records with cascade
@@ -469,18 +568,26 @@ class Workbench extends Control {
         }
         $task->assignedPort = $assignedPort;
 
-        // Non-admin members must work on an isolated workspace with a branch
-        $isNonAdmin = $this->member->level > LEVELS['ADMIN'];
+        // Always create isolated workspace for tasks (safer for testing)
         $workspacePath = null;
 
-        if ($isNonAdmin && empty($task->branchName)) {
+        if (empty($task->branchName)) {
             try {
-                // Clone repository into isolated workspace
+                // Determine base branch before cloning
+                $baseBranch = $task->baseBranch ?: 'main';
+                if (empty($task->baseBranch) && $task->teamId) {
+                    $team = Bean::load('team', $task->teamId);
+                    if ($team->defaultBranch) {
+                        $baseBranch = $team->defaultBranch;
+                    }
+                }
+
+                // Clone repository into isolated workspace (clones the base branch)
                 $mainGit = new GitService();
-                $workspacePath = $mainGit->cloneToWorkspace($this->member->id, $task->id);
+                $workspacePath = $mainGit->cloneToWorkspace($this->member->id, $task->id, null, $baseBranch);
                 $task->projectPath = $workspacePath;
 
-                $this->logTaskEvent($taskId, 'info', 'system', "Created workspace: {$workspacePath}");
+                $this->logTaskEvent($taskId, 'info', 'system', "Created workspace: {$workspacePath} (from {$baseBranch})");
 
                 // Create GitService for the workspace
                 $gitService = new GitService($workspacePath);
@@ -491,17 +598,10 @@ class Workbench extends Control {
                     $task->title
                 );
 
-                // Get base branch from team settings or default to main
-                $baseBranch = 'main';
-                if ($task->teamId) {
-                    $team = Bean::load('team', $task->teamId);
-                    if ($team->defaultBranch) {
-                        $baseBranch = $team->defaultBranch;
-                    }
-                }
-
+                // Create new branch from the cloned base branch
                 $gitService->createBranch($branchName, $baseBranch);
                 $task->branchName = $branchName;
+                $task->baseBranch = $baseBranch; // Store the actual base branch used
 
                 $this->logTaskEvent($taskId, 'info', 'system', "Created branch: {$branchName} from {$baseBranch}");
 
@@ -520,6 +620,18 @@ class Workbench extends Control {
             $task->proxyHash = bin2hex(random_bytes(6)); // 12-char hex
             Bean::store($task);
             $this->logTaskEvent($taskId, 'info', 'system', "Generated proxy hash: {$task->proxyHash}");
+        }
+
+        // Initialize workspace with isolated database, config, and vendor
+        if ($workspacePath && is_dir($workspacePath)) {
+            try {
+                $wsManager = new WorkspaceManager();
+                $wsInfo = $wsManager->initialize($workspacePath, $task->proxyHash);
+                $this->logTaskEvent($taskId, 'info', 'system', "Initialized workspace: {$wsInfo['baseurl']}");
+            } catch (Exception $e) {
+                $this->logger->warning('Workspace initialization warning', ['error' => $e->getMessage()]);
+                // Continue - workspace may still work without full initialization
+            }
         }
 
         try {
@@ -1248,8 +1360,8 @@ class Workbench extends Control {
 
     /**
      * Start test server for a task's branch
-     * Creates a tmux session running serve.php on the assigned port
-     *
+     * Creates a tmux session running server.php on the assigned port
+     * Initializes workspace environment with fresh database for testing
      */
     public function startserver($params = []) {
         if (!$this->requireLogin()) return;
@@ -1295,23 +1407,49 @@ class Workbench extends Control {
 
         try {
             $sessionName = TmuxManager::buildServerSessionName($this->member->id, $task->id);
+            $initMessages = [];
 
             // Use workspace path if available, otherwise default to main project
             $projectPath = !empty($task->projectPath) ? $task->projectPath : dirname(__DIR__);
 
-            // Build the server command - only checkout branch if using main project
-            // In workspace mode, we're already on the correct branch
-            if (!empty($task->projectPath)) {
+            // Generate proxy hash if not exists
+            if (empty($task->proxyHash)) {
+                $task->proxyHash = bin2hex(random_bytes(6));
+                $initMessages[] = "Generated proxy hash: {$task->proxyHash}";
+            }
+
+            // Initialize or refresh workspace environment
+            if (!empty($task->projectPath) && is_dir($task->projectPath)) {
+                // Pull latest changes from branch
+                $pullCmd = sprintf(
+                    'cd %s && git pull origin %s 2>&1',
+                    escapeshellarg($task->projectPath),
+                    escapeshellarg($task->branchName)
+                );
+                exec($pullCmd, $pullOutput, $pullCode);
+                if ($pullCode === 0) {
+                    $initMessages[] = "Pulled latest changes from {$task->branchName}";
+                } else {
+                    // Not fatal - might be a local-only branch
+                    $this->logger->info('Git pull skipped (local branch)', ['output' => implode("\n", $pullOutput)]);
+                }
+
+                // Initialize workspace with fresh database and config
+                $wsManager = new WorkspaceManager();
+                $wsInfo = $wsManager->initialize($task->projectPath, $task->proxyHash);
+                $initMessages[] = "Initialized workspace: {$wsInfo['baseurl']}";
+                $initMessages[] = "Fresh database created with admin/admin1234";
+
                 // Workspace mode - already in isolated clone on correct branch
                 $serverCmd = sprintf(
-                    'cd %s && php serve.php --port=%d; echo "Server stopped. Press Enter to close..."; read',
+                    'cd %s && php -S 0.0.0.0:%d server.php; echo "Server stopped. Press Enter to close..."; read',
                     escapeshellarg($projectPath),
                     $task->assignedPort
                 );
             } else {
                 // Main project mode - need to checkout branch
                 $serverCmd = sprintf(
-                    'cd %s && git checkout %s && php serve.php --port=%d; echo "Server stopped. Press Enter to close..."; read',
+                    'cd %s && git checkout %s && php -S 0.0.0.0:%d server.php; echo "Server stopped. Press Enter to close..."; read',
                     escapeshellarg($projectPath),
                     escapeshellarg($task->branchName),
                     $task->assignedPort
@@ -1329,6 +1467,8 @@ class Workbench extends Control {
             // Filename: .proxy.{hash}.{domain} (no TLD - nginx lua strips it)
             if (!empty($task->proxyHash)) {
                 $baseDomain = preg_replace('#^https?://#', '', Flight::get('baseurl') ?? 'https://localhost');
+                // Strip TLD (e.g., .com, .net) - nginx lua expects domain without TLD
+                $baseDomain = preg_replace('/\.[a-z]{2,}$/i', '', $baseDomain);
                 $proxyFile = "/var/www/html/.proxy.{$task->proxyHash}.{$baseDomain}";
                 $proxyContent = "proxyhost=127.0.0.1\nproxyport={$task->assignedPort}";
                 if (file_put_contents($proxyFile, $proxyContent) !== false) {
@@ -1341,6 +1481,10 @@ class Workbench extends Control {
 
             Bean::store($task);
 
+            // Log initialization messages
+            foreach ($initMessages as $msg) {
+                $this->logTaskEvent($taskId, 'info', 'system', $msg);
+            }
             $this->logTaskEvent($taskId, 'info', 'system', "Test server started on port {$task->assignedPort}");
 
             // Build response with subdomain URL if available
@@ -1350,13 +1494,19 @@ class Workbench extends Control {
                 $testUrl = "https://{$task->proxyHash}.{$baseDomain}";
             }
 
+            $message = "Test server started on port {$task->assignedPort}";
+            if (!empty($initMessages)) {
+                $message .= " (" . implode(", ", $initMessages) . ")";
+            }
+
             Flight::json([
                 'success' => true,
-                'message' => "Test server started on port {$task->assignedPort}",
+                'message' => $message,
                 'session' => $sessionName,
                 'port' => $task->assignedPort,
                 'url' => $testUrl,
-                'subdomain' => !empty($task->proxyHash) ? "{$task->proxyHash}.{$baseDomain}" : null
+                'subdomain' => !empty($task->proxyHash) ? "{$task->proxyHash}.{$baseDomain}" : null,
+                'init_details' => $initMessages
             ]);
 
         } catch (Exception $e) {
@@ -1755,8 +1905,12 @@ class Workbench extends Control {
         $escapedTitle = escapeshellarg($title);
         $escapedBody = escapeshellarg($body);
 
-        // Run gh pr create
-        $cmd = "cd " . escapeshellarg($workspacePath) . " && gh pr create --title {$escapedTitle} --body {$escapedBody} 2>&1";
+        // Target base branch (for PR to merge into)
+        $baseBranch = $task->baseBranch ?: 'main';
+        $escapedBase = escapeshellarg($baseBranch);
+
+        // Run gh pr create with base branch
+        $cmd = "cd " . escapeshellarg($workspacePath) . " && gh pr create --title {$escapedTitle} --body {$escapedBody} --base {$escapedBase} 2>&1";
 
         $output = [];
         $returnCode = 0;
@@ -1843,14 +1997,14 @@ class Workbench extends Control {
             if (!empty($task->projectPath)) {
                 // Workspace mode - already on correct branch
                 $serverCmd = sprintf(
-                    'cd %s && php serve.php --port=%d; echo "Server stopped. Press Enter to close..."; read',
+                    'cd %s && php -S 0.0.0.0:%d server.php; echo "Server stopped. Press Enter to close..."; read',
                     escapeshellarg($projectPath),
                     $task->assignedPort
                 );
             } else {
                 // Main project mode - checkout branch first
                 $serverCmd = sprintf(
-                    'cd %s && git checkout %s && php serve.php --port=%d; echo "Server stopped. Press Enter to close..."; read',
+                    'cd %s && git checkout %s && php -S 0.0.0.0:%d server.php; echo "Server stopped. Press Enter to close..."; read',
                     escapeshellarg($projectPath),
                     escapeshellarg($task->branchName),
                     $task->assignedPort
@@ -1866,6 +2020,8 @@ class Workbench extends Control {
             // Filename: .proxy.{hash}.{domain} (no TLD - nginx lua strips it)
             if (!empty($task->proxyHash)) {
                 $baseDomain = preg_replace('#^https?://#', '', Flight::get('baseurl') ?? 'https://localhost');
+                // Strip TLD (e.g., .com, .net) - nginx lua expects domain without TLD
+                $baseDomain = preg_replace('/\.[a-z]{2,}$/i', '', $baseDomain);
                 $proxyFile = "/var/www/html/.proxy.{$task->proxyHash}.{$baseDomain}";
                 $proxyContent = "proxyhost=127.0.0.1\nproxyport={$task->assignedPort}";
                 if (file_put_contents($proxyFile, $proxyContent) !== false) {

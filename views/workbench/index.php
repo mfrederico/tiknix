@@ -5,7 +5,13 @@
             <a href="/teams" class="btn btn-outline-secondary me-2">
                 <i class="bi bi-people"></i> Teams
             </a>
-            <a href="/workbench/create" class="btn btn-primary">
+            <?php
+            $createUrl = '/workbench/create';
+            if (!empty($filters['team_id']) && $filters['team_id'] !== 'personal' && is_numeric($filters['team_id'])) {
+                $createUrl .= '?team_id=' . (int)$filters['team_id'];
+            }
+            ?>
+            <a href="<?= $createUrl ?>" class="btn btn-primary">
                 <i class="bi bi-plus-lg"></i> New Task
             </a>
         </div>
@@ -25,6 +31,8 @@
     <div class="row">
         <!-- Sidebar Filters -->
         <div class="col-lg-3 col-md-4 mb-4">
+            <h6 class="text-muted text-uppercase mb-3"><i class="bi bi-funnel"></i> Filters</h6>
+
             <!-- Status Counts -->
             <div class="card mb-3">
                 <div class="card-header">
@@ -54,25 +62,6 @@
                 </div>
             </div>
 
-            <!-- Team Filter -->
-            <?php if (!empty($teams)): ?>
-            <div class="card mb-3">
-                <div class="card-header">
-                    <h6 class="mb-0">Team</h6>
-                </div>
-                <div class="list-group list-group-flush">
-                    <a href="/workbench?team_id=personal" class="list-group-item list-group-item-action <?= $filters['team_id'] === 'personal' ? 'active' : '' ?>">
-                        <i class="bi bi-person"></i> Personal Tasks
-                    </a>
-                    <?php foreach ($teams as $team): ?>
-                        <a href="/workbench?team_id=<?= $team['id'] ?>" class="list-group-item list-group-item-action <?= (string)$filters['team_id'] === (string)$team['id'] ? 'active' : '' ?>">
-                            <i class="bi bi-people"></i> <?= htmlspecialchars($team['name']) ?>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-            <?php endif; ?>
-
             <!-- Type Filter -->
             <div class="card">
                 <div class="card-header">
@@ -90,13 +79,37 @@
 
         <!-- Task List -->
         <div class="col-lg-9 col-md-8">
+            <!-- Team Tabs -->
+            <ul class="nav nav-tabs mb-3">
+                <li class="nav-item">
+                    <a class="nav-link <?= empty($filters['team_id']) ? 'active' : '' ?>" href="/workbench<?= !empty($filters['status']) ? '?status=' . $filters['status'] : '' ?>">
+                        All Tasks
+                        <span class="badge bg-secondary rounded-pill ms-1"><?= $teamCounts['total'] ?? 0 ?></span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= $filters['team_id'] === 'personal' ? 'active' : '' ?>" href="/workbench?team_id=personal<?= !empty($filters['status']) ? '&status=' . $filters['status'] : '' ?>">
+                        <i class="bi bi-person"></i> Personal
+                        <span class="badge bg-secondary rounded-pill ms-1"><?= $teamCounts['personal'] ?? 0 ?></span>
+                    </a>
+                </li>
+                <?php foreach ($teams ?? [] as $team): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= (string)$filters['team_id'] === (string)$team['id'] ? 'active' : '' ?>" href="/workbench?team_id=<?= $team['id'] ?><?= !empty($filters['status']) ? '&status=' . $filters['status'] : '' ?>">
+                        <i class="bi bi-people"></i> <?= htmlspecialchars($team['name']) ?>
+                        <span class="badge bg-secondary rounded-pill ms-1"><?= $teamCounts[$team['id']] ?? 0 ?></span>
+                    </a>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+
             <?php if (empty($tasks)): ?>
                 <div class="card">
                     <div class="card-body text-center py-5">
                         <i class="bi bi-inbox" style="font-size: 3rem; color: #6c757d;"></i>
                         <h4 class="mt-3">No Tasks Found</h4>
                         <p class="text-muted">Create a new task to get started with AI-assisted development.</p>
-                        <a href="/workbench/create" class="btn btn-primary">
+                        <a href="<?= $createUrl ?>" class="btn btn-primary">
                             <i class="bi bi-plus-lg"></i> Create Task
                         </a>
                     </div>

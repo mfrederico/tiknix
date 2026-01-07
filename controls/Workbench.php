@@ -2375,41 +2375,14 @@ class Workbench extends Control {
      * Called every time a task is run to ensure fresh config with
      * correct baseurl from config.ini and valid API key.
      *
+     * Delegates to Mcp::ensureMcpConfig() for centralized config management.
+     *
      * @param string $workspacePath Path to the workspace
      * @param string|null $apiKey API key for tiknix MCP auth
      * @param string $baseUrl Base URL from config.ini
      */
     private function generateWorkspaceMcpConfig(string $workspacePath, ?string $apiKey, string $baseUrl): void {
-        // Build mcpServers as associative array (will serialize to JSON object)
-        $mcpServers = [
-            'playwright' => [
-                'command' => 'npx',
-                'args' => ['@playwright/mcp@latest', '--headless']
-            ]
-        ];
-
-        // Add tiknix MCP if we have an API key
-        // Use HTTP transport with /mcp/message endpoint (matches working config)
-        if ($apiKey) {
-            $mcpServers['tiknix'] = [
-                'type' => 'http',
-                'url' => rtrim($baseUrl, '/') . '/mcp/message',
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $apiKey
-                ]
-            ];
-        }
-
-        // Cast to object to ensure JSON serializes as {} not []
-        $mcpConfig = [
-            'mcpServers' => (object)$mcpServers
-        ];
-
-        $mcpJsonPath = rtrim($workspacePath, '/') . '/.mcp.json';
-        file_put_contents(
-            $mcpJsonPath,
-            json_encode($mcpConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
-        );
+        Mcp::ensureMcpConfig($workspacePath, $apiKey, $baseUrl);
     }
 
     /**

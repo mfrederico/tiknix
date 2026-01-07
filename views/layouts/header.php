@@ -55,6 +55,11 @@
                             <i class="bi bi-hammer"></i> Workbench
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/ollama">
+                            <i class="bi bi-robot"></i> Ollama
+                        </a>
+                    </li>
                     <?php if (($member['level'] ?? 100) <= 50): ?>
                     <li class="nav-item">
                         <a class="nav-link" href="/agentsetup">

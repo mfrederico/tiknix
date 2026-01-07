@@ -74,7 +74,7 @@
                             ?>
                             <?php if (empty($mcpServers)): ?>
                                 <div class="alert alert-info">
-                                    No MCP servers registered yet. <a href="/mcpregistry/add">Add a server</a> to restrict access.
+                                    No MCP servers configured yet. <a href="/agentsetup?tab=servers">Configure servers</a> in Agent Setup.
                                 </div>
                             <?php else: ?>
                                 <div class="row">

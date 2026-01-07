@@ -164,48 +164,6 @@ test.describe('Admin Panel', () => {
 });
 
 // ============================================
-// MCP REGISTRY TESTS
-// ============================================
-
-test.describe('MCP Registry', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page);
-  });
-
-  test('should display MCP registry list', async ({ page }) => {
-    await page.goto(`${BASE_URL}/mcpregistry`);
-    await expect(page).toHaveTitle('MCP Server Registry');
-    await expect(page.getByRole('heading', { name: 'MCP Registry' })).toBeVisible();
-  });
-
-  test('should show registered servers', async ({ page }) => {
-    await page.goto(`${BASE_URL}/mcpregistry`);
-    await expect(page.getByText('servers registered')).toBeVisible();
-  });
-
-  test('should have search and filter options', async ({ page }) => {
-    await page.goto(`${BASE_URL}/mcpregistry`);
-    await expect(page.getByRole('textbox', { name: 'Search servers...' })).toBeVisible();
-    await expect(page.getByRole('combobox').first()).toBeVisible();
-  });
-
-  test('should navigate to add server page', async ({ page }) => {
-    await page.goto(`${BASE_URL}/mcpregistry/add`);
-    await expect(page).toHaveTitle('Add MCP Server');
-    await expect(page.getByRole('heading', { name: 'Add MCP Server' })).toBeVisible();
-  });
-
-  // Known bug - CSRF issue
-  test.skip('should create new MCP server', async ({ page }) => {
-    await page.goto(`${BASE_URL}/mcpregistry/add`);
-    await page.getByRole('textbox', { name: 'Name *' }).fill('Test Server');
-    await page.getByRole('textbox', { name: 'Endpoint URL *' }).fill('http://localhost:9999/mcp');
-    await page.getByRole('button', { name: 'Create Server' }).click();
-    await expect(page).toHaveURL(`${BASE_URL}/mcpregistry`);
-  });
-});
-
-// ============================================
 // TEAMS TESTS
 // ============================================
 

@@ -102,9 +102,9 @@ class GitService {
         // Update repoPath to the new workspace
         $this->repoPath = $workspacePath;
 
-        // Copy main project's .claude and .mcp.json to workspace
+        // Copy main project's .claude folder and ensure .mcp.json exists
         $this->copyClaudeFolder($workspacePath);
-        $this->copyMcpConfig($workspacePath, null); // API key set later if needed
+        Mcp::ensureMcpConfig($workspacePath); // API key set later if needed
 
         $this->log("Workspace created at: {$workspacePath}");
         return $workspacePath;
@@ -118,7 +118,7 @@ class GitService {
      * @param string|null $mcpUrl Base URL for tiknix MCP (defaults to app.baseurl)
      */
     public function setWorkspaceMcpKey(string $workspacePath, string $apiKey, ?string $mcpUrl = null): void {
-        $this->copyMcpConfig($workspacePath, $apiKey, $mcpUrl);
+        Mcp::ensureMcpConfig($workspacePath, $apiKey, $mcpUrl);
     }
 
     /**
@@ -153,49 +153,6 @@ class GitService {
             }
         }
         $this->log("Copied .claude from main project");
-    }
-
-    /**
-     * Generate .mcp.json for workspace with valid MCP server configurations
-     *
-     * @param string $workspacePath Path to the workspace
-     * @param string|null $apiKey API key for tiknix MCP (if provided, tiknix tools are enabled)
-     * @param string|null $mcpUrl Base URL for tiknix MCP
-     */
-    private function copyMcpConfig(string $workspacePath, ?string $apiKey = null, ?string $mcpUrl = null): void {
-        $workspaceMcpJson = $workspacePath . '/.mcp.json';
-
-        // Generate a valid .mcp.json with known-good configurations
-        $mcpConfig = [
-            'mcpServers' => [
-                // Playwright for browser automation testing
-                'playwright' => [
-                    'command' => 'npx',
-                    'args' => ['@playwright/mcp@latest', '--headless']
-                ]
-            ]
-        ];
-
-        // Add tiknix MCP if API key is provided
-        // Use HTTP transport with /mcp/message endpoint
-        if ($apiKey) {
-            $baseUrl = $mcpUrl ?? (Flight::get('app.baseurl') ?? 'https://dev.tiknix.com');
-            $mcpConfig['mcpServers']['tiknix'] = [
-                'type' => 'http',
-                'url' => rtrim($baseUrl, '/') . '/mcp/message',
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $apiKey
-                ]
-            ];
-            $this->log("Added tiknix MCP to workspace config");
-        }
-
-        file_put_contents(
-            $workspaceMcpJson,
-            json_encode($mcpConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
-        );
-
-        $this->log("Generated .mcp.json for workspace");
     }
 
     /**

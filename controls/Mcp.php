@@ -2519,4 +2519,184 @@ class Mcp extends BaseControls\Control {
         }
         flush();
     }
+
+    // =========================================
+    // Static Config Management Methods
+    // =========================================
+
+    /**
+     * Ensure a workspace has proper .mcp.json configuration
+     *
+     * This is the main entry point for GitService and other callers.
+     * - Loads existing .mcp.json if present
+     * - Adds/updates tiknix and playwright servers
+     * - Preserves any other servers the user configured
+     * - Only writes if changes were made
+     *
+     * @param string $workspacePath Path to workspace directory
+     * @param string|null $apiKey API key for tiknix MCP authentication
+     * @param string|null $baseUrl Base URL override (defaults to app.baseurl)
+     * @return bool True if config was created/updated, false if no changes needed
+     */
+    public static function ensureMcpConfig(string $workspacePath, ?string $apiKey = null, ?string $baseUrl = null): bool {
+        $configPath = rtrim($workspacePath, '/') . '/.mcp.json';
+
+        // Load existing config or start fresh
+        $config = self::loadMcpConfig($configPath);
+
+        // Ensure mcpServers exists as array for manipulation
+        if (!isset($config['mcpServers']) || !is_array($config['mcpServers'])) {
+            $config['mcpServers'] = [];
+        }
+
+        // Snapshot original servers for change detection (use sorted keys for consistent comparison)
+        $originalServers = $config['mcpServers'];
+        ksort($originalServers);
+
+        // Always ensure playwright is configured (for browser automation)
+        if (!isset($config['mcpServers']['playwright'])) {
+            $config['mcpServers']['playwright'] = [
+                'command' => 'npx',
+                'args' => ['@playwright/mcp@latest', '--headless']
+            ];
+        }
+
+        // Always ensure mantic is configured (for PHP 8.3 AST analysis)
+        if (!isset($config['mcpServers']['mantic'])) {
+            $config['mcpServers']['mantic'] = [
+                'command' => 'node',
+                'args' => ['/home/mfrederico/development/Mantic.sh/dist/mcp-server.js']
+            ];
+        }
+
+        // Add/update tiknix server if API key provided
+        if ($apiKey) {
+            $config['mcpServers']['tiknix'] = self::generateServerConfig($apiKey, $baseUrl);
+        }
+
+        // Check if anything changed (compare sorted arrays)
+        $newServers = $config['mcpServers'];
+        ksort($newServers);
+        if ($originalServers === $newServers) {
+            return false; // No changes needed
+        }
+
+        // Write config - cast mcpServers and each server config to object for proper JSON {}
+        $output = ['mcpServers' => new \stdClass()];
+        foreach ($config['mcpServers'] as $name => $serverConfig) {
+            $output['mcpServers']->$name = self::arrayToObject($serverConfig);
+        }
+
+        return self::saveMcpConfig($configPath, $output);
+    }
+
+    /**
+     * Load existing .mcp.json config from a path
+     *
+     * @param string $configPath Full path to .mcp.json file
+     * @return array Parsed config array, or empty structure if not found/invalid
+     */
+    public static function loadMcpConfig(string $configPath): array {
+        if (!file_exists($configPath)) {
+            return ['mcpServers' => []];
+        }
+
+        $content = file_get_contents($configPath);
+        if ($content === false) {
+            return ['mcpServers' => []];
+        }
+
+        $config = json_decode($content, true);
+        if (!is_array($config)) {
+            return ['mcpServers' => []];
+        }
+
+        // Convert mcpServers to array if it's an object (for easier manipulation)
+        if (isset($config['mcpServers']) && is_object($config['mcpServers'])) {
+            $config['mcpServers'] = (array)$config['mcpServers'];
+        }
+
+        return $config;
+    }
+
+    /**
+     * Generate tiknix MCP server configuration entry
+     *
+     * @param string $apiKey API key for authentication
+     * @param string|null $baseUrl Base URL override (defaults to app.baseurl)
+     * @return array Server configuration array
+     */
+    public static function generateServerConfig(string $apiKey, ?string $baseUrl = null): array {
+        $mcpUrl = self::buildMcpUrl($baseUrl);
+
+        return [
+            'type' => 'http',
+            'url' => $mcpUrl,
+            'headers' => [
+                'Authorization' => 'Bearer ' . $apiKey
+            ]
+        ];
+    }
+
+    /**
+     * Save .mcp.json config to a path
+     *
+     * @param string $configPath Full path to .mcp.json file
+     * @param array $config Config array to save
+     * @return bool True on success
+     */
+    public static function saveMcpConfig(string $configPath, array $config): bool {
+        $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+        return file_put_contents($configPath, $json) !== false;
+    }
+
+    /**
+     * Build the MCP endpoint URL (static version)
+     *
+     * @param string|null $baseUrl Base URL override
+     * @return string Full MCP endpoint URL
+     */
+    private static function buildMcpUrl(?string $baseUrl = null): string {
+        if (!$baseUrl) {
+            $baseUrl = Flight::get('app.baseurl') ?? Flight::get('baseurl') ?? 'https://dev.tiknix.com';
+        }
+
+        $baseUrl = rtrim($baseUrl, '/');
+
+        // Ensure HTTPS in production
+        $env = Flight::get('app.environment');
+        if ($env === 'production' && strpos($baseUrl, 'http://') === 0) {
+            $baseUrl = 'https://' . substr($baseUrl, 7);
+        }
+
+        return $baseUrl . '/mcp/message';
+    }
+
+    /**
+     * Recursively convert associative arrays to objects for JSON serialization
+     *
+     * Ensures all associative arrays become {} in JSON, not [].
+     * Sequential arrays (like 'args') remain as arrays.
+     *
+     * @param mixed $data Data to convert
+     * @return mixed Converted data
+     */
+    private static function arrayToObject(mixed $data): mixed {
+        if (!is_array($data)) {
+            return $data;
+        }
+
+        // Check if this is a sequential array (like 'args' => ['--headless'])
+        if (array_keys($data) === range(0, count($data) - 1)) {
+            // Sequential array - keep as array, but recurse into elements
+            return array_map([self::class, 'arrayToObject'], $data);
+        }
+
+        // Associative array - convert to object
+        $obj = new \stdClass();
+        foreach ($data as $key => $value) {
+            $obj->$key = self::arrayToObject($value);
+        }
+        return $obj;
+    }
 }

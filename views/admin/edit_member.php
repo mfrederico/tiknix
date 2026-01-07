@@ -25,7 +25,7 @@
                             <label for="username" class="form-label">Username</label>
                             <input type="text" class="form-control" id="username" name="username" 
                                    value="<?= htmlspecialchars($editMember->username) ?>" required
-                                   <?= $editMember->username === 'public-user-entity' ? 'readonly' : '' ?>>
+                                   <?= $editMember->id == PUBLIC_USER_ID || $editMember->id == SYSTEM_ADMIN_ID ? 'readonly' : '' ?>>
                         </div>
                         
                         <div class="mb-3">
@@ -43,14 +43,14 @@
                         <div class="mb-3">
                             <label for="level" class="form-label">User Level</label>
                             <select class="form-select" id="level" name="level" required
-                                    <?= $editMember->username === 'public-user-entity' ? 'disabled' : '' ?>>
+                                    <?= $editMember->id == PUBLIC_USER_ID || $editMember->id == SYSTEM_ADMIN_ID ? 'disabled' : '' ?>>
                                 <option value="0" <?= $editMember->level == 0 ? 'selected' : '' ?>>ROOT (0)</option>
                                 <option value="1" <?= $editMember->level == 1 ? 'selected' : '' ?>>ROOT (1)</option>
                                 <option value="50" <?= $editMember->level == 50 ? 'selected' : '' ?>>ADMIN (50)</option>
                                 <option value="100" <?= $editMember->level == 100 ? 'selected' : '' ?>>MEMBER (100)</option>
                                 <option value="101" <?= $editMember->level == 101 ? 'selected' : '' ?>>PUBLIC (101)</option>
                             </select>
-                            <?php if ($editMember->username === 'public-user-entity'): ?>
+                            <?php if ($editMember->id == PUBLIC_USER_ID || $editMember->id == SYSTEM_ADMIN_ID): ?>
                                 <input type="hidden" name="level" value="101">
                             <?php endif; ?>
                         </div>
@@ -58,12 +58,12 @@
                         <div class="mb-3">
                             <label for="status" class="form-label">Status</label>
                             <select class="form-select" id="status" name="status" required
-                                    <?= $editMember->username === 'public-user-entity' ? 'disabled' : '' ?>>
+                                    <?= $editMember->id == PUBLIC_USER_ID || $editMember->id == SYSTEM_ADMIN_ID ? 'disabled' : '' ?>>
                                 <option value="active" <?= $editMember->status === 'active' ? 'selected' : '' ?>>Active</option>
                                 <option value="suspended" <?= $editMember->status === 'suspended' ? 'selected' : '' ?>>Suspended</option>
                                 <option value="inactive" <?= $editMember->status === 'inactive' ? 'selected' : '' ?>>Inactive</option>
                             </select>
-                            <?php if ($editMember->username === 'public-user-entity'): ?>
+                            <?php if ($editMember->id == PUBLIC_USER_ID || $editMember->id == SYSTEM_ADMIN_ID): ?>
                                 <input type="hidden" name="status" value="active">
                                 <small class="form-text text-muted">System user - status cannot be changed</small>
                             <?php endif; ?>

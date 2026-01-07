@@ -2,9 +2,6 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">API Keys</h1>
         <div>
-            <a href="/mcpregistry" class="btn btn-outline-secondary me-2">
-                <i class="bi bi-plug"></i> MCP Registry
-            </a>
             <a href="/apikeys/add" class="btn btn-primary">
                 <i class="bi bi-plus-lg"></i> Create New Key
             </a>

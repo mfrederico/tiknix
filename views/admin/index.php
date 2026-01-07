@@ -129,16 +129,6 @@
                     <p class="mb-1">View and respond to contact form submissions</p>
                 </a>
 
-                <a href="/mcpregistry" class="list-group-item list-group-item-action">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h5 class="mb-1"><i class="bi bi-plug"></i> MCP Server Registry</h5>
-                        <?php
-                        $mcpCount = \app\Bean::count('mcpserver', 'status = ?', ['active']);
-                        ?>
-                        <span class="badge bg-info"><?= $mcpCount ?> Active</span>
-                    </div>
-                    <p class="mb-1">Register and manage Model Context Protocol (MCP) servers for AI integrations</p>
-                </a>
             </div>
         </div>
     </div>

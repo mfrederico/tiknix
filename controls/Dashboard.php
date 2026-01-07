@@ -43,7 +43,9 @@ class Dashboard extends BaseControls\Control {
             $stats['login_count'] = $member->login_count ?? 0;
             
             // Get member since date
-            $stats['member_since'] = date('F j, Y', strtotime($member->created_at));
+            $stats['member_since'] = $member->createdAt
+                ? date('F j, Y', strtotime($member->createdAt))
+                : 'Unknown';
             
             // Get total members (if admin)
             if (Flight::hasLevel(LEVELS['ADMIN'])) {

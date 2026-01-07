@@ -143,81 +143,20 @@ curl -X POST <?= htmlspecialchars($mcpUrl ?? '') ?> \
         </div>
     </div>
 
-    <!-- MCP Registry API Accordion -->
+    <!-- Quick Links -->
     <div class="card mb-4">
         <div class="card-header">
             <h5 class="mb-0">
-                <i class="bi bi-collection"></i> MCP Server Registry
+                <i class="bi bi-link-45deg"></i> Quick Links
             </h5>
         </div>
         <div class="card-body">
-            <p>Tiknix includes a public MCP server registry. You can discover and connect to registered MCP servers.</p>
-
-            <div class="accordion" id="registryAccordion">
-                <div class="accordion-item">
-                    <h2 class="accordion-header">
-                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseRegistry">
-                            <i class="bi bi-code-slash me-2"></i> Add Registry API to Claude
-                        </button>
-                    </h2>
-                    <div id="collapseRegistry" class="accordion-collapse collapse" data-bs-parent="#registryAccordion">
-                        <div class="accordion-body">
-                            <p>Add the public registry API to your Claude configuration to discover available MCP servers:</p>
-
-                            <h6 class="mt-3">For <code>~/.claude/settings.json</code> or <code>.mcp.json</code>:</h6>
-                            <pre class="bg-dark text-light p-3 rounded"><code>{
-  "mcpServers": {
-    "tiknix-registry": {
-      "type": "http",
-      "url": "<?= htmlspecialchars(rtrim($_SERVER['REQUEST_SCHEME'] ?? 'https', '/')) ?>://<?= htmlspecialchars($_SERVER['HTTP_HOST'] ?? 'localhost') ?>/mcpregistry/api"
-    }
-  }
-}</code></pre>
-
-                            <div class="alert alert-info mt-3 mb-0">
-                                <i class="bi bi-info-circle"></i>
-                                <strong>No authentication required!</strong> The registry API is public for discovery.
-                                Individual MCP servers may require their own authentication.
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="accordion-item">
-                    <h2 class="accordion-header">
-                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseApiEndpoints">
-                            <i class="bi bi-hdd-network me-2"></i> Registry API Endpoints
-                        </button>
-                    </h2>
-                    <div id="collapseApiEndpoints" class="accordion-collapse collapse" data-bs-parent="#registryAccordion">
-                        <div class="accordion-body">
-                            <table class="table table-sm">
-                                <tr>
-                                    <td><code>GET /mcpregistry/api</code></td>
-                                    <td>List all active MCP servers (JSON)</td>
-                                </tr>
-                                <tr>
-                                    <td><code>GET /mcpregistry/api?status=all</code></td>
-                                    <td>Include inactive/deprecated servers</td>
-                                </tr>
-                                <tr>
-                                    <td><code>GET /mcpregistry/api?featured=1</code></td>
-                                    <td>Only featured servers</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-3">
-                <a href="/mcpregistry" class="btn btn-outline-primary">
-                    <i class="bi bi-gear"></i> Manage Registry
-                </a>
-                <a href="/apikeys" class="btn btn-outline-secondary">
-                    <i class="bi bi-key"></i> Manage API Keys
-                </a>
-            </div>
+            <a href="/agentsetup" class="btn btn-outline-primary me-2">
+                <i class="bi bi-gear"></i> Agent Setup
+            </a>
+            <a href="/apikeys" class="btn btn-outline-secondary">
+                <i class="bi bi-key"></i> Manage API Keys
+            </a>
         </div>
     </div>
 </div>

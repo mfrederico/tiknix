@@ -91,12 +91,6 @@ const tests = {
       requiresAuth: true,
       expectedElements: ['API Keys list or empty state']
     },
-    mcpRegistry: {
-      url: '/mcpregistry',
-      description: 'MCP Registry page',
-      requiresAuth: true,
-      expectedElements: ['MCP servers list']
-    },
     teams: {
       url: '/teams',
       description: 'Teams management page',
@@ -126,31 +120,6 @@ const tests = {
 
   // CRUD Operations
   crud: {
-    mcpRegistry: {
-      create: {
-        url: '/mcpregistry/form',
-        description: 'Create new MCP server',
-        formData: {
-          name: 'Test MCP Server',
-          description: 'Automated test server',
-          type: 'http',
-          endpoint: 'http://localhost:3000/mcp'
-        }
-      },
-      read: {
-        url: '/mcpregistry',
-        description: 'List MCP servers'
-      },
-      update: {
-        description: 'Edit MCP server',
-        formData: {
-          name: 'Updated Test Server'
-        }
-      },
-      delete: {
-        description: 'Delete MCP server'
-      }
-    },
     apikeys: {
       create: {
         url: '/apikeys/create',

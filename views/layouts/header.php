@@ -55,6 +55,13 @@
                             <i class="bi bi-hammer"></i> Workbench
                         </a>
                     </li>
+                    <?php if (($member['level'] ?? 100) <= 50): ?>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/agentsetup">
+                            <i class="bi bi-robot"></i> Agent Setup
+                        </a>
+                    </li>
+                    <?php endif; ?>
                 <?php endif; ?>
             </ul>
             
@@ -93,6 +100,11 @@
                                 <li>
                                     <a class="dropdown-item" href="/admin">
                                         <i class="bi bi-shield-lock"></i> Admin Panel
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="/security">
+                                        <i class="bi bi-shield-check"></i> Security Rules
                                     </a>
                                 </li>
                             <?php endif; ?>

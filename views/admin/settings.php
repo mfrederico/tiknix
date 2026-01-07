@@ -77,6 +77,46 @@
             </form>
         </div>
     </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5>Two-Factor Authentication Settings</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <?php if (!empty($csrf) && is_array($csrf)): ?>
+                    <?php foreach ($csrf as $name => $value): ?>
+                        <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <div class="mb-3">
+                    <label for="twofa_ip_whitelist" class="form-label">2FA IP Whitelist</label>
+                    <textarea class="form-control font-monospace" id="twofa_ip_whitelist" name="twofa_ip_whitelist" rows="4" placeholder="127.0.0.1&#10;192.168.1.0/24&#10;10.0.0.0/8"><?= htmlspecialchars(Flight::getSetting('twofa_ip_whitelist', 0) ?? '') ?></textarea>
+                    <small class="form-text text-muted">
+                        One IP or CIDR range per line. Requests from these IPs will bypass 2FA verification.<br>
+                        <strong>Security note:</strong> Only add trusted internal/VPN IPs. Never whitelist public IPs.
+                    </small>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="twofa_whitelist_enabled" name="twofa_whitelist_enabled" value="1" <?= Flight::getSetting('twofa_whitelist_enabled', 0) == '1' ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="twofa_whitelist_enabled">
+                            Enable IP whitelist bypass
+                        </label>
+                    </div>
+                    <small class="form-text text-muted">When enabled, IPs in the whitelist skip 2FA verification (not setup)</small>
+                </div>
+
+                <div class="alert alert-info mb-3">
+                    <strong>Current Request IP:</strong> <code><?= htmlspecialchars($_SERVER['REMOTE_ADDR'] ?? 'unknown') ?></code>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Save 2FA Settings</button>
+            </form>
+        </div>
+    </div>
     
     <?php if (!empty($settings)): ?>
         <div class="card mt-4">

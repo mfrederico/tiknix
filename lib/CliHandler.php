@@ -202,19 +202,19 @@ class CliHandler {
                 $this->error("Error loading member: " . $e->getMessage());
             }
         } else {
-            // Use public-user-entity by default
-            $publicUser = Bean::findOne('member', 'username = ?', ['public-user-entity']);
-            if ($publicUser) {
+            // Use public-user-entity (PUBLIC_USER_ID) by default
+            $publicUser = Bean::load('member', PUBLIC_USER_ID);
+            if ($publicUser->id) {
                 $_SESSION['member'] = $publicUser->export();
                 $_SESSION['member']['id'] = $publicUser->id;
                 $_SESSION['member']['level'] = $publicUser->level;
-                
+
                 // Also set in Flight for easy access
                 Flight::set('member', $publicUser);
                 Flight::set('memberlevel', $publicUser->level);
-                
+
                 if ($this->isVerbose()) {
-                    echo "Running as public-user-entity (Level: {$publicUser->level})\n";
+                    echo "Running as public user (Level: {$publicUser->level})\n";
                 }
             }
         }

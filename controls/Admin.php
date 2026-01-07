@@ -338,24 +338,25 @@ class Admin extends Control {
      */
     public function settings($params = []) {
         $this->viewData['title'] = 'System Settings';
-        
-        if (Flight::request()->method === 'POST') {
+        $request = Flight::request();
+
+        if ($request->method === 'POST') {
             // Validate CSRF
             if (!Flight::csrf()->validateRequest()) {
                 $this->viewData['error'] = 'Invalid CSRF token';
             } else {
-                // Update settings
+                // Update system-wide settings (stored under SYSTEM_ADMIN_ID)
                 foreach ($request->data as $key => $value) {
                     if ($key !== 'csrf_token' && $key !== 'csrf_token_name') {
-                        Flight::setSetting($key, $value, 0); // System-wide setting
+                        Flight::setSetting($key, $value, 0);
                     }
                 }
                 $this->viewData['success'] = 'Settings updated successfully';
             }
         }
         
-        // Get current settings
-        $this->viewData['settings'] = Bean::findAll('settings', 'member_id = 0');
+        // Get current system settings (owned by SYSTEM_ADMIN_ID)
+        $this->viewData['settings'] = Bean::findAll('settings', 'member_id = ?', [SYSTEM_ADMIN_ID]);
         
         $this->render('admin/settings', $this->viewData);
     }
@@ -364,14 +365,20 @@ class Admin extends Control {
      * Delete member
      */
     private function deleteMember($id) {
-        // Don't allow deleting self or system users
+        // Don't allow deleting self
         if ($id == $this->member->id) {
             $this->logger->warning('Attempted to delete self', ['member_id' => $id]);
             return;
         }
-        
+
+        // Never allow deleting protected system members
+        if ($id == SYSTEM_ADMIN_ID || $id == PUBLIC_USER_ID) {
+            $this->logger->warning('Attempted to delete protected system member', ['member_id' => $id]);
+            return;
+        }
+
         $member = Bean::load('member', $id);
-        if ($member->id && $member->username !== 'public-user-entity') {
+        if ($member->id) {
             // Additional protection for critical accounts
             if ($member->level <= self::ADMIN_LEVEL && $member->id != $this->member->id) {
                 // Only ROOT users can delete ADMIN users
@@ -439,9 +446,10 @@ class Admin extends Control {
         switch ($action) {
             case 'activate':
                 foreach ($selectedMembers as $memberId) {
-                    if (is_numeric($memberId)) {
+                    // Skip protected system members
+                    if (is_numeric($memberId) && $memberId != SYSTEM_ADMIN_ID && $memberId != PUBLIC_USER_ID) {
                         $member = Bean::load('member', $memberId);
-                        if ($member->id && $member->username !== 'public-user-entity') {
+                        if ($member->id) {
                             $member->status = 'active';
                             $member->updatedAt = date('Y-m-d H:i:s');
                             Bean::store($member);
@@ -451,12 +459,13 @@ class Admin extends Control {
                 }
                 $this->logger->info("Bulk activated $count members", ['admin_id' => $this->member->id]);
                 break;
-                
+
             case 'suspend':
                 foreach ($selectedMembers as $memberId) {
-                    if (is_numeric($memberId) && $memberId != $this->member->id) {
+                    // Skip self and protected system members
+                    if (is_numeric($memberId) && $memberId != $this->member->id && $memberId != SYSTEM_ADMIN_ID && $memberId != PUBLIC_USER_ID) {
                         $member = Bean::load('member', $memberId);
-                        if ($member->id && $member->username !== 'public-user-entity') {
+                        if ($member->id) {
                             $member->status = 'suspended';
                             $member->updatedAt = date('Y-m-d H:i:s');
                             Bean::store($member);
@@ -466,12 +475,13 @@ class Admin extends Control {
                 }
                 $this->logger->info("Bulk suspended $count members", ['admin_id' => $this->member->id]);
                 break;
-                
+
             case 'delete':
                 foreach ($selectedMembers as $memberId) {
-                    if (is_numeric($memberId) && $memberId != $this->member->id) {
+                    // Skip self and protected system members
+                    if (is_numeric($memberId) && $memberId != $this->member->id && $memberId != SYSTEM_ADMIN_ID && $memberId != PUBLIC_USER_ID) {
                         $member = Bean::load('member', $memberId);
-                        if ($member->id && $member->username !== 'public-user-entity') {
+                        if ($member->id) {
                             // Same protection as single delete
                             if ($member->level <= self::ADMIN_LEVEL && $this->member->level > self::ROOT_LEVEL) {
                                 continue; // Skip admin deletion by non-root

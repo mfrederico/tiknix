@@ -279,6 +279,114 @@ class TwoFactorAuth {
     }
 
     /**
+     * Check if automated testing bypass is active
+     * SECURITY: Only bypasses when ALL conditions are met:
+     * 1. TIKNIX_TESTING env var is set (must be explicitly enabled on server)
+     * 2. Request comes from localhost (REMOTE_ADDR cannot be spoofed)
+     */
+    public static function isTestingBypass(): bool {
+        // Must have testing env var explicitly set
+        if (empty(getenv('TIKNIX_TESTING'))) {
+            return false;
+        }
+
+        // REMOTE_ADDR is the actual TCP connection IP - cannot be spoofed
+        $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+        $localhostIPs = ['127.0.0.1', '::1'];
+
+        return in_array($remoteAddr, $localhostIPs, true);
+    }
+
+    /**
+     * Check if current IP is in the admin-configured whitelist
+     * SECURITY: Uses REMOTE_ADDR which cannot be spoofed
+     */
+    public static function isIpWhitelisted(): bool {
+        // Check if whitelist is enabled
+        if (Flight::getSetting('twofa_whitelist_enabled', 0) !== '1') {
+            return false;
+        }
+
+        $whitelist = Flight::getSetting('twofa_ip_whitelist', 0);
+        if (empty($whitelist)) {
+            return false;
+        }
+
+        $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? '';
+        if (empty($remoteAddr)) {
+            return false;
+        }
+
+        // Parse whitelist (one IP or CIDR per line)
+        $lines = array_filter(array_map('trim', explode("\n", $whitelist)));
+
+        foreach ($lines as $entry) {
+            // Skip comments and empty lines
+            if (empty($entry) || $entry[0] === '#') {
+                continue;
+            }
+
+            // Check for CIDR notation
+            if (strpos($entry, '/') !== false) {
+                if (self::ipInCidr($remoteAddr, $entry)) {
+                    return true;
+                }
+            } else {
+                // Exact IP match
+                if ($remoteAddr === $entry) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if an IP is within a CIDR range
+     */
+    private static function ipInCidr(string $ip, string $cidr): bool {
+        [$subnet, $bits] = explode('/', $cidr);
+
+        // Handle IPv4
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $ip = ip2long($ip);
+            $subnet = ip2long($subnet);
+            $mask = -1 << (32 - (int)$bits);
+            $subnet &= $mask;
+            return ($ip & $mask) === $subnet;
+        }
+
+        // Handle IPv6 (simplified - exact prefix match)
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            $ipBin = inet_pton($ip);
+            $subnetBin = inet_pton($subnet);
+            if ($ipBin === false || $subnetBin === false) {
+                return false;
+            }
+            $bits = (int)$bits;
+            $bytes = (int)($bits / 8);
+            $remainingBits = $bits % 8;
+
+            // Compare full bytes
+            if (substr($ipBin, 0, $bytes) !== substr($subnetBin, 0, $bytes)) {
+                return false;
+            }
+
+            // Compare remaining bits
+            if ($remainingBits > 0 && $bytes < 16) {
+                $mask = 0xFF << (8 - $remainingBits);
+                if ((ord($ipBin[$bytes]) & $mask) !== (ord($subnetBin[$bytes]) & $mask)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Check if user needs to verify 2FA now
      * Returns true if 2FA is required, enabled, and device not trusted
      */
@@ -293,6 +401,23 @@ class TwoFactorAuth {
             return false; // Will be caught by needsSetup()
         }
 
+        // Testing bypass - localhost only, requires explicit env var
+        if (self::isTestingBypass()) {
+            Flight::get('log')->info('2FA verification bypassed (localhost testing)', [
+                'member_id' => $member->id
+            ]);
+            return false;
+        }
+
+        // Admin-configured IP whitelist bypass
+        if (self::isIpWhitelisted()) {
+            Flight::get('log')->info('2FA verification bypassed (IP whitelist)', [
+                'member_id' => $member->id,
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
+            return false;
+        }
+
         // Device is trusted
         if (self::isDeviceTrusted()) {
             return false;
@@ -305,6 +430,11 @@ class TwoFactorAuth {
      * Check if user needs to set up 2FA
      */
     public static function needsSetup(object $member): bool {
+        // Testing bypass - skip setup requirement for localhost testing
+        if (self::isTestingBypass()) {
+            return false;
+        }
+
         return self::isRequired($member) && !self::isEnabled($member);
     }
 

@@ -459,7 +459,7 @@ class Mcp extends BaseControls\Control {
 
         $this->logger->debug('MCP request received', [
             'method' => $method,
-            'member_id' => $this->authMember->id ?? 0
+            'member_id' => $this->authMember->id ?? PUBLIC_USER_ID
         ]);
 
         // Use output buffering to capture response for logging
@@ -1018,7 +1018,7 @@ class Mcp extends BaseControls\Control {
             'full_tool' => $fullToolName,
             'server' => $serverSlug,
             'tool' => $toolName,
-            'member_id' => $this->authMember->id ?? 0
+            'member_id' => $this->authMember->id ?? PUBLIC_USER_ID
         ]);
 
         try {

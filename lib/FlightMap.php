@@ -286,14 +286,26 @@ Flight::map('isOff', function($val) {
 });
 
 /**
+ * Protected system members - cannot be deleted
+ */
+define('SYSTEM_ADMIN_ID', 1);        // Root admin, owns system settings
+define('PUBLIC_USER_ID', 2);         // public-user-entity, represents unauthenticated users
+
+/**
  * Setting management helpers
+ * Pass memberId=0 for system-wide settings (stored under SYSTEM_ADMIN_ID)
  */
 Flight::map('getSetting', function($key, $memberId = null) {
     if ($memberId === null) {
         $member = Flight::getMember();
-        $memberId = $member->id;
+        $memberId = $member->id ?? SYSTEM_ADMIN_ID;
     }
-    
+
+    // System-wide settings (member_id=0) are owned by SYSTEM_ADMIN_ID
+    if ($memberId === 0) {
+        $memberId = SYSTEM_ADMIN_ID;
+    }
+
     $setting = Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
     return $setting ? $setting->settingValue : null;
 });
@@ -301,10 +313,16 @@ Flight::map('getSetting', function($key, $memberId = null) {
 Flight::map('setSetting', function($key, $value, $memberId = null) {
     if ($memberId === null) {
         $member = Flight::getMember();
-        $memberId = $member->id;
+        $memberId = $member->id ?? SYSTEM_ADMIN_ID;
     }
-    
+
+    // System-wide settings (member_id=0) are owned by SYSTEM_ADMIN_ID
+    if ($memberId === 0) {
+        $memberId = SYSTEM_ADMIN_ID;
+    }
+
     $setting = Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
+
     if (!$setting) {
         $setting = Bean::dispense('settings');
         $setting->memberId = $memberId;
@@ -312,6 +330,6 @@ Flight::map('setSetting', function($key, $value, $memberId = null) {
     }
     $setting->settingValue = $value;
     $setting->updatedAt = date('Y-m-d H:i:s');
-    
+
     return Bean::store($setting);
 });

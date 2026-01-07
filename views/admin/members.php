@@ -102,8 +102,8 @@
                                     $statusClass = 'secondary';
                                     break;
                             }
-                            // Special case for public-user-entity
-                            if ($member->username === 'public-user-entity') {
+                            // Special case for public user (unauthenticated)
+                            if ($member->id == PUBLIC_USER_ID) {
                                 $statusClass = 'info';
                             }
                             ?>
@@ -122,7 +122,7 @@
                         </td>
                         <td>
                             <a href="/admin/editMember?id=<?= $member->id ?>" class="btn btn-sm btn-outline-primary">Edit</a>
-                            <?php if ($member->username !== 'public-user-entity' && $member->id != $_SESSION['member']['id']): ?>
+                            <?php if ($member->id != PUBLIC_USER_ID && $member->id != SYSTEM_ADMIN_ID && $member->id != $_SESSION['member']['id']): ?>
                                 <a href="/admin/members?delete=<?= $member->id ?>" 
                                    class="btn btn-sm btn-outline-danger"
                                    onclick="return confirm('Delete this member?')">Delete</a>

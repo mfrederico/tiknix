@@ -346,8 +346,9 @@ function generateMcpConfig(int $taskId): array {
     // In production, you'd want to use a proper key
     $apiKey = 'worker-' . bin2hex(random_bytes(16));
 
+    // Cast to object to ensure JSON serializes as {} not []
     return [
-        'mcpServers' => [
+        'mcpServers' => (object)[
             'tiknix' => [
                 'type' => 'http',
                 'url' => $baseUrl . '/mcp/message',

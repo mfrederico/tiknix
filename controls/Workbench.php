@@ -2380,19 +2380,18 @@ class Workbench extends Control {
      * @param string $baseUrl Base URL from config.ini
      */
     private function generateWorkspaceMcpConfig(string $workspacePath, ?string $apiKey, string $baseUrl): void {
-        $mcpConfig = [
-            'mcpServers' => [
-                'playwright' => [
-                    'command' => 'npx',
-                    'args' => ['@playwright/mcp@latest', '--headless']
-                ]
+        // Build mcpServers as associative array (will serialize to JSON object)
+        $mcpServers = [
+            'playwright' => [
+                'command' => 'npx',
+                'args' => ['@playwright/mcp@latest', '--headless']
             ]
         ];
 
         // Add tiknix MCP if we have an API key
         // Use HTTP transport with /mcp/message endpoint (matches working config)
         if ($apiKey) {
-            $mcpConfig['mcpServers']['tiknix'] = [
+            $mcpServers['tiknix'] = [
                 'type' => 'http',
                 'url' => rtrim($baseUrl, '/') . '/mcp/message',
                 'headers' => [
@@ -2400,6 +2399,11 @@ class Workbench extends Control {
                 ]
             ];
         }
+
+        // Cast to object to ensure JSON serializes as {} not []
+        $mcpConfig = [
+            'mcpServers' => (object)$mcpServers
+        ];
 
         $mcpJsonPath = rtrim($workspacePath, '/') . '/.mcp.json';
         file_put_contents(

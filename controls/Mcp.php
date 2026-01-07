@@ -617,9 +617,9 @@ class Mcp extends BaseControls\Control {
             'url' => $mcpUrl
         ];
 
-        // Response structure
+        // Response structure - cast to object to ensure JSON {} not []
         $response = [
-            'mcpServers' => [
+            'mcpServers' => (object)[
                 self::SERVER_NAME => $serverConfig
             ]
         ];
@@ -727,11 +727,12 @@ class Mcp extends BaseControls\Control {
 
         $this->logger->info('MCP token generated', ['member_id' => $this->authMember->id]);
 
+        // Cast mcpServers to object to ensure JSON {} not []
         echo json_encode([
             'success' => true,
             'api_token' => $token,
             'config' => [
-                'mcpServers' => [
+                'mcpServers' => (object)[
                     self::SERVER_NAME => [
                         'type' => 'http',
                         'url' => $this->getMcpUrl(),

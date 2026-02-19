@@ -2620,6 +2620,55 @@ class Mcp extends BaseControls\Control {
     }
 
     /**
+     * Get available MCP servers for task configuration
+     *
+     * Returns servers from project .mcp.json plus system tiknix server.
+     * Each server includes: slug, type, isSystem flag, and full config.
+     *
+     * @return array Array of server configurations
+     */
+    public static function getAvailableServers(): array {
+        $servers = [];
+
+        // Add system tiknix server
+        $servers['tiknix'] = [
+            'slug' => 'tiknix',
+            'type' => 'http',
+            'source' => 'system',
+            'description' => 'Tiknix MCP Server - PHP validation, workbench tools',
+            'config' => [
+                'type' => 'http',
+                'url' => self::buildMcpUrl(),
+                'headers' => ['Authorization' => 'Bearer {API_KEY}']
+            ]
+        ];
+
+        // Load user-defined servers from project .mcp.json
+        $projectRoot = \Flight::get('project.root') ?? dirname(__DIR__);
+        $configPath = $projectRoot . '/.mcp.json';
+        $config = self::loadMcpConfig($configPath);
+
+        if (!empty($config['mcpServers'])) {
+            foreach ($config['mcpServers'] as $slug => $serverConfig) {
+                // Skip tiknix if already in project config (use system version)
+                if ($slug === 'tiknix') {
+                    continue;
+                }
+
+                $servers[$slug] = [
+                    'slug' => $slug,
+                    'type' => $serverConfig['type'] ?? 'unknown',
+                    'source' => 'user',
+                    'description' => $serverConfig['description'] ?? '',
+                    'config' => $serverConfig
+                ];
+            }
+        }
+
+        return $servers;
+    }
+
+    /**
      * Generate tiknix MCP server configuration entry
      *
      * @param string $apiKey API key for authentication

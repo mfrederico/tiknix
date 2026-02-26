@@ -216,6 +216,15 @@ class Mcp extends BaseControls\Control {
         // Try to resolve auth for proxy/logging (sets authMember, authApiKey)
         $this->resolveAuthContext($authRequest);
 
+        // Propagate auth context to tool adapters so BaseTool has member/apiKey
+        if ($this->authMember || $this->authApiKey) {
+            foreach ($this->server->getTools() as $tool) {
+                if ($tool instanceof FastMcpToolAdapter) {
+                    $tool->setAuth($this->authMember, $this->authApiKey);
+                }
+            }
+        }
+
         ob_start();
 
         try {

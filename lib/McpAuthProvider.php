@@ -86,6 +86,9 @@ class McpAuthProvider implements AuthProviderInterface
 
             $scopes = json_decode($key->scopes, true) ?: [];
 
+            // Translate tiknix scopes to fastmcphp scope format
+            $scopes = $this->translateScopes($scopes);
+
             return AuthResult::success(new AuthenticatedUser(
                 id: (string) $member->id,
                 name: $member->username ?? $member->firstName ?? null,
@@ -113,7 +116,7 @@ class McpAuthProvider implements AuthProviderInterface
             name: $member->username ?? $member->firstName ?? null,
             email: $member->email ?? null,
             level: (int) ($member->level ?? 100),
-            scopes: ['mcp:*'], // Legacy auth gets full access
+            scopes: ['tools:*', 'resources:*', 'prompts:*'], // Legacy auth gets full access
             extra: [
                 'member_id' => (int) $member->id,
                 'apikey_id' => 0,
@@ -160,5 +163,44 @@ class McpAuthProvider implements AuthProviderInterface
                 'basic_auth' => true,
             ],
         ));
+    }
+
+    /**
+     * Translate tiknix scope format to fastmcphp scope format.
+     *
+     * Tiknix uses: mcp:tools, mcp:*
+     * fastmcphp uses: tools:*, resources:*, prompts:*
+     *
+     * @param array<string> $scopes
+     * @return array<string>
+     */
+    private function translateScopes(array $scopes): array
+    {
+        $translated = [];
+
+        foreach ($scopes as $scope) {
+            switch ($scope) {
+                case 'mcp:*':
+                    $translated[] = 'tools:*';
+                    $translated[] = 'resources:*';
+                    $translated[] = 'prompts:*';
+                    break;
+                case 'mcp:tools':
+                    $translated[] = 'tools:*';
+                    break;
+                case 'mcp:resources':
+                    $translated[] = 'resources:*';
+                    break;
+                case 'mcp:prompts':
+                    $translated[] = 'prompts:*';
+                    break;
+                default:
+                    // Pass through scopes already in fastmcphp format
+                    $translated[] = $scope;
+                    break;
+            }
+        }
+
+        return array_unique($translated);
     }
 }

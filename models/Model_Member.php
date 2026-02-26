@@ -7,7 +7,14 @@
  * - ownContactList: Contact submissions by this member
  * - ownSettingsList: Settings for this member
  * - ownTeammemberList: Team memberships
+ *
+ * Agent support:
+ * - agentId: FK to agent table (NULL for human members)
+ * - isAgent(): Check if this member is a bot account
+ * - getAgent(): Load the linked agent bean
  */
+
+use app\Bean;
 
 class Model_Member extends \RedBeanPHP\SimpleModel {
 
@@ -48,5 +55,42 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
         }
 
         return strtoupper(substr($name, 0, 1));
+    }
+
+    /**
+     * Check if this member is a bot account linked to an agent
+     *
+     * @return bool
+     */
+    public function isAgent(): bool {
+        return !empty($this->bean->agentId);
+    }
+
+    /**
+     * Load the linked agent bean, or null if this is a human member
+     *
+     * @return \RedBeanPHP\OODBBean|null
+     */
+    public function getAgent() {
+        if (!$this->isAgent()) {
+            return null;
+        }
+        $agent = Bean::load('agent', (int) $this->bean->agentId);
+        return ($agent && $agent->id) ? $agent : null;
+    }
+
+    /**
+     * Get the agent badge HTML for display in views.
+     * Returns empty string for human members.
+     *
+     * @return string HTML badge markup
+     */
+    public function agentBadge(): string {
+        if (!$this->isAgent()) {
+            return '';
+        }
+        $agent = $this->getAgent();
+        $provider = $agent ? htmlspecialchars($agent->provider) : 'unknown';
+        return '<span class="badge bg-info ms-1" title="AI Agent (' . $provider . ')"><i class="bi bi-robot"></i> Bot</span>';
     }
 }

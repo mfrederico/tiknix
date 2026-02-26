@@ -10,18 +10,24 @@
             "email": "you@example.com"
         }
     ],
+    "repositories": [
+        {"type": "path", "url": "../fastmcphp"},
+        {"type": "path", "url": "../aoe-php"}
+    ],
     "require": {
         "php": ">=8.1",
+        "bacon/bacon-qr-code": "^3.0",
+        "fastmcphp/fastmcphp": "@dev",
         "flightphp/core": "^3.0",
         "gabordemooij/redbean": "dev-master",
-        "monolog/monolog": "^3.5",
-        "nesbot/carbon": "^3.1",
-        "vlucas/phpdotenv": "^5.5",
         "mailgun/mailgun-php": "^4.0",
-        "symfony/http-client": "^6.0",
+        "monolog/monolog": "^3.5",
+        "myctobot/aoe-php": "@dev",
+        "nesbot/carbon": "^3.1",
         "nyholm/psr7": "^1.5",
         "pragmarx/google2fa": "^8.0",
-        "bacon/bacon-qr-code": "^3.0"
+        "symfony/http-client": "^6.0",
+        "vlucas/phpdotenv": "^5.5"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.5",

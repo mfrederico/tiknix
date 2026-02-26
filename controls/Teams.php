@@ -816,6 +816,79 @@ class Teams extends Control {
     }
 
     /**
+     * Add an agent to a team as a member
+     */
+    public function addagent($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::redirect('/teams');
+            return;
+        }
+
+        $teamId = (int)$this->getParam('team_id');
+        $agentId = (int)$this->getParam('agent_id');
+
+        if (!$teamId || !$agentId) {
+            Flight::jsonError('Invalid parameters', 400);
+            return;
+        }
+
+        $team = Bean::load('team', $teamId);
+        if (!$team->id) {
+            Flight::jsonError('Team not found', 404);
+            return;
+        }
+
+        if (!$this->access->isTeamAdmin($teamId, $this->member->id)) {
+            Flight::jsonError('Only admins can add agents to teams', 403);
+            return;
+        }
+
+        $agent = Bean::load('agent', $agentId);
+        if (!$agent->id || !$agent->isActive) {
+            Flight::jsonError('Agent not found or inactive', 404);
+            return;
+        }
+
+        if (!$agent->memberId) {
+            Flight::jsonError('Agent does not have a linked member account', 400);
+            return;
+        }
+
+        // Check if agent member is already in the team
+        $existing = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, (int)$agent->memberId]);
+        if ($existing) {
+            Flight::jsonError('This agent is already a member of the team', 400);
+            return;
+        }
+
+        // Add agent's linked member to the team
+        $membership = Bean::dispense('teammember');
+        $membership->teamId = $teamId;
+        $membership->memberId = (int)$agent->memberId;
+        $membership->role = 'member';
+        $membership->canRunTasks = 1;
+        $membership->canEditTasks = 1;
+        $membership->canDeleteTasks = 0;
+        $membership->joinedAt = date('Y-m-d H:i:s');
+        Bean::store($membership);
+
+        $this->logger->info('Agent added to team', [
+            'team_id' => $teamId,
+            'agent_id' => $agentId,
+            'agent_member_id' => $agent->memberId,
+            'added_by' => $this->member->id
+        ]);
+
+        Flight::json([
+            'success' => true,
+            'message' => 'Agent "' . $agent->name . '" added to team'
+        ]);
+    }
+
+    /**
      * Generate URL-safe slug from name
      */
     private function generateSlug(string $name): string {

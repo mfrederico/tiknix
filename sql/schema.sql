@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS tasksnapshot (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
--- Task comments (conversation between user and Claude)
+-- Task comments (conversation between user and Claude/agents)
 CREATE TABLE IF NOT EXISTS taskcomment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id INTEGER NOT NULL REFERENCES workbenchtask(id) ON DELETE CASCADE,
@@ -202,6 +202,9 @@ CREATE TABLE IF NOT EXISTS taskcomment (
     content TEXT NOT NULL,
     is_internal INTEGER DEFAULT 0,
     is_from_claude INTEGER DEFAULT 0,
+    is_from_agent INTEGER DEFAULT 0,
+    agent_id INTEGER REFERENCES agent(id),
+    mentioned_agents TEXT DEFAULT '[]',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT
 );
@@ -362,6 +365,85 @@ CREATE TABLE IF NOT EXISTS groceryitem (
 );
 
 -- ============================================
+-- AGENT SYSTEM
+-- ============================================
+
+-- Agent profiles (AI agent definitions)
+CREATE TABLE IF NOT EXISTS agent (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) NOT NULL,
+    description TEXT,
+    provider VARCHAR(50) NOT NULL DEFAULT 'claude_cli',
+    provider_config TEXT DEFAULT '{}',
+    system_prompt TEXT,
+    capabilities TEXT DEFAULT '[]',
+    mcp_servers TEXT DEFAULT '{}',
+    hooks TEXT DEFAULT '{}',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    member_id INTEGER,
+    created_by INTEGER,
+    expose_as_mcp INTEGER NOT NULL DEFAULT 0,
+    mcp_tool_name VARCHAR(255),
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT,
+    FOREIGN KEY (member_id) REFERENCES member(id),
+    FOREIGN KEY (created_by) REFERENCES member(id)
+);
+
+-- Agent link on member (NULL for humans, FK to agent for bot accounts)
+-- Note: SQLite ALTER TABLE ADD COLUMN does not support REFERENCES constraint,
+-- but RedBeanPHP handles the relationship via FUSE models
+ALTER TABLE member ADD COLUMN agent_id INTEGER REFERENCES agent(id);
+
+-- ============================================
+-- WORKSTATION / RUNNER SYSTEM
+-- ============================================
+
+-- SSH Keys (stored encrypted, used for remote workstation access)
+CREATE TABLE IF NOT EXISTS sshkey (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id INTEGER NOT NULL REFERENCES member(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    key_type VARCHAR(20) DEFAULT 'ed25519',
+    public_key TEXT NOT NULL,
+    private_key_encrypted TEXT NOT NULL,
+    fingerprint VARCHAR(255),
+    is_shared INTEGER DEFAULT 0,
+    last_used_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT
+);
+
+-- Runners (remote workstations where agents execute tasks)
+CREATE TABLE IF NOT EXISTS runner (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    host VARCHAR(255) NOT NULL,
+    ssh_user VARCHAR(100) DEFAULT 'claudeuser',
+    ssh_port INTEGER DEFAULT 22,
+    sshkey_id INTEGER REFERENCES sshkey(id) ON DELETE SET NULL,
+    capabilities TEXT DEFAULT '[]',
+    max_concurrent_jobs INTEGER DEFAULT 2,
+    is_active INTEGER DEFAULT 1,
+    is_default INTEGER DEFAULT 0,
+    health_status VARCHAR(20) DEFAULT 'unknown',
+    last_health_check TEXT,
+    ssh_validated INTEGER DEFAULT 0,
+    ssh_last_diagnostic TEXT,
+    ssh_last_check TEXT,
+    created_by INTEGER REFERENCES member(id),
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT
+);
+
+-- Runner ↔ Agent: add workstation fields to agent table
+ALTER TABLE agent ADD COLUMN runner_id INTEGER REFERENCES runner(id) ON DELETE SET NULL;
+ALTER TABLE agent ADD COLUMN default_work_dir VARCHAR(512);
+
+-- ============================================
 -- INDEXES
 -- ============================================
 
@@ -405,6 +487,7 @@ CREATE INDEX IF NOT EXISTS idx_tasklog_task ON tasklog(task_id);
 CREATE INDEX IF NOT EXISTS idx_tasklog_level ON tasklog(log_level);
 CREATE INDEX IF NOT EXISTS idx_tasksnapshot_task ON tasksnapshot(task_id);
 CREATE INDEX IF NOT EXISTS idx_taskcomment_task ON taskcomment(task_id);
+CREATE INDEX IF NOT EXISTS idx_taskcomment_agent ON taskcomment(agent_id);
 
 -- MCP indexes
 CREATE INDEX IF NOT EXISTS idx_mcpserver_slug ON mcpserver(slug);
@@ -426,6 +509,21 @@ CREATE INDEX IF NOT EXISTS idx_mcplog_session ON mcplog(session_id);
 CREATE INDEX IF NOT EXISTS idx_grocerylist_member ON grocerylist(member_id);
 CREATE INDEX IF NOT EXISTS idx_groceryitem_member ON groceryitem(member_id);
 CREATE INDEX IF NOT EXISTS idx_groceryitem_list ON groceryitem(grocerylist_id);
+
+-- Agent indexes
+CREATE INDEX IF NOT EXISTS idx_agent_slug ON agent(slug);
+CREATE INDEX IF NOT EXISTS idx_agent_member ON agent(member_id);
+CREATE INDEX IF NOT EXISTS idx_agent_created_by ON agent(created_by);
+CREATE INDEX IF NOT EXISTS idx_agent_active ON agent(is_active);
+CREATE INDEX IF NOT EXISTS idx_agent_provider ON agent(provider);
+CREATE INDEX IF NOT EXISTS idx_agent_runner ON agent(runner_id);
+CREATE INDEX IF NOT EXISTS idx_member_agent ON member(agent_id);
+
+-- Workstation / Runner indexes
+CREATE INDEX IF NOT EXISTS idx_sshkey_member ON sshkey(member_id);
+CREATE INDEX IF NOT EXISTS idx_runner_active ON runner(is_active);
+CREATE INDEX IF NOT EXISTS idx_runner_created_by ON runner(created_by);
+CREATE INDEX IF NOT EXISTS idx_runner_sshkey ON runner(sshkey_id);
 
 -- ============================================
 -- DEFAULT DATA
@@ -472,6 +570,7 @@ INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_
     ('grocery', '*', 100, 'Grocery list management', datetime('now')),
     ('workbench', '*', 100, 'Workbench access', datetime('now')),
     ('teams', '*', 100, 'Teams management', datetime('now')),
+    ('teams', 'addagent', 100, 'Add agent to team', datetime('now')),
 
     -- Admin routes (level 50)
     ('admin', '*', 50, 'Admin panel access', datetime('now')),
@@ -486,6 +585,30 @@ INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_
     ('mcp', 'message', 101, 'MCP JSON-RPC endpoint', datetime('now')),
     ('mcp', 'health', 101, 'MCP health check', datetime('now')),
     ('mcpregistry', 'testConnection', 101, 'Test MCP server connection', datetime('now')),
+
+    -- Agent routes (level 100 - member)
+    ('agents', 'index', 100, 'List agent profiles', datetime('now')),
+    ('agents', 'create', 100, 'Create agent profile form', datetime('now')),
+    ('agents', 'store', 100, 'Store new agent profile', datetime('now')),
+    ('agents', 'edit', 100, 'Edit agent profile form', datetime('now')),
+    ('agents', 'update', 100, 'Update agent profile', datetime('now')),
+    ('agents', 'delete', 100, 'Delete agent profile', datetime('now')),
+    ('agents', 'view', 100, 'View agent profile', datetime('now')),
+    ('agents', 'getcapabilities', 100, 'Get provider capabilities', datetime('now')),
+    ('agents', 'testconnection', 100, 'Test provider connection', datetime('now')),
+
+    -- Workstation routes (level 100 - member)
+    ('workstations', 'index', 100, 'List workstations', datetime('now')),
+    ('workstations', 'create', 100, 'Create workstation form', datetime('now')),
+    ('workstations', 'store', 100, 'Store new workstation', datetime('now')),
+    ('workstations', 'edit', 100, 'Edit workstation form', datetime('now')),
+    ('workstations', 'update', 100, 'Update workstation', datetime('now')),
+    ('workstations', 'delete', 100, 'Delete workstation', datetime('now')),
+    ('workstations', 'test', 100, 'Test workstation SSH', datetime('now')),
+    ('workstations', 'diagnose', 100, 'Full diagnostic check', datetime('now')),
+    ('workstations', 'sshkeys', 100, 'List SSH keys', datetime('now')),
+    ('workstations', 'generatesshkey', 100, 'Generate SSH key', datetime('now')),
+    ('workstations', 'deletesshkey', 100, 'Delete SSH key', datetime('now')),
 
     -- Root only (level 1)
     ('permissions', 'build', 1, 'Build mode - scan controllers', datetime('now')),

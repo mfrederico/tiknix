@@ -1,3 +1,4 @@
+<?php include __DIR__ . '/../partials/agent-badge.php'; ?>
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
@@ -6,9 +7,14 @@
             </a>
             <h1 class="h2 mb-0 mt-1">Team Members</h1>
         </div>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#inviteModal">
-            <i class="bi bi-person-plus"></i> Invite Member
-        </button>
+        <div>
+            <button class="btn btn-outline-info me-2" data-bs-toggle="modal" data-bs-target="#addAgentModal">
+                <i class="bi bi-robot"></i> Add Agent
+            </button>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#inviteModal">
+                <i class="bi bi-person-plus"></i> Invite Member
+            </button>
+        </div>
     </div>
 
     <?php
@@ -44,15 +50,9 @@
                         <tr>
                             <td>
                                 <div class="d-flex align-items-center">
-                                    <?php if (!empty($member->avatarUrl)): ?>
-                                        <img src="<?= htmlspecialchars($member->avatarUrl) ?>" class="rounded-circle me-2" width="40" height="40">
-                                    <?php else: ?>
-                                        <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
-                                            <?= $member->initials() ?>
-                                        </div>
-                                    <?php endif; ?>
+                                    <div class="me-2"><?= render_member_badge($member, 40) ?></div>
                                     <div>
-                                        <div class="fw-medium"><?= htmlspecialchars($member->displayName()) ?></div>
+                                        <div class="fw-medium"><?= render_member_name($member) ?></div>
                                         <small class="text-muted"><?= htmlspecialchars($member->email) ?></small>
                                     </div>
                                 </div>
@@ -195,8 +195,134 @@
     </div>
 </div>
 
+<!-- Add Agent Modal -->
+<div class="modal fade" id="addAgentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-robot"></i> Add Agent to Team</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="agentList">
+                    <p class="text-muted">Loading available agents...</p>
+                </div>
+                <div id="addAgentResult" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const teamId = <?= $team->id ?>;
+
+// Load available agents when modal opens
+document.getElementById('addAgentModal')?.addEventListener('show.bs.modal', function() {
+    const listDiv = document.getElementById('agentList');
+    const resultDiv = document.getElementById('addAgentResult');
+    resultDiv.style.display = 'none';
+
+    listDiv.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm"></span> Loading agents...</div>';
+
+    // Fetch available agents and render as clickable cards
+    fetch('/agents/view?format=json&team_id=' + teamId)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success || !data.agents || data.agents.length === 0) {
+                listDiv.innerHTML = `
+                    <div class="text-center py-4">
+                        <i class="bi bi-robot text-muted" style="font-size: 2rem;"></i>
+                        <p class="text-muted mt-2">No agents available.</p>
+                        <a href="/agents/create" class="btn btn-sm btn-primary">
+                            <i class="bi bi-plus-lg"></i> Create an Agent First
+                        </a>
+                    </div>`;
+                return;
+            }
+
+            let html = '<div class="list-group">';
+            data.agents.forEach(agent => {
+                const providerColors = { claude_cli: 'purple', ollama: 'success', openai: 'primary', custom_http: 'secondary' };
+                const color = providerColors[agent.provider] || 'secondary';
+                const providerLabel = agent.provider.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
+                html += `
+                    <button type="button" class="list-group-item list-group-item-action d-flex align-items-center agent-pick-btn" data-agent-id="${agent.id}">
+                        <div class="rounded-circle bg-info text-white d-flex align-items-center justify-content-center me-3 flex-shrink-0" style="width:40px;height:40px;">
+                            <i class="bi bi-robot"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-medium">${agent.name}</div>
+                            <small class="text-muted">${agent.description || 'No description'}</small>
+                        </div>
+                        <span class="badge bg-${color} bg-opacity-75 ms-2">${providerLabel}</span>
+                    </button>`;
+            });
+            html += '</div>';
+            listDiv.innerHTML = html;
+
+            // Attach click handlers
+            listDiv.querySelectorAll('.agent-pick-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.getElementById('agentSelect').value = btn.dataset.agentId;
+                    // Highlight selected
+                    listDiv.querySelectorAll('.agent-pick-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                });
+            });
+        })
+        .catch(() => {
+            listDiv.innerHTML = '<div class="alert alert-danger">Failed to load agents.</div>';
+        });
+
+    listDiv.insertAdjacentHTML('afterend', `
+        <input type="hidden" id="agentSelect" value="">
+        <div class="mt-3">
+            <button type="button" class="btn btn-info w-100" onclick="addAgentToTeam()">
+                <i class="bi bi-robot"></i> Add Selected Agent to Team
+            </button>
+        </div>
+    `);
+});
+
+async function addAgentToTeam() {
+    const agentId = document.getElementById('agentSelect').value;
+    const resultDiv = document.getElementById('addAgentResult');
+
+    if (!agentId) {
+        alert('Please enter an agent ID');
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('team_id', teamId);
+        formData.append('agent_id', agentId);
+
+        const response = await fetch('/teams/addagent', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        resultDiv.style.display = 'block';
+        if (data.success) {
+            resultDiv.className = 'alert alert-success';
+            resultDiv.textContent = data.message || 'Agent added to team';
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            resultDiv.className = 'alert alert-danger';
+            resultDiv.textContent = data.message || 'Failed to add agent';
+        }
+    } catch (e) {
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'alert alert-danger';
+        resultDiv.textContent = 'Error: ' + e.message;
+    }
+}
 
 async function updateRole(memberId, newRole) {
     try {

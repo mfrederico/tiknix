@@ -318,8 +318,10 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                 <div class="card-body">
                     <!-- Add Message Form (at top) -->
                     <form id="commentForm" class="mb-4">
-                        <div class="mb-2">
-                            <textarea class="form-control" id="commentContent" name="content" rows="2" placeholder="Send instructions or respond to Claude..."></textarea>
+                        <div class="mb-2 position-relative">
+                            <textarea class="form-control" id="commentContent" name="content" rows="2" placeholder="Send instructions or @mention an agent..."></textarea>
+                            <!-- @mention dropdown -->
+                            <div id="mentionDropdown" class="list-group position-absolute shadow-lg" style="display:none; z-index:1050; max-height:200px; overflow-y:auto; width:250px;"></div>
                         </div>
                         <!-- Image preview area -->
                         <div id="imagePreviewContainer" class="mb-2" style="display: none;">
@@ -347,12 +349,20 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             <?php foreach (array_reverse($comments) as $comment): ?>
                                 <?php
                                 $isFromClaude = !empty($comment['is_from_claude']);
+                                $isFromAgent = !empty($comment['is_from_agent']) || !empty($comment['agent_id']);
+                                $isAI = $isFromClaude || $isFromAgent;
                                 $authorName = $isFromClaude ? 'Claude' : trim(($comment['first_name'] ?? '') . ' ' . ($comment['last_name'] ?? ''));
+                                if ($isFromAgent && !$isFromClaude && !empty($comment['agent_id'])) {
+                                    $commentAgent = \app\Bean::load('agent', (int)$comment['agent_id']);
+                                    if ($commentAgent && $commentAgent->id) {
+                                        $authorName = $commentAgent->name;
+                                    }
+                                }
                                 if (empty($authorName)) $authorName = $comment['username'] ?? $comment['email'] ?? 'Unknown';
                                 ?>
-                                <div class="d-flex mb-3 <?= $isFromClaude ? 'flex-row-reverse' : '' ?>" data-comment-id="<?= $comment['id'] ?>">
-                                    <?php if ($isFromClaude): ?>
-                                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center ms-2 flex-shrink-0" style="width: 40px; height: 40px;">
+                                <div class="d-flex mb-3 <?= $isAI ? 'flex-row-reverse' : '' ?>" data-comment-id="<?= $comment['id'] ?>">
+                                    <?php if ($isAI): ?>
+                                        <div class="rounded-circle <?= $isFromAgent && !$isFromClaude ? 'bg-info' : 'bg-primary' ?> text-white d-flex align-items-center justify-content-center ms-2 flex-shrink-0" style="width: 40px; height: 40px;">
                                             <i class="bi bi-robot"></i>
                                         </div>
                                     <?php elseif (!empty($comment['avatar_url'])): ?>
@@ -363,20 +373,20 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                         </div>
                                     <?php endif; ?>
                                     <div class="flex-grow-1">
-                                        <div class="<?= $isFromClaude ? 'bg-primary bg-opacity-10 border border-primary' : 'bg-light text-dark border' ?> rounded p-3 position-relative">
+                                        <div class="<?= $isAI ? ($isFromAgent && !$isFromClaude ? 'bg-info bg-opacity-10 border border-info' : 'bg-primary bg-opacity-10 border border-primary') : 'bg-light text-dark border' ?> rounded p-3 position-relative">
                                             <?php if ($canEdit): ?>
                                                 <button type="button" class="btn btn-sm btn-link text-danger position-absolute p-0" style="top: 8px; right: 8px; opacity: 0.5;" onclick="deleteComment(<?= $comment['id'] ?>)" title="Delete">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
                                             <?php endif; ?>
                                             <div class="d-flex justify-content-between mb-1 pe-4">
-                                                <strong><?= $isFromClaude ? '<i class="bi bi-robot me-1"></i>' : '' ?><?= htmlspecialchars($authorName) ?></strong>
+                                                <strong><?= $isAI ? '<i class="bi bi-robot me-1"></i>' : '' ?><?= htmlspecialchars($authorName) ?><?= $isFromAgent && !$isFromClaude ? ' <span class="badge bg-info bg-opacity-25 text-info" style="font-size:0.65em;">Agent</span>' : '' ?></strong>
                                                 <small class="text-muted"><?= date('M j, g:i A', strtotime($comment['created_at'])) ?></small>
                                             </div>
                                             <?php
-                                            // Simple markdown parsing for Claude messages
+                                            // Simple markdown parsing for AI messages (Claude + agents)
                                             $content = htmlspecialchars($comment['content'] ?? '');
-                                            if ($isFromClaude) {
+                                            if ($isAI) {
                                                 // Bold: **text** or __text__
                                                 $content = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $content);
                                                 // Italic: *text* or _text_
@@ -944,6 +954,123 @@ function clearImagePreview() {
     document.getElementById('imagePreviewContainer').style.display = 'none';
     document.getElementById('imagePreview').src = '';
 }
+
+// === @mention autocomplete ===
+(function() {
+    const textarea = document.getElementById('commentContent');
+    const dropdown = document.getElementById('mentionDropdown');
+    let agentCache = null;
+    let mentionStart = -1;
+
+    async function loadAgents() {
+        if (agentCache) return agentCache;
+        try {
+            const res = await fetch('/agents/view?format=json');
+            const data = await res.json();
+            agentCache = data.success ? data.agents : [];
+        } catch(e) { agentCache = []; }
+        return agentCache;
+    }
+
+    // Preload on focus
+    textarea.addEventListener('focus', () => loadAgents());
+
+    textarea.addEventListener('input', async function() {
+        const val = this.value;
+        const pos = this.selectionStart;
+
+        // Find @ before cursor
+        let atIdx = -1;
+        for (let i = pos - 1; i >= 0; i--) {
+            if (val[i] === '@') { atIdx = i; break; }
+            if (val[i] === ' ' || val[i] === '\n') break;
+        }
+
+        if (atIdx === -1 || (atIdx > 0 && val[atIdx-1] !== ' ' && val[atIdx-1] !== '\n')) {
+            dropdown.style.display = 'none';
+            mentionStart = -1;
+            return;
+        }
+
+        mentionStart = atIdx;
+        const query = val.substring(atIdx + 1, pos).toLowerCase();
+        const agents = await loadAgents();
+        const filtered = agents.filter(a =>
+            a.name.toLowerCase().includes(query) || a.slug.toLowerCase().includes(query)
+        ).slice(0, 6);
+
+        if (filtered.length === 0) {
+            dropdown.style.display = 'none';
+            return;
+        }
+
+        const provColors = { claude_cli: '#8b5cf6', ollama: '#22c55e', openai: '#06b6d4', custom_http: '#6b7280' };
+        dropdown.innerHTML = filtered.map((a, i) => `
+            <button type="button" class="list-group-item list-group-item-action d-flex align-items-center py-2 ${i===0?'active':''}" data-slug="${a.slug}" data-name="${a.name}">
+                <i class="bi bi-robot me-2" style="color:${provColors[a.provider]||'#6b7280'}"></i>
+                <span class="fw-medium">${a.name}</span>
+                <small class="text-muted ms-auto">${a.provider.replace('_',' ')}</small>
+            </button>
+        `).join('');
+        dropdown.style.display = 'block';
+
+        // Position near cursor (simple: below textarea)
+        dropdown.style.top = (textarea.offsetHeight + 4) + 'px';
+        dropdown.style.left = '0px';
+
+        dropdown.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                insertMention(this.dataset.slug);
+            });
+        });
+    });
+
+    function insertMention(slug) {
+        const val = textarea.value;
+        const before = val.substring(0, mentionStart);
+        const after = val.substring(textarea.selectionStart);
+        textarea.value = before + '@' + slug + ' ' + after;
+        textarea.focus();
+        const newPos = mentionStart + slug.length + 2;
+        textarea.setSelectionRange(newPos, newPos);
+        dropdown.style.display = 'none';
+        mentionStart = -1;
+    }
+
+    // Handle keyboard navigation in dropdown
+    textarea.addEventListener('keydown', function(e) {
+        if (dropdown.style.display === 'none') return;
+        const items = dropdown.querySelectorAll('button');
+        const active = dropdown.querySelector('.active');
+        const idx = Array.from(items).indexOf(active);
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (active) active.classList.remove('active');
+            items[Math.min(idx+1, items.length-1)].classList.add('active');
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (active) active.classList.remove('active');
+            items[Math.max(idx-1, 0)].classList.add('active');
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+            if (active) {
+                e.preventDefault();
+                insertMention(active.dataset.slug);
+            }
+        } else if (e.key === 'Escape') {
+            dropdown.style.display = 'none';
+            mentionStart = -1;
+        }
+    });
+
+    // Close dropdown on click outside
+    document.addEventListener('click', function(e) {
+        if (!textarea.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.style.display = 'none';
+        }
+    });
+})();
 
 document.getElementById('commentForm').addEventListener('submit', async function(e) {
     e.preventDefault();

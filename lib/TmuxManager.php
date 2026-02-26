@@ -1,5 +1,9 @@
 <?php
 /**
+ * @deprecated Use Aoe\Tmux\TmuxService instead. This class is retained for backward
+ *             compatibility with test server sessions (tiknix-serve-*) but new code
+ *             should use TmuxService directly. ClaudeRunner no longer depends on this class.
+ *
  * TmuxManager - Centralized tmux session management
  *
  * Provides a clean abstraction layer for tmux operations.

@@ -11,10 +11,37 @@
     <?php endforeach; ?>
 
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-robot me-2"></i>Agent Setup</h2>
+        <h2><i class="bi bi-robot me-2"></i>Agents</h2>
+        <a href="/agents/create" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> Create Agent
+        </a>
     </div>
 
-    <!-- Tabs Navigation -->
+    <!-- Top-level navigation: Profiles ↔ Setup -->
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link" href="/agents">
+                <i class="bi bi-people"></i> Agent Profiles
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="/agentsetup">
+                <i class="bi bi-sliders"></i> MCP Servers & Tools
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link <?= $activeTab === 'hooks' ? 'fw-bold' : '' ?>" href="/agentsetup?tab=hooks">
+                <i class="bi bi-link-45deg"></i> Hooks
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/workstations">
+                <i class="bi bi-pc-display"></i> Workstations
+            </a>
+        </li>
+    </ul>
+
+    <!-- Sub-tabs for setup sections -->
     <ul class="nav nav-tabs mb-4" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link <?= $activeTab === 'servers' ? 'active' : '' ?>" data-bs-toggle="tab" data-bs-target="#servers" type="button">

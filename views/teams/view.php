@@ -1,3 +1,4 @@
+<?php include __DIR__ . '/../partials/agent-badge.php'; ?>
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
@@ -125,26 +126,20 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h6 class="mb-0">Members (<?= count($memberships) ?>)</h6>
                     <?php if ($isAdmin): ?>
-                        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#inviteModal">
+                        <a href="/teams/members?id=<?= $team->id ?>" class="btn btn-sm btn-outline-primary" title="Manage Members & Agents">
                             <i class="bi bi-person-plus"></i>
-                        </button>
+                        </a>
                     <?php endif; ?>
                 </div>
                 <div class="list-group list-group-flush">
                     <?php $count = 0; foreach ($memberships as $tm): ?>
                         <?php if ($count++ >= 5) break; ?>
-                        <?php $member = $tm->member; ?>
+                        <?php $tmMember = $tm->member; ?>
                         <div class="list-group-item d-flex align-items-center">
-                            <?php if (!empty($member->avatarUrl)): ?>
-                                <img src="<?= htmlspecialchars($member->avatarUrl) ?>" class="rounded-circle me-2" width="32" height="32">
-                            <?php else: ?>
-                                <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
-                                    <?= $member->initials() ?>
-                                </div>
-                            <?php endif; ?>
+                            <div class="me-2"><?= render_member_badge($tmMember, 32) ?></div>
                             <div class="flex-grow-1">
                                 <div class="fw-medium small">
-                                    <?= htmlspecialchars($member->displayName()) ?>
+                                    <?= render_member_name($tmMember) ?>
                                 </div>
                             </div>
                             <span class="badge bg-<?= $tm->role === 'owner' ? 'primary' : ($tm->role === 'admin' ? 'info' : 'secondary') ?> small">

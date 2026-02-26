@@ -60,13 +60,11 @@
                             <i class="bi bi-robot"></i> Ollama
                         </a>
                     </li>
-                    <?php if (($member['level'] ?? 100) <= 50): ?>
                     <li class="nav-item">
-                        <a class="nav-link" href="/agentsetup">
-                            <i class="bi bi-robot"></i> Agent Setup
+                        <a class="nav-link" href="/agents">
+                            <i class="bi bi-robot"></i> Agents
                         </a>
                     </li>
-                    <?php endif; ?>
                 <?php endif; ?>
             </ul>
             

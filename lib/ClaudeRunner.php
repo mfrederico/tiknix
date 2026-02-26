@@ -1,6 +1,6 @@
 <?php
 /**
- * ClaudeRunner - Tmux-based Claude Code Execution
+ * ClaudeRunner - Tmux-based Claude Code Execution (aoe-php backed)
  *
  * Manages isolated tmux sessions for running Claude Code tasks.
  * Each task gets its own session with a unique work directory.
@@ -9,11 +9,16 @@
  * - Personal tasks: tiknix-{member_id}-task-{task_id}
  * - Team tasks: tiknix-team-{team_id}-task-{task_id}
  *
- * Uses TmuxManager for low-level tmux operations.
+ * Internally uses aoe-php's TmuxService for tmux operations and
+ * StatusDetector for intelligent status detection. The old TmuxManager
+ * is no longer used (deprecated).
  */
 
 namespace app;
 
+use Aoe\Tmux\TmuxService;
+use Aoe\Tmux\StatusDetector;
+use Aoe\Session\Status as AoeStatus;
 use \Exception as Exception;
 
 class ClaudeRunner {
@@ -25,6 +30,8 @@ class ClaudeRunner {
     private string $sessionName;
     private string $workDir;
     private ?string $projectPath = null;
+    private TmuxService $tmux;
+    private StatusDetector $statusDetector;
 
     /**
      * Create a new ClaudeRunner instance
@@ -42,8 +49,8 @@ class ClaudeRunner {
         $this->memberLevel = $memberLevel;
         $this->projectPath = $projectPath;
 
-        // Use TmuxManager to build session name
-        $this->sessionName = TmuxManager::buildTaskSessionName($memberId, $taskId, $teamId);
+        // Build session name (preserves existing naming convention)
+        $this->sessionName = self::buildTaskSessionName($memberId, $taskId, $teamId);
 
         // Work directory based on ownership
         if ($teamId) {
@@ -51,6 +58,18 @@ class ClaudeRunner {
         } else {
             $this->workDir = "/tmp/tiknix-{$memberId}-task-{$taskId}";
         }
+
+        // Initialize aoe-php services
+        // Use 'tiknix' as workspace ID - TmuxService uses it only for prefix-based listing
+        // We use custom session names via createSessionWithName() so the prefix doesn't affect naming
+        $this->tmux = new TmuxService('tiknix', 'tiknix');
+        $this->statusDetector = new StatusDetector();
+
+        // Add Tiknix-specific patterns for richer status detection
+        $this->statusDetector->addRunningPattern('/esc to interrupt/i');
+        $this->statusDetector->addRunningPattern('/In progress.*tool uses/i');
+        $this->statusDetector->addWaitingPattern('/↵ send/');
+        $this->statusDetector->addWaitingPattern('/waiting for (your |user )?input/i');
     }
 
     /**
@@ -126,8 +145,12 @@ class ClaudeRunner {
         file_put_contents($scriptFile, $invocationScript);
         chmod($scriptFile, 0755);
 
-        // Use TmuxManager to create the session
-        TmuxManager::create($this->sessionName, $scriptFile, $workspaceRoot);
+        // Use aoe-php TmuxService to create the session with custom name
+        $success = $this->tmux->createSessionWithName($this->sessionName, $workspaceRoot, $scriptFile);
+
+        if (!$success) {
+            throw new Exception("Failed to create tmux session: {$this->sessionName}");
+        }
 
         // Wait for Claude to initialize
         usleep(500000); // 500ms delay
@@ -270,23 +293,21 @@ BASH;
         $promptFile = $this->workDir . '/prompt.txt';
         file_put_contents($promptFile, $prompt);
 
-        // Use TmuxManager to load buffer and paste
-        if (!TmuxManager::sendTextViaBuffer($this->sessionName, $prompt, 'tiknix-prompt')) {
+        // Use aoe-php's paste method for reliable long text delivery
+        if (!$this->tmux->pasteTextByName($this->sessionName, $prompt)) {
             // Fallback to send-keys for shorter prompts
             return $this->sendMessage($prompt);
         }
 
-        // Small delay to ensure paste completes
-        usleep(100000); // 100ms
+        // Wait for Claude Code's TUI to process the pasted text.
+        // The terminal needs time to render each line in the input buffer.
+        // Use 25ms per line (proven reliable in myctobot).
+        $lineCount = substr_count($prompt, "\n") + 1;
+        $delayMs = max($lineCount * 25, 500); // 25ms/line, minimum 500ms
+        usleep($delayMs * 1000);
 
         // Send Enter to submit the prompt to Claude
-        if (!TmuxManager::sendKeys($this->sessionName, 'Enter')) {
-            return false;
-        }
-
-        // Send a second Enter in case Claude needs confirmation
-        usleep(50000); // 50ms
-        TmuxManager::sendKeys($this->sessionName, 'Enter');
+        $this->tmux->sendEnterByName($this->sessionName);
 
         return true;
     }
@@ -297,7 +318,7 @@ BASH;
      * @return bool Success
      */
     public function kill(): bool {
-        return TmuxManager::kill($this->sessionName);
+        return $this->tmux->killSessionByName($this->sessionName);
     }
 
     /**
@@ -306,7 +327,7 @@ BASH;
      * @return bool
      */
     public function exists(): bool {
-        return TmuxManager::exists($this->sessionName);
+        return $this->tmux->sessionExistsByName($this->sessionName);
     }
 
     /**
@@ -319,7 +340,9 @@ BASH;
             return false;
         }
 
-        return TmuxManager::isProcessRunning($this->sessionName, 'claude');
+        // Use status detection - Running or Starting means Claude is active
+        $status = $this->refreshAoeStatus();
+        return $status === AoeStatus::Running || $status === AoeStatus::Starting;
     }
 
     /**
@@ -333,19 +356,12 @@ BASH;
             return false;
         }
 
-        // Escape special characters for tmux
-        $escaped = str_replace(
-            ["'", '"', '\\', '$', '`'],
-            ["\\'", '\\"', '\\\\', '\\$', '\\`'],
-            $message
-        );
-
-        // Send keys then Enter
-        if (!TmuxManager::sendKeys($this->sessionName, $escaped)) {
+        // Send literal text then Enter using aoe-php
+        if (!$this->tmux->sendTextByName($this->sessionName, $message)) {
             return false;
         }
 
-        return TmuxManager::sendKeys($this->sessionName, 'Enter');
+        return $this->tmux->sendEnterByName($this->sessionName);
     }
 
     /**
@@ -355,7 +371,21 @@ BASH;
      * @return string The captured content
      */
     public function captureSnapshot(int $lines = 100): string {
-        return TmuxManager::capture($this->sessionName, $lines);
+        return $this->tmux->capturePaneByName($this->sessionName, $lines);
+    }
+
+    /**
+     * Refresh status using aoe-php StatusDetector
+     *
+     * @return AoeStatus The detected aoe-php status
+     */
+    private function refreshAoeStatus(): AoeStatus {
+        if (!$this->exists()) {
+            return AoeStatus::Stopped;
+        }
+
+        $content = $this->tmux->capturePaneByName($this->sessionName, 20);
+        return $this->statusDetector->detect($content);
     }
 
     /**
@@ -457,84 +487,117 @@ BASH;
     }
 
     /**
-     * Detect overall status
+     * Detect overall status using aoe-php StatusDetector with Tiknix-specific enrichments
+     *
+     * Returns string status codes for backward compatibility with the Workbench controller.
+     * Internally uses StatusDetector for the heavy lifting.
      */
     public function detectStatus(array $lines = []): string {
         // If no lines provided, capture from tmux
         if (empty($lines)) {
-            $content = TmuxManager::capture($this->sessionName, 50);
+            $content = $this->captureSnapshot(50);
             $lines = explode("\n", $content);
         }
 
-        // Check last few lines for status indicators
         $recentLines = array_slice($lines, -15);
-
-        // Look for Claude's status line: "✶ Determining… (esc to interrupt · 12m 3s · ...)"
-        // The pattern matches any spinner char + status text + (esc to interrupt · info)
-        foreach ($recentLines as $line) {
-            if (preg_match('/^.\s+(.+?)\s+\(esc to interrupt\s*·\s*(.+)\)/u', $line, $matches)) {
-                $statusText = trim($matches[1], '…. '); // Remove trailing ellipsis/dots
-                // Map common status texts to simple status codes
-                $statusMap = [
-                    'determining' => 'determining',
-                    'thinking' => 'thinking',
-                    'processing' => 'processing',
-                    'analyzing' => 'analyzing',
-                    'exploring' => 'exploring',
-                    'searching' => 'searching',
-                    'reading' => 'reading',
-                    'writing' => 'writing',
-                ];
-                $lower = strtolower($statusText);
-                foreach ($statusMap as $key => $status) {
-                    if (str_starts_with($lower, $key)) {
-                        return $status;
-                    }
-                }
-                // Return first word if no match
-                return preg_match('/^(\w+)/', $lower, $m) ? $m[1] : 'working';
-            }
-        }
-
         $lastLines = implode("\n", $recentLines);
 
-        // Check for "In progress" tool execution
-        if (preg_match('/In progress.*tool uses/i', $lastLines)) {
-            return 'executing';
-        }
-
-        // "esc to interrupt" means Claude is actively working (fallback)
-        if (preg_match('/esc to interrupt/i', $lastLines)) {
-            return 'working';
-        }
-
-        // Check for session complete message (from our wrapper script)
+        // Check for Tiknix-specific completion/error indicators first
+        // (These come from the invocation script, not Claude itself)
         if (preg_match('/Session complete|Claude exited with code: 0/i', $lastLines)) {
             return 'completed';
         }
 
-        // Check for actual error exit or API errors
         if (preg_match('/Claude exited with code: [1-9]|Fatal error:|PHP Parse error:|API Error:/i', $lastLines)) {
             return 'error';
         }
 
-        // Check for waiting prompts (Claude's actual prompt indicators)
-        // Look for: ">" prompt, "↵ send" indicator, or question mark at end
-        if (preg_match('/↵ send|^\s*>\s|>\s*$|Press Enter|waiting for (your |user )?input/im', $lastLines)) {
+        // Use aoe-php StatusDetector for Claude-specific status detection
+        $detectedResult = $this->statusDetector->detectWithDetails($lastLines, 0);
+        $aoeStatus = $detectedResult['status'];
+
+        // Map aoe-php status to Tiknix status strings
+        // Also check for Claude's richer status indicators
+        if ($aoeStatus === AoeStatus::Running) {
+            // Try to extract more specific status from Claude's status line
+            foreach ($recentLines as $line) {
+                if (preg_match('/^.\s+(.+?)\s+\(esc to interrupt\s*·\s*(.+)\)/u', $line, $matches)) {
+                    $statusText = trim($matches[1], '…. ');
+                    $statusMap = [
+                        'determining' => 'determining',
+                        'thinking' => 'thinking',
+                        'processing' => 'processing',
+                        'analyzing' => 'analyzing',
+                        'exploring' => 'exploring',
+                        'searching' => 'searching',
+                        'reading' => 'reading',
+                        'writing' => 'writing',
+                    ];
+                    $lower = strtolower($statusText);
+                    foreach ($statusMap as $key => $status) {
+                        if (str_starts_with($lower, $key)) {
+                            return $status;
+                        }
+                    }
+                    return preg_match('/^(\w+)/', $lower, $m) ? $m[1] : 'working';
+                }
+            }
+
+            // Check for "In progress" tool execution
+            if (preg_match('/In progress.*tool uses/i', $lastLines)) {
+                return 'executing';
+            }
+
+            return 'working';
+        }
+
+        if ($aoeStatus === AoeStatus::Waiting) {
             return 'waiting';
         }
 
-        // If Claude process is running, it's working
-        if ($this->isRunning()) {
-            return 'running';
+        if ($aoeStatus === AoeStatus::Error) {
+            return 'error';
         }
 
-        // If session exists but Claude not running, it completed
-        if ($this->exists()) {
-            return 'completed';
+        if ($aoeStatus === AoeStatus::Idle) {
+            // Distinguish between idle-at-prompt and session-completed
+            if ($this->exists()) {
+                // Check if Claude process is still alive via pgrep
+                $panePid = $this->getPanePid();
+                if ($panePid !== null) {
+                    $cmd = sprintf('pgrep -P %d -f %s 2>/dev/null', $panePid, escapeshellarg('claude'));
+                    exec($cmd, $output, $returnCode);
+                    if ($returnCode === 0 && !empty($output)) {
+                        return 'running';
+                    }
+                }
+                return 'completed';
+            }
+            return 'unknown';
+        }
+
+        if ($aoeStatus === AoeStatus::Stopped) {
+            return $this->exists() ? 'completed' : 'unknown';
         }
 
         return 'unknown';
+    }
+
+    /**
+     * Get the PID of the main process in the session's pane
+     */
+    private function getPanePid(): ?int {
+        $cmd = sprintf(
+            'tmux list-panes -t %s -F "#{pane_pid}" 2>/dev/null | head -1',
+            escapeshellarg($this->sessionName)
+        );
+        exec($cmd, $output, $returnCode);
+
+        if ($returnCode !== 0 || empty($output[0])) {
+            return null;
+        }
+
+        return (int) trim($output[0]);
     }
 
     /**
@@ -624,13 +687,87 @@ BASH;
         return $result;
     }
 
+    // =========================================================================
+    // Static methods (preserve backward compatibility)
+    // =========================================================================
+
+    /**
+     * Build a task runner session name
+     *
+     * @param int $memberId Member ID
+     * @param int $taskId Task ID
+     * @param int|null $teamId Team ID (null for personal tasks)
+     * @return string Session name
+     */
+    public static function buildTaskSessionName(int $memberId, int $taskId, ?int $teamId = null): string {
+        if ($teamId) {
+            return "tiknix-team-{$teamId}-task-{$taskId}";
+        }
+        return "tiknix-{$memberId}-task-{$taskId}";
+    }
+
+    /**
+     * Parse a session name to extract IDs
+     *
+     * @param string $sessionName The session name
+     * @return array|null Parsed info [type, member_id, task_id, team_id] or null
+     */
+    public static function parseSessionName(string $sessionName): ?array {
+        // Team task: tiknix-team-{team_id}-task-{task_id}
+        if (preg_match('/^tiknix-team-(\d+)-task-(\d+)$/', $sessionName, $m)) {
+            return [
+                'type' => 'task',
+                'member_id' => null,
+                'task_id' => (int)$m[2],
+                'team_id' => (int)$m[1]
+            ];
+        }
+
+        // Personal task: tiknix-{member_id}-task-{task_id}
+        if (preg_match('/^tiknix-(\d+)-task-(\d+)$/', $sessionName, $m)) {
+            return [
+                'type' => 'task',
+                'member_id' => (int)$m[1],
+                'task_id' => (int)$m[2],
+                'team_id' => null
+            ];
+        }
+
+        return null;
+    }
+
     /**
      * List all active tiknix task sessions
      *
      * @return array Session info
      */
     public static function listAllSessions(): array {
-        return TmuxManager::listTaskSessions();
+        // Use direct tmux listing for full backward compatibility
+        // (includes both old and new naming conventions)
+        $cmd = 'tmux list-sessions -F "#{session_name}|#{session_created}|#{session_attached}" 2>/dev/null';
+        exec($cmd, $output, $returnCode);
+
+        if ($returnCode !== 0) {
+            return [];
+        }
+
+        $sessions = [];
+        foreach ($output as $line) {
+            $parts = explode('|', $line);
+            if (count($parts) >= 3) {
+                $name = $parts[0];
+                // Match tiknix task sessions (both old and new naming)
+                if (strpos($name, 'tiknix-') === 0 && strpos($name, '-task-') !== false && strpos($name, '-serve-') === false) {
+                    $sessions[] = [
+                        'name' => $name,
+                        'created' => date('Y-m-d H:i:s', (int)$parts[1]),
+                        'attached' => $parts[2] === '1'
+                    ];
+                }
+            }
+        }
+
+        return $sessions;
     }
 
     /**
@@ -673,7 +810,7 @@ BASH;
         $all = self::listAllSessions();
 
         foreach ($all as $session) {
-            $parsed = TmuxManager::parseSessionName($session['name']);
+            $parsed = self::parseSessionName($session['name']);
             if ($parsed && $parsed['task_id'] === $taskId && $parsed['type'] === 'task') {
                 $memberId = $parsed['member_id'] ?? 0;
                 $teamId = $parsed['team_id'];
@@ -696,13 +833,14 @@ BASH;
         if (!$dirs) return;
 
         $cutoff = time() - $maxAgeSeconds;
+        $tmux = new TmuxService('tiknix', 'tiknix');
 
         foreach ($dirs as $dir) {
             $mtime = filemtime($dir);
             if ($mtime && $mtime < $cutoff) {
                 // Check if there's an active session for this dir
                 $sessionName = basename($dir);
-                if (!TmuxManager::exists($sessionName)) {
+                if (!$tmux->sessionExistsByName($sessionName)) {
                     // No active session, safe to remove
                     self::removeDirectory($dir);
                 }

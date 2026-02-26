@@ -184,7 +184,8 @@ INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_
     ('workbench', 'progress', 100, 'Get task progress (AJAX)', datetime('now')),
     ('workbench', 'output', 100, 'View full task output', datetime('now')),
     ('workbench', 'comment', 100, 'Add task comment', datetime('now')),
-    ('workbench', 'logs', 100, 'View task logs', datetime('now'));
+    ('workbench', 'logs', 100, 'View task logs', datetime('now')),
+    ('workbench', 'agentstatus', 100, 'Get active agent status (AJAX)', datetime('now'));
 
 -- ============================================
 -- NOTES

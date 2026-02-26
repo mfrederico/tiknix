@@ -1807,11 +1807,18 @@ class Workbench extends Control {
         }
 
         try {
+            // Parse @mentions for agent IDs
+            $mentionedAgentIds = [];
+            if (class_exists('\\app\\AgentOrchestrator')) {
+                $mentionedAgentIds = AgentOrchestrator::parseMentions($content);
+            }
+
             $comment = Bean::dispense('taskcomment');
             $comment->taskId = $taskId;
             $comment->memberId = $this->member->id;
             $comment->content = $content;
             $comment->isInternal = (int)$this->getParam('is_internal', 0);
+            $comment->mentionedAgents = !empty($mentionedAgentIds) ? json_encode($mentionedAgentIds) : '[]';
             $comment->createdAt = date('Y-m-d H:i:s');
             Bean::store($comment);
 
@@ -1838,9 +1845,26 @@ class Workbench extends Control {
                 }
             }
 
+            // Trigger mentioned agents (async-friendly: fire and forget for now)
+            $agentResults = [];
+            if (!empty($mentionedAgentIds) && !$comment->isInternal && class_exists('\\app\\AgentOrchestrator')) {
+                try {
+                    $orchestrator = new AgentOrchestrator();
+                    $agentResults = $orchestrator->triggerMentionedAgents(
+                        $taskId,
+                        $mentionedAgentIds,
+                        $content,
+                        $this->member->id
+                    );
+                } catch (Exception $e) {
+                    $this->logger->error('Agent orchestration failed', ['error' => $e->getMessage()]);
+                }
+            }
+
             Flight::json([
                 'success' => true,
                 'sent_to_session' => $sentToSession,
+                'agent_results' => $agentResults,
                 'comment' => [
                     'id' => $comment->id,
                     'content' => $comment->content,
@@ -2345,6 +2369,124 @@ class Workbench extends Control {
 
         ksort($availableLevels);
         return $availableLevels;
+    }
+
+    /**
+     * AJAX endpoint: Get status of all active agents visible to the current member
+     *
+     * Returns JSON with agent info, current task, and live status.
+     * Polled by the workbench index page every 5-10 seconds.
+     */
+    public function agentstatus($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $memberId = $this->member->id;
+        $agents = [];
+
+        // Get teams visible to this member
+        $memberTeams = $this->access->getMemberTeams($memberId);
+        $teamIds = array_column($memberTeams, 'id');
+        $teamMap = [];
+        foreach ($memberTeams as $t) {
+            $teamMap[(int)$t['id']] = $t['name'];
+        }
+
+        // Find active agents: agents whose linked member is on one of the user's teams
+        // or agents created by this member (personal agents)
+        $activeAgents = Bean::find('agent', 'is_active = 1');
+
+        foreach ($activeAgents as $agent) {
+            // Determine which team(s) this agent belongs to
+            $agentTeamName = null;
+            $agentTeamId = null;
+            if ($agent->memberId) {
+                $tm = Bean::findOne('teammember', 'member_id = ?', [(int)$agent->memberId]);
+                if ($tm) {
+                    $agentTeamId = (int)$tm->teamId;
+                    // Only include if user is on the same team
+                    if (!in_array($agentTeamId, $teamIds)) {
+                        // Not visible unless created by this member
+                        if ((int)$agent->createdBy !== $memberId) {
+                            continue;
+                        }
+                    }
+                    $agentTeamName = $teamMap[$agentTeamId] ?? null;
+                }
+            }
+
+            // If no team link, only show if created by this member
+            if (!$agentTeamId && (int)$agent->createdBy !== $memberId) {
+                continue;
+            }
+
+            // Find running tasks for this agent
+            // Tasks where last_runner_member_id matches the agent's linked member
+            $currentTask = null;
+            $currentActivity = null;
+            $taskStatus = 'idle';
+
+            if ($agent->memberId) {
+                $runningTask = Bean::findOne('workbenchtask',
+                    'last_runner_member_id = ? AND status IN (?, ?, ?) ORDER BY updated_at DESC',
+                    [(int)$agent->memberId, 'running', 'queued', 'awaiting']
+                );
+
+                if (!$runningTask) {
+                    // Also check tasks on the agent's team that are running
+                    if ($agentTeamId) {
+                        $runningTask = Bean::findOne('workbenchtask',
+                            'team_id = ? AND status IN (?, ?, ?) ORDER BY updated_at DESC',
+                            [$agentTeamId, 'running', 'queued', 'awaiting']
+                        );
+                    }
+                }
+
+                if ($runningTask) {
+                    $currentTask = [
+                        'id' => (int)$runningTask->id,
+                        'title' => $runningTask->title,
+                    ];
+                    $taskStatus = $runningTask->status;
+
+                    // Get live status from tmux if running
+                    if (in_array($runningTask->status, ['running', 'queued'])) {
+                        try {
+                            $workspacePath = !empty($runningTask->projectPath) ? $runningTask->projectPath : null;
+                            $runner = new ClaudeRunner(
+                                (int)$runningTask->id,
+                                (int)$runningTask->memberId,
+                                $runningTask->teamId ? (int)$runningTask->teamId : null,
+                                $workspacePath
+                            );
+                            if ($runner->exists()) {
+                                $progress = $runner->getProgress();
+                                $taskStatus = $progress['status'] ?? $runningTask->status;
+                                $currentActivity = $progress['current_task'] ?? null;
+                            }
+                        } catch (Exception $e) {
+                            // Silently skip runner errors for status polling
+                        }
+                    } elseif ($runningTask->status === 'awaiting') {
+                        $currentActivity = 'Waiting for user input';
+                    }
+                }
+            }
+
+            $agents[] = [
+                'id' => (int)$agent->id,
+                'name' => $agent->name,
+                'slug' => $agent->slug,
+                'provider' => $agent->provider,
+                'status' => $taskStatus,
+                'current_task_id' => $currentTask ? $currentTask['id'] : null,
+                'current_task_title' => $currentTask ? $currentTask['title'] : null,
+                'current_activity' => $currentActivity,
+                'team' => $agentTeamName,
+                'team_id' => $agentTeamId,
+            ];
+        }
+
+        Flight::json(['agents' => $agents]);
     }
 
     /**

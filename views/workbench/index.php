@@ -17,6 +17,15 @@
         </div>
     </div>
 
+    <!-- Agent Status Dashboard -->
+    <div id="agent-status-strip" class="mb-4" style="display: none;">
+        <div class="d-flex align-items-center mb-2">
+            <h6 class="text-muted text-uppercase mb-0 me-2"><i class="bi bi-robot"></i> Active Agents</h6>
+            <span id="agent-count-badge" class="badge bg-info rounded-pill" style="font-size: 0.7em;">0</span>
+        </div>
+        <div id="agent-cards" class="d-flex flex-wrap gap-2"></div>
+    </div>
+
     <?php
     $flash = $_SESSION['flash'] ?? [];
     unset($_SESSION['flash']);
@@ -194,3 +203,188 @@
         </div>
     </div>
 </div>
+
+<style>
+.agent-card {
+    min-width: 220px;
+    max-width: 300px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+}
+.agent-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.agent-card[data-status="running"],
+.agent-card[data-status="working"],
+.agent-card[data-status="thinking"],
+.agent-card[data-status="determining"],
+.agent-card[data-status="analyzing"],
+.agent-card[data-status="executing"] {
+    border-left-color: #0d6efd;
+}
+.agent-card[data-status="waiting"],
+.agent-card[data-status="awaiting"] {
+    border-left-color: #ffc107;
+}
+.agent-card[data-status="queued"] {
+    border-left-color: #0dcaf0;
+}
+.agent-card[data-status="idle"] {
+    border-left-color: #6c757d;
+}
+.agent-card[data-status="error"] {
+    border-left-color: #dc3545;
+}
+.agent-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.agent-status-dot.running { background-color: #0d6efd; animation: pulse-dot 1.5s infinite; }
+.agent-status-dot.waiting { background-color: #ffc107; }
+.agent-status-dot.queued { background-color: #0dcaf0; animation: pulse-dot 2s infinite; }
+.agent-status-dot.idle { background-color: #6c757d; }
+.agent-status-dot.error { background-color: #dc3545; }
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+.provider-icon { font-size: 0.7em; }
+.provider-claude_cli { background-color: #6f42c1 !important; }
+.provider-ollama { background-color: #198754 !important; }
+.provider-openai { background-color: #0dcaf0 !important; }
+.provider-custom { background-color: #6c757d !important; }
+</style>
+
+<script>
+(function() {
+    const strip = document.getElementById('agent-status-strip');
+    const cardsContainer = document.getElementById('agent-cards');
+    const countBadge = document.getElementById('agent-count-badge');
+    let previousAgents = {};
+
+    function getStatusClass(status) {
+        const running = ['running', 'working', 'thinking', 'determining', 'analyzing',
+                         'exploring', 'searching', 'reading', 'writing', 'executing', 'processing'];
+        if (running.includes(status)) return 'running';
+        if (status === 'queued') return 'queued';
+        if (status === 'waiting' || status === 'awaiting') return 'waiting';
+        if (status === 'error' || status === 'failed') return 'error';
+        return 'idle';
+    }
+
+    function getStatusLabel(status) {
+        const labels = {
+            'running': 'Running', 'working': 'Working', 'thinking': 'Thinking',
+            'determining': 'Determining', 'analyzing': 'Analyzing', 'exploring': 'Exploring',
+            'searching': 'Searching', 'reading': 'Reading', 'writing': 'Writing',
+            'executing': 'Executing', 'processing': 'Processing', 'queued': 'Queued',
+            'waiting': 'Waiting', 'awaiting': 'Awaiting input', 'idle': 'Idle',
+            'error': 'Error', 'failed': 'Failed', 'completed': 'Completed'
+        };
+        return labels[status] || (status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Idle');
+    }
+
+    function getProviderLabel(provider) {
+        const labels = { 'claude_cli': 'Claude', 'ollama': 'Ollama', 'openai': 'OpenAI', 'custom': 'Custom' };
+        return labels[provider] || provider;
+    }
+
+    function renderAgentCard(agent) {
+        const statusClass = getStatusClass(agent.status);
+        const hasTask = agent.current_task_id != null;
+        const clickUrl = hasTask ? '/workbench/view?id=' + agent.current_task_id : '/agents/view?id=' + agent.id;
+
+        let activityHtml = '';
+        if (agent.current_activity) {
+            activityHtml = '<div class="text-muted small text-truncate" style="max-width: 250px;">' +
+                           escapeHtml(agent.current_activity) + '</div>';
+        } else if (hasTask) {
+            activityHtml = '<div class="text-muted small text-truncate" style="max-width: 250px;">' +
+                           escapeHtml(agent.current_task_title) + '</div>';
+        }
+
+        return '<a href="' + clickUrl + '" class="agent-card card text-decoration-none" ' +
+               'data-agent-id="' + agent.id + '" data-status="' + statusClass + '">' +
+               '<div class="card-body py-2 px-3">' +
+               '<div class="d-flex align-items-center gap-2 mb-1">' +
+               '<span class="agent-status-dot ' + statusClass + '"></span>' +
+               '<span class="fw-medium small text-dark text-truncate">' + escapeHtml(agent.name) + '</span>' +
+               '<span class="badge provider-' + agent.provider + ' provider-icon text-white ms-auto">' +
+               getProviderLabel(agent.provider) + '</span>' +
+               '</div>' +
+               '<div class="d-flex align-items-center gap-1">' +
+               '<span class="badge bg-' + (statusClass === 'running' ? 'primary' :
+               statusClass === 'waiting' ? 'warning text-dark' :
+               statusClass === 'queued' ? 'info' :
+               statusClass === 'error' ? 'danger' : 'secondary') +
+               '" style="font-size: 0.65em;">' + getStatusLabel(agent.status) + '</span>' +
+               (agent.team ? '<span class="text-muted small ms-auto" style="font-size: 0.7em;"><i class="bi bi-people"></i> ' +
+               escapeHtml(agent.team) + '</span>' : '') +
+               '</div>' +
+               activityHtml +
+               '</div></a>';
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(text));
+        return div.innerHTML;
+    }
+
+    function updateAgentCards(agents) {
+        // Only show strip if there are agents with tasks or active status
+        var activeAgents = agents.filter(function(a) {
+            return a.current_task_id != null || getStatusClass(a.status) !== 'idle';
+        });
+
+        if (activeAgents.length === 0) {
+            strip.style.display = 'none';
+            return;
+        }
+
+        strip.style.display = '';
+        countBadge.textContent = activeAgents.length;
+
+        // Build new cards HTML
+        var html = '';
+        activeAgents.forEach(function(agent) {
+            html += renderAgentCard(agent);
+        });
+
+        // Check if content actually changed to avoid unnecessary DOM updates
+        var newAgentKey = activeAgents.map(function(a) {
+            return a.id + ':' + a.status + ':' + (a.current_task_id || '') + ':' + (a.current_activity || '');
+        }).join('|');
+
+        var prevKey = cardsContainer.getAttribute('data-agent-key') || '';
+        if (newAgentKey !== prevKey) {
+            cardsContainer.innerHTML = html;
+            cardsContainer.setAttribute('data-agent-key', newAgentKey);
+        }
+    }
+
+    function pollAgentStatus() {
+        fetch('/workbench/agentstatus')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+                if (data && data.agents) {
+                    updateAgentCards(data.agents);
+                }
+            })
+            .catch(function() {
+                // Silently ignore polling errors
+            });
+    }
+
+    // Initial poll
+    pollAgentStatus();
+
+    // Poll every 8 seconds
+    setInterval(pollAgentStatus, 8000);
+})();
+</script>

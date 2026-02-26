@@ -10,7 +10,7 @@
         <div class="col-12">
             <div class="card">
                 <div class="card-body p-0">
-                    <div id="usa-map" style="height: 600px; width: 100%;"></div>
+                    <div id="usa-map"></div>
                 </div>
             </div>
         </div>
@@ -79,6 +79,17 @@
 #usa-map {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     border-radius: 0.375rem;
+    /* Responsive height: fill available viewport space minus header/nav area */
+    height: calc(100vh - 250px);
+    min-height: 300px;
+    max-height: 800px;
+    width: 100%;
+}
+
+/* Ensure SVG inside scales properly */
+#usa-map svg {
+    width: 100% !important;
+    height: 100% !important;
 }
 
 .datamaps-hoverover {
@@ -109,13 +120,32 @@
     border-color: rgba(255,255,255,0.1);
 }
 
-@media (max-width: 768px) {
+/* Tablet and smaller screens */
+@media (max-width: 992px) {
     #usa-map {
-        height: 400px !important;
+        height: calc(100vh - 200px);
+        min-height: 250px;
+    }
+}
+
+/* Mobile screens */
+@media (max-width: 576px) {
+    #usa-map {
+        height: calc(100vh - 180px);
+        min-height: 200px;
+        max-height: 400px;
     }
 
     .offcanvas {
         width: 100% !important;
+    }
+}
+
+/* Landscape mobile - prioritize width */
+@media (max-height: 500px) and (orientation: landscape) {
+    #usa-map {
+        height: calc(100vh - 120px);
+        min-height: 150px;
     }
 }
 </style>
@@ -184,6 +214,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.getElementById('stateFullName').textContent = data.state.name;
                     document.getElementById('stateCode').textContent = data.state.code;
                     document.getElementById('stateCapital').textContent = data.state.capital;
+
+                    // Populate Key Facts with placeholder data
+                    var badges = document.querySelectorAll('#stateContent .badge.bg-secondary');
+                    if (badges[0]) badges[0].textContent = 'N/A';
+                    if (badges[1]) badges[1].textContent = 'N/A';
+                    if (badges[2]) badges[2].textContent = 'N/A';
                 } else {
                     document.getElementById('stateError').style.display = 'block';
                     document.getElementById('stateErrorMessage').textContent = data.message || 'State not found';

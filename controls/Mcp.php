@@ -64,6 +64,7 @@ use \app\mcptools\FastMcpToolAdapter;
 use Fastmcphp\Server\Server;
 use Fastmcphp\Server\Auth\AuthRequest;
 use Fastmcphp\Server\Auth\AuthenticatedUser;
+use Fastmcphp\Server\Session\ApcuSessionStore;
 use Fastmcphp\Protocol\JsonRpc;
 use Fastmcphp\Protocol\JsonRpcException;
 use Fastmcphp\Protocol\ErrorCodes;
@@ -125,6 +126,10 @@ class Mcp extends BaseControls\Control {
         // Set auth provider - auth required for non-public methods
         $this->server->setAuthProvider(new McpAuthProvider(), required: true);
 
+        // Enable session persistence for PHP-FPM (stateless transport)
+        // This allows the Server to track initialization state across requests
+        $this->server->setSessionStore(new ApcuSessionStore());
+
         // Register built-in tools from ToolLoader as fastmcphp tools
         $this->registerBuiltinTools();
     }
@@ -176,6 +181,10 @@ class Mcp extends BaseControls\Control {
         $incomingSessionId = $_SERVER['HTTP_MCP_SESSION_ID'] ?? null;
         $this->gatewaySessionId = $incomingSessionId ?: $this->generateUuid4();
         header('mcp-session-id: ' . $this->gatewaySessionId);
+
+        // Tell fastmcphp server the current session ID so it can
+        // restore initialization state from the session store
+        $this->server->setSessionId($this->gatewaySessionId);
 
         // Handle CORS preflight
         if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {

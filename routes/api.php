@@ -1,19 +1,22 @@
 <?php
-/**
- * API Routes
- * JSON API endpoints for AJAX operations
- */
 
-use \Flight as Flight;
-
-// PHP Code Validation
-Flight::route('POST /api/validatephp', function() {
-    $controller = new \app\Api();
-    $controller->validatephp([]);
+// OpenAPI tools management
+Flight::route('POST /api/openapi-tools', function() {
+    (new Controls_OpenapiTools())->addTool();
 });
 
-// Tool Metadata extraction
-Flight::route('POST /api/toolmetadata', function() {
-    $controller = new \app\Api();
-    $controller->toolmetadata([]);
+Flight::route('PUT /api/openapi-tools/activate/@id', function($id) {
+    (new Controls_OpenapiTools())->activateTool(['id' => $id]);
+});
+
+Flight::route('PUT /api/openapi-tools/deactivate/@id', function($id) {
+    (new Controls_OpenapiTools())->deactivateTool(['id' => $id]);
+});
+
+Flight::route('GET /api/openapi-tools', function() {
+    (new Controls_OpenapiTools())->listTools();
+});
+
+Flight::route('DELETE /api/openapi-tools/@id', function($id) {
+    (new Controls_OpenapiTools())->deleteTool(['id' => $id]);
 });

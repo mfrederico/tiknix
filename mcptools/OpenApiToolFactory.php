@@ -1,176 +1,76 @@
 <?php
 
-namespace mcptools;
+namespace McpTools;
 
-use OpenSwoole\Coroutine;
 use OpenSwoole\Coroutine\Http\Client;
-use OpenSwoole\Coroutine\Server;
-use OpenSwoole\Table;
-use OpenSwoole\Coroutine\Channel;
-use OpenSwoole\Coroutine\WaitGroup;
-use OpenSwoole\Coroutine\Timer;
-
-class OpenApiToolFactory {
-    private string $baseNamespace = 'mcptools\\generated\\';
-    
-    public function generateMcpToolsFromSpec(string $specUrl, array $operations): bool {
-        $successCount = 0;
-        $errorCount = 0;
-        
-        foreach ($operations as $operation) {
-            try {
-                $toolClass = $this->generateToolClass($operation);
-                if ($toolClass !== false) {
-                    $successCount++;
-                    
-                    // Register with MCP system
-                    $mcpName = 'dynamic_openapi_' . $operation['operation_id'];
-                    $handlerConfig = json_encode([
-                        'spec_url' => $specUrl,
-                        'operation_id' => $operation['operation_id']
-                    ]);
-                    
-                    $result = \mcptools\ToolLoader::registerMcpTool(
-                        $mcpName, 
-                        $toolClass, 
-                        ['handler_config' => $handlerConfig]
-                    );
-                    
-                    if ($result) {
-                        echo "Created MCP tool: {$mcpName}\n";
-                    }
-                }
-            } catch (\Exception $e) {
-                $errorCount++;
-                echo "Error generating tool for operation {$operation['operation_id']}: " . $e->getMessage() . "\n";
-            }
-        }
-        
-        return $successCount > 0;
-    }
-    
-    private function generateToolClass(array $operation): string|bool {
-        $className = $this->baseNamespace . ucfirst($operation['operation_id']);
-        $filePath = str_replace('\\', '/', substr($className, 0, -4)) . '.php';
-        
-        if (file_exists($filePath)) {
-            return $className;
-        }
-        
-        // Generate PHP class
-        $classContent = $this->generateClassTemplate($operation);
-        
-        Coroutine::create(function() use ($filePath, $classContent) {
-            file_put_contents($filePath, $classContent);
-            
-            // Autoload the new class
-            require_once $filePath;
-        });
-        
-        return $className;
-    }
-    
-    private function generateClassTemplate(array $operation): string {
-        $mcpName = 'dynamic_openapi_' . $operation['operation_id'];
-        $description = trim($operation['summary'] . '. ' . $operation['description']);
-        
-        // Build parameter schema
-        $paramArray = [];
-        foreach ($operation['parameters'] as $param) {
-            $desc = $param['description'] ?? '';
-            
-            if (!empty($param['schema']['description'])) {
-                $desc .= ' (' . $param['schema']['description'] . ')';
-            }
-            
-            $paramArray[] = "'{$param['name']}' => " . json_encode([
-                'type' => $this->getPhpTypeFromSchema($param['schema']),
-                'description' => trim($desc),
-                'required' => $param['required'] ?? false
-            ]);
-        }
-        
-        return <<<PHP
-<?php
-
-namespace mcptools\generated;
-
+use OpenSwoole\Coroutine;
 use OpenSwoole\Http\Request;
 use OpenSwoole\Http\Response;
-use OpenSwoole\Table;
-use OpenSwoole\Coroutine;
-use OpenSwoole\Coroutine\Http\Client;
 use OpenSwoole\Coroutine\Server;
-use OpenSwoole\Table;
 use OpenSwoole\Coroutine\Channel;
 use OpenSwoole\Coroutine\WaitGroup;
-use OpenSwoole\Coroutine\Timer;
 
-class {$operation['operation_id']} extends \mcptools\BaseTool {
-    public function getName(): string {
-        return '{$mcpName}';
+class OpenApiToolFactory {
+    private array $tools = [];
+    
+    public function __construct() {
+        // Load active tools from registry
+        $activeTools = \Model_Openapitoolregistry::getActiveTools();
+        
+        foreach ($activeTools as $toolData) {
+            try {
+                $this->loadFromRegistry($toolData);
+            } catch (\Exception $e) {
+                error_log("Failed to load tool {$toolData['name']}: " . $e->getMessage());
+            }
+        }
     }
     
-    public function getDescription(): string {
-        return '{$description}';
-    }
-    
-    public function execute(array \$args): array {
-        // Extract parameters
-        \$method = '{$operation['method']}';
-        \$path = '{$operation['path']}';
+    private function loadFromRegistry(array $toolData): void {
+        // Load OpenAPI spec from URL
+        $spec = $this->loadOpenApiSpec($toolData['spec_url']);
         
-        // Build URL
-        \$baseUrl = \$_SERVER['REQUEST_SCHEME'] . '://' . \$_SERVER['HTTP_HOST'];
-        \$url = \$baseUrl . str_replace(['{', '}'], ['\\$', ''], \$path);
-        
-        // Prepare headers
-        \$headers = [
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . (\$_ENV['OPENAI_API_KEY'] ?? '')
-        ];
-        
-        // Build request body
-        \$requestBody = null;
-        if (!empty(\$args['body'])) {
-            \$requestBody = json_encode(\$args['body']);
+        if (!$spec) {
+            throw new \Exception("Failed to load OpenAPI spec");
         }
         
-        // Make HTTP request
-        Coroutine::create(function() use (\$url, \$method, \$headers, \$requestBody) {
-            \$client = new Client(parse_url(\$url)['host'], 80);
+        // Parse and register tool
+        $parser = new \lib\OpenApiParser();
+        $parsedTools = $parser->parseFromArray($spec);
+        
+        foreach ($parsedTools as $tool) {
+            if ($this->isValidToolSpec($tool)) {
+                $this->registerTool($tool, $toolData['name']);
+            }
+        }
+    }
+    
+    private function loadOpenApiSpec(string $url): ?array {
+        // Use coroutine to fetch spec asynchronously
+        return Coroutine::create(function() use ($url) {
+            $client = new Client('localhost', 80);
             
-            if (parse_url(\$url)['scheme'] === 'https') {
-                \$client->setSSLVerify(false);
+            try {
+                $client->get($url);
+                
+                if ($client->statusCode === 200) {
+                    $specJson = $client->getBody();
+                    
+                    // Parse JSON with error handling
+                    return json_decode($specJson, true, 512, JSON_THROW_ON_ERROR);
+                }
+            } catch (\Throwable $e) {
+                error_log("HTTP request failed: " . $e->getMessage());
+            } finally {
+                $client->close();
             }
             
-            \$client->{$method}(\$path, \$headers, \$requestBody);
-            
-            if (\$client->getStatusCode() !== 200) {
-                throw new Exception('HTTP error: ' . \$client->getStatusCode());
-            }
-            
-            \$response = json_decode(\$client->getBody(), true);
-            \$client->close();
-            
-            return \$response;
+            return null;
         });
-        
-        return ['success' => true, 'data' => \$result];
-    }
-}
-PHP
     }
     
-    private function getPhpTypeFromSchema(array $schema): string {
-        if (isset($schema['type'])) {
-            switch ($schema['type']) {
-                case 'integer': return 'int';
-                case 'boolean': return 'bool';
-                default: return 'string';
-            }
-        }
-        
-        return 'mixed';
+    private function isValidToolSpec(array $tool): bool {
+        // Basic validation - can be extended
+        return !empty($tool['name']) && !empty($tool['description']);
     }
 }

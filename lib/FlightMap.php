@@ -37,7 +37,15 @@ Flight::map('defaultRoute', function($prefix = '') {
         // Default to index if not specified
         if (empty($class)) $class = 'index';
         if (empty($function)) $function = 'index';
-        
+
+        // Check URL aliases (clean marketing URLs → controller/method)
+        $aliases = Flight::get('url_aliases') ?: [];
+        if (isset($aliases[$class])) {
+            $alias = $aliases[$class];
+            $class = $alias[0];
+            $function = $alias[1];
+        }
+
         Flight::get('log')->debug("Checking permission for {$class}->{$function}");
         
         // Check permissions

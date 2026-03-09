@@ -1,184 +1,51 @@
-<!-- Navigation Bar -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container">
-        <!-- Brand -->
-        <a class="navbar-brand" href="/">
-            <i class="bi bi-box"></i> <?= htmlspecialchars($site_name ?? 'Tiknix') ?>
-        </a>
-        
-        <!-- Mobile Toggle -->
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        
-        <!-- Navigation Menu -->
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav me-auto">
-                <?php foreach ($menu ?? [] as $item): ?>
-                    <?php if (isset($item['dropdown'])): ?>
-                        <!-- Dropdown Menu -->
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <?php if (isset($item['icon'])): ?>
-                                    <i class="bi bi-<?= $item['icon'] ?>"></i>
-                                <?php endif; ?>
-                                <?= htmlspecialchars($item['label']) ?>
-                            </a>
-                            <ul class="dropdown-menu">
-                                <?php foreach ($item['dropdown'] as $subitem): ?>
-                                    <li>
-                                        <a class="dropdown-item" href="<?= $subitem['url'] ?>">
-                                            <?php if (isset($subitem['icon'])): ?>
-                                                <i class="bi bi-<?= $subitem['icon'] ?>"></i>
-                                            <?php endif; ?>
-                                            <?= htmlspecialchars($subitem['label']) ?>
-                                        </a>
-                                    </li>
-                                <?php endforeach; ?>
-                            </ul>
-                        </li>
-                    <?php else: ?>
-                        <!-- Regular Menu Item -->
-                        <li class="nav-item">
-                            <a class="nav-link" href="<?= $item['url'] ?>">
-                                <?php if (isset($item['icon'])): ?>
-                                    <i class="bi bi-<?= $item['icon'] ?>"></i>
-                                <?php endif; ?>
-                                <?= htmlspecialchars($item['label']) ?>
-                            </a>
-                        </li>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-                <?php if ($isLoggedIn ?? false): ?>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/workbench">
-                            <i class="bi bi-hammer"></i> Workbench
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/ollama">
-                            <i class="bi bi-robot"></i> Ollama
-                        </a>
-                    </li>
-                    <?php if (($member['level'] ?? 100) <= 50): ?>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/agentsetup">
-                            <i class="bi bi-robot"></i> Agent Setup
-                        </a>
-                    </li>
-                    <?php endif; ?>
-                <?php endif; ?>
-            </ul>
-            
-            <!-- Right Side Menu -->
-            <ul class="navbar-nav ms-auto">
-                <?php if ($isLoggedIn ?? false): ?>
-                    <!-- User Dropdown -->
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-person-circle"></i>
-                            <?= htmlspecialchars($member['username'] ?? 'User') ?>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li>
-                                <a class="dropdown-item" href="/dashboard">
-                                    <i class="bi bi-speedometer2"></i> Dashboard
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/member/settings">
-                                    <i class="bi bi-gear"></i> Settings
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/apikeys">
-                                    <i class="bi bi-key"></i> API Keys
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/teams">
-                                    <i class="bi bi-people"></i> Teams
-                                </a>
-                            </li>
-                            <?php if (($member['level'] ?? 100) <= 50): ?>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item" href="/admin">
-                                        <i class="bi bi-shield-lock"></i> Admin Panel
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="/security">
-                                        <i class="bi bi-shield-check"></i> Security Rules
-                                    </a>
-                                </li>
-                            <?php endif; ?>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item" href="/docs">
-                                    <i class="bi bi-book"></i> Documentation
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/help">
-                                    <i class="bi bi-question-circle"></i> Help
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item" href="/auth/logout">
-                                    <i class="bi bi-box-arrow-right"></i> Logout
-                                </a>
-                            </li>
-                        </ul>
-                    </li>
-                <?php else: ?>
-                    <!-- Login/Register -->
-                    <li class="nav-item">
-                        <a class="nav-link" href="/auth/login">
-                            <i class="bi bi-box-arrow-in-right"></i> Login
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="btn btn-primary ms-2" href="/auth/register">
-                            <i class="bi bi-person-plus"></i> Register
-                        </a>
-                    </li>
-                <?php endif; ?>
-            </ul>
+<!-- Top Utility Bar -->
+<div style="background: #080b10; border-bottom: 1px solid rgba(48,54,61,0.6); padding: 6px 0; font-size: 0.8rem;">
+    <div class="container d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-3">
+            <a href="tel:+18668457447" style="color: var(--text-secondary); text-decoration: none;">
+                <i class="fas fa-phone" style="color: var(--primary-color); margin-right: 4px;"></i> (866) 845-7447
+            </a>
+            <span style="color: var(--text-secondary); opacity: 0.5;" class="d-none d-md-inline">|</span>
+            <span style="color: var(--text-secondary);" class="d-none d-md-inline">Mon&ndash;Fri 9AM&ndash;5PM EST</span>
         </div>
-    </div>
-</nav>
-
-<!-- Toast Container for Notifications -->
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 11">
-    <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="toast-header">
-            <i class="bi bi-info-circle me-2"></i>
-            <strong class="me-auto">Notification</strong>
-            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        <div class="d-none d-md-flex align-items-center">
+            <a href="mailto:info@shipcannon.com" style="color: var(--text-secondary); text-decoration: none;">
+                <i class="fas fa-envelope" style="color: var(--primary-color); margin-right: 4px;"></i> info@shipcannon.com
+            </a>
         </div>
-        <div class="toast-body"></div>
     </div>
 </div>
 
-<!-- Breadcrumb (optional) -->
-<?php if (isset($breadcrumbs) && !empty($breadcrumbs)): ?>
-<nav aria-label="breadcrumb">
+<!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-dark sticky-top">
     <div class="container">
-        <ol class="breadcrumb py-2 mb-0">
-            <?php foreach ($breadcrumbs as $crumb): ?>
-                <?php if (isset($crumb['active']) && $crumb['active']): ?>
-                    <li class="breadcrumb-item active" aria-current="page">
-                        <?= htmlspecialchars($crumb['label']) ?>
-                    </li>
-                <?php else: ?>
-                    <li class="breadcrumb-item">
-                        <a href="<?= $crumb['url'] ?>"><?= htmlspecialchars($crumb['label']) ?></a>
-                    </li>
-                <?php endif; ?>
-            <?php endforeach; ?>
-        </ol>
+        <a class="navbar-brand" href="/">
+            <img src="/images/NEW-ShipCannon_header_footer.webp" alt="ShipCannon Logo" style="height: 40px;">
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
+                <li class="nav-item"><a class="nav-link" href="/#why-cannon">Why CannonWMS</a></li>
+                <li class="nav-item"><a class="nav-link" href="/#integrations">Integrations</a></li>
+                <li class="nav-item"><a class="nav-link" href="/pricing">Pricing</a></li>
+                <li class="nav-item"><a class="nav-link" href="/contact-us">Contact</a></li>
+                <li class="nav-item"><a class="nav-link" href="/blog">Blog</a></li>
+            </ul>
+            <div class="ms-3">
+                <a href="/login" class="btn btn-outline-primary me-2">Login</a>
+                <a href="/get-started" class="btn btn-primary">Start Free Trial</a>
+            </div>
+        </div>
     </div>
 </nav>
+
+<?php if (($currentPage ?? '') !== 'pricing'): ?>
+<div class="sticky-cta">
+    <a href="/pricing" class="btn btn-primary btn-lg">
+        <i class="fas fa-calculator"></i> See Pricing
+    </a>
+</div>
 <?php endif; ?>

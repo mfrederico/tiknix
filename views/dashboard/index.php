@@ -79,6 +79,9 @@
                         <a href="/workbench" class="btn btn-primary">
                             <i class="bi bi-hammer"></i> Workbench
                         </a>
+                        <a href="/index/blogeditor" class="btn btn-outline-primary">
+                            <i class="bi bi-pencil-square"></i> Blog Editor
+                        </a>
                         <a href="/teams" class="btn btn-outline-primary">
                             <i class="bi bi-people"></i> My Teams
                         </a>

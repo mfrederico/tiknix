@@ -1,19 +1,24 @@
 <?php
 /**
- * Default routing pattern
- * This handles the standard /class/method/operation/id pattern
- * Include this file in your route files to get automatic routing
+ * ShipCannon Routes
+ * Custom routes for clean marketing URLs + default controller routing
  */
 
 use \Flight as Flight;
 
-// Register the default routing pattern
+// Clean URL aliases: maps clean marketing URLs to controller/method
+Flight::set('url_aliases', [
+    'pricing'       => ['index', 'pricing'],
+    'all-about-us'  => ['index', 'about'],
+    'contact-us'    => ['index', 'contact'],
+    'blog'          => ['index', 'blog'],
+    'privacy'       => ['index', 'privacy'],
+    'terms'         => ['index', 'terms'],
+    'thank-you'     => ['index', 'thankyou'],
+    'get-started'   => ['index', 'getstarted'],
+    'login'         => ['auth', 'login'],
+    'case-study-linentablecloth' => ['index', 'casestudyLinentablecloth'],
+]);
+
+// Default controller routing (handles aliases + standard auto-routing)
 Flight::defaultRoute();
-
-// This single line handles:
-// - /controller -> Controller->index()
-// - /controller/method -> Controller->method()
-// - /controller/method/param -> Controller->method(['operation' => (object)['name' => 'param']])
-// - /controller/method/param/id -> Controller->method(['operation' => (object)['name' => 'param', 'type' => 'id']])
-
-// All permission checking is handled automatically via the authcontrol table

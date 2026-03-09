@@ -1,163 +1,51 @@
-<!-- Footer -->
-<footer class="footer mt-auto py-3 bg-secondary text-light">
+<footer style="background: var(--dark-surface); border-top: 1px solid var(--dark-border); padding: 60px 0 30px;">
     <div class="container">
-        <div class="row">
-            <!-- About Section -->
-            <div class="col-md-4">
-                <h5><?= htmlspecialchars($site_name ?? 'Tiknix') ?></h5>
-                <p class="text-muted">
-                    <?= htmlspecialchars($site_description ?? 'A modern PHP application built with Flight, RedBean, and Bootstrap.') ?>
-                </p>
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <a href="/">
+                    <img src="/images/NEW-ShipCannon_header_footer.webp" alt="ShipCannon Logo" class="mb-3" style="height: 40px;">
+                </a>
+                <p style="color: var(--text-secondary); margin-bottom: 1rem;">CannonWMS is a modern, multi-warehouse management system built for eCommerce brands that need real inventory control and transparent pricing.</p>
+                <div class="d-flex gap-3">
+                    <a href="https://www.linkedin.com/company/shipcannon/" style="color: var(--text-secondary);"><i class="fab fa-linkedin fa-lg"></i></a>
+                    <a href="https://www.facebook.com/profile.php?id=100088177518045" style="color: var(--text-secondary);"><i class="fab fa-facebook fa-lg"></i></a>
+                    <a href="https://twitter.com/ShipCannon" style="color: var(--text-secondary);"><i class="fab fa-twitter fa-lg"></i></a>
+                </div>
             </div>
-            
-            <!-- Quick Links -->
-            <div class="col-md-4">
-                <h5>Quick Links</h5>
-                <ul class="list-unstyled">
-                    <li><a href="/" class="text-muted text-decoration-none">Home</a></li>
-                    <li><a href="/docs" class="text-muted text-decoration-none">Documentation</a></li>
-                    <li><a href="/help" class="text-muted text-decoration-none">Help Center</a></li>
-                    <li><a href="/contact" class="text-muted text-decoration-none">Contact</a></li>
-                    <li><a href="/privacy" class="text-muted text-decoration-none">Privacy Policy</a></li>
-                    <li><a href="/terms" class="text-muted text-decoration-none">Terms of Service</a></li>
+            <div class="col-lg-2 col-md-4">
+                <h6 style="color: #fff; font-weight: 700; margin-bottom: 1rem;">Product</h6>
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                    <li style="margin-bottom: 8px;"><a href="/#why-cannon" style="color: var(--text-secondary); text-decoration: none;">Why CannonWMS</a></li>
+                    <li style="margin-bottom: 8px;"><a href="/#integrations" style="color: var(--text-secondary); text-decoration: none;">Integrations</a></li>
+                    <li style="margin-bottom: 8px;"><a href="/pricing" style="color: var(--text-secondary); text-decoration: none;">Pricing</a></li>
+                    <li style="margin-bottom: 8px;"><a href="/case-study-linentablecloth" style="color: var(--text-secondary); text-decoration: none;">Case Study</a></li>
                 </ul>
             </div>
-            
-            <!-- Contact Info -->
-            <div class="col-md-4">
-                <h5>Connect</h5>
-                <div class="d-flex gap-3">
-                    <?php if (isset($social_links)): ?>
-                        <?php foreach ($social_links as $social): ?>
-                            <a href="<?= $social['url'] ?>" class="text-muted" target="_blank" rel="noopener">
-                                <i class="bi bi-<?= $social['icon'] ?> fs-4"></i>
-                            </a>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-                <?php if (isset($contact_email)): ?>
-                    <p class="mt-3 text-muted">
-                        <i class="bi bi-envelope"></i> <?= htmlspecialchars($contact_email) ?>
-                    </p>
-                <?php endif; ?>
+            <div class="col-lg-2 col-md-4">
+                <h6 style="color: #fff; font-weight: 700; margin-bottom: 1rem;">Company</h6>
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                    <li style="margin-bottom: 8px;"><a href="/all-about-us" style="color: var(--text-secondary); text-decoration: none;">About Us</a></li>
+                    <li style="margin-bottom: 8px;"><a href="/contact-us" style="color: var(--text-secondary); text-decoration: none;">Contact</a></li>
+                    <li style="margin-bottom: 8px;"><a href="/contact-us" style="color: var(--text-secondary); text-decoration: none;">Support</a></li>
+                    <li style="margin-bottom: 8px;"><a href="/login" style="color: var(--text-secondary); text-decoration: none;">Login</a></li>
+                </ul>
+            </div>
+            <div class="col-lg-4 col-md-4">
+                <h6 style="color: #fff; font-weight: 700; margin-bottom: 1rem;">Get Started</h6>
+                <p style="color: var(--text-secondary); margin-bottom: 1rem;">Start your 60-day free trial with full feature access.</p>
+                <a href="/get-started" class="btn btn-primary w-100 mb-2">Start Free Trial</a>
+                <a href="/pricing" class="btn btn-outline-primary w-100">See Pricing Calculator</a>
             </div>
         </div>
-        
-        <hr class="my-4 bg-secondary">
-        
-        <!-- Copyright -->
-        <div class="row">
+        <hr style="border-color: var(--dark-border); margin: 2rem 0;">
+        <div class="row align-items-center">
             <div class="col-md-6">
-                <p class="text-muted mb-0">
-                    &copy; <?= date('Y') ?> <?= htmlspecialchars($site_name ?? 'Tiknix') ?>. All rights reserved.
-                </p>
+                <p style="color: var(--text-secondary); margin: 0; font-size: 0.85rem;">&copy; <?= date('Y') ?> ShipCannon LLC. All rights reserved.</p>
             </div>
             <div class="col-md-6 text-md-end">
-                <p class="text-muted mb-0">
-                    Built with <i class="bi bi-heart-fill text-danger"></i> using 
-                    <a href="https://flightphp.com" class="text-muted" target="_blank">Flight</a> &amp; 
-                    <a href="https://redbeanphp.com" class="text-muted" target="_blank">RedBean</a>
-                </p>
+                <a href="/privacy" style="color: var(--text-secondary); text-decoration: none; font-size: 0.85rem; margin-right: 1.5rem;">Privacy Policy</a>
+                <a href="/terms" style="color: var(--text-secondary); text-decoration: none; font-size: 0.85rem;">Terms of Service</a>
             </div>
         </div>
     </div>
 </footer>
-
-<!-- Back to Top Button -->
-<button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top" style="position: fixed; bottom: 20px; right: 20px; display: none;">
-    <i class="bi bi-arrow-up"></i>
-</button>
-
-<script>
-// Back to top button
-window.onscroll = function() {
-    if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
-        document.getElementById("btn-back-to-top").style.display = "block";
-    } else {
-        document.getElementById("btn-back-to-top").style.display = "none";
-    }
-};
-
-document.getElementById("btn-back-to-top").addEventListener("click", function() {
-    document.body.scrollTop = 0;
-    document.documentElement.scrollTop = 0;
-});
-
-// Toast notification function with localStorage deduplication
-function showToast(type, message, options = {}) {
-    const toastEl = document.getElementById('liveToast');
-    if (!toastEl) return;
-
-    // Deduplication: prevent showing same message multiple times
-    const messageKey = 'toast_' + btoa(unescape(encodeURIComponent(type + ':' + message))).slice(0, 32);
-    const now = Date.now();
-    const dedupWindow = options.dedupMs || 60000; // Default: 1 minute dedup window
-
-    // Check if we've shown this message recently
-    const lastShown = localStorage.getItem(messageKey);
-    if (lastShown && (now - parseInt(lastShown)) < dedupWindow) {
-        console.log('Toast deduplicated:', message);
-        return; // Skip showing duplicate
-    }
-
-    // Mark as shown
-    localStorage.setItem(messageKey, now.toString());
-
-    // Clean up old toast keys (keep localStorage tidy)
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('toast_')) {
-            const timestamp = parseInt(localStorage.getItem(key));
-            if (now - timestamp > 300000) { // Remove after 5 minutes
-                keysToRemove.push(key);
-            }
-        }
-    }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-
-    // Configure toast behavior based on type
-    const autohide = options.autohide !== undefined ? options.autohide : (type !== 'error');
-    const delay = options.delay || 5000;
-
-    const toast = new bootstrap.Toast(toastEl, {
-        autohide: autohide,
-        delay: delay
-    });
-    const toastBody = toastEl.querySelector('.toast-body');
-    const toastHeader = toastEl.querySelector('.toast-header');
-
-    // Set message
-    toastBody.textContent = message;
-
-    // Set type styling
-    toastHeader.className = 'toast-header';
-    if (type === 'success') {
-        toastHeader.classList.add('bg-success', 'text-white');
-        toastHeader.querySelector('i').className = 'bi bi-check-circle me-2';
-    } else if (type === 'error') {
-        toastHeader.classList.add('bg-danger', 'text-white');
-        toastHeader.querySelector('i').className = 'bi bi-x-circle me-2';
-    } else if (type === 'warning') {
-        toastHeader.classList.add('bg-warning');
-        toastHeader.querySelector('i').className = 'bi bi-exclamation-triangle me-2';
-    } else {
-        toastHeader.classList.add('bg-info', 'text-white');
-        toastHeader.querySelector('i').className = 'bi bi-info-circle me-2';
-    }
-
-    toast.show();
-}
-
-// Clear all toast dedup keys on logout
-function clearToastHistory() {
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('toast_')) {
-            keysToRemove.push(key);
-        }
-    }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-}
-</script>

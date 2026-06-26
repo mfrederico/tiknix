@@ -19,6 +19,18 @@ You have access to a semantic search tool called `mantic` via MCP (tool name: `s
 Use natural language queries (e.g., "authentication logic", "member profile") instead of just keywords.
 Prefer Mantic over `grep` or `glob` for discovery tasks.
 
+## Codebase Introspection (MCP)
+
+Inside an AI Builder instance, the `tiknix` MCP server exposes structural
+primitives — prefer them over scanning the tree:
+
+- `codebase_map` — orient first: controllers (+route counts), models+tables, lib classes, config sections.
+- `whatprovides("<concept>")` — everything providing a concept (e.g. `auth`, `email`, `permissions`), as ranked `path:line` pointers.
+- `describe("<name>")` — a controller's routes+levels, a model's columns+relations, or a lib's methods.
+
+They return pointers, not file bodies — `Read` the file at the pointer for detail. Use these before grepping.
+
+
 ## Framework Standards
 
 This project uses FlightPHP and RedBeanPHP. You MUST follow these conventions strictly.

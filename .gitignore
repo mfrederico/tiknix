@@ -1,6 +1,7 @@
 # Configuration (contains credentials)
 conf/config.ini
 conf/mailgun.ini
+conf/aibuilder.ini
 
 # Python cache
 __pycache__/

@@ -457,6 +457,12 @@ INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_
     ('auth', 'google', 101, 'Google OAuth login', datetime('now')),
     ('auth', 'googlecallback', 101, 'Google OAuth callback', datetime('now')),
     ('auth', 'verify', 101, 'Email verification', datetime('now')),
+    -- 2FA routes are PUBLIC: during pending-2FA the user is not fully logged in yet
+    ('auth', 'twofasetup', 101, '2FA setup page', datetime('now')),
+    ('auth', 'twofaverify', 101, '2FA verification page', datetime('now')),
+    ('auth', 'twofaconfirmsaved', 101, '2FA confirm recovery codes saved', datetime('now')),
+    ('auth', 'twofarecoverycodes', 101, '2FA recovery codes', datetime('now')),
+    ('auth', 'setpassword', 101, 'Set password (post-2FA / oauth)', datetime('now')),
     ('docs', '*', 101, 'Documentation', datetime('now')),
     ('help', '*', 101, 'Help pages', datetime('now')),
     ('contact', 'index', 101, 'Contact form', datetime('now')),

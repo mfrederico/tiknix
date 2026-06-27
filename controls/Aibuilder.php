@@ -64,6 +64,16 @@ class Aibuilder extends Control {
         return $inst;
     }
 
+    /** Run git inside an instance's directory (read/write its own repo only). */
+    private function gitInstance(string $slug, array $args): array {
+        if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'out' => '', 'code' => 1];
+        $cmd = 'git -C ' . escapeshellarg($this->instanceDir($slug));
+        foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string)$a); }
+        $lines = []; $code = 0;
+        exec($cmd . ' 2>&1', $lines, $code);
+        return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
+    }
+
     /** Run a capricorn instance script (args already validated). Returns ok/out/code. */
     private function runScript(string $script, array $args): array {
         $cfg    = $this->cfg();
@@ -164,31 +174,69 @@ class Aibuilder extends Control {
         Flight::jsonSuccess(['token' => $this->mintToken($inst->slug, (int)$this->member->id)]);
     }
 
-    /** POST /aibuilder/checkpoint?id= — take a rollback checkpoint. JSON. */
+    /** GET /aibuilder/changes?id= — files changed since the last checkpoint. JSON. */
+    public function changes($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        // Uncommitted working-tree changes == the delta since the last checkpoint
+        // (snapshot-instance.sh commits everything, so this self-resets per checkpoint).
+        $out = $this->gitInstance($inst->slug, ['status', '--porcelain']);
+        $files = [];
+        foreach (explode("\n", $out['out']) as $line) {
+            if (trim($line) === '') continue;
+            $status = trim(substr($line, 0, 2));
+            $path   = substr($line, 3);
+            if (($p = strpos($path, ' -> ')) !== false) $path = substr($path, $p + 4); // rename
+            $files[] = ['status' => $status, 'path' => trim($path)];
+        }
+        Flight::jsonSuccess(['files' => $files, 'count' => count($files)]);
+    }
+
+    /** POST /aibuilder/checkpoint?id= — checkpoint with an optional description. JSON. */
     public function checkpoint($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
-        $label = preg_replace('/[^a-z0-9]/i', '', (string)$this->getParam('label', ''));
-        $out = $this->runScript('snapshot-instance.sh', array_filter([self::APP, $inst->slug, $label]));
-        if ($out['ok']) Flight::jsonSuccess(['log' => $out['out']], 'Checkpoint saved');
-        else            Flight::jsonError('Checkpoint failed: ' . substr(trim($out['out']), -300), 500);
+        $desc = mb_substr(trim(preg_replace('/[\r\n]+/', ' ', (string)$this->getParam('label', ''))), 0, 200);
+
+        // snapshot-instance.sh commits + creates an auto-unique lightweight tag, echoing it.
+        $out = $this->runScript('snapshot-instance.sh', [self::APP, $inst->slug]);
+        if (!$out['ok']) { Flight::jsonError('Checkpoint failed: ' . substr(trim($out['out']), -300), 500); return; }
+
+        $tag = '';
+        foreach (array_reverse(array_filter(array_map('trim', explode("\n", $out['out'])))) as $l) {
+            if (preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $l)) { $tag = $l; break; }
+        }
+        // Re-tag as an ANNOTATED tag carrying the description (git-native; HEAD is the snapshot commit).
+        if ($tag !== '' && $desc !== '') {
+            $this->gitInstance($inst->slug, ['tag', '-f', '-a', $tag, '-m', $desc]);
+        }
+        Flight::jsonSuccess(['checkpoint' => $tag, 'description' => $desc], 'Checkpoint saved');
     }
 
-    /** GET /aibuilder/checkpoints?id= — list checkpoints. JSON. */
+    /** GET /aibuilder/checkpoints?id= — list checkpoints with descriptions. JSON. */
     public function checkpoints($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
-        $out = $this->runScript('rollback-instance.sh', ['--list', self::APP, $inst->slug]);
+        $out = $this->gitInstance($inst->slug, ['for-each-ref', '--sort=-creatordate',
+            '--format=%(refname:short)|%(creatordate:short)|%(objectname:short)|%(contents:subject)',
+            'refs/tags/checkpoint-*']);
         $items = [];
         foreach (explode("\n", $out['out']) as $line) {
-            if (preg_match('/^\s*(checkpoint-\S+)\s+(\S+)\s+(\S+)/', $line, $m)) {
-                $items[] = ['name' => $m[1], 'date' => $m[2], 'commit' => $m[3]];
-            }
+            if ($line === '') continue;
+            $p = explode('|', $line, 4);
+            $items[] = [
+                'name'        => $p[0] ?? '',
+                'date'        => $p[1] ?? '',
+                'commit'      => $p[2] ?? '',
+                'description' => $p[3] ?? '',  // empty for lightweight (undescribed) tags
+            ];
         }
         Flight::jsonSuccess(['checkpoints' => $items]);
     }
@@ -207,5 +255,87 @@ class Aibuilder extends Control {
         $out = $this->runScript('rollback-instance.sh', [self::APP, $inst->slug, $ckpt]);
         if ($out['ok']) Flight::jsonSuccess(['log' => $out['out']], 'Rolled back to ' . $ckpt);
         else            Flight::jsonError('Rollback failed: ' . substr(trim($out['out']), -300), 500);
+    }
+
+    /** POST /aibuilder/plansave?id= — save a decomposed plan as a workbench task tree. JSON. */
+    public function plansave($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $plan = json_decode((string)$this->getParam('plan', ''), true);
+        if (!is_array($plan) || empty($plan['title']) || empty($plan['subtasks']) || !is_array($plan['subtasks'])) {
+            Flight::jsonError('Invalid plan: need {title, subtasks:[...]}', 400); return;
+        }
+
+        // Baseline checkpoint so the WHOLE plan is reversible to the pre-plan state.
+        $snap = $this->runScript('snapshot-instance.sh', [self::APP, $inst->slug]);
+        $tag = '';
+        foreach (array_reverse(array_filter(array_map('trim', explode("\n", $snap['out'])))) as $l) {
+            if (preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $l)) { $tag = $l; break; }
+        }
+        if ($tag !== '') {
+            $this->gitInstance($inst->slug, ['tag', '-f', '-a', $tag, '-m', 'plan: ' . mb_substr((string)$plan['title'], 0, 80)]);
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $parent = R::dispense('workbenchtask');
+        $parent->title          = mb_substr((string)$plan['title'], 0, 200);
+        $parent->description    = (string)($plan['summary'] ?? '');
+        $parent->taskType       = 'feature';
+        $parent->priority       = 2;
+        $parent->status         = 'pending';
+        $parent->instanceId     = (int)$inst->id;     // fluid: adds instance_id
+        $parent->engine         = $inst->engine;
+        $parent->memberId       = (int)$this->member->id;
+        $parent->planCheckpoint = $tag;               // fluid: adds plan_checkpoint
+        $parent->createdAt      = $now;
+        R::store($parent);
+
+        $subs = [];
+        foreach ($plan['subtasks'] as $st) {
+            if (empty($st['title'])) continue;
+            $t = R::dispense('workbenchtask');
+            $t->title        = mb_substr((string)$st['title'], 0, 200);
+            $t->description  = (string)($st['description'] ?? '');
+            $t->taskType     = 'feature';
+            $t->priority     = (int)($st['priority'] ?? 3);
+            $t->status       = 'pending';
+            $t->parentTaskId = (int)$parent->id;
+            $t->instanceId   = (int)$inst->id;
+            $t->engine       = in_array($st['engine'] ?? '', ['claude', 'qwen'], true) ? $st['engine'] : $inst->engine;
+            $t->relatedFiles = is_array($st['files'] ?? null) ? implode("\n", $st['files']) : '';
+            $t->memberId     = (int)$this->member->id;
+            $t->createdAt    = $now;
+            R::store($t);
+            $subs[] = ['id' => (int)$t->id, 'title' => $t->title, 'priority' => (int)$t->priority, 'engine' => $t->engine];
+        }
+
+        $this->logger->info('aibuilder plan saved', ['instance' => $inst->slug, 'parent' => $parent->id, 'subtasks' => count($subs)]);
+        Flight::jsonSuccess(['parent' => ['id' => (int)$parent->id, 'title' => $parent->title], 'checkpoint' => $tag, 'subtasks' => $subs], 'Plan saved');
+    }
+
+    /** GET /aibuilder/plan?id= — list saved plans (task trees) for an instance. JSON. */
+    public function plan($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $parents = R::find('workbenchtask', 'instance_id = ? AND parent_task_id IS NULL ORDER BY created_at DESC', [(int)$inst->id]);
+        $plans = [];
+        foreach ($parents as $p) {
+            $subs = R::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [(int)$p->id]);
+            $plans[] = [
+                'id' => (int)$p->id, 'title' => $p->title, 'summary' => $p->description,
+                'checkpoint' => $p->planCheckpoint, 'status' => $p->status,
+                'subtasks' => array_map(fn($s) => [
+                    'id' => (int)$s->id, 'title' => $s->title, 'description' => $s->description,
+                    'priority' => (int)$s->priority, 'engine' => $s->engine, 'status' => $s->status,
+                    'files' => $s->relatedFiles,
+                ], array_values($subs)),
+            ];
+        }
+        Flight::jsonSuccess(['plans' => $plans]);
     }
 }

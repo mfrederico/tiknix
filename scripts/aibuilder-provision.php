@@ -21,8 +21,8 @@
 
 $ROOT = dirname(__DIR__);                 // the instance root (cwd is the instance)
 
-// SAFETY: this seeder rewrites conf/config.ini, so it must ONLY ever run inside a
-// provisioned "<sub>.<app>" instance clone — never in a source app dir (which would
+// SAFETY: this seeder rewrites conf/config.ini, so it must ONLY run inside a
+// provisioned "<sub>.<app>" instance clone — never a source app dir (which would
 // clobber the live site's config/db). Instance dirs always contain a dot.
 if (strpos(basename($ROOT), '.') === false) {
     fwrite(STDERR, "aibuilder-provision: refusing to run in source app dir '" . basename($ROOT) . "' — run inside a <sub>.<app> instance only\n");
@@ -143,5 +143,12 @@ R::exec('INSERT OR IGNORE INTO authcontrol (control, method, level, description,
         ['aibuilder', '*', 50, 'AI Builder', date('Y-m-d H:i:s')]);
 
 R::close();
+
+// --- 4) wire the codebase-introspection MCP for the in-jail agent -----------
+// stdio (not HTTP): the jail blocks loopback, so the agent launches this as a
+// subprocess. .mcp.json is gitignored, so we write it per provision.
+@file_put_contents("$ROOT/.mcp.json",
+    "{\n  \"mcpServers\": {\n    \"tiknix\": { \"command\": \"php\", \"args\": [\"mcptools/mcp-stdio.php\"] }\n  }\n}\n");
+echo "  wrote .mcp.json (codebase introspection MCP)\n";
 
 echo "aibuilder-provision: done ($dbRel ready)\n";

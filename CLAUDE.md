@@ -1,40 +1,3 @@
-# AI Builder — your private instance of tiknix (`test2`)
-
-You are running inside an **isolated, sandboxed copy** of tiknix that belongs to this
-customer (`test2`). Everything you see here is theirs to change. You cannot see or
-affect any other customer, the host, or our internal systems — they are not part of
-this sandbox.
-
-## What you can change freely
-- **Views / UI**: `views/**`
-- **Controllers**: `controls/**`
-- **Their data models**: `models/**` (except the protected ones below)
-- **Their database**: the SQLite file referenced in `conf/config.test2.ini`
-  (use the `sqlite3` CLI or the app's models). This is *their* data.
-- **App services & logic**: `services/**` (except billing)
-
-## What is off-limits (blocked automatically)
-- **Billing / payments / subscriptions / invoices** — these are managed by us and
-  out of scope: `conf/billing.ini`, `models/Model_Billing*`, `models/Model_Payment*`,
-  `models/Model_Subscription*`, `models/Model_Invoice*`, `services/*billing*`.
-- **Dependencies**: `vendor/**` (read-only — it's shared from the source app).
-- **The guard itself**: `.claude/**`.
-Attempts to edit these are denied by a hook; don't try to work around it.
-
-## How rollback works (reassure the customer)
-Every change you make lives in this instance's own git history. The customer can
-**Checkpoint** before risky work and **Roll back** to undo *everything* — including
-database changes — from the AI Builder screen. So it's safe to experiment.
-
-## Good practices
-- Before a big change, suggest the customer hit **Checkpoint**.
-- Keep edits within the customer's app surface above.
-- Test changes by loading their site (`https://test2.tiknix.com`).
-- Explain what you changed in plain language — the customer may not be technical.
-
----
-## App technical notes (from the source app)
-
 # Tiknix Development Standards
 
 ## Git Commit Rules
@@ -55,6 +18,18 @@ You have access to a semantic search tool called `mantic` via MCP (tool name: `s
 
 Use natural language queries (e.g., "authentication logic", "member profile") instead of just keywords.
 Prefer Mantic over `grep` or `glob` for discovery tasks.
+
+## Codebase Introspection (MCP)
+
+Inside an AI Builder instance, the `tiknix` MCP server exposes structural
+primitives — prefer them over scanning the tree:
+
+- `codebase_map` — orient first: controllers (+route counts), models+tables, lib classes, config sections.
+- `whatprovides("<concept>")` — everything providing a concept (e.g. `auth`, `email`, `permissions`), as ranked `path:line` pointers.
+- `describe("<name>")` — a controller's routes+levels, a model's columns+relations, or a lib's methods.
+
+They return pointers, not file bodies — `Read` the file at the pointer for detail. Use these before grepping.
+
 
 ## Framework Standards
 

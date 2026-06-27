@@ -114,6 +114,16 @@ class ClaudeRunner {
         // Use custom project path (workspace) if provided, otherwise default to main project
         $workspaceRoot = $this->getProjectPath();
 
+        // SECURITY: never run a task agent against the live source app. A task must
+        // operate on an isolated instance/workspace — never the main tree.
+        $mainRoot = dirname(__DIR__);
+        if ((realpath($workspaceRoot) ?: $workspaceRoot) === (realpath($mainRoot) ?: $mainRoot)) {
+            throw new Exception("Refusing to run a task agent on the main app ({$mainRoot}). Assign the task an isolated instance/workspace.");
+        }
+
+        // Jail by default: when the workspace is a capricorn instance, run inside bwrap.
+        $jail = $this->jailFor($workspaceRoot);
+
         // Build Claude command to run interactively
         $claudeCmd = 'claude --debug';
         if ($skipPermissions) {
@@ -121,7 +131,7 @@ class ClaudeRunner {
         }
 
         // Build a wrapper script that shows invocation info then runs Claude
-        $invocationScript = $this->buildInvocationScript($claudeCmd, $workspaceRoot);
+        $invocationScript = $this->buildInvocationScript($claudeCmd, $workspaceRoot, $jail);
         $scriptFile = $this->workDir . '/run-claude.sh';
         file_put_contents($scriptFile, $invocationScript);
         chmod($scriptFile, 0755);
@@ -141,13 +151,30 @@ class ClaudeRunner {
     }
 
     /**
+     * Return the jail-run.sh path if $workspace is a jailable capricorn instance
+     * (<sub>.<app> under /var/www/html/default with public/index.php), else ''.
+     */
+    private function jailFor(string $workspace): string {
+        $root = '/var/www/html/default';
+        $real = realpath($workspace) ?: $workspace;
+        if (strpos(basename($real), '.') === false) return '';
+        if (strpos($real, $root . '/') !== 0) return '';
+        if (!is_file("$real/public/index.php")) return '';
+        $cfg = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
+        $binDir = rtrim($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin', '/');
+        $script = "$binDir/jail-run.sh";
+        return is_file($script) ? $script : '';
+    }
+
+    /**
      * Build the invocation script that displays info and runs Claude
      *
      * @param string $claudeCmd The claude command to run
      * @param string $workspaceRoot The workspace root directory (may differ from main project for isolated tasks)
+     * @param string $jail jail-run.sh path when the workspace is a jailable instance, else ''
      * @return string Shell script content
      */
-    private function buildInvocationScript(string $claudeCmd, string $workspaceRoot): string {
+    private function buildInvocationScript(string $claudeCmd, string $workspaceRoot, string $jail = ''): string {
         // TIKNIX_PROJECT_ROOT always points to main project (for vendor, hooks, DB)
         // The workspace may be different for isolated tasks
         $mainProjectRoot = dirname(__DIR__);
@@ -159,6 +186,14 @@ class ClaudeRunner {
 
         // Determine internal URL for hooks - check .mcp_url first, then use localhost
         $hookUrl = $this->getHookUrl($mainProjectRoot);
+
+        // Run jailed (bwrap) on an instance; else direct (an isolated clone, hook-sandboxed).
+        if ($jail !== '') {
+            $runBlock = "echo \"  [jailed: " . addslashes($jail) . "]\"\n"
+                      . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . " -- --debug\nEXIT_CODE=\$?";
+        } else {
+            $runBlock = 'cd ' . escapeshellarg($workspaceRoot) . "\n{$claudeCmd}\nEXIT_CODE=\$?";
+        }
 
         return <<<BASH
 #!/bin/bash
@@ -228,10 +263,8 @@ auto_accept_permissions() {
 auto_accept_permissions &
 WATCHER_PID=\$!
 
-# Change to workspace directory and run Claude
-cd "{$workspaceRoot}"
-{$claudeCmd}
-EXIT_CODE=\$?
+# Run the agent (jailed via bwrap when the workspace is an instance)
+{$runBlock}
 
 # Kill the watcher if still running
 kill \$WATCHER_PID 2>/dev/null

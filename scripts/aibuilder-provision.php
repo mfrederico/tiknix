@@ -21,6 +21,14 @@
 
 $ROOT = dirname(__DIR__);                 // the instance root (cwd is the instance)
 
+// SAFETY: this seeder rewrites conf/config.ini, so it must ONLY ever run inside a
+// provisioned "<sub>.<app>" instance clone — never in a source app dir (which would
+// clobber the live site's config/db). Instance dirs always contain a dot.
+if (strpos(basename($ROOT), '.') === false) {
+    fwrite(STDERR, "aibuilder-provision: refusing to run in source app dir '" . basename($ROOT) . "' — run inside a <sub>.<app> instance only\n");
+    exit(1);
+}
+
 // --- args -------------------------------------------------------------------
 $opts = getopt('', ['tenant:', 'admin::', 'name::', 'from-mysql::']);
 $sub  = strtolower(trim($opts['tenant'] ?? ''));

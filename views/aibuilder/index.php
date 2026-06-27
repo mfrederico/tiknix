@@ -346,14 +346,19 @@ if (AB.has) {
   function extractJson(s){ const a=(s||'').indexOf('{'), b=(s||'').lastIndexOf('}'); if(a<0||b<=a) return null; try{ return JSON.parse(s.slice(a,b+1)); }catch(e){ return null; } }
   function planNote(html){ document.getElementById('ab-plan-list').insertAdjacentHTML('afterbegin','<div class="text-body-secondary mb-2">'+html+'</div>'); }
   function handlePlan(raw){
-    const plan=extractJson(raw);
-    if(!plan||!Array.isArray(plan.subtasks)){ planNote('⚠️ Could not parse a plan from the response.'); return; }
-    post('/aibuilder/plansave',{plan:JSON.stringify(plan)}).then(j=>{ if(j.success){ loadPlans(); loadCheckpoints(); } else planNote('⚠️ '+(j.message||'save failed')); });
+    // Primary: the planner called submit_plan -> wrote .aibuilder/plan.json; ingest it.
+    post('/aibuilder/planingest',{}).then(j=>{
+      if(j.success){ loadPlans(); loadCheckpoints(); return; }
+      // Fallback: parse JSON the agent may have emitted directly in chat.
+      const plan=extractJson(raw);
+      if(plan&&Array.isArray(plan.subtasks)){ post('/aibuilder/plansave',{plan:JSON.stringify(plan)}).then(k=>{ if(k.success){loadPlans();loadCheckpoints();} else planNote('⚠️ '+(k.message||'save failed')); }); }
+      else planNote('⚠️ Planner produced no plan (submit_plan not called, no JSON in reply).');
+    });
   }
   const planForm=document.getElementById('ab-plan-form');
   if(planForm) planForm.addEventListener('submit',function(e){
     e.preventDefault(); const req=document.getElementById('ab-plan-input').value.trim(); if(!req||sending) return;
-    const prompt="PLAN MODE — do NOT modify any files. First use the codebase_map and whatprovides MCP tools to ground yourself in THIS codebase, then decompose the request into a small, ordered set of concrete tasks. Respond with ONLY a JSON object (no prose, no code fences):\n{\"title\":\"...\",\"summary\":\"...\",\"subtasks\":[{\"title\":\"...\",\"description\":\"...\",\"priority\":1,\"engine\":\"claude\",\"files\":[\"path\"]}]}\nRequest: "+req;
+    const prompt="PLAN MODE — do NOT modify application files. First use the codebase_map and whatprovides MCP tools to ground yourself in THIS codebase. Then decompose the request into a small, ordered set of concrete tasks and deliver it by calling the submit_plan tool with {title, summary, subtasks:[{title, description, priority 1-4, engine claude|qwen, files[]}]}. After submit_plan succeeds, reply with only: PLAN_WRITTEN\nRequest: "+req;
     window._planning=true; addUser('🧩 Plan: '+req); document.getElementById('ab-plan-input').value=''; sending=true; window._preChange=new Set(lastChangePaths);
     const send=()=>chatWs.send(JSON.stringify({type:'chat',message:prompt,sessionId:sessionId||undefined}));
     if(chatWs&&chatWs.readyState===WebSocket.OPEN) send(); else connectChat().then(send).catch(()=>{ window._planning=false; sending=false; planNote('⚠️ Could not connect.'); });

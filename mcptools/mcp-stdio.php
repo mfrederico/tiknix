@@ -17,7 +17,7 @@ $root = dirname(__DIR__);
 require_once $root . '/vendor/autoload.php';
 
 // Tools this server exposes (deterministic, no auth needed — read-only introspection).
-$ALLOW = ['codebase_map', 'describe', 'whatprovides'];
+$ALLOW = ['codebase_map', 'describe', 'whatprovides', 'submit_plan'];
 $loader = new \app\mcptools\ToolLoader($root . '/mcptools');
 
 $send   = function (array $msg) { fwrite(STDOUT, json_encode($msg) . "\n"); };

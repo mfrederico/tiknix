@@ -257,18 +257,13 @@ class Aibuilder extends Control {
         else            Flight::jsonError('Rollback failed: ' . substr(trim($out['out']), -300), 500);
     }
 
-    /** POST /aibuilder/plansave?id= — save a decomposed plan as a workbench task tree. JSON. */
-    public function plansave($params = []): void {
-        if (!$this->requireLevel($this->minLevel())) return;
-        if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
-        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+    /** Validate a decomposed-plan array: {title, subtasks:[{title,...}]}. */
+    private function validPlan($plan): bool {
+        return is_array($plan) && !empty($plan['title']) && !empty($plan['subtasks']) && is_array($plan['subtasks']);
+    }
 
-        $plan = json_decode((string)$this->getParam('plan', ''), true);
-        if (!is_array($plan) || empty($plan['title']) || empty($plan['subtasks']) || !is_array($plan['subtasks'])) {
-            Flight::jsonError('Invalid plan: need {title, subtasks:[...]}', 400); return;
-        }
-
+    /** Persist a decomposed plan as a workbench task tree + take a baseline checkpoint. */
+    private function savePlanTree($inst, array $plan): array {
         // Baseline checkpoint so the WHOLE plan is reversible to the pre-plan state.
         $snap = $this->runScript('snapshot-instance.sh', [self::APP, $inst->slug]);
         $tag = '';
@@ -311,9 +306,39 @@ class Aibuilder extends Control {
             R::store($t);
             $subs[] = ['id' => (int)$t->id, 'title' => $t->title, 'priority' => (int)$t->priority, 'engine' => $t->engine];
         }
-
         $this->logger->info('aibuilder plan saved', ['instance' => $inst->slug, 'parent' => $parent->id, 'subtasks' => count($subs)]);
-        Flight::jsonSuccess(['parent' => ['id' => (int)$parent->id, 'title' => $parent->title], 'checkpoint' => $tag, 'subtasks' => $subs], 'Plan saved');
+        return ['parent' => ['id' => (int)$parent->id, 'title' => $parent->title], 'checkpoint' => $tag, 'subtasks' => $subs];
+    }
+
+    /** POST /aibuilder/planingest?id= — ingest the plan the agent wrote to .aibuilder/plan.json. JSON.
+     *  Reliable handoff: the jailed planner WRITES a file (a tool it does well) rather than us
+     *  scraping JSON out of chat text. */
+    public function planingest($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $file = $this->instanceDir($inst->slug) . '/.aibuilder/plan.json';
+        if (!is_file($file)) { Flight::jsonError('No plan.json was written by the planner yet.', 404); return; }
+        $plan = json_decode((string)@file_get_contents($file), true);
+        if (!$this->validPlan($plan)) { Flight::jsonError('plan.json is not a valid plan {title, subtasks:[...]}.', 422); return; }
+
+        $res = $this->savePlanTree($inst, $plan);
+        @unlink($file);  // consume it so the next plan starts clean
+        Flight::jsonSuccess($res, 'Plan saved');
+    }
+
+    /** POST /aibuilder/plansave?id= — save a decomposed plan posted as JSON (fallback path). JSON. */
+    public function plansave($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $plan = json_decode((string)$this->getParam('plan', ''), true);
+        if (!$this->validPlan($plan)) { Flight::jsonError('Invalid plan: need {title, subtasks:[...]}', 400); return; }
+        Flight::jsonSuccess($this->savePlanTree($inst, $plan), 'Plan saved');
     }
 
     /** GET /aibuilder/plan?id= — list saved plans (task trees) for an instance. JSON. */

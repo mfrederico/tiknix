@@ -64,16 +64,6 @@ class Aibuilder extends Control {
         return $inst;
     }
 
-    /** Run git inside an instance's directory (read/write its own repo only). */
-    private function gitInstance(string $slug, array $args): array {
-        if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'out' => '', 'code' => 1];
-        $cmd = 'git -C ' . escapeshellarg($this->instanceDir($slug));
-        foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string)$a); }
-        $lines = []; $code = 0;
-        exec($cmd . ' 2>&1', $lines, $code);
-        return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
-    }
-
     /** Run a capricorn instance script (args already validated). Returns ok/out/code. */
     private function runScript(string $script, array $args): array {
         $cfg    = $this->cfg();
@@ -174,69 +164,31 @@ class Aibuilder extends Control {
         Flight::jsonSuccess(['token' => $this->mintToken($inst->slug, (int)$this->member->id)]);
     }
 
-    /** GET /aibuilder/changes?id= — files changed since the last checkpoint. JSON. */
-    public function changes($params = []): void {
-        if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
-        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
-
-        // Uncommitted working-tree changes == the delta since the last checkpoint
-        // (snapshot-instance.sh commits everything, so this self-resets per checkpoint).
-        $out = $this->gitInstance($inst->slug, ['status', '--porcelain']);
-        $files = [];
-        foreach (explode("\n", $out['out']) as $line) {
-            if (trim($line) === '') continue;
-            $status = trim(substr($line, 0, 2));
-            $path   = substr($line, 3);
-            if (($p = strpos($path, ' -> ')) !== false) $path = substr($path, $p + 4); // rename
-            $files[] = ['status' => $status, 'path' => trim($path)];
-        }
-        Flight::jsonSuccess(['files' => $files, 'count' => count($files)]);
-    }
-
-    /** POST /aibuilder/checkpoint?id= — checkpoint with an optional description. JSON. */
+    /** POST /aibuilder/checkpoint?id= — take a rollback checkpoint. JSON. */
     public function checkpoint($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
-        $desc = mb_substr(trim(preg_replace('/[\r\n]+/', ' ', (string)$this->getParam('label', ''))), 0, 200);
-
-        // snapshot-instance.sh commits + creates an auto-unique lightweight tag, echoing it.
-        $out = $this->runScript('snapshot-instance.sh', [self::APP, $inst->slug]);
-        if (!$out['ok']) { Flight::jsonError('Checkpoint failed: ' . substr(trim($out['out']), -300), 500); return; }
-
-        $tag = '';
-        foreach (array_reverse(array_filter(array_map('trim', explode("\n", $out['out'])))) as $l) {
-            if (preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $l)) { $tag = $l; break; }
-        }
-        // Re-tag as an ANNOTATED tag carrying the description (git-native; HEAD is the snapshot commit).
-        if ($tag !== '' && $desc !== '') {
-            $this->gitInstance($inst->slug, ['tag', '-f', '-a', $tag, '-m', $desc]);
-        }
-        Flight::jsonSuccess(['checkpoint' => $tag, 'description' => $desc], 'Checkpoint saved');
+        $label = preg_replace('/[^a-z0-9]/i', '', (string)$this->getParam('label', ''));
+        $out = $this->runScript('snapshot-instance.sh', array_filter([self::APP, $inst->slug, $label]));
+        if ($out['ok']) Flight::jsonSuccess(['log' => $out['out']], 'Checkpoint saved');
+        else            Flight::jsonError('Checkpoint failed: ' . substr(trim($out['out']), -300), 500);
     }
 
-    /** GET /aibuilder/checkpoints?id= — list checkpoints with descriptions. JSON. */
+    /** GET /aibuilder/checkpoints?id= — list checkpoints. JSON. */
     public function checkpoints($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
-        $out = $this->gitInstance($inst->slug, ['for-each-ref', '--sort=-creatordate',
-            '--format=%(refname:short)|%(creatordate:short)|%(objectname:short)|%(contents:subject)',
-            'refs/tags/checkpoint-*']);
+        $out = $this->runScript('rollback-instance.sh', ['--list', self::APP, $inst->slug]);
         $items = [];
         foreach (explode("\n", $out['out']) as $line) {
-            if ($line === '') continue;
-            $p = explode('|', $line, 4);
-            $items[] = [
-                'name'        => $p[0] ?? '',
-                'date'        => $p[1] ?? '',
-                'commit'      => $p[2] ?? '',
-                'description' => $p[3] ?? '',  // empty for lightweight (undescribed) tags
-            ];
+            if (preg_match('/^\s*(checkpoint-\S+)\s+(\S+)\s+(\S+)/', $line, $m)) {
+                $items[] = ['name' => $m[1], 'date' => $m[2], 'commit' => $m[3]];
+            }
         }
         Flight::jsonSuccess(['checkpoints' => $items]);
     }

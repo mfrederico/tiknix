@@ -136,11 +136,4 @@ R::exec('INSERT OR IGNORE INTO authcontrol (control, method, level, description,
 
 R::close();
 
-// --- 4) wire the codebase-introspection MCP for the in-jail agent -----------
-// stdio (not HTTP): the jail blocks loopback, so the agent launches this as a
-// subprocess. .mcp.json is gitignored, so we write it per provision.
-@file_put_contents("$ROOT/.mcp.json",
-    "{\n  \"mcpServers\": {\n    \"tiknix\": { \"command\": \"php\", \"args\": [\"mcptools/mcp-stdio.php\"] }\n  }\n}\n");
-echo "  wrote .mcp.json (codebase introspection MCP)\n";
-
 echo "aibuilder-provision: done ($dbRel ready)\n";

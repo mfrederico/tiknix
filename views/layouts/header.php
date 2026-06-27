@@ -103,6 +103,11 @@
                             <?php if (($member['level'] ?? 100) <= 50): ?>
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
+                                    <a class="dropdown-item" href="/leads">
+                                        <i class="bi bi-person-lines-fill"></i> Leads
+                                    </a>
+                                </li>
+                                <li>
                                     <a class="dropdown-item" href="/admin">
                                         <i class="bi bi-shield-lock"></i> Admin Panel
                                     </a>

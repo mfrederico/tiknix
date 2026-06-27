@@ -15,26 +15,55 @@ class Index extends BaseControls\Control {
      * Home page
      */
     public function index() {
-        try {
-            // Example of loading data
-            $stats = [
-                'total_users' => Bean::count('member'),
-                'active_users' => Bean::count('member', 'status = ?', ['active']),
-                'total_permissions' => Bean::count('authcontrol')
-            ];
+        // Public "Coming Soon" landing page.
+        // Rendered without the Tiknix header/footer layout so visitors see a
+        // clean, standalone page. To restore the original homepage, revert this
+        // method to render 'index/index' with the layout (see git history).
+        $this->render('index/coming-soon', [
+            'title' => 'Coming Soon',
+            'subscribed' => (bool)$this->getParam('subscribed')
+        ], false);
+    }
 
-            $this->render('index/index', [
-                'title' => 'Welcome',
-                'stats' => $stats
-            ]);
-        } catch (\Throwable $e) {
-            Flight::get('log')->error('Index error: ' . $e->getMessage(), [
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            throw $e;
+    /**
+     * Process the "Coming Soon" lead capture form.
+     * Saves the visitor's name + email as a `lead`, then returns to the
+     * landing page with a thank-you message. Public endpoint (covered by the
+     * index::* permission).
+     */
+    public function dolead() {
+        // Validate CSRF
+        if (!$this->validateCSRF()) {
+            return;
         }
+
+        $firstName = trim($this->sanitize($this->getParam('first_name')));
+        $lastName  = trim($this->sanitize($this->getParam('last_name')));
+        $email     = trim($this->sanitize($this->getParam('email'), 'email'));
+
+        // Basic validation
+        if ($firstName === '' || $lastName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $this->flash('error', 'Please enter your name and a valid email address.');
+            Flight::redirect('/');
+            return;
+        }
+
+        try {
+            $lead = Bean::dispense('lead');
+            $lead->firstName = $firstName;
+            $lead->lastName  = $lastName;
+            $lead->email     = $email;
+            $lead->createdAt = date('Y-m-d H:i:s');
+            Bean::store($lead);
+        } catch (\Throwable $e) {
+            Flight::get('log')->error('Lead capture error: ' . $e->getMessage());
+            $this->flash('error', 'Sorry, something went wrong. Please try again.');
+            Flight::redirect('/');
+            return;
+        }
+
+        // Back to the landing page in its "thank you" state
+        Flight::redirect('/?subscribed=1');
     }
     
     /**

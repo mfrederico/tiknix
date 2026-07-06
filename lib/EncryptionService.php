@@ -78,8 +78,10 @@ class EncryptionService {
      * @throws \Exception If key is missing or malformed
      */
     private static function getKey(): string {
-        $config = Flight::get('config');
-        $hexKey = $config['security']['app_key'] ?? null;
+        // Bootstrap flattens config into Flight as "section.key" (there is no nested
+        // 'config' array). Read the flattened key; fall back to a nested array if present.
+        $hexKey = Flight::get('security.app_key');
+        if (empty($hexKey)) { $c = Flight::get('config'); $hexKey = is_array($c) ? ($c['security']['app_key'] ?? null) : null; }
 
         if (empty($hexKey)) {
             throw new \Exception('Encryption key not configured. Add app_key to the [security] section of conf/config.ini (see EncryptionService::generateKey()).');

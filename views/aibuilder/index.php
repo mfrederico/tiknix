@@ -1,35 +1,22 @@
 <?php
 /**
- * AI Builder view — instance picker + jailed Terminal/Chat + git changes panel.
+ * AI Builder view — instance picker + jailed Terminal + git changes/checkpoint/plan panel.
  *
  * Vars: $instances (Instance beans), $selected (bean|null), $ab_sub, $ab_token,
- *       $ab_wspath, $ab_chat_wspath, $ab_hasInstance, $csrf
+ *       $ab_wspath, $ab_hasInstance, $csrf
  */
 $csrfTok = csrf_token();
 $selId   = $selected ? (int)$selected->id : 0;
 ?>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 <style>
-  #ab-terminal { height: 68vh; width: 100%; background:#1e1e1e; border-radius:.375rem; padding:8px; }
-  #ab-chat-log { height: 58vh; overflow-y:auto; background:#1e1e1e; border-radius:.375rem; padding:1rem; }
-  .ab-msg { margin-bottom:.85rem; }
-  .ab-msg.user { text-align:right; }
-  .ab-msg.user .bubble { display:inline-block; background:#0d6efd; color:#fff; padding:.5rem .75rem; border-radius:.5rem; max-width:90%; white-space:pre-wrap; }
-  .ab-msg.assistant .bubble { background:#2b3035; color:#e9ecef; padding:.6rem .85rem; border-radius:.5rem; }
-  .ab-msg.assistant .bubble p:last-child { margin-bottom:0; }
-  .ab-msg.assistant .bubble pre { background:#11141a; padding:.6rem .75rem; border-radius:.375rem; overflow-x:auto; }
-  .ab-msg.assistant .bubble code { color:#7ee787; }
-  .ab-msg.assistant .bubble pre code { color:#e9ecef; }
-  /* Single animated activity pill (replaces the long Bash/Read/... list) */
-  .ab-activity { display:inline-flex; align-items:center; gap:.4rem; font-size:.78rem; color:#9aa4b2;
-                 background:#23272e; border:1px solid #343a40; border-radius:1rem; padding:.15rem .6rem; margin:.1rem 0 .4rem; cursor:default; }
-  .ab-activity .dot { width:.5rem; height:.5rem; border-radius:50%; background:#0dcaf0; animation:abpulse 1s ease-in-out infinite; }
-  .ab-activity.done .dot { background:#198754; animation:none; }
-  .ab-activity.done { cursor:pointer; }
-  .ab-activity .tool { color:#0dcaf0; font-weight:600; transition:opacity .15s; }
-  @keyframes abpulse { 0%,100%{opacity:.35; transform:scale(.8);} 50%{opacity:1; transform:scale(1.15);} }
-  .ab-activity-list { font-size:.72rem; color:#8b949e; margin:.1rem 0 .5rem; padding-left:.4rem; display:none; }
-  .ab-activity-list.show { display:block; }
+  #ab-terminal { height: 70vh; width: 100%; background:#1e1e1e; border-radius:.375rem; padding:8px; }
+  /* Loud "which instance am I in" banner */
+  .ab-working { border:2px solid var(--bs-primary); }
+  .ab-working .lbl { font-size:.6rem; letter-spacing:.06em; }
+  /* Active instance in the left nav */
+  .list-group-item.active .ab-caret { display:inline; }
+  .ab-caret { display:none; }
   #ab-changes { max-height:40vh; overflow-y:auto; }
   .ab-file { display:flex; gap:.5rem; align-items:center; font-family:ui-monospace,Menlo,monospace; font-size:.78rem; padding:.15rem 0; }
   .ab-file .st { width:1.4rem; text-align:center; border-radius:.2rem; font-weight:700; font-size:.7rem; }
@@ -47,8 +34,14 @@ $selId   = $selected ? (int)$selected->id : 0;
       <p class="text-body-secondary mb-0">Build software with AI. Every instance is sandboxed — checkpoint and roll back any change.</p>
     </div>
     <?php if ($ab_hasInstance): ?>
-      <span class="badge text-bg-secondary align-self-center"><i class="bi bi-hdd-network me-1"></i><?= htmlspecialchars($selected->slug) ?>.tiknix
-        <span id="ab-status" class="ms-1">· connecting…</span></span>
+      <div class="ab-working d-flex align-items-center gap-2 px-3 py-2 rounded-3 bg-primary-subtle">
+        <i class="bi bi-hdd-network-fill text-primary fs-5"></i>
+        <div class="lh-sm">
+          <div class="lbl text-uppercase text-body-secondary fw-semibold">Working on</div>
+          <div class="fw-bold"><?= htmlspecialchars($selected->slug) ?>.tiknix
+            <span id="ab-status" class="fw-normal text-body-secondary small">· connecting…</span></div>
+        </div>
+      </div>
     <?php endif; ?>
   </div>
 
@@ -83,14 +76,14 @@ $selId   = $selected ? (int)$selected->id : 0;
         <div class="list-group list-group-flush">
           <?php if (empty($instances)): ?>
             <div class="list-group-item text-body-secondary small">No instances yet. Create one above.</div>
-          <?php else: foreach ($instances as $inst): ?>
+          <?php else: foreach ($instances as $inst): $isSel = ($selId === (int)$inst->id); ?>
             <a href="/aibuilder/open/<?= (int)$inst->id ?>"
-               class="list-group-item list-group-item-action <?= ($selId === (int)$inst->id) ? 'active' : '' ?>">
+               class="list-group-item list-group-item-action <?= $isSel ? 'active' : '' ?>">
               <div class="d-flex justify-content-between">
-                <span class="fw-semibold"><?= htmlspecialchars($inst->displayName ?: $inst->slug) ?></span>
+                <span class="fw-semibold"><i class="bi bi-caret-right-fill ab-caret me-1"></i><?= htmlspecialchars($inst->displayName ?: $inst->slug) ?></span>
                 <span class="badge text-bg-dark"><?= htmlspecialchars($inst->engine) ?></span>
               </div>
-              <small class="<?= ($selId === (int)$inst->id) ? '' : 'text-body-secondary' ?>"><?= htmlspecialchars($inst->slug) ?>.tiknix</small>
+              <small class="<?= $isSel ? '' : 'text-body-secondary' ?>"><?= htmlspecialchars($inst->slug) ?>.tiknix</small>
             </a>
           <?php endforeach; endif; ?>
         </div>
@@ -101,33 +94,28 @@ $selId   = $selected ? (int)$selected->id : 0;
       <div class="col-lg-9">
         <div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">
           <i class="bi bi-arrow-left-circle fs-1 d-block mb-3"></i>
-          Select an instance to open its sandboxed Terminal and Chat, or create a new one.
+          Select an instance to open its sandboxed Terminal, or create a new one.
         </div></div>
       </div>
     <?php else: ?>
-      <!-- Builder surface -->
+      <!-- Builder surface: Terminal -->
       <div class="col-lg-6">
-        <ul class="nav nav-tabs" role="tablist">
-          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-chat" type="button"><i class="bi bi-chat-dots me-1"></i>Chat</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-term" type="button"><i class="bi bi-terminal me-1"></i>Terminal</button></li>
-        </ul>
-        <div class="tab-content border border-top-0 rounded-bottom p-2 bg-body-tertiary">
-          <div class="tab-pane fade show active" id="tab-chat" role="tabpanel">
-            <div id="ab-chat-log"></div>
-            <form id="ab-chat-form" class="d-flex gap-2 mt-2">
-              <button type="button" id="ab-chat-clear" class="btn btn-outline-secondary" title="New conversation (clears this chat)"><i class="bi bi-trash"></i></button>
-              <input id="ab-chat-input" class="form-control" placeholder="Ask the AI to build or change something…" autocomplete="off">
-              <button class="btn btn-primary" type="submit"><i class="bi bi-send"></i></button>
-            </form>
+        <div class="card shadow-sm">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span class="fw-semibold"><i class="bi bi-terminal me-1"></i>Terminal</span>
+            <span class="text-body-secondary small"><i class="bi bi-shield-lock me-1"></i>Sandboxed to <?= htmlspecialchars($selected->slug) ?>.tiknix</span>
           </div>
-          <div class="tab-pane fade" id="tab-term" role="tabpanel">
+          <div class="card-body p-2 bg-body-tertiary">
             <div id="ab-terminal"></div>
-            <p class="text-body-secondary small mt-2 mb-0"><i class="bi bi-shield-lock me-1"></i>Sandboxed to this instance. First time on <code>claude</code>, run <code>claude setup-token</code> here.</p>
+            <p class="text-body-secondary small mt-2 mb-0">
+              Type <code>claude</code> to start the agent. If it asks you to sign in, run <code>claude setup-token</code> and open the link it prints.
+              Hold <kbd>Shift</kbd> and drag to select/copy; right-click to paste.
+            </p>
           </div>
         </div>
       </div>
 
-      <!-- Changes + checkpoints -->
+      <!-- Changes + checkpoints + plan -->
       <div class="col-lg-3">
         <div class="card shadow-sm mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
@@ -153,9 +141,21 @@ $selId   = $selected ? (int)$selected->id : 0;
           <div class="card-body">
             <form id="ab-plan-form" class="mb-2">
               <textarea id="ab-plan-input" class="form-control form-control-sm mb-2" rows="2" placeholder="Describe a feature to decompose into tasks…"></textarea>
-              <button class="btn btn-info btn-sm w-100" type="submit"><i class="bi bi-diagram-3 me-1"></i>Decompose into tasks</button>
+              <div class="d-flex gap-2">
+                <button id="ab-plan-copy" class="btn btn-info btn-sm flex-fill" type="submit"><i class="bi bi-clipboard-plus me-1"></i>Copy plan prompt</button>
+                <button id="ab-plan-ingest" class="btn btn-outline-info btn-sm" type="button" title="Ingest the plan the agent wrote"><i class="bi bi-box-arrow-in-down"></i></button>
+              </div>
             </form>
+            <div id="ab-plan-hint" class="text-body-secondary mb-2" style="font-size:.72rem"></div>
             <div id="ab-plan-list" class="small"></div>
+          </div>
+        </div>
+        <div class="card shadow-sm mt-3">
+          <div class="card-header fw-semibold"><i class="bi bi-github me-1"></i>Publish to GitHub</div>
+          <div class="card-body">
+            <div id="ab-gh-state" class="small text-body-secondary mb-2">Checking connection…</div>
+            <button id="ab-publish" class="btn btn-dark btn-sm w-100" type="button"><i class="bi bi-cloud-upload me-1"></i>Publish</button>
+            <div id="ab-publish-msg" class="small mt-2"></div>
           </div>
         </div>
       </div>
@@ -163,21 +163,18 @@ $selId   = $selected ? (int)$selected->id : 0;
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 <script>
 const AB = {
   id: <?= $selId ?>,
   token: <?= json_encode($ab_token) ?>,
   wsPath: <?= json_encode($ab_wspath) ?>,
-  chatWsPath: <?= json_encode($ab_chat_wspath) ?>,
   csrf: <?= json_encode($csrfTok) ?>,
   has: <?= $ab_hasInstance ? 'true' : 'false' ?>,
 };
 const esc = s => (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const renderMd = t => { try { return DOMPurify.sanitize(marked.parse(t||'')); } catch(e){ return esc(t); } };
 
 // --- create instance --------------------------------------------------------
 const createForm = document.getElementById('ab-create-form');
@@ -202,12 +199,27 @@ if (AB.has) {
     .then(r=>r.json()).then(j=>(j.success&&j.data&&j.data.token)?j.data.token:AB.token).catch(()=>AB.token);
   const wsBase = (location.protocol==='https:'?'wss':'ws') + '://' + location.host;
 
-  // --- Terminal (lazy) ---
-  let termReady=false, term, termWs;
+  // --- Terminal ---
+  let term, termWs;
   function initTerminal(){
-    if (termReady) return; termReady=true;
     term=new Terminal({cursorBlink:true,fontSize:13,scrollback:50000,fontFamily:'ui-monospace,Menlo,monospace',theme:{background:'#1e1e1e'}});
-    const fit=new FitAddon.FitAddon(); term.loadAddon(fit); term.open(document.getElementById('ab-terminal')); fit.fit();
+    const fit=new FitAddon.FitAddon(); term.loadAddon(fit);
+    // Clickable URLs — makes the `claude setup-token` OAuth link openable without selecting it.
+    try { term.loadAddon(new WebLinksAddon.WebLinksAddon((e,uri)=>window.open(uri,'_blank','noopener'))); } catch(e){}
+    const el=document.getElementById('ab-terminal');
+    term.open(el); fit.fit();
+
+    // Copy-on-select: releasing the mouse over a selection copies it to the clipboard.
+    el.addEventListener('mouseup', ()=>{
+      const sel=term.getSelection();
+      if(sel && navigator.clipboard) navigator.clipboard.writeText(sel).catch(()=>{});
+    });
+    // Right-click pastes from the clipboard into the PTY.
+    el.addEventListener('contextmenu', ev=>{
+      ev.preventDefault();
+      if(navigator.clipboard) navigator.clipboard.readText().then(t=>{ if(t) term.paste(t); }).catch(()=>{});
+    });
+
     freshToken().then(tok=>{
       termWs=new WebSocket(wsBase+AB.wsPath+'?token='+encodeURIComponent(tok));
       termWs.onopen=()=>{ setStatus('terminal connected'); termWs.send(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows})); };
@@ -217,98 +229,24 @@ if (AB.has) {
       window.addEventListener('resize',()=>{ fit.fit(); if(termWs.readyState===WebSocket.OPEN) termWs.send(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows})); });
     });
   }
-  document.querySelector('[data-bs-target="#tab-term"]').addEventListener('shown.bs.tab', initTerminal);
 
-  // --- Chat ---
-  const log=document.getElementById('ab-chat-input')?document.getElementById('ab-chat-log'):null;
-  const chatForm=document.getElementById('ab-chat-form'), chatInput=document.getElementById('ab-chat-input');
-  let chatWs=null, sessionId=null, sending=false, cur=null;
-
-  // Persist transcript + Claude session id per instance so a refresh doesn't wipe it.
-  const STORE='ab_chat_'+AB.id;
-  function saveChat(){ try{ localStorage.setItem(STORE, JSON.stringify({sid:sessionId, html:log.innerHTML})); }catch(e){} }
-  function restoreChat(){ try{ const s=JSON.parse(localStorage.getItem(STORE)||'null');
-    if(s&&s.html){ log.innerHTML=s.html; sessionId=s.sid||null;
-      log.querySelectorAll('.ab-activity.done').forEach(a=>a.addEventListener('click',()=>{ const l=a.nextElementSibling; if(l&&l.classList.contains('ab-activity-list')) l.classList.toggle('show'); }));
-      log.scrollTop=log.scrollHeight; } }catch(e){} }
-
-  function addUser(t){ const d=document.createElement('div'); d.className='ab-msg user';
-    d.innerHTML='<div class="bubble">'+esc(t)+'</div>'; log.appendChild(d); log.scrollTop=log.scrollHeight; saveChat(); }
-  function newTurn(){
-    const wrap=document.createElement('div'); wrap.className='ab-msg assistant';
-    const act=document.createElement('div'); act.className='ab-activity'; act.style.display='none';
-    act.innerHTML='<span class="dot"></span><span class="label">working</span> <span class="tool"></span><span class="cnt"></span>';
-    const list=document.createElement('div'); list.className='ab-activity-list';
-    const bub=document.createElement('div'); bub.className='bubble'; bub.innerHTML='<span class="text-body-secondary">…</span>';
-    wrap.appendChild(act); wrap.appendChild(list); wrap.appendChild(bub);
-    log.appendChild(wrap); log.scrollTop=log.scrollHeight;
-    act.addEventListener('click',()=>{ if(act.classList.contains('done')) list.classList.toggle('show'); });
-    return {wrap, act, list, bub, raw:'', tools:[]};
-  }
-  function tick(c, name){
-    c.tools.push(name);
-    c.act.style.display='inline-flex';
-    c.act.querySelector('.tool').textContent=name;
-    c.act.querySelector('.cnt').textContent=' · '+c.tools.length;
-    c.act.querySelector('.tool').style.opacity=0; requestAnimationFrame(()=>c.act.querySelector('.tool').style.opacity=1);
-  }
-  function finishTurn(c){
-    if (c.tools.length){
-      c.act.classList.add('done'); c.act.querySelector('.label').textContent='';
-      c.act.querySelector('.tool').textContent='✓ '+c.tools.length+' action'+(c.tools.length>1?'s':'');
-      c.act.querySelector('.cnt').textContent=''; c.act.title='Click to expand';
-      c.list.innerHTML=c.tools.map(t=>esc(t)).join(' · ');
-    } else c.act.style.display='none';
-    if(!c.raw) c.bub.innerHTML='<span class="text-body-secondary">(no text response)</span>';
-    saveChat();
-  }
-
-  function connectChat(){
-    return freshToken().then(tok=>new Promise((resolve,reject)=>{
-      chatWs=new WebSocket(wsBase+AB.chatWsPath+'?token='+encodeURIComponent(tok));
-      chatWs.onopen=()=>setStatus('chat connected');
-      chatWs.onclose=()=>{ setStatus('chat disconnected'); chatWs=null; };
-      chatWs.onerror=()=>{ setStatus('chat error'); reject(); };
-      chatWs.onmessage=e=>{ let m; try{m=JSON.parse(e.data);}catch{return;}
-        switch(m.type){
-          case 'ready': resolve(); break;
-          case 'start': cur=newTurn(); break;
-          case 'session': sessionId=m.id; saveChat(); break;
-          case 'delta': if(!cur) cur=newTurn(); cur.raw+=(m.text||''); cur.bub.innerHTML=renderMd(cur.raw); log.scrollTop=log.scrollHeight; break;
-          case 'tool': if(!cur) cur=newTurn(); tick(cur, m.name||'tool'); break;
-          case 'auth_required': if(!cur) cur=newTurn(); cur.bub.innerHTML='⚠️ Not logged in. Open the Terminal tab and run <code>claude setup-token</code>.'; sending=false; break;
-          case 'error': if(!cur) cur=newTurn(); cur.bub.innerHTML='⚠️ '+esc(m.error||'error'); finishTurn(cur); sending=false; break;
-          case 'done': if(cur) finishTurn(cur); if(window._planning){ window._planning=false; handlePlan(cur?cur.raw:''); } cur=null; sending=false; refreshChanges(true); break;
-        }
-      };
-    }));
-  }
-
-  chatForm.addEventListener('submit', function(e){
-    e.preventDefault(); const text=chatInput.value.trim(); if(!text||sending) return;
-    addUser(text); chatInput.value=''; sending=true; window._preChange=new Set(lastChangePaths);
-    const send=()=>chatWs.send(JSON.stringify({type:'chat',message:text,sessionId:sessionId||undefined}));
-    if(chatWs&&chatWs.readyState===WebSocket.OPEN) send();
-    else connectChat().then(send).catch(()=>{ if(!cur)cur=newTurn(); cur.bub.innerHTML='⚠️ Could not connect.'; sending=false; });
-  });
-
-  // --- Changes panel ---
+  // --- Changes panel (polls so terminal edits show up live) ---
   let lastChangePaths=[];
   function refreshChanges(){
     fetch('/aibuilder/changes?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}})
       .then(r=>r.json()).then(j=>{
         const box=document.getElementById('ab-changes'); const files=(j.data&&j.data.files)||[];
-        const pre=window._preChange||new Set();
+        const prev=new Set(lastChangePaths);
         if(!files.length){ box.innerHTML='<div class="text-body-secondary small">No changes since last checkpoint.</div>'; lastChangePaths=[]; return; }
         box.innerHTML=files.map(f=>{
           const code=(f.status||'?').replace(/[^MADRU?]/g,'').charAt(0)||'M';
-          const fresh=!pre.has(f.path)?' fresh':'';
+          const fresh=!prev.has(f.path)?' fresh':'';
           return '<div class="ab-file'+fresh+'"><span class="st '+code+'">'+esc(code)+'</span><span class="path">'+esc(f.path)+'</span></div>';
         }).join('');
         lastChangePaths=files.map(f=>f.path);
       }).catch(()=>{});
   }
-  document.getElementById('ab-changes-refresh').addEventListener('click',()=>{ window._preChange=new Set(lastChangePaths); refreshChanges(); });
+  document.getElementById('ab-changes-refresh').addEventListener('click',()=>{ lastChangePaths=[]; refreshChanges(); });
 
   // --- Checkpoints ---
   function loadCheckpoints(){
@@ -336,32 +274,24 @@ if (AB.has) {
     post('/aibuilder/rollback/'+encodeURIComponent(ckpt),{}).then(j=>{ loadCheckpoints(); refreshChanges(); });
   }
 
-  // New-conversation button: clear transcript + start a fresh Claude session.
-  document.getElementById('ab-chat-clear').addEventListener('click',()=>{
-    if(!confirm('Clear this conversation and start fresh?')) return;
-    log.innerHTML=''; sessionId=null; try{ localStorage.removeItem(STORE); }catch(e){}
-  });
-
-  // --- Plan mode (decompose request -> reviewable workbench task tree) ---
-  function extractJson(s){ const a=(s||'').indexOf('{'), b=(s||'').lastIndexOf('}'); if(a<0||b<=a) return null; try{ return JSON.parse(s.slice(a,b+1)); }catch(e){ return null; } }
-  function planNote(html){ document.getElementById('ab-plan-list').insertAdjacentHTML('afterbegin','<div class="text-body-secondary mb-2">'+html+'</div>'); }
-  function handlePlan(raw){
-    // Primary: the planner called submit_plan -> wrote .aibuilder/plan.json; ingest it.
-    post('/aibuilder/planingest',{}).then(j=>{
-      if(j.success){ loadPlans(); loadCheckpoints(); return; }
-      // Fallback: parse JSON the agent may have emitted directly in chat.
-      const plan=extractJson(raw);
-      if(plan&&Array.isArray(plan.subtasks)){ post('/aibuilder/plansave',{plan:JSON.stringify(plan)}).then(k=>{ if(k.success){loadPlans();loadCheckpoints();} else planNote('⚠️ '+(k.message||'save failed')); }); }
-      else planNote('⚠️ Planner produced no plan (submit_plan not called, no JSON in reply).');
-    });
-  }
+  // --- Plan mode (terminal-driven: copy prompt -> run in Terminal -> ingest) ---
+  const planHint=document.getElementById('ab-plan-hint');
+  function planNote(html){ planHint.innerHTML=html; }
   const planForm=document.getElementById('ab-plan-form');
   if(planForm) planForm.addEventListener('submit',function(e){
-    e.preventDefault(); const req=document.getElementById('ab-plan-input').value.trim(); if(!req||sending) return;
+    e.preventDefault(); const req=document.getElementById('ab-plan-input').value.trim(); if(!req) return;
     const prompt="PLAN MODE — do NOT modify application files. First use the codebase_map and whatprovides MCP tools to ground yourself in THIS codebase. Then decompose the request into a small, ordered set of concrete tasks and deliver it by calling the submit_plan tool with {title, summary, subtasks:[{title, description, priority 1-4, engine claude|qwen, files[]}]}. After submit_plan succeeds, reply with only: PLAN_WRITTEN\nRequest: "+req;
-    window._planning=true; addUser('🧩 Plan: '+req); document.getElementById('ab-plan-input').value=''; sending=true; window._preChange=new Set(lastChangePaths);
-    const send=()=>chatWs.send(JSON.stringify({type:'chat',message:prompt,sessionId:sessionId||undefined}));
-    if(chatWs&&chatWs.readyState===WebSocket.OPEN) send(); else connectChat().then(send).catch(()=>{ window._planning=false; sending=false; planNote('⚠️ Could not connect.'); });
+    if(navigator.clipboard) navigator.clipboard.writeText(prompt).then(()=>{
+      planNote('✅ Prompt copied. Paste it into the <strong>Terminal</strong> (right-click). When the agent prints <code>PLAN_WRITTEN</code>, click <i class="bi bi-box-arrow-in-down"></i> to ingest.');
+    }).catch(()=>planNote('⚠️ Could not copy — select and copy the prompt manually.'));
+    else planNote('⚠️ Clipboard unavailable in this browser.');
+  });
+  document.getElementById('ab-plan-ingest').addEventListener('click',function(){
+    this.disabled=true; planNote('Ingesting…');
+    post('/aibuilder/planingest',{}).then(j=>{
+      if(j.success){ planNote('✅ Plan ingested.'); loadPlans(); loadCheckpoints(); }
+      else planNote('⚠️ '+(j.message||'No plan found. Did the agent call submit_plan?'));
+    }).catch(()=>planNote('⚠️ Ingest failed.')).finally(()=>{ this.disabled=false; });
   });
   function loadPlans(){
     fetch('/aibuilder/plan?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
@@ -374,8 +304,46 @@ if (AB.has) {
     }).catch(()=>{});
   }
 
+  // --- Publish to GitHub (push + PR; first-time opens setup in a new tab) ---
+  let ghConnected=false, ghRepo='';
+  function loadGhStatus(){
+    fetch('/connections/status?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(r=>r.json()).then(j=>{
+        const st=document.getElementById('ab-gh-state');
+        ghConnected=!!(j.data&&j.data.connected);
+        if(ghConnected&&j.data.connection){ ghRepo=j.data.connection.repo||'';
+          st.innerHTML='<i class="bi bi-check-circle text-success me-1"></i>Connected: <strong>'+esc(ghRepo)+'</strong>'; }
+        else st.innerHTML='<i class="bi bi-plug me-1"></i>Not connected. Publish will open GitHub setup.';
+      }).catch(()=>{});
+  }
+  const ghMsg=()=>document.getElementById('ab-publish-msg');
+  document.getElementById('ab-publish').addEventListener('click',function(){
+    if(!ghConnected){
+      window.open('/connections/setup?id='+AB.id,'_blank');
+      ghMsg().className='small mt-2 text-body-secondary';
+      ghMsg().innerHTML='Complete GitHub setup in the new tab, then click <strong>Publish</strong> again.';
+      return;
+    }
+    const btn=this; btn.disabled=true;
+    ghMsg().className='small mt-2 text-body-secondary'; ghMsg().textContent='Pushing & opening PR…';
+    post('/connections/publish',{}).then(j=>{
+      const m=ghMsg(); const pr=j.data&&j.data.pr;
+      if(j.success&&pr&&pr.url){ m.className='small mt-2 text-success';
+        m.innerHTML='<i class="bi bi-check-circle me-1"></i>'+esc(j.message||'Published')+' — <a href="'+esc(pr.url)+'" target="_blank" rel="noopener">PR #'+esc(String(pr.number||''))+'</a>'; }
+      else if(j.success){ m.className='small mt-2 text-success';
+        m.innerHTML='<i class="bi bi-check-circle me-1"></i>'+esc(j.message||'Pushed')+(j.data&&j.data.note?' — '+esc(j.data.note):''); }
+      else { m.className='small mt-2 text-danger'; m.textContent=j.message||'Publish failed.'; }
+    }).catch(()=>{ const m=ghMsg(); m.className='small mt-2 text-danger'; m.textContent='Network error.'; })
+      .finally(()=>btn.disabled=false);
+  });
+  window.addEventListener('message',function(ev){
+    if(ev.origin===location.origin&&ev.data&&ev.data.type==='gh-connected'){
+      loadGhStatus(); const m=ghMsg(); m.className='small mt-2 text-success';
+      m.innerHTML='<i class="bi bi-check-circle me-1"></i>GitHub connected. Click <strong>Publish</strong>.'; }
+  });
+
   // init
-  setStatus('connecting…'); restoreChat(); refreshChanges(); loadCheckpoints(); loadPlans();
-  connectChat().catch(()=>setStatus('idle'));
+  setStatus('connecting…'); initTerminal(); refreshChanges(); loadCheckpoints(); loadPlans(); loadGhStatus();
+  setInterval(refreshChanges, 4000);
 }
 </script>

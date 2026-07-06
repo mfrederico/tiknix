@@ -118,6 +118,7 @@ class Aibuilder extends Control {
             'ab_isDefault'   => $selected ? (bool)$selected->isDefault : false,
             'ab_isRoot'      => Flight::hasLevel(LEVELS['ROOT']),
             'ab_mainRepo'    => GitHubPublisher::mainGithubRepo(),
+            'ab_url'         => $selected ? 'https://' . $selected->slug . '.' . self::APP . '.com' : '',
         ]);
     }
 

@@ -129,10 +129,12 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
           </div>
           <div class="card-body p-2 bg-body-tertiary">
             <div id="ab-terminal"></div>
-            <p class="text-body-secondary small mt-2 mb-0">
+            <p class="text-body-secondary small mt-2 mb-1">
               Type <code>claude</code> to start the agent. If it asks you to sign in, run <code>claude setup-token</code> and open the link it prints.
               Hold <kbd>Shift</kbd> and drag to select/copy; right-click to paste.
             </p>
+            <button id="ab-test" class="btn btn-outline-secondary btn-sm" type="button" title="Copy a browser-test prompt for the agent (uses the playwright MCP)"><i class="bi bi-bug me-1"></i>Copy browser-test prompt</button>
+            <span id="ab-test-msg" class="small text-body-secondary ms-2"></span>
           </div>
         </div>
       </div>
@@ -208,6 +210,7 @@ const AB = {
   wsPath: <?= json_encode($ab_wspath) ?>,
   csrf: <?= json_encode($csrfTok) ?>,
   has: <?= $ab_hasInstance ? 'true' : 'false' ?>,
+  url: <?= json_encode($ab_url ?? '') ?>,
 };
 const esc = s => (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 
@@ -430,6 +433,18 @@ if (AB.has) {
         msg.textContent=(j.message||'Uploaded')+(errs.length?(' · '+errs.join('; ')):''); inp.value=''; loadUploads(); refreshChanges(); }
       else { msg.className='form-text text-danger'; msg.textContent=j.message||'Upload failed.'; }
     }).catch(()=>{ msg.className='form-text text-danger'; msg.textContent='Network error.'; }).finally(()=>btn.disabled=false);
+  });
+
+  // --- Browser-test prompt (agent uses the playwright MCP to verify its layout) ---
+  const testBtn=document.getElementById('ab-test');
+  if(testBtn) testBtn.addEventListener('click',function(){
+    const url=AB.url||('https://'+location.host);
+    const prompt='Use the playwright MCP to open '+url+' — take a screenshot and a page snapshot, then verify the layout renders correctly '
+      +'(no overflow, elements aligned, works at mobile ~375px and desktop widths). List any issues you find, fix them, and re-test until the page is clean.';
+    const m=document.getElementById('ab-test-msg');
+    if(navigator.clipboard) navigator.clipboard.writeText(prompt).then(()=>{ m.textContent='Copied — paste into the terminal agent.'; setTimeout(()=>m.textContent='',3500); })
+      .catch(()=>{ m.textContent='Copy failed.'; });
+    else m.textContent='Clipboard unavailable.';
   });
 
   // init

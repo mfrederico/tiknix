@@ -144,11 +144,17 @@ R::exec('INSERT OR IGNORE INTO authcontrol (control, method, level, description,
 
 R::close();
 
-// --- 4) wire the codebase-introspection MCP for the in-jail agent -----------
-// stdio (not HTTP): the jail blocks loopback, so the agent launches this as a
-// subprocess. .mcp.json is gitignored, so we write it per provision.
-@file_put_contents("$ROOT/.mcp.json",
-    "{\n  \"mcpServers\": {\n    \"tiknix\": { \"command\": \"php\", \"args\": [\"mcptools/mcp-stdio.php\"] }\n  }\n}\n");
-echo "  wrote .mcp.json (codebase introspection MCP)\n";
+// --- 4) wire the in-jail MCP servers for the agent --------------------------
+// stdio (not HTTP): the jail blocks loopback, so the agent launches these as
+// subprocesses. .mcp.json is gitignored, so we write it per provision.
+//   - tiknix:     codebase introspection (codebase_map / whatprovides / describe)
+//   - playwright: drive a headless browser to test its own layout/design work
+@file_put_contents("$ROOT/.mcp.json", json_encode([
+    'mcpServers' => [
+        'tiknix'     => ['command' => 'php', 'args' => ['mcptools/mcp-stdio.php']],
+        'playwright' => ['command' => 'npx', 'args' => ['-y', '@playwright/mcp@latest', '--headless', '--isolated']],
+    ],
+], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+echo "  wrote .mcp.json (tiknix introspection + playwright browser MCP)\n";
 
 echo "aibuilder-provision: done ($dbRel ready)\n";

@@ -3,6 +3,8 @@ conf/config.ini
 conf/mailgun.ini
 conf/aibuilder.ini
 conf/github.ini
+conf/config.*.ini
+!conf/*.example.ini
 
 # Python cache
 __pycache__/

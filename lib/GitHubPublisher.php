@@ -32,6 +32,18 @@ class GitHubPublisher {
         return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
     }
 
+    /** Like git(), but with extra environment (e.g. GIT_INDEX_FILE) prefixed. */
+    private static function gitEnv(string $slug, array $env, array $args): array {
+        if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'out' => '', 'code' => 1];
+        $cmd = '';
+        foreach ($env as $k => $v) { $cmd .= $k . '=' . escapeshellarg((string)$v) . ' '; }
+        $cmd .= 'git -C ' . escapeshellarg(self::instanceDir($slug));
+        foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string)$a); }
+        $lines = []; $code = 0;
+        exec($cmd . ' 2>&1', $lines, $code);
+        return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
+    }
+
     /**
      * @param object $inst Instance bean (uses ->slug)
      * @param object $conn `connections` bean (github, with encrypted accessToken + metadataJson)
@@ -53,21 +65,48 @@ class GitHubPublisher {
         if (!$head['ok']) return $fail('This instance has no commits to publish yet.');
         $shortSha = substr(trim($head['out']), 0, 7);
 
-        // Push HEAD to the integration branch on the customer repo.
-        // NOTE: token embedded in URL (visible to `ps` during the push). Hardening
-        // TODO: pass via GIT_ASKPASS / credential helper.
-        $url  = 'https://x-access-token:' . $pat . '@github.com/' . $owner . '/' . $repo . '.git';
-        $push = self::git($slug, ['push', '--force', '--follow-tags', $url, 'HEAD:refs/heads/' . self::BRANCH]);
-        if (!$push['ok']) {
-            $out = $pat !== '' ? str_replace($pat, '***', $push['out']) : $push['out'];
-            return $fail('git push failed: ' . $out);
+        // Build a CLEAN SNAPSHOT of the current tree as one parentless commit — never the
+        // instance's internal history or tags (which can carry secrets in conf/*.ini or
+        // builder state in .aibuilder), and never tiknix's own git history.
+        $tmpIndex = self::instanceDir($slug) . '/.git/aibuilder-publish.index';
+        @unlink($tmpIndex);
+        $ienv = ['GIT_INDEX_FILE' => $tmpIndex];
+        self::gitEnv($slug, $ienv, ['read-tree', 'HEAD']);
+        self::gitEnv($slug, $ienv, ['rm', '--cached', '-r', '--ignore-unmatch', '--quiet',
+            'conf/*.ini', ':(exclude)conf/*.example.ini', '.aibuilder']);
+        $tree = trim(self::gitEnv($slug, $ienv, ['write-tree'])['out']);
+        @unlink($tmpIndex);
+        if ($tree === '') return $fail('could not build a clean snapshot tree');
+        $idenv  = ['GIT_AUTHOR_NAME' => 'AI Builder', 'GIT_AUTHOR_EMAIL' => 'aibuilder@tiknix',
+                   'GIT_COMMITTER_NAME' => 'AI Builder', 'GIT_COMMITTER_EMAIL' => 'aibuilder@tiknix'];
+        $commit = trim(self::gitEnv($slug, $idenv, ['commit-tree', $tree, '-m', 'AI Builder: ' . $slug . ' snapshot (' . $shortSha . ')'])['out']);
+        if ($commit === '') return $fail('could not create snapshot commit');
+
+        $url = 'https://x-access-token:' . $pat . '@github.com/' . $owner . '/' . $repo . '.git';
+        $redact = fn($s) => $pat !== '' ? str_replace($pat, '***', $s) : $s;
+
+        // Determine the repo's default branch and whether it exists yet.
+        try {
+            $gh = new GitHubService($pat, $owner, $repo);
+            $base = $meta['defaultBranch'] ?? $gh->getDefaultBranch();
+            $baseExists = $gh->branchExists($base);
+        } catch (\Throwable $e) {
+            $gh = null; $base = $meta['defaultBranch'] ?? 'main'; $baseExists = false;
         }
 
-        // Open or reuse a PR: integration branch -> repo default branch.
-        try {
-            $gh   = new GitHubService($pat, $owner, $repo);
-            $base = $meta['defaultBranch'] ?? $gh->getDefaultBranch();
+        // Empty repo (no base branch yet): push the snapshot straight to the default branch
+        // to initialize it — there is nothing to open a PR against.
+        if (!$baseExists) {
+            $push = self::git($slug, ['push', '--force', $url, $commit . ':refs/heads/' . $base]);
+            if (!$push['ok']) return $fail('git push failed: ' . $redact($push['out']));
+            return ['ok' => true, 'pushed' => true, 'pr' => null,
+                'message' => 'Published to ' . $owner . '/' . $repo . ' (initialized ' . $base . ')', 'error' => null];
+        }
 
+        // Base exists: push the snapshot to the integration branch and open/reuse a PR.
+        $push = self::git($slug, ['push', '--force', $url, $commit . ':refs/heads/' . self::BRANCH]);
+        if (!$push['ok']) return $fail('git push failed: ' . $redact($push['out']));
+        try {
             $pr = null;
             foreach ($gh->listPullRequests('open', 50) as $p) {
                 if (($p['head']['ref'] ?? '') === self::BRANCH) { $pr = $p; break; }
@@ -81,20 +120,13 @@ class GitHubPublisher {
                        . '- HEAD: `' . $shortSha . "`\n";
                 $pr = $gh->createPullRequest($title, $body, self::BRANCH, $base, false);
             }
-            return [
-                'ok' => true, 'pushed' => true,
+            return ['ok' => true, 'pushed' => true,
                 'pr' => ['number' => $pr['number'] ?? null, 'url' => $pr['html_url'] ?? null],
-                'message' => 'Published to ' . $owner . '/' . $repo . ($reused ? ' (updated existing PR)' : ''),
-                'error' => null,
-            ];
+                'message' => 'Published to ' . $owner . '/' . $repo . ($reused ? ' (updated existing PR)' : ''), 'error' => null];
         } catch (\Throwable $e) {
-            // Push landed even if the PR couldn't be opened (e.g. empty base repo).
-            return [
-                'ok' => true, 'pushed' => true, 'pr' => null,
-                'message' => 'Pushed to ' . $owner . '/' . $repo,
-                'error' => null,
-                'note' => 'PR could not be created: ' . $e->getMessage(),
-            ];
+            return ['ok' => true, 'pushed' => true, 'pr' => null,
+                'message' => 'Pushed to ' . $owner . '/' . $repo, 'error' => null,
+                'note' => 'PR could not be created: ' . $e->getMessage()];
         }
     }
 

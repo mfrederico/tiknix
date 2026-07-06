@@ -4,8 +4,9 @@
  * Vars: $instance, $connection (array|null), $isDefault (bool), $prefill (array|null),
  *       $oauthEnabled (bool), $oauthReturn (bool), $oauthError (bool)
  */
-$iid = (int)$instance->id;
-$pf  = $prefill ?? ['owner' => '', 'repo' => ''];
+$iid   = (int)$instance->id;
+$pf    = $prefill ?? ['owner' => '', 'repo' => ''];
+$pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' . $pf['owner'] . '/' . $pf['repo'] : '';
 ?>
 <div class="container py-4" style="max-width:640px">
   <div class="d-flex align-items-center gap-2 mb-3">
@@ -73,15 +74,10 @@ $pf  = $prefill ?? ['owner' => '', 'repo' => ''];
               with the <code>repo</code> scope. Stored encrypted.
             </div>
           </div>
-          <div class="row g-2 mb-3">
-            <div class="col">
-              <label class="form-label small fw-semibold">Owner</label>
-              <input id="gh-owner" class="form-control" placeholder="jadams" value="<?= htmlspecialchars($pf['owner'] ?? '') ?>" required>
-            </div>
-            <div class="col">
-              <label class="form-label small fw-semibold">Repository</label>
-              <input id="gh-repo" class="form-control" placeholder="my-app" value="<?= htmlspecialchars($pf['repo'] ?? '') ?>" required>
-            </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Repository URL</label>
+            <input id="gh-repo-url" class="form-control" placeholder="https://github.com/owner/repo" value="<?= htmlspecialchars($pfUrl) ?>" required>
+            <div class="form-text">Paste the repo's GitHub URL (e.g. <code>https://github.com/mfrederico/run.ngn.sh</code>). It must already exist and your token needs push access.</div>
           </div>
           <div class="form-check mb-3">
             <input class="form-check-input" type="checkbox" id="gh-auto-pat" <?= (!empty($connection['autoPublish'])) ? 'checked' : '' ?>>
@@ -142,8 +138,7 @@ $pf  = $prefill ?? ['owner' => '', 'repo' => ''];
     post('/connections/add', {
       id:iid, type:'github',
       token:document.getElementById('gh-token').value.trim(),
-      owner:document.getElementById('gh-owner').value.trim(),
-      repo:document.getElementById('gh-repo').value.trim(),
+      repo_url:document.getElementById('gh-repo-url').value.trim(),
       auto_publish:document.getElementById('gh-auto-pat').checked?'1':'0'
     }).then(j=>{
       if(j.success) done(msg, j.data);

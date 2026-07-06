@@ -108,6 +108,21 @@ class Connections extends Control {
         ]);
     }
 
+    /** Parse a GitHub repo URL/spec into [owner, repo]. Accepts https://, git@, or owner/repo. */
+    private function parseRepoSpec(string $s): array {
+        $s = trim($s);
+        if ($s === '') return ['', ''];
+        // https://github.com/owner/repo(.git)  or  git@github.com:owner/repo(.git)
+        if (preg_match('~github\.com[:/]+([^/]+)/([^/#?]+?)(?:\.git)?/?$~i', $s, $m)) {
+            return [$m[1], $m[2]];
+        }
+        // owner/repo shorthand
+        if (preg_match('~^([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+?)(?:\.git)?$~', $s, $m)) {
+            return [$m[1], $m[2]];
+        }
+        return ['', ''];
+    }
+
     /** POST /connections/add — store/replace a GitHub PAT connection for an instance. */
     public function add($params = []): void {
         if (!$this->requireLogin()) return;
@@ -119,9 +134,11 @@ class Connections extends Control {
         $type = strtolower(trim((string)$this->getParam('type', 'github')));
         if ($type !== 'github') { $this->jsonError('Unsupported connector', 400); return; }
 
-        $owner = trim((string)$this->getParam('owner', ''));
-        $repo  = preg_replace('/\.git$/', '', trim((string)$this->getParam('repo', '')));
-        $auto  = filter_var($this->getParam('auto_publish', false), FILTER_VALIDATE_BOOLEAN);
+        $owner   = trim((string)$this->getParam('owner', ''));
+        $repo    = preg_replace('/\.git$/', '', trim((string)$this->getParam('repo', '')));
+        $repoUrl = trim((string)$this->getParam('repo_url', ''));
+        if ($repoUrl !== '') { [$owner, $repo] = $this->parseRepoSpec($repoUrl); }
+        $auto    = filter_var($this->getParam('auto_publish', false), FILTER_VALIDATE_BOOLEAN);
 
         // Token source: a freshly-completed OAuth authorization (preferred) or a pasted PAT.
         $useOauth = filter_var($this->getParam('use_oauth', false), FILTER_VALIDATE_BOOLEAN);
@@ -137,7 +154,7 @@ class Connections extends Control {
             $pat = trim((string)$this->getParam('token', ''));
         }
         if ($pat === '' || $owner === '' || $repo === '') {
-            $this->jsonError('A GitHub authorization (or token) plus owner and repo are required', 400); return;
+            $this->jsonError('A token/authorization and a valid repository URL (https://github.com/owner/repo) are required', 400); return;
         }
         if (!preg_match('/^[A-Za-z0-9._-]+$/', $owner) || !preg_match('/^[A-Za-z0-9._-]+$/', $repo)) {
             $this->jsonError('Invalid owner/repo format', 400); return;

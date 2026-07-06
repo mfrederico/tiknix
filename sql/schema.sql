@@ -463,6 +463,8 @@ INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_
     ('auth', 'twofaconfirmsaved', 101, '2FA confirm recovery codes saved', datetime('now')),
     ('auth', 'twofarecoverycodes', 101, '2FA recovery codes', datetime('now')),
     ('auth', 'setpassword', 101, 'Set password (post-2FA / oauth)', datetime('now')),
+    ('install', 'index', 101, 'First-run setup wizard', datetime('now')),
+    ('install', 'save', 101, 'First-run setup wizard submit', datetime('now')),
     ('docs', '*', 101, 'Documentation', datetime('now')),
     ('help', '*', 101, 'Help pages', datetime('now')),
     ('contact', 'index', 101, 'Contact form', datetime('now')),

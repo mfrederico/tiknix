@@ -27,6 +27,7 @@ if [ ! -s database/tiknix.db ]; then
   for f in sql/schema.sql sql/workbench_schema.sql sql/map_permissions.sql; do
     [ -f "$f" ] && sqlite3 database/tiknix.db < "$f" || true
   done
+  echo "entrypoint: fresh install — open the site in a browser to complete first-run setup (/install)"
 fi
 
 # 4) Make runtime paths writable by the web user.

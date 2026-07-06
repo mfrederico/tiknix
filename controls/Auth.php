@@ -19,6 +19,9 @@ class Auth extends BaseControls\Control {
      * Show login form
      */
     public function login() {
+        // First-run setup takes precedence over login.
+        if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
+
         // Don't redirect if coming from a permission denied scenario
         // Check if we're in a redirect loop situation
         $redirect = Flight::request()->query->redirect ?? '';
@@ -46,6 +49,9 @@ class Auth extends BaseControls\Control {
      */
     public function dologin() {
         try {
+            // Force first-run setup before any credential check (blocks the default creds).
+            if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
+
             // CSRF validation enabled for security
             if (!$this->validateCSRF()) {
                 $this->flash('error', 'Security validation failed. Please try again.');
@@ -111,6 +117,9 @@ class Auth extends BaseControls\Control {
 
             // Clear rate limit on successful login
             RateLimiter::clear('login');
+
+            // First successful admin login confirms the site is set up (idempotent marker).
+            if ((int)$member->level <= LEVELS['ADMIN']) { Install::markComplete(); }
 
             // Check 2FA requirements
             if (TwoFactorAuth::needsSetup($member)) {

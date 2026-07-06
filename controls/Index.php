@@ -15,6 +15,9 @@ class Index extends BaseControls\Control {
      * Home page
      */
     public function index() {
+        // First-run setup takes precedence over the landing page.
+        if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
+
         // Public "Coming Soon" landing page.
         // Rendered without the Tiknix header/footer layout so visitors see a
         // clean, standalone page. To restore the original homepage, revert this

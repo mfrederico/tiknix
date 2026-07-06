@@ -1,0 +1,18 @@
+# Keep the build context lean and secrets out of the image.
+.git
+.github
+.gitignore
+.claude
+node_modules
+vendor
+database/*.db
+database/*.sqlite
+database/log
+storage/logs/*
+# Real (gitignored) config files — the entrypoint seeds these from *.example.ini
+conf/config.ini
+conf/aibuilder.ini
+conf/github.ini
+conf/mailgun.ini
+*.md
+tests

@@ -80,12 +80,19 @@ class Connections extends Control {
         // Default (tiknix-core) instances publish back to main — root only.
         $isDefault = (bool)$inst->isDefault;
         if ($isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/aibuilder'); return; }
-        $conn = $this->githubConn((int)$inst->id);
+        $conn  = $this->githubConn((int)$inst->id);
+        $oauth = (string)$this->getParam('oauth', '');
+        $pendingOauth = $oauth === '1'
+            && !empty($_SESSION['gh_oauth']['token'])
+            && (int)($_SESSION['gh_oauth']['instance_id'] ?? 0) === (int)$inst->id;
         $this->render('connections/setup', [
-            'instance'   => $inst,
-            'connection' => $conn && $conn->id ? $this->connSummary($conn) : null,
-            'isDefault'  => $isDefault,
-            'prefill'    => $isDefault ? GitHubPublisher::mainGithubRepo() : null,
+            'instance'     => $inst,
+            'connection'   => $conn && $conn->id ? $this->connSummary($conn) : null,
+            'isDefault'    => $isDefault,
+            'prefill'      => $isDefault ? GitHubPublisher::mainGithubRepo() : null,
+            'oauthEnabled' => $this->oauthEnabled(),
+            'oauthReturn'  => $pendingOauth,
+            'oauthError'   => $oauth === 'err',
         ]);
     }
 
@@ -112,13 +119,25 @@ class Connections extends Control {
         $type = strtolower(trim((string)$this->getParam('type', 'github')));
         if ($type !== 'github') { $this->jsonError('Unsupported connector', 400); return; }
 
-        $pat   = trim((string)$this->getParam('token', ''));
         $owner = trim((string)$this->getParam('owner', ''));
-        $repo  = trim((string)$this->getParam('repo', ''));
-        $repo  = preg_replace('/\.git$/', '', $repo);
+        $repo  = preg_replace('/\.git$/', '', trim((string)$this->getParam('repo', '')));
         $auto  = filter_var($this->getParam('auto_publish', false), FILTER_VALIDATE_BOOLEAN);
+
+        // Token source: a freshly-completed OAuth authorization (preferred) or a pasted PAT.
+        $useOauth = filter_var($this->getParam('use_oauth', false), FILTER_VALIDATE_BOOLEAN);
+        $authType = 'token';
+        if ($useOauth) {
+            $sess = $_SESSION['gh_oauth'] ?? null;
+            if (!$sess || empty($sess['token']) || (int)($sess['instance_id'] ?? 0) !== (int)$inst->id) {
+                $this->jsonError('GitHub authorization expired — reconnect.', 400); return;
+            }
+            $pat = (string)$sess['token'];
+            $authType = 'oauth';
+        } else {
+            $pat = trim((string)$this->getParam('token', ''));
+        }
         if ($pat === '' || $owner === '' || $repo === '') {
-            $this->jsonError('Token, owner and repo are required', 400); return;
+            $this->jsonError('A GitHub authorization (or token) plus owner and repo are required', 400); return;
         }
         if (!preg_match('/^[A-Za-z0-9._-]+$/', $owner) || !preg_match('/^[A-Za-z0-9._-]+$/', $repo)) {
             $this->jsonError('Invalid owner/repo format', 400); return;
@@ -141,7 +160,7 @@ class Connections extends Control {
         $conn->connectorType  = 'github';
         $conn->memberId       = (int)$this->member->id;
         $conn->instanceId     = (int)$inst->id;
-        $conn->authType       = 'token';
+        $conn->authType       = $authType;
         $conn->accessToken    = EncryptionService::encrypt($pat);
         $conn->tokenType      = 'Bearer';
         $conn->externalEid    = $fullName;
@@ -156,13 +175,127 @@ class Connections extends Control {
         if (!$conn->id) $conn->createdAt = $now;
         $conn->updatedAt      = $now;
         Bean::store($conn);
+        if ($useOauth) unset($_SESSION['gh_oauth']);
 
         $this->jsonSuccess([
             'id'            => (int)$conn->id,
             'repo'          => $fullName,
             'defaultBranch' => $defaultBranch,
-            'tokenMask'     => EncryptionService::mask($pat),
+            'authType'      => $authType,
         ], 'GitHub connected');
+    }
+
+    // --- OAuth (GitHub App) ---------------------------------------------------
+
+    private function githubOAuthConfig(): array {
+        $ini = @parse_ini_file(dirname(__DIR__) . '/conf/github.ini', true) ?: [];
+        $o = $ini['oauth'] ?? [];
+        return [
+            'client_id'     => (string)($o['client_id'] ?? ''),
+            'client_secret' => (string)($o['client_secret'] ?? ''),
+            'scope'         => (string)($o['scope'] ?? 'repo read:user'),
+        ];
+    }
+
+    private function oauthEnabled(): bool {
+        $c = $this->githubOAuthConfig();
+        return $c['client_id'] !== '' && $c['client_secret'] !== '';
+    }
+
+    private function redirectUri(): string {
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        return ($https ? 'https' : 'http') . '://' . $host . '/connections/callback/github';
+    }
+
+    /** Exchange an OAuth code for an access token. Returns token or null. */
+    private function githubExchangeCode(string $code, array $cfg): ?string {
+        $ch = curl_init('https://github.com/login/oauth/access_token');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => ['Accept: application/json', 'User-Agent: tiknix-aibuilder'],
+            CURLOPT_POSTFIELDS     => http_build_query([
+                'client_id'     => $cfg['client_id'],
+                'client_secret' => $cfg['client_secret'],
+                'code'          => $code,
+                'redirect_uri'  => $this->redirectUri(),
+            ]),
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $resp = curl_exec($ch); curl_close($ch);
+        $j = json_decode($resp ?: '', true);
+        $tok = is_array($j) ? ($j['access_token'] ?? '') : '';
+        return $tok !== '' ? $tok : null;
+    }
+
+    /** List the authorized user's pushable repos. */
+    private function githubUserRepos(string $token): array {
+        $ch = curl_init('https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => ['Accept: application/vnd.github+json', 'Authorization: Bearer ' . $token, 'User-Agent: tiknix-aibuilder'],
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $resp = curl_exec($ch); curl_close($ch);
+        $arr  = json_decode($resp ?: '', true) ?: [];
+        $out  = [];
+        foreach ($arr as $r) {
+            if (!empty($r['full_name']) && !empty($r['permissions']['push'])) {
+                $out[] = ['full_name' => $r['full_name'], 'default_branch' => $r['default_branch'] ?? 'main', 'private' => !empty($r['private'])];
+            }
+        }
+        return $out;
+    }
+
+    /** GET /connections/connect/github?id=<instance> — start the OAuth flow. */
+    public function connect($params = []): void {
+        if (!$this->requireLogin()) return;
+        $type = strtolower((string)($params['operation']->name ?? 'github'));
+        if ($type !== 'github' || !$this->oauthEnabled()) { Flight::redirect('/aibuilder'); return; }
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::redirect('/aibuilder'); return; }
+        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/aibuilder'); return; }
+
+        $state = bin2hex(random_bytes(16));
+        $_SESSION['gh_oauth'] = ['state' => $state, 'instance_id' => (int)$inst->id, 'ts' => time()];
+        $cfg = $this->githubOAuthConfig();
+        Flight::redirect('https://github.com/login/oauth/authorize?' . http_build_query([
+            'client_id'    => $cfg['client_id'],
+            'redirect_uri' => $this->redirectUri(),
+            'scope'        => $cfg['scope'],
+            'state'        => $state,
+            'allow_signup' => 'false',
+        ]));
+    }
+
+    /** GET /connections/callback/github?code=&state= — OAuth redirect target. */
+    public function callback($params = []): void {
+        $type  = strtolower((string)($params['operation']->name ?? 'github'));
+        $sess  = $_SESSION['gh_oauth'] ?? null;
+        $state = (string)$this->getParam('state', '');
+        $code  = (string)$this->getParam('code', '');
+        if ($type !== 'github' || !$sess || $state === '' || !hash_equals((string)($sess['state'] ?? ''), $state) || $code === '') {
+            unset($_SESSION['gh_oauth']); Flight::redirect('/aibuilder'); return;
+        }
+        if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
+
+        $iid   = (int)($sess['instance_id'] ?? 0);
+        $token = $this->githubExchangeCode($code, $this->githubOAuthConfig());
+        if (!$token) { unset($_SESSION['gh_oauth']); Flight::redirect('/connections/setup?id=' . $iid . '&oauth=err'); return; }
+
+        // Stash the token for the repo-picker step; cleared once the connection is saved.
+        $_SESSION['gh_oauth']['token'] = $token;
+        Flight::redirect('/connections/setup?id=' . $iid . '&oauth=1');
+    }
+
+    /** GET /connections/repos — the authorized user's repos (pending OAuth token). JSON. */
+    public function repos($params = []): void {
+        if (!$this->requireLogin()) return;
+        $sess = $_SESSION['gh_oauth'] ?? null;
+        if (!$sess || empty($sess['token'])) { $this->jsonError('No pending GitHub authorization', 400); return; }
+        $this->jsonSuccess(['repos' => $this->githubUserRepos((string)$sess['token'])]);
     }
 
     /** POST /connections/test — re-validate a stored connection. */

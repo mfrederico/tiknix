@@ -148,6 +148,27 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
             <div id="ab-changes"><div class="text-body-secondary small">No changes yet.</div></div>
           </div>
         </div>
+        <div class="card shadow-sm mb-3">
+          <div class="card-header fw-semibold"><i class="bi bi-paperclip me-1"></i>Uploads <small class="text-body-secondary">@reference in the terminal</small></div>
+          <div class="card-body">
+            <form id="ab-upload-form" class="mb-2">
+              <input id="ab-upload-file" type="file" class="form-control form-control-sm mb-2" multiple>
+              <div class="d-flex gap-2">
+                <select id="ab-upload-bucket" class="form-select form-select-sm">
+                  <option value="secure">Secure — private, never published</option>
+                  <option value="public">Public — published with commits</option>
+                </select>
+                <button class="btn btn-primary btn-sm" type="submit" title="Upload"><i class="bi bi-upload"></i></button>
+              </div>
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" id="ab-upload-overwrite">
+                <label class="form-check-label small" for="ab-upload-overwrite">Overwrite existing (<code>index.php</code> protected)</label>
+              </div>
+              <div id="ab-upload-msg" class="form-text"></div>
+            </form>
+            <div id="ab-upload-list" class="small"></div>
+          </div>
+        </div>
         <div class="card shadow-sm">
           <div class="card-header fw-semibold"><i class="bi bi-bookmark-plus me-1"></i>Checkpoint</div>
           <div class="card-body">
@@ -379,8 +400,40 @@ if (AB.has) {
       m.innerHTML='<i class="bi bi-check-circle me-1"></i>GitHub connected. Click <strong>Publish</strong>.'; }
   });
 
+  // --- Uploads (secure = private/gitignored, public = published with commits) ---
+  function humanSize(n){ n=+n||0; return n>1048576?(n/1048576).toFixed(1)+'MB':(n>1024?(n/1024).toFixed(0)+'KB':n+'B'); }
+  function loadUploads(){
+    fetch('/aibuilder/uploads?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
+      const box=document.getElementById('ab-upload-list'); const u=(j.data&&j.data.uploads)||{secure:[],public:[]};
+      const row=(f,bucket)=>'<div class="ab-file"><span class="st '+(bucket==='public'?'A':'U')+'">'+(bucket==='public'?'P':'S')+'</span>'
+        +'<span class="path flex-grow-1">'+esc(f.name)+' <span class="text-body-secondary">'+humanSize(f.size)+'</span></span>'
+        +'<button class="btn btn-link btn-sm p-0 ab-cp" title="Copy @reference" data-ref="'+esc(f.ref)+'"><i class="bi bi-clipboard"></i></button>'
+        +'<button class="btn btn-link btn-sm p-0 text-danger ab-del" title="Delete" data-bucket="'+bucket+'" data-name="'+esc(f.name)+'"><i class="bi bi-x-lg"></i></button></div>';
+      const sec=(u.secure||[]).map(f=>row(f,'secure')).join(''), pub=(u.public||[]).map(f=>row(f,'public')).join('');
+      box.innerHTML=(sec||pub)?((sec?'<div class="text-body-secondary mt-1 mb-1">Secure</div>'+sec:'')+(pub?'<div class="text-body-secondary mt-2 mb-1">Public</div>'+pub:'')):'<div class="text-body-secondary">No uploads yet.</div>';
+      box.querySelectorAll('.ab-cp').forEach(b=>b.addEventListener('click',()=>{ if(navigator.clipboard) navigator.clipboard.writeText(b.dataset.ref); b.innerHTML='<i class="bi bi-check2"></i>'; setTimeout(()=>b.innerHTML='<i class="bi bi-clipboard"></i>',1200); }));
+      box.querySelectorAll('.ab-del').forEach(b=>b.addEventListener('click',()=>{ if(!confirm('Delete '+b.dataset.name+'?')) return; post('/aibuilder/deleteupload',{bucket:b.dataset.bucket,name:b.dataset.name}).then(()=>{ loadUploads(); refreshChanges(); }); }));
+    }).catch(()=>{});
+  }
+  document.getElementById('ab-upload-form').addEventListener('submit',function(e){
+    e.preventDefault();
+    const inp=document.getElementById('ab-upload-file'); if(!inp.files.length) return;
+    const fd=new FormData();
+    fd.append('id',AB.id); fd.append('csrf_token',AB.csrf);
+    fd.append('bucket',document.getElementById('ab-upload-bucket').value);
+    fd.append('overwrite',document.getElementById('ab-upload-overwrite').checked?'1':'0');
+    for(const f of inp.files) fd.append('files[]',f);
+    const btn=this.querySelector('button[type=submit]'); btn.disabled=true;
+    const msg=document.getElementById('ab-upload-msg'); msg.className='form-text text-body-secondary'; msg.textContent='Uploading…';
+    fetch('/aibuilder/upload',{method:'POST',headers:{'X-CSRF-TOKEN':AB.csrf,'X-Requested-With':'XMLHttpRequest'},body:fd}).then(r=>r.json()).then(j=>{
+      if(j.success){ const errs=(j.data&&j.data.errors)||[]; msg.className='form-text '+(errs.length?'text-warning':'text-success');
+        msg.textContent=(j.message||'Uploaded')+(errs.length?(' · '+errs.join('; ')):''); inp.value=''; loadUploads(); refreshChanges(); }
+      else { msg.className='form-text text-danger'; msg.textContent=j.message||'Upload failed.'; }
+    }).catch(()=>{ msg.className='form-text text-danger'; msg.textContent='Network error.'; }).finally(()=>btn.disabled=false);
+  });
+
   // init
-  setStatus('connecting…'); initTerminal(); refreshChanges(); loadCheckpoints(); loadPlans(); loadGhStatus();
+  setStatus('connecting…'); initTerminal(); refreshChanges(); loadCheckpoints(); loadPlans(); loadGhStatus(); loadUploads();
   setInterval(refreshChanges, 4000);
 }
 </script>

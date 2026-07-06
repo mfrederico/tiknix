@@ -390,4 +390,124 @@ class Aibuilder extends Control {
         }
         Flight::jsonSuccess(['plans' => $plans]);
     }
+
+    // --- Uploads: secure (private/gitignored) + public (published) ------------
+
+    private const UPLOAD_MAX = 52428800; // 50 MB per file
+
+    /** Ensure uploads/{secure,public} exist; secure is gitignored, public is tracked. */
+    private function ensureUploadDirs(string $slug): void {
+        $base = $this->instanceDir($slug) . '/uploads';
+        @mkdir($base . '/secure', 0775, true);
+        @mkdir($base . '/public', 0775, true);
+        $keep = $base . '/public/.gitkeep';
+        if (!is_file($keep)) @file_put_contents($keep, '');
+        // Never publish secure uploads: ignore them in the instance repo.
+        $gi   = $this->instanceDir($slug) . '/.gitignore';
+        $line = '/uploads/secure/';
+        $cur  = is_file($gi) ? (string)file_get_contents($gi) : '';
+        if (strpos($cur, $line) === false) {
+            @file_put_contents($gi, rtrim($cur, "\n") . "\n" . $line . "\n", LOCK_EX);
+        }
+    }
+
+    /** Reduce an uploaded name to a safe basename (no traversal, no hidden files). */
+    private function safeName(string $name): string {
+        $name = preg_replace('/[^A-Za-z0-9._-]+/', '_', basename($name));
+        $name = ltrim($name, '.');
+        return substr($name === '' ? 'file' : $name, 0, 120);
+    }
+
+    /** POST /aibuilder/upload — store file(s) into the secure|public bucket. JSON. */
+    public function upload($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $bucket    = $this->getParam('bucket', 'secure') === 'public' ? 'public' : 'secure';
+        $overwrite = filter_var($this->getParam('overwrite', false), FILTER_VALIDATE_BOOLEAN);
+        $this->ensureUploadDirs($inst->slug);
+        $destDir = $this->instanceDir($inst->slug) . '/uploads/' . $bucket;
+
+        if (empty($_FILES['files']['name'])) { Flight::jsonError('No files uploaded', 400); return; }
+        $names = (array)$_FILES['files']['name'];
+        $tmps  = (array)$_FILES['files']['tmp_name'];
+        $errs  = (array)$_FILES['files']['error'];
+        $sizes = (array)$_FILES['files']['size'];
+
+        $stored = []; $errors = [];
+        foreach ($names as $i => $origName) {
+            if (($errs[$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) { $errors[] = $origName . ': upload error'; continue; }
+            if (($sizes[$i] ?? 0) > self::UPLOAD_MAX)               { $errors[] = $origName . ': too large (max 50MB)'; continue; }
+            if (!is_uploaded_file($tmps[$i]))                        { $errors[] = $origName . ': invalid'; continue; }
+
+            $name = $this->safeName((string)$origName);
+            $dest = $destDir . '/' . $name;
+            if ($overwrite) {
+                // index.php is protected — never overwrite the front controller.
+                if (strtolower($name) === 'index.php' && is_file($dest)) {
+                    $errors[] = $origName . ': index.php is protected (not overwritten)'; continue;
+                }
+                // otherwise keep $dest as-is; move_uploaded_file replaces it.
+            } else {
+                $n = 1;
+                while (is_file($dest)) {
+                    $ext  = pathinfo($name, PATHINFO_EXTENSION);
+                    $dest = $destDir . '/' . pathinfo($name, PATHINFO_FILENAME) . '-' . $n . ($ext ? '.' . $ext : '');
+                    $n++;
+                }
+            }
+            if (move_uploaded_file($tmps[$i], $dest)) {
+                @chmod($dest, 0664);
+                $rel = 'uploads/' . $bucket . '/' . basename($dest);
+                // Track public uploads so they publish with the next checkpoint.
+                if ($bucket === 'public') $this->gitInstance($inst->slug, ['add', $rel]);
+                $stored[] = ['name' => basename($dest), 'path' => $rel, 'ref' => '@' . $rel, 'bucket' => $bucket];
+            } else {
+                $errors[] = $origName . ': write failed';
+            }
+        }
+        Flight::jsonSuccess(['stored' => $stored, 'errors' => $errors], count($stored) . ' file(s) uploaded');
+    }
+
+    /** GET /aibuilder/uploads?id= — list uploaded files by bucket. JSON. */
+    public function uploads($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+        $out = ['secure' => [], 'public' => []];
+        foreach (['secure', 'public'] as $b) {
+            $dir = $this->instanceDir($inst->slug) . '/uploads/' . $b;
+            if (!is_dir($dir)) continue;
+            foreach (scandir($dir) as $f) {
+                if ($f === '.' || $f === '..' || $f === '.gitkeep') continue;
+                $full = $dir . '/' . $f;
+                if (!is_file($full)) continue;
+                $rel = 'uploads/' . $b . '/' . $f;
+                $out[$b][] = ['name' => $f, 'path' => $rel, 'ref' => '@' . $rel, 'size' => filesize($full)];
+            }
+        }
+        Flight::jsonSuccess(['uploads' => $out]);
+    }
+
+    /** POST /aibuilder/deleteupload — remove an uploaded file. JSON. */
+    public function deleteupload($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+        $bucket = $this->getParam('bucket', 'secure') === 'public' ? 'public' : 'secure';
+        $name   = basename((string)$this->getParam('name', ''));
+        if ($name === '' || $name === '.gitkeep') { Flight::jsonError('Invalid file', 400); return; }
+
+        $bucketDir = realpath($this->instanceDir($inst->slug) . '/uploads/' . $bucket);
+        $real      = realpath($this->instanceDir($inst->slug) . '/uploads/' . $bucket . '/' . $name);
+        if (!$real || !$bucketDir || strpos($real, $bucketDir) !== 0 || !is_file($real)) {
+            Flight::jsonError('Not found', 404); return;
+        }
+        if ($bucket === 'public') $this->gitInstance($inst->slug, ['rm', '-f', '--cached', 'uploads/public/' . $name]);
+        @unlink($real);
+        Flight::jsonSuccess([], 'Deleted');
+    }
 }

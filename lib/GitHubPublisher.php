@@ -77,11 +77,6 @@ class GitHubPublisher {
         $tree = trim(self::gitEnv($slug, $ienv, ['write-tree'])['out']);
         @unlink($tmpIndex);
         if ($tree === '') return $fail('could not build a clean snapshot tree');
-        $idenv  = ['GIT_AUTHOR_NAME' => 'AI Builder', 'GIT_AUTHOR_EMAIL' => 'aibuilder@tiknix',
-                   'GIT_COMMITTER_NAME' => 'AI Builder', 'GIT_COMMITTER_EMAIL' => 'aibuilder@tiknix'];
-        $commit = trim(self::gitEnv($slug, $idenv, ['commit-tree', $tree, '-m', 'AI Builder: ' . $slug . ' snapshot (' . $shortSha . ')'])['out']);
-        if ($commit === '') return $fail('could not create snapshot commit');
-
         $url = 'https://x-access-token:' . $pat . '@github.com/' . $owner . '/' . $repo . '.git';
         $redact = fn($s) => $pat !== '' ? str_replace($pat, '***', $s) : $s;
 
@@ -93,6 +88,24 @@ class GitHubPublisher {
         } catch (\Throwable $e) {
             $gh = null; $base = $meta['defaultBranch'] ?? 'main'; $baseExists = false;
         }
+
+        // Parent the snapshot on the current base-branch tip when the base exists, so the
+        // integration branch shares history with it. GitHub refuses to open a PR between two
+        // branches "with no history in common" — which a parentless commit always is. Empty
+        // repo -> a parentless commit initializes the default branch (nothing to descend from).
+        $parentArgs = [];
+        if ($baseExists) {
+            self::git($slug, ['fetch', '--no-tags', '--force', $url, $base]);
+            $baseSha = trim(self::git($slug, ['rev-parse', 'FETCH_HEAD'])['out']);
+            if (preg_match('/^[0-9a-f]{7,40}$/', $baseSha)) { $parentArgs = ['-p', $baseSha]; }
+        }
+
+        $idenv  = ['GIT_AUTHOR_NAME' => 'AI Builder', 'GIT_AUTHOR_EMAIL' => 'aibuilder@tiknix',
+                   'GIT_COMMITTER_NAME' => 'AI Builder', 'GIT_COMMITTER_EMAIL' => 'aibuilder@tiknix'];
+        $commitArgs = array_merge(['commit-tree', $tree], $parentArgs,
+            ['-m', 'AI Builder: ' . $slug . ' snapshot (' . $shortSha . ')']);
+        $commit = trim(self::gitEnv($slug, $idenv, $commitArgs)['out']);
+        if ($commit === '') return $fail('could not create snapshot commit');
 
         // Empty repo (no base branch yet): push the snapshot straight to the default branch
         // to initialize it — there is nothing to open a PR against.

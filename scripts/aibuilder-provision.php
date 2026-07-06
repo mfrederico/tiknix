@@ -157,4 +157,24 @@ R::close();
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
 echo "  wrote .mcp.json (tiknix introspection + playwright browser MCP)\n";
 
+// --- 5) seed Hyperlift deploy files (Dockerfile + entrypoint) ---------------
+// So a freshly provisioned instance is publishable to Spaceship Hyperlift (or any
+// Dockerfile-based host) with no backfill. These are instance-agnostic; copy them
+// from the source app so instances track whatever the core ships. .dockerignore
+// keeps secrets (conf/config*.ini) out of the build context; GitHubPublisher also
+// strips them from the published snapshot.
+$srcApp = dirname($ROOT) . '/' . substr(basename($ROOT), strpos(basename($ROOT), '.') + 1);
+foreach (['Dockerfile', '.dockerignore', 'docker/entrypoint.sh'] as $rel) {
+    $from = "$srcApp/$rel";
+    $to   = "$ROOT/$rel";
+    if (!is_file($from)) { fwrite(STDERR, "  warn: source missing $rel — skipped\n"); continue; }
+    if (!is_dir(dirname($to))) @mkdir(dirname($to), 0755, true);
+    if (@copy($from, $to)) {
+        if (substr($rel, -3) === '.sh') @chmod($to, 0755);
+    } else {
+        fwrite(STDERR, "  warn: failed to copy $rel\n");
+    }
+}
+echo "  seeded Dockerfile + docker/entrypoint.sh + .dockerignore (Hyperlift-ready)\n";
+
 echo "aibuilder-provision: done ($dbRel ready)\n";

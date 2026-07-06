@@ -56,9 +56,9 @@ class WorkspaceManager
     private function getDefaultWorkspaceRoot(): string
     {
         // Check for configured workspace root
-        $config = Flight::get('config');
-        if (!empty($config['workspaces']['root'])) {
-            return $config['workspaces']['root'];
+        $root = Flight::get('workspaces.root');
+        if (!empty($root)) {
+            return $root;
         }
 
         // Default to /tmp for development

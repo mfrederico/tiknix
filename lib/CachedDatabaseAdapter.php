@@ -41,10 +41,9 @@ class CachedDatabaseAdapter extends DBAdapter {
         $this->cachePrefix = "rdb_{$siteId}_";
 
         // Get config if available
-        if (class_exists('Flight') && Flight::has('config')) {
-            $config = Flight::get('config');
-            $this->enabled = $config['cache']['query_cache'] ?? true;
-            $this->defaultTTL = $config['cache']['query_cache_ttl'] ?? 60;
+        if (class_exists('Flight')) {
+            $this->enabled = Flight::get('cache.query_cache') ?? true;
+            $this->defaultTTL = Flight::get('cache.query_cache_ttl') ?? 60;
         }
 
         $this->log('CachedDatabaseAdapter initialized');

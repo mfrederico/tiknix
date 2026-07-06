@@ -54,10 +54,9 @@ class GitHubService {
      * @return self|null Null if GitHub not configured globally
      */
     public static function fromConfig(): ?self {
-        $config = Flight::get('config');
-        $token = $config['github']['token'] ?? null;
-        $owner = $config['github']['owner'] ?? null;
-        $repo = $config['github']['repo'] ?? null;
+        $token = Flight::get('github.token');
+        $owner = Flight::get('github.owner');
+        $repo = Flight::get('github.repo');
 
         if (!$token || !$owner || !$repo) {
             return null;

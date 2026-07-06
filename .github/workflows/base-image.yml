@@ -1,0 +1,35 @@
+name: base-image
+
+# Builds the tiknix-base image (PHP 8.3 + extensions precompiled) and pushes it to
+# GHCR. App deploys do `FROM ghcr.io/<owner>/tiknix-base:8.3`, so they never compile
+# extensions. Run manually from the Actions tab, or it runs when the base Dockerfile
+# changes. NOTE: after the first push, make the GHCR package PUBLIC (package settings
+# -> Change visibility) so Spaceship Hyperlift can pull it without credentials.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'docker/base/Dockerfile'
+      - '.github/workflows/base-image.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/base/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/tiknix-base:8.3

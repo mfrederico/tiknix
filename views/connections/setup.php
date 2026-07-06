@@ -83,7 +83,7 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
             <input class="form-check-input" type="checkbox" id="gh-auto-pat" <?= (!empty($connection['autoPublish'])) ? 'checked' : '' ?>>
             <label class="form-check-label small" for="gh-auto-pat">Auto-publish — open/update a PR on every checkpoint</label>
           </div>
-          <button class="btn btn-outline-dark w-100" type="submit"><i class="bi bi-plug me-1"></i>Verify &amp; connect</button>
+          <button class="btn btn-primary w-100" type="submit"><i class="bi bi-plug me-1"></i>Verify &amp; connect</button>
           <div id="gh-msg-pat" class="form-text mt-2"></div>
         </form>
       <?php endif; ?>

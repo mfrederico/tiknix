@@ -125,7 +125,10 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
         <div class="card shadow-sm">
           <div class="card-header d-flex justify-content-between align-items-center">
             <span class="fw-semibold"><i class="bi bi-terminal me-1"></i>Terminal</span>
-            <span class="text-body-secondary small"><i class="bi bi-shield-lock me-1"></i>Sandboxed to <?= htmlspecialchars($selected->slug) ?>.tiknix</span>
+            <span class="d-flex align-items-center gap-2">
+              <span class="text-body-secondary small d-none d-md-inline"><i class="bi bi-shield-lock me-1"></i>Sandboxed to <?= htmlspecialchars($selected->slug) ?>.tiknix</span>
+              <button id="ab-restart" class="btn btn-outline-secondary btn-sm" type="button" title="Restart the jailed session (applies updated sandbox settings)"><i class="bi bi-arrow-repeat me-1"></i>Restart</button>
+            </span>
           </div>
           <div class="card-body p-2 bg-body-tertiary">
             <div id="ab-terminal"></div>
@@ -433,6 +436,15 @@ if (AB.has) {
         msg.textContent=(j.message||'Uploaded')+(errs.length?(' · '+errs.join('; ')):''); inp.value=''; loadUploads(); refreshChanges(); }
       else { msg.className='form-text text-danger'; msg.textContent=j.message||'Upload failed.'; }
     }).catch(()=>{ msg.className='form-text text-danger'; msg.textContent='Network error.'; }).finally(()=>btn.disabled=false);
+  });
+
+  // --- Restart session (kills the jailed tmux server, then reloads for a fresh jail) ---
+  const restartBtn=document.getElementById('ab-restart');
+  if(restartBtn) restartBtn.addEventListener('click',function(){
+    if(!confirm('Restart this instance’s session? Anything running will stop and a fresh sandbox starts.')) return;
+    this.disabled=true; setStatus('restarting…');
+    post('/aibuilder/restart',{}).then(()=>{ setTimeout(()=>location.reload(), 700); })
+      .catch(()=>{ this.disabled=false; setStatus('restart failed'); alert('Restart failed.'); });
   });
 
   // --- Browser-test prompt (agent uses the playwright MCP to verify its layout) ---

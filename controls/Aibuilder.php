@@ -392,6 +392,23 @@ class Aibuilder extends Control {
         Flight::jsonSuccess(['plans' => $plans]);
     }
 
+    /**
+     * POST /aibuilder/restart — kill the instance's jailed tmux session so a fresh
+     * jail (with the current binds/settings) launches when the terminal reconnects.
+     * The fpm user owns the socket, so no elevation is needed. JSON.
+     */
+    public function restart($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+        $sock = $this->instanceDir($inst->slug) . '/.aibuilder/tmux.sock';
+        if (@file_exists($sock)) {
+            @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1');
+        }
+        Flight::jsonSuccess([], 'Session restarted — reconnecting');
+    }
+
     // --- Uploads: secure (private/gitignored) + public (published) ------------
 
     private const UPLOAD_MAX = 52428800; // 50 MB per file

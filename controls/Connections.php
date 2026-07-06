@@ -27,13 +27,12 @@ use app\BaseControls\Control;
 use app\Bean;
 use app\EncryptionService;
 use app\GitHubService;
+use app\GitHubPublisher;
 use RedBeanPHP\R;
 
 class Connections extends Control {
 
-    private const SLUG_RE        = '/^[a-z][a-z0-9]{1,49}$/';
-    private const APP            = 'tiknix';
-    private const PUBLISH_BRANCH = 'aibuilder-publish';
+    private const APP = 'tiknix';
 
     private function instanceDir(string $sub): string {
         return '/var/www/html/default/' . $sub . '.' . self::APP;
@@ -50,21 +49,6 @@ class Connections extends Control {
         return $inst;
     }
 
-    /** Run git inside an instance's directory (its own repo only). */
-    private function gitInstance(string $slug, array $args): array {
-        if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'out' => '', 'code' => 1];
-        $cmd = 'git -C ' . escapeshellarg($this->instanceDir($slug));
-        foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string)$a); }
-        $lines = []; $code = 0;
-        exec($cmd . ' 2>&1', $lines, $code);
-        return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
-    }
-
-    /** Strip a secret from a string before it is returned or logged. */
-    private function redact(string $s, string $secret): string {
-        return $secret !== '' ? str_replace($secret, '***', $s) : $s;
-    }
-
     /** The enabled GitHub connection bound to member + instance, or null. */
     private function githubConn(int $instanceId) {
         return Bean::findOne('connections',
@@ -79,6 +63,7 @@ class Connections extends Control {
             'type'        => $conn->connectorType,
             'repo'        => ($meta['owner'] ?? '') . '/' . ($meta['repo'] ?? ''),
             'defaultBranch' => $meta['defaultBranch'] ?? 'main',
+            'autoPublish' => !empty($meta['autoPublish']),
             'enabled'     => (int)$conn->enabled === 1,
             'lastUsed'    => $conn->lastUsedAt,
             'lastError'   => $conn->lastError,
@@ -125,6 +110,7 @@ class Connections extends Control {
         $owner = trim((string)$this->getParam('owner', ''));
         $repo  = trim((string)$this->getParam('repo', ''));
         $repo  = preg_replace('/\.git$/', '', $repo);
+        $auto  = filter_var($this->getParam('auto_publish', false), FILTER_VALIDATE_BOOLEAN);
         if ($pat === '' || $owner === '' || $repo === '') {
             $this->jsonError('Token, owner and repo are required', 400); return;
         }
@@ -156,7 +142,7 @@ class Connections extends Control {
         $conn->externalName   = $fullName;
         $conn->externalUrl    = 'https://github.com/' . $owner . '/' . $repo;
         $conn->connectionName = $fullName;
-        $conn->metadataJson   = json_encode(['owner' => $owner, 'repo' => $repo, 'defaultBranch' => $defaultBranch]);
+        $conn->metadataJson   = json_encode(['owner' => $owner, 'repo' => $repo, 'defaultBranch' => $defaultBranch, 'autoPublish' => $auto]);
         $conn->enabled        = 1;
         $conn->shared         = 0;
         $conn->lastError      = null;
@@ -215,65 +201,17 @@ class Connections extends Control {
         $conn = $this->githubConn((int)$inst->id);
         if (!$conn) { $this->jsonError('This instance is not connected to GitHub yet.', 409); return; }
 
-        $meta  = json_decode($conn->metadataJson ?: '{}', true) ?: [];
-        $owner = $meta['owner'] ?? '';
-        $repo  = $meta['repo'] ?? '';
-        if ($owner === '' || $repo === '') { $this->jsonError('Connection is missing owner/repo', 400); return; }
+        $res = GitHubPublisher::publish($inst, $conn);
+        $conn->lastUsedAt = date('Y-m-d H:i:s');
+        $conn->lastError  = $res['ok'] ? ($res['note'] ?? null) : ($res['error'] ?? 'publish failed');
+        Bean::store($conn);
 
-        try { $pat = EncryptionService::decrypt($conn->accessToken); }
-        catch (\Throwable $e) { $this->jsonError('Could not read the stored token', 500); return; }
-
-        $branch = self::PUBLISH_BRANCH;
-
-        // Must have a commit to publish.
-        $head = $this->gitInstance($inst->slug, ['rev-parse', 'HEAD']);
-        if (!$head['ok']) { $this->jsonError('This instance has no commits to publish yet.', 400); return; }
-        $shortSha = substr(trim($head['out']), 0, 7);
-
-        // Push HEAD to the integration branch on the customer repo.
-        // NOTE: token is embedded in the URL (visible to `ps` on this host for the
-        // duration of the push). Hardening TODO: pass via GIT_ASKPASS/credential helper.
-        $url  = 'https://x-access-token:' . $pat . '@github.com/' . $owner . '/' . $repo . '.git';
-        $push = $this->gitInstance($inst->slug, ['push', '--force', '--follow-tags', $url, 'HEAD:refs/heads/' . $branch]);
-        $pushOut = $this->redact($push['out'], $pat);
-        if (!$push['ok']) {
-            $conn->lastError = 'push failed'; Bean::store($conn);
-            $this->jsonError('git push failed: ' . $pushOut, 502); return;
-        }
-
-        // Open or reuse a PR: integration branch -> repo default branch.
-        try {
-            $gh   = new GitHubService($pat, $owner, $repo);
-            $base = $meta['defaultBranch'] ?? $gh->getDefaultBranch();
-
-            $pr = null;
-            foreach ($gh->listPullRequests('open', 50) as $p) {
-                if (($p['head']['ref'] ?? '') === $branch) { $pr = $p; break; }
-            }
-            $reused = (bool)$pr;
-            if (!$pr) {
-                $title = 'AI Builder: ' . $inst->slug . ' updates';
-                $body  = "Automated update from the tiknix AI Builder.\n\n"
-                       . '- Instance: `' . $inst->slug . ".tiknix`\n"
-                       . '- Branch: `' . $branch . "`\n"
-                       . '- HEAD: `' . $shortSha . "`\n";
-                $pr = $gh->createPullRequest($title, $body, $branch, $base, false);
-            }
-            $conn->lastUsedAt = date('Y-m-d H:i:s'); $conn->lastError = null; Bean::store($conn);
-            $this->jsonSuccess([
-                'pushed' => true,
-                'branch' => $branch,
-                'pr'     => ['number' => $pr['number'] ?? null, 'url' => $pr['html_url'] ?? null],
-            ], 'Published to ' . $owner . '/' . $repo . ($reused ? ' (updated existing PR)' : ''));
-        } catch (\Throwable $e) {
-            // The push landed even if the PR couldn't be opened (e.g. empty base repo).
-            $conn->lastUsedAt = date('Y-m-d H:i:s'); $conn->lastError = 'PR: ' . $e->getMessage(); Bean::store($conn);
-            $this->jsonSuccess([
-                'pushed' => true,
-                'branch' => $branch,
-                'pr'     => null,
-                'note'   => 'Pushed, but the PR could not be created: ' . $e->getMessage(),
-            ], 'Pushed to ' . $owner . '/' . $repo);
-        }
+        if (!$res['ok']) { $this->jsonError($res['error'] ?? 'Publish failed', 502); return; }
+        $this->jsonSuccess([
+            'pushed' => $res['pushed'],
+            'branch' => GitHubPublisher::BRANCH,
+            'pr'     => $res['pr'],
+            'note'   => $res['note'] ?? null,
+        ], $res['message']);
     }
 }

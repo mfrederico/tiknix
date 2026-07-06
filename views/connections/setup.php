@@ -44,6 +44,12 @@ $iid = (int)$instance->id;
             <input id="gh-repo" class="form-control" placeholder="my-app" required>
           </div>
         </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="gh-auto" <?= ($connection && !empty($connection['autoPublish'])) ? 'checked' : '' ?>>
+          <label class="form-check-label small" for="gh-auto">
+            Auto-publish — open/update a PR on every checkpoint
+          </label>
+        </div>
         <button class="btn btn-dark w-100" type="submit"><i class="bi bi-plug me-1"></i>Verify &amp; connect</button>
         <div id="gh-msg" class="form-text mt-2"></div>
       </form>
@@ -70,7 +76,8 @@ $iid = (int)$instance->id;
       id:iid, type:'github',
       token:document.getElementById('gh-token').value.trim(),
       owner:document.getElementById('gh-owner').value.trim(),
-      repo:document.getElementById('gh-repo').value.trim()
+      repo:document.getElementById('gh-repo').value.trim(),
+      auto_publish:document.getElementById('gh-auto').checked ? '1' : '0'
     }).then(j=>{
       if(j.success){
         msg.className='form-text mt-2 text-success';

@@ -267,7 +267,13 @@ if (AB.has) {
 
   document.getElementById('ab-ckpt-form').addEventListener('submit',function(e){
     e.preventDefault(); const inp=document.getElementById('ab-ckpt-desc'); const btn=this.querySelector('button'); btn.disabled=true;
-    post('/aibuilder/checkpoint',{label:inp.value.trim()}).then(j=>{ inp.value=''; loadCheckpoints(); refreshChanges(); }).finally(()=>btn.disabled=false);
+    post('/aibuilder/checkpoint',{label:inp.value.trim()}).then(j=>{
+      inp.value=''; loadCheckpoints(); refreshChanges();
+      const p=j.data&&j.data.publish; if(p){ const m=ghMsg();
+        if(p.ok&&p.pr&&p.pr.url){ m.className='small mt-2 text-success'; m.innerHTML='<i class="bi bi-check-circle me-1"></i>Auto-published — <a href="'+esc(p.pr.url)+'" target="_blank" rel="noopener">PR #'+esc(String(p.pr.number||''))+'</a>'; }
+        else if(p.ok){ m.className='small mt-2 text-success'; m.innerHTML='<i class="bi bi-check-circle me-1"></i>'+esc(p.message||'Auto-pushed'); }
+        else { m.className='small mt-2 text-danger'; m.textContent='Auto-publish failed: '+(p.error||''); } }
+    }).finally(()=>btn.disabled=false);
   });
   function doRollback(ckpt){
     if(!confirm('Roll back to '+ckpt+'? This restores code AND data to that checkpoint.')) return;
@@ -311,8 +317,9 @@ if (AB.has) {
       .then(r=>r.json()).then(j=>{
         const st=document.getElementById('ab-gh-state');
         ghConnected=!!(j.data&&j.data.connected);
-        if(ghConnected&&j.data.connection){ ghRepo=j.data.connection.repo||'';
-          st.innerHTML='<i class="bi bi-check-circle text-success me-1"></i>Connected: <strong>'+esc(ghRepo)+'</strong>'; }
+        if(ghConnected&&j.data.connection){ const c=j.data.connection; ghRepo=c.repo||'';
+          st.innerHTML='<i class="bi bi-check-circle text-success me-1"></i>Connected: <strong>'+esc(ghRepo)+'</strong>'
+            +(c.autoPublish?' <span class="badge text-bg-info">auto-publish</span>':''); }
         else st.innerHTML='<i class="bi bi-plug me-1"></i>Not connected. Publish will open GitHub setup.';
       }).catch(()=>{});
   }

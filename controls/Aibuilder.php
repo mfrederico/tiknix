@@ -215,7 +215,27 @@ class Aibuilder extends Control {
         if ($tag !== '' && $desc !== '') {
             $this->gitInstance($inst->slug, ['tag', '-f', '-a', $tag, '-m', $desc]);
         }
-        Flight::jsonSuccess(['checkpoint' => $tag, 'description' => $desc], 'Checkpoint saved');
+
+        // Auto-publish: if this instance has a GitHub connection with auto-publish on,
+        // push HEAD + open/refresh a PR right after the checkpoint lands.
+        $publish = null;
+        $conn = Bean::findOne('connections',
+            'member_id = ? AND instance_id = ? AND connector_type = ? AND enabled = 1',
+            [(int)$this->member->id, (int)$inst->id, 'github']);
+        if ($conn && $conn->id) {
+            $meta = json_decode($conn->metadataJson ?: '{}', true) ?: [];
+            if (!empty($meta['autoPublish'])) {
+                $res = GitHubPublisher::publish($inst, $conn);
+                $conn->lastUsedAt = date('Y-m-d H:i:s');
+                $conn->lastError  = $res['ok'] ? ($res['note'] ?? null) : ($res['error'] ?? 'publish failed');
+                Bean::store($conn);
+                $publish = $res['ok']
+                    ? ['ok' => true, 'pr' => $res['pr'], 'message' => $res['message'], 'note' => $res['note'] ?? null]
+                    : ['ok' => false, 'error' => $res['error'] ?? 'publish failed'];
+            }
+        }
+
+        Flight::jsonSuccess(['checkpoint' => $tag, 'description' => $desc, 'publish' => $publish], 'Checkpoint saved');
     }
 
     /** GET /aibuilder/checkpoints?id= — list checkpoints with descriptions. JSON. */

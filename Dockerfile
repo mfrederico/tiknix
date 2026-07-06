@@ -3,16 +3,19 @@
 # Serves public/index.php via Apache + mod_rewrite (public/.htaccess routes to index.php).
 FROM php:8.3-apache
 
-# --- PHP extensions the app uses: pdo_sqlite, mbstring, sodium, gd (QR), zip, apcu ---
-# Use mlocati/php-extension-installer: it fetches prebuilt extensions where
-# possible instead of compiling each from source (docker-php-ext-install builds
-# mbstring's libmbfl + gd from C, which takes many minutes and can time out
-# hosted builds). It also pulls the right apt deps and enables each ext for us.
-COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
-RUN install-php-extensions pdo_sqlite mbstring sodium gd zip apcu \
+# --- PHP extensions: pdo_sqlite, mbstring, sodium, gd (PNG-only), zip, apcu ---
+# gd is built PNG-only ON PURPOSE. A default gd build (and install-php-extensions)
+# links every image backend, including WebP + AVIF (rav1e/svt-av1), which balloons
+# the gd compile to many minutes and times out hosted builds. The app only needs gd
+# for a PNG PWA icon (controls/Grocery.php); 2FA QR codes render as SVG (no gd). So
+# we install just libpng and skip jpeg/webp/avif/freetype -> gd compiles in seconds.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git unzip sqlite3 \
+        libsodium-dev libonig-dev libzip-dev libsqlite3-dev libpng-dev \
+    && docker-php-ext-install -j"$(nproc)" pdo pdo_sqlite mbstring sodium gd zip \
+    && pecl install apcu \
+    && docker-php-ext-enable apcu \
     && printf 'apc.enable=1\napc.enable_cli=1\n' > /usr/local/etc/php/conf.d/docker-apcu.ini \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends git unzip sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Composer ---

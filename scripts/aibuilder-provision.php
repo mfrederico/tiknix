@@ -69,6 +69,20 @@ file_put_contents("$ROOT/$cfgRel", $ini);   // tracked by provision-instance.sh 
 file_put_contents("$ROOT/conf/config.ini", $ini); // what the instance app actually boots on
 echo "  wrote $cfgRel + conf/config.ini (db: $dbRel)\n";
 
+// --- 1c) runtime dirs -------------------------------------------------------
+// Create the dirs the app writes to at runtime, upfront and owned by whoever
+// runs this provisioner (the instance owner). bootstrap.php auto-creates the log
+// dir on first request, but if php-fpm gets there first the dir lands with the
+// wrong owner and the jailed agent (or vice-versa) can't write. Seeding them here
+// with 0775 keeps both writers happy. database/log = where [logging] file points;
+// storage = installed.lock + logs; uploads/{secure,public} = the two upload buckets.
+foreach (['database/log', 'storage/logs', 'cache', 'log', 'uploads/secure', 'uploads/public'] as $rel) {
+    $dir = "$ROOT/$rel";
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    @chmod($dir, 0775);
+}
+echo "  ensured runtime dirs (database/log, storage/logs, cache, log, uploads/{secure,public})\n";
+
 // --- 1b) real per-instance vendor (composer install) ------------------------
 // provision-instance.sh symlinks vendor/ to the SOURCE app, but that makes
 // composer's __DIR__-relative files-autoload resolve back into the source tree

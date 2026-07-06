@@ -97,4 +97,15 @@ class GitHubPublisher {
             ];
         }
     }
+
+    /** Derive owner/repo for tiknix's own GitHub repo from main's origin remote. */
+    public static function mainGithubRepo(): array {
+        $lines = []; $code = 0;
+        exec('git -C ' . escapeshellarg('/var/www/html/default/' . self::APP) . ' remote get-url origin 2>/dev/null', $lines, $code);
+        $url = trim($lines[0] ?? '');
+        if (preg_match('#github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$#', $url, $m)) {
+            return ['owner' => $m[1], 'repo' => $m[2]];
+        }
+        return ['owner' => '', 'repo' => ''];
+    }
 }

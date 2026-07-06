@@ -7,6 +7,10 @@
  */
 $csrfTok = csrf_token();
 $selId   = $selected ? (int)$selected->id : 0;
+$ab_isDefault = $ab_isDefault ?? false;
+$ab_isRoot    = $ab_isRoot ?? false;
+$hasDefault = false;
+foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true; break; } }
 ?>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 <style>
@@ -34,13 +38,22 @@ $selId   = $selected ? (int)$selected->id : 0;
       <p class="text-body-secondary mb-0">Build software with AI. Every instance is sandboxed — checkpoint and roll back any change.</p>
     </div>
     <?php if ($ab_hasInstance): ?>
-      <div class="ab-working d-flex align-items-center gap-2 px-3 py-2 rounded-3 bg-primary-subtle">
+      <div class="ab-working d-flex align-items-center gap-2 px-3 py-2 rounded-3 bg-primary-subtle flex-wrap">
         <i class="bi bi-hdd-network-fill text-primary fs-5"></i>
         <div class="lh-sm">
           <div class="lbl text-uppercase text-body-secondary fw-semibold">Working on</div>
-          <div class="fw-bold"><?= htmlspecialchars($selected->slug) ?>.tiknix
-            <span id="ab-status" class="fw-normal text-body-secondary small">· connecting…</span></div>
+          <div class="fw-bold">
+            <?= htmlspecialchars($selected->slug) ?>.tiknix
+            <?php if ($ab_isDefault): ?><span class="badge text-bg-warning">default · core</span><?php endif; ?>
+            <span id="ab-status" class="fw-normal text-body-secondary small">· connecting…</span>
+          </div>
         </div>
+        <div class="vr d-none d-sm-block mx-1"></div>
+        <button id="ab-publish" class="btn btn-dark btn-sm" type="button">
+          <i class="bi bi-cloud-upload me-1"></i><?= $ab_isDefault ? 'Publish to main' : 'Publish' ?>
+        </button>
+        <span id="ab-gh-state" class="small text-body-secondary"></span>
+        <span id="ab-publish-msg" class="small"></span>
       </div>
     <?php endif; ?>
   </div>
@@ -74,6 +87,12 @@ $selId   = $selected ? (int)$selected->id : 0;
           </div>
         </div>
         <div class="list-group list-group-flush">
+          <?php if ($ab_isRoot && !$hasDefault): ?>
+            <button id="ab-create-core" type="button" class="list-group-item list-group-item-action list-group-item-warning">
+              <span class="fw-semibold"><i class="bi bi-star-fill me-1"></i>Set up tiknix core (default)</span>
+              <div class="small text-body-secondary">A sandboxed clone of main you publish back via PR.</div>
+            </button>
+          <?php endif; ?>
           <?php if (empty($instances)): ?>
             <div class="list-group-item text-body-secondary small">No instances yet. Create one above.</div>
           <?php else: foreach ($instances as $inst): $isSel = ($selId === (int)$inst->id); ?>
@@ -81,7 +100,10 @@ $selId   = $selected ? (int)$selected->id : 0;
                class="list-group-item list-group-item-action <?= $isSel ? 'active' : '' ?>">
               <div class="d-flex justify-content-between">
                 <span class="fw-semibold"><i class="bi bi-caret-right-fill ab-caret me-1"></i><?= htmlspecialchars($inst->displayName ?: $inst->slug) ?></span>
-                <span class="badge text-bg-dark"><?= htmlspecialchars($inst->engine) ?></span>
+                <span>
+                  <?php if (!empty($inst->isDefault)): ?><span class="badge text-bg-warning">default</span> <?php endif; ?>
+                  <span class="badge text-bg-dark"><?= htmlspecialchars($inst->engine) ?></span>
+                </span>
               </div>
               <small class="<?= $isSel ? '' : 'text-body-secondary' ?>"><?= htmlspecialchars($inst->slug) ?>.tiknix</small>
             </a>
@@ -150,14 +172,6 @@ $selId   = $selected ? (int)$selected->id : 0;
             <div id="ab-plan-list" class="small"></div>
           </div>
         </div>
-        <div class="card shadow-sm mt-3">
-          <div class="card-header fw-semibold"><i class="bi bi-github me-1"></i>Publish to GitHub</div>
-          <div class="card-body">
-            <div id="ab-gh-state" class="small text-body-secondary mb-2">Checking connection…</div>
-            <button id="ab-publish" class="btn btn-dark btn-sm w-100" type="button"><i class="bi bi-cloud-upload me-1"></i>Publish</button>
-            <div id="ab-publish-msg" class="small mt-2"></div>
-          </div>
-        </div>
       </div>
     <?php endif; ?>
   </div>
@@ -190,6 +204,22 @@ if (createForm) createForm.addEventListener('submit', function (e) {
     if (j.success && j.data && j.data.id) window.location = '/aibuilder/open/' + j.data.id;
     else { msg.textContent = j.message || 'Failed.'; btn.disabled = false; }
   }).catch(()=>{ msg.textContent='Network error.'; btn.disabled=false; });
+});
+
+// --- root: provision the "(default)" tiknix-core instance (a clone of main) ---
+const coreBtn = document.getElementById('ab-create-core');
+if (coreBtn) coreBtn.addEventListener('click', function () {
+  if (!confirm('Provision a sandboxed clone of tiknix main as your (default) core instance? This can take a minute.')) return;
+  this.disabled = true;
+  this.insertAdjacentHTML('beforeend', '<div class="small text-body-secondary">Provisioning…</div>');
+  fetch('/aibuilder/create', {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':AB.csrf,'X-Requested-With':'XMLHttpRequest'},
+    body:new URLSearchParams({slug:'core', name:'(default)', engine:'claude', is_default:'1', csrf_token:AB.csrf}).toString()
+  }).then(r=>r.json()).then(j=>{
+    if (j.success && j.data && j.data.id) window.location = '/aibuilder/open/' + j.data.id;
+    else { alert(j.message || 'Failed to provision core.'); this.disabled = false; }
+  }).catch(()=>{ alert('Network error.'); this.disabled = false; });
 });
 
 if (AB.has) {

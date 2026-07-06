@@ -115,6 +115,9 @@ class Aibuilder extends Control {
             'ab_wspath'      => (string)($cfg['bridge']['ws_path'] ?? '/aibuilder/ws'),
             'ab_chat_wspath' => (string)($cfg['bridge']['chat_ws_path'] ?? '/aibuilder/chat-ws'),
             'ab_hasInstance' => (bool)$selected,
+            'ab_isDefault'   => $selected ? (bool)$selected->isDefault : false,
+            'ab_isRoot'      => Flight::hasLevel(LEVELS['ROOT']),
+            'ab_mainRepo'    => GitHubPublisher::mainGithubRepo(),
         ]);
     }
 
@@ -158,6 +161,10 @@ class Aibuilder extends Control {
         $inst->displayName = $name;
         $inst->engine      = $engine;
         $inst->status      = 'active';
+        // Root may flag one instance as the "(default)" tiknix-core sandbox that
+        // publishes back to main. Only root; other members' instances are never default.
+        $inst->isDefault   = (Flight::hasLevel(LEVELS['ROOT'])
+                              && filter_var($this->getParam('is_default', false), FILTER_VALIDATE_BOOLEAN)) ? 1 : 0;
         $inst->createdAt   = date('Y-m-d H:i:s');
         $member->ownInstanceList[] = $inst;
         R::store($member);

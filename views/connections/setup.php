@@ -14,6 +14,15 @@ $iid = (int)$instance->id;
     </div>
   </div>
 
+  <?php if (!empty($isDefault)): ?>
+    <div class="alert alert-warning py-2 small">
+      <i class="bi bi-shield-lock me-1"></i>This is the <strong>tiknix core (default)</strong> instance —
+      publishing opens a pull request into <strong>main</strong>
+      (<code><?= htmlspecialchars(($prefill['owner'] ?? '') . '/' . ($prefill['repo'] ?? '')) ?></code>).
+      The token needs push access to that repository.
+    </div>
+  <?php endif; ?>
+
   <?php if ($connection): ?>
     <div class="alert alert-success d-flex justify-content-between align-items-center py-2">
       <span><i class="bi bi-check-circle me-1"></i>Connected to <strong><?= htmlspecialchars($connection['repo']) ?></strong></span>
@@ -37,11 +46,11 @@ $iid = (int)$instance->id;
         <div class="row g-2 mb-3">
           <div class="col">
             <label class="form-label small fw-semibold">Owner</label>
-            <input id="gh-owner" class="form-control" placeholder="jadams" required>
+            <input id="gh-owner" class="form-control" placeholder="jadams" value="<?= htmlspecialchars($prefill['owner'] ?? '') ?>" required>
           </div>
           <div class="col">
             <label class="form-label small fw-semibold">Repository</label>
-            <input id="gh-repo" class="form-control" placeholder="my-app" required>
+            <input id="gh-repo" class="form-control" placeholder="my-app" value="<?= htmlspecialchars($prefill['repo'] ?? '') ?>" required>
           </div>
         </div>
         <div class="form-check mb-3">

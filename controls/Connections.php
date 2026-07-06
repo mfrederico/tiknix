@@ -77,10 +77,15 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::redirect('/aibuilder'); return; }
+        // Default (tiknix-core) instances publish back to main — root only.
+        $isDefault = (bool)$inst->isDefault;
+        if ($isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/aibuilder'); return; }
         $conn = $this->githubConn((int)$inst->id);
         $this->render('connections/setup', [
             'instance'   => $inst,
             'connection' => $conn && $conn->id ? $this->connSummary($conn) : null,
+            'isDefault'  => $isDefault,
+            'prefill'    => $isDefault ? GitHubPublisher::mainGithubRepo() : null,
         ]);
     }
 
@@ -102,6 +107,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { $this->jsonError('Only root can configure the tiknix-core connection.', 403); return; }
 
         $type = strtolower(trim((string)$this->getParam('type', 'github')));
         if ($type !== 'github') { $this->jsonError('Unsupported connector', 400); return; }
@@ -197,6 +203,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { $this->jsonError('Only root can publish to tiknix main.', 403); return; }
 
         $conn = $this->githubConn((int)$inst->id);
         if (!$conn) { $this->jsonError('This instance is not connected to GitHub yet.', 409); return; }

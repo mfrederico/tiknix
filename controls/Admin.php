@@ -55,6 +55,15 @@ class Admin extends Control {
     }
 
     /**
+     * /admin/login — there is no separate admin login. Send authenticated admins
+     * to the panel; unauthenticated users are already redirected to /auth/login by
+     * the permission layer before this runs.
+     */
+    public function login($params = []) {
+        Flight::redirect('/admin');
+    }
+
+    /**
      * Member management
      */
     public function members($params = []) {

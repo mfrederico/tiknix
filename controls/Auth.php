@@ -106,7 +106,7 @@ class Auth extends BaseControls\Control {
             
             // Update last login
             $member->lastLogin = date('Y-m-d H:i:s');
-            $member->loginCount = ($member->loginCount ?? 0) + 1;
+            $member->loginCount = (int)($member->loginCount ?? 0) + 1;
             Bean::store($member);
 
             // Clear rate limit on successful login

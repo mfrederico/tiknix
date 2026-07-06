@@ -9,10 +9,13 @@ database/*.db
 database/*.sqlite
 database/log
 storage/logs/*
-# Real (gitignored) config files — the entrypoint seeds these from *.example.ini
+# Real (gitignored) config files — the entrypoint seeds these from *.example.ini.
+# Covers per-instance secrets (conf/config.<instance>.ini) too; keep the examples.
 conf/config.ini
+conf/config.*.ini
 conf/aibuilder.ini
 conf/github.ini
 conf/mailgun.ini
+!conf/*.example.ini
 *.md
 tests

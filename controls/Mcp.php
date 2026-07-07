@@ -107,7 +107,7 @@ class Mcp extends BaseControls\Control {
             'description' => 'Returns info about stored MCP sessions for debugging.',
             'inputSchema' => [
                 'type' => 'object',
-                'properties' => (object)[], // JSON object, not [] — strict MCP clients reject arrays
+                'properties' => [], // normalized to {} by fixToolSchema() before output
                 'required' => []
             ]
         ],

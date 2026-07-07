@@ -84,10 +84,17 @@ abstract class BaseTool {
      * @return array Tool definition with name, description, inputSchema
      */
     public static function getDefinition(): array {
+        $schema = static::$inputSchema;
+        // JSON Schema requires `properties` to be an object. An empty PHP array
+        // json-encodes to [] (array), which strict MCP clients reject with
+        // "expected record, received array". Force {} for the no-argument case.
+        if (empty($schema['properties'])) {
+            $schema['properties'] = new \stdClass();
+        }
         $def = [
             'name' => static::$name,
             'description' => static::$description,
-            'inputSchema' => static::$inputSchema
+            'inputSchema' => $schema
         ];
 
         if (!empty(static::$annotations)) {

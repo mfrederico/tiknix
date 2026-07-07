@@ -21,7 +21,9 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
   /* Active instance in the left nav */
   .list-group-item.active .ab-caret { display:inline; }
   .ab-caret { display:none; }
-  #ab-changes { max-height:40vh; overflow-y:auto; }
+  #ab-changes { max-height:22vh; overflow-y:auto; }
+  #ab-upload-list { max-height:18vh; overflow-y:auto; }
+  #ab-ckpt-list { max-height:22vh; overflow-y:auto; }
   .ab-file { display:flex; gap:.5rem; align-items:center; font-family:ui-monospace,Menlo,monospace; font-size:.78rem; padding:.15rem 0; }
   .ab-file .st { width:1.4rem; text-align:center; border-radius:.2rem; font-weight:700; font-size:.7rem; }
   .ab-file .st.M{background:#3a2f00;color:#e3b341}.ab-file .st.A{background:#0f2e15;color:#3fb950}
@@ -144,18 +146,19 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
 
       <!-- Changes + checkpoints + plan -->
       <div class="col-lg-3">
-        <div class="card shadow-sm mb-3">
+        <!-- Save your work: changes + uploads + checkpoint, in one place -->
+        <div class="card shadow-sm">
           <div class="card-header d-flex justify-content-between align-items-center">
-            <span class="fw-semibold"><i class="bi bi-file-diff me-1"></i>Changes <small class="text-body-secondary">since checkpoint</small></span>
-            <button id="ab-changes-refresh" class="btn btn-sm btn-outline-secondary" title="Refresh"><i class="bi bi-arrow-clockwise"></i></button>
+            <span class="fw-semibold"><i class="bi bi-save me-1"></i>Save your work</span>
+            <button id="ab-changes-refresh" class="btn btn-sm btn-outline-secondary" title="Refresh changes"><i class="bi bi-arrow-clockwise"></i></button>
           </div>
           <div class="card-body">
-            <div id="ab-changes"><div class="text-body-secondary small">No changes yet.</div></div>
-          </div>
-        </div>
-        <div class="card shadow-sm mb-3">
-          <div class="card-header fw-semibold"><i class="bi bi-paperclip me-1"></i>Uploads <small class="text-body-secondary">@reference in the terminal</small></div>
-          <div class="card-body">
+            <!-- 1) Changes since last checkpoint -->
+            <div class="text-uppercase text-body-secondary fw-semibold mb-1" style="font-size:.68rem;letter-spacing:.04em"><i class="bi bi-file-diff me-1"></i>Changes since last checkpoint</div>
+            <div id="ab-changes" class="mb-3"><div class="text-body-secondary small">No changes yet.</div></div>
+
+            <!-- 2) Uploads -->
+            <div class="text-uppercase text-body-secondary fw-semibold mb-1" style="font-size:.68rem;letter-spacing:.04em"><i class="bi bi-paperclip me-1"></i>Uploads <span class="fw-normal text-lowercase">— @reference in the terminal</span></div>
             <form id="ab-upload-form" class="mb-2">
               <input id="ab-upload-file" type="file" class="form-control form-control-sm mb-2" multiple>
               <div class="d-flex gap-2">
@@ -171,16 +174,16 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
               </div>
               <div id="ab-upload-msg" class="form-text"></div>
             </form>
-            <div id="ab-upload-list" class="small"></div>
-          </div>
-        </div>
-        <div class="card shadow-sm">
-          <div class="card-header fw-semibold"><i class="bi bi-bookmark-plus me-1"></i>Checkpoint</div>
-          <div class="card-body">
-            <form id="ab-ckpt-form" class="d-flex gap-2 mb-2">
+            <div id="ab-upload-list" class="small mb-3"></div>
+
+            <!-- 3) Checkpoint (commits everything above; auto-publishes if connected) -->
+            <hr class="my-2">
+            <div class="text-uppercase text-body-secondary fw-semibold mb-1" style="font-size:.68rem;letter-spacing:.04em"><i class="bi bi-bookmark-plus me-1"></i>Checkpoint</div>
+            <form id="ab-ckpt-form" class="d-flex gap-2 mb-1">
               <input id="ab-ckpt-desc" class="form-control form-control-sm" placeholder="Describe this checkpoint…" maxlength="200">
-              <button class="btn btn-success btn-sm" type="submit" title="Save checkpoint"><i class="bi bi-save"></i></button>
+              <button class="btn btn-success btn-sm text-nowrap" type="submit" title="Save checkpoint"><i class="bi bi-save me-1"></i>Save</button>
             </form>
+            <div class="text-body-secondary mb-2" style="font-size:.72rem">Commits all changes &amp; uploads above as a restore point — and publishes to GitHub if this instance auto-publishes.</div>
             <div id="ab-ckpt-list" class="small"></div>
           </div>
         </div>

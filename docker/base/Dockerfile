@@ -7,14 +7,16 @@
 #   - Local docker:    ./docker/build-base.sh
 FROM php:8.3-apache
 
-# Extensions: pdo_sqlite, mbstring, sodium, gd (PNG-only), zip, apcu.
-# gd is PNG-only on purpose — skipping jpeg/webp/avif (rav1e/svt-av1) keeps the build
-# lean; the app only needs PNG (2FA QR codes render as SVG). This compile runs HERE,
-# once, so app images built FROM this never pay for it.
+# Extensions: pdo_sqlite, pdo_mysql, mbstring, sodium, gd (PNG-only), zip, apcu.
+# pdo_mysql: the app runs on SQLite, but RedBeanPHP's Functions.php references
+# PDO::MYSQL_ATTR_INIT_COMMAND at autoload time and fatals if pdo_mysql is absent
+# (it uses bundled mysqlnd, so no extra libs). gd is PNG-only on purpose — skipping
+# jpeg/webp/avif (rav1e/svt-av1) keeps the build lean; the app only needs PNG (2FA QR
+# codes render as SVG). These compiles run HERE, once, so app images never pay for them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git unzip sqlite3 \
         libsodium-dev libonig-dev libzip-dev libsqlite3-dev libpng-dev \
-    && docker-php-ext-install -j"$(nproc)" pdo pdo_sqlite mbstring sodium gd zip \
+    && docker-php-ext-install -j"$(nproc)" pdo pdo_sqlite pdo_mysql mbstring sodium gd zip \
     && pecl install apcu \
     && docker-php-ext-enable apcu \
     && printf 'apc.enable=1\napc.enable_cli=1\n' > /usr/local/etc/php/conf.d/docker-apcu.ini \

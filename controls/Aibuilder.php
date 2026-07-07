@@ -413,20 +413,33 @@ class Aibuilder extends Control {
 
     private const UPLOAD_MAX = 52428800; // 50 MB per file
 
-    /** Ensure uploads/{secure,public} exist; secure is gitignored, public is tracked. */
+    /** Relative dir for an upload bucket. public/uploads is under the docroot (web-served);
+     *  secure/uploads is outside it (not web-accessible). BOTH are tracked and published. */
+    private function uploadBucketRel(string $bucket): string {
+        return ($bucket === 'public' ? 'public' : 'secure') . '/uploads';
+    }
+
+    /** Ensure both upload buckets exist. public/uploads is web-served (under the docroot);
+     *  secure/uploads sits outside the docroot so it is NOT web-accessible — a place for a
+     *  DB or system files. Both are committed + published; the only difference is reachability. */
     private function ensureUploadDirs(string $slug): void {
-        $base = $this->instanceDir($slug) . '/uploads';
-        @mkdir($base . '/secure', 0775, true);
-        @mkdir($base . '/public', 0775, true);
-        $keep = $base . '/public/.gitkeep';
-        if (!is_file($keep)) @file_put_contents($keep, '');
-        // Never publish secure uploads: ignore them in the instance repo.
-        $gi   = $this->instanceDir($slug) . '/.gitignore';
-        $line = '/uploads/secure/';
-        $cur  = is_file($gi) ? (string)file_get_contents($gi) : '';
-        if (strpos($cur, $line) === false) {
-            @file_put_contents($gi, rtrim($cur, "\n") . "\n" . $line . "\n", LOCK_EX);
+        $root = $this->instanceDir($slug);
+        foreach (['public/uploads', 'secure/uploads'] as $rel) {
+            @mkdir($root . '/' . $rel, 0775, true);
+            $keep = $root . '/' . $rel . '/.gitkeep';
+            if (!is_file($keep)) @file_put_contents($keep, '');
         }
+        // public/uploads is web-served: serve assets, but never EXECUTE uploaded code.
+        $puh = $root . '/public/uploads/.htaccess';
+        if (!is_file($puh)) {
+            @file_put_contents($puh,
+                "# Uploaded assets are served but never executed.\n"
+                . "<FilesMatch \"\\.(php|phtml|phar|php[0-9]|pht)$\">\n    Require all denied\n</FilesMatch>\n");
+        }
+        // Defense-in-depth: if a web server is ever mis-pointed at the instance root
+        // (docroot must be public/), deny web access to secure/ entirely.
+        $sh = $root . '/secure/.htaccess';
+        if (!is_file($sh)) @file_put_contents($sh, "Require all denied\n");
     }
 
     /** Reduce an uploaded name to a safe basename (no traversal, no hidden files). */
@@ -446,7 +459,7 @@ class Aibuilder extends Control {
         $bucket    = $this->getParam('bucket', 'secure') === 'public' ? 'public' : 'secure';
         $overwrite = filter_var($this->getParam('overwrite', false), FILTER_VALIDATE_BOOLEAN);
         $this->ensureUploadDirs($inst->slug);
-        $destDir = $this->instanceDir($inst->slug) . '/uploads/' . $bucket;
+        $destDir = $this->instanceDir($inst->slug) . '/' . $this->uploadBucketRel($bucket);
 
         if (empty($_FILES['files']['name'])) { Flight::jsonError('No files uploaded', 400); return; }
         $names = (array)$_FILES['files']['name'];
@@ -478,9 +491,9 @@ class Aibuilder extends Control {
             }
             if (move_uploaded_file($tmps[$i], $dest)) {
                 @chmod($dest, 0664);
-                $rel = 'uploads/' . $bucket . '/' . basename($dest);
-                // Track public uploads so they publish with the next checkpoint.
-                if ($bucket === 'public') $this->gitInstance($inst->slug, ['add', $rel]);
+                $rel = $this->uploadBucketRel($bucket) . '/' . basename($dest);
+                // Track the file so it publishes with the next checkpoint (both buckets publish).
+                $this->gitInstance($inst->slug, ['add', $rel]);
                 $stored[] = ['name' => basename($dest), 'path' => $rel, 'ref' => '@' . $rel, 'bucket' => $bucket];
             } else {
                 $errors[] = $origName . ': write failed';
@@ -496,13 +509,13 @@ class Aibuilder extends Control {
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
         $out = ['secure' => [], 'public' => []];
         foreach (['secure', 'public'] as $b) {
-            $dir = $this->instanceDir($inst->slug) . '/uploads/' . $b;
+            $dir = $this->instanceDir($inst->slug) . '/' . $this->uploadBucketRel($b);
             if (!is_dir($dir)) continue;
             foreach (scandir($dir) as $f) {
-                if ($f === '.' || $f === '..' || $f === '.gitkeep') continue;
+                if ($f === '.' || $f === '..' || $f === '.gitkeep' || $f === '.htaccess') continue;
                 $full = $dir . '/' . $f;
                 if (!is_file($full)) continue;
-                $rel = 'uploads/' . $b . '/' . $f;
+                $rel = $this->uploadBucketRel($b) . '/' . $f;
                 $out[$b][] = ['name' => $f, 'path' => $rel, 'ref' => '@' . $rel, 'size' => filesize($full)];
             }
         }
@@ -519,12 +532,13 @@ class Aibuilder extends Control {
         $name   = basename((string)$this->getParam('name', ''));
         if ($name === '' || $name === '.gitkeep') { Flight::jsonError('Invalid file', 400); return; }
 
-        $bucketDir = realpath($this->instanceDir($inst->slug) . '/uploads/' . $bucket);
-        $real      = realpath($this->instanceDir($inst->slug) . '/uploads/' . $bucket . '/' . $name);
+        $relDir    = $this->uploadBucketRel($bucket);
+        $bucketDir = realpath($this->instanceDir($inst->slug) . '/' . $relDir);
+        $real      = realpath($this->instanceDir($inst->slug) . '/' . $relDir . '/' . $name);
         if (!$real || !$bucketDir || strpos($real, $bucketDir) !== 0 || !is_file($real)) {
             Flight::jsonError('Not found', 404); return;
         }
-        if ($bucket === 'public') $this->gitInstance($inst->slug, ['rm', '-f', '--cached', 'uploads/public/' . $name]);
+        $this->gitInstance($inst->slug, ['rm', '-f', '--cached', $relDir . '/' . $name]);
         @unlink($real);
         Flight::jsonSuccess([], 'Deleted');
     }

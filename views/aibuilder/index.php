@@ -160,8 +160,8 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
               <input id="ab-upload-file" type="file" class="form-control form-control-sm mb-2" multiple>
               <div class="d-flex gap-2">
                 <select id="ab-upload-bucket" class="form-select form-select-sm">
-                  <option value="secure">Secure — private, never published</option>
-                  <option value="public">Public — published with commits</option>
+                  <option value="secure">Secure — not web-accessible (published)</option>
+                  <option value="public">Public — web-accessible (published)</option>
                 </select>
                 <button class="btn btn-primary btn-sm" type="submit" title="Upload"><i class="bi bi-upload"></i></button>
               </div>
@@ -406,7 +406,7 @@ if (AB.has) {
       m.innerHTML='<i class="bi bi-check-circle me-1"></i>GitHub connected. Click <strong>Publish</strong>.'; }
   });
 
-  // --- Uploads (secure = private/gitignored, public = published with commits) ---
+  // --- Uploads (both published; secure = outside docroot/not web-served, public = web-served) ---
   function humanSize(n){ n=+n||0; return n>1048576?(n/1048576).toFixed(1)+'MB':(n>1024?(n/1024).toFixed(0)+'KB':n+'B'); }
   function loadUploads(){
     fetch('/aibuilder/uploads?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{

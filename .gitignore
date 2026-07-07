@@ -24,9 +24,10 @@ cache/
 # Logs
 log/*.log
 
-# Uploads: secure/ is private (never published); public/ is tracked so it ships
-# with checkpoints + publish. (upload() also appends /uploads/secure/ per instance.)
-uploads/secure/
+# Uploads live in public/uploads (web-served, under the docroot) and secure/uploads
+# (outside the docroot, NOT web-served). BOTH are tracked & published — the only
+# difference is web reachability. This ignores only the legacy/deprecated uploads/ dir.
+uploads/
 
 # Workbench project workspaces (cloned repos)
 projects/

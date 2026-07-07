@@ -28,17 +28,33 @@ if [ -n "${BASE_URL:-}" ]; then
 fi
 
 # 2) Ensure EncryptionService has a key ([security] app_key, 64 hex chars).
-if ! grep -qE '^app_key[[:space:]]*=[[:space:]]*"[0-9a-f]{64}"' conf/config.ini; then
+# Priority: APP_KEY env  ->  key already in config  ->  generate ephemeral.
+# SET APP_KEY IN THE HYPERLIFT ENV: a generated key changes every boot, so anything
+# encrypted (2FA secrets, stored tokens) becomes unreadable after a redeploy. A fixed
+# APP_KEY makes encryption survive restarts even without a persistent volume.
+if [ -n "${APP_KEY:-}" ] && printf '%s' "$APP_KEY" | grep -qE '^[0-9a-f]{64}$'; then
+  KEY="$APP_KEY"; KEYSRC="APP_KEY env"
+elif grep -qE '^app_key[[:space:]]*=[[:space:]]*"[0-9a-f]{64}"' conf/config.ini; then
+  KEY=""; KEYSRC="existing config"          # already set (e.g. persisted config volume)
+else
   KEY="$(php -r 'echo bin2hex(random_bytes(32));')"
+  KEYSRC="generated (EPHEMERAL — set APP_KEY to persist!)"
+fi
+if [ -n "$KEY" ]; then
   if grep -qE '^app_key[[:space:]]*=' conf/config.ini; then
     sed -ri "s|^app_key[[:space:]]*=.*|app_key = \"${KEY}\"|" conf/config.ini
   else
     sed -ri "s|^\[security\]|[security]\napp_key = \"${KEY}\"|" conf/config.ini
   fi
-  echo "entrypoint: generated [security] app_key"
+fi
+echo "entrypoint: app_key source = ${KEYSRC}"
+if [ -z "${APP_KEY:-}" ] && [ "$KEYSRC" != "existing config" ]; then
+  echo "entrypoint: WARNING — no APP_KEY env set; encrypted data will not survive a redeploy."
 fi
 
-# 3) Initialize the SQLite database on first boot.
+# 3) Initialize the SQLite database on first boot only. Idempotent: if database/ is a
+# persistent volume, the .db survives redeploys and this init is skipped (so your data
+# — and the completed install — persist). Mount a volume at /var/www/html/database.
 mkdir -p database storage/logs
 if [ ! -s database/tiknix.db ]; then
   echo "entrypoint: initializing database/tiknix.db"

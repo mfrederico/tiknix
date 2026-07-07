@@ -5,9 +5,24 @@
 set -euo pipefail
 cd /var/www/html
 
-# 1) Seed config from the committed examples on first boot.
-[ -f conf/config.ini ] || cp conf/config.example.ini conf/config.ini
+# 1) Seed config from the committed examples on first boot. The container runs on
+# SQLite (step 3 inits the .db), so prefer the SQLite example — the generic
+# config.example.ini defaults to MySQL and would fail to connect in-container.
+if [ ! -f conf/config.ini ]; then
+  if [ -f conf/config.sqlite.example.ini ]; then
+    cp conf/config.sqlite.example.ini conf/config.ini
+  else
+    cp conf/config.example.ini conf/config.ini
+  fi
+fi
 [ -f conf/github.ini ] || { [ -f conf/github.example.ini ] && cp conf/github.example.ini conf/github.ini; } || true
+
+# 1b) Point baseurl at the public URL when the platform provides one (the seeded
+# example defaults to http://localhost:8080). Set BASE_URL in the Hyperlift env.
+if [ -n "${BASE_URL:-}" ]; then
+  sed -ri "s#^baseurl[[:space:]]*=.*#baseurl = \"${BASE_URL}\"#" conf/config.ini
+  echo "entrypoint: baseurl = ${BASE_URL}"
+fi
 
 # 2) Ensure EncryptionService has a key ([security] app_key, 64 hex chars).
 if ! grep -qE '^app_key[[:space:]]*=[[:space:]]*"[0-9a-f]{64}"' conf/config.ini; then

@@ -24,8 +24,9 @@ cache/
 # Logs
 log/*.log
 
-# Uploads
-uploads/
+# Uploads: secure/ is private (never published); public/ is tracked so it ships
+# with checkpoints + publish. (upload() also appends /uploads/secure/ per instance.)
+uploads/secure/
 
 # Workbench project workspaces (cloned repos)
 projects/

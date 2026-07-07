@@ -107,10 +107,15 @@ class Bootstrap {
         $config['logLevel'] = $this->config['logging']['level'] ?? 'DEBUG';
         $config['logFile']  = $this->config['logging']['file'] ?? 'log/app.log';
 
+        // Containers log to stderr (Hyperlift/Docker capture the stream; the
+        // container FS is ephemeral so a logfile is lost). Toggled by the LOG_STDERR
+        // env (set in the Dockerfile) or [logging] stderr = true. Dev host: neither.
+        $config['logStderr'] = filter_var(getenv('LOG_STDERR') ?: ($this->config['logging']['stderr'] ?? false), FILTER_VALIDATE_BOOLEAN);
+
         // Create log directory if it doesn't exist
-        $logDir = dirname($config['logFile']);
-        if (!is_dir($logDir)) {
-            mkdir($logDir, 0755, true);
+        if (!$config['logStderr']) {
+            $logDir = dirname($config['logFile']);
+            if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
         }
 
 		if (empty($config['log.name'])) $config['log.name'] = 'app';
@@ -129,7 +134,9 @@ class Bootstrap {
 			);
         
 			// Add rotating file handler (new file each day, keep 30 days)
-			$handler = new RotatingFileHandler($config['logFile'], 30, constant("Monolog\Logger::{$config['logLevel']}"));
+			$handler = $config['logStderr']
+				? new StreamHandler('php://stderr', constant("Monolog\Logger::{$config['logLevel']}"))
+				: new RotatingFileHandler($config['logFile'], 30, constant("Monolog\Logger::{$config['logLevel']}"));
 			$handler->setFormatter($formatter);
 			$log->pushHandler($handler);
 

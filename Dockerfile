@@ -18,6 +18,11 @@ RUN composer install --no-dev --no-interaction --optimize-autoloader --no-progre
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Log to stderr so Hyperlift/Docker capture the stream (container FS is ephemeral, so a
+# rotating logfile would be lost). bootstrap.php reads this; the dev host, which doesn't
+# set it, keeps file logging.
+ENV LOG_STDERR=1
+
 # Hyperlift routes to 8080 and injects APPLICATION_PORT; the entrypoint sets Apache's
 # listen port to $APPLICATION_PORT (then $PORT, default 8080).
 EXPOSE 8080

@@ -107,7 +107,7 @@ class Mcp extends BaseControls\Control {
             'description' => 'Returns info about stored MCP sessions for debugging.',
             'inputSchema' => [
                 'type' => 'object',
-                'properties' => [],
+                'properties' => (object)[], // JSON object, not [] — strict MCP clients reject arrays
                 'required' => []
             ]
         ],
@@ -794,7 +794,7 @@ class Mcp extends BaseControls\Control {
                 $toolList[] = [
                     'name' => $server->slug . ':' . $tool['name'],
                     'description' => '[' . $server->name . '] ' . ($tool['description'] ?? ''),
-                    'inputSchema' => $tool['inputSchema'] ?? ['type' => 'object', 'properties' => []]
+                    'inputSchema' => $tool['inputSchema'] ?? ['type' => 'object', 'properties' => (object)[]]
                 ];
             }
         }

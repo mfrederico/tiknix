@@ -18,6 +18,7 @@ RUN composer install --no-dev --no-interaction --optimize-autoloader --no-progre
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-EXPOSE 80
+# Hyperlift routes to 8080; the entrypoint sets Apache's listen port to $PORT (default 8080).
+EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["apache2-foreground"]

@@ -33,4 +33,11 @@ fi
 # 4) Make runtime paths writable by the web user.
 chown -R www-data:www-data database storage conf 2>/dev/null || true
 
+# 5) Listen on the platform's port. Hyperlift routes to 8080; honor $PORT for other
+# hosts (Cloud Run, etc.). Rewrites both the global Listen and the vhost. Idempotent.
+PORT="${PORT:-8080}"
+sed -ri "s/^Listen 80\b/Listen ${PORT}/" /etc/apache2/ports.conf
+sed -ri "s/<VirtualHost \*:80>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/*.conf
+echo "entrypoint: Apache listening on port ${PORT}"
+
 exec "$@"

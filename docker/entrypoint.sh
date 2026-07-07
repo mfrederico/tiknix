@@ -11,10 +11,13 @@ cd /var/www/html
 if [ ! -f conf/config.ini ]; then
   if [ -f conf/config.sqlite.example.ini ]; then
     cp conf/config.sqlite.example.ini conf/config.ini
+    echo "entrypoint: seeded conf/config.ini from config.sqlite.example.ini (sqlite)"
   else
     cp conf/config.example.ini conf/config.ini
+    echo "entrypoint: seeded conf/config.ini from config.example.ini (generic)"
   fi
 fi
+echo "entrypoint: database type = $(sed -n 's/^type[[:space:]]*=[[:space:]]*"\([a-z]*\)".*/\1/p' conf/config.ini | head -1)"
 [ -f conf/github.ini ] || { [ -f conf/github.example.ini ] && cp conf/github.example.ini conf/github.ini; } || true
 
 # 1b) Point baseurl at the public URL when the platform provides one (the seeded

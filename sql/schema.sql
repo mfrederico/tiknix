@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS contact (
     updated_at TEXT
 );
 
+-- Landing-page leads (captured by Index::dolead)
+CREATE TABLE IF NOT EXISTS lead (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Contact responses
 CREATE TABLE IF NOT EXISTS contactresponse (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -487,6 +496,9 @@ INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_
     ('contact', 'admin', 50, 'View contact messages', datetime('now')),
     ('contact', 'view', 50, 'View single message', datetime('now')),
     ('contact', 'respond', 50, 'Respond to message', datetime('now')),
+    ('lead', 'admin', 50, 'View captured leads', datetime('now')),
+    ('lead', 'delete', 50, 'Delete a lead', datetime('now')),
+    ('lead', 'export', 50, 'Export leads CSV', datetime('now')),
     ('mcpregistry', '*', 50, 'MCP Server Registry management', datetime('now')),
 
     -- Public MCP endpoints (level 101) - auth handled by controller

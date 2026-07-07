@@ -65,13 +65,15 @@ class GitHubPublisher {
         if (!$head['ok']) return $fail('This instance has no commits to publish yet.');
         $shortSha = substr(trim($head['out']), 0, 7);
 
-        // Build a CLEAN SNAPSHOT of the current tree as one parentless commit — never the
-        // instance's internal history or tags (which can carry secrets in conf/*.ini or
-        // builder state in .aibuilder), and never tiknix's own git history.
+        // Build a CLEAN SNAPSHOT as one commit. Snapshot the CURRENT WORKING TREE (not just
+        // committed HEAD) so Publish always reflects the customer's latest edits even if they
+        // haven't checkpointed. A fresh temp index + `add -A` respects .gitignore, so the
+        // SQLite db, vendor/, real conf/*.ini, .aibuilder creds, caches and logs are excluded.
         $tmpIndex = self::instanceDir($slug) . '/.git/aibuilder-publish.index';
         @unlink($tmpIndex);
         $ienv = ['GIT_INDEX_FILE' => $tmpIndex];
-        self::gitEnv($slug, $ienv, ['read-tree', 'HEAD']);
+        self::gitEnv($slug, $ienv, ['add', '-A']);
+        // Belt-and-suspenders: drop any secret config that slipped past .gitignore (keep examples).
         self::gitEnv($slug, $ienv, ['rm', '--cached', '-r', '--ignore-unmatch', '--quiet',
             'conf/*.ini', ':(exclude)conf/*.example.ini', '.aibuilder']);
         $tree = trim(self::gitEnv($slug, $ienv, ['write-tree'])['out']);

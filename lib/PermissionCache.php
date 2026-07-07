@@ -334,10 +334,15 @@ class PermissionCache {
         try {
             Flight::get('log')->info("PermissionCache: Auto-creating permission for {$control}->{$method}");
 
+            // Most auto-created routes default to ADMIN, but pre-auth routes MUST be
+            // public or the app locks itself out (e.g. the first-run wizard loops:
+            // / -> /install -> /auth/login -> /install). See defaultLevelFor().
+            $level = self::defaultLevelFor($control, $method);
+
             $auth = Bean::dispense('authcontrol');
             $auth->control = $control;
             $auth->method = $method;
-            $auth->level = LEVELS['ADMIN']; // Default to admin level
+            $auth->level = $level;
             $auth->description = "Auto-generated permission for {$control}::{$method}";
             $auth->validcount = 0;
             $auth->createdAt = date('Y-m-d H:i:s');
@@ -346,7 +351,7 @@ class PermissionCache {
             // Add to local cache immediately
             $key = strtolower("{$control}::{$method}");
             if (self::$localCache !== null) {
-                self::$localCache[$key] = LEVELS['ADMIN'];
+                self::$localCache[$key] = $level;
             }
 
             // Clear APCu to force reload on next request
@@ -361,6 +366,31 @@ class PermissionCache {
             ]);
             return false;
         }
+    }
+
+    /**
+     * Level to assign a route auto-created in build_mode. Most default to ADMIN,
+     * but a few controllers MUST stay publicly reachable or the app locks itself
+     * out — the first-run install wizard (else / -> /install -> /auth/login ->
+     * /install loops) and the pre-authentication auth routes (login/register/
+     * reset/oauth/2FA), where the visitor is not logged in yet.
+     */
+    private static function defaultLevelFor($control, $method) {
+        $c = strtolower((string)$control);
+        $m = strtolower((string)$method);
+        // Whole controllers that are public: install wizard + home/landing.
+        if ($c === 'install' || $c === 'index') return LEVELS['PUBLIC'];
+        // Pre-auth auth routes only (NOT logout/account management).
+        if ($c === 'auth') {
+            $publicAuth = [
+                'login', 'dologin', 'register', 'doregister',
+                'forgot', 'doforgot', 'reset', 'doreset',
+                'google', 'googlecallback', 'verify', 'setpassword',
+                'twofasetup', 'twofaverify', 'twofaconfirmsaved', 'twofarecoverycodes',
+            ];
+            if (in_array($m, $publicAuth, true)) return LEVELS['PUBLIC'];
+        }
+        return LEVELS['ADMIN'];
     }
 
     /**

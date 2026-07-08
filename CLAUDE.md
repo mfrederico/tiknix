@@ -339,14 +339,27 @@ See `controls/Mcp.php` header comments for full security documentation.
 
 ## Two-Factor Authentication (2FA)
 
-TOTP-based 2FA is **required** for admin users (level ≤ 50). Configuration in `lib/TwoFactorAuth.php`:
+TOTP-based 2FA for admin users (level ≤ 50) and workbench users. Whether it is
+**required**, **optional**, or **off** is controlled by `conf/config.ini` `[security]`:
+
+```ini
+[security]
+two_factor_enabled = true   ; master switch — false disables 2FA entirely (no setup, no verify)
+two_factor_enforce = true   ; false = OPTIONAL (eligible users prompted but can "Skip for now"); true = required
+```
+
+- **enabled=false** → 2FA completely off (handy for local dev).
+- **enabled=true, enforce=false** → optional: eligible users are prompted at login but may hit **Skip for now** (`/auth/twofaskip`, session-scoped); anyone who opts in still verifies each login.
+- **enabled=true, enforce=true** → required for `REQUIRED_LEVELS` (default, secure).
+
+The enforcement choke points are `TwoFactorAuth::needsSetup()` / `needsVerification()`; policy is read via `policyEnabled()` / `policyEnforced()`. Level scope in `lib/TwoFactorAuth.php`:
 
 ```php
 public const TRUST_DURATION = 30 * 24 * 60 * 60;  // 30 days device trust
-public const REQUIRED_LEVELS = [1, 50];            // ROOT, ADMIN require 2FA
+public const REQUIRED_LEVELS = [1, 50];            // ROOT, ADMIN in scope for 2FA
 ```
 
-**Login flow for admin users:**
+**Login flow for admin users (when required):**
 1. Enter username/password → redirects to `/auth/twofasetup` (first time) or `/auth/twofaverify`
 2. Scan QR code with authenticator app (Google Authenticator, Authy, etc.)
 3. Enter 6-digit TOTP code

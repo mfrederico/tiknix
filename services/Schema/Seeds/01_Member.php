@@ -64,8 +64,8 @@ if (!$public) {
     R::store($public);
 }
 
-try {
-    R::exec('CREATE UNIQUE INDEX IF NOT EXISTS uk_member_username ON member (username)');
-    R::exec('CREATE INDEX IF NOT EXISTS idx_member_email ON member (email)');
-    R::exec('CREATE INDEX IF NOT EXISTS idx_member_level ON member (level)');
-} catch (\Exception $e) { /* indexes may already exist */ }
+// Schema is 100% bean-derived — no hand-declared indexes/constraints. RedBean
+// indexes *_id columns by convention; there is no bean-native way to declare a
+// standalone UNIQUE (username) or a plain lookup index (email, level), so those
+// are not created at the DB level. Username uniqueness is enforced in the
+// registration/auth flow before insert.

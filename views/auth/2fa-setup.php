@@ -25,8 +25,13 @@
 
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle me-2"></i>
-                        <strong>Two-factor authentication is required</strong> for your account level.
-                        This adds an extra layer of security to protect your account.
+                        <?php if (!empty($canSkip)): ?>
+                            <strong>Set up two-factor authentication</strong> to add an extra layer of
+                            security to your account. It's optional — you can skip and enable it later.
+                        <?php else: ?>
+                            <strong>Two-factor authentication is required</strong> for your account level.
+                            This adds an extra layer of security to protect your account.
+                        <?php endif; ?>
                     </div>
 
                     <div class="text-center mb-4">
@@ -67,6 +72,18 @@
                                 </button>
                             </div>
                         </form>
+
+                        <?php if (!empty($canSkip)): ?>
+                            <form method="post" action="/auth/twofaskip" class="d-grid mt-2">
+                                <?= csrf_field() ?>
+                                <button type="submit" class="btn btn-outline-secondary">
+                                    Skip for now
+                                </button>
+                                <div class="form-text text-center">
+                                    Two-factor authentication is optional. You can enable it later.
+                                </div>
+                            </form>
+                        <?php endif; ?>
                     </div>
 
                     <hr>

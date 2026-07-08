@@ -40,6 +40,7 @@ $defaults = [
     ['auth', 'twofasetup', 101, '2FA setup page'],
     ['auth', 'twofaverify', 101, '2FA verification page'],
     ['auth', 'twofaconfirmsaved', 101, '2FA confirm recovery codes saved'],
+    ['auth', 'twofaskip', 101, '2FA skip setup (optional mode)'],
     ['auth', 'twofarecoverycodes', 101, '2FA recovery codes'],
     ['auth', 'setpassword', 101, 'Set password (post-2FA / oauth)'],
     ['install', 'index', 101, 'First-run setup wizard'],
@@ -59,6 +60,7 @@ $defaults = [
     ['grocery', '*', 100, 'Grocery list management'],
     ['workbench', '*', 100, 'Workbench access'],
     ['teams', '*', 100, 'Teams management'],
+    ['communications', '*', 100, 'Threaded email inbox'],
 
     // Admin (50)
     ['admin', '*', 50, 'Admin panel access'],
@@ -72,6 +74,9 @@ $defaults = [
     ['lead', 'delete', 50, 'Delete a lead'],
     ['lead', 'export', 50, 'Export leads CSV'],
     ['mcpregistry', '*', 50, 'MCP Server Registry management'],
+
+    // Public webhook (101) — authenticates itself via Mailgun HMAC
+    ['webhook', 'mailgun', 101, 'Mailgun inbound mail + delivery-event webhook'],
 
     // Public MCP endpoints (101) — auth handled by the controller
     ['mcp', '*', 101, 'MCP server endpoints'],
@@ -98,7 +103,8 @@ foreach ($defaults as [$control, $method, $level, $desc]) {
     R::store($ac);
 }
 
-try {
-    R::exec('CREATE UNIQUE INDEX IF NOT EXISTS uk_authcontrol ON authcontrol (control, method)');
-    R::exec('CREATE INDEX IF NOT EXISTS idx_authcontrol_level ON authcontrol (level)');
-} catch (\Exception $e) { /* indexes may already exist */ }
+// Schema is 100% bean-derived — no hand-declared indexes/constraints. RedBean
+// has no bean-native way to express the composite UNIQUE (control, method) or a
+// plain level index, so they are not created at the DB level. Duplicate rows
+// are prevented by the findOne(control, method) idempotency guard in the loop
+// above.

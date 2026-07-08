@@ -40,6 +40,35 @@ class TwoFactorAuth {
     public const REQUIRED_LEVELS = [1, 50]; // ROOT, ADMIN
 
     /**
+     * Master switch — is 2FA enabled at all?
+     * conf/config.ini [security].two_factor_enabled (default true).
+     * When false, 2FA is entirely off: no setup prompt, no verification.
+     * Handy for local development.
+     */
+    public static function policyEnabled(): bool {
+        $v = Flight::get('security.two_factor_enabled');
+        return $v === null ? true : self::truthy($v);
+    }
+
+    /**
+     * Enforcement — force eligible users (REQUIRED_LEVELS / workbench) to set
+     * up 2FA before continuing?
+     * conf/config.ini [security].two_factor_enforce (default true).
+     * When false, 2FA is OPTIONAL: eligible users are still prompted at login
+     * but may "Skip for now"; anyone who opts in still verifies each login.
+     */
+    public static function policyEnforced(): bool {
+        $v = Flight::get('security.two_factor_enforce');
+        return $v === null ? true : self::truthy($v);
+    }
+
+    /** Loose truthiness for ini values ("1"/"true"/"on"/"yes"/true → true). */
+    private static function truthy($v): bool {
+        if (is_bool($v)) return $v;
+        return in_array(strtolower(trim((string)$v)), ['1', 'true', 'on', 'yes', 'enabled'], true);
+    }
+
+    /**
      * Get Google2FA instance
      */
     private static function getGoogle2FA(): Google2FA {
@@ -149,6 +178,9 @@ class TwoFactorAuth {
      * Check if user requires 2FA based on level or workbench access
      */
     public static function isRequired(object $member): bool {
+        if (!self::policyEnabled()) {
+            return false;
+        }
         return self::getRequiredReason($member) !== null;
     }
 
@@ -391,14 +423,16 @@ class TwoFactorAuth {
      * Returns true if 2FA is required, enabled, and device not trusted
      */
     public static function needsVerification(object $member): bool {
-        // 2FA not required for this user
-        if (!self::isRequired($member)) {
+        // Feature disabled entirely
+        if (!self::policyEnabled()) {
             return false;
         }
 
-        // 2FA required but not set up yet - they need to set it up first
+        // Verify anyone who has 2FA configured — including users who opted in
+        // voluntarily under optional mode. Not enabled → nothing to verify
+        // (forced setup, if applicable, is handled by needsSetup()).
         if (!self::isEnabled($member)) {
-            return false; // Will be caught by needsSetup()
+            return false;
         }
 
         // Testing bypass - localhost only, requires explicit env var
@@ -435,7 +469,23 @@ class TwoFactorAuth {
             return false;
         }
 
-        return self::isRequired($member) && !self::isEnabled($member);
+        // Feature off, or user already has 2FA configured.
+        if (!self::policyEnabled() || self::isEnabled($member)) {
+            return false;
+        }
+
+        // Not an eligible user (not admin / no workbench access) → never forced.
+        if (self::getRequiredReason($member) === null) {
+            return false;
+        }
+
+        // Optional mode: prompt once per session but honor "Skip for now".
+        if (!self::policyEnforced()) {
+            return empty($_SESSION['2fa_setup_skipped']);
+        }
+
+        // Enforced: must set up before continuing.
+        return true;
     }
 
     /**

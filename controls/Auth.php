@@ -584,7 +584,8 @@ class Auth extends BaseControls\Control {
                     'title' => 'Set Up Two-Factor Authentication',
                     'secret' => $secret ?: TwoFactorAuth::generateSecret(),
                     'qrCode' => TwoFactorAuth::generateQrCode($secret, $member->email),
-                    'errors' => ['Please enter the verification code']
+                    'errors' => ['Please enter the verification code'],
+                    'canSkip' => !TwoFactorAuth::policyEnforced()
                 ]);
                 return;
             }
@@ -596,7 +597,8 @@ class Auth extends BaseControls\Control {
                     'title' => 'Set Up Two-Factor Authentication',
                     'secret' => $secret,
                     'qrCode' => TwoFactorAuth::generateQrCode($secret, $member->email),
-                    'errors' => [$result['error']]
+                    'errors' => [$result['error']],
+                    'canSkip' => !TwoFactorAuth::policyEnforced()
                 ]);
                 return;
             }
@@ -614,8 +616,51 @@ class Auth extends BaseControls\Control {
         $this->render('auth/2fa-setup', [
             'title' => 'Set Up Two-Factor Authentication',
             'secret' => $secret,
-            'qrCode' => $qrCode
+            'qrCode' => $qrCode,
+            'canSkip' => !TwoFactorAuth::policyEnforced()
         ]);
+    }
+
+    /**
+     * "Skip for now" — defer 2FA setup and finish logging in.
+     *
+     * Only valid mid-login (pending member) and only when 2FA is NOT enforced
+     * ([security].two_factor_enforce = false). Sets a per-session flag so the
+     * user isn't re-prompted, then completes the login.
+     */
+    public function twofaSkip() {
+        if (!$this->validateCSRF()) {
+            return;
+        }
+
+        $memberId = $_SESSION['2fa_pending_member_id'] ?? null;
+        if (!$memberId) {
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        // Refuse to skip when 2FA is enforced.
+        if (TwoFactorAuth::policyEnforced()) {
+            $this->flash('error', 'Two-factor authentication is required.');
+            Flight::redirect('/auth/twofasetup');
+            return;
+        }
+
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) {
+            unset($_SESSION['2fa_pending_member_id']);
+            Flight::redirect('/auth/login');
+            return;
+        }
+
+        $redirect = $_SESSION['2fa_pending_redirect'] ?? '/dashboard';
+        $_SESSION['2fa_setup_skipped'] = 1;
+        unset($_SESSION['2fa_pending_member_id'], $_SESSION['2fa_pending_redirect']);
+
+        // Complete login without 2FA.
+        $_SESSION['member'] = $member->export();
+        $this->logger->info('2FA setup skipped (optional mode)', ['id' => $member->id]);
+        Flight::redirect($redirect);
     }
 
     /**

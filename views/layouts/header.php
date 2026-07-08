@@ -51,6 +51,11 @@
                 <?php endforeach; ?>
                 <?php if ($isLoggedIn ?? false): ?>
                     <li class="nav-item">
+                        <a class="nav-link" href="/communications">
+                            <i class="bi bi-chat-left-dots"></i> Communications
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="/workbench">
                             <i class="bi bi-hammer"></i> Workbench
                         </a>

@@ -175,7 +175,19 @@ class Bootstrap {
                 // Construct DSN based on database type
                 $type = $dbConfig['type'] ?? 'mysql';
 
-                if ($type === 'sqlite') {
+
+                // Deploy-time override: a single DB_DSN env var (e.g. Hyperlift) drives
+                // the connection; falls back to conf/config.ini when unset. Supports
+                // mysql://, pgsql://, sqlite:... — see parse_db_dsn() in lib/functions.php.
+                $envDsn = getenv('DB_DSN');
+                if ($envDsn !== false && trim($envDsn) !== '') {
+                    [$dsn, $dsnUser, $dsnPass] = \parse_db_dsn(trim($envDsn), __DIR__);
+                    if ($dsnUser === null) {
+                        R::setup($dsn);
+                    } else {
+                        R::setup($dsn, (string)$dsnUser, (string)$dsnPass);
+                    }
+                } elseif ($type === 'sqlite') {
                     // SQLite configuration - use absolute path relative to project root
                     $dbPath = $dbConfig['path'] ?? 'database/tiknix.db';
                     if ($dbPath[0] !== '/') {
@@ -205,7 +217,13 @@ class Bootstrap {
             }
             
             // Set freeze mode based on environment
-            $freeze = $this->config['app']['environment'] === 'production';
+            // DB_FREEZE env (true/false) overrides; otherwise freeze in production.
+            $envFreeze = getenv('DB_FREEZE');
+            if ($envFreeze !== false) {
+                $freeze = filter_var($envFreeze, FILTER_VALIDATE_BOOLEAN);
+            } else {
+                $freeze = $this->config['app']['environment'] === 'production';
+            }
             R::freeze($freeze);
             
             // Enable query logging in debug mode

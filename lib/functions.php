@@ -258,5 +258,87 @@ function mapCountry($val, $getKey=true){
 	return 'US';
 }
 
+if (!function_exists('parse_db_dsn')) {
+    /**
+     * Parse a URL-style database DSN into RedBeanPHP's R::setup() form, so a
+     * single DB_DSN env var can drive the connection (e.g. on Hyperlift),
+     * falling back to conf/config.ini when unset. Supported schemes:
+     *
+     *   mysql://user:pass@host:3306/dbname       (also mariadb://)
+     *   pgsql://user:pass@host:5432/dbname       (also postgres://, postgresql://)
+     *   sqlite:relative/path.db                  (relative to $projectRoot)
+     *   sqlite:///absolute/path.db
+     *   file://./relative/path.db                (alias for sqlite)
+     *
+     * The DB_PASSWORD env var, when set, overrides any password in the URL — so
+     * the credential can stay out of the DSN string (and out of anything that
+     * logs it).
+     *
+     * @param string $url         The DB_DSN value.
+     * @param string $projectRoot Absolute root for resolving relative sqlite paths.
+     * @return array{0:string,1:?string,2:?string} [pdoDsn, user|null, pass|null];
+     *         user/pass are null for sqlite (R::setup called without credentials).
+     * @throws \RuntimeException on an unparseable or unsupported DSN.
+     */
+    function parse_db_dsn(string $url, string $projectRoot = ''): array {
+        $colon = strpos($url, ':');
+        if ($colon === false) {
+            throw new \RuntimeException("Invalid DB_DSN (no scheme): {$url}");
+        }
+        $scheme = strtolower(substr($url, 0, $colon));
+
+        // sqlite / file -> a plain filesystem path, no credentials. Parsed by
+        // hand (not parse_url, which returns false on sqlite:///abs forms).
+        if ($scheme === 'sqlite' || $scheme === 'file') {
+            $path = substr($url, $colon + 1);
+            if (str_starts_with($path, '//')) {
+                $path = substr($path, 2);   // drop the // authority marker
+            }
+            if ($path === '') {
+                throw new \RuntimeException("DB_DSN sqlite path is empty: {$url}");
+            }
+            if ($path[0] !== '/' && $projectRoot !== '') {
+                $path = rtrim($projectRoot, '/') . '/' . ltrim($path, './');
+            }
+            $dir = dirname($path);
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+            return ["sqlite:{$path}", null, null];
+        }
+
+        // mysql / pgsql -> host-based, with credentials (parse_url is fine here).
+        $p = parse_url($url);
+        if ($p === false) {
+            throw new \RuntimeException("Invalid DB_DSN (cannot parse): {$url}");
+        }
+        $driver = match ($scheme) {
+            'mysql', 'mariadb'                => 'mysql',
+            'pgsql', 'postgres', 'postgresql' => 'pgsql',
+            default => throw new \RuntimeException("Unsupported DB_DSN scheme '{$scheme}': {$url}"),
+        };
+        $host = $p['host'] ?? 'localhost';
+        $port = $p['port'] ?? ($driver === 'pgsql' ? 5432 : 3306);
+        $db   = ltrim($p['path'] ?? '', '/');
+        if ($db === '') {
+            throw new \RuntimeException("DB_DSN missing database name: {$url}");
+        }
+        $user = isset($p['user']) ? rawurldecode($p['user']) : '';
+        $pass = isset($p['pass']) ? rawurldecode($p['pass']) : '';
+
+        // DB_PASSWORD overrides any inline password.
+        $envPass = getenv('DB_PASSWORD');
+        if ($envPass !== false) {
+            $pass = $envPass;
+        }
+
+        $dsn = "{$driver}:host={$host};port={$port};dbname={$db}";
+        if ($driver === 'mysql') {
+            $dsn .= ';charset=utf8mb4';
+        }
+        return [$dsn, $user, $pass];
+    }
+}
+
 
 ?>

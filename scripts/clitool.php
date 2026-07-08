@@ -258,9 +258,28 @@ if (isset($opt['scaffold'])) {
     $partsList = array_values(array_filter(array_map('trim', explode(',', $parts))));
     $manager = new \app\Scaffold\ScaffoldManager(dirname(__DIR__));
     $manager->setVerbose($VERBOSE)->setDryRun($DRYRUN);
-    out('# scaffolding ' . Bean::normalize($type) . ': ' . implode(', ', $partsList) . ($DRYRUN ? ' (dry-run)' : ''));
-    $manager->runScaffold(Bean::normalize($type), $partsList);
-    if (!$DRYRUN && class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); }
+    $bt = Bean::normalize($type);
+    out('# scaffolding ' . $bt . ': ' . implode(', ', $partsList) . ($DRYRUN ? ' (dry-run)' : ''));
+    $manager->runScaffold($bt, $partsList);
+
+    // Seed an authcontrol row so the generated controller's routes are reachable.
+    // Default level 100 (MEMBER — matches the requireLogin() the CRUD template emits);
+    // override with --level. Idempotent: leaves an existing control/* row as-is.
+    if (!$DRYRUN && array_intersect(['controller', 'crud', 'api'], $partsList)) {
+        $lvl = isset($opt['level']) ? (int)$opt['level'] : 100;
+        $existing = R::findOne('authcontrol', 'control = ? AND method = ?', [$bt, '*']);
+        if ($existing && $existing->id) {
+            out("# authcontrol {$bt}/* already exists (level {$existing->level})");
+        } else {
+            $ac = Bean::dispense('authcontrol');
+            $ac->control = $bt;
+            $ac->method  = '*';
+            $ac->level   = $lvl;
+            Bean::store($ac);
+            out("# seeded authcontrol: {$bt}/* level {$lvl}");
+        }
+    }
+    if (!$DRYRUN && class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
     exit(0);
 }
 

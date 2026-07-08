@@ -326,6 +326,17 @@ abstract class Control {
     }
 
     /**
+     * Decode a JSON request body to an array (for API controllers). Returns null
+     * when the body is empty or not valid JSON.
+     */
+    protected function getJsonInput(): ?array {
+        $raw = file_get_contents('php://input');
+        if ($raw === '' || $raw === false) return null;
+        $data = json_decode($raw, true);
+        return is_array($data) ? $data : null;
+    }
+
+    /**
      * Guard: require the request be POST. Halts with 405 otherwise.
      */
     protected function requirePost() {

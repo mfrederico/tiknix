@@ -118,9 +118,6 @@ class Auth extends BaseControls\Control {
             // Clear rate limit on successful login
             RateLimiter::clear('login');
 
-            // First successful admin login confirms the site is set up (idempotent marker).
-            if ((int)$member->level <= LEVELS['ADMIN']) { Install::markComplete(); }
-
             // Check 2FA requirements
             if (TwoFactorAuth::needsSetup($member)) {
                 // User needs to set up 2FA before continuing

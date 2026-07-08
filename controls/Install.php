@@ -2,12 +2,15 @@
 /**
  * First-run setup wizard (WordPress-style).
  *
- * A fresh deploy seeds the database (sql/schema.sql) with a default admin whose
- * password ('admin123') is public in the repo. While that default password is
- * unchanged, the site is treated as "not installed": the home page and login
- * redirect to /install, where the operator sets the real admin credentials.
- * Once changed, the wizard self-disables and drops storage/installed.lock so the
- * check stays cheap. The live site (admin hash already differs) is never affected.
+ * A fresh deploy seeds the database with a default admin whose password
+ * ('admin123') is public in the repo. While that default password is unchanged,
+ * the site is treated as "not installed": the home page and login redirect to
+ * /install, where the operator sets the real admin credentials.
+ *
+ * Install state is derived purely from the DB — a ROOT admin whose password is
+ * no longer the seeded default. No marker file: a fresh, dropped, or reseeded
+ * database self-corrects straight back to /install, and a completed install can
+ * never be "locked" true while the DB says otherwise.
  */
 
 namespace app;
@@ -22,28 +25,16 @@ class Install extends Control {
     /** password_hash('admin123', PASSWORD_DEFAULT) — the value seeded by sql/schema.sql. */
     private const DEFAULT_HASH = '$2y$10$jVz654DI7bX8e1Dh32O9suFcMW4x1V.0SrniJNpDyknwkzc6gM20a';
 
-    private static function lockFile(): string {
-        return dirname(__DIR__) . '/storage/installed.lock';
-    }
-
     /**
-     * True once the site is set up. Signalled by the persistent lock (written on the
-     * first successful admin login) or, before that, by the seeded default admin
-     * password having been changed — so the wizard won't reappear between the wizard
-     * submit and the first login.
+     * True once the site is set up: a ROOT admin exists whose password is no
+     * longer the seeded default (and is non-empty). Keyed on level (not the
+     * username 'admin') so a renamed admin still counts. Purely DB-derived, so
+     * dropping/reseeding the database drops the site back into /install.
      */
     public static function isInstalled(): bool {
-        if (is_file(self::lockFile())) return true;
-        $admin = R::findOne('member', 'username = ?', ['admin']);
-        return !$admin || !$admin->id || $admin->password !== self::DEFAULT_HASH;
-    }
-
-    /** Persist the "setup complete" marker. Called on the first successful admin login. */
-    public static function markComplete(): void {
-        $lock = self::lockFile();
-        if (is_file($lock)) return;
-        @mkdir(dirname($lock), 0775, true);
-        @file_put_contents($lock, date('c') . "\n");
+        $admin = R::findOne('member', 'level = 1 AND password != ? AND password != ?',
+                            [self::DEFAULT_HASH, '']);
+        return (bool)($admin && $admin->id);
     }
 
     /** GET /install — the setup wizard (only while not installed). */
@@ -72,8 +63,10 @@ class Install extends Control {
             return;
         }
 
-        // Update the seeded admin (or create one if the seed is missing).
-        $admin = R::findOne('member', 'username = ?', ['admin']);
+        // Upgrade the seeded default admin into the real one (or create it if the
+        // seed is missing). Keyed on ROOT + default hash so a seeded 'admin' is
+        // found regardless of the username the operator is choosing now.
+        $admin = R::findOne('member', 'level = 1 AND password = ? ORDER BY id ASC', [self::DEFAULT_HASH]);
         if (!$admin || !$admin->id) { $admin = Bean::dispense('member'); $admin->createdAt = date('Y-m-d H:i:s'); $admin->loginCount = 0; }
         $admin->username  = $username;
         $admin->email     = $email;
@@ -83,9 +76,8 @@ class Install extends Control {
         $admin->updatedAt = date('Y-m-d H:i:s');
         Bean::store($admin);
 
-        // Do NOT lock here — the "setup complete" marker is written on the first
-        // successful admin login (Auth::dologin). The changed password already keeps
-        // the wizard from reappearing in the meantime.
+        // No marker file: isInstalled() now reads the changed password straight
+        // from the DB, so the wizard self-disables the moment this admin is saved.
         Flight::redirect('/auth/login?installed=1');
     }
 }

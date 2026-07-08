@@ -76,17 +76,6 @@ $googleEnabled = !empty(Flight::get('social.google_client_id')) && !empty(Flight
                         <a href="/auth/register">Don't have an account? Register</a><br>
                         <a href="/auth/forgot">Forgot your password?</a>
                     </div>
-                    
-                    <?php if (Flight::get('debug') || Flight::get('development')): ?>
-                        <div class="alert alert-info alert-dismissible fade show mt-3" role="alert">
-                            <small>
-                                <strong>Dev Mode:</strong><br>
-                                Username: admin<br>
-                                Password: admin1234
-                            </small>
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>

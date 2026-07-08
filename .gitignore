@@ -10,9 +10,6 @@ conf/config.*.ini
 __pycache__/
 *.pyc
 
-# First-run setup lock (written on first successful admin login)
-storage/installed.lock
-
 # Database files
 database/*.db
 database/*.sqlite

@@ -39,7 +39,8 @@
             "app\\": ["controls/", "lib/"],
             "app\\Models\\": "models/",
             "app\\BaseControls\\": "controls/BaseControls/",
-            "app\\mcptools\\": "mcptools/"
+            "app\\mcptools\\": "mcptools/",
+            "app\\services\\": "services/"
         },
         "classmap": [
             "models/"

@@ -52,6 +52,8 @@ $longopts = [
     'help', 'verbose', 'yes', 'dry-run',
     // schema / db
     'build', 'fresh', 'list', 'describe:', 'sql:', 'exec:',
+    // scaffold (code generation)
+    'wizard', 'scaffold:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
     'status:', 'set-password:', 'set-level:', 'reset-2fa', 'delete-user',
@@ -237,6 +239,31 @@ if (isset($opt['user'])) {
     exit(0);
 }
 
+// --- Scaffold: --wizard (interactive) --------------------------------------
+if (isset($opt['wizard'])) {
+    $manager = new \app\Scaffold\ScaffoldManager(dirname(__DIR__));
+    $manager->setVerbose($VERBOSE)->setDryRun($DRYRUN);
+    $manager->runWizard();
+    exit(0);
+}
+
+// --- Scaffold: --scaffold=PARTS --bean=TYPE --------------------------------
+// PARTS is a comma list of model,controller,view,api (or 'all'). Generates a
+// working CRUD stack for an existing/spec'd bean.
+if (isset($opt['scaffold'])) {
+    $type = trim((string)($opt['bean'] ?? ''));
+    if ($type === '') bail('--scaffold requires --bean=TYPE (the bean to generate for)');
+    $parts = trim((string)$opt['scaffold']);
+    if ($parts === '' || $parts === 'all') $parts = 'model,controller,view';
+    $partsList = array_values(array_filter(array_map('trim', explode(',', $parts))));
+    $manager = new \app\Scaffold\ScaffoldManager(dirname(__DIR__));
+    $manager->setVerbose($VERBOSE)->setDryRun($DRYRUN);
+    out('# scaffolding ' . Bean::normalize($type) . ': ' . implode(', ', $partsList) . ($DRYRUN ? ' (dry-run)' : ''));
+    $manager->runScaffold(Bean::normalize($type), $partsList);
+    if (!$DRYRUN && class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); }
+    exit(0);
+}
+
 // --- Beans: generic read ops ------------------------------------------------
 if (isset($opt['bean'])) {
     $type = Bean::normalize($opt['bean']);
@@ -283,6 +310,11 @@ MEMBERS
   --user=IDENT --status=active   Change a member's status
   --user=IDENT --reset-2fa       Clear 2FA (totp secret, recovery codes) — the lockout fix
   --user=IDENT --delete-user --yes   Delete a member
+
+SCAFFOLD (code generation)
+  --wizard                       Interactive model/CRUD wizard
+  --scaffold=PARTS --bean=TYPE   Generate PARTS (model,controller,view,api | all) for a bean
+                                 e.g. --scaffold=all --bean=product
 
 BEANS (read-mostly, generic)
   --bean=TYPE --getall [--where="col = ?" --data=VAL] [--order="id DESC"] [--limit=N]

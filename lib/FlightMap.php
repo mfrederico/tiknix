@@ -75,6 +75,11 @@ Flight::map('defaultRoute', function($prefix = '') {
                     // Only call if method is public
                     if ($reflection->isPublic()) {
                         Flight::get('log')->info("Calling: {$classname}->{$function}");
+                        // Stash parsed route params so $this->opId()/opType() work
+                        // (scaffolded CRUD reads the record id from the URL op segment).
+                        if (method_exists($instance, 'setRouteParams')) {
+                            $instance->setRouteParams($params);
+                        }
                         $instance->$function($params);
                     } else {
                         Flight::get('log')->error("Method not public: {$function}");

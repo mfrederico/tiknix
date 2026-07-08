@@ -16,7 +16,8 @@ abstract class Control {
     protected $logger;
     protected $member;
     protected $viewData = [];
-    
+    protected $routeParams = [];
+
     public function __construct() {
         $this->logger = Flight::get('log');
         $this->member = Flight::getMember();
@@ -293,5 +294,45 @@ abstract class Control {
         $messages = $_SESSION['flash'] ?? [];
         unset($_SESSION['flash']);
         return $messages;
+    }
+
+    /**
+     * Stash the router's parsed params on the instance so opId()/opType() can
+     * read them. Called by FlightMap before dispatching the controller method.
+     */
+    public function setRouteParams(array $params) {
+        $this->routeParams = $params;
+    }
+
+    /**
+     * The URL "operation" segment — /class/method/<op>/<opid>. Scaffolded CRUD
+     * uses this as the record id (e.g. /product/edit/5 -> opId() === '5').
+     */
+    protected function opId() {
+        $op = $this->routeParams['operation'] ?? null;
+        if (is_object($op)) return $op->name ?? null;
+        if (is_array($op))  return $op['name'] ?? null;
+        return null;
+    }
+
+    /**
+     * The URL "opid" segment — /class/method/op/<opid>.
+     */
+    protected function opType() {
+        $op = $this->routeParams['operation'] ?? null;
+        if (is_object($op)) return $op->type ?? null;
+        if (is_array($op))  return $op['type'] ?? null;
+        return null;
+    }
+
+    /**
+     * Guard: require the request be POST. Halts with 405 otherwise.
+     */
+    protected function requirePost() {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            Flight::halt(405, 'Method Not Allowed');
+            return false;
+        }
+        return true;
     }
 }

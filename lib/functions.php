@@ -18,6 +18,36 @@ function csrf_field(): string {
 function csrf_token(): string {
     return \app\SimpleCsrf::getToken();
 }
+
+/**
+ * HTML-escape helper (shorthand for htmlspecialchars). Used by scaffolded views.
+ */
+function h($value): string {
+    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+}
+
+/**
+ * Translate helper. Passthrough for now (interpolates :placeholders but does not
+ * translate) — becomes the real translator when a lang system is wired in, at
+ * which point every t()-wrapped string (including scaffolded controllers) starts
+ * translating for free. Mirrors the dealeryes/Translatify t() signature.
+ */
+function t(string $string, array $params = []): string {
+    return $params ? strtr($string, $params) : $string;
+}
+
+// Fallback autoloader for RedBeanPHP FUSE models (models/Model_X.php). Composer's
+// classmap only knows models present at dump time, so a freshly scaffolded model
+// wouldn't attach its hooks until `composer dump-autoload`. This picks it up at
+// runtime instead — and stays per-instance (resolves relative to THIS app root),
+// so it never writes into a shared/symlinked vendor classmap the way a dump would.
+// Only fires for Model_* not already resolved by the classmap.
+spl_autoload_register(function (string $class): void {
+    if (strncmp($class, 'Model_', 6) !== 0) return;
+    $file = __DIR__ . '/../models/' . $class . '.php';
+    if (is_file($file)) require $file;
+});
+
 function getOptionValue($opts,$key) {
 	foreach($opts as $opt) {
 		if ($opt->key == $key) return($opt);

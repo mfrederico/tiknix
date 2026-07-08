@@ -163,13 +163,18 @@ R::close();
 // subprocesses. .mcp.json is gitignored, so we write it per provision.
 //   - tiknix:     codebase introspection (codebase_map / whatprovides / describe)
 //   - playwright: drive a headless browser to test its own layout/design work
+// Prefer the fastmcphp-backed server when fastmcphp is vendored (it handles the
+// JSON-RPC framing + schema encoding); fall back to the dependency-free
+// hand-rolled server otherwise. Selection is by presence, so instances light up
+// automatically once fastmcphp lands as a dev dependency — no re-provision.
+$tiknixMcp = is_dir("$ROOT/vendor/fastmcphp") ? 'mcptools/mcp-fastmcp.php' : 'mcptools/mcp-stdio.php';
 @file_put_contents("$ROOT/.mcp.json", json_encode([
     'mcpServers' => [
-        'tiknix'     => ['command' => 'php', 'args' => ['mcptools/mcp-stdio.php']],
+        'tiknix'     => ['command' => 'php', 'args' => [$tiknixMcp]],
         'playwright' => ['command' => 'npx', 'args' => ['-y', '@playwright/mcp@latest', '--headless', '--isolated']],
     ],
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-echo "  wrote .mcp.json (tiknix introspection + playwright browser MCP)\n";
+echo "  wrote .mcp.json (tiknix introspection [{$tiknixMcp}] + playwright browser MCP)\n";
 
 // --- 5) seed Hyperlift deploy files (Dockerfile + entrypoint) ---------------
 // So a freshly provisioned instance is publishable to Spaceship Hyperlift (or any

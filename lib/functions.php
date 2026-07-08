@@ -18,6 +18,49 @@ function csrf_field(): string {
 function csrf_token(): string {
     return \app\SimpleCsrf::getToken();
 }
+
+/**
+ * HTML-escape helper (shorthand for htmlspecialchars). Used by scaffolded views.
+ */
+if (!function_exists('h')) {
+    function h($value): string {
+        return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+    }
+}
+
+/**
+ * Translate helper — FALLBACK only. When the Translatify package is installed it
+ * files-autoloads its own t() first (dependency order), and this guard skips,
+ * so the real locale-aware translator wins. Without the package, this passthrough
+ * still interpolates :placeholders, so t()-wrapped code (scaffolded controllers,
+ * views) works either way. Same signature as Translatify's t().
+ */
+if (!function_exists('t')) {
+    function t(string $string, array $params = []): string {
+        if (!$params) return $string;
+        // Match Translatify semantics: vars are keyed WITHOUT the colon; a bare
+        // alphanumeric key `name` replaces the `:name` placeholder. Non-alnum keys
+        // are skipped (so we never eat a stray colon in the message).
+        $repl = [];
+        foreach ($params as $k => $v) {
+            if (is_string($k) && preg_match('/^[A-Za-z0-9_]+$/', $k)) $repl[':' . $k] = (string)$v;
+        }
+        return $repl ? strtr($string, $repl) : $string;
+    }
+}
+
+// Fallback autoloader for RedBeanPHP FUSE models (models/Model_X.php). Composer's
+// classmap only knows models present at dump time, so a freshly scaffolded model
+// wouldn't attach its hooks until `composer dump-autoload`. This picks it up at
+// runtime instead — and stays per-instance (resolves relative to THIS app root),
+// so it never writes into a shared/symlinked vendor classmap the way a dump would.
+// Only fires for Model_* not already resolved by the classmap.
+spl_autoload_register(function (string $class): void {
+    if (strncmp($class, 'Model_', 6) !== 0) return;
+    $file = __DIR__ . '/../models/' . $class . '.php';
+    if (is_file($file)) require $file;
+});
+
 function getOptionValue($opts,$key) {
 	foreach($opts as $opt) {
 		if ($opt->key == $key) return($opt);

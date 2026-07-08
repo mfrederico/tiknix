@@ -75,7 +75,7 @@ echo "  wrote $cfgRel + conf/config.ini (db: $dbRel)\n";
 // dir on first request, but if php-fpm gets there first the dir lands with the
 // wrong owner and the jailed agent (or vice-versa) can't write. Seeding them here
 // with 0775 keeps both writers happy. database/log = where [logging] file points;
-// storage = installed.lock + logs; uploads/{secure,public} = the two upload buckets.
+// storage = app logs/scratch; uploads/{secure,public} = the two upload buckets.
 foreach (['database/log', 'storage/logs', 'cache', 'log', 'uploads/secure', 'uploads/public'] as $rel) {
     $dir = "$ROOT/$rel";
     if (!is_dir($dir)) @mkdir($dir, 0775, true);
@@ -195,5 +195,13 @@ foreach (['Dockerfile', '.dockerignore', 'docker/entrypoint.sh'] as $rel) {
     }
 }
 echo "  seeded Dockerfile + docker/entrypoint.sh + .dockerignore (Hyperlift-ready)\n";
+
+// --- 6) seed the isolated sandbox rules DB (database/security.db) ------------
+// Runs in a subprocess (it boots the instance app to reach its own connections);
+// tolerant so it never blocks provisioning. Gives the jailed agent baseline
+// block/protect/allow rules instead of a permissive empty ruleset.
+@exec('php ' . escapeshellarg("$ROOT/scripts/seed-security.php") . ' 2>&1', $secOut, $secCode);
+echo '  ' . ($secCode === 0 ? (trim(implode(' ', $secOut)) ?: 'seeded security.db')
+                            : 'warn: security seed failed — run scripts/seed-security.php later') . "\n";
 
 echo "aibuilder-provision: done ($dbRel ready)\n";

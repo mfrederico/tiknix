@@ -16,11 +16,24 @@ abstract class Control {
     protected $logger;
     protected $member;
     protected $viewData = [];
-    
+    protected $routeParams = [];
+
     public function __construct() {
         $this->logger = Flight::get('log');
         $this->member = Flight::getMember();
-        
+
+        // i18n locale (no-op unless the Translatify package is installed). Locale
+        // comes from the member's preference, overridable per-request with ?lang=xx
+        // for testing; untranslated strings render their English source.
+        if (class_exists('\Translatify\Translator')) {
+            $locale = (string)($this->member->locale ?? '');
+            $qlang  = (string)(Flight::request()->query->lang ?? '');
+            if ($qlang !== '' && preg_match('/^[a-z]{2}(-[A-Z]{2})?$/', $qlang)) $locale = $qlang;
+            if (!preg_match('/^[a-z]{2}(-[A-Z]{2})?$/', $locale)) $locale = 'en';
+            \Translatify\Translator::register(dirname(__DIR__, 2) . '/lang')
+                ->setLocale($locale)->setFallback('en');
+        }
+
         // Initialize view data
         $this->viewData = [
             'member' => $this->member,
@@ -293,5 +306,56 @@ abstract class Control {
         $messages = $_SESSION['flash'] ?? [];
         unset($_SESSION['flash']);
         return $messages;
+    }
+
+    /**
+     * Stash the router's parsed params on the instance so opId()/opType() can
+     * read them. Called by FlightMap before dispatching the controller method.
+     */
+    public function setRouteParams(array $params) {
+        $this->routeParams = $params;
+    }
+
+    /**
+     * The URL "operation" segment — /class/method/<op>/<opid>. Scaffolded CRUD
+     * uses this as the record id (e.g. /product/edit/5 -> opId() === '5').
+     */
+    protected function opId() {
+        $op = $this->routeParams['operation'] ?? null;
+        if (is_object($op)) return $op->name ?? null;
+        if (is_array($op))  return $op['name'] ?? null;
+        return null;
+    }
+
+    /**
+     * The URL "opid" segment — /class/method/op/<opid>.
+     */
+    protected function opType() {
+        $op = $this->routeParams['operation'] ?? null;
+        if (is_object($op)) return $op->type ?? null;
+        if (is_array($op))  return $op['type'] ?? null;
+        return null;
+    }
+
+    /**
+     * Decode a JSON request body to an array (for API controllers). Returns null
+     * when the body is empty or not valid JSON.
+     */
+    protected function getJsonInput(): ?array {
+        $raw = file_get_contents('php://input');
+        if ($raw === '' || $raw === false) return null;
+        $data = json_decode($raw, true);
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * Guard: require the request be POST. Halts with 405 otherwise.
+     */
+    protected function requirePost() {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            Flight::halt(405, 'Method Not Allowed');
+            return false;
+        }
+        return true;
     }
 }

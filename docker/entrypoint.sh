@@ -71,6 +71,12 @@ elif [ ! -s database/tiknix.db ]; then
   echo "entrypoint: fresh install — open the site in a browser to complete first-run setup (/install)"
 fi
 
+# 3c) Seed the isolated Claude Code sandbox rules DB (database/security.db). Separate
+# from the main DB and always local SQLite; idempotent. Ensures the securitycontrol
+# table + baseline block/protect/allow rules exist so the jail isn't permissive-by-
+# default and the /admin dashboard card doesn't hit a missing table.
+php scripts/seed-security.php || echo "entrypoint: WARN seed-security.php failed"
+
 # 4) Make runtime paths writable by the web user.
 chown -R www-data:www-data database storage conf 2>/dev/null || true
 

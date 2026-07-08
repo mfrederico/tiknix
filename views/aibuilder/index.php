@@ -130,6 +130,7 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
             <span class="d-flex align-items-center gap-2">
               <span class="text-body-secondary small d-none d-md-inline"><i class="bi bi-shield-lock me-1"></i>Sandboxed to <?= htmlspecialchars($selected->slug) ?>.tiknix</span>
               <button id="ab-restart" class="btn btn-outline-secondary btn-sm" type="button" title="Restart the jailed session (applies updated sandbox settings)"><i class="bi bi-arrow-repeat me-1"></i>Restart</button>
+              <button id="ab-delete" class="btn btn-outline-danger btn-sm" type="button" title="Delete this instance (danger zone)"><i class="bi bi-trash me-1"></i>Delete</button>
             </span>
           </div>
           <div class="card-body p-2 bg-body-tertiary">
@@ -207,6 +208,33 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<!-- Danger-zone: delete instance -->
+<div class="modal fade" id="ab-delete-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Delete instance</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">This <strong>permanently deletes</strong> <code id="ab-del-domain"></code>. It:</p>
+        <ul class="small mb-3">
+          <li>kills the jailed session and removes the GitHub connector (the repo itself is kept)</li>
+          <li>archives the folder to <code>public/&lt;slug&gt;.zip</code> (config secrets stripped; vendor/.git excluded)</li>
+          <li>wipes everything else and removes it from the builder</li>
+        </ul>
+        <label class="form-label small mb-1">Type <code id="ab-del-domain2"></code> to confirm:</label>
+        <input id="ab-del-input" class="form-control" autocomplete="off" spellcheck="false">
+        <div id="ab-del-msg" class="small text-danger mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="ab-del-confirm" class="btn btn-danger" type="button" disabled><i class="bi bi-trash me-1"></i>Delete permanently</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 <script>
@@ -461,6 +489,36 @@ if (AB.has) {
       .catch(()=>{ m.textContent='Copy failed.'; });
     else m.textContent='Clipboard unavailable.';
   });
+
+  // --- Danger-zone: delete instance -----------------------------------------
+  (function(){
+    const btn = document.getElementById('ab-delete');
+    const modalEl = document.getElementById('ab-delete-modal');
+    if (!btn || !modalEl) return;
+    const domain = (AB.url||'').replace(/^https?:\/\//,'').replace(/\/$/,'');
+    const input = document.getElementById('ab-del-input');
+    const confirmBtn = document.getElementById('ab-del-confirm');
+    const msg = document.getElementById('ab-del-msg');
+    document.getElementById('ab-del-domain').textContent = domain;
+    document.getElementById('ab-del-domain2').textContent = domain;
+    input.placeholder = domain;
+    btn.addEventListener('click', function(){
+      input.value=''; msg.textContent=''; confirmBtn.disabled=true;
+      bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+    input.addEventListener('input', function(){ confirmBtn.disabled = (input.value.trim() !== domain); });
+    confirmBtn.addEventListener('click', function(){
+      confirmBtn.disabled = true; msg.textContent = 'Deleting…';
+      fetch('/aibuilder/delete', {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':AB.csrf,'X-Requested-With':'XMLHttpRequest'},
+        body:new URLSearchParams({id:AB.id, confirm:input.value.trim(), csrf_token:AB.csrf}).toString()
+      }).then(r=>r.json()).then(j=>{
+        if (j.success) { window.location = '/aibuilder'; }
+        else { msg.textContent = j.message || 'Delete failed.'; confirmBtn.disabled = false; }
+      }).catch(()=>{ msg.textContent = 'Network error.'; confirmBtn.disabled = false; });
+    });
+  })();
 
   // init
   setStatus('connecting…'); initTerminal(); refreshChanges(); loadCheckpoints(); loadPlans(); loadGhStatus(); loadUploads();

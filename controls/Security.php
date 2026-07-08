@@ -35,6 +35,18 @@ class Security extends Control {
             Bean::addDatabase('security', 'sqlite:' . $this->securityDbPath);
         }
         Bean::selectDatabase('security');
+        // Ensure the table exists even on a brand-new security.db that has never
+        // had a rule saved (RedBean only fluid-creates it on first store), so reads
+        // never hit "no such table". Cheap, idempotent, once per request.
+        static $ensured = false;
+        if (!$ensured) {
+            \RedBeanPHP\R::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT, target TEXT, action TEXT, pattern TEXT,
+                level INTEGER, description TEXT, priority INTEGER,
+                is_active INTEGER, created_at NUMERIC)');
+            $ensured = true;
+        }
     }
 
     /**

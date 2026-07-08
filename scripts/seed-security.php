@@ -26,22 +26,22 @@ if (php_sapi_name() !== 'cli') {
 }
 
 chdir(dirname(__DIR__));
-require_once __DIR__ . '/../bootstrap.php';
+// Standalone: RedBean straight onto the local security.db — no app bootstrap and
+// no main database, so this runs reliably in the container entrypoint regardless
+// of the main DB / DB_DSN state (it only ever touches security.db).
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use RedBeanPHP\R;
-use app\Bean;
-
-new \app\Bootstrap(); // main connection (not used for the write, but boots config/log)
 
 $projectRoot    = dirname(__DIR__);
 $securityDbPath = $projectRoot . '/database/security.db';
 @mkdir(dirname($securityDbPath), 0775, true);
 
-// Switch to the isolated security DB (register once, then select).
-if (!array_key_exists('security', R::$toolboxes ?? [])) {
-    Bean::addDatabase('security', 'sqlite:' . $securityDbPath);
+R::setup('sqlite:' . $securityDbPath);
+if (!R::testConnection()) {
+    fwrite(STDERR, "seed-security: cannot open {$securityDbPath}\n");
+    exit(1);
 }
-Bean::selectDatabase('security');
 
 // 1) Ensure the table exists (matches the schema RedBean produces).
 R::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
@@ -106,6 +106,6 @@ foreach ($defaults as [$name, $target, $action, $pattern, $level, $priority]) {
     $added++;
 }
 
-Bean::selectDatabase('default');
+R::close();
 
 echo "seed-security: {$added} rule(s) added, {$skipped} already present ({$securityDbPath})\n";

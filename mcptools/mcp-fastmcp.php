@@ -27,9 +27,8 @@ declare(strict_types=1);
 
 use Fastmcphp\Fastmcphp;
 use Fastmcphp\Server\Transport\StdioTransport;
-use app\mcptools\CodebaseMapTool;
-use app\mcptools\DescribeTool;
-use app\mcptools\WhatProvidesTool;
+use app\mcptools\ToolLoader;
+use app\mcptools\LocalMcpServer;
 
 $root = dirname(__DIR__);
 
@@ -49,34 +48,16 @@ if (!class_exists(Fastmcphp::class)) {
     exit(1);
 }
 
-$mcp = new Fastmcphp(
-    name: 'tiknix-introspect',
-    version: '0.1.0',
-    instructions: 'Deterministic, read-only introspection of this tiknix codebase. '
+// Register tiknix's local tools via the shared builder (same registration path
+// the HTTP Mcp gateway uses). Scoped to the read-only introspection + plan tools
+// — the same allow-list as mcp-stdio.php, so the two servers are interchangeable.
+$loader = new ToolLoader($root . '/mcptools');
+$mcp = LocalMcpServer::build($loader, [
+    'name'    => 'tiknix-introspect',
+    'version' => '0.1.0',
+    'instructions' => 'Deterministic, read-only introspection of this tiknix codebase. '
         . 'Call codebase_map first to orient, then describe(name) / whatprovides(concept) to drill down.',
-);
-
-// codebase_map — no arguments.
-$mcp->tool(
-    callable: fn(): string => (new CodebaseMapTool())->execute([]),
-    name: 'codebase_map',
-    description: CodebaseMapTool::$description,
-);
-
-// describe(name).
-$mcp->tool(
-    callable: fn(string $name): string => (new DescribeTool())->execute(['name' => $name]),
-    name: 'describe',
-    description: DescribeTool::$description,
-);
-
-// whatprovides(concept). Mirrors mcp-stdio.php: exposes concept only (the tool
-// applies Introspector's default limit).
-$mcp->tool(
-    callable: fn(string $concept): string => (new WhatProvidesTool())->execute(['concept' => $concept]),
-    name: 'whatprovides',
-    description: WhatProvidesTool::$description,
-);
+], ['codebase_map', 'describe', 'whatprovides', 'submit_plan']);
 
 // Force the pure-PHP blocking loop (fgets on STDIN) instead of the default
 // swoole coroutine path. In a jail with (open)swoole loaded, the coroutine

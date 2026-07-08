@@ -54,6 +54,8 @@ $longopts = [
     'build', 'fresh', 'list', 'describe:', 'sql:', 'exec:',
     // scaffold (code generation)
     'wizard', 'scaffold:',
+    // i18n
+    'i18n-scan',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
     'status:', 'set-password:', 'set-level:', 'reset-2fa', 'delete-user',
@@ -283,6 +285,19 @@ if (isset($opt['scaffold'])) {
     exit(0);
 }
 
+// --- i18n: --i18n-scan (harvest t() strings into lang/en.json) --------------
+if (isset($opt['i18n-scan'])) {
+    if (!class_exists('\Translatify\Scanner')) bail('translatify package not installed (composer require translatify/translatify)');
+    $root = dirname(__DIR__);
+    $langDir = $root . '/lang';
+    if (!is_dir($langDir)) @mkdir($langDir, 0755, true);
+    $roots = ["$root/views", "$root/controls", "$root/services", "$root/lib"];
+    if ($DRYRUN) { out('# dry-run: would scan ' . implode(', ', $roots)); exit(0); }
+    $result = (new \Translatify\Scanner())->syncToLocale(new \Translatify\Editor($langDir), $roots, 'en');
+    out("# i18n-scan: {$result['total']} unique strings, " . count($result['added']) . ' new key(s) added to en.json');
+    exit(0);
+}
+
 // --- Beans: generic read ops ------------------------------------------------
 if (isset($opt['bean'])) {
     $type = Bean::normalize($opt['bean']);
@@ -334,6 +349,9 @@ SCAFFOLD (code generation)
   --wizard                       Interactive model/CRUD wizard
   --scaffold=PARTS --bean=TYPE   Generate PARTS (model,controller,view,api | all) for a bean
                                  e.g. --scaffold=all --bean=product
+
+I18N
+  --i18n-scan                    Harvest t('…') strings from source into lang/en.json
 
 BEANS (read-mostly, generic)
   --bean=TYPE --getall [--where="col = ?" --data=VAL] [--order="id DESC"] [--limit=N]

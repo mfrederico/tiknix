@@ -97,6 +97,13 @@
                     <p class="mb-1">View cache statistics and clear caches (APCu, OPcache, Query Cache)</p>
                 </a>
 
+                <a href="/translations" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1"><i class="bi bi-translate"></i> Translations</h5>
+                    </div>
+                    <p class="mb-1">Edit UI translations and manage locales (i18n)</p>
+                </a>
+
                 <a href="/security" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1"><i class="bi bi-shield-lock"></i> Security Sandbox Rules</h5>

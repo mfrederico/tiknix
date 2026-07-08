@@ -62,6 +62,7 @@ $defaults = [
 
     // Admin (50)
     ['admin', '*', 50, 'Admin panel access'],
+    ['translations', '*', 50, 'Translations editor (i18n)'],
     ['aibuilder', '*', 50, 'AI Builder'],
     ['permissions', '*', 50, 'Permission management'],
     ['contact', 'admin', 50, 'View contact messages'],

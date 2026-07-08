@@ -1,1 +1,5 @@
-{}
+{
+    "Locale ':code' created": "Locale ':code' created",
+    "Scan failed: :error": "Scan failed: :error",
+    "Scanned source — :total unique strings, :added new key(s) added to en.json": "Scanned source — :total unique strings, :added new key(s) added to en.json"
+}

@@ -84,17 +84,15 @@ abstract class BaseTool {
      * @return array Tool definition with name, description, inputSchema
      */
     public static function getDefinition(): array {
-        $schema = static::$inputSchema;
-        // JSON Schema requires `properties` to be an object. An empty PHP array
-        // json-encodes to [] (array), which strict MCP clients reject with
-        // "expected record, received array". Force {} for the no-argument case.
-        if (empty($schema['properties'])) {
-            $schema['properties'] = new \stdClass();
-        }
+        // Returns the raw definition. The empty-properties → {} normalization that
+        // strict MCP clients require ("expected record, received array") lives in
+        // ToolLoader::normalizeDefinition(), the single choke point every
+        // hand-rolled tools/list consumer flows through. (The fastmcphp-backed
+        // server builds its own schema and never calls this.)
         $def = [
             'name' => static::$name,
             'description' => static::$description,
-            'inputSchema' => $schema
+            'inputSchema' => static::$inputSchema
         ];
 
         if (!empty(static::$annotations)) {

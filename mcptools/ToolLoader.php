@@ -112,7 +112,7 @@ class ToolLoader {
                     $name = $className::$name;
                     if ($name) {
                         $this->tools[$name] = $className;
-                        $this->definitions[$name] = $className::getDefinition();
+                        $this->definitions[$name] = $this->normalizeDefinition($className::getDefinition());
                     }
                 }
             }
@@ -215,6 +215,25 @@ class ToolLoader {
      */
     public function getDefinition(string $name): ?array {
         return $this->definitions[$name] ?? null;
+    }
+
+    /**
+     * JSON Schema requires inputSchema.properties to be an object. An empty PHP
+     * array json-encodes to [] (array), which strict MCP clients reject with
+     * "expected record, received array". Normalize the no-argument case to {}
+     * here — the single point every hand-rolled tools/list consumer
+     * (mcp-stdio.php, the HTTP Mcp controller, admin UIs) flows through.
+     *
+     * @param array $def Tool definition from BaseTool::getDefinition()
+     * @return array Definition with an object (not array) empty properties
+     */
+    private function normalizeDefinition(array $def): array {
+        if (isset($def['inputSchema']['properties']) &&
+            is_array($def['inputSchema']['properties']) &&
+            empty($def['inputSchema']['properties'])) {
+            $def['inputSchema']['properties'] = (object)[];
+        }
+        return $def;
     }
 
     /**

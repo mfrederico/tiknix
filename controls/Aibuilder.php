@@ -409,6 +409,105 @@ class Aibuilder extends Control {
         Flight::jsonSuccess([], 'Session restarted — reconnecting');
     }
 
+    /**
+     * POST /aibuilder/delete — danger-zone delete. The caller must type the
+     * instance's full domain (slug.tiknix.com) to confirm. Kills the jailed
+     * session, unlinks any GitHub connector (the remote repo is left intact),
+     * archives the folder to a tombstone zip in a fresh public/, wipes everything
+     * else, and removes the instance + connector DB records. JSON.
+     */
+    public function delete($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+
+        $inst = R::load('instance', (int)$this->getParam('id', 0));
+        if (!$inst->id) { Flight::jsonError('No such instance', 404); return; }
+        if ((int)$inst->memberId !== (int)$this->member->id && !Flight::hasLevel(LEVELS['ROOT'])) {
+            Flight::jsonError('Not your instance', 403); return;
+        }
+        if (!empty($inst->isDefault)) { Flight::jsonError('The (default) core instance cannot be deleted here.', 403); return; }
+
+        $slug = (string)$inst->slug;
+        if (!preg_match(self::SLUG_RE, $slug)) { Flight::jsonError('Invalid instance slug', 400); return; }
+        $domain = $slug . '.' . self::APP . '.com';
+        if (!hash_equals($domain, trim((string)$this->getParam('confirm', '')))) {
+            Flight::jsonError('Confirmation does not match — type "' . $domain . '" exactly.', 400); return;
+        }
+
+        $dir = $this->instanceDir($slug);
+        // Hard safety before any destructive fs op: canonical path + a dot in the
+        // basename (every instance dir is "slug.app"; the source app dir is not).
+        if ($dir !== '/var/www/html/default/' . $slug . '.' . self::APP || strpos(basename($dir), '.') === false) {
+            Flight::jsonError('Refusing to delete: path failed validation', 400); return;
+        }
+
+        $steps = [];
+
+        // 1) Kill the jailed session (same mechanism as restart).
+        $sock = $dir . '/.aibuilder/tmux.sock';
+        if (@file_exists($sock)) { @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1'); $steps[] = 'killed jailed session'; }
+
+        // 2) Unlink GitHub connector(s). The remote repo itself is left untouched.
+        $conns = R::find('connections', 'instance_id = ?', [(int)$inst->id]);
+        if ($conns) { R::trashAll($conns); $steps[] = 'removed ' . count($conns) . ' connector(s)'; }
+
+        // 3) Archive + wipe, leaving a tombstone zip in a fresh public/.
+        if (is_dir($dir)) {
+            $res = $this->archiveInstance($dir, $slug);
+            if (!$res['ok']) { Flight::jsonError('Archive failed: ' . $res['error'], 500); return; }
+            $steps[] = $res['message'];
+        } else {
+            $steps[] = 'folder already absent';
+        }
+
+        // 4) Drop the instance record.
+        R::trash($inst);
+        $steps[] = 'removed instance record';
+
+        $this->logger->warning('aibuilder instance deleted', ['slug' => $slug, 'by' => (int)$this->member->id, 'steps' => $steps]);
+        Flight::jsonSuccess(['slug' => $slug, 'steps' => $steps], 'Deleted ' . $domain);
+    }
+
+    /**
+     * Archive an instance folder to public/slug.zip, then wipe. Excludes the big
+     * regenerable dirs (vendor, node_modules, .git); swaps real conf/*.ini for the
+     * matching .example.ini (or drops a secret-bearing .ini with no example) so the
+     * web-served archive never carries live credentials.
+     */
+    private function archiveInstance(string $dir, string $slug): array {
+        // (a) Neutralize secrets: real conf/*.ini -> its .example.ini.
+        foreach (glob($dir . '/conf/*.ini') ?: [] as $ini) {
+            if (substr($ini, -12) === '.example.ini') continue;
+            $example = substr($ini, 0, -4) . '.example.ini';
+            if (is_file($example)) @copy($example, $ini);
+            else                   @unlink($ini);
+        }
+
+        // (b) Zip everything except the heavy regenerable dirs.
+        $tmpZip = sys_get_temp_dir() . '/' . $slug . '-' . date('Ymd-His') . '.zip';
+        @unlink($tmpZip);
+        $cmd = 'cd ' . escapeshellarg($dir) . ' && zip -r -q ' . escapeshellarg($tmpZip)
+             . " . -x 'vendor/*' 'node_modules/*' '.git/*'";
+        $out = []; $code = 0; @exec($cmd . ' 2>&1', $out, $code);
+        if (!is_file($tmpZip)) {
+            return ['ok' => false, 'error' => 'zip produced no archive: ' . implode(' ', array_slice($out, -2))];
+        }
+
+        // (c) Wipe the folder, then recreate an empty public/.
+        @exec('rm -rf ' . escapeshellarg($dir) . ' 2>&1');
+        if (!@mkdir($dir . '/public', 0775, true) && !is_dir($dir . '/public')) {
+            return ['ok' => false, 'error' => 'could not recreate public/ (archive kept at ' . $tmpZip . ')'];
+        }
+
+        // (d) Drop the tombstone zip into public/.
+        $dest = $dir . '/public/' . $slug . '.zip';
+        if (!@rename($tmpZip, $dest)) { @copy($tmpZip, $dest); @unlink($tmpZip); }
+        @chmod($dest, 0644);
+
+        $kb = (int)round((@filesize($dest) ?: 0) / 1024);
+        return ['ok' => true, 'message' => 'archived to public/' . $slug . '.zip (' . $kb . ' KB)'];
+    }
+
     // --- Uploads: secure (private/gitignored) + public (published) ------------
 
     private const UPLOAD_MAX = 52428800; // 50 MB per file

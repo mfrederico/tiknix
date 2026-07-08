@@ -21,7 +21,19 @@ abstract class Control {
     public function __construct() {
         $this->logger = Flight::get('log');
         $this->member = Flight::getMember();
-        
+
+        // i18n locale (no-op unless the Translatify package is installed). Locale
+        // comes from the member's preference, overridable per-request with ?lang=xx
+        // for testing; untranslated strings render their English source.
+        if (class_exists('\Translatify\Translator')) {
+            $locale = (string)($this->member->locale ?? '');
+            $qlang  = (string)(Flight::request()->query->lang ?? '');
+            if ($qlang !== '' && preg_match('/^[a-z]{2}(-[A-Z]{2})?$/', $qlang)) $locale = $qlang;
+            if (!preg_match('/^[a-z]{2}(-[A-Z]{2})?$/', $locale)) $locale = 'en';
+            \Translatify\Translator::register(dirname(__DIR__, 2) . '/lang')
+                ->setLocale($locale)->setFallback('en');
+        }
+
         // Initialize view data
         $this->viewData = [
             'member' => $this->member,

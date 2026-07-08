@@ -84,14 +84,14 @@ class <?=$ctx->className?> extends BaseControls\Control {
 
         $id = $this->opId();
         if (!$id) {
-            $this->flash('error', t('No :name specified', [':name' => '<?=$ctx->beanName?>']));
+            $this->flash('error', t('No :name specified', ['name' => '<?=$ctx->beanName?>']));
             Flight::redirect('/<?=$ctx->beanName?>');
             return;
         }
 
         $bean = Bean::load('<?=$ctx->beanName?>', $id);
         if (!$bean->id) {
-            $this->flash('error', t(':name not found', [':name' => '<?=$ctx->className?>']));
+            $this->flash('error', t(':name not found', ['name' => '<?=$ctx->className?>']));
             Flight::redirect('/<?=$ctx->beanName?>');
             return;
         }
@@ -102,10 +102,10 @@ class <?=$ctx->className?> extends BaseControls\Control {
 
             try {
                 Bean::store($bean);
-                $this->flash('success', t(':name updated successfully', [':name' => '<?=$ctx->className?>']));
+                $this->flash('success', t(':name updated successfully', ['name' => '<?=$ctx->className?>']));
                 Flight::redirect('/<?=$ctx->beanName?>');
             } catch (\Exception $e) {
-                $this->flash('error', t('Error: :message', [':message' => $e->getMessage()]));
+                $this->flash('error', t('Error: :message', ['message' => $e->getMessage()]));
             }
         }
 
@@ -132,10 +132,10 @@ class <?=$ctx->className?> extends BaseControls\Control {
 
         try {
             $id = Bean::store($bean);
-            $this->flash('success', t(':name created successfully', [':name' => '<?=$ctx->className?>']));
+            $this->flash('success', t(':name created successfully', ['name' => '<?=$ctx->className?>']));
             Flight::redirect('/<?=$ctx->beanName?>/edit/' . $id);
         } catch (\Exception $e) {
-            $this->flash('error', t('Error: :message', [':message' => $e->getMessage()]));
+            $this->flash('error', t('Error: :message', ['message' => $e->getMessage()]));
             Flight::redirect('/<?=$ctx->beanName?>/create');
         }
     }
@@ -148,29 +148,29 @@ class <?=$ctx->className?> extends BaseControls\Control {
 
         $id = $this->opId();
         if (!$id) {
-            $this->jsonError(t('No :name specified', [':name' => '<?=$ctx->beanName?>']));
+            $this->jsonError(t('No :name specified', ['name' => '<?=$ctx->beanName?>']));
             return;
         }
 
         $bean = Bean::load('<?=$ctx->beanName?>', $id);
         if (!$bean->id) {
-            $this->jsonError(t(':name not found', [':name' => '<?=$ctx->className?>']));
+            $this->jsonError(t(':name not found', ['name' => '<?=$ctx->className?>']));
             return;
         }
 
         try {
             Bean::trash($bean);
             if (Flight::request()->ajax) {
-                $this->jsonSuccess([], t(':name deleted', [':name' => '<?=$ctx->className?>']));
+                $this->jsonSuccess([], t(':name deleted', ['name' => '<?=$ctx->className?>']));
             } else {
-                $this->flash('success', t(':name deleted', [':name' => '<?=$ctx->className?>']));
+                $this->flash('success', t(':name deleted', ['name' => '<?=$ctx->className?>']));
                 Flight::redirect('/<?=$ctx->beanName?>');
             }
         } catch (\Exception $e) {
             if (Flight::request()->ajax) {
                 $this->jsonError($e->getMessage());
             } else {
-                $this->flash('error', t('Error: :message', [':message' => $e->getMessage()]));
+                $this->flash('error', t('Error: :message', ['message' => $e->getMessage()]));
                 Flight::redirect('/<?=$ctx->beanName?>');
             }
         }
@@ -186,7 +186,7 @@ class <?=$ctx->className?> extends BaseControls\Control {
         $bean = Bean::load('<?=$ctx->beanName?>', $id);
 
         if (!$bean->id) {
-            $this->jsonError(t(':name not found', [':name' => '<?=$ctx->className?>']));
+            $this->jsonError(t(':name not found', ['name' => '<?=$ctx->className?>']));
             return;
         }
 

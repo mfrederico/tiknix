@@ -22,18 +22,31 @@ function csrf_token(): string {
 /**
  * HTML-escape helper (shorthand for htmlspecialchars). Used by scaffolded views.
  */
-function h($value): string {
-    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+if (!function_exists('h')) {
+    function h($value): string {
+        return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+    }
 }
 
 /**
- * Translate helper. Passthrough for now (interpolates :placeholders but does not
- * translate) — becomes the real translator when a lang system is wired in, at
- * which point every t()-wrapped string (including scaffolded controllers) starts
- * translating for free. Mirrors the dealeryes/Translatify t() signature.
+ * Translate helper — FALLBACK only. When the Translatify package is installed it
+ * files-autoloads its own t() first (dependency order), and this guard skips,
+ * so the real locale-aware translator wins. Without the package, this passthrough
+ * still interpolates :placeholders, so t()-wrapped code (scaffolded controllers,
+ * views) works either way. Same signature as Translatify's t().
  */
-function t(string $string, array $params = []): string {
-    return $params ? strtr($string, $params) : $string;
+if (!function_exists('t')) {
+    function t(string $string, array $params = []): string {
+        if (!$params) return $string;
+        // Match Translatify semantics: vars are keyed WITHOUT the colon; a bare
+        // alphanumeric key `name` replaces the `:name` placeholder. Non-alnum keys
+        // are skipped (so we never eat a stray colon in the message).
+        $repl = [];
+        foreach ($params as $k => $v) {
+            if (is_string($k) && preg_match('/^[A-Za-z0-9_]+$/', $k)) $repl[':' . $k] = (string)$v;
+        }
+        return $repl ? strtr($string, $repl) : $string;
+    }
 }
 
 // Fallback autoloader for RedBeanPHP FUSE models (models/Model_X.php). Composer's

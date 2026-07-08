@@ -21,10 +21,10 @@
         "symfony/http-client": "^6.0",
         "nyholm/psr7": "^1.5",
         "pragmarx/google2fa": "^8.0",
-        "bacon/bacon-qr-code": "^3.0"
+        "bacon/bacon-qr-code": "^3.0",
+        "fastmcphp/fastmcphp": "^0.1"
     },
     "require-dev": {
-        "fastmcphp/fastmcphp": "^0.1",
         "phpunit/phpunit": "^9.5",
         "squizlabs/php_codesniffer": "^3.7"
     },

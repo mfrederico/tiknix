@@ -362,6 +362,27 @@ class Mcp extends BaseControls\Control {
     }
 
     /**
+     * The fastmcphp Server exposing this gateway's own (local) tiknix tools.
+     *
+     * Built once from the shared LocalMcpServer builder — the SAME registration
+     * path the stdio server (mcp-fastmcp.php) uses — so local tools are defined
+     * one way across every transport. The adapters reference $this->toolLoader,
+     * so auth set via setAuth() before a call flows through. Remote/proxied
+     * servers are composed on top of this via the server:tool prefix scheme.
+     */
+    private ?\Fastmcphp\Server\Server $localMcp = null;
+
+    private function localMcpServer(): \Fastmcphp\Server\Server {
+        if ($this->localMcp === null) {
+            $this->localMcp = \app\mcptools\LocalMcpServer::build($this->toolLoader, [
+                'name'    => self::SERVER_NAME,
+                'version' => '1.0.0',
+            ])->getServer();
+        }
+        return $this->localMcp;
+    }
+
+    /**
      * Main MCP message endpoint
      * POST /mcp/message
      */
@@ -772,12 +793,15 @@ class Mcp extends BaseControls\Control {
     private function handleToolsList(mixed $id): void {
         $toolList = [];
 
-        // Add built-in Tiknix tools from ToolLoader (prefixed with tiknix:)
-        foreach ($this->toolLoader->getDefinitions() as $toolDef) {
+        // Local tiknix tools, sourced from the shared fastmcphp server (prefixed
+        // with tiknix:). fastmcphp emits a spec-compliant inputSchema ({} not []),
+        // so no post-fix is needed for these.
+        foreach ($this->localMcpServer()->getTools() as $tool) {
+            $def = $tool->toMcpTool();
             $toolList[] = [
-                'name' => 'tiknix:' . $toolDef['name'],
-                'description' => '[Tiknix] ' . $toolDef['description'],
-                'inputSchema' => $toolDef['inputSchema']
+                'name' => 'tiknix:' . $def['name'],
+                'description' => '[Tiknix] ' . $def['description'],
+                'inputSchema' => $def['inputSchema']
             ];
         }
 
@@ -1022,21 +1046,31 @@ class Mcp extends BaseControls\Control {
         ]);
 
         try {
+            $isError = false;
+
             // Route to built-in Tiknix tools or proxy to backend
             if ($serverSlug === 'tiknix') {
-                // Built-in Tiknix tools via ToolLoader
+                // Local tiknix tools via the shared fastmcphp server. Auth is set
+                // on the shared ToolLoader the adapters delegate to.
                 $this->toolLoader->setAuth($this->authMember, $this->authApiKey);
 
-                if (!$this->toolLoader->has($toolName)) {
+                $tools = $this->localMcpServer()->getTools();
+                if (!isset($tools[$toolName])) {
                     throw new \Exception("Unknown Tiknix tool: {$toolName}");
                 }
-                $result = $this->toolLoader->execute($toolName, $arguments);
+                $toolResult = $tools[$toolName]->execute($arguments);
+                $result = $toolResult->content[0]->text ?? '';
+                $isError = $toolResult->isError;
             } else {
                 // Proxy to backend server
                 $result = $this->proxyToolCall($serverSlug, $toolName, $arguments);
             }
 
-            $this->sendToolResult($id, $result);
+            $this->sendToolResult($id, $result, $isError);
+            if ($isError) {
+                $responseStatus = 'error';
+                $errorMessage = $result;
+            }
 
         } catch (\Exception $e) {
             $responseStatus = 'error';

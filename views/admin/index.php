@@ -108,11 +108,20 @@
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1"><i class="bi bi-shield-lock"></i> Security Sandbox Rules</h5>
                         <?php
-                        // Connect to security database temporarily
+                        // Connect to security database temporarily. Guard on the
+                        // TABLE, not just the file: a fresh instance can have an
+                        // empty security.db (table lazily created on first rule /
+                        // by seed-security.php), so query defensively -> 0.
                         $securityDbPath = dirname(dirname(__DIR__)) . '/database/security.db';
+                        $ruleCount = 0;
                         if (file_exists($securityDbPath)) {
-                            $secDb = new \PDO('sqlite:' . $securityDbPath);
-                            $ruleCount = $secDb->query('SELECT COUNT(*) FROM securitycontrol WHERE is_active = 1')->fetchColumn();
+                            try {
+                                $secDb = new \PDO('sqlite:' . $securityDbPath);
+                                $secDb->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+                                $ruleCount = (int) $secDb->query('SELECT COUNT(*) FROM securitycontrol WHERE is_active = 1')->fetchColumn();
+                            } catch (\Throwable $e) {
+                                $ruleCount = 0; // table not initialized yet
+                            }
                         } else {
                             $ruleCount = 0;
                         }

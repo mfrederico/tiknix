@@ -196,4 +196,12 @@ foreach (['Dockerfile', '.dockerignore', 'docker/entrypoint.sh'] as $rel) {
 }
 echo "  seeded Dockerfile + docker/entrypoint.sh + .dockerignore (Hyperlift-ready)\n";
 
+// --- 6) seed the isolated sandbox rules DB (database/security.db) ------------
+// Runs in a subprocess (it boots the instance app to reach its own connections);
+// tolerant so it never blocks provisioning. Gives the jailed agent baseline
+// block/protect/allow rules instead of a permissive empty ruleset.
+@exec('php ' . escapeshellarg("$ROOT/scripts/seed-security.php") . ' 2>&1', $secOut, $secCode);
+echo '  ' . ($secCode === 0 ? (trim(implode(' ', $secOut)) ?: 'seeded security.db')
+                            : 'warn: security seed failed — run scripts/seed-security.php later') . "\n";
+
 echo "aibuilder-provision: done ($dbRel ready)\n";

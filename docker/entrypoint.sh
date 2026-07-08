@@ -52,11 +52,18 @@ if [ -z "${APP_KEY:-}" ] && [ "$KEYSRC" != "existing config" ]; then
   echo "entrypoint: WARNING — no APP_KEY env set; encrypted data will not survive a redeploy."
 fi
 
-# 3) Initialize the SQLite database on first boot only. Idempotent: if database/ is a
-# persistent volume, the .db survives redeploys and this init is skipped (so your data
-# — and the completed install — persist). Mount a volume at /var/www/html/database.
+# 3) Initialize the database. Idempotent on every start.
 mkdir -p database storage/logs
-if [ ! -s database/tiknix.db ]; then
+if [ -n "${DB_DSN:-}" ]; then
+  # Remote/explicit DB (MySQL/Postgres, or an explicit sqlite path): seed via the
+  # dialect-agnostic bean seeder — RedBean emits the right DDL for the backend.
+  # Idempotent, so it safely tops up an existing db on every redeploy.
+  echo "entrypoint: seeding database via DB_DSN ($(printf '%s' "$DB_DSN" | sed -E 's#://[^@/]*@#://***@#'))"
+  php scripts/reseed.php || echo "entrypoint: WARN reseed.php failed"
+elif [ ! -s database/tiknix.db ]; then
+  # SQLite first boot only. If database/ is a persistent volume, the .db survives
+  # redeploys and this is skipped (data + completed install persist). Mount a
+  # volume at /var/www/html/database.
   echo "entrypoint: initializing database/tiknix.db"
   for f in sql/schema.sql sql/workbench_schema.sql sql/map_permissions.sql; do
     [ -f "$f" ] && sqlite3 database/tiknix.db < "$f" || true

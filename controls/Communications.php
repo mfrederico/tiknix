@@ -181,9 +181,10 @@ class Communications extends BaseControls\Control {
             ->to($toEmail, $toName)
             ->subject($subject)
             ->owner((int)$thread->ownerMemberId)
+            ->onThread($id)
             ->inReplyTo($inReplyTo, $prevRefs);
 
-        // Keep the reply on THIS thread via the same polymorphic key.
+        // Preserve the polymorphic related-entity link on the outbound row.
         if ($thread->relatedType && $thread->relatedId) {
             $svc->relatedTo((string)$thread->relatedType, (int)$thread->relatedId);
         }

@@ -54,6 +54,7 @@ class NotifyService {
     private ?string $relatedType   = null;
     private ?int    $relatedId     = null;
     private ?int    $ownerMemberId = null;
+    private ?int    $threadId      = null;
 
     private ?string $inReplyTo      = null;
     /** @var array<string> */
@@ -193,6 +194,16 @@ class NotifyService {
         return $this;
     }
 
+    /**
+     * Continue an existing conversation by id — the reliable way for inbox
+     * replies to stay on the same thread even when it has no related entity.
+     * Takes precedence over the (relatedType, relatedId) reuse key.
+     */
+    public function onThread(int $threadId): self {
+        $this->threadId = $threadId ?: null;
+        return $this;
+    }
+
     /** RFC-5322 threading on replies. */
     public function inReplyTo(?string $messageId, array $prevReferences = []): self {
         $this->inReplyTo      = $messageId;
@@ -219,6 +230,15 @@ class NotifyService {
      * one-shot sends.
      */
     private function resolveThread(): object {
+        // Explicit thread id wins — inbox replies continue a known conversation
+        // even when it carries no polymorphic related entity.
+        if ($this->threadId !== null) {
+            $existing = Bean::load('emailthread', $this->threadId);
+            if ($existing && $existing->id) {
+                return $existing;
+            }
+        }
+
         if ($this->relatedType !== null && $this->relatedId !== null) {
             $existing = Bean::findOne(
                 'emailthread',

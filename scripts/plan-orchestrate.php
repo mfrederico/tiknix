@@ -55,6 +55,14 @@ for ($i = 0; $i < $maxTicks; $i++) {
     sleep(10);
 }
 
+// Apply DB seed scripts the plan introduced + rebuild the permission cache, but
+// only for a plan that actually completed (a stalled plan is incomplete).
+if (empty($res['stalled'])) {
+    foreach ($ex->finalize() as $line) {
+        echo "[orchestrator] finalize: $line\n";
+    }
+}
+
 $parent = R::load('workbenchtask', $planId);
 $parent->planStatus = !empty($res['stalled']) ? 'stalled' : 'done';
 $parent->updatedAt  = date('Y-m-d H:i:s');

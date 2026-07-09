@@ -219,8 +219,16 @@ class Workbench extends Control {
             return;
         }
 
-        // Sync tmux status to database for running tasks
-        if ($task->status === 'running') {
+        // Sync tmux status to database for running tasks.
+        // Plan-decompose subtasks are owned by PlanExecutor (separate worktree +
+        // "tiknix-plan<N>-task<M>" session), NOT by ClaudeRunner. Never let this
+        // view's poller touch them — its ClaudeRunner session name won't match, so
+        // exists() returns false and it would race the executor by force-failing a
+        // live subtask.
+        $isPlanManaged = !empty($task->planRef)
+            || !empty($task->worktreeBranch)
+            || strncmp((string)$task->agentSession, 'tiknix-plan', 11) === 0;
+        if (!$isPlanManaged && $task->status === 'running') {
             $workspacePath = $task->projectPath ?: Flight::get('project_root');
             $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
 

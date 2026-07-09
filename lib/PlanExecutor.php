@@ -92,6 +92,50 @@ class PlanExecutor {
         return ['done' => $done || $stalled, 'stalled' => $stalled, 'counts' => $counts, 'total' => $total];
     }
 
+    /**
+     * Post-build: apply the DB seed scripts the plan introduced (database/seeds/*.php)
+     * against the LIVE instance, then rebuild the permission cache. Plan branches never
+     * carry the binary DB (reapTask discards it), so DB / permission changes are
+     * expressed as committed, idempotent seed scripts and applied here — once, ledgered
+     * so a resumed orchestrator never double-applies. Returns human-readable log lines.
+     */
+    public function finalize(): array {
+        $log = [];
+        $seedDir    = $this->instanceDir . '/database/seeds';
+        $ledgerFile = $this->instanceDir . '/.aibuilder/plan-' . $this->planId . '-seeds.txt';
+        $applied    = is_file($ledgerFile)
+            ? array_values(array_filter(array_map('trim', explode("\n", (string)file_get_contents($ledgerFile)))))
+            : [];
+        $appliedSet = array_flip($applied);
+
+        if (is_dir($seedDir)) {
+            $seeds = glob($seedDir . '/*.php') ?: [];
+            sort($seeds);
+            foreach ($seeds as $seed) {
+                $name = basename($seed);
+                if (isset($appliedSet[$name])) { $log[] = "seed {$name}: already applied"; continue; }
+                $out = []; $code = 0;
+                exec('cd ' . escapeshellarg($this->instanceDir) . ' && php ' . escapeshellarg($seed) . ' 2>&1', $out, $code);
+                $tail = trim(implode(' ', array_slice($out, -2)));
+                $log[] = "seed {$name}: " . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
+                if ($code === 0) { $applied[] = $name; }
+            }
+            @file_put_contents($ledgerFile, implode("\n", array_values(array_unique($applied))) . "\n");
+        } else {
+            $log[] = 'no database/seeds/ — nothing to apply';
+        }
+
+        // Rebuild the permission cache so any new authcontrol rows take effect at once
+        // (a direct DB insert doesn't bump the APCu cache version on its own).
+        $rc = $this->instanceDir . '/scripts/resetcache.php';
+        if (is_file($rc)) {
+            $out = []; $code = 0;
+            exec('cd ' . escapeshellarg($this->instanceDir) . ' && php ' . escapeshellarg($rc) . ' 2>&1', $out, $code);
+            $log[] = 'resetcache: ' . ($code === 0 ? 'ok' : 'FAILED');
+        }
+        return $log;
+    }
+
     // ---- task lifecycle ----------------------------------------------------
 
     /** Create the worktree + brief and spawn the jailed agent. */
@@ -139,6 +183,17 @@ class PlanExecutor {
         $branch = (string)$t->worktreeBranch;
         $wtRel  = '.aibuilder/wt/task-' . (int)$t->id;
 
+        // The force-tracked SQLite DB is runtime state, not a build artifact. Discard
+        // any writes the agent's app made to it in the worktree so plan branches never
+        // carry (and merge-clobber) the binary DB. Intentional DB / permission changes
+        // travel as database/seeds/*.php (committed code), applied to the LIVE instance
+        // in finalize(). Best-effort: only if a tracked DB was actually modified.
+        $modDb = $this->gitAt($wtRel, ['ls-files', '-m', '--', '*.db', '*.sqlite']);
+        $dbFiles = array_values(array_filter(array_map('trim', explode("\n", (string)$modDb['out']))));
+        if ($dbFiles !== []) {   // check out the exact files (a wildcard that matches none aborts the whole checkout)
+            $this->gitAt($wtRel, array_merge(['checkout', '--'], $dbFiles));
+        }
+
         // Commit whatever the agent produced (don't rely on the agent committing).
         $this->gitAt($wtRel, ['add', '-A']);
         $staged = $this->gitAt($wtRel, ['diff', '--cached', '--quiet']);
@@ -163,10 +218,15 @@ class PlanExecutor {
 
     /** Merge a task branch into base; abort cleanly on conflict. */
     private function mergeBack(string $branch, string $base): array {
-        // Refuse if the main tree is dirty (a terminal edit mid-run) — surface it.
-        $dirty = $this->git(['status', '--porcelain']);
-        if ($dirty['ok'] && trim($dirty['out']) !== '') {
-            return ['status' => 'failed', 'out' => 'instance working tree is dirty; commit/checkpoint it, then re-run'];
+        // Refuse only on UNEXPECTED local edits (a terminal edit mid-run). The live
+        // SQLite DB is force-tracked (for checkpoint/rollback) yet written on every
+        // request, so it is perpetually "modified" — that expected churn is not a
+        // reason to refuse. Plan branches never diff the DB (reapTask discards it),
+        // so the locally-modified DB can't collide with the merge.
+        $dirt = $this->significantDirt();
+        if ($dirt !== []) {
+            return ['status' => 'failed', 'out' => 'instance working tree has uncommitted edits ('
+                . implode(', ', array_slice($dirt, 0, 5)) . '); commit or checkpoint them, then re-run'];
         }
         $m = $this->gitRaw('merge --no-ff -m ' . escapeshellarg('merge ' . $branch) . ' ' . escapeshellarg($branch));
         if ($m['ok']) return ['status' => 'merged', 'out' => ''];
@@ -174,6 +234,28 @@ class PlanExecutor {
         $this->git(['merge', '--abort']);
         $isConflict = stripos($m['out'], 'conflict') !== false;
         return ['status' => $isConflict ? 'conflict' : 'failed', 'out' => trim($m['out'])];
+    }
+
+    /**
+     * Working-tree paths with local edits that AREN'T expected runtime churn.
+     * The force-tracked SQLite DB(s) are rewritten on every web request, so
+     * `git status` always shows them modified; ignore *.db / *.sqlite so a live
+     * request can't spuriously trip the dirty-tree guard mid-merge.
+     */
+    private function significantDirt(): array {
+        $r = $this->git(['status', '--porcelain']);
+        if (!$r['ok']) return [];
+        $out = [];
+        foreach (explode("\n", trim($r['out'])) as $line) {
+            if ($line === '') continue;
+            $path = trim(substr($line, 3));                  // strip "XY " status prefix
+            if (strpos($path, ' -> ') !== false) {           // rename: keep the new path
+                $path = substr($path, strpos($path, ' -> ') + 4);
+            }
+            if (preg_match('/\.(db|sqlite)$/', $path)) continue;   // expected live-DB churn
+            $out[] = $path;
+        }
+        return $out;
     }
 
     private function cleanupWorktree(string $wtRel, string $branch, bool $dropBranch): void {
@@ -274,6 +356,13 @@ commit and merge your work — you just make the code changes.
   (codebase_map / whatprovides / describe) to check conventions before writing.
 - Stay within the scope of THIS task. Do not edit files owned by other tasks.
 - Do not run git, do not push, do not start servers. Just implement, then stop.
+- Database / permission changes: do NOT write to the database directly, do NOT run
+  migration or seed scripts, and do NOT edit conf/config*.ini. The live SQLite DB is
+  discarded from your worktree, so direct writes will NOT persist. If this task needs
+  a DB or permission change (e.g. an authcontrol route entry to make a page public),
+  write an IDEMPOTENT PHP seed script to database/seeds/<descriptive-name>.php using
+  the \\app\\Bean wrapper. The orchestrator runs every database/seeds/*.php against the
+  live instance after your work merges, then rebuilds the permission cache.
 MD;
     }
 

@@ -527,6 +527,7 @@ class Aibuilder extends Control {
             return;
         }
         $plan->planStatus = 'building';
+        $plan->status     = 'running';   // sync the plain status column for the Workbench list
         $plan->updatedAt  = date('Y-m-d H:i:s');
         R::store($plan);
         Flight::jsonSuccess(['session' => $session], 'Build started — up to ' . PlanExecutor::MAX_CONCURRENT . ' agents running.');

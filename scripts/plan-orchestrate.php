@@ -38,6 +38,7 @@ if (!R::testConnection()) { fwrite(STDERR, "cannot open db: $db\n"); exit(1); }
 $parent = R::load('workbenchtask', $planId);
 if (!$parent->id) { fwrite(STDERR, "no plan #$planId\n"); exit(1); }
 $parent->planStatus = 'building';
+$parent->status     = 'running';   // keep the plain status column in sync for the Workbench list
 $parent->updatedAt  = date('Y-m-d H:i:s');
 R::store($parent);
 
@@ -65,6 +66,7 @@ if (empty($res['stalled'])) {
 
 $parent = R::load('workbenchtask', $planId);
 $parent->planStatus = !empty($res['stalled']) ? 'stalled' : 'done';
+$parent->status     = !empty($res['stalled']) ? 'failed' : 'completed';   // sync list column
 $parent->updatedAt  = date('Y-m-d H:i:s');
 R::store($parent);
 R::close();

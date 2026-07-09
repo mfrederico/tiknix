@@ -601,5 +601,16 @@ if (AB.has) {
   // init
   setStatus('connecting…'); initTerminal(); refreshChanges(); loadCheckpoints(); loadPlans(); loadGhStatus(); loadUploads();
   setInterval(refreshChanges, 4000);
+
+  // Resume watching an already-running planner: e.g. handed off from the Workbench
+  // "Decompose" flow (?planning=1), or a page reload mid-decompose.
+  if (AB.id) {
+    fetch('/aibuilder/planstatus?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(r=>r.json()).then(j=>{
+        const d=j.data||{};
+        if(d.running){ const b=genBtn&&genBtn(); if(b)b.disabled=true; planNote('🧠 Planner running — decomposing your goal document…'); pollPlanner(); }
+        else if(d.plan_ready){ planNote('✅ Plan ready — ingesting…'); ingestPlan(); }
+      }).catch(()=>{});
+  }
 }
 </script>

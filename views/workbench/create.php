@@ -161,11 +161,20 @@
                             <div class="form-text">Comma-separated tags for organization.</div>
                         </div>
 
-                        <div class="d-flex gap-2">
+                        <div class="d-flex gap-2 align-items-center flex-wrap">
                             <button type="submit" class="btn btn-primary">
                                 <i class="bi bi-plus-lg"></i> Create Task
                             </button>
+                            <button type="submit" class="btn btn-info" formaction="/workbench/decompose"
+                                    title="Treat the Description as a goal document and decompose it into a multi-agent plan for the selected instance">
+                                <i class="bi bi-diagram-3"></i> Decompose into plan &rarr;
+                            </button>
                             <a href="/workbench" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                        <div class="form-text mt-2">
+                            <strong>Create Task</strong> saves a single task. <strong>Decompose into plan</strong>
+                            feeds the Description (e.g. your uploaded <code>.md</code> goal document) to the AI Builder
+                            planner, which breaks it into a multi-agent plan for the chosen instance to review, approve, and build.
                         </div>
                     </form>
                 </div>

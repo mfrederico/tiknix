@@ -17,6 +17,7 @@ use \app\PromptBuilder;
 use \app\GitService;
 use \app\PortManager;
 use \app\TmuxManager;
+use \app\PlanRunner;
 use \app\WorkspaceManager;
 use \Exception as Exception;
 use app\BaseControls\Control;
@@ -239,6 +240,73 @@ class Workbench extends Control {
             $this->flash('error', 'Failed to create task');
             Flight::redirect('/workbench/create');
         }
+    }
+
+    /**
+     * Store new task by DECOMPOSING a goal document into a multi-agent plan.
+     *
+     * The submitted Description (typically an uploaded Markdown "goal" document)
+     * is fed to the AI Builder planner for the chosen instance; it decomposes the
+     * goal into a plan tree (parent + subtasks with a dependency DAG) via a headless
+     * claude -p pass. We then hand off to the AI Builder for that instance to watch
+     * the decomposition -> ingest -> approve -> build. The resulting plan lands in
+     * the Workbench, tagged to the instance.
+     */
+    public function decompose($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') { Flight::redirect('/workbench/create'); return; }
+        if (!Flight::csrf()->validateRequest()) {
+            $this->flash('error', 'Invalid CSRF token');
+            Flight::redirect('/workbench/create');
+            return;
+        }
+
+        // Instance (tenant) is required and must belong to the member.
+        $instanceId = (int)$this->getParam('instance_id', 0);
+        $instance = $instanceId ? Bean::load('instance', $instanceId) : null;
+        if (!$instance || !$instance->id || (int)$instance->memberId !== (int)$this->member->id) {
+            $this->flash('error', 'Please select a valid instance to decompose for');
+            Flight::redirect('/workbench/create');
+            return;
+        }
+
+        // The goal is the Markdown/description body (an uploaded .md fills this).
+        $goal = trim($this->getParam('description', ''));
+        if ($goal === '') { $goal = trim($this->getParam('title', '')); }
+        if (mb_strlen($goal) < 20) {
+            $this->flash('error', 'Add a goal document (drop a .md or write a spec — at least 20 characters) to decompose.');
+            Flight::redirect('/workbench/create');
+            return;
+        }
+
+        $slug = (string)$instance->slug;
+        $app  = $instance->app ?: 'tiknix';
+        $instanceDir = '/var/www/html/default/' . $slug . '.' . $app;
+        if (!is_file($instanceDir . '/public/index.php')) {
+            $this->flash('error', 'That instance is not available on disk.');
+            Flight::redirect('/workbench/create');
+            return;
+        }
+
+        try {
+            $runner = new PlanRunner(
+                $slug, $instanceDir, (int)$this->member->id,
+                (int)$this->member->level, (string)($instance->engine ?: 'claude')
+            );
+            $runner->start($goal);
+        } catch (\Throwable $e) {
+            $this->logger->error('Workbench decompose failed', ['error' => $e->getMessage(), 'instance' => $slug]);
+            $this->flash('error', 'Could not start the planner: ' . $e->getMessage());
+            Flight::redirect('/workbench/create');
+            return;
+        }
+
+        $this->logger->info('Workbench decompose started', ['instance' => $slug, 'member_id' => $this->member->id]);
+        // Hand off to the AI Builder for this instance to watch the decompose ->
+        // ingest -> approve -> build flow (planning=1 triggers the resume poll).
+        Flight::redirect('/aibuilder?id=' . (int)$instance->id . '&planning=1');
     }
 
     /**

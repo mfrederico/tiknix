@@ -189,16 +189,19 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
           </div>
         </div>
         <div class="card shadow-sm mt-3">
-          <div class="card-header fw-semibold"><i class="bi bi-diagram-3 me-1"></i>Plan (decompose)</div>
+          <div class="card-header fw-semibold"><i class="bi bi-diagram-3 me-1"></i>Plan &amp; build (decompose)</div>
           <div class="card-body">
             <form id="ab-plan-form" class="mb-2">
-              <textarea id="ab-plan-input" class="form-control form-control-sm mb-2" rows="2" placeholder="Describe a feature to decompose into tasks…"></textarea>
+              <textarea id="ab-plan-input" class="form-control form-control-sm mb-2" rows="2" placeholder="Describe a goal to decompose into a multi-agent plan…"></textarea>
               <div class="d-flex gap-2">
-                <button id="ab-plan-copy" class="btn btn-info btn-sm flex-fill" type="submit"><i class="bi bi-clipboard-plus me-1"></i>Copy plan prompt</button>
-                <button id="ab-plan-ingest" class="btn btn-outline-info btn-sm" type="button" title="Ingest the plan the agent wrote"><i class="bi bi-box-arrow-in-down"></i></button>
+                <button id="ab-plan-generate" class="btn btn-info btn-sm flex-fill" type="submit"><i class="bi bi-stars me-1"></i>Generate plan</button>
+                <button id="ab-plan-copy" class="btn btn-outline-secondary btn-sm" type="button" title="Copy the prompt to run in the Terminal instead"><i class="bi bi-clipboard-plus"></i></button>
+                <button id="ab-plan-ingest" class="btn btn-outline-info btn-sm" type="button" title="Ingest a plan written by the terminal agent"><i class="bi bi-box-arrow-in-down"></i></button>
               </div>
             </form>
-            <div id="ab-plan-hint" class="text-body-secondary mb-2" style="font-size:.72rem"></div>
+            <div class="text-body-secondary mb-2" style="font-size:.72rem">Runs a headless Claude (Opus) that grounds itself via the tiknix MCP, then decomposes the goal into a dependency graph of tasks. Review them at the Workbench, tagged to this instance.</div>
+            <div id="ab-plan-hint" class="mb-2" style="font-size:.72rem"></div>
+            <pre id="ab-plan-log" class="small mb-2 d-none" style="max-height:16vh;overflow:auto;background:#1e1e1e;color:#ddd;border-radius:.375rem;padding:.5rem;font-size:.7rem;white-space:pre-wrap"></pre>
             <div id="ab-plan-list" class="small"></div>
           </div>
         </div>
@@ -368,33 +371,72 @@ if (AB.has) {
     post('/aibuilder/rollback/'+encodeURIComponent(ckpt),{}).then(j=>{ loadCheckpoints(); refreshChanges(); });
   }
 
-  // --- Plan mode (terminal-driven: copy prompt -> run in Terminal -> ingest) ---
+  // --- Plan & build: headless claude -p planner (primary) + terminal-copy fallback ---
   const planHint=document.getElementById('ab-plan-hint');
+  const planLog=document.getElementById('ab-plan-log');
   function planNote(html){ planHint.innerHTML=html; }
+  function showLog(t){ if(t){ planLog.textContent=t; planLog.classList.remove('d-none'); } }
+  const genBtn=()=>document.getElementById('ab-plan-generate');
+
+  let planPoll=null;
+  function stopPoll(){ if(planPoll){ clearInterval(planPoll); planPoll=null; } }
+  function pollPlanner(){
+    stopPoll();
+    planPoll=setInterval(()=>{
+      fetch('/aibuilder/planstatus?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
+        const d=j.data||{}; showLog(d.log);
+        if(d.plan_ready){ stopPoll(); planNote('✅ Plan ready — ingesting…'); ingestPlan(); }
+        else if(!d.running){ stopPoll(); genBtn().disabled=false; planNote('⚠️ Planner finished without writing a plan. See the log below.'); }
+      }).catch(()=>{});
+    }, 4000);
+  }
+  function generatePlan(goal){
+    genBtn().disabled=true; planLog.classList.add('d-none'); planLog.textContent='';
+    planNote('🧠 Planning with Claude (Opus) — grounding via the tiknix MCP, then decomposing…');
+    post('/aibuilder/plangenerate',{goal:goal}).then(j=>{
+      if(j.success){ pollPlanner(); }
+      else { planNote('⚠️ '+(j.message||'Could not start planner.')); genBtn().disabled=false; }
+    }).catch(()=>{ planNote('⚠️ Network error starting planner.'); genBtn().disabled=false; });
+  }
+  function ingestPlan(){
+    post('/aibuilder/planingest',{}).then(j=>{
+      genBtn().disabled=false;
+      if(j.success){ planNote('✅ Plan ingested — review it at <a href="/workbench" target="_blank">the Workbench</a>, tagged to this instance.'); loadPlans(); loadCheckpoints(); }
+      else planNote('⚠️ '+(j.message||'No plan found. Did the planner call submit_plan?'));
+    }).catch(()=>{ genBtn().disabled=false; planNote('⚠️ Ingest failed.'); });
+  }
+
   const planForm=document.getElementById('ab-plan-form');
   if(planForm) planForm.addEventListener('submit',function(e){
-    e.preventDefault(); const req=document.getElementById('ab-plan-input').value.trim(); if(!req) return;
-    const prompt="PLAN MODE — do NOT modify application files. First use the codebase_map and whatprovides MCP tools to ground yourself in THIS codebase. Then decompose the request into a small, ordered set of concrete tasks and deliver it by calling the submit_plan tool with {title, summary, subtasks:[{title, description, priority 1-4, engine claude|qwen, files[]}]}. After submit_plan succeeds, reply with only: PLAN_WRITTEN\nRequest: "+req;
-    if(navigator.clipboard) navigator.clipboard.writeText(prompt).then(()=>{
-      planNote('✅ Prompt copied. Paste it into the <strong>Terminal</strong> (right-click). When the agent prints <code>PLAN_WRITTEN</code>, click <i class="bi bi-box-arrow-in-down"></i> to ingest.');
-    }).catch(()=>planNote('⚠️ Could not copy — select and copy the prompt manually.'));
-    else planNote('⚠️ Clipboard unavailable in this browser.');
+    e.preventDefault(); const goal=document.getElementById('ab-plan-input').value.trim();
+    if(goal.length<10){ planNote('Describe the goal in a sentence or two first.'); return; }
+    generatePlan(goal);
   });
-  document.getElementById('ab-plan-ingest').addEventListener('click',function(){
-    this.disabled=true; planNote('Ingesting…');
-    post('/aibuilder/planingest',{}).then(j=>{
-      if(j.success){ planNote('✅ Plan ingested.'); loadPlans(); loadCheckpoints(); }
-      else planNote('⚠️ '+(j.message||'No plan found. Did the agent call submit_plan?'));
-    }).catch(()=>planNote('⚠️ Ingest failed.')).finally(()=>{ this.disabled=false; });
+  // Fallback: copy a prompt to drive the interactive Terminal agent instead.
+  document.getElementById('ab-plan-copy').addEventListener('click',function(){
+    const req=document.getElementById('ab-plan-input').value.trim(); if(!req){ planNote('Describe the goal first.'); return; }
+    const prompt="PLAN MODE — do NOT modify application files. First use the codebase_map and whatprovides MCP tools to ground yourself. Then decompose into concrete tasks with stable ids + depends_on and call submit_plan with {title, summary, subtasks:[{id, title, description, priority 1-4, engine claude|qwen, files[], depends_on[]}]}. After submit_plan, reply PLAN_WRITTEN.\nRequest: "+req;
+    if(navigator.clipboard) navigator.clipboard.writeText(prompt).then(()=>planNote('✅ Prompt copied — paste into the <strong>Terminal</strong>, then click <i class="bi bi-box-arrow-in-down"></i> to ingest.')).catch(()=>planNote('⚠️ Copy failed.'));
+    else planNote('⚠️ Clipboard unavailable.');
   });
+  document.getElementById('ab-plan-ingest').addEventListener('click',function(){ planNote('Ingesting…'); ingestPlan(); });
   function loadPlans(){
     fetch('/aibuilder/plan?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
       const box=document.getElementById('ab-plan-list'); const plans=(j.data&&j.data.plans)||[];
       if(!plans.length){ box.innerHTML='<div class="text-body-secondary">No plans yet.</div>'; return; }
-      box.innerHTML=plans.map(p=>'<div class="ab-ckpt"><div class="fw-semibold">'+esc(p.title)+'</div>'
-        +(p.checkpoint?'<div class="text-body-secondary" style="font-size:.72rem">baseline: '+esc(p.checkpoint)+'</div>':'')
-        +p.subtasks.map(s=>'<div class="ab-file"><span class="st M">P'+esc(String(s.priority))+'</span><span>'+esc(s.title)+' <span class="badge text-bg-dark">'+esc(s.engine)+'</span></span></div>').join('')
-        +'</div>').join('');
+      box.innerHTML=plans.map(p=>{
+        const ps=p.plan_status||'draft';
+        const psColor={draft:'secondary',approved:'info',building:'primary',done:'success'}[ps]||'secondary';
+        return '<div class="ab-ckpt"><div class="d-flex justify-content-between align-items-center"><span class="fw-semibold">'+esc(p.title)+'</span>'
+          +'<span class="badge text-bg-'+psColor+'">'+esc(ps)+'</span></div>'
+          +(p.checkpoint?'<div class="text-body-secondary" style="font-size:.72rem">baseline: '+esc(p.checkpoint)+'</div>':'')
+          +p.subtasks.map(s=>{ const dc=(s.depends_on||[]).length;
+            return '<div class="ab-file"><span class="st M">P'+esc(String(s.priority))+'</span><span>'+esc(s.title)
+              +' <span class="badge text-bg-dark">'+esc(s.engine)+'</span>'
+              +(dc?' <span class="badge text-bg-secondary" title="depends on '+dc+' task(s)"><i class="bi bi-link-45deg"></i>'+dc+'</span>':'')+'</span></div>';
+          }).join('')
+          +'</div>';
+      }).join('');
     }).catch(()=>{});
   }
 

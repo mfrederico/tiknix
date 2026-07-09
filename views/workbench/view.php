@@ -29,6 +29,13 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-3">
                         <div>
+                            <?php if (!empty($task->instanceTag)): ?>
+                                <a href="/workbench?instance_tag=<?= urlencode($task->instanceTag) ?>"
+                                   class="badge bg-info-subtle text-info-emphasis border border-info-subtle text-decoration-none mb-2 d-inline-block"
+                                   style="font-size:.9rem;" title="Show all tasks for this instance">
+                                    <i class="bi bi-hdd-network me-1"></i>Instance: <?= htmlspecialchars($task->instanceTag) ?>
+                                </a>
+                            <?php endif; ?>
                             <h2 class="mb-1"><?= htmlspecialchars($task->title) ?></h2>
                             <div class="text-muted small">
                                 Created by <?= htmlspecialchars($creator->displayName ?? $creator->email) ?>
@@ -435,7 +442,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <?php endif; ?>
 
                         <?php
-                        $relatedFiles = json_decode($task->relatedFiles, true) ?: [];
+                        $relatedFiles = json_decode((string)$task->relatedFiles, true) ?: [];
                         if (!empty($relatedFiles)):
                         ?>
                             <dt>Related Files</dt>
@@ -447,7 +454,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <?php endif; ?>
 
                         <?php
-                        $tags = json_decode($task->tags, true) ?: [];
+                        $tags = json_decode((string)$task->tags, true) ?: [];
                         if (!empty($tags)):
                         ?>
                             <dt>Tags</dt>

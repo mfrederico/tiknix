@@ -337,7 +337,7 @@ class Aibuilder extends Control {
             $t->instanceId   = (int)$inst->id;
             $t->instanceTag  = $inst->slug . '.' . self::APP;   // fluid: tenant tag, denormalized for the board
             $t->engine       = in_array($st['engine'] ?? '', ['claude', 'qwen'], true) ? $st['engine'] : $inst->engine;
-            $t->relatedFiles = is_array($st['files'] ?? null) ? implode("\n", $st['files']) : '';
+            $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
             $t->planRef      = $ref;                  // fluid: planner's stable id
             $t->memberId     = (int)$this->member->id;
             $t->createdAt    = $now;

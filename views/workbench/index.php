@@ -140,7 +140,8 @@
                         <table class="table table-hover mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th style="width: 50%;">Task</th>
+                                    <th style="width: 38%;">Task</th>
+                                    <th>Instance</th>
                                     <th>Type</th>
                                     <th>Priority</th>
                                     <th>Status</th>
@@ -161,6 +162,15 @@
                                             </a>
                                             <?php if ($task->teamId): ?>
                                                 <br><small class="text-muted"><i class="bi bi-people"></i> Team task</small>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php if (!empty($task->instanceTag)): ?>
+                                                <a href="/workbench?instance_tag=<?= urlencode($task->instanceTag) ?>" class="badge bg-info-subtle text-info-emphasis border border-info-subtle text-decoration-none" title="Filter to this instance">
+                                                    <i class="bi bi-hdd-network me-1"></i><?= htmlspecialchars($task->instanceTag) ?>
+                                                </a>
+                                            <?php else: ?>
+                                                <span class="text-muted">—</span>
                                             <?php endif; ?>
                                         </td>
                                         <td>

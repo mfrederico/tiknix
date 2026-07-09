@@ -151,11 +151,13 @@
                             <i class="bi bi-box-arrow-in-right"></i> Login
                         </a>
                     </li>
+                    <?php if (Flight::getSetting('registration_enabled', 0) != '0'): ?>
                     <li class="nav-item">
                         <a class="btn btn-primary ms-2" href="/auth/register">
                             <i class="bi bi-person-plus"></i> Register
                         </a>
                     </li>
+                    <?php endif; ?>
                 <?php endif; ?>
             </ul>
         </div>

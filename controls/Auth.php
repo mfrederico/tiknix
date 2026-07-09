@@ -180,6 +180,14 @@ class Auth extends BaseControls\Control {
     }
     
     /**
+     * Whether public self-registration is open (admin setting).
+     * Mirrors the toggle in views/admin/settings.php: '1' = enabled.
+     */
+    private function registrationEnabled(): bool {
+        return Flight::getSetting('registration_enabled', 0) != '0';
+    }
+
+    /**
      * Show registration form
      */
     public function register() {
@@ -188,7 +196,16 @@ class Auth extends BaseControls\Control {
             Flight::redirect('/dashboard');
             return;
         }
-        
+
+        // Registration turned off by an admin — show a closed notice, not the form.
+        if (!$this->registrationEnabled()) {
+            $this->render('auth/register', [
+                'title' => 'Registration Closed',
+                'registration_closed' => true,
+            ]);
+            return;
+        }
+
         $this->render('auth/register', [
             'title' => 'Register'
         ]);
@@ -203,6 +220,16 @@ class Auth extends BaseControls\Control {
         // Handle both GET and POST for easier testing
         if ($request->method === 'GET') {
             $this->register();
+            return;
+        }
+
+        // Hard stop: never create an account when registration is disabled, even
+        // if a request is POSTed directly past the hidden form.
+        if (!$this->registrationEnabled()) {
+            $this->render('auth/register', [
+                'title' => 'Registration Closed',
+                'registration_closed' => true,
+            ]);
             return;
         }
 

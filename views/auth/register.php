@@ -3,8 +3,20 @@
         <div class="col-md-5">
             <div class="card shadow-sm">
                 <div class="card-body">
+                <?php if (!empty($registration_closed)): ?>
+                    <div class="text-center py-4">
+                        <i class="bi bi-door-closed text-muted" style="font-size:2.75rem;"></i>
+                        <h2 class="card-title mt-3 mb-2">Registrations Closed</h2>
+                        <p class="text-muted mb-4">
+                            We're not accepting new registrations right now.<br>Please check back later.
+                        </p>
+                        <a href="/auth/login" class="btn btn-outline-primary">
+                            <i class="bi bi-box-arrow-in-right"></i> Sign In
+                        </a>
+                    </div>
+                <?php else: ?>
                     <h2 class="card-title text-center mb-4">Create Account</h2>
-                    
+
                     <?php if (!empty($errors)): ?>
                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
                             <ul class="mb-0">
@@ -86,15 +98,18 @@
                             <p>Already have an account? <a href="/auth/login">Sign In</a></p>
                         </div>
                     </form>
+                <?php endif; ?>
                 </div>
             </div>
             
+            <?php if (empty($registration_closed)): ?>
             <div class="text-center mt-3 text-muted">
                 <small>
-                    <i class="bi bi-info-circle"></i> 
+                    <i class="bi bi-info-circle"></i>
                     By registering, you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>
                 </small>
             </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

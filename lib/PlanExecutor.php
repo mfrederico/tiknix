@@ -361,8 +361,14 @@ commit and merge your work — you just make the code changes.
   discarded from your worktree, so direct writes will NOT persist. If this task needs
   a DB or permission change (e.g. an authcontrol route entry to make a page public),
   write an IDEMPOTENT PHP seed script to database/seeds/<descriptive-name>.php using
-  the \\app\\Bean wrapper. The orchestrator runs every database/seeds/*.php against the
-  live instance after your work merges, then rebuilds the permission cache.
+  the \\app\\Bean wrapper (Bean::findOne / dispense / store). The orchestrator runs
+  every database/seeds/*.php against the live instance after your work merges (with the
+  instance root as CWD), then rebuilds the permission cache — you do NOT run it.
+  The seed file lives TWO levels below the instance root, so bootstrap the app with
+  EXACTLY this (do not add a chdir, the CWD is already the instance root):
+      require_once __DIR__ . '/../../bootstrap.php';
+      \$app = new \\app\\Bootstrap();
+  A wrong relative depth (e.g. '/../bootstrap.php') will fatal — the seed is two dirs deep.
 MD;
     }
 

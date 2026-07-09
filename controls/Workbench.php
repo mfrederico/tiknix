@@ -44,6 +44,7 @@ class Workbench extends Control {
             'task_type' => $this->getParam('type'),
             'team_id' => $this->getParam('team_id'),
             'priority' => $this->getParam('priority'),
+            'instance_tag' => $this->getParam('instance_tag'),
             'order_by' => $this->getParam('order_by', 'updated_at DESC')
         ];
 
@@ -66,6 +67,7 @@ class Workbench extends Control {
         $this->viewData['filters'] = $filters;
         $this->viewData['taskTypes'] = $this->getTaskTypes();
         $this->viewData['priorities'] = $this->getPriorities();
+        $this->viewData['instanceTags'] = $this->access->getInstanceTags($this->member->id);
 
         $this->render('workbench/index', $this->viewData);
     }

@@ -310,15 +310,23 @@ class Aibuilder extends Control {
         $parent->priority       = 2;
         $parent->status         = 'pending';
         $parent->instanceId     = (int)$inst->id;     // fluid: adds instance_id
+        $parent->instanceTag    = $inst->slug . '.' . self::APP;  // fluid: tenant tag e.g. "jadams.tiknix"
         $parent->engine         = $inst->engine;
         $parent->memberId       = (int)$this->member->id;
         $parent->planCheckpoint = $tag;               // fluid: adds plan_checkpoint
+        $parent->planStatus     = 'draft';            // fluid: draft -> approved -> building -> done
         $parent->createdAt      = $now;
         R::store($parent);
 
-        $subs = [];
+        // Pass 1: create every subtask, remembering the planner's stable ref
+        // (its "id", or a positional fallback) so we can resolve depends_on next.
+        $rows = [];       // [$task, $subtaskArray, $ref]
+        $refMap = [];     // planner ref => db task id
+        $i = 0;
         foreach ($plan['subtasks'] as $st) {
             if (empty($st['title'])) continue;
+            $i++;
+            $ref = trim((string)($st['id'] ?? '')) ?: ('t' . $i);
             $t = R::dispense('workbenchtask');
             $t->title        = mb_substr((string)$st['title'], 0, 200);
             $t->description  = (string)($st['description'] ?? '');
@@ -327,12 +335,35 @@ class Aibuilder extends Control {
             $t->status       = 'pending';
             $t->parentTaskId = (int)$parent->id;
             $t->instanceId   = (int)$inst->id;
+            $t->instanceTag  = $inst->slug . '.' . self::APP;   // fluid: tenant tag, denormalized for the board
             $t->engine       = in_array($st['engine'] ?? '', ['claude', 'qwen'], true) ? $st['engine'] : $inst->engine;
             $t->relatedFiles = is_array($st['files'] ?? null) ? implode("\n", $st['files']) : '';
+            $t->planRef      = $ref;                  // fluid: planner's stable id
             $t->memberId     = (int)$this->member->id;
             $t->createdAt    = $now;
             R::store($t);
-            $subs[] = ['id' => (int)$t->id, 'title' => $t->title, 'priority' => (int)$t->priority, 'engine' => $t->engine];
+            $refMap[$ref] = (int)$t->id;
+            $rows[] = [$t, $st, $ref];
+        }
+
+        // Pass 2: resolve depends_on (planner refs) to concrete db task ids. Store
+        // as a JSON array on the subtask — this is the DAG the executor walks.
+        $subs = [];
+        foreach ($rows as [$t, $st, $ref]) {
+            $deps = [];
+            foreach ((array)($st['depends_on'] ?? []) as $d) {
+                $d = trim((string)$d);
+                if ($d !== '' && isset($refMap[$d]) && $refMap[$d] !== (int)$t->id) {
+                    $deps[] = $refMap[$d];
+                }
+            }
+            $deps = array_values(array_unique($deps));
+            $t->dependsOn = json_encode($deps);       // fluid: JSON array of task ids
+            R::store($t);
+            $subs[] = [
+                'id' => (int)$t->id, 'ref' => $ref, 'title' => $t->title,
+                'priority' => (int)$t->priority, 'engine' => $t->engine, 'depends_on' => $deps,
+            ];
         }
         $this->logger->info('aibuilder plan saved', ['instance' => $inst->slug, 'parent' => $parent->id, 'subtasks' => count($subs)]);
         return ['parent' => ['id' => (int)$parent->id, 'title' => $parent->title], 'checkpoint' => $tag, 'subtasks' => $subs];
@@ -382,14 +413,58 @@ class Aibuilder extends Control {
             $plans[] = [
                 'id' => (int)$p->id, 'title' => $p->title, 'summary' => $p->description,
                 'checkpoint' => $p->planCheckpoint, 'status' => $p->status,
+                'plan_status' => $p->planStatus ?: 'draft',
+                'instance_tag' => $p->instanceTag ?: ($inst->slug . '.' . self::APP),
                 'subtasks' => array_map(fn($s) => [
-                    'id' => (int)$s->id, 'title' => $s->title, 'description' => $s->description,
+                    'id' => (int)$s->id, 'ref' => $s->planRef, 'title' => $s->title, 'description' => $s->description,
                     'priority' => (int)$s->priority, 'engine' => $s->engine, 'status' => $s->status,
                     'files' => $s->relatedFiles,
+                    'depends_on' => json_decode($s->dependsOn ?: '[]', true) ?: [],
                 ], array_values($subs)),
             ];
         }
         Flight::jsonSuccess(['plans' => $plans]);
+    }
+
+    /**
+     * POST /aibuilder/plangenerate?id= — launch the headless (claude -p) planner
+     * for a goal. It grounds itself via the tiknix MCP and calls submit_plan,
+     * which writes .aibuilder/plan.json for planingest to pick up. JSON.
+     */
+    public function plangenerate($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $goal = trim((string)$this->getParam('goal', ''));
+        if (mb_strlen($goal) < 10) { Flight::jsonError('Describe the goal in a sentence or two (min 10 chars).', 400); return; }
+
+        $runner = new PlanRunner($inst->slug, $this->instanceDir($inst->slug),
+                                 (int)$this->member->id, (int)$this->member->level, (string)$inst->engine);
+        try {
+            $session = $runner->start($goal);
+        } catch (\Throwable $e) {
+            Flight::jsonError('Could not start planner: ' . $e->getMessage(), 500);
+            return;
+        }
+        $this->logger->info('aibuilder planner started', ['instance' => $inst->slug, 'session' => $session]);
+        Flight::jsonSuccess(['session' => $session, 'running' => true], 'Planner started — decomposing the goal…');
+    }
+
+    /** GET /aibuilder/planstatus?id= — poll the headless planner (running / plan_ready / log). JSON. */
+    public function planstatus($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $runner = new PlanRunner($inst->slug, $this->instanceDir($inst->slug),
+                                 (int)$this->member->id, (int)$this->member->level, (string)$inst->engine);
+        Flight::jsonSuccess([
+            'running'    => $runner->running(),
+            'plan_ready' => $runner->planReady(),
+            'log'        => $runner->logTail(40),
+        ]);
     }
 
     /**

@@ -33,6 +33,26 @@
         <div class="col-lg-3 col-md-4 mb-4">
             <h6 class="text-muted text-uppercase mb-3"><i class="bi bi-funnel"></i> Filters</h6>
 
+            <!-- Instance (tenant) Filter — top-level: which AI Builder instance a plan is tagged into -->
+            <?php if (!empty($instanceTags)): ?>
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-hdd-stack"></i> Instance</h6>
+                </div>
+                <div class="list-group list-group-flush">
+                    <a href="/workbench" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center <?= empty($filters['instance_tag']) ? 'active' : '' ?>">
+                        All Instances
+                    </a>
+                    <?php foreach ($instanceTags as $it): ?>
+                        <a href="/workbench?instance_tag=<?= urlencode($it['tag']) ?>" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center <?= ($filters['instance_tag'] ?? '') === $it['tag'] ? 'active' : '' ?>">
+                            <span class="text-truncate"><i class="bi bi-hdd-network text-info"></i> <?= htmlspecialchars($it['tag']) ?></span>
+                            <span class="badge bg-info rounded-pill ms-2"><?= (int)$it['n'] ?></span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <!-- Status Counts -->
             <div class="card mb-3">
                 <div class="card-header">

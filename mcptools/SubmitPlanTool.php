@@ -14,7 +14,7 @@ namespace app\mcptools;
 class SubmitPlanTool extends BaseTool {
 
     public static string $name = 'submit_plan';
-    public static string $description = 'Submit your decomposed plan. Call this ONCE, after grounding yourself with codebase_map/whatprovides, with the full ordered task breakdown. The plan is captured for the operator to review and execute.';
+    public static string $description = 'Submit your decomposed plan. Call this ONCE, after grounding yourself with codebase_map/whatprovides, with the full task breakdown as a dependency graph. Give every subtask a stable "id" and list any prerequisite ids in "depends_on" — independent tasks (empty depends_on) will be built in parallel, so keep tasks that touch the same files sequential via depends_on. The plan is captured for the operator to review and execute.';
     public static array $inputSchema = [
         'type' => 'object',
         'properties' => [
@@ -22,15 +22,17 @@ class SubmitPlanTool extends BaseTool {
             'summary' => ['type' => 'string', 'description' => '1-3 sentence summary of the approach'],
             'subtasks' => [
                 'type' => 'array',
-                'description' => 'Ordered, concrete tasks (smallest sensible units)',
+                'description' => 'Concrete tasks (smallest sensible units) as a dependency graph',
                 'items' => [
                     'type' => 'object',
                     'properties' => [
+                        'id'          => ['type' => 'string', 'description' => 'Stable short id for this task (e.g. "t1"), referenced by other tasks depends_on'],
                         'title'       => ['type' => 'string'],
                         'description' => ['type' => 'string'],
                         'priority'    => ['type' => 'integer', 'description' => '1 (highest) .. 4 (lowest)'],
                         'engine'      => ['type' => 'string', 'description' => 'claude or qwen — pick qwen for simple mechanical tasks'],
                         'files'       => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'likely files to touch'],
+                        'depends_on'  => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'ids of tasks that MUST finish before this one (empty = can start immediately / run in parallel)'],
                     ],
                     'required' => ['title'],
                 ],

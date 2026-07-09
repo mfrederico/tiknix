@@ -331,10 +331,47 @@ class TaskAccessControl {
             $params[] = (int)$filters['priority'];
         }
 
+        // Tenant filter — plans/subtasks carry instance_tag (e.g. "jadams.tiknix").
+        // Guarded because instance_tag is a fluid column, absent until the first
+        // plan is ingested.
+        if (!empty($filters['instance_tag']) && $this->columnExists('workbenchtask', 'instance_tag')) {
+            $conditions[] = "instance_tag = ?";
+            $params[] = $filters['instance_tag'];
+        }
+
         $where = implode(' AND ', array_map(function($c) { return "($c)"; }, $conditions));
         $orderBy = $filters['order_by'] ?? 'created_at DESC';
 
         return Bean::find('workbenchtask', "$where ORDER BY $orderBy", $params);
+    }
+
+    /**
+     * Distinct instance tags across the member's plans, with a plan count each,
+     * for the Workbench tenant filter. Returns [] before any plan exists (the
+     * fluid instance_tag column isn't there yet).
+     */
+    public function getInstanceTags(int $memberId): array {
+        if (!$this->columnExists('workbenchtask', 'instance_tag')) return [];
+        try {
+            $rows = \RedBeanPHP\R::getAll(
+                "SELECT instance_tag AS tag, COUNT(*) AS n
+                 FROM workbenchtask
+                 WHERE member_id = ? AND parent_task_id IS NULL
+                   AND instance_tag IS NOT NULL AND instance_tag != ''
+                 GROUP BY instance_tag
+                 ORDER BY instance_tag ASC",
+                [$memberId]
+            );
+            return $rows ?: [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /** True if $table has $col (fluid RedBean columns appear only once written). */
+    private function columnExists(string $table, string $col): bool {
+        try { return array_key_exists($col, \RedBeanPHP\R::inspect($table)); }
+        catch (\Throwable $e) { return false; }
     }
 
     /**

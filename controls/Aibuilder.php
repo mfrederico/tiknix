@@ -302,71 +302,10 @@ class Aibuilder extends Control {
             $this->gitInstance($inst->slug, ['tag', '-f', '-a', $tag, '-m', 'plan: ' . mb_substr((string)$plan['title'], 0, 80)]);
         }
 
-        $now = date('Y-m-d H:i:s');
-        $parent = R::dispense('workbenchtask');
-        $parent->title          = mb_substr((string)$plan['title'], 0, 200);
-        $parent->description    = (string)($plan['summary'] ?? '');
-        $parent->taskType       = 'feature';
-        $parent->priority       = 2;
-        $parent->status         = 'pending';
-        $parent->instanceId     = (int)$inst->id;     // fluid: adds instance_id
-        $parent->instanceTag    = $inst->slug . '.' . self::APP;  // fluid: tenant tag e.g. "jadams.tiknix"
-        $parent->engine         = $inst->engine;
-        $parent->memberId       = (int)$this->member->id;
-        $parent->planCheckpoint = $tag;               // fluid: adds plan_checkpoint
-        $parent->planStatus     = 'draft';            // fluid: draft -> approved -> building -> done
-        $parent->createdAt      = $now;
-        R::store($parent);
-
-        // Pass 1: create every subtask, remembering the planner's stable ref
-        // (its "id", or a positional fallback) so we can resolve depends_on next.
-        $rows = [];       // [$task, $subtaskArray, $ref]
-        $refMap = [];     // planner ref => db task id
-        $i = 0;
-        foreach ($plan['subtasks'] as $st) {
-            if (empty($st['title'])) continue;
-            $i++;
-            $ref = trim((string)($st['id'] ?? '')) ?: ('t' . $i);
-            $t = R::dispense('workbenchtask');
-            $t->title        = mb_substr((string)$st['title'], 0, 200);
-            $t->description  = (string)($st['description'] ?? '');
-            $t->taskType     = 'feature';
-            $t->priority     = (int)($st['priority'] ?? 3);
-            $t->status       = 'pending';
-            $t->parentTaskId = (int)$parent->id;
-            $t->instanceId   = (int)$inst->id;
-            $t->instanceTag  = $inst->slug . '.' . self::APP;   // fluid: tenant tag, denormalized for the board
-            $t->engine       = in_array($st['engine'] ?? '', ['claude', 'qwen'], true) ? $st['engine'] : $inst->engine;
-            $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
-            $t->planRef      = $ref;                  // fluid: planner's stable id
-            $t->memberId     = (int)$this->member->id;
-            $t->createdAt    = $now;
-            R::store($t);
-            $refMap[$ref] = (int)$t->id;
-            $rows[] = [$t, $st, $ref];
-        }
-
-        // Pass 2: resolve depends_on (planner refs) to concrete db task ids. Store
-        // as a JSON array on the subtask — this is the DAG the executor walks.
-        $subs = [];
-        foreach ($rows as [$t, $st, $ref]) {
-            $deps = [];
-            foreach ((array)($st['depends_on'] ?? []) as $d) {
-                $d = trim((string)$d);
-                if ($d !== '' && isset($refMap[$d]) && $refMap[$d] !== (int)$t->id) {
-                    $deps[] = $refMap[$d];
-                }
-            }
-            $deps = array_values(array_unique($deps));
-            $t->dependsOn = json_encode($deps);       // fluid: JSON array of task ids
-            R::store($t);
-            $subs[] = [
-                'id' => (int)$t->id, 'ref' => $ref, 'title' => $t->title,
-                'priority' => (int)$t->priority, 'engine' => $t->engine, 'depends_on' => $deps,
-            ];
-        }
-        $this->logger->info('aibuilder plan saved', ['instance' => $inst->slug, 'parent' => $parent->id, 'subtasks' => count($subs)]);
-        return ['parent' => ['id' => (int)$parent->id, 'title' => $parent->title], 'checkpoint' => $tag, 'subtasks' => $subs];
+        // Deterministic tree creation is shared with the headless CLI ingester.
+        $res = \app\PlanIngestor::ingest($inst, $plan, (int)$this->member->id, $tag, self::APP);
+        $this->logger->info('aibuilder plan saved', ['instance' => $inst->slug, 'parent' => $res['parent']['id'], 'subtasks' => count($res['subtasks'])]);
+        return $res;
     }
 
     /** POST /aibuilder/planingest?id= — ingest the plan the agent wrote to .aibuilder/plan.json. JSON.
@@ -378,13 +317,26 @@ class Aibuilder extends Control {
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
-        $file = $this->instanceDir($inst->slug) . '/.aibuilder/plan.json';
-        if (!is_file($file)) { Flight::jsonError('No plan.json was written by the planner yet.', 404); return; }
-        $plan = json_decode((string)@file_get_contents($file), true);
-        if (!$this->validPlan($plan)) { Flight::jsonError('plan.json is not a valid plan {title, subtasks:[...]}.', 422); return; }
+        $file  = $this->instanceDir($inst->slug) . '/.aibuilder/plan.json';
+        // Atomically claim the file so the server-side (planner-exit) ingester and
+        // this browser poll can never double-ingest the same plan.
+        $claim = \app\PlanIngestor::claim($file);
+        if ($claim === null) { Flight::jsonError('No plan.json to ingest (or it was already ingested).', 404); return; }
 
-        $res = $this->savePlanTree($inst, $plan);
-        @unlink($file);  // consume it so the next plan starts clean
+        $plan = json_decode((string)@file_get_contents($claim), true);
+        if (!\app\PlanIngestor::isValidPlan($plan)) {
+            @unlink($claim);
+            Flight::jsonError('plan.json is not a valid plan {title, subtasks:[...]}.', 422);
+            return;
+        }
+        try {
+            $res = $this->savePlanTree($inst, $plan);
+        } catch (\Throwable $e) {
+            @rename($claim, $file);  // release for retry
+            Flight::jsonError('Ingest failed: ' . $e->getMessage(), 500);
+            return;
+        }
+        @unlink($claim);
         Flight::jsonSuccess($res, 'Plan saved');
     }
 

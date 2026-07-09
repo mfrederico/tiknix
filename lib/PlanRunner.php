@@ -138,7 +138,11 @@ class PlanRunner {
             $runBlock = 'cd ' . escapeshellarg($ws) . " && " . $claude;
         }
 
-        $logArg = escapeshellarg($log);
+        $logArg     = escapeshellarg($log);
+        $ingestArg  = escapeshellarg($mainProjectRoot . '/scripts/plan-ingest.php');
+        $planJsonArg = escapeshellarg($ws . '/.aibuilder/plan.json');
+        $slugArg    = escapeshellarg($this->slug);
+        $wsArg      = escapeshellarg($ws);
         return <<<BASH
 #!/bin/bash
 # Tiknix headless planner (claude -p) — instance {$this->slug}
@@ -152,8 +156,13 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS=250000
 echo "[planner] instance {$this->slug} starting \$(date)" | tee {$logArg}
 {$runBlock} 2>&1 | tee -a {$logArg}
 echo "[planner] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
-# Exit cleanly (no blocking read): the session ending is the "done" signal that
-# planstatus polls; plan.json + planner.log persist for ingest and review.
+# Server-side ingest the moment the planner finishes, so the plan lands in the
+# Workbench with no browser tab needing to stay open. Atomic-claim makes this
+# race-safe with the AI Builder browser poll (whichever wins ingests once).
+if [ -f {$planJsonArg} ]; then
+  echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
+  php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix 2>&1 | tee -a {$logArg}
+fi
 BASH;
     }
 

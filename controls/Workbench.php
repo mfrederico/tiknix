@@ -18,6 +18,7 @@ use \app\GitService;
 use \app\PortManager;
 use \app\TmuxManager;
 use \app\PlanRunner;
+use \app\PlanExecutor;
 use \app\WorkspaceManager;
 use \Exception as Exception;
 use app\BaseControls\Control;
@@ -94,6 +95,7 @@ class Workbench extends Control {
         $this->viewData['instanceTags'] = $this->access->getInstanceTags($this->member->id);
         $this->viewData['planMeta'] = $planMeta;
         $this->viewData['parentIdsWithChildren'] = array_keys($childParentIds);
+        $this->viewData['decomposingInstance'] = (int)$this->getParam('decomposing', 0);
 
         $this->render('workbench/index', $this->viewData);
     }
@@ -304,9 +306,125 @@ class Workbench extends Control {
         }
 
         $this->logger->info('Workbench decompose started', ['instance' => $slug, 'member_id' => $this->member->id]);
-        // Hand off to the AI Builder for this instance to watch the decompose ->
-        // ingest -> approve -> build flow (planning=1 triggers the resume poll).
-        Flight::redirect('/aibuilder?id=' . (int)$instance->id . '&planning=1');
+        // Stay in the Workbench: the planner ingests itself when it finishes
+        // (scripts/plan-ingest.php), so the plan appears here automatically. The
+        // decomposing banner polls and refreshes the list when it lands.
+        $this->flash('info', 'Decomposing your goal for ' . $slug . '.' . $app . ' — the plan will appear here shortly.');
+        Flight::redirect('/workbench?instance_tag=' . urlencode($slug . '.' . $app) . '&decomposing=' . (int)$instance->id);
+    }
+
+    /** Load a plan (parent task) the member owns; returns [plan, instance|null] or null. */
+    private function ownedPlan($planId): ?array {
+        $planId = (int)$planId;
+        if (!$planId) return null;
+        $plan = Bean::load('workbenchtask', $planId);
+        if (!$plan->id || !empty($plan->parentTaskId)) return null;      // must be a plan parent
+        if ((int)$plan->memberId !== (int)$this->member->id) return null; // must own it
+        $inst = $plan->instanceId ? Bean::load('instance', (int)$plan->instanceId) : null;
+        return [$plan, ($inst && $inst->id) ? $inst : null];
+    }
+
+    private function planActionGuard(): bool {
+        if (!$this->requireLogin()) return false;
+        if (Flight::request()->method !== 'POST') { Flight::jsonError('POST required', 405); return false; }
+        if (!Flight::csrf()->validateRequest()) { Flight::jsonError('Invalid CSRF token', 403); return false; }
+        return true;
+    }
+
+    /** POST /workbench/planapprove — approve a plan (task-chain) so it can be built. JSON. */
+    public function planapprove($params = []) {
+        if (!$this->planActionGuard()) return;
+        $pi = $this->ownedPlan($this->getParam('plan_id', 0));
+        if (!$pi) { Flight::jsonError('No such plan', 404); return; }
+        [$plan] = $pi;
+        if ($plan->planStatus === 'building') { Flight::jsonError('This plan is already building.', 409); return; }
+        $plan->planStatus = 'approved';
+        $plan->updatedAt  = date('Y-m-d H:i:s');
+        Bean::store($plan);
+        Flight::jsonSuccess(['plan_status' => 'approved'], 'Plan approved — ready to build.');
+    }
+
+    /** POST /workbench/planbuild — launch the worktree orchestrator for an approved plan. JSON. */
+    public function planbuild($params = []) {
+        if (!$this->planActionGuard()) return;
+        $pi = $this->ownedPlan($this->getParam('plan_id', 0));
+        if (!$pi) { Flight::jsonError('No such plan', 404); return; }
+        [$plan, $inst] = $pi;
+        if (!$inst) { Flight::jsonError('This plan has no linked instance to build in.', 409); return; }
+        if (!in_array($plan->planStatus, ['approved', 'stalled'], true)) {
+            Flight::jsonError('Approve the plan before building it (or it is already building).', 409);
+            return;
+        }
+        $session = 'tiknix-plan' . (int)$plan->id . '-orchestrator';
+        if (TmuxManager::exists($session)) { Flight::jsonError('This plan is already running.', 409); return; }
+
+        $dir = '/var/www/html/default/' . $inst->slug . '.' . ($inst->app ?: 'tiknix');
+        $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
+             . ' --plan=' . (int)$plan->id
+             . ' --slug=' . escapeshellarg((string)$inst->slug)
+             . ' --dir='  . escapeshellarg($dir)
+             . ' --model=sonnet'
+             . ' --level=' . (int)$this->member->level;
+        $ab = $dir . '/.aibuilder';
+        @mkdir($ab, 0775, true);
+        $scriptFile = $ab . '/run-orchestrator.sh';
+        file_put_contents($scriptFile, "#!/bin/bash\n" . $cmd . ' 2>&1 | tee ' . escapeshellarg($ab . '/orchestrator.log') . "\n");
+        @chmod($scriptFile, 0755);
+        if (!TmuxManager::create($session, $scriptFile, $dir)) {
+            Flight::jsonError('Could not start the orchestrator.', 500);
+            return;
+        }
+        $plan->planStatus = 'building';
+        $plan->status     = 'running';
+        $plan->updatedAt  = date('Y-m-d H:i:s');
+        Bean::store($plan);
+        Flight::jsonSuccess(['plan_status' => 'building'], 'Build started — up to ' . PlanExecutor::MAX_CONCURRENT . ' agents running.');
+    }
+
+    /** POST /workbench/plandelete — delete a whole plan (task-chain): parent + all subtasks. JSON. */
+    public function plandelete($params = []) {
+        if (!$this->planActionGuard()) return;
+        $pi = $this->ownedPlan($this->getParam('plan_id', 0));
+        if (!$pi) { Flight::jsonError('No such plan', 404); return; }
+        [$plan] = $pi;
+        if ($plan->planStatus === 'building' || TmuxManager::exists('tiknix-plan' . (int)$plan->id . '-orchestrator')) {
+            Flight::jsonError('This plan is building — stop the build before deleting it.', 409);
+            return;
+        }
+        $n = 0;
+        foreach (Bean::find('workbenchtask', 'parent_task_id = ?', [(int)$plan->id]) as $s) { Bean::trash($s); $n++; }
+        Bean::trash($plan);
+        Flight::jsonSuccess(['deleted' => $n + 1], 'Deleted the plan and ' . $n . ' task(s).');
+    }
+
+    /** GET /workbench/planprogress — per-task status for a plan (for the build poller). JSON. */
+    public function planprogress($params = []) {
+        if (!$this->requireLogin()) return;
+        $pi = $this->ownedPlan($this->getParam('plan_id', 0));
+        if (!$pi) { Flight::jsonError('No such plan', 404); return; }
+        [$plan] = $pi;
+        $tasks = [];
+        foreach (Bean::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [(int)$plan->id]) as $s) {
+            $tasks[] = ['id' => (int)$s->id, 'title' => $s->title, 'status' => $s->status];
+        }
+        Flight::jsonSuccess(['plan_status' => $plan->planStatus ?: 'draft', 'status' => $plan->status, 'tasks' => $tasks]);
+    }
+
+    /** GET /workbench/decomposestatus — is the planner still decomposing for an instance? JSON. */
+    public function decomposestatus($params = []) {
+        if (!$this->requireLogin()) return;
+        $instanceId = (int)$this->getParam('instance_id', 0);
+        $inst = $instanceId ? Bean::load('instance', $instanceId) : null;
+        if (!$inst || !$inst->id || (int)$inst->memberId !== (int)$this->member->id) {
+            Flight::jsonError('No such instance', 404);
+            return;
+        }
+        $session = 'tiknix-' . (int)$this->member->id . '-plan-' . $inst->slug;
+        $newest  = (int)Bean::getCell(
+            'SELECT MAX(id) FROM workbenchtask WHERE instance_id = ? AND parent_task_id IS NULL',
+            [(int)$inst->id]
+        );
+        Flight::jsonSuccess(['running' => TmuxManager::exists($session), 'newest_plan_id' => $newest]);
     }
 
     /**

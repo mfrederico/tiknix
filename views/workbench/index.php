@@ -100,6 +100,45 @@
                 <?php endforeach; ?>
             </ul>
 
+            <script>window.WB_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;</script>
+
+            <?php if (!empty($decomposingInstance)): ?>
+                <div id="wbDecomposeBanner" class="alert alert-info d-flex align-items-center" data-instance-id="<?= (int)$decomposingInstance ?>">
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    <div>
+                        <strong>Decomposing your goal into a plan…</strong>
+                        <div class="small text-muted">The planner is grounding itself in the codebase and drafting tasks. This page refreshes automatically when the plan is ready.</div>
+                    </div>
+                </div>
+                <script>
+                (function(){
+                    var el = document.getElementById('wbDecomposeBanner');
+                    if (!el) return;
+                    var iid = el.getAttribute('data-instance-id');
+                    var baseline = null, tries = 0;
+                    function done(){
+                        var u = new URL(window.location.href);
+                        u.searchParams.delete('decomposing');   // drop so the banner does not re-arm
+                        window.location.href = u.toString();
+                    }
+                    function poll(){
+                        fetch('/workbench/decomposestatus?instance_id=' + encodeURIComponent(iid), {headers:{'X-Requested-With':'XMLHttpRequest'}})
+                            .then(function(r){ return r.json(); })
+                            .then(function(j){
+                                var d = (j && j.data) ? j.data : j;   // jsonSuccess wraps payload in .data
+                                var newest = d ? (d.newest_plan_id || 0) : 0;
+                                if (baseline === null) baseline = newest;
+                                if (newest > baseline) return done();       // a new plan landed
+                                if (d && d.running === false) return done(); // planner exited (ingest runs before it dies)
+                                if (++tries < 240) setTimeout(poll, 3000);   // ~12 min cap
+                            })
+                            .catch(function(){ if (++tries < 240) setTimeout(poll, 3000); });
+                    }
+                    setTimeout(poll, 3000);
+                })();
+                </script>
+            <?php endif; ?>
+
             <?php if (empty($tasks)): ?>
                 <div class="card">
                     <div class="card-body text-center py-5">
@@ -120,13 +159,15 @@
                 $planMetaJs = [];
                 foreach (($planMeta ?? []) as $pid => $m) {
                     $planMetaJs['plan:' . $pid] = [
-                        'title'  => $m['title'],
-                        'tag'    => $m['instanceTag'],
-                        'status' => $m['planStatus'] ?: $m['status'],
-                        'url'    => '/workbench/view?id=' . $pid,
+                        'id'          => (int)$pid,
+                        'title'       => $m['title'],
+                        'tag'         => $m['instanceTag'],
+                        'status'      => $m['planStatus'] ?: $m['status'],
+                        'plan_status' => $m['planStatus'] ?: '',
+                        'url'         => '/workbench/view?id=' . $pid,
                     ];
                 }
-                $planMetaJs['solo'] = ['title' => 'Standalone tasks', 'tag' => null, 'status' => null, 'url' => null];
+                $planMetaJs['solo'] = ['id' => 0, 'title' => 'Standalone tasks', 'tag' => null, 'status' => null, 'plan_status' => '', 'url' => null];
                 ?>
                 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
                 <link rel="stylesheet" href="https://cdn.datatables.net/rowgroup/1.4.1/css/rowGroup.bootstrap5.min.css">
@@ -230,6 +271,21 @@
                         'https://cdn.datatables.net/rowgroup/1.4.1/js/dataTables.rowGroup.min.js'
                     ];
                     function esc(t){ return $('<div>').text(t == null ? '' : t).html(); }
+                    // Lifecycle action buttons for a plan group header, keyed on plan_status.
+                    function planActions(m){
+                        if (!m.id) return '';   // solo group is not a plan
+                        var ps = String(m.plan_status || '').toLowerCase();
+                        var btn = function(cls, extra, icon, label){
+                            return '<button type="button" class="btn btn-sm '+cls+' '+extra+' ms-1" data-plan-id="'+m.id+'">'
+                                 + '<i class="bi bi-'+icon+'"></i>' + (label ? ' '+label : '') + '</button>';
+                        };
+                        var out = '';
+                        if (ps === 'draft')                             out += btn('btn-outline-info',   'wb-plan-approve', 'check2-circle', 'Approve');
+                        else if (ps === 'approved' || ps === 'stalled') out += btn('btn-info',           'wb-plan-build',   'play-fill',     'Build');
+                        else if (ps === 'building')                     out += '<span class="badge bg-primary ms-1"><span class="spinner-border spinner-border-sm me-1" role="status"></span>Building</span>';
+                        if (ps !== 'building')                          out += btn('btn-outline-danger',  'wb-plan-delete',  'trash',         '');
+                        return '<span class="float-end">'+out+'</span>';
+                    }
                     function statusBadge(s){
                         if (!s) return '';
                         var map = {done:'success', completed:'success', merged:'success',
@@ -270,12 +326,41 @@
                                     var tag = m.tag ? ' <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-2"><i class="bi bi-hdd-network me-1"></i>'+esc(m.tag)+'</span>' : '';
                                     var count = ' <span class="text-muted small ms-2">'+n+' task'+(n===1?'':'s')+'</span>';
                                     return $('<tr class="table-active">').append(
-                                        '<td colspan="7">'+icon+title+tag+statusBadge(m.status)+count+'</td>'
+                                        '<td colspan="7">'+planActions(m)+icon+title+tag+statusBadge(m.status)+count+'</td>'
                                     );
                                 }
                             },
                             language: { search: 'Filter:', searchPlaceholder: 'title, instance, status…' }
                         });
+                        bindPlanActions();
+                    }
+                    // POST a plan lifecycle action, then refresh so the new state shows.
+                    function planAction(url, btn, confirmMsg){
+                        var id = btn.getAttribute('data-plan-id');
+                        if (!id) return;
+                        if (confirmMsg && !window.confirm(confirmMsg)) return;
+                        btn.disabled = true;
+                        fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-CSRF-TOKEN': window.WB_CSRF || '',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: 'plan_id=' + encodeURIComponent(id) + '&_csrf_token=' + encodeURIComponent(window.WB_CSRF || '')
+                        }).then(function(r){ return r.json(); })
+                          .then(function(j){
+                              if (j && j.success === false) { window.alert(j.message || 'Action failed'); btn.disabled = false; return; }
+                              window.location.reload();
+                          })
+                          .catch(function(){ window.alert('Network error'); btn.disabled = false; });
+                    }
+                    // Delegated so the buttons survive DataTables redraws (sort/search/paginate).
+                    function bindPlanActions(){
+                        $('#wbTasks').off('click.wbplan')
+                            .on('click.wbplan', '.wb-plan-approve', function(){ planAction('/workbench/planapprove', this); })
+                            .on('click.wbplan', '.wb-plan-build',   function(){ planAction('/workbench/planbuild', this); })
+                            .on('click.wbplan', '.wb-plan-delete',  function(){ planAction('/workbench/plandelete', this, 'Delete this entire plan and all of its tasks? This cannot be undone.'); });
                     }
                     // jQuery is loaded near the end of <body> (after this view), so wait for it,
                     // then load DataTables + RowGroup in order and initialise.

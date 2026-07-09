@@ -60,6 +60,29 @@ class Workbench extends Control {
         // Get task counts per team for tab badges
         $teamCounts = $this->access->getTeamTaskCounts($this->member->id);
 
+        // Grouping for the list: subtasks nest under their plan parent. Collect the
+        // parent ids referenced by visible subtasks, then load those parents' header
+        // metadata directly — a status filter can hide the parent (e.g. a "completed"
+        // plan whose children are "merged"), but we still want its group header.
+        $childParentIds = [];
+        foreach ($tasks as $t) {
+            if (!empty($t->parentTaskId)) { $childParentIds[(int)$t->parentTaskId] = true; }
+        }
+        $planMeta = [];
+        if ($childParentIds) {
+            $ids = array_keys($childParentIds);
+            $ph  = implode(',', array_fill(0, count($ids), '?'));
+            foreach (Bean::find('workbenchtask', "id IN ($ph)", $ids) as $p) {
+                $planMeta[(int)$p->id] = [
+                    'id'          => (int)$p->id,
+                    'title'       => $p->title,
+                    'instanceTag' => $p->instanceTag,
+                    'status'      => $p->status,
+                    'planStatus'  => $p->planStatus,
+                ];
+            }
+        }
+
         $this->viewData['tasks'] = $tasks;
         $this->viewData['counts'] = $counts;
         $this->viewData['teams'] = $teams;
@@ -68,6 +91,8 @@ class Workbench extends Control {
         $this->viewData['taskTypes'] = $this->getTaskTypes();
         $this->viewData['priorities'] = $this->getPriorities();
         $this->viewData['instanceTags'] = $this->access->getInstanceTags($this->member->id);
+        $this->viewData['planMeta'] = $planMeta;
+        $this->viewData['parentIdsWithChildren'] = array_keys($childParentIds);
 
         $this->render('workbench/index', $this->viewData);
     }

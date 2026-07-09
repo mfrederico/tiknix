@@ -27,6 +27,17 @@
                             <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                         <?php endforeach; ?>
 
+                        <!-- Markdown import (drag & drop) -->
+                        <div class="mb-3">
+                            <label class="form-label">Start from a Markdown file <span class="text-muted">(optional)</span></label>
+                            <div id="mdDrop" class="border border-2 rounded p-4 text-center text-muted" style="border-style:dashed !important; cursor:pointer;">
+                                <i class="bi bi-filetype-md fs-2 d-block mb-2"></i>
+                                <span id="mdDropText">Drag &amp; drop a <code>.md</code> file here, or click to browse</span>
+                                <input type="file" id="mdFile" accept=".md,.markdown,text/markdown,text/plain" hidden>
+                            </div>
+                            <div class="form-text">Loads the file into Title &amp; Description below. Nothing is uploaded until you click Create.</div>
+                        </div>
+
                         <!-- Title -->
                         <div class="mb-3">
                             <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
@@ -40,6 +51,22 @@
                             <textarea class="form-control" id="description" name="description" rows="4"
                                       placeholder="Provide detailed context for Claude..."></textarea>
                             <div class="form-text">Be specific about what you want. Include relevant code paths, requirements, and constraints.</div>
+                        </div>
+
+                        <!-- Instance (tenant) — required -->
+                        <div class="mb-3">
+                            <label for="instance_id" class="form-label">Instance <span class="text-danger">*</span></label>
+                            <select class="form-select" id="instance_id" name="instance_id" required>
+                                <option value="" selected disabled>— Select an instance —</option>
+                                <?php foreach (($instances ?? []) as $inst): ?>
+                                    <option value="<?= (int)$inst['id'] ?>"><?= htmlspecialchars($inst['label']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php if (empty($instances)): ?>
+                                <div class="form-text text-warning"><i class="bi bi-exclamation-triangle"></i> You have no instances yet — provision one in the <a href="/aibuilder">AI Builder</a> first.</div>
+                            <?php else: ?>
+                                <div class="form-text">Which AI Builder instance this task targets.</div>
+                            <?php endif; ?>
                         </div>
 
                         <div class="row">
@@ -146,3 +173,41 @@
         </div>
     </div>
 </div>
+
+<script>
+(function(){
+    var drop  = document.getElementById('mdDrop'),
+        input = document.getElementById('mdFile'),
+        txt   = document.getElementById('mdDropText');
+    if (!drop || !input) return;
+    function ingest(file){
+        if (!file) return;
+        if (!/\.(md|markdown|txt)$/i.test(file.name)) { txt.textContent = 'Please choose a .md file.'; return; }
+        var reader = new FileReader();
+        reader.onload = function(e){
+            var content = String(e.target.result || '');
+            var desc  = document.getElementById('description');
+            var title = document.getElementById('title');
+            if (desc) desc.value = content;
+            if (title && !title.value.trim()){
+                var m = content.match(/^\s*#\s+(.+?)\s*$/m);   // first "# Heading" -> title
+                title.value = (m ? m[1] : file.name.replace(/\.(md|markdown|txt)$/i, '')).slice(0, 255);
+            }
+            var name = file.name.replace(/[<>&"]/g, '');
+            txt.innerHTML = 'Loaded <strong>' + name + '</strong> (' + content.length + ' chars). Review below, then Create.';
+        };
+        reader.readAsText(file);
+    }
+    drop.addEventListener('click', function(){ input.click(); });
+    input.addEventListener('change', function(){ ingest(input.files[0]); });
+    ['dragenter','dragover'].forEach(function(ev){
+        drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.add('border-primary','text-primary'); });
+    });
+    ['dragleave','drop'].forEach(function(ev){
+        drop.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); drop.classList.remove('border-primary','text-primary'); });
+    });
+    drop.addEventListener('drop', function(e){
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) ingest(e.dataTransfer.files[0]);
+    });
+})();
+</script>

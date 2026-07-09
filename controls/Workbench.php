@@ -131,6 +131,18 @@ class Workbench extends Control {
         $this->viewData['branches'] = $remoteBranches;
         $this->viewData['currentBranch'] = in_array($currentBranch, $remoteBranches) ? $currentBranch : 'main';
 
+        // AI Builder instances (tenants) this member owns — a task must target one.
+        $instances = [];
+        foreach (Bean::find('instance', 'member_id = ? AND status = ? ORDER BY slug ASC', [$this->member->id, 'active']) as $inst) {
+            $tag = $inst->slug . '.' . ($inst->app ?: 'tiknix');
+            $instances[] = [
+                'id'    => (int)$inst->id,
+                'tag'   => $tag,
+                'label' => ($inst->displayName ? $inst->displayName . ' — ' : '') . $tag,
+            ];
+        }
+        $this->viewData['instances'] = $instances;
+
         $this->render('workbench/create', $this->viewData);
     }
 
@@ -180,6 +192,15 @@ class Workbench extends Control {
             $authcontrolLevel = $this->member->level; // Can't assign higher privilege than you have
         }
 
+        // Instance (tenant) is required — must be one of the member's own active instances.
+        $instanceId = (int)$this->getParam('instance_id', 0);
+        $instance = $instanceId ? Bean::load('instance', $instanceId) : null;
+        if (!$instance || !$instance->id || (int)$instance->memberId !== (int)$this->member->id) {
+            $this->flash('error', 'Please select a valid instance for this task');
+            Flight::redirect('/workbench/create');
+            return;
+        }
+
         try {
             $task = Bean::dispense('workbenchtask');
             $task->title = $title;
@@ -194,6 +215,8 @@ class Workbench extends Control {
             $task->relatedFiles = json_encode(array_filter(explode("\n", $this->getParam('related_files', ''))));
             $task->tags = json_encode(array_filter(array_map('trim', explode(',', $this->getParam('tags', '')))));
             $task->baseBranch = trim($this->getParam('base_branch', 'main'));
+            $task->instanceId = (int)$instance->id;
+            $task->instanceTag = $instance->slug . '.' . ($instance->app ?: 'tiknix');
             $task->runCount = 0;
             $task->createdAt = date('Y-m-d H:i:s');
             Bean::store($task);

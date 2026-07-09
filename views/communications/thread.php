@@ -79,14 +79,14 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
                                 $who      = $m->fromName ?: $m->fromEmail ?: ($isOut ? 'You' : 'Them');
                             ?>
                             <?php if ($isSystem): ?>
-                                <div class="comms-msg-system">
+                                <div class="comms-msg-system" data-msg-id="<?= (int)$m->id ?>">
                                     <span class="comms-msg-system-inner">
                                         <i class="bi bi-info-circle me-1"></i><?= $m->content ?>
                                         <span class="ms-1 opacity-75"><?= htmlspecialchars($when) ?></span>
                                     </span>
                                 </div>
                             <?php else: ?>
-                                <div class="d-flex <?= $isOut ? 'justify-content-end' : 'justify-content-start' ?> align-items-end gap-2">
+                                <div class="comms-msg-row d-flex <?= $isOut ? 'justify-content-end' : 'justify-content-start' ?> align-items-end gap-2" data-msg-id="<?= (int)$m->id ?>">
                                     <?php if (!$isOut): ?>
                                         <span class="comms-avatar sm"><?= htmlspecialchars(comms_initials($who)) ?></span>
                                     <?php endif; ?>
@@ -150,9 +150,114 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
 <?php include __DIR__ . '/_compose-modal.php'; ?>
 
 <script>
-// Scroll the message feed to the newest message on load.
+// Live thread — appends only NEW messages every 10s. Scoped to #comms-feed so
+// nothing else on the page re-renders; scroll position is preserved unless the
+// viewer was already pinned to the bottom. Ported from the dealeryes pattern.
 (function () {
     var feed = document.getElementById('comms-feed');
-    if (feed) feed.scrollTop = feed.scrollHeight;
+    if (!feed) return;
+
+    var threadId = <?= (int)$thread->id ?>;
+    var POLL_MS  = 10000;
+
+    // Newest message id currently in the DOM (0 if the feed is empty).
+    function currentLastId() {
+        var last = 0;
+        feed.querySelectorAll('[data-msg-id]').forEach(function (el) {
+            var n = parseInt(el.getAttribute('data-msg-id'), 10) || 0;
+            if (n > last) last = n;
+        });
+        return last;
+    }
+    var lastId = currentLastId();
+
+    // Start pinned to the newest message (replaces the old scroll-on-load).
+    feed.scrollTop = feed.scrollHeight;
+
+    function atBottom() {
+        return (feed.scrollHeight - feed.clientHeight - feed.scrollTop) < 24;
+    }
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c];
+        });
+    }
+    function initials(name) {
+        var p = String(name || '').trim().split(/\s+/).filter(Boolean);
+        if (!p.length) return '?';
+        return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+    }
+    function fmt(ts) {
+        if (!ts) return '';
+        var d = new Date(String(ts).replace(' ', 'T'));
+        if (isNaN(d)) return esc(ts);
+        return d.toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+    }
+
+    // Build a bubble that mirrors the server-rendered markup (see thread.php).
+    function renderMessage(m) {
+        var when = fmt(m.ts);
+        if (m.notify_type === 'system') {
+            var sys = document.createElement('div');
+            sys.className = 'comms-msg-system';
+            sys.setAttribute('data-msg-id', m.id);
+            sys.innerHTML = '<span class="comms-msg-system-inner">' +
+                '<i class="bi bi-info-circle me-1"></i>' + (m.content || '') +
+                '<span class="ms-1 opacity-75">' + esc(when) + '</span></span>';
+            return sys;
+        }
+        var isOut = m.direction === 'out';
+        var who   = m.from_name || (isOut ? 'You' : 'Them');
+        var avatar = '<span class="comms-avatar sm">' + esc(initials(who)) + '</span>';
+        var statusHtml = '';
+        if (m.status === 'failed')       statusHtml = ' <span class="text-danger"><i class="bi bi-exclamation-triangle"></i> failed</span>';
+        else if (isOut && m.status === 'sent') statusHtml = ' <i class="bi bi-check2 text-success" title="sent"></i>';
+        var errHtml = (m.status === 'failed' && m.error)
+            ? '<div class="text-danger small mt-1 border-top pt-1">' + esc(m.error) + '</div>' : '';
+
+        var row = document.createElement('div');
+        row.className = 'comms-msg-row d-flex ' + (isOut ? 'justify-content-end' : 'justify-content-start') + ' align-items-end gap-2';
+        row.setAttribute('data-msg-id', m.id);
+        row.innerHTML =
+            (isOut ? '' : avatar) +
+            '<div class="comms-msg-bubble-wrap">' +
+                '<div class="comms-msg-meta ' + (isOut ? 'text-end' : '') + '">' +
+                    esc(who) + ' &middot; ' + esc(when) + statusHtml +
+                '</div>' +
+                '<div class="comms-msg-bubble ' + (isOut ? 'out' : 'in') + '">' +
+                    (m.content || '') + errHtml +
+                '</div>' +
+            '</div>' +
+            (isOut ? avatar : '');
+        return row;
+    }
+
+    async function tick() {
+        if (document.hidden) return;
+        try {
+            var pinned = atBottom();
+            var r = await fetch('/communications/poll?thread=' + threadId + '&since_msg=' + lastId,
+                                { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+            if (!r.ok) return;
+            var data = await r.json();
+            var added = false;
+            (data.new_messages || []).forEach(function (m) {
+                if (m.id <= lastId) return;               // de-dupe
+                // Drop the "No messages yet." placeholder on first arrival.
+                var ph = feed.querySelector('.text-center.text-muted');
+                if (ph) ph.remove();
+                feed.appendChild(renderMessage(m));
+                lastId = m.id;
+                added = true;
+            });
+            if (added && pinned) feed.scrollTop = feed.scrollHeight;
+            // Refresh the nav bell right away (it owns its own 30s cadence).
+            if (added && window.notifyBellRefresh) window.notifyBellRefresh();
+        } catch (e) { /* transient — next tick retries */ }
+    }
+
+    setInterval(tick, POLL_MS);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
 })();
 </script>

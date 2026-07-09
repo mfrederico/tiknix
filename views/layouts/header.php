@@ -78,6 +78,8 @@
             <!-- Right Side Menu -->
             <ul class="navbar-nav ms-auto">
                 <?php if ($isLoggedIn ?? false): ?>
+                    <!-- Notification Bell -->
+                    <?php include __DIR__ . '/_notify-bell.php'; ?>
                     <!-- User Dropdown -->
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">

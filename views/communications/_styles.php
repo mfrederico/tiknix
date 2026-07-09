@@ -49,6 +49,7 @@
     background: var(--bs-primary); margin-right: 0.4rem; flex-shrink: 0; visibility: hidden;
 }
 .comms-hub .comms-thread-row.unread .comms-unread-dot { visibility: visible; }
+.comms-hub .comms-unread-badge { font-size: 0.62rem; }
 
 /* ---- avatar chip ---- */
 .comms-hub .comms-avatar {

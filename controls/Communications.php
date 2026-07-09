@@ -117,6 +117,7 @@ class Communications extends BaseControls\Control {
             ->to($to, $toName)
             ->subject($subject)
             ->owner((int)$this->member->id)
+            ->fromName($this->senderName())
             ->send($body);
 
         if (empty($result['thread'])) {
@@ -181,6 +182,7 @@ class Communications extends BaseControls\Control {
             ->to($toEmail, $toName)
             ->subject($subject)
             ->owner((int)$thread->ownerMemberId)
+            ->fromName($this->senderName())
             ->onThread($id)
             ->inReplyTo($inReplyTo, $prevRefs);
 
@@ -199,7 +201,94 @@ class Communications extends BaseControls\Control {
         Flight::redirect('/communications/thread/' . $id);
     }
 
+    /**
+     * Live-poll (GET, JSON): messages on one thread newer than since_msg, plus
+     * the viewer's scoped unread total for the nav bell. Returns only the delta
+     * so the thread view appends new bubbles without re-rendering the page.
+     *   /communications/poll?thread={id}&since_msg={lastId}
+     */
+    public function poll() {
+        if (!$this->requireLogin()) { Flight::json(['new_messages' => [], 'unread_total' => 0]); return; }
+
+        $threadId = (int)$this->getParam('thread', 0);
+        $sinceId  = (int)$this->getParam('since_msg', 0);
+        $thread   = Bean::load('emailthread', $threadId);
+
+        // Unknown/forbidden thread: still hand back the bell total so the poll
+        // isn't wasted, but no messages.
+        if (!$thread->id || !$this->canView($thread)) {
+            Flight::json(['new_messages' => [], 'unread_total' => $this->unreadTotal()]);
+            return;
+        }
+
+        $new = [];
+        foreach (Bean::find('notify', 'thread_id = ? AND id > ? ORDER BY id ASC', [$threadId, $sinceId]) as $m) {
+            $new[] = [
+                'id'          => (int)$m->id,
+                'thread_id'   => (int)$m->threadId,
+                'direction'   => $m->direction,
+                'notify_type' => $m->notifyType,
+                'from_name'   => $m->fromName ?: $m->fromEmail,
+                'status'      => $m->status,
+                'content'     => $m->content,   // stored already sanitized (webhook in / reply out)
+                'error'       => $m->status === 'failed' ? (string)$m->errorMessage : '',
+                'ts'          => $m->createdAt,
+            ];
+        }
+
+        // The viewer is actively looking at this thread, so anything that just
+        // arrived is "read" — clear its badge (mirrors thread() on load).
+        if ($new && (int)$thread->unreadCount > 0) {
+            $thread->unreadCount = 0;
+            $thread->updatedAt   = date('Y-m-d H:i:s');
+            Bean::store($thread);
+        }
+
+        Flight::json(['new_messages' => $new, 'unread_total' => $this->unreadTotal()]);
+    }
+
+    /**
+     * Nav bell feed (GET, JSON): scoped unread total + the most recent threads
+     * for the dropdown. Polled globally (every page) by the bell component.
+     */
+    public function unreadjson() {
+        if (!$this->requireLogin()) { Flight::json(['unread' => 0, 'threads' => []]); return; }
+
+        [$where, $params] = $this->scopeClause();
+        $threads = Bean::find('emailthread', $where . ' ORDER BY last_message_at DESC, id DESC LIMIT 8', $params);
+
+        $out = [];
+        foreach ($threads as $t) {
+            $out[] = [
+                'id'              => (int)$t->id,
+                'subject'         => (string)($t->subject ?: '(no subject)'),
+                'who'             => (string)($t->recipientName ?: $t->recipientEmail ?: 'Unknown'),
+                'preview'         => (string)($t->lastPreview ?? ''),
+                'last_message_at' => $t->lastMessageAt,
+                'last_direction'  => (string)($t->lastDirection ?? ''),
+                'unread_count'    => (int)$t->unreadCount,
+            ];
+        }
+
+        Flight::json(['unread' => $this->unreadTotal(), 'threads' => $out]);
+    }
+
     // ---- helpers -----------------------------------------------------------
+
+    /**
+     * Display name for outbound mail: the sending member's real name
+     * (first + last), falling back to username then email. The From email
+     * stays the verified Mailgun sender — only the display name changes.
+     */
+    private function senderName(): string {
+        $first = trim((string)($this->member->firstName ?? ''));
+        $last  = trim((string)($this->member->lastName  ?? ''));
+        $name  = trim($first . ' ' . $last);
+        if ($name === '') {
+            $name = (string)($this->member->username ?: $this->member->email ?: '');
+        }
+        return $name;
+    }
 
     /** Scoped, optionally-searched thread list for the sidebar rail. */
     private function fetchThreads(string $search = ''): array {

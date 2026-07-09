@@ -176,6 +176,19 @@ class NotifyService {
         return $this;
     }
 
+    /**
+     * Override only the From display name (e.g. the sending member's real name),
+     * leaving fromEmail as the verified Mailgun sender so Reply-To routing and
+     * SPF/DKIM stay intact. Blank/whitespace names are ignored (keeps the default).
+     */
+    public function fromName(string $name): self {
+        $safe = trim(preg_replace('/[\r\n<>",;]/', '', $name));
+        if ($safe !== '') {
+            $this->fromName = $safe;
+        }
+        return $this;
+    }
+
     public function subject(string $subject): self {
         $this->subjectLine = $subject;
         return $this;

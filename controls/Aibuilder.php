@@ -467,6 +467,93 @@ class Aibuilder extends Control {
         ]);
     }
 
+    /** Resolve a plan (workbenchtask parent) by id and authorize via its instance. */
+    private function ownedPlan($planId) {
+        $planId = (int)$planId;
+        if ($planId <= 0) return null;
+        $plan = R::load('workbenchtask', $planId);
+        if (!$plan->id || $plan->parentTaskId) return null;         // must be a plan parent
+        $inst = $this->ownedInstance((int)$plan->instanceId);
+        if (!$inst) return null;
+        return [$plan, $inst];
+    }
+
+    /** POST /aibuilder/planapprove?plan= — mark a plan approved (ready to build). JSON. */
+    public function planapprove($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $pi = $this->ownedPlan($this->getParam('plan', 0));
+        if (!$pi) { Flight::jsonError('No such plan', 404); return; }
+        [$plan] = $pi;
+        $plan->planStatus = 'approved';
+        $plan->updatedAt  = date('Y-m-d H:i:s');
+        R::store($plan);
+        Flight::jsonSuccess(['plan_status' => 'approved'], 'Plan approved — ready to build.');
+    }
+
+    /**
+     * POST /aibuilder/planrun?plan= — launch the detached worktree orchestrator for
+     * an approved plan (parallel build agents, capped at PlanExecutor::MAX_CONCURRENT). JSON.
+     */
+    public function planrun($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $pi = $this->ownedPlan($this->getParam('plan', 0));
+        if (!$pi) { Flight::jsonError('No such plan', 404); return; }
+        [$plan, $inst] = $pi;
+
+        if (!in_array($plan->planStatus, ['approved', 'stalled'], true)) {
+            Flight::jsonError('Approve the plan before running it (or it is already building).', 409);
+            return;
+        }
+        $session = 'tiknix-plan' . (int)$plan->id . '-orchestrator';
+        if (TmuxManager::exists($session)) { Flight::jsonError('This plan is already running.', 409); return; }
+
+        $dir = $this->instanceDir($inst->slug);
+        $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
+             . ' --plan=' . (int)$plan->id
+             . ' --slug=' . escapeshellarg((string)$inst->slug)
+             . ' --dir='  . escapeshellarg($dir)
+             . ' --model=sonnet'
+             . ' --level=' . (int)$this->member->level;
+        $ab = $dir . '/.aibuilder';
+        @mkdir($ab, 0775, true);
+        $scriptFile = $ab . '/run-orchestrator.sh';
+        file_put_contents($scriptFile, "#!/bin/bash\n" . $cmd . ' 2>&1 | tee ' . escapeshellarg($ab . '/orchestrator.log') . "\n");
+        @chmod($scriptFile, 0755);
+
+        if (!TmuxManager::create($session, $scriptFile, $dir)) {
+            Flight::jsonError('Could not start the orchestrator.', 500);
+            return;
+        }
+        $plan->planStatus = 'building';
+        $plan->updatedAt  = date('Y-m-d H:i:s');
+        R::store($plan);
+        Flight::jsonSuccess(['session' => $session], 'Build started — up to ' . PlanExecutor::MAX_CONCURRENT . ' agents running.');
+    }
+
+    /** GET /aibuilder/planprogress?plan= — per-task build status for the live board. JSON. */
+    public function planprogress($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        $pi = $this->ownedPlan($this->getParam('plan', 0));
+        if (!$pi) { Flight::jsonError('No such plan', 404); return; }
+        [$plan] = $pi;
+        $subs = R::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [(int)$plan->id]);
+        $tasks = [];
+        foreach ($subs as $s) {
+            $tasks[] = [
+                'id' => (int)$s->id, 'title' => $s->title, 'status' => $s->status,
+                'engine' => $s->engine, 'error' => (string)$s->errorMessage,
+                'depends_on' => json_decode((string)$s->dependsOn ?: '[]', true) ?: [],
+            ];
+        }
+        Flight::jsonSuccess([
+            'plan_status' => $plan->planStatus ?: 'draft',
+            'running'     => TmuxManager::exists('tiknix-plan' . (int)$plan->id . '-orchestrator'),
+            'tasks'       => $tasks,
+        ]);
+    }
+
     /**
      * POST /aibuilder/restart — kill the instance's jailed tmux session so a fresh
      * jail (with the current binds/settings) launches when the terminal reconnects.

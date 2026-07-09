@@ -220,23 +220,34 @@
                         </table>
                     </div>
                 </div>
-                <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
-                <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
-                <script src="https://cdn.datatables.net/rowgroup/1.4.1/js/dataTables.rowGroup.min.js"></script>
                 <script>
                 (function(){
-                    const PLAN_META = <?= json_encode($planMetaJs, JSON_UNESCAPED_SLASHES) ?>;
+                    var $;   // bound once jQuery is available (this layout loads jQuery after the view)
+                    var PLAN_META = <?= json_encode($planMetaJs, JSON_UNESCAPED_SLASHES) ?>;
+                    var DT_ASSETS = [
+                        'https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js',
+                        'https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js',
+                        'https://cdn.datatables.net/rowgroup/1.4.1/js/dataTables.rowGroup.min.js'
+                    ];
                     function esc(t){ return $('<div>').text(t == null ? '' : t).html(); }
                     function statusBadge(s){
                         if (!s) return '';
-                        const map = {done:'success', completed:'success', merged:'success',
+                        var map = {done:'success', completed:'success', merged:'success',
                             building:'primary', running:'primary', approved:'info',
                             draft:'secondary', pending:'secondary', stalled:'danger', failed:'danger'};
-                        const cls = map[String(s).toLowerCase()] || 'secondary';
+                        var cls = map[String(s).toLowerCase()] || 'secondary';
                         return ' <span class="badge bg-'+cls+' ms-1">'+esc(String(s).charAt(0).toUpperCase()+String(s).slice(1))+'</span>';
                     }
-                    $(function(){
-                        if (!$.fn || !$.fn.DataTable) return;   // graceful no-op if the CDN is unreachable
+                    function loadSeq(list, done){
+                        if (!list.length) return done();
+                        var s = document.createElement('script');
+                        s.src = list[0];
+                        s.onload = function(){ loadSeq(list.slice(1), done); };
+                        s.onerror = function(){ console.error('DataTables asset failed to load:', list[0]); };
+                        document.head.appendChild(s);
+                    }
+                    function initTable(){
+                        if (!$.fn || !$.fn.DataTable) return;   // graceful no-op if a CDN asset is unreachable
                         $('#wbTasks').DataTable({
                             pageLength: 25,
                             lengthMenu: [[10,25,50,-1],[10,25,50,'All']],
@@ -249,15 +260,15 @@
                             rowGroup: {
                                 dataSrc: 0,
                                 startRender: function(rows, group){
-                                    const m = PLAN_META[group] || { title: group };
-                                    const n = rows.count();
-                                    const icon = m.url ? '<i class="bi bi-diagram-3 me-2 text-primary"></i>'
-                                                       : '<i class="bi bi-collection me-2 text-muted"></i>';
-                                    const title = m.url
+                                    var m = PLAN_META[group] || { title: group };
+                                    var n = rows.count();
+                                    var icon = m.url ? '<i class="bi bi-diagram-3 me-2 text-primary"></i>'
+                                                     : '<i class="bi bi-collection me-2 text-muted"></i>';
+                                    var title = m.url
                                         ? '<a href="'+m.url+'" class="text-decoration-none fw-semibold">'+esc(m.title)+'</a>'
                                         : '<span class="fw-semibold">'+esc(m.title)+'</span>';
-                                    const tag = m.tag ? ' <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-2"><i class="bi bi-hdd-network me-1"></i>'+esc(m.tag)+'</span>' : '';
-                                    const count = ' <span class="text-muted small ms-2">'+n+' task'+(n===1?'':'s')+'</span>';
+                                    var tag = m.tag ? ' <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-2"><i class="bi bi-hdd-network me-1"></i>'+esc(m.tag)+'</span>' : '';
+                                    var count = ' <span class="text-muted small ms-2">'+n+' task'+(n===1?'':'s')+'</span>';
                                     return $('<tr class="table-active">').append(
                                         '<td colspan="7">'+icon+title+tag+statusBadge(m.status)+count+'</td>'
                                     );
@@ -265,7 +276,13 @@
                             },
                             language: { search: 'Filter:', searchPlaceholder: 'title, instance, status…' }
                         });
-                    });
+                    }
+                    // jQuery is loaded near the end of <body> (after this view), so wait for it,
+                    // then load DataTables + RowGroup in order and initialise.
+                    (function waitJQ(n){
+                        if (window.jQuery){ $ = window.jQuery; loadSeq(DT_ASSETS, initTable); }
+                        else if (n < 200){ setTimeout(function(){ waitJQ(n + 1); }, 50); }   // ~10s cap
+                    })(0);
                 })();
                 </script>
             <?php endif; ?>

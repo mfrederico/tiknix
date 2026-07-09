@@ -420,24 +420,60 @@ if (AB.has) {
     else planNote('⚠️ Clipboard unavailable.');
   });
   document.getElementById('ab-plan-ingest').addEventListener('click',function(){ planNote('Ingesting…'); ingestPlan(); });
+  const taskStatusColor={pending:'secondary',running:'primary',merged:'success',completed:'success',failed:'danger',conflict:'warning'};
+  const planStatusColor={draft:'secondary',approved:'info',building:'primary',done:'success',stalled:'warning'};
+  let planProgressPoll=null;
+  function stopPlanProgress(){ if(planProgressPoll){ clearInterval(planProgressPoll); planProgressPoll=null; } }
   function loadPlans(){
     fetch('/aibuilder/plan?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
       const box=document.getElementById('ab-plan-list'); const plans=(j.data&&j.data.plans)||[];
       if(!plans.length){ box.innerHTML='<div class="text-body-secondary">No plans yet.</div>'; return; }
       box.innerHTML=plans.map(p=>{
         const ps=p.plan_status||'draft';
-        const psColor={draft:'secondary',approved:'info',building:'primary',done:'success'}[ps]||'secondary';
-        return '<div class="ab-ckpt"><div class="d-flex justify-content-between align-items-center"><span class="fw-semibold">'+esc(p.title)+'</span>'
-          +'<span class="badge text-bg-'+psColor+'">'+esc(ps)+'</span></div>'
+        const psColor=planStatusColor[ps]||'secondary';
+        let actions='';
+        if(ps==='draft') actions='<button class="btn btn-outline-info btn-sm ab-plan-approve" data-plan="'+p.id+'"><i class="bi bi-check2-circle me-1"></i>Approve</button>';
+        else if(ps==='approved'||ps==='stalled') actions='<button class="btn btn-info btn-sm ab-plan-run" data-plan="'+p.id+'"><i class="bi bi-play-fill me-1"></i>Build (&le;3 agents)</button>';
+        else if(ps==='building') actions='<span class="text-primary small"><span class="spinner-border spinner-border-sm me-1"></span>Building…</span>';
+        return '<div class="ab-ckpt" data-plan="'+p.id+'"><div class="d-flex justify-content-between align-items-center"><span class="fw-semibold">'+esc(p.title)+'</span>'
+          +'<span class="badge text-bg-'+psColor+' ab-plan-status">'+esc(ps)+'</span></div>'
           +(p.checkpoint?'<div class="text-body-secondary" style="font-size:.72rem">baseline: '+esc(p.checkpoint)+'</div>':'')
-          +p.subtasks.map(s=>{ const dc=(s.depends_on||[]).length;
-            return '<div class="ab-file"><span class="st M">P'+esc(String(s.priority))+'</span><span>'+esc(s.title)
+          +'<div class="ab-plan-tasks">'+p.subtasks.map(s=>{ const dc=(s.depends_on||[]).length; const sc=taskStatusColor[s.status]||'secondary';
+            return '<div class="ab-file" data-task="'+s.id+'"><span class="st M">P'+esc(String(s.priority))+'</span><span class="flex-grow-1">'+esc(s.title)
               +' <span class="badge text-bg-dark">'+esc(s.engine)+'</span>'
-              +(dc?' <span class="badge text-bg-secondary" title="depends on '+dc+' task(s)"><i class="bi bi-link-45deg"></i>'+dc+'</span>':'')+'</span></div>';
-          }).join('')
+              +(dc?' <span class="badge text-bg-secondary" title="depends on '+dc+' task(s)"><i class="bi bi-link-45deg"></i>'+dc+'</span>':'')
+              +'</span><span class="badge text-bg-'+sc+' ab-task-status">'+esc(s.status)+'</span></div>';
+          }).join('')+'</div>'
+          +'<div class="mt-2 ab-plan-actions">'+actions+'</div>'
           +'</div>';
       }).join('');
+      box.querySelectorAll('.ab-plan-approve').forEach(b=>b.addEventListener('click',()=>{
+        b.disabled=true; post('/aibuilder/planapprove',{plan:b.dataset.plan}).then(()=>loadPlans());
+      }));
+      box.querySelectorAll('.ab-plan-run').forEach(b=>b.addEventListener('click',()=>{
+        b.disabled=true; b.innerHTML='<span class="spinner-border spinner-border-sm"></span>';
+        post('/aibuilder/planrun',{plan:b.dataset.plan}).then(j=>{ if(!j.success) alert(j.message||'Could not start build.'); loadPlans(); startPlanProgress(); });
+      }));
+      if(plans.some(p=>(p.plan_status||'')==='building')) startPlanProgress();
     }).catch(()=>{});
+  }
+  function startPlanProgress(){
+    stopPlanProgress();
+    planProgressPoll=setInterval(()=>{
+      const building=[...document.querySelectorAll('.ab-ckpt[data-plan]')].filter(el=>{
+        const b=el.querySelector('.ab-plan-status'); return b && b.textContent==='building'; });
+      if(!building.length){ stopPlanProgress(); return; }
+      building.forEach(el=>{
+        const plan=el.dataset.plan;
+        fetch('/aibuilder/planprogress?plan='+plan,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
+          const d=j.data||{}; if(!Array.isArray(d.tasks)) return;
+          d.tasks.forEach(t=>{ const badge=el.querySelector('.ab-file[data-task="'+t.id+'"] .ab-task-status');
+            if(badge){ badge.className='badge text-bg-'+(taskStatusColor[t.status]||'secondary')+' ab-task-status'; badge.textContent=t.status;
+              if(t.error) badge.title=t.error; } });
+          if(d.plan_status && d.plan_status!=='building'){ stopPlanProgress(); loadPlans(); refreshChanges(); loadCheckpoints(); }
+        }).catch(()=>{});
+      });
+    }, 4000);
   }
 
   // --- Publish to GitHub (push + PR; first-time opens setup in a new tab) ---

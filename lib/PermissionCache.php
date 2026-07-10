@@ -387,6 +387,7 @@ class PermissionCache {
                 'forgot', 'doforgot', 'reset', 'doreset',
                 'google', 'googlecallback', 'verify', 'setpassword',
                 'twofasetup', 'twofaverify', 'twofaconfirmsaved', 'twofarecoverycodes',
+                'twofaskip',
             ];
             if (in_array($m, $publicAuth, true)) return LEVELS['PUBLIC'];
         }

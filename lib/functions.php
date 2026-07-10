@@ -20,6 +20,28 @@ function csrf_token(): string {
 }
 
 /**
+ * Is this tiknix running as the root control plane (the one that provisions
+ * instances), rather than a provisioned sandbox instance?
+ *
+ * The AI Builder / instance tooling only makes sense on the control plane; a
+ * sandbox is a leaf and must not spawn nested instances (until real host-aware
+ * nesting exists). Detection keys off the running host vs the apex domain, so it
+ * works without any per-instance config: a clone served at instance.tiknix.com
+ * self-identifies as a sandbox, tiknix.com as the control plane.
+ *
+ * Apex defaults to "tiknix.com" (the slug.tiknix.com convention); override with
+ * [app] control_plane_host in config. Fail-safe: an unknown host is treated as
+ * the control plane so the root is never accidentally locked out of its tools.
+ */
+function is_control_plane(): bool {
+    $root = strtolower(trim((string)(\Flight::get('app.control_plane_host') ?? '')));
+    if ($root === '') $root = 'tiknix.com';
+    $host = strtolower((string)(parse_url((string)\Flight::get('app.baseurl'), PHP_URL_HOST) ?: ''));
+    if ($host === '') return true;   // unknown host -> never lock out the root
+    return $host === $root;
+}
+
+/**
  * HTML-escape helper (shorthand for htmlspecialchars). Used by scaffolded views.
  */
 if (!function_exists('h')) {

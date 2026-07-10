@@ -28,6 +28,20 @@ class Aibuilder extends Control {
     private const SLUG_RE = '/^[a-z][a-z0-9]{1,49}$/';
     private const APP     = 'tiknix';
 
+    /**
+     * The whole AI Builder is control-plane-only: a provisioned sandbox instance
+     * is a leaf and must not run the instance tooling (no nested instances until
+     * host-aware nesting exists). Gate every route in one place.
+     */
+    public function __construct() {
+        parent::__construct();
+        if (!is_control_plane()) {
+            $this->flash('info', 'The AI Builder is only available on the root control plane, not inside a sandbox instance.');
+            Flight::redirect('/dashboard');
+            exit;
+        }
+    }
+
     private function cfg(): array {
         return @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
     }

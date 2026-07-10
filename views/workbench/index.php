@@ -168,6 +168,18 @@
                     ];
                 }
                 $planMetaJs['solo'] = ['id' => 0, 'title' => 'Standalone tasks', 'tag' => null, 'status' => null, 'plan_status' => '', 'url' => null];
+
+                // Group ordering key: the most recent createdAt in each group, so the
+                // whole table defaults to newest-first BY GROUP (not by plan-id string).
+                // Must be one constant per group (incl. the parent header row) or the
+                // RowGroup rows won't stay contiguous.
+                $groupOrder = [];
+                foreach ($tasks as $t) {
+                    $gk = !empty($t->parentTaskId) ? ('plan:' . (int)$t->parentTaskId)
+                        : (isset($parentSet[(int)$t->id]) ? ('plan:' . (int)$t->id) : 'solo');
+                    $ts = $t->createdAt ? strtotime((string)$t->createdAt) : 0;
+                    if (!isset($groupOrder[$gk]) || $ts > $groupOrder[$gk]) $groupOrder[$gk] = $ts;
+                }
                 ?>
                 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
                 <link rel="stylesheet" href="https://cdn.datatables.net/rowgroup/1.4.1/css/rowGroup.bootstrap5.min.css">
@@ -197,7 +209,8 @@
                                     $groupKey = $isSub ? ('plan:' . (int)$task->parentTaskId) : 'solo';
                                     ?>
                                     <tr>
-                                        <td class="wb-grp"><?= htmlspecialchars($groupKey) ?></td>
+                                        <?php // Prefix an inverted-timestamp so string-sorting column 0 puts newest groups first, while the value still groups by key (parsed back out in startRender). ?>
+                                        <td class="wb-grp"><?= htmlspecialchars(sprintf('%010d', 9999999999 - (int)($groupOrder[$groupKey] ?? 0)) . '~' . $groupKey) ?></td>
                                         <td>
                                             <?php if ($isSub): ?><i class="bi bi-arrow-return-right text-muted me-1"></i><?php endif; ?>
                                             <a href="/workbench/view?id=<?= $task->id ?>" class="text-decoration-none fw-medium">
@@ -307,8 +320,8 @@
                         $('#wbTasks').DataTable({
                             pageLength: 25,
                             lengthMenu: [[10,25,50,-1],[10,25,50,'All']],
-                            orderFixed: { pre: [[0,'asc']] },
-                            order: [[6,'desc']],
+                            orderFixed: { pre: [[0,'asc']] },    // group key carries an inverted-ts prefix, so asc = newest group first
+                            order: [[6,'desc']],                  // and rows newest-first within each group
                             columnDefs: [
                                 { targets: 0, visible: false, searchable: false },
                                 { targets: -1, orderable: false, searchable: false }
@@ -316,7 +329,8 @@
                             rowGroup: {
                                 dataSrc: 0,
                                 startRender: function(rows, group){
-                                    var m = PLAN_META[group] || { title: group };
+                                    var key = String(group).split('~').pop();   // strip the inverted-ts sort prefix
+                                    var m = PLAN_META[key] || { title: key };
                                     var n = rows.count();
                                     var icon = m.url ? '<i class="bi bi-diagram-3 me-2 text-primary"></i>'
                                                      : '<i class="bi bi-collection me-2 text-muted"></i>';

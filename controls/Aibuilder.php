@@ -35,11 +35,7 @@ class Aibuilder extends Control {
      */
     public function __construct() {
         parent::__construct();
-        if (!is_control_plane()) {
-            $this->flash('info', 'The AI Builder is only available on the root control plane, not inside a sandbox instance.');
-            Flight::redirect('/dashboard');
-            exit;
-        }
+        $this->requireBuilderTools('The AI Builder');
     }
 
     private function cfg(): array {

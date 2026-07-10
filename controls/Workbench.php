@@ -30,6 +30,7 @@ class Workbench extends Control {
     public function __construct() {
         parent::__construct();
         $this->access = new TaskAccessControl();
+        $this->requireBuilderTools('The Workbench');
     }
 
     /**

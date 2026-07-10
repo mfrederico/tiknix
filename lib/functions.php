@@ -42,6 +42,22 @@ function is_control_plane(): bool {
 }
 
 /**
+ * Should the "builder" tooling (AI Builder, Workbench, Agent Setup) be available
+ * here? These belong on the root control plane, not inside a provisioned sandbox
+ * instance (a leaf).
+ *
+ * Precedence: an explicit [app] builder_tools_enabled in config.ini wins — so a
+ * provisioned sub-instance can hard-disable the tools regardless of host. If it
+ * is unset, fall back to is_control_plane() host detection.
+ */
+function builder_tools_enabled(): bool {
+    $v = \Flight::get('app.builder_tools_enabled');
+    if ($v === null) return is_control_plane();   // unset -> auto-detect by host
+    if (is_bool($v)) return $v;
+    return in_array(strtolower(trim((string)$v)), ['1', 'true', 'on', 'yes', 'enabled'], true);
+}
+
+/**
  * HTML-escape helper (shorthand for htmlspecialchars). Used by scaffolded views.
  */
 if (!function_exists('h')) {

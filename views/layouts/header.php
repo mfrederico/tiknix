@@ -55,24 +55,24 @@
                             <i class="bi bi-chat-left-dots"></i> Communications
                         </a>
                     </li>
+                    <?php if (builder_tools_enabled()): // builder tooling is control-plane-only ?>
                     <li class="nav-item">
                         <a class="nav-link" href="/workbench">
                             <i class="bi bi-hammer"></i> Workbench
                         </a>
                     </li>
                     <?php if (($member['level'] ?? 100) <= 50): ?>
-                    <?php if (is_control_plane()): // instance tooling is control-plane-only ?>
                     <li class="nav-item">
                         <a class="nav-link" href="/aibuilder">
                             <i class="bi bi-robot"></i> AI Builder
                         </a>
                     </li>
-                    <?php endif; ?>
                     <li class="nav-item">
                         <a class="nav-link" href="/agentsetup">
                             <i class="bi bi-robot"></i> Agent Setup
                         </a>
                     </li>
+                    <?php endif; ?>
                     <?php endif; ?>
                 <?php endif; ?>
             </ul>

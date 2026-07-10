@@ -45,6 +45,19 @@ abstract class Control {
         
         $this->logger->debug('Controller initialized: ' . get_class($this));
     }
+
+    /**
+     * Gate a whole controller to the control plane: the builder tooling (AI
+     * Builder, Workbench, Agent Setup) is unavailable inside a sandbox instance.
+     * Call from a controller constructor; redirects + halts when disabled.
+     */
+    protected function requireBuilderTools(string $label): void {
+        if (!builder_tools_enabled()) {
+            $this->flash('info', $label . ' is only available on the root control plane, not inside a sandbox instance.');
+            Flight::redirect('/dashboard');
+            exit;
+        }
+    }
     
     /**
      * Render a view with the sandwich layout (header/footer)

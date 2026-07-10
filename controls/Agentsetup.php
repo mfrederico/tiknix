@@ -28,6 +28,7 @@ class Agentsetup extends Control {
         $this->toolsDir = dirname(__DIR__) . '/mcptools';
         $this->hooksDir = dirname(__DIR__) . '/scripts/hooks';
         $this->settingsFile = dirname(__DIR__) . '/.claude/settings.json';
+        $this->requireBuilderTools('Agent Setup');
     }
 
     /**

@@ -1291,7 +1291,11 @@ async function approveTask(id) {
 
             let message = 'Task approved!';
             if (data.pr_created) message += ' PR created.';
-            if (data.pr_merged) message += ' PR merged.';
+            if (data.merged) {
+                message += data.pr_merged ? ' PR merged.' : ' Merged.';
+            } else if (data.merge_requested && data.merge_reason) {
+                message += '\n\n⚠ Not merged — ' + data.merge_reason + '\nStatus left as "completed".';
+            }
             if (data.merge_error) message += ' (PR merge failed: ' + data.merge_error + ')';
             if (data.workspace_deleted) message += ' Workspace deleted.';
 

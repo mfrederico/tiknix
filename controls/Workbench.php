@@ -1491,6 +1491,20 @@ class Workbench extends Control {
                 }
             }
 
+            // Local merge fallback: when a merge was requested but no GitHub PR was
+            // merged (no gh / local-remote instance / no PR), merge the task branch
+            // into its base inside the workspace and push — the gh-free equivalent.
+            // Must run BEFORE any teardown below (it needs the workspace + branch).
+            $localMerged = false;
+            $mergeReason = null;
+            if ($mergePr && !$prMerged) {
+                $lm = $this->localMergeBack($task);
+                $localMerged = $lm['merged'] && $lm['pushed'];
+                $mergeReason = $lm['reason'];
+                $this->logTaskEvent($taskId, $localMerged ? 'info' : 'warning', 'system', 'Local merge: ' . $lm['reason']);
+            }
+            $merged = $prMerged || $localMerged;
+
             // Stop tmux session if requested
             if ($stopSession && $task->tmuxSession) {
                 $runner = new ClaudeRunner($taskId, $task->memberId, $task->teamId, $workspacePath);
@@ -1522,12 +1536,13 @@ class Workbench extends Control {
                 $workspaceDeleted = true;
             }
 
-            // Mark task as merged or completed
-            $task->status = $prMerged ? 'merged' : 'completed';
+            // Mark task as merged or completed — only 'merged' when a real merge
+            // (GitHub PR or local) actually landed, never silently on failure.
+            $task->status = $merged ? 'merged' : 'completed';
             $task->completedAt = date('Y-m-d H:i:s');
             $task->reviewedBy = $this->member->id;
             $task->reviewedAt = date('Y-m-d H:i:s');
-            if ($prMerged) {
+            if ($merged) {
                 $task->mergedAt = date('Y-m-d H:i:s');
             }
             $task->updatedAt = date('Y-m-d H:i:s');
@@ -1538,6 +1553,8 @@ class Workbench extends Control {
             $actions = [];
             if ($prCreated) $actions[] = 'PR created';
             if ($prMerged) $actions[] = 'PR merged';
+            if ($localMerged) $actions[] = 'merged locally';
+            if ($mergePr && !$merged && $mergeReason) $actions[] = "not merged: {$mergeReason}";
             if ($mergeError) $actions[] = "PR merge failed: {$mergeError}";
             if ($stopSession) $actions[] = 'session stopped';
             if ($stopServer) $actions[] = 'server stopped';
@@ -1556,6 +1573,9 @@ class Workbench extends Control {
                 'message' => 'Task approved',
                 'pr_created' => $prCreated,
                 'pr_merged' => $prMerged,
+                'merged' => $merged,
+                'merge_requested' => $mergePr,
+                'merge_reason' => $mergeReason,
                 'merge_error' => $mergeError,
                 'workspace_deleted' => $workspaceDeleted
             ]);
@@ -2480,6 +2500,59 @@ class Workbench extends Control {
         } catch (Exception $e) {
             $this->logger->error('Failed to log task event', ['error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * Local merge-back for tasks with no GitHub PR (gh missing, or a local-remote
+     * instance). Merges the task branch into its base inside the workspace clone
+     * and pushes the base to origin — the gh-free equivalent of merging the PR.
+     * Best-effort and non-destructive: never force-pushes; aborts on conflict.
+     *
+     * @return array ['merged' => bool, 'pushed' => bool, 'reason' => string]
+     */
+    private function localMergeBack($task): array {
+        $ws   = (string)($task->projectPath ?? '');
+        $br   = (string)($task->branchName ?? '');
+        $base = (string)($task->baseBranch ?: 'main');
+        if ($ws === '' || !is_dir($ws . '/.git')) {
+            return ['merged' => false, 'pushed' => false, 'reason' => 'workspace no longer available to merge from'];
+        }
+        if ($br === '') {
+            return ['merged' => false, 'pushed' => false, 'reason' => 'task has no branch'];
+        }
+        $git = function (array $args) use ($ws): array {
+            $cmd = 'git -C ' . escapeshellarg($ws);
+            foreach ($args as $a) $cmd .= ' ' . escapeshellarg($a);
+            $out = []; $code = 0;
+            exec($cmd . ' 2>&1', $out, $code);
+            return ['ok' => $code === 0, 'out' => trim(implode("\n", $out))];
+        };
+        // Are there commits on the branch not already on base?
+        $ahead = $git(['rev-list', '--count', $base . '..' . $br]);
+        if (!$ahead['ok']) {
+            return ['merged' => false, 'pushed' => false, 'reason' => 'could not compare branch to base (' . $ahead['out'] . ')'];
+        }
+        if ((int)$ahead['out'] === 0) {
+            return ['merged' => false, 'pushed' => false, 'reason' => 'the agent made no committed changes on the branch'];
+        }
+        if (!$git(['checkout', $base])['ok']) {
+            return ['merged' => false, 'pushed' => false, 'reason' => 'could not check out base branch ' . $base];
+        }
+        $merge = $git(['merge', '--no-ff', '-m', 'Merge ' . $br . ' (task #' . (int)$task->id . ')', $br]);
+        if (!$merge['ok']) {
+            $git(['merge', '--abort']);
+            return ['merged' => false, 'pushed' => false, 'reason' => 'merge conflict on ' . $base . ' — needs manual resolution'];
+        }
+        // Push the merged base to origin (gh-free). If this fails, the merge lives
+        // only in the soon-to-be-deleted clone, so it does NOT count as merged.
+        $push = $git(['push', 'origin', $base]);
+        return [
+            'merged' => true,
+            'pushed' => $push['ok'],
+            'reason' => $push['ok']
+                ? 'merged into ' . $base . ' and pushed to origin'
+                : 'merged locally but push to origin failed: ' . $push['out'],
+        ];
     }
 
     /**

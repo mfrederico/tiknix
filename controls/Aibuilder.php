@@ -575,7 +575,38 @@ class Aibuilder extends Control {
             $steps[] = 'folder already absent';
         }
 
-        // 4) Drop the instance record.
+        // 4) Delete every workbench task tagged to this instance (plan parents +
+        // subtasks, standalone tasks) and their child rows, so the workbench isn't
+        // left showing orphaned tasks for a gone instance. Also stop any of their
+        // still-live sessions and remove per-task workspace clones under /projects/.
+        $tasks = R::find('workbenchtask', 'instance_id = ?', [(int)$inst->id]);
+        if ($tasks) {
+            $killed = 0; $wiped = 0;
+            foreach ($tasks as $t) {
+                // Stop live agent/task sessions + any plan orchestrator (parents).
+                $sessions = [(string)$t->agentSession, (string)$t->tmuxSession];
+                if (empty($t->parentTaskId)) $sessions[] = 'tiknix-plan' . (int)$t->id . '-orchestrator';
+                foreach (array_unique(array_filter($sessions)) as $s) {
+                    if (TmuxManager::exists($s)) { TmuxManager::kill($s); $killed++; }
+                }
+                // Remove the per-task workspace clone (guard to a /projects/ path).
+                $ws = (string)$t->projectPath;
+                if ($ws !== '' && strpos($ws, '/projects/') !== false && is_dir($ws)) {
+                    @exec('rm -rf ' . escapeshellarg($ws) . ' 2>&1'); $wiped++;
+                }
+                // Child rows keyed by task_id.
+                foreach (['tasklog', 'taskcomment', 'tasksnapshot'] as $child) {
+                    $rows = R::find($child, 'task_id = ?', [(int)$t->id]);
+                    if ($rows) R::trashAll($rows);
+                }
+            }
+            R::trashAll($tasks);
+            $steps[] = 'deleted ' . count($tasks) . ' workbench task(s)'
+                     . ($killed ? ", stopped {$killed} session(s)" : '')
+                     . ($wiped ? ", removed {$wiped} workspace(s)" : '');
+        }
+
+        // 5) Drop the instance record.
         R::trash($inst);
         $steps[] = 'removed instance record';
 

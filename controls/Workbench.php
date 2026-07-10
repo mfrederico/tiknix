@@ -927,7 +927,11 @@ class Workbench extends Control {
 
         if (empty($task->branchName)) {
             try {
-                // Determine base branch before cloning
+                // Determine clone source + base branch. An instance-tagged task
+                // builds against ITS instance repo (local), on the instance's own
+                // branch, so changes land on that instance — not the main tiknix
+                // repo. Non-instance tasks clone from main (GitHub) as before.
+                $cloneUrl = null;   // null => main repo origin
                 $baseBranch = $task->baseBranch ?: 'main';
                 if (empty($task->baseBranch) && $task->teamId) {
                     $team = Bean::load('team', $task->teamId);
@@ -935,13 +939,22 @@ class Workbench extends Control {
                         $baseBranch = $team->defaultBranch;
                     }
                 }
+                $instDir = $this->instanceDirForTask($task);
+                if ($instDir !== null) {
+                    $cloneUrl = $instDir;
+                    if (empty($task->baseBranch)) {
+                        $cur = trim((string)@shell_exec('git -C ' . escapeshellarg($instDir) . ' rev-parse --abbrev-ref HEAD 2>/dev/null'));
+                        if ($cur !== '' && $cur !== 'HEAD') $baseBranch = $cur;
+                    }
+                }
 
                 // Clone repository into isolated workspace (clones the base branch)
                 $mainGit = new GitService();
-                $workspacePath = $mainGit->cloneToWorkspace($this->member->id, $task->id, null, $baseBranch);
+                $workspacePath = $mainGit->cloneToWorkspace($this->member->id, $task->id, $cloneUrl, $baseBranch);
                 $task->projectPath = $workspacePath;
 
-                $this->logTaskEvent($taskId, 'info', 'system', "Created workspace: {$workspacePath} (from {$baseBranch})");
+                $srcLabel = $instDir !== null ? ($task->instanceTag ?: 'instance') : 'main';
+                $this->logTaskEvent($taskId, 'info', 'system', "Created workspace: {$workspacePath} (from {$srcLabel}:{$baseBranch})");
 
                 // Create GitService for the workspace
                 $gitService = new GitService($workspacePath);
@@ -2511,11 +2524,39 @@ class Workbench extends Control {
         }
     }
 
+    /** Absolute git repo dir for a task's instance, or null if not instance-tagged / missing. */
+    private function instanceDirForTask($task): ?string {
+        if (empty($task->instanceId)) return null;
+        $inst = Bean::load('instance', (int)$task->instanceId);
+        if (!$inst->id) return null;
+        $dir = '/var/www/html/default/' . $inst->slug . '.' . ($inst->app ?: 'tiknix');
+        return is_dir($dir . '/.git') ? $dir : null;
+    }
+
     /**
-     * Local merge-back for tasks with no GitHub PR (gh missing, or a local-remote
-     * instance). Merges the task branch into its base inside the workspace clone
-     * and pushes the base to origin — the gh-free equivalent of merging the PR.
-     * Best-effort and non-destructive: never force-pushes; aborts on conflict.
+     * Non-DB uncommitted changes in a repo (a short path list), or '' if clean.
+     * Live instances force-track their sqlite DB which churns every request, so
+     * *.db/*.sqlite noise is ignored — mirrors the plan executor's significantDirt.
+     */
+    private function instanceDirtyFiles(string $dir): string {
+        $out = [];
+        exec('git -C ' . escapeshellarg($dir) . ' status --porcelain 2>/dev/null', $out);
+        $paths = [];
+        foreach ($out as $line) {
+            $p = trim(substr($line, 3));
+            if ($p === '' || preg_match('/\.(db|sqlite)$/i', $p)) continue;
+            $paths[] = $p;
+        }
+        return implode(', ', array_slice($paths, 0, 5)) . (count($paths) > 5 ? ' …' : '');
+    }
+
+    /**
+     * Local merge-back for tasks with no GitHub PR. Instance-tagged tasks land the
+     * change directly in their live instance repo (fetch the task branch from the
+     * clone, merge into the instance's checked-out branch — like the plan executor);
+     * other tasks merge into base in the clone and push to origin (gh-free PR merge).
+     * Best-effort and non-destructive: never force-pushes; aborts on conflict; and
+     * refuses to merge into an instance that has its own uncommitted code changes.
      *
      * @return array ['merged' => bool, 'pushed' => bool, 'reason' => string]
      */
@@ -2529,32 +2570,55 @@ class Workbench extends Control {
         if ($br === '') {
             return ['merged' => false, 'pushed' => false, 'reason' => 'task has no branch'];
         }
-        $git = function (array $args) use ($ws): array {
-            $cmd = 'git -C ' . escapeshellarg($ws);
+        $git = function (string $dir, array $args): array {
+            $cmd = 'git -C ' . escapeshellarg($dir);
             foreach ($args as $a) $cmd .= ' ' . escapeshellarg($a);
             $out = []; $code = 0;
             exec($cmd . ' 2>&1', $out, $code);
             return ['ok' => $code === 0, 'out' => trim(implode("\n", $out))];
         };
         // Are there commits on the branch not already on base?
-        $ahead = $git(['rev-list', '--count', $base . '..' . $br]);
+        $ahead = $git($ws, ['rev-list', '--count', $base . '..' . $br]);
         if (!$ahead['ok']) {
             return ['merged' => false, 'pushed' => false, 'reason' => 'could not compare branch to base (' . $ahead['out'] . ')'];
         }
         if ((int)$ahead['out'] === 0) {
             return ['merged' => false, 'pushed' => false, 'reason' => 'the agent made no committed changes on the branch'];
         }
-        if (!$git(['checkout', $base])['ok']) {
+
+        $instDir = $this->instanceDirForTask($task);
+        if ($instDir !== null) {
+            // Instance task: merge into the live instance repo's checked-out branch.
+            $dirty = $this->instanceDirtyFiles($instDir);
+            if ($dirty !== '') {
+                return ['merged' => false, 'pushed' => false,
+                        'reason' => 'the instance has uncommitted code changes (' . $dirty . ') — commit or discard them first'];
+            }
+            $fetch = $git($instDir, ['fetch', $ws, $br]);
+            if (!$fetch['ok']) {
+                return ['merged' => false, 'pushed' => false, 'reason' => 'could not fetch the task branch into the instance (' . $fetch['out'] . ')'];
+            }
+            $merge = $git($instDir, ['merge', '--no-ff', '-m', 'Merge ' . $br . ' (task #' . (int)$task->id . ')', 'FETCH_HEAD']);
+            if (!$merge['ok']) {
+                $git($instDir, ['merge', '--abort']);
+                return ['merged' => false, 'pushed' => false, 'reason' => 'merge conflict on the instance — needs manual resolution'];
+            }
+            return ['merged' => true, 'pushed' => true,
+                    'reason' => 'merged into ' . $base . ' on ' . ($task->instanceTag ?: 'the instance')];
+        }
+
+        // Non-instance task: merge into base in the clone and push to origin.
+        if (!$git($ws, ['checkout', $base])['ok']) {
             return ['merged' => false, 'pushed' => false, 'reason' => 'could not check out base branch ' . $base];
         }
-        $merge = $git(['merge', '--no-ff', '-m', 'Merge ' . $br . ' (task #' . (int)$task->id . ')', $br]);
+        $merge = $git($ws, ['merge', '--no-ff', '-m', 'Merge ' . $br . ' (task #' . (int)$task->id . ')', $br]);
         if (!$merge['ok']) {
-            $git(['merge', '--abort']);
+            $git($ws, ['merge', '--abort']);
             return ['merged' => false, 'pushed' => false, 'reason' => 'merge conflict on ' . $base . ' — needs manual resolution'];
         }
         // Push the merged base to origin (gh-free). If this fails, the merge lives
         // only in the soon-to-be-deleted clone, so it does NOT count as merged.
-        $push = $git(['push', 'origin', $base]);
+        $push = $git($ws, ['push', 'origin', $base]);
         return [
             'merged' => true,
             'pushed' => $push['ok'],

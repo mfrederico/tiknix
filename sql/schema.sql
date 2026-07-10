@@ -468,6 +468,7 @@ INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_
     ('auth', 'verify', 101, 'Email verification', datetime('now')),
     -- 2FA routes are PUBLIC: during pending-2FA the user is not fully logged in yet
     ('auth', 'twofasetup', 101, '2FA setup page', datetime('now')),
+    ('auth', 'twofaskip', 101, 'Skip 2FA setup (optional mode)', datetime('now')),
     ('auth', 'twofaverify', 101, '2FA verification page', datetime('now')),
     ('auth', 'twofaconfirmsaved', 101, '2FA confirm recovery codes saved', datetime('now')),
     ('auth', 'twofarecoverycodes', 101, '2FA recovery codes', datetime('now')),

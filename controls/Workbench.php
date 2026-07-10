@@ -530,6 +530,32 @@ class Workbench extends Control {
         // Get creator info
         $creator = Bean::load('member', $task->memberId);
 
+        // Dependency status — for a plan subtask, "what is this task waiting on
+        // before Claude can start it?" (upstream prerequisites) and "what is
+        // waiting on it?" (downstream). Done = merged/completed; anything else
+        // still blocks. Ordering the executor uses is the same depends_on DAG.
+        $doneStates = ['merged', 'completed', 'done'];
+        $deps = $blocks = [];
+        foreach ((array)json_decode((string)($task->dependsOn ?: '[]'), true) as $did) {
+            $d = Bean::load('workbenchtask', (int)$did);
+            if ($d->id) {
+                $deps[] = ['id' => (int)$d->id, 'title' => $d->title, 'status' => $d->status,
+                           'done' => in_array($d->status, $doneStates, true)];
+            }
+        }
+        if (!empty($task->parentTaskId)) {
+            foreach (Bean::find('workbenchtask', 'parent_task_id = ? AND id != ?',
+                     [(int)$task->parentTaskId, (int)$task->id]) as $sib) {
+                $sd = array_map('intval', (array)json_decode((string)($sib->dependsOn ?: '[]'), true));
+                if (in_array((int)$task->id, $sd, true)) {
+                    $blocks[] = ['id' => (int)$sib->id, 'title' => $sib->title, 'status' => $sib->status];
+                }
+            }
+        }
+        $this->viewData['deps']        = $deps;
+        $this->viewData['depsPending'] = array_values(array_filter($deps, fn($d) => !$d['done']));
+        $this->viewData['blocks']      = $blocks;
+
         $this->viewData['title'] = $task->title;
         $this->viewData['task'] = $task;
         $this->viewData['logs'] = $logs;

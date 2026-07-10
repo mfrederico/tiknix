@@ -154,6 +154,69 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                 </div>
             </div>
 
+            <!-- Dependencies — what Claude is waiting on before it can start this task -->
+            <?php if (!empty($deps) || !empty($blocks)): ?>
+                <?php
+                $depBadge = function($s) {
+                    $map = ['merged'=>'success','completed'=>'success','done'=>'success',
+                            'running'=>'primary','queued'=>'info','failed'=>'danger',
+                            'awaiting'=>'warning','waiting'=>'warning','paused'=>'warning'];
+                    $cls = $map[$s] ?? 'secondary';
+                    return '<span class="badge bg-'.$cls.'">'.ucfirst($s ?: 'pending').'</span>';
+                };
+                $nPending = count($depsPending);
+                $isTerminalDone = in_array($task->status, ['merged','completed','done'], true);
+                ?>
+                <div class="card mb-4 <?= $nPending ? 'border-warning' : (!empty($deps) ? 'border-success' : '') ?>">
+                    <div class="card-header d-flex align-items-center <?= $nPending ? 'bg-warning bg-opacity-10' : '' ?>">
+                        <h5 class="mb-0">
+                            <i class="bi bi-diagram-3 me-1"></i> Dependencies
+                        </h5>
+                        <?php if (!empty($deps)): ?>
+                            <span class="ms-auto small">
+                                <?php if ($isTerminalDone): ?>
+                                    <span class="text-success"><i class="bi bi-check2-all"></i> Completed</span>
+                                <?php elseif ($nPending === 0): ?>
+                                    <span class="text-success"><i class="bi bi-check2-circle"></i> Ready to run — all prerequisites done</span>
+                                <?php else: ?>
+                                    <span class="text-warning-emphasis"><i class="bi bi-hourglass-split"></i> Waiting on <?= $nPending ?> of <?= count($deps) ?></span>
+                                <?php endif; ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="card-body">
+                        <?php if (!empty($deps)): ?>
+                            <div class="mb-1 text-muted small text-uppercase">Waiting on</div>
+                            <ul class="list-group list-group-flush mb-<?= empty($blocks) ? '0' : '3' ?>">
+                                <?php foreach ($deps as $d): ?>
+                                    <li class="list-group-item d-flex align-items-center px-0">
+                                        <i class="bi bi-<?= $d['done'] ? 'check-circle-fill text-success' : 'hourglass text-warning' ?> me-2"></i>
+                                        <a href="/workbench/view?id=<?= $d['id'] ?>" class="text-decoration-none flex-grow-1 <?= $d['done'] ? 'text-muted' : 'fw-medium' ?>">
+                                            <?= htmlspecialchars($d['title']) ?>
+                                        </a>
+                                        <?= $depBadge($d['status']) ?>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php endif; ?>
+                        <?php if (!empty($blocks)): ?>
+                            <div class="mb-1 text-muted small text-uppercase">Blocks</div>
+                            <ul class="list-group list-group-flush mb-0">
+                                <?php foreach ($blocks as $b): ?>
+                                    <li class="list-group-item d-flex align-items-center px-0">
+                                        <i class="bi bi-arrow-return-right text-muted me-2"></i>
+                                        <a href="/workbench/view?id=<?= $b['id'] ?>" class="text-decoration-none flex-grow-1">
+                                            <?= htmlspecialchars($b['title']) ?>
+                                        </a>
+                                        <?= $depBadge($b['status']) ?>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <!-- Description -->
             <?php if (!empty($task->description)): ?>
                 <div class="card mb-4">

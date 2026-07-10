@@ -46,8 +46,26 @@ class Aibuilder extends Control {
         return (int)($this->cfg()['access']['min_level'] ?? LEVELS['ADMIN']);
     }
 
+    /**
+     * The namespace new instances are minted under: the running host minus the
+     * .com apex. Root tiknix.com -> "tiknix" (== APP, so the control plane is
+     * byte-for-byte unchanged); an instance served at instance.tiknix.com ->
+     * "instance.tiknix", so its children nest as <slug>.instance.tiknix.com
+     * (capricorn builds <sub>.<app> from this and its Lua router auto-routes it).
+     * Falls back to APP if the host is missing/unusable.
+     *
+     * A node only ever manages instances under its own namespace, so this equals
+     * each managed instance's stored ->app — safe to use for existing ones too.
+     */
+    private function appNamespace(): string {
+        $host = strtolower((string)(parse_url((string)Flight::get('app.baseurl'), PHP_URL_HOST) ?: ''));
+        $ns   = preg_replace('/\.com$/', '', $host);
+        return ($ns !== '' && preg_match('/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/', $ns))
+            ? $ns : self::APP;
+    }
+
     private function instanceDir(string $sub): string {
-        return '/var/www/html/default/' . $sub . '.' . self::APP;
+        return '/var/www/html/default/' . $sub . '.' . $this->appNamespace();
     }
 
     /** base64url(payload) + "." + hex(HMAC-SHA256(payload, secret)) — mirrors the bridges. */
@@ -56,7 +74,7 @@ class Aibuilder extends Control {
         $secret = (string)($cfg['token']['secret'] ?? '');
         $ttl    = (int)($cfg['token']['ttl'] ?? 120);
         $payload = json_encode([
-            'app' => self::APP, 'sub' => $sub, 'member_id' => $memberId,
+            'app' => $this->appNamespace(), 'sub' => $sub, 'member_id' => $memberId,
             'exp' => time() + $ttl,
         ]);
         $b64 = rtrim(strtr(base64_encode($payload), '+/', '-_'), '=');
@@ -128,7 +146,7 @@ class Aibuilder extends Control {
             'ab_isDefault'   => $selected ? (bool)$selected->isDefault : false,
             'ab_isRoot'      => Flight::hasLevel(LEVELS['ROOT']),
             'ab_mainRepo'    => GitHubPublisher::mainGithubRepo(),
-            'ab_url'         => $selected ? 'https://' . $selected->slug . '.' . self::APP . '.com' : '',
+            'ab_url'         => $selected ? 'https://' . $selected->slug . '.' . $this->appNamespace() . '.com' : '',
         ]);
     }
 
@@ -153,7 +171,7 @@ class Aibuilder extends Control {
 
         // Provision: capricorn clones the app, seeds an isolated sqlite db + guardrails.
         $out = $this->runScript('provision-instance.sh',
-            [self::APP, $slug, '--admin', (string)$this->member->email, '--name', $name]);
+            [$this->appNamespace(), $slug, '--admin', (string)$this->member->email, '--name', $name]);
 
         if (!is_file($this->instanceDir($slug) . '/public/index.php')) {
             $this->logger->error('aibuilder provision failed', ['slug' => $slug, 'out' => $out['out']]);
@@ -168,7 +186,7 @@ class Aibuilder extends Control {
         $member = R::load('member', (int)$this->member->id);
         $inst = R::dispense('instance');
         $inst->slug        = $slug;
-        $inst->app         = self::APP;
+        $inst->app         = $this->appNamespace();
         $inst->displayName = $name;
         $inst->engine      = $engine;
         $inst->status      = 'active';
@@ -222,7 +240,7 @@ class Aibuilder extends Control {
         $desc = mb_substr(trim(preg_replace('/[\r\n]+/', ' ', (string)$this->getParam('label', ''))), 0, 200);
 
         // snapshot-instance.sh commits + creates an auto-unique lightweight tag, echoing it.
-        $out = $this->runScript('snapshot-instance.sh', [self::APP, $inst->slug]);
+        $out = $this->runScript('snapshot-instance.sh', [$this->appNamespace(), $inst->slug]);
         if (!$out['ok']) { Flight::jsonError('Checkpoint failed: ' . substr(trim($out['out']), -300), 500); return; }
 
         $tag = '';
@@ -290,7 +308,7 @@ class Aibuilder extends Control {
         if (!preg_match('/^[a-z0-9-]{3,60}$/i', $ckpt)) {
             Flight::jsonError('Invalid checkpoint', 400); return;
         }
-        $out = $this->runScript('rollback-instance.sh', [self::APP, $inst->slug, $ckpt]);
+        $out = $this->runScript('rollback-instance.sh', [$this->appNamespace(), $inst->slug, $ckpt]);
         if ($out['ok']) Flight::jsonSuccess(['log' => $out['out']], 'Rolled back to ' . $ckpt);
         else            Flight::jsonError('Rollback failed: ' . substr(trim($out['out']), -300), 500);
     }
@@ -303,7 +321,7 @@ class Aibuilder extends Control {
     /** Persist a decomposed plan as a workbench task tree + take a baseline checkpoint. */
     private function savePlanTree($inst, array $plan): array {
         // Baseline checkpoint so the WHOLE plan is reversible to the pre-plan state.
-        $snap = $this->runScript('snapshot-instance.sh', [self::APP, $inst->slug]);
+        $snap = $this->runScript('snapshot-instance.sh', [$this->appNamespace(), $inst->slug]);
         $tag = '';
         foreach (array_reverse(array_filter(array_map('trim', explode("\n", $snap['out'])))) as $l) {
             if (preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $l)) { $tag = $l; break; }
@@ -313,7 +331,7 @@ class Aibuilder extends Control {
         }
 
         // Deterministic tree creation is shared with the headless CLI ingester.
-        $res = \app\PlanIngestor::ingest($inst, $plan, (int)$this->member->id, $tag, self::APP);
+        $res = \app\PlanIngestor::ingest($inst, $plan, (int)$this->member->id, $tag, $this->appNamespace());
         $this->logger->info('aibuilder plan saved', ['instance' => $inst->slug, 'parent' => $res['parent']['id'], 'subtasks' => count($res['subtasks'])]);
         return $res;
     }
@@ -376,7 +394,7 @@ class Aibuilder extends Control {
                 'id' => (int)$p->id, 'title' => $p->title, 'summary' => $p->description,
                 'checkpoint' => $p->planCheckpoint, 'status' => $p->status,
                 'plan_status' => $p->planStatus ?: 'draft',
-                'instance_tag' => $p->instanceTag ?: ($inst->slug . '.' . self::APP),
+                'instance_tag' => $p->instanceTag ?: ($inst->slug . '.' . $this->appNamespace()),
                 'subtasks' => array_map(fn($s) => [
                     'id' => (int)$s->id, 'ref' => $s->planRef, 'title' => $s->title, 'description' => $s->description,
                     'priority' => (int)$s->priority, 'engine' => $s->engine, 'status' => $s->status,
@@ -554,7 +572,7 @@ class Aibuilder extends Control {
 
         $slug = (string)$inst->slug;
         if (!preg_match(self::SLUG_RE, $slug)) { Flight::jsonError('Invalid instance slug', 400); return; }
-        $domain = $slug . '.' . self::APP . '.com';
+        $domain = $slug . '.' . $this->appNamespace() . '.com';
         if (!hash_equals($domain, trim((string)$this->getParam('confirm', '')))) {
             Flight::jsonError('Confirmation does not match — type "' . $domain . '" exactly.', 400); return;
         }
@@ -562,7 +580,7 @@ class Aibuilder extends Control {
         $dir = $this->instanceDir($slug);
         // Hard safety before any destructive fs op: canonical path + a dot in the
         // basename (every instance dir is "slug.app"; the source app dir is not).
-        if ($dir !== '/var/www/html/default/' . $slug . '.' . self::APP || strpos(basename($dir), '.') === false) {
+        if ($dir !== '/var/www/html/default/' . $slug . '.' . $this->appNamespace() || strpos(basename($dir), '.') === false) {
             Flight::jsonError('Refusing to delete: path failed validation', 400); return;
         }
 

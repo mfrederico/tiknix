@@ -44,7 +44,10 @@ if ($name === '')  $name  = ucfirst($sub);
 
 $dbRel  = "database/$sub.db";
 $dbPath = "$ROOT/$dbRel";
-$baseUrl = "https://$sub.tiknix.com";
+// Self-locating: the instance dir basename IS the full host (<sub>.<app>), so a
+// nested instance at <sub>.parent.tiknix gets the right baseurl for free — no
+// hardcoded apex. (capricorn placed us at the correct nested path.)
+$baseUrl = "https://" . basename($ROOT) . ".com";
 
 echo "aibuilder-provision: seeding instance '$sub'\n";
 

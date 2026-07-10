@@ -427,6 +427,81 @@ class Workbench extends Control {
         Flight::jsonSuccess(['running' => TmuxManager::exists($session), 'newest_plan_id' => $newest]);
     }
 
+    /** Absolute path to a plan subtask's executor agent log (stream-json), or '' if unknown. */
+    private function agentLogPath($task): string {
+        $inst = $task->instanceId ? Bean::load('instance', (int)$task->instanceId) : null;
+        if (!$inst || !$inst->id) return '';
+        $dir = '/var/www/html/default/' . $inst->slug . '.' . ($inst->app ?: 'tiknix');
+        return $dir . '/.aibuilder/wt/task-' . (int)$task->id . '/.aibuilder/agent.log';
+    }
+
+    /**
+     * Parse the executor agent's stream-json log into "what is it doing now".
+     * Returns {current: {verb,target}|null, recent: [...], files: [...],
+     * running: bool, finished: bool}. Pure read — never mutates anything.
+     */
+    private function planAgentActivity($task): array {
+        $out = ['current' => null, 'recent' => [], 'files' => [], 'finished' => false,
+                'running' => ($task->agentSession && TmuxManager::exists((string)$task->agentSession))];
+        $log = $this->agentLogPath($task);
+        if ($log === '' || !is_file($log)) return $out;
+        // Bound the read: only the tail matters, and logs can get large.
+        $lines = @file($log, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+        if (count($lines) > 400) $lines = array_slice($lines, -400);
+        $acts = $files = [];
+        foreach ($lines as $ln) {
+            $ln = ltrim($ln);
+            if ($ln === '' || $ln[0] !== '{') continue;   // skip the [agent] header lines
+            $ev = json_decode($ln, true);
+            if (!is_array($ev)) continue;
+            $type = $ev['type'] ?? '';
+            if ($type === 'result') { $out['finished'] = true; continue; }
+            if ($type !== 'assistant') continue;
+            foreach (($ev['message']['content'] ?? []) as $c) {
+                $ct = $c['type'] ?? '';
+                if ($ct === 'tool_use') {
+                    $d = $this->describeToolUse((string)($c['name'] ?? ''), (array)($c['input'] ?? []));
+                    $acts[] = $d;
+                    if (in_array($d['verb'], ['Editing', 'Writing'], true) && $d['target'] !== '') {
+                        $files[$d['target']] = true;
+                    }
+                } elseif ($ct === 'text' && trim((string)($c['text'] ?? '')) !== '') {
+                    $acts[] = ['verb' => 'Thinking', 'target' => $this->firstLine((string)$c['text'])];
+                }
+            }
+        }
+        if ($acts) {
+            $out['current'] = end($acts);
+            $out['recent']  = array_slice($acts, -8);
+        }
+        $out['files'] = array_slice(array_keys($files), -8);
+        return $out;
+    }
+
+    /** Map a Claude tool_use event to a human {verb, target} for the activity feed. */
+    private function describeToolUse(string $name, array $in): array {
+        switch ($name) {
+            case 'Read':         return ['verb' => 'Reading',       'target' => basename((string)($in['file_path'] ?? ''))];
+            case 'Edit':         return ['verb' => 'Editing',       'target' => basename((string)($in['file_path'] ?? ''))];
+            case 'Write':        return ['verb' => 'Writing',       'target' => basename((string)($in['file_path'] ?? ''))];
+            case 'NotebookEdit': return ['verb' => 'Editing',       'target' => basename((string)($in['notebook_path'] ?? ''))];
+            case 'Bash':         return ['verb' => 'Running',       'target' => $this->firstLine((string)($in['description'] ?? $in['command'] ?? ''))];
+            case 'Grep':         return ['verb' => 'Searching for', 'target' => $this->firstLine((string)($in['pattern'] ?? ''))];
+            case 'Glob':         return ['verb' => 'Finding files', 'target' => $this->firstLine((string)($in['pattern'] ?? ''))];
+            case 'Task':         return ['verb' => 'Delegating',    'target' => $this->firstLine((string)($in['description'] ?? ''))];
+            case 'TodoWrite':    return ['verb' => 'Planning next steps', 'target' => ''];
+            default:             return ['verb' => 'Using ' . ($name ?: 'a tool'), 'target' => ''];
+        }
+    }
+
+    /** First line of a string, trimmed and length-capped for display. */
+    private function firstLine(string $s, int $max = 80): string {
+        $s = trim($s);
+        $nl = strpos($s, "\n");
+        if ($nl !== false) $s = rtrim(substr($s, 0, $nl));
+        return mb_strlen($s) > $max ? mb_substr($s, 0, $max - 1) . '…' : $s;
+    }
+
     /**
      * View task details
      */
@@ -1994,6 +2069,32 @@ class Workbench extends Control {
                 'timestamp' => $log->createdAt
             ];
         }, $logs);
+
+        // Plan-managed subtasks run under PlanExecutor (a jailed `claude -p` agent in
+        // a worktree), not ClaudeRunner — so $task->tmuxSession is empty and the block
+        // above yields no 'live'. Read that agent's streaming log to show what it is
+        // CURRENTLY doing. Read-only: it never writes the bean, so it can't race the
+        // executor that owns this task's status.
+        $isPlanManaged = !empty($task->planRef) || !empty($task->worktreeBranch)
+            || strncmp((string)$task->agentSession, 'tiknix-plan', 11) === 0;
+        if (in_array($task->status, ['running', 'queued'], true) && $isPlanManaged && empty($progress['live'])) {
+            $act = $this->planAgentActivity($task);
+            if ($act['current'] !== null || $act['running']) {
+                $cur = $act['current'];
+                $progress['live'] = [
+                    'status'        => $act['running'] ? 'Working' : 'Finishing up…',
+                    'current_task'  => $cur ? trim($cur['verb'] . ' ' . $cur['target']) : 'Starting up…',
+                    'files_changed' => $act['files'],
+                ];
+                if (!empty($act['recent'])) {
+                    // newest-first, to match the DB recent_logs the UI expects
+                    $progress['recent_logs'] = array_map(fn($a) => [
+                        'level' => 'info', 'type' => 'activity',
+                        'message' => trim($a['verb'] . ' ' . $a['target']), 'timestamp' => '',
+                    ], array_reverse($act['recent']));
+                }
+            }
+        }
 
         // Get recent comments for live updates
         $comments = Bean::getAll(

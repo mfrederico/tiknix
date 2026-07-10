@@ -307,9 +307,15 @@ class PlanExecutor {
         $jail = $this->jailFor();
         // bypassPermissions must be explicit here: JAIL_CMD replaces jail-run.sh's
         // own `claude --permission-mode bypassPermissions` wrapper.
+        // stream-json (+ required --verbose) so each tool use / message is emitted
+        // as its own JSON line to agent.log as work happens — otherwise plain `-p`
+        // buffers and the log stays empty until the agent exits, leaving the UI
+        // unable to show what the agent is CURRENTLY doing. reapTask never parses
+        // this log (it merges on git diff), so the format change is display-only.
         $inner = 'cd ' . $wtRel . ' && claude --permission-mode bypassPermissions -p '
                . escapeshellarg('Read .aibuilder/task.md and implement it fully in this working directory, following the codebase conventions. Do not touch files outside your task. When finished, stop.')
-               . ' --model ' . escapeshellarg($this->engineModel);
+               . ' --model ' . escapeshellarg($this->engineModel)
+               . ' --output-format stream-json --verbose';
 
         if ($jail !== '') {
             $run = 'JAIL_CMD=' . escapeshellarg($inner) . ' ' . escapeshellarg($jail) . ' ' . escapeshellarg($this->instanceDir);

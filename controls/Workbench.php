@@ -631,6 +631,15 @@ class Workbench extends Control {
         $this->viewData['depsPending'] = array_values(array_filter($deps, fn($d) => !$d['done']));
         $this->viewData['blocks']      = $blocks;
 
+        // Changes to review — when a task is paused for the operator (awaiting /
+        // completed / paused) and still has its workspace branch, summarise what
+        // changed so "Your Turn" actually shows what there is to review.
+        $reviewChanges = null;
+        if (in_array($task->status, ['awaiting', 'completed', 'paused'], true)) {
+            $reviewChanges = $this->taskDiffStat($task);
+        }
+        $this->viewData['reviewChanges'] = $reviewChanges;
+
         $this->viewData['title'] = $task->title;
         $this->viewData['task'] = $task;
         $this->viewData['logs'] = $logs;
@@ -2553,6 +2562,64 @@ class Workbench extends Control {
                 ? 'merged into ' . $base . ' and pushed to origin'
                 : 'merged locally but push to origin failed: ' . $push['out'],
         ];
+    }
+
+    /**
+     * Diff summary of a task's branch vs its base (numstat), for the review UI.
+     * Read-only. Returns null when there's no workspace/branch/changes, else
+     * ['files'=>[['path','added','removed','binary'],...],'total_files','added','removed','base'].
+     */
+    private function taskDiffStat($task): ?array {
+        $ws   = (string)($task->projectPath ?? '');
+        $br   = (string)($task->branchName ?? '');
+        $base = (string)($task->baseBranch ?: 'main');
+        if ($ws === '' || !is_dir($ws . '/.git') || $br === '') return null;
+        $out = []; $code = 0;
+        exec('git -C ' . escapeshellarg($ws) . ' diff --numstat ' . escapeshellarg($base . '...HEAD') . ' 2>/dev/null', $out, $code);
+        if ($code !== 0) return null;
+        $files = []; $addT = 0; $remT = 0;
+        foreach ($out as $line) {
+            $p = explode("\t", $line);
+            if (count($p) < 3) continue;
+            $binary  = ($p[0] === '-');
+            $added   = $binary ? 0 : (int)$p[0];
+            $removed = ($p[1] === '-') ? 0 : (int)$p[1];
+            $files[] = ['path' => $p[2], 'added' => $added, 'removed' => $removed, 'binary' => $binary];
+            $addT += $added; $remT += $removed;
+        }
+        if (!$files) return null;
+        return ['files' => $files, 'total_files' => count($files), 'added' => $addT, 'removed' => $remT, 'base' => $base];
+    }
+
+    /** GET /workbench/diff?id= — full patch of a task's branch vs base, for review. */
+    public function diff($params = []) {
+        if (!$this->requireLogin()) return;
+        $taskId = (int)$this->getParam('id');
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id || !$this->access->canView($this->member->id, $task)) {
+            $this->flash('error', 'Access denied');
+            Flight::redirect('/workbench');
+            return;
+        }
+        $ws   = (string)($task->projectPath ?? '');
+        $br   = (string)($task->branchName ?? '');
+        $base = (string)($task->baseBranch ?: 'main');
+        $patch = ''; $note = '';
+        if ($ws === '' || !is_dir($ws . '/.git') || $br === '') {
+            $note = 'No workspace branch is available for this task — it may have been merged or cleaned up.';
+        } else {
+            $out = [];
+            exec('git -C ' . escapeshellarg($ws) . ' diff ' . escapeshellarg($base . '...HEAD') . ' 2>&1', $out);
+            $patch = implode("\n", $out);
+            if (strlen($patch) > 500000) { $patch = substr($patch, 0, 500000); $note = 'Diff truncated (very large).'; }
+            elseif (trim($patch) === '') { $note = 'No changes on this branch.'; }
+        }
+        $this->viewData['title'] = 'Diff — ' . $task->title;
+        $this->viewData['task']  = $task;
+        $this->viewData['patch'] = $patch;
+        $this->viewData['note']  = $note;
+        $this->viewData['stat']  = $this->taskDiffStat($task);
+        $this->render('workbench/diff', $this->viewData);
     }
 
     /**

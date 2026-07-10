@@ -288,19 +288,53 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <small class="text-muted" id="lastUpdate"></small>
                     </div>
                     <div class="card-body">
-                        <p class="mb-3">Claude has completed work and is waiting for your review or further instructions.</p>
+                        <p class="mb-2"><strong>Claude paused and handed control back to you.</strong> It has either finished the work and wants your review, or it asked a question. Here's what to do:</p>
+                        <ol class="small text-muted mb-3">
+                            <li>Read <strong>Claude's message</strong> (the card just above) for what it did or is asking.</li>
+                            <?php if (!empty($reviewChanges)): ?>
+                                <li>Review the <strong>changes below</strong>, then use <strong>Approve &amp; Merge</strong> (top of the page) to accept them into <code><?= htmlspecialchars($reviewChanges['base']) ?></code>.</li>
+                            <?php endif; ?>
+                            <li>Or type an answer / follow-up instructions and <strong>Send</strong> to keep Claude going.</li>
+                        </ol>
+
+                        <?php if (!empty($reviewChanges)): ?>
+                            <div class="border rounded p-2 mb-3 bg-body-tertiary">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong class="small"><i class="bi bi-file-earmark-diff me-1"></i>Changes to review</strong>
+                                    <a href="/workbench/diff?id=<?= $task->id ?>" class="btn btn-sm btn-outline-secondary" target="_blank">
+                                        <i class="bi bi-arrows-fullscreen me-1"></i>View full diff
+                                    </a>
+                                </div>
+                                <div class="small mb-1">
+                                    <span class="text-muted"><?= (int)$reviewChanges['total_files'] ?> file<?= $reviewChanges['total_files'] == 1 ? '' : 's' ?> changed ·</span>
+                                    <span class="text-success">+<?= (int)$reviewChanges['added'] ?></span>
+                                    <span class="text-danger">&minus;<?= (int)$reviewChanges['removed'] ?></span>
+                                </div>
+                                <ul class="list-unstyled mb-0 small font-monospace">
+                                    <?php foreach ($reviewChanges['files'] as $f): ?>
+                                        <li class="d-flex justify-content-between border-top py-1">
+                                            <span class="text-truncate me-2"><?= htmlspecialchars($f['path']) ?></span>
+                                            <span class="text-nowrap">
+                                                <?php if ($f['binary']): ?><span class="text-muted">binary</span>
+                                                <?php else: ?><span class="text-success">+<?= (int)$f['added'] ?></span> <span class="text-danger">&minus;<?= (int)$f['removed'] ?></span><?php endif; ?>
+                                            </span>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        <?php endif; ?>
 
                         <!-- Inline instruction form -->
                         <div class="mb-3">
-                            <textarea class="form-control" id="inlineCommentContent" rows="3" placeholder="Send instructions to Claude..."></textarea>
+                            <textarea class="form-control" id="inlineCommentContent" rows="3" placeholder="Answer Claude's question, or send follow-up instructions..."></textarea>
                         </div>
 
-                        <div class="d-flex gap-2">
+                        <div class="d-flex gap-2 flex-wrap">
                             <button class="btn btn-primary" onclick="sendInlineComment()">
-                                <i class="bi bi-send me-1"></i> Send Instructions
+                                <i class="bi bi-send me-1"></i> Send
                             </button>
-                            <button class="btn btn-success" onclick="markComplete(<?= $task->id ?>)">
-                                <i class="bi bi-check-circle me-1"></i> Mark Complete
+                            <button class="btn btn-outline-success" onclick="markComplete(<?= $task->id ?>)">
+                                <i class="bi bi-check-circle me-1"></i> Mark Complete <span class="small">(no merge)</span>
                             </button>
                         </div>
                     </div>

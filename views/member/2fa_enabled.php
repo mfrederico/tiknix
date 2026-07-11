@@ -19,7 +19,7 @@
                             <div class="row">
                                 <?php foreach ($recovery_codes as $code): ?>
                                     <div class="col-6 mb-2">
-                                        <code class="fs-6"><?= htmlspecialchars($code) ?></code>
+                                        <code class="fs-6"><?= htmlspecialchars(($code) ?? '') ?></code>
                                     </div>
                                 <?php endforeach; ?>
                             </div>

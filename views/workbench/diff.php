@@ -1,7 +1,7 @@
 <div class="container-fluid py-4">
     <div class="mb-4">
         <a href="/workbench/view?id=<?= $task->id ?>" class="text-decoration-none">
-            <i class="bi bi-arrow-left"></i> Back to <?= htmlspecialchars($task->title) ?>
+            <i class="bi bi-arrow-left"></i> Back to <?= htmlspecialchars(($task->title) ?? '') ?>
         </a>
     </div>
 
@@ -9,7 +9,7 @@
         <div>
             <h1 class="h2 mb-1">Changes to review</h1>
             <div class="text-muted small">
-                <code><?= htmlspecialchars((string)$task->branchName) ?></code>
+                <code><?= htmlspecialchars(((string)$task->branchName) ?? '') ?></code>
                 vs <code><?= htmlspecialchars($stat['base'] ?? ($task->baseBranch ?: 'main')) ?></code>
                 <?php if (!empty($stat)): ?>
                     · <?= (int)$stat['total_files'] ?> file<?= $stat['total_files'] == 1 ? '' : 's' ?>
@@ -26,7 +26,7 @@
     </div>
 
     <?php if (!empty($note)): ?>
-        <div class="alert alert-info"><?= htmlspecialchars($note) ?></div>
+        <div class="alert alert-info"><?= htmlspecialchars(($note) ?? '') ?></div>
     <?php endif; ?>
 
     <?php if (!empty($patch)): ?>
@@ -35,7 +35,7 @@
             <pre class="mb-0 diff-view" id="diffContent"><?php
                 // Lightweight diff colouring — escape first, then class each line.
                 foreach (explode("\n", $patch) as $line) {
-                    $esc = htmlspecialchars($line);
+                    $esc = htmlspecialchars(($line) ?? '');
                     if ($line === '') { echo "\n"; continue; }
                     $c = $line[0];
                     if (strncmp($line, '+++', 3) === 0 || strncmp($line, '---', 3) === 0) $cls = 'd-file';

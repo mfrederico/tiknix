@@ -13,7 +13,7 @@
                     <form method="POST" action="/auth/doreset">
                         <?php if (!empty($csrf) && is_array($csrf)): ?>
                             <?php foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                             <?php endforeach; ?>
                         <?php endif; ?>
 

@@ -273,13 +273,13 @@ class Mcpconfig extends Control {
             $config['command'] = $command;
 
             // Parse args as JSON array
-            $args = json_decode($argsJson, true);
+            $args = json_decode(($argsJson) ?? '', true);
             if (is_array($args) && !empty($args)) {
                 $config['args'] = $args;
             }
 
             // Parse env as JSON object
-            $env = json_decode($envJson, true);
+            $env = json_decode(($envJson) ?? '', true);
             if (is_array($env) && !empty($env)) {
                 $config['env'] = $env;
             }
@@ -291,7 +291,7 @@ class Mcpconfig extends Control {
             $config['url'] = $url;
 
             // Parse headers as JSON object
-            $headers = json_decode($headersJson, true);
+            $headers = json_decode(($headersJson) ?? '', true);
             if (is_array($headers) && !empty($headers)) {
                 $config['headers'] = $headers;
             }

@@ -17,7 +17,7 @@
                         <div class="alert alert-danger">
                             <ul class="mb-0">
                                 <?php foreach ($errors as $error): ?>
-                                    <li><?= htmlspecialchars($error) ?></li>
+                                    <li><?= htmlspecialchars(($error) ?? '') ?></li>
                                 <?php endforeach; ?>
                             </ul>
                         </div>
@@ -25,7 +25,7 @@
 
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle me-2"></i>
-                        Welcome! Your account has been created for <strong><?= htmlspecialchars($email) ?></strong>.
+                        Welcome! Your account has been created for <strong><?= htmlspecialchars(($email) ?? '') ?></strong>.
                         Please set a password to complete your registration.
                     </div>
 

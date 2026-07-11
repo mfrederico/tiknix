@@ -27,7 +27,7 @@
                             <?php foreach ($recoveryCodes as $code): ?>
                                 <div class="col">
                                     <code class="d-block text-center py-2 bg-white rounded border">
-                                        <?= htmlspecialchars($code) ?>
+                                        <?= htmlspecialchars(($code) ?? '') ?>
                                     </code>
                                 </div>
                             <?php endforeach; ?>

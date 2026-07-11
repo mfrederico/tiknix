@@ -37,7 +37,7 @@ class ApiAuthService {
             return ['success' => false, 'member_id' => null, 'error' => 'API token owner not found'];
         }
 
-        $scopes = json_decode((string)$key->scopes, true) ?: [];
+        $scopes = json_decode(((string)$key->scopes) ?? '', true) ?: [];
         if ($bean !== '' && $scopes && !self::allows($scopes, $bean, $action)) {
             return ['success' => false, 'member_id' => null, 'error' => "API token lacks scope {$bean}.{$action}"];
         }

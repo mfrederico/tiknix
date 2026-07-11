@@ -1,7 +1,7 @@
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2><i class="bi bi-shield-lock me-2"></i><?= htmlspecialchars($title) ?></h2>
+            <h2><i class="bi bi-shield-lock me-2"></i><?= htmlspecialchars(($title) ?? '') ?></h2>
             <p class="text-muted mb-0">
                 <?= $rule ? 'Edit existing security rule' : 'Create a new security sandbox rule' ?>
             </p>
@@ -17,7 +17,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>

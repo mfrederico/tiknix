@@ -57,7 +57,7 @@ class Connections extends Control {
     }
 
     private function connSummary($conn): array {
-        $meta = json_decode($conn->metadataJson ?: '{}', true) ?: [];
+        $meta = json_decode(($conn->metadataJson ?: '{}') ?? '', true) ?: [];
         return [
             'id'          => (int)$conn->id,
             'type'        => $conn->connectorType,
@@ -242,7 +242,7 @@ class Connections extends Control {
             CURLOPT_TIMEOUT        => 15,
         ]);
         $resp = curl_exec($ch); curl_close($ch);
-        $j = json_decode($resp ?: '', true);
+        $j = json_decode(($resp ?: '') ?? '', true);
         $tok = is_array($j) ? ($j['access_token'] ?? '') : '';
         return $tok !== '' ? $tok : null;
     }
@@ -256,7 +256,7 @@ class Connections extends Control {
             CURLOPT_TIMEOUT        => 15,
         ]);
         $resp = curl_exec($ch); curl_close($ch);
-        $arr  = json_decode($resp ?: '', true) ?: [];
+        $arr  = json_decode(($resp ?: '') ?? '', true) ?: [];
         $out  = [];
         foreach ($arr as $r) {
             if (!empty($r['full_name']) && !empty($r['permissions']['push'])) {
@@ -321,7 +321,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $conn = Bean::load('connections', (int)$this->getParam('cid', 0));
         if (!$conn->id || (int)$conn->memberId !== (int)$this->member->id) { $this->jsonError('Connection not found', 404); return; }
-        $meta = json_decode($conn->metadataJson ?: '{}', true) ?: [];
+        $meta = json_decode(($conn->metadataJson ?: '{}') ?? '', true) ?: [];
         try {
             $pat = EncryptionService::decrypt($conn->accessToken);
             $gh  = new GitHubService($pat, $meta['owner'] ?? '', $meta['repo'] ?? '');

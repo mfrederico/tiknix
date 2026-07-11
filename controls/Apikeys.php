@@ -336,8 +336,8 @@ class Apikeys extends Control {
 
         // Check server restrictions if a server slug is provided
         if ($serverSlug) {
-            $allowedServers = json_decode($key->allowedServers, true) ?: [];
-            $scopes = json_decode($key->scopes, true) ?: [];
+            $allowedServers = json_decode(($key->allowedServers) ?? '', true) ?: [];
+            $scopes = json_decode(($key->scopes) ?? '', true) ?: [];
 
             // If there are allowed servers specified, check if this server is in the list
             if (!empty($allowedServers) && !in_array($serverSlug, $allowedServers)) {

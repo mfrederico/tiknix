@@ -4,9 +4,9 @@
             <a href="/teams" class="text-decoration-none text-muted small">
                 <i class="bi bi-arrow-left"></i> All Teams
             </a>
-            <h1 class="h2 mb-0 mt-1"><?= htmlspecialchars($team->name) ?></h1>
+            <h1 class="h2 mb-0 mt-1"><?= htmlspecialchars(($team->name) ?? '') ?></h1>
             <?php if (!empty($team->description)): ?>
-                <p class="text-muted mb-0"><?= htmlspecialchars($team->description) ?></p>
+                <p class="text-muted mb-0"><?= htmlspecialchars(($team->description) ?? '') ?></p>
             <?php endif; ?>
         </div>
         <div>
@@ -29,7 +29,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : ($msg['type'] === 'info' ? 'info' : 'success') ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -70,10 +70,10 @@
                                 <a href="/workbench/view?id=<?= $task->id ?>" class="list-group-item list-group-item-action">
                                     <div class="d-flex justify-content-between align-items-start">
                                         <div>
-                                            <h6 class="mb-1"><?= htmlspecialchars($task->title) ?></h6>
+                                            <h6 class="mb-1"><?= htmlspecialchars(($task->title) ?? '') ?></h6>
                                             <small class="text-muted">
                                                 <?= ucfirst($task->taskType) ?> &bull;
-                                                by <?= htmlspecialchars($creator ? $creator->displayName() : 'Unknown') ?> &bull;
+                                                by <?= htmlspecialchars(($creator ? $creator->displayName() : 'Unknown') ?? '') ?> &bull;
                                                 <?= date('M j', strtotime($task->createdAt)) ?>
                                             </small>
                                         </div>
@@ -136,7 +136,7 @@
                         <?php $member = $tm->member; ?>
                         <div class="list-group-item d-flex align-items-center">
                             <?php if (!empty($member->avatarUrl)): ?>
-                                <img src="<?= htmlspecialchars($member->avatarUrl) ?>" class="rounded-circle me-2" width="32" height="32">
+                                <img src="<?= htmlspecialchars(($member->avatarUrl) ?? '') ?>" class="rounded-circle me-2" width="32" height="32">
                             <?php else: ?>
                                 <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
                                     <?= $member->initials() ?>
@@ -144,7 +144,7 @@
                             <?php endif; ?>
                             <div class="flex-grow-1">
                                 <div class="fw-medium small">
-                                    <?= htmlspecialchars($member->displayName()) ?>
+                                    <?= htmlspecialchars(($member->displayName()) ?? '') ?>
                                 </div>
                             </div>
                             <span class="badge bg-<?= $tm->role === 'owner' ? 'primary' : ($tm->role === 'admin' ? 'info' : 'secondary') ?> small">
@@ -169,7 +169,7 @@
                     <div class="list-group list-group-flush">
                         <?php foreach ($invitations as $inv): ?>
                             <div class="list-group-item">
-                                <div class="small"><?= htmlspecialchars($inv->email) ?></div>
+                                <div class="small"><?= htmlspecialchars(($inv->email) ?? '') ?></div>
                                 <small class="text-muted">
                                     Expires <?= date('M j', strtotime($inv->expiresAt)) ?>
                                 </small>

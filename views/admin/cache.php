@@ -285,8 +285,8 @@
                                     }
                                 ?>
                                 <tr>
-                                    <td><code><?= htmlspecialchars($control) ?></code></td>
-                                    <td><code><?= htmlspecialchars($method) ?></code></td>
+                                    <td><code><?= htmlspecialchars(($control) ?? '') ?></code></td>
+                                    <td><code><?= htmlspecialchars(($method) ?? '') ?></code></td>
                                     <td>
                                         <?php
                                         if ($level <= 1) {

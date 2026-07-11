@@ -12,7 +12,7 @@ $googleEnabled = !empty(Flight::get('social.google_client_id')) && !empty(Flight
                 <div class="card-body">
                     <?php if (!empty($error)): ?>
                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            <?= htmlspecialchars($error) ?>
+                            <?= htmlspecialchars(($error) ?? '') ?>
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
                     <?php endif; ?>
@@ -42,12 +42,12 @@ $googleEnabled = !empty(Flight::get('social.google_client_id')) && !empty(Flight
                     <form method="POST" action="/auth/dologin">
                         <?php if (!empty($csrf) && is_array($csrf)): ?>
                             <?php foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                             <?php endforeach; ?>
                         <?php endif; ?>
                         
                         <?php if (!empty($redirect)): ?>
-                            <input type="hidden" name="redirect" value="<?= htmlspecialchars($redirect) ?>">
+                            <input type="hidden" name="redirect" value="<?= htmlspecialchars(($redirect) ?? '') ?>">
                         <?php endif; ?>
                         
                         <div class="mb-3">

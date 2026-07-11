@@ -13,7 +13,7 @@
             foreach ($flash as $msg):
             ?>
                 <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?>">
-                    <?= htmlspecialchars($msg['message']) ?>
+                    <?= htmlspecialchars(($msg['message']) ?? '') ?>
                 </div>
             <?php endforeach; ?>
 
@@ -59,7 +59,7 @@
                             <select class="form-select" id="instance_id" name="instance_id" required>
                                 <option value="" selected disabled>— Select an instance —</option>
                                 <?php foreach (($instances ?? []) as $inst): ?>
-                                    <option value="<?= (int)$inst['id'] ?>"><?= htmlspecialchars($inst['label']) ?></option>
+                                    <option value="<?= (int)$inst['id'] ?>"><?= htmlspecialchars(($inst['label']) ?? '') ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <?php if (empty($instances)): ?>
@@ -101,7 +101,7 @@
                                     <option value="personal">Personal Task</option>
                                     <?php foreach ($teams as $team): ?>
                                         <option value="<?= $team['id'] ?>" <?= $preselectedTeamId == $team['id'] ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($team['name']) ?>
+                                            <?= htmlspecialchars(($team['name']) ?? '') ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -114,8 +114,8 @@
                                 <label for="base_branch" class="form-label">Base Branch</label>
                                 <select class="form-select" id="base_branch" name="base_branch">
                                     <?php foreach ($branches ?? ['main'] as $branch): ?>
-                                        <option value="<?= htmlspecialchars($branch) ?>" <?= $branch === ($currentBranch ?? 'main') ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($branch) ?>
+                                        <option value="<?= htmlspecialchars(($branch) ?? '') ?>" <?= $branch === ($currentBranch ?? 'main') ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars(($branch) ?? '') ?>
                                             <?= $branch === ($currentBranch ?? 'main') ? '(current)' : '' ?>
                                         </option>
                                     <?php endforeach; ?>

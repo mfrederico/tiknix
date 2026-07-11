@@ -60,7 +60,7 @@
         
         <?php if (!empty($message)): ?>
             <div class="error-message">
-                <?= htmlspecialchars($message) ?>
+                <?= htmlspecialchars(($message) ?? '') ?>
             </div>
         <?php else: ?>
             <p>You don't have permission to access this resource.</p>

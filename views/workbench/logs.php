@@ -1,7 +1,7 @@
 <div class="container py-4">
     <div class="mb-4">
         <a href="/workbench/view?id=<?= $task->id ?>" class="text-decoration-none">
-            <i class="bi bi-arrow-left"></i> Back to <?= htmlspecialchars($task->title) ?>
+            <i class="bi bi-arrow-left"></i> Back to <?= htmlspecialchars(($task->title) ?? '') ?>
         </a>
     </div>
 
@@ -55,10 +55,10 @@
                                         } ?>"><?= $log->logType ?></span>
                                     </td>
                                     <td>
-                                        <div><?= htmlspecialchars($log->message) ?></div>
+                                        <div><?= htmlspecialchars(($log->message) ?? '') ?></div>
                                         <?php if ($log->contextJson): ?>
                                             <small class="text-muted font-monospace">
-                                                <?= htmlspecialchars(substr($log->contextJson, 0, 200)) ?>
+                                                <?= htmlspecialchars((substr($log->contextJson, 0, 200)) ?? '') ?>
                                                 <?= strlen($log->contextJson) > 200 ? '...' : '' ?>
                                             </small>
                                         <?php endif; ?>

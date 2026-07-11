@@ -74,7 +74,7 @@ class SimpleCsrf
      */
     public static function field(): string
     {
-        $token = htmlspecialchars(self::getToken(), ENT_QUOTES, 'UTF-8');
+        $token = htmlspecialchars((self::getToken()) ?? '', ENT_QUOTES, 'UTF-8');
         return '<input type="hidden" name="' . self::FORM_FIELD . '" value="' . $token . '">';
     }
 

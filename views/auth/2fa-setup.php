@@ -17,7 +17,7 @@
                         <div class="alert alert-danger">
                             <ul class="mb-0">
                                 <?php foreach ($errors as $error): ?>
-                                    <li><?= htmlspecialchars($error) ?></li>
+                                    <li><?= htmlspecialchars(($error) ?? '') ?></li>
                                 <?php endforeach; ?>
                             </ul>
                         </div>
@@ -47,7 +47,7 @@
                         <p class="text-muted">Enter the 6-digit code from your authenticator app</p>
 
                         <form method="POST" action="/auth/twofasetup" class="needs-validation" novalidate>
-                            <input type="hidden" name="secret" value="<?= htmlspecialchars($secret) ?>">
+                            <input type="hidden" name="secret" value="<?= htmlspecialchars(($secret) ?? '') ?>">
                             <?= \app\SimpleCsrf::getTokenField() ?>
 
                             <div class="mb-3">
@@ -91,7 +91,7 @@
                     <div class="text-muted small">
                         <h6>Can't scan the QR code?</h6>
                         <p>Manually enter this key in your authenticator app:</p>
-                        <code class="d-block bg-light p-2 rounded text-break"><?= htmlspecialchars($secret) ?></code>
+                        <code class="d-block bg-light p-2 rounded text-break"><?= htmlspecialchars(($secret) ?? '') ?></code>
                     </div>
                 </div>
             </div>

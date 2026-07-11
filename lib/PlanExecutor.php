@@ -281,7 +281,7 @@ class PlanExecutor {
     }
 
     private function deps($t): array {
-        $d = json_decode((string)$t->dependsOn, true);
+        $d = json_decode(((string)$t->dependsOn) ?? '', true);
         return is_array($d) ? array_map('intval', $d) : [];
     }
 
@@ -337,7 +337,7 @@ BASH;
     }
 
     private function buildTaskBrief($t): string {
-        $files = json_decode((string)$t->relatedFiles, true);
+        $files = json_decode(((string)$t->relatedFiles) ?? '', true);
         $files = is_array($files) ? implode("\n", array_map(fn($f) => "- $f", $files)) : '';
         $title = (string)$t->title;
         $desc  = (string)$t->description;

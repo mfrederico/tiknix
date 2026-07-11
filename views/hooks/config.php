@@ -13,7 +13,7 @@
             foreach ($flash as $msg):
             ?>
                 <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-                    <?= htmlspecialchars($msg['message']) ?>
+                    <?= htmlspecialchars(($msg['message']) ?? '') ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endforeach; ?>
@@ -37,7 +37,7 @@
                         <div class="mb-3">
                             <label class="form-label">Hooks JSON</label>
                             <textarea class="form-control font-monospace" name="hooks_json" id="hooksJson"
-                                      rows="25" style="font-size: 0.85rem;"><?= htmlspecialchars($hooksJson) ?></textarea>
+                                      rows="25" style="font-size: 0.85rem;"><?= htmlspecialchars(($hooksJson) ?? '') ?></textarea>
                         </div>
 
                         <div class="d-flex gap-2">

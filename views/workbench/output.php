@@ -1,7 +1,7 @@
 <div class="container-fluid py-4">
     <div class="mb-4">
         <a href="/workbench/view?id=<?= $task->id ?>" class="text-decoration-none">
-            <i class="bi bi-arrow-left"></i> Back to <?= htmlspecialchars($task->title) ?>
+            <i class="bi bi-arrow-left"></i> Back to <?= htmlspecialchars(($task->title) ?? '') ?>
         </a>
     </div>
 
@@ -17,7 +17,7 @@
             <?php if (empty($output)): ?>
                 <p class="text-muted">No output available yet.</p>
             <?php else: ?>
-                <pre class="mb-0" id="outputContent" style="max-height: 80vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word;"><?= htmlspecialchars($output) ?></pre>
+                <pre class="mb-0" id="outputContent" style="max-height: 80vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word;"><?= htmlspecialchars(($output) ?? '') ?></pre>
             <?php endif; ?>
         </div>
     </div>

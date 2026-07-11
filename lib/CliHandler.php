@@ -160,7 +160,7 @@ class CliHandler {
         
         // Parse JSON parameters
         if (!empty($this->options['json'])) {
-            $jsonData = json_decode($this->options['json'], true);
+            $jsonData = json_decode(($this->options['json']) ?? '', true);
             if (json_last_error() === JSON_ERROR_NONE) {
                 $_REQUEST = array_merge($_REQUEST, $jsonData);
                 // Simulate POST for JSON data

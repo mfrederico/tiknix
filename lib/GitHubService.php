@@ -231,7 +231,7 @@ class GitHubService {
         $body .= "**Type**: " . ucfirst($task['task_type'] ?? 'feature') . "\n";
 
         if (!empty($task['tags'])) {
-            $tags = is_array($task['tags']) ? $task['tags'] : json_decode($task['tags'], true);
+            $tags = is_array($task['tags']) ? $task['tags'] : json_decode(($task['tags']) ?? '', true);
             if ($tags) {
                 $body .= "**Tags**: " . implode(', ', $tags) . "\n";
             }
@@ -309,7 +309,7 @@ class GitHubService {
             throw new \Exception("GitHub API request failed: {$error}");
         }
 
-        $result = json_decode($response, true);
+        $result = json_decode(($response) ?? '', true);
 
         if ($httpCode >= 400) {
             $message = $result['message'] ?? 'Unknown error';

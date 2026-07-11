@@ -21,7 +21,7 @@
                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
                             <ul class="mb-0">
                                 <?php foreach ($errors as $error): ?>
-                                    <li><?= htmlspecialchars($error) ?></li>
+                                    <li><?= htmlspecialchars(($error) ?? '') ?></li>
                                 <?php endforeach; ?>
                             </ul>
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -33,7 +33,7 @@
                         // Include CSRF token if available
                         if (isset($csrf) && is_array($csrf)):
                             foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                             <?php endforeach;
                         endif;
                         ?>

@@ -2,11 +2,11 @@
     <h1 class="h2 mb-4">System Settings</h1>
     
     <?php if (!empty($error)): ?>
-        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+        <div class="alert alert-danger"><?= htmlspecialchars(($error) ?? '') ?></div>
     <?php endif; ?>
     
     <?php if (!empty($success)): ?>
-        <div class="alert alert-success"><?= htmlspecialchars($success) ?></div>
+        <div class="alert alert-success"><?= htmlspecialchars(($success) ?? '') ?></div>
     <?php endif; ?>
     
     <div class="card">
@@ -17,7 +17,7 @@
             <form method="POST">
                 <?php if (!empty($csrf) && is_array($csrf)): ?>
                     <?php foreach ($csrf as $name => $value): ?>
-                        <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                        <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                     <?php endforeach; ?>
                 <?php endif; ?>
                 
@@ -86,7 +86,7 @@
             <form method="POST">
                 <?php if (!empty($csrf) && is_array($csrf)): ?>
                     <?php foreach ($csrf as $name => $value): ?>
-                        <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                        <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                     <?php endforeach; ?>
                 <?php endif; ?>
 
@@ -136,8 +136,8 @@
                         <tbody>
                             <?php foreach ($settings as $setting): ?>
                                 <tr>
-                                    <td><code><?= htmlspecialchars($setting->setting_key) ?></code></td>
-                                    <td><?= htmlspecialchars(substr($setting->setting_value, 0, 100)) ?></td>
+                                    <td><code><?= htmlspecialchars(($setting->setting_key) ?? '') ?></code></td>
+                                    <td><?= htmlspecialchars((substr($setting->setting_value, 0, 100)) ?? '') ?></td>
                                     <td><?= $setting->updated_at ?></td>
                                 </tr>
                             <?php endforeach; ?>

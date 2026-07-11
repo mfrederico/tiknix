@@ -54,22 +54,22 @@ if (!function_exists('comms_initials')) {
                        data-thread-id="<?= (int)$t->id ?>"
                        class="comms-thread-row <?= $unread ? 'unread' : '' ?> <?= $active ? 'active' : '' ?>">
                         <div class="d-flex gap-2">
-                            <span class="comms-avatar"><?= htmlspecialchars(comms_initials($who)) ?></span>
+                            <span class="comms-avatar"><?= htmlspecialchars((comms_initials($who)) ?? '') ?></span>
                             <div class="min-w-0 flex-grow-1">
                                 <div class="d-flex align-items-center">
                                     <span class="comms-unread-dot"></span>
-                                    <span class="comms-thread-subject flex-grow-1"><?= htmlspecialchars($t->subject ?: '(no subject)') ?></span>
+                                    <span class="comms-thread-subject flex-grow-1"><?= htmlspecialchars(($t->subject ?: '(no subject)') ?? '') ?></span>
                                     <span class="comms-unread-badge badge rounded-pill bg-danger ms-1 flex-shrink-0 <?= $unread ? '' : 'd-none' ?>"><?= (int)$t->unreadCount ?></span>
-                                    <small class="comms-thread-when text-muted ms-2 flex-shrink-0"><?= htmlspecialchars($when) ?></small>
+                                    <small class="comms-thread-when text-muted ms-2 flex-shrink-0"><?= htmlspecialchars(($when) ?? '') ?></small>
                                 </div>
                                 <div class="comms-thread-preview">
                                     <i class="bi <?= $dirIcon ?>"></i>
-                                    <?= htmlspecialchars($t->lastPreview ?: $who) ?>
+                                    <?= htmlspecialchars(($t->lastPreview ?: $who) ?? '') ?>
                                 </div>
                                 <div class="small text-muted text-truncate">
-                                    <i class="bi bi-person"></i> <?= htmlspecialchars($who) ?>
+                                    <i class="bi bi-person"></i> <?= htmlspecialchars(($who) ?? '') ?>
                                     <?php if (!empty($t->relatedType)): ?>
-                                        · <span class="badge bg-info-subtle text-info-emphasis"><?= htmlspecialchars($t->relatedType) ?> #<?= (int)$t->relatedId ?></span>
+                                        · <span class="badge bg-info-subtle text-info-emphasis"><?= htmlspecialchars(($t->relatedType) ?? '') ?> #<?= (int)$t->relatedId ?></span>
                                     <?php endif; ?>
                                 </div>
                             </div>

@@ -448,7 +448,7 @@ class Mcp extends BaseControls\Control {
         // Parse JSON-RPC request first (before auth check)
         $rawBody = file_get_contents('php://input');
         $this->currentRequestBody = $rawBody; // Store for logging
-        $request = json_decode($rawBody, true);
+        $request = json_decode(($rawBody) ?? '', true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             $this->sendError(-32700, 'Parse error: Invalid JSON', null);
@@ -512,7 +512,7 @@ class Mcp extends BaseControls\Control {
         $httpCode = http_response_code() ?: 200;
 
         // Check if response contains an error
-        $responseData = json_decode($responseBody, true);
+        $responseData = json_decode(($responseBody) ?? '', true);
         $error = isset($responseData['error']) ? ($responseData['error']['message'] ?? null) : null;
 
         $this->logMcpRequest($method, $responseBody, $httpCode, $error);
@@ -656,8 +656,8 @@ class Mcp extends BaseControls\Control {
                 // Using new API key system
                 $token = $this->authApiKey->token;
                 $keyName = $this->authApiKey->name;
-                $keyScopes = json_decode($this->authApiKey->scopes, true) ?: [];
-                $allowedServerSlugs = json_decode($this->authApiKey->allowedServers, true) ?: [];
+                $keyScopes = json_decode(($this->authApiKey->scopes) ?? '', true) ?: [];
+                $allowedServerSlugs = json_decode(($this->authApiKey->allowedServers) ?? '', true) ?: [];
             } elseif (!empty($this->authMember->api_token)) {
                 // Legacy api_token
                 $token = $this->authMember->api_token;
@@ -676,7 +676,7 @@ class Mcp extends BaseControls\Control {
             $accessibleServers = [];
 
             foreach ($servers as $server) {
-                $tools = json_decode($server->tools, true) ?: [];
+                $tools = json_decode(($server->tools) ?? '', true) ?: [];
                 $toolNames = array_map(fn($t) => $t['name'] ?? 'unknown', $tools);
 
                 $accessibleServers[] = [
@@ -851,7 +851,7 @@ class Mcp extends BaseControls\Control {
 
         // Filter by API key permissions if applicable
         if ($this->authApiKey) {
-            $allowedSlugs = json_decode($this->authApiKey->allowedServers, true) ?: [];
+            $allowedSlugs = json_decode(($this->authApiKey->allowedServers) ?? '', true) ?: [];
 
             // If no restrictions, return all
             if (empty($allowedSlugs)) {
@@ -873,7 +873,7 @@ class Mcp extends BaseControls\Control {
         if ($server->toolsCache && $server->toolsCachedAt) {
             $cacheAge = time() - strtotime($server->toolsCachedAt);
             if ($cacheAge < 3600) { // 1 hour cache
-                $cached = json_decode($server->toolsCache, true);
+                $cached = json_decode(($server->toolsCache) ?? '', true);
                 if ($cached !== null) {
                     return $cached;
                 }
@@ -882,7 +882,7 @@ class Mcp extends BaseControls\Control {
 
         // If endpoint is relative (built-in), use stored tools
         if (strpos($server->endpointUrl, 'http') !== 0) {
-            return json_decode($server->tools, true) ?: [];
+            return json_decode(($server->tools) ?? '', true) ?: [];
         }
 
         // Fetch fresh tools from backend
@@ -901,7 +901,7 @@ class Mcp extends BaseControls\Control {
                 'error' => $e->getMessage()
             ]);
             // Fall back to stored tools
-            return json_decode($server->tools, true) ?: [];
+            return json_decode(($server->tools) ?? '', true) ?: [];
         }
     }
 
@@ -1007,12 +1007,12 @@ class Mcp extends BaseControls\Control {
         // Handle SSE format (event: message\ndata: {...})
         if (strpos($response, 'event:') !== false || strpos($response, 'data:') !== false) {
             if (preg_match('/data:\s*(\{.*\})/s', $response, $matches)) {
-                $data = json_decode($matches[1], true);
+                $data = json_decode(($matches[1]) ?? '', true);
             } else {
                 $data = null;
             }
         } else {
-            $data = json_decode($response, true);
+            $data = json_decode(($response) ?? '', true);
         }
 
         return $data['result']['tools'] ?? [];
@@ -1276,12 +1276,12 @@ class Mcp extends BaseControls\Control {
         // Handle SSE format (event: message\ndata: {...})
         if (strpos($response, 'event:') !== false || strpos($response, 'data:') !== false) {
             if (preg_match('/data:\s*(\{.*\})/s', $response, $matches)) {
-                $data = json_decode($matches[1], true);
+                $data = json_decode(($matches[1]) ?? '', true);
             } else {
                 throw new \Exception("Invalid SSE response from backend");
             }
         } else {
-            $data = json_decode($response, true);
+            $data = json_decode(($response) ?? '', true);
         }
 
         if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
@@ -1712,8 +1712,8 @@ class Mcp extends BaseControls\Control {
             return true;
         }
 
-        $scopes = json_decode($this->authApiKey->scopes, true) ?: [];
-        $allowedServers = json_decode($this->authApiKey->allowedServers, true) ?: [];
+        $scopes = json_decode(($this->authApiKey->scopes) ?? '', true) ?: [];
+        $allowedServers = json_decode(($this->authApiKey->allowedServers) ?? '', true) ?: [];
 
         // Full access scope allows everything
         if (in_array('mcp:*', $scopes)) {
@@ -1737,7 +1737,7 @@ class Mcp extends BaseControls\Control {
             return ['mcp:*']; // Legacy auth has full access
         }
 
-        return json_decode($this->authApiKey->scopes, true) ?: [];
+        return json_decode(($this->authApiKey->scopes) ?? '', true) ?: [];
     }
 
     // =========================================
@@ -2072,7 +2072,7 @@ class Mcp extends BaseControls\Control {
             return ['mcpServers' => []];
         }
 
-        $config = json_decode($content, true);
+        $config = json_decode(($content) ?? '', true);
         if (!is_array($config)) {
             return ['mcpServers' => []];
         }

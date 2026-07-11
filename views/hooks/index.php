@@ -17,7 +17,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -44,7 +44,7 @@
                     <?php foreach ($files as $file): ?>
                     <div class="list-group-item d-flex justify-content-between align-items-center">
                         <div>
-                            <strong><?= htmlspecialchars($file['name']) ?></strong>
+                            <strong><?= htmlspecialchars(($file['name']) ?? '') ?></strong>
                             <br><small class="text-muted"><?= date('M j, g:ia', $file['modTime']) ?> - <?= number_format($file['size']) ?> bytes</small>
                         </div>
                         <div class="btn-group btn-group-sm">
@@ -52,7 +52,7 @@
                                 <i class="bi bi-pencil"></i>
                             </a>
                             <button type="button" class="btn btn-outline-danger" title="Delete"
-                                    onclick="confirmDelete('<?= htmlspecialchars($file['name'], ENT_QUOTES) ?>')">
+                                    onclick="confirmDelete('<?= htmlspecialchars(($file['name']) ?? '', ENT_QUOTES) ?>')">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -80,7 +80,7 @@
                             <h2 class="accordion-header">
                                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#event-<?= $event ?>">
                                     <span class="badge bg-<?= $event === 'PreToolUse' ? 'warning' : ($event === 'PostToolUse' ? 'success' : 'info') ?> me-2">
-                                        <?= htmlspecialchars($event) ?>
+                                        <?= htmlspecialchars(($event) ?? '') ?>
                                     </span>
                                     <span class="text-muted small"><?= count($matchers) ?> matcher(s)</span>
                                 </button>
@@ -89,7 +89,7 @@
                                 <div class="accordion-body small">
                                     <?php foreach ($matchers as $m): ?>
                                     <div class="mb-2 p-2 bg-light rounded">
-                                        <strong>Matcher:</strong> <code><?= htmlspecialchars($m['matcher'] ?: '*') ?></code>
+                                        <strong>Matcher:</strong> <code><?= htmlspecialchars(($m['matcher'] ?: '*') ?? '') ?></code>
                                         <?php foreach ($m['hooks'] ?? [] as $h): ?>
                                         <div class="ms-3 mt-1">
                                             <code class="text-truncate d-inline-block" style="max-width: 300px;">

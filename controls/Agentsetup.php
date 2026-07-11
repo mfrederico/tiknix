@@ -420,7 +420,7 @@ class Agentsetup extends Control {
         if (!$this->validatePost()) return;
 
         $hooksJson = $this->getParam('hooks_json', '{}');
-        $hooks = json_decode($hooksJson, true);
+        $hooks = json_decode(($hooksJson) ?? '', true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid JSON'];
@@ -463,13 +463,13 @@ class Agentsetup extends Control {
 
         if ($type === 'stdio') {
             $config['command'] = $this->getParam('command', '');
-            $args = json_decode($this->getParam('args', '[]'), true);
+            $args = json_decode(($this->getParam('args', '[]')) ?? '', true);
             if (!empty($args)) $config['args'] = $args;
-            $env = json_decode($this->getParam('env', '{}'), true);
+            $env = json_decode(($this->getParam('env', '{}')) ?? '', true);
             if (!empty($env)) $config['env'] = $env;
         } else {
             $config['url'] = $this->getParam('url', '');
-            $headers = json_decode($this->getParam('headers', '{}'), true);
+            $headers = json_decode(($this->getParam('headers', '{}')) ?? '', true);
             if (!empty($headers)) $config['headers'] = $headers;
         }
 
@@ -492,7 +492,7 @@ class Agentsetup extends Control {
     private function loadSettings(): array {
         if (!file_exists($this->settingsFile)) return ['hooks' => []];
         $content = file_get_contents($this->settingsFile);
-        $settings = json_decode($content, true);
+        $settings = json_decode(($content) ?? '', true);
         return is_array($settings) ? $settings : ['hooks' => []];
     }
 }

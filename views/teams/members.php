@@ -2,7 +2,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <a href="/teams/view?id=<?= $team->id ?>" class="text-decoration-none text-muted small">
-                <i class="bi bi-arrow-left"></i> <?= htmlspecialchars($team->name) ?>
+                <i class="bi bi-arrow-left"></i> <?= htmlspecialchars(($team->name) ?? '') ?>
             </a>
             <h1 class="h2 mb-0 mt-1">Team Members</h1>
         </div>
@@ -17,7 +17,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -45,15 +45,15 @@
                             <td>
                                 <div class="d-flex align-items-center">
                                     <?php if (!empty($member->avatarUrl)): ?>
-                                        <img src="<?= htmlspecialchars($member->avatarUrl) ?>" class="rounded-circle me-2" width="40" height="40">
+                                        <img src="<?= htmlspecialchars(($member->avatarUrl) ?? '') ?>" class="rounded-circle me-2" width="40" height="40">
                                     <?php else: ?>
                                         <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
                                             <?= $member->initials() ?>
                                         </div>
                                     <?php endif; ?>
                                     <div>
-                                        <div class="fw-medium"><?= htmlspecialchars($member->displayName()) ?></div>
-                                        <small class="text-muted"><?= htmlspecialchars($member->email) ?></small>
+                                        <div class="fw-medium"><?= htmlspecialchars(($member->displayName()) ?? '') ?></div>
+                                        <small class="text-muted"><?= htmlspecialchars(($member->email) ?? '') ?></small>
                                     </div>
                                 </div>
                             </td>
@@ -90,7 +90,7 @@
                             <td>
                                 <?php if ($tm->role !== 'owner' && $isOwner): ?>
                                     <button class="btn btn-sm btn-outline-danger"
-                                            onclick="removeMember(<?= $member->id ?>, '<?= htmlspecialchars($member->displayName(), ENT_QUOTES) ?>')">
+                                            onclick="removeMember(<?= $member->id ?>, '<?= htmlspecialchars(($member->displayName()) ?? '', ENT_QUOTES) ?>')">
                                         <i class="bi bi-person-x"></i>
                                     </button>
                                 <?php elseif ($tm->role === 'owner'): ?>
@@ -123,7 +123,7 @@
                     <tbody>
                         <?php foreach ($invitations as $inv): ?>
                             <tr>
-                                <td><?= htmlspecialchars($inv->email) ?></td>
+                                <td><?= htmlspecialchars(($inv->email) ?? '') ?></td>
                                 <td>
                                     <span class="badge bg-secondary"><?= ucfirst($inv->role) ?></span>
                                 </td>

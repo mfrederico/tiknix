@@ -34,12 +34,12 @@
                 <tbody>
                     <?php foreach ($leads as $lead): ?>
                         <tr>
-                            <td><strong><?= htmlspecialchars(trim($lead->firstName . ' ' . $lead->lastName)) ?></strong></td>
-                            <td><a href="mailto:<?= htmlspecialchars($lead->email) ?>"><?= htmlspecialchars($lead->email) ?></a></td>
+                            <td><strong><?= htmlspecialchars((trim($lead->firstName . ' ' . $lead->lastName)) ?? '') ?></strong></td>
+                            <td><a href="mailto:<?= htmlspecialchars(($lead->email) ?? '') ?>"><?= htmlspecialchars(($lead->email) ?? '') ?></a></td>
                             <td>
                                 <?php $ts = strtotime((string)$lead->createdAt); ?>
-                                <span title="<?= htmlspecialchars((string)$lead->createdAt) ?>">
-                                    <?= $ts ? date('M j, Y g:i A', $ts) : htmlspecialchars((string)$lead->createdAt) ?>
+                                <span title="<?= htmlspecialchars(((string)$lead->createdAt) ?? '') ?>">
+                                    <?= $ts ? date('M j, Y g:i A', $ts) : htmlspecialchars(((string)$lead->createdAt) ?? '') ?>
                                 </span>
                             </td>
                             <td class="text-end">

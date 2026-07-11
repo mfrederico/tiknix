@@ -3,7 +3,7 @@
         <div class="col-md-8 col-lg-6">
             <div class="mb-4">
                 <a href="/teams/view?id=<?= $team->id ?>" class="text-decoration-none">
-                    <i class="bi bi-arrow-left"></i> Back to <?= htmlspecialchars($team->name) ?>
+                    <i class="bi bi-arrow-left"></i> Back to <?= htmlspecialchars(($team->name) ?? '') ?>
                 </a>
             </div>
 
@@ -13,7 +13,7 @@
             foreach ($flash as $msg):
             ?>
                 <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-                    <?= htmlspecialchars($msg['message']) ?>
+                    <?= htmlspecialchars(($msg['message']) ?? '') ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endforeach; ?>
@@ -32,13 +32,13 @@
                         <div class="mb-3">
                             <label for="name" class="form-label">Team Name <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="name" name="name" required
-                                   value="<?= htmlspecialchars($team->name) ?>"
+                                   value="<?= htmlspecialchars(($team->name) ?? '') ?>"
                                    minlength="2" maxlength="100">
                         </div>
 
                         <div class="mb-3">
                             <label for="slug" class="form-label">Slug</label>
-                            <input type="text" class="form-control" id="slug" value="<?= htmlspecialchars($team->slug) ?>" readonly disabled>
+                            <input type="text" class="form-control" id="slug" value="<?= htmlspecialchars(($team->slug) ?? '') ?>" readonly disabled>
                             <div class="form-text">The team slug cannot be changed</div>
                         </div>
 

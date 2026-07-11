@@ -3,22 +3,22 @@
         <div class="col-md-8">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h4 class="mb-0"><?= htmlspecialchars($title) ?></h4>
+                    <h4 class="mb-0"><?= htmlspecialchars(($title) ?? '') ?></h4>
                     <a href="/apikeys" class="btn btn-outline-secondary btn-sm">Back to Keys</a>
                 </div>
                 <div class="card-body">
                     <?php if (!empty($error)): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+                        <div class="alert alert-danger"><?= htmlspecialchars(($error) ?? '') ?></div>
                     <?php endif; ?>
 
                     <?php if (!empty($success)): ?>
-                        <div class="alert alert-success"><?= htmlspecialchars($success) ?></div>
+                        <div class="alert alert-success"><?= htmlspecialchars(($success) ?? '') ?></div>
                     <?php endif; ?>
 
                     <form method="POST">
                         <?php if (!empty($csrf) && is_array($csrf)): ?>
                             <?php foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                             <?php endforeach; ?>
                         <?php endif; ?>
 
@@ -52,11 +52,11 @@
                             <?php foreach ($availableScopes as $scope => $description): ?>
                                 <div class="form-check">
                                     <input class="form-check-input" type="checkbox" name="scopes[]"
-                                           id="scope_<?= htmlspecialchars($scope) ?>"
-                                           value="<?= htmlspecialchars($scope) ?>"
+                                           id="scope_<?= htmlspecialchars(($scope) ?? '') ?>"
+                                           value="<?= htmlspecialchars(($scope) ?? '') ?>"
                                            <?= in_array($scope, $currentScopes) ? 'checked' : '' ?>>
-                                    <label class="form-check-label" for="scope_<?= htmlspecialchars($scope) ?>">
-                                        <code><?= htmlspecialchars($scope) ?></code> - <?= htmlspecialchars($description) ?>
+                                    <label class="form-check-label" for="scope_<?= htmlspecialchars(($scope) ?? '') ?>">
+                                        <code><?= htmlspecialchars(($scope) ?? '') ?></code> - <?= htmlspecialchars(($description) ?? '') ?>
                                     </label>
                                 </div>
                             <?php endforeach; ?>
@@ -82,12 +82,12 @@
                                         <div class="col-md-6">
                                             <div class="form-check">
                                                 <input class="form-check-input" type="checkbox" name="allowedServers[]"
-                                                       id="server_<?= htmlspecialchars($server->slug) ?>"
-                                                       value="<?= htmlspecialchars($server->slug) ?>"
+                                                       id="server_<?= htmlspecialchars(($server->slug) ?? '') ?>"
+                                                       value="<?= htmlspecialchars(($server->slug) ?? '') ?>"
                                                        <?= in_array($server->slug, $currentServers) ? 'checked' : '' ?>>
-                                                <label class="form-check-label" for="server_<?= htmlspecialchars($server->slug) ?>">
-                                                    <strong><?= htmlspecialchars($server->name) ?></strong>
-                                                    <br><small class="text-muted"><?= htmlspecialchars($server->slug) ?></small>
+                                                <label class="form-check-label" for="server_<?= htmlspecialchars(($server->slug) ?? '') ?>">
+                                                    <strong><?= htmlspecialchars(($server->name) ?? '') ?></strong>
+                                                    <br><small class="text-muted"><?= htmlspecialchars(($server->slug) ?? '') ?></small>
                                                 </label>
                                             </div>
                                         </div>
@@ -133,15 +133,15 @@
                             </div>
                             <div class="row mb-3">
                                 <div class="col-sm-4"><strong>Created:</strong></div>
-                                <div class="col-sm-8"><?= htmlspecialchars($key->createdAt) ?></div>
+                                <div class="col-sm-8"><?= htmlspecialchars(($key->createdAt) ?? '') ?></div>
                             </div>
                             <?php if ($key->lastUsedAt): ?>
                                 <div class="row mb-3">
                                     <div class="col-sm-4"><strong>Last Used:</strong></div>
                                     <div class="col-sm-8">
-                                        <?= htmlspecialchars($key->lastUsedAt) ?>
+                                        <?= htmlspecialchars(($key->lastUsedAt) ?? '') ?>
                                         <?php if ($key->lastUsedIp): ?>
-                                            <small class="text-muted">from <?= htmlspecialchars($key->lastUsedIp) ?></small>
+                                            <small class="text-muted">from <?= htmlspecialchars(($key->lastUsedIp) ?? '') ?></small>
                                         <?php endif; ?>
                                     </div>
                                 </div>

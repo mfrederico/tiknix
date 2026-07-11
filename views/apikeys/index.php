@@ -11,10 +11,10 @@
     <?php if (!empty($_SESSION['new_api_key'])): ?>
         <div class="alert alert-success alert-dismissible fade show" role="alert">
             <h5 class="alert-heading"><i class="bi bi-check-circle"></i> API Key Created!</h5>
-            <p class="mb-2">Your new API key <strong><?= htmlspecialchars($_SESSION['new_api_key_name']) ?></strong> has been created. Copy it now - it won't be shown again!</p>
+            <p class="mb-2">Your new API key <strong><?= htmlspecialchars(($_SESSION['new_api_key_name']) ?? '') ?></strong> has been created. Copy it now - it won't be shown again!</p>
             <div class="input-group mb-2" style="max-width: 600px;">
                 <input type="text" class="form-control font-monospace bg-light" id="newToken"
-                       value="<?= htmlspecialchars($_SESSION['new_api_key']) ?>" readonly>
+                       value="<?= htmlspecialchars(($_SESSION['new_api_key']) ?? '') ?>" readonly>
                 <button class="btn btn-outline-secondary" type="button" onclick="copyToken('newToken')">
                     <i class="bi bi-clipboard"></i> Copy
                 </button>
@@ -25,7 +25,7 @@
     <?php endif; ?>
 
     <?php if (!empty($error)): ?>
-        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+        <div class="alert alert-danger"><?= htmlspecialchars(($error) ?? '') ?></div>
     <?php endif; ?>
 
     <div class="card mb-4">
@@ -57,18 +57,18 @@
                         <tbody>
                             <?php foreach ($keys as $key): ?>
                                 <?php
-                                $scopes = json_decode($key->scopes, true) ?: [];
-                                $allowedServers = json_decode($key->allowedServers, true) ?: [];
+                                $scopes = json_decode(($key->scopes) ?? '', true) ?: [];
+                                $allowedServers = json_decode(($key->allowedServers) ?? '', true) ?: [];
                                 $isExpired = $key->expiresAt && strtotime($key->expiresAt) < time();
                                 ?>
                                 <tr class="<?= (!$key->isActive || $isExpired) ? 'table-secondary' : '' ?>">
                                     <td>
-                                        <strong><?= htmlspecialchars($key->name) ?></strong>
+                                        <strong><?= htmlspecialchars(($key->name) ?? '') ?></strong>
                                         <br><small class="text-muted">Created <?= date('M j, Y', strtotime($key->createdAt)) ?></small>
                                     </td>
                                     <td>
                                         <code class="text-muted"><?= substr($key->token, 0, 12) ?>...</code>
-                                        <button class="btn btn-sm btn-link p-0 ms-1" onclick="regenerateToken(<?= $key->id ?>, '<?= htmlspecialchars($key->name, ENT_QUOTES) ?>')" title="Regenerate token">
+                                        <button class="btn btn-sm btn-link p-0 ms-1" onclick="regenerateToken(<?= $key->id ?>, '<?= htmlspecialchars(($key->name) ?? '', ENT_QUOTES) ?>')" title="Regenerate token">
                                             <i class="bi bi-arrow-clockwise"></i>
                                         </button>
                                     </td>
@@ -79,7 +79,7 @@
                                             <span class="badge bg-success">Full Access</span>
                                         <?php else: ?>
                                             <?php foreach ($scopes as $scope): ?>
-                                                <span class="badge bg-info"><?= htmlspecialchars($scope) ?></span>
+                                                <span class="badge bg-info"><?= htmlspecialchars(($scope) ?? '') ?></span>
                                             <?php endforeach; ?>
                                         <?php endif; ?>
                                     </td>
@@ -88,7 +88,7 @@
                                             <span class="text-muted">All servers</span>
                                         <?php else: ?>
                                             <?php foreach ($allowedServers as $slug): ?>
-                                                <span class="badge bg-secondary"><?= htmlspecialchars($slug) ?></span>
+                                                <span class="badge bg-secondary"><?= htmlspecialchars(($slug) ?? '') ?></span>
                                             <?php endforeach; ?>
                                         <?php endif; ?>
                                     </td>
@@ -103,7 +103,7 @@
                                     </td>
                                     <td>
                                         <?php if ($key->lastUsedAt): ?>
-                                            <span title="<?= htmlspecialchars($key->lastUsedAt) ?>">
+                                            <span title="<?= htmlspecialchars(($key->lastUsedAt) ?? '') ?>">
                                                 <?= date('M j, Y', strtotime($key->lastUsedAt)) ?>
                                             </span>
                                             <br><small class="text-muted"><?= $key->usageCount ?? 0 ?> uses</small>
@@ -122,7 +122,7 @@
                                     </td>
                                     <td>
                                         <button type="button" class="btn btn-sm btn-success"
-                                                onclick="showUseKeyModal('<?= htmlspecialchars($key->token, ENT_QUOTES) ?>', '<?= htmlspecialchars($key->name, ENT_QUOTES) ?>')">
+                                                onclick="showUseKeyModal('<?= htmlspecialchars(($key->token) ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars(($key->name) ?? '', ENT_QUOTES) ?>')">
                                             <i class="bi bi-plug"></i> Use
                                         </button>
                                         <a href="/apikeys/edit?id=<?= $key->id ?>" class="btn btn-sm btn-outline-primary">Edit</a>

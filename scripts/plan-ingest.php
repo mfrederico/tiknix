@@ -46,7 +46,7 @@ if (!$inst || !$inst->id) { fwrite(STDERR, "[ingest] no instance '$slug' owned b
 $claim = PlanIngestor::claim($planFile);
 if ($claim === null) { echo "[ingest] plan.json already claimed/ingested — skipping\n"; exit(0); }
 
-$plan = json_decode((string)@file_get_contents($claim), true);
+$plan = json_decode(((string)@file_get_contents($claim)) ?? '', true);
 if (!PlanIngestor::isValidPlan($plan)) {
     @unlink($claim);
     fwrite(STDERR, "[ingest] plan.json is not a valid plan — discarded\n");

@@ -13,7 +13,7 @@
             foreach ($flash as $msg):
             ?>
                 <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?>">
-                    <?= htmlspecialchars($msg['message']) ?>
+                    <?= htmlspecialchars(($msg['message']) ?? '') ?>
                 </div>
             <?php endforeach; ?>
 
@@ -32,7 +32,7 @@
                         <div class="mb-3">
                             <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="title" name="title" required
-                                   value="<?= htmlspecialchars($task->title) ?>">
+                                   value="<?= htmlspecialchars(($task->title) ?? '') ?>">
                         </div>
 
                         <!-- Description -->
@@ -74,8 +74,8 @@
                                 <?php if (empty($task->branchName)): ?>
                                     <select class="form-select" id="base_branch" name="base_branch">
                                         <?php foreach ($branches ?? ['main'] as $branch): ?>
-                                            <option value="<?= htmlspecialchars($branch) ?>" <?= ($task->baseBranch ?? 'main') === $branch ? 'selected' : '' ?>>
-                                                <?= htmlspecialchars($branch) ?>
+                                            <option value="<?= htmlspecialchars(($branch) ?? '') ?>" <?= ($task->baseBranch ?? 'main') === $branch ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars(($branch) ?? '') ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -110,9 +110,9 @@
                         <div class="mb-3">
                             <label for="related_files" class="form-label">Related Files</label>
                             <?php
-                            $relatedFiles = json_decode($task->relatedFiles, true) ?: [];
+                            $relatedFiles = json_decode(($task->relatedFiles) ?? '', true) ?: [];
                             ?>
-                            <textarea class="form-control font-monospace" id="related_files" name="related_files" rows="3"><?= htmlspecialchars(implode("\n", $relatedFiles)) ?></textarea>
+                            <textarea class="form-control font-monospace" id="related_files" name="related_files" rows="3"><?= htmlspecialchars((implode("\n", $relatedFiles)) ?? '') ?></textarea>
                             <div class="form-text">One file path per line.</div>
                         </div>
 
@@ -120,10 +120,10 @@
                         <div class="mb-4">
                             <label for="tags" class="form-label">Tags</label>
                             <?php
-                            $tags = json_decode($task->tags, true) ?: [];
+                            $tags = json_decode(($task->tags) ?? '', true) ?: [];
                             ?>
                             <input type="text" class="form-control" id="tags" name="tags"
-                                   value="<?= htmlspecialchars(implode(', ', $tags)) ?>">
+                                   value="<?= htmlspecialchars((implode(', ', $tags)) ?? '') ?>">
                             <div class="form-text">Comma-separated tags.</div>
                         </div>
 

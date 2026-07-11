@@ -19,7 +19,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
             foreach ($flash as $msg):
             ?>
                 <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-                    <?= htmlspecialchars($msg['message']) ?>
+                    <?= htmlspecialchars(($msg['message']) ?? '') ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endforeach; ?>
@@ -33,15 +33,15 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                 <a href="/workbench?instance_tag=<?= urlencode($task->instanceTag) ?>"
                                    class="badge bg-info-subtle text-info-emphasis border border-info-subtle text-decoration-none mb-2 d-inline-block"
                                    style="font-size:.9rem;" title="Show all tasks for this instance">
-                                    <i class="bi bi-hdd-network me-1"></i>Instance: <?= htmlspecialchars($task->instanceTag) ?>
+                                    <i class="bi bi-hdd-network me-1"></i>Instance: <?= htmlspecialchars(($task->instanceTag) ?? '') ?>
                                 </a>
                             <?php endif; ?>
-                            <h2 class="mb-1"><?= htmlspecialchars($task->title) ?></h2>
+                            <h2 class="mb-1"><?= htmlspecialchars(($task->title) ?? '') ?></h2>
                             <div class="text-muted small">
                                 Created by <?= htmlspecialchars($creator->displayName ?? $creator->email) ?>
                                 on <?= date('M j, Y', strtotime($task->createdAt)) ?>
                                 <?php if ($team): ?>
-                                    &bull; <a href="/teams/view?id=<?= $team->id ?>"><?= htmlspecialchars($team->name) ?></a>
+                                    &bull; <a href="/teams/view?id=<?= $team->id ?>"><?= htmlspecialchars(($team->name) ?? '') ?></a>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -146,7 +146,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <?php endif; ?>
 
                         <?php if ($task->prUrl): ?>
-                            <a href="<?= htmlspecialchars($task->prUrl) ?>" class="btn btn-outline-primary" target="_blank">
+                            <a href="<?= htmlspecialchars(($task->prUrl) ?? '') ?>" class="btn btn-outline-primary" target="_blank">
                                 <i class="bi bi-github"></i> View PR
                             </a>
                         <?php endif; ?>
@@ -192,7 +192,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                     <li class="list-group-item d-flex align-items-center px-0">
                                         <i class="bi bi-<?= $d['done'] ? 'check-circle-fill text-success' : 'hourglass text-warning' ?> me-2"></i>
                                         <a href="/workbench/view?id=<?= $d['id'] ?>" class="text-decoration-none flex-grow-1 <?= $d['done'] ? 'text-muted' : 'fw-medium' ?>">
-                                            <?= htmlspecialchars($d['title']) ?>
+                                            <?= htmlspecialchars(($d['title']) ?? '') ?>
                                         </a>
                                         <?= $depBadge($d['status']) ?>
                                     </li>
@@ -206,7 +206,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                     <li class="list-group-item d-flex align-items-center px-0">
                                         <i class="bi bi-arrow-return-right text-muted me-2"></i>
                                         <a href="/workbench/view?id=<?= $b['id'] ?>" class="text-decoration-none flex-grow-1">
-                                            <?= htmlspecialchars($b['title']) ?>
+                                            <?= htmlspecialchars(($b['title']) ?? '') ?>
                                         </a>
                                         <?= $depBadge($b['status']) ?>
                                     </li>
@@ -224,7 +224,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <h5 class="mb-0">Description</h5>
                     </div>
                     <div class="card-body">
-                        <div class="prose"><?= nl2br(htmlspecialchars($task->description)) ?></div>
+                        <div class="prose"><?= nl2br(htmlspecialchars(($task->description) ?? '')) ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -236,7 +236,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <h5 class="mb-0">Acceptance Criteria</h5>
                     </div>
                     <div class="card-body">
-                        <div class="prose"><?= nl2br(htmlspecialchars($task->acceptanceCriteria)) ?></div>
+                        <div class="prose"><?= nl2br(htmlspecialchars(($task->acceptanceCriteria) ?? '')) ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -266,7 +266,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                     </div>
                     <div class="card-body">
                         <?php
-                        $content = htmlspecialchars($lastClaudeMessage['content']);
+                        $content = htmlspecialchars(($lastClaudeMessage['content']) ?? '');
                         $content = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $content);
                         $content = preg_replace('/\*(.+?)\*/', '<em>$1</em>', $content);
                         $content = preg_replace('/^- (.+)$/m', '<li>$1</li>', $content);
@@ -292,7 +292,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <ol class="small text-muted mb-3">
                             <li>Read <strong>Claude's message</strong> (the card just above) for what it did or is asking.</li>
                             <?php if (!empty($reviewChanges)): ?>
-                                <li>Review the <strong>changes below</strong>, then use <strong>Approve &amp; Merge</strong> (top of the page) to accept them into <code><?= htmlspecialchars($reviewChanges['base']) ?></code>.</li>
+                                <li>Review the <strong>changes below</strong>, then use <strong>Approve &amp; Merge</strong> (top of the page) to accept them into <code><?= htmlspecialchars(($reviewChanges['base']) ?? '') ?></code>.</li>
                             <?php endif; ?>
                             <li>Or type an answer / follow-up instructions and <strong>Send</strong> to keep Claude going.</li>
                         </ol>
@@ -313,7 +313,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                 <ul class="list-unstyled mb-0 small font-monospace">
                                     <?php foreach ($reviewChanges['files'] as $f): ?>
                                         <li class="d-flex justify-content-between border-top py-1">
-                                            <span class="text-truncate me-2"><?= htmlspecialchars($f['path']) ?></span>
+                                            <span class="text-truncate me-2"><?= htmlspecialchars(($f['path']) ?? '') ?></span>
                                             <span class="text-nowrap">
                                                 <?php if ($f['binary']): ?><span class="text-muted">binary</span>
                                                 <?php else: ?><span class="text-success">+<?= (int)$f['added'] ?></span> <span class="text-danger">&minus;<?= (int)$f['removed'] ?></span><?php endif; ?>
@@ -384,14 +384,14 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             ?>
                             <p class="mb-2">
                                 <i class="bi bi-check-circle-fill text-success me-1"></i>
-                                <strong>Merged to:</strong> <code><?= htmlspecialchars($mergedTo) ?></code>
+                                <strong>Merged to:</strong> <code><?= htmlspecialchars(($mergedTo) ?? '') ?></code>
                             </p>
-                            <p><strong>From branch:</strong> <code><?= htmlspecialchars($task->branchName) ?></code></p>
+                            <p><strong>From branch:</strong> <code><?= htmlspecialchars(($task->branchName) ?? '') ?></code></p>
                         <?php elseif ($task->branchName): ?>
-                            <p><strong>Branch:</strong> <code><?= htmlspecialchars($task->branchName) ?></code></p>
+                            <p><strong>Branch:</strong> <code><?= htmlspecialchars(($task->branchName) ?? '') ?></code></p>
                         <?php endif; ?>
                         <?php if ($task->prUrl): ?>
-                            <p><strong>Pull Request:</strong> <a href="<?= htmlspecialchars($task->prUrl) ?>" target="_blank"><?= htmlspecialchars($task->prUrl) ?></a></p>
+                            <p><strong>Pull Request:</strong> <a href="<?= htmlspecialchars(($task->prUrl) ?? '') ?>" target="_blank"><?= htmlspecialchars(($task->prUrl) ?? '') ?></a></p>
                         <?php endif; ?>
                         <?php if ($task->mergedAt): ?>
                             <p><strong>Merged:</strong> <?= date('M j, Y g:i A', strtotime($task->mergedAt)) ?></p>
@@ -409,7 +409,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <h5 class="mb-0"><i class="bi bi-x-circle"></i> Task Failed</h5>
                     </div>
                     <div class="card-body">
-                        <pre class="mb-0 text-danger"><?= htmlspecialchars($task->errorMessage) ?></pre>
+                        <pre class="mb-0 text-danger"><?= htmlspecialchars(($task->errorMessage) ?? '') ?></pre>
                     </div>
                 </div>
             <?php endif; ?>
@@ -460,7 +460,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                             <i class="bi bi-robot"></i>
                                         </div>
                                     <?php elseif (!empty($comment['avatar_url'])): ?>
-                                        <img src="<?= htmlspecialchars($comment['avatar_url']) ?>" class="rounded-circle me-2 flex-shrink-0" width="40" height="40">
+                                        <img src="<?= htmlspecialchars(($comment['avatar_url']) ?? '') ?>" class="rounded-circle me-2 flex-shrink-0" width="40" height="40">
                                     <?php else: ?>
                                         <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 40px; height: 40px;">
                                             <?= strtoupper(substr($authorName, 0, 1)) ?>
@@ -474,7 +474,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                                 </button>
                                             <?php endif; ?>
                                             <div class="d-flex justify-content-between mb-1 pe-4">
-                                                <strong><?= $isFromClaude ? '<i class="bi bi-robot me-1"></i>' : '' ?><?= htmlspecialchars($authorName) ?></strong>
+                                                <strong><?= $isFromClaude ? '<i class="bi bi-robot me-1"></i>' : '' ?><?= htmlspecialchars(($authorName) ?? '') ?></strong>
                                                 <small class="text-muted"><?= date('M j, g:i A', strtotime($comment['created_at'])) ?></small>
                                             </div>
                                             <?php
@@ -495,8 +495,8 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                             <?php endif; ?>
                                             <?php if (!empty($comment['image_path'])): ?>
                                                 <div class="comment-image mt-2">
-                                                    <a href="/<?= htmlspecialchars($comment['image_path']) ?>" target="_blank" class="d-block">
-                                                        <img src="/<?= htmlspecialchars($comment['image_path']) ?>"
+                                                    <a href="/<?= htmlspecialchars(($comment['image_path']) ?? '') ?>" target="_blank" class="d-block">
+                                                        <img src="/<?= htmlspecialchars(($comment['image_path']) ?? '') ?>"
                                                              class="img-fluid rounded border"
                                                              style="max-height: 300px; cursor: zoom-in;"
                                                              alt="Attached image">
@@ -535,41 +535,41 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
 
                         <?php if ($task->tmuxSession): ?>
                             <dt>Session</dt>
-                            <dd><code class="small"><?= htmlspecialchars($task->tmuxSession) ?></code></dd>
+                            <dd><code class="small"><?= htmlspecialchars(($task->tmuxSession) ?? '') ?></code></dd>
                         <?php endif; ?>
 
                         <?php
-                        $relatedFiles = json_decode((string)$task->relatedFiles, true) ?: [];
+                        $relatedFiles = json_decode(((string)$task->relatedFiles) ?? '', true) ?: [];
                         if (!empty($relatedFiles)):
                         ?>
                             <dt>Related Files</dt>
                             <dd>
                                 <?php foreach ($relatedFiles as $file): ?>
-                                    <code class="d-block small"><?= htmlspecialchars($file) ?></code>
+                                    <code class="d-block small"><?= htmlspecialchars(($file) ?? '') ?></code>
                                 <?php endforeach; ?>
                             </dd>
                         <?php endif; ?>
 
                         <?php
-                        $tags = json_decode((string)$task->tags, true) ?: [];
+                        $tags = json_decode(((string)$task->tags) ?? '', true) ?: [];
                         if (!empty($tags)):
                         ?>
                             <dt>Tags</dt>
                             <dd>
                                 <?php foreach ($tags as $tag): ?>
-                                    <span class="badge bg-secondary"><?= htmlspecialchars($tag) ?></span>
+                                    <span class="badge bg-secondary"><?= htmlspecialchars(($tag) ?? '') ?></span>
                                 <?php endforeach; ?>
                             </dd>
                         <?php endif; ?>
 
                         <?php if ($task->branchName): ?>
                             <dt>Branch</dt>
-                            <dd><code class="small"><?= htmlspecialchars($task->branchName) ?></code></dd>
+                            <dd><code class="small"><?= htmlspecialchars(($task->branchName) ?? '') ?></code></dd>
                         <?php endif; ?>
 
                         <?php if ($task->baseBranch): ?>
                             <dt>Base Branch</dt>
-                            <dd><code class="small"><?= htmlspecialchars($task->baseBranch) ?></code> <small class="text-muted">(PR target)</small></dd>
+                            <dd><code class="small"><?= htmlspecialchars(($task->baseBranch) ?? '') ?></code> <small class="text-muted">(PR target)</small></dd>
                         <?php endif; ?>
 
                         <?php if ($task->assignedPort): ?>
@@ -604,8 +604,8 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             <div class="alert alert-success py-2 mb-2">
                                 <i class="bi bi-check-circle me-1"></i>
                                 <?php if ($task->proxyHash): ?>
-                                    Running at <a href="https://<?= htmlspecialchars($task->proxyHash) ?>.<?= $baseDomain ?>" target="_blank" class="fw-bold">
-                                        <?= htmlspecialchars($task->proxyHash) ?>.<?= $baseDomain ?>
+                                    Running at <a href="https://<?= htmlspecialchars(($task->proxyHash) ?? '') ?>.<?= $baseDomain ?>" target="_blank" class="fw-bold">
+                                        <?= htmlspecialchars(($task->proxyHash) ?? '') ?>.<?= $baseDomain ?>
                                     </a>
                                 <?php else: ?>
                                     Running on <a href="http://localhost:<?= $task->assignedPort ?>" target="_blank">localhost:<?= $task->assignedPort ?></a>
@@ -615,13 +615,13 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                 <button class="btn btn-danger btn-sm" onclick="stopTestServer(<?= $task->id ?>)">
                                     <i class="bi bi-stop-fill"></i> Stop Server
                                 </button>
-                                <code class="small d-block text-center mt-1">tmux attach -t <?= htmlspecialchars($task->testServerSession) ?></code>
+                                <code class="small d-block text-center mt-1">tmux attach -t <?= htmlspecialchars(($task->testServerSession) ?? '') ?></code>
                             </div>
                         <?php else: ?>
                             <?php if ($task->proxyHash): ?>
                                 <p class="small text-muted mb-2">
                                     <i class="bi bi-globe me-1"></i>
-                                    Test URL: <code><?= htmlspecialchars($task->proxyHash) ?>.<?= $baseDomain ?></code>
+                                    Test URL: <code><?= htmlspecialchars(($task->proxyHash) ?? '') ?>.<?= $baseDomain ?></code>
                                 </p>
                             <?php endif; ?>
                             <div class="d-grid">
@@ -655,7 +655,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                     } ?>"><?= $log->logLevel ?></span>
                                     <small class="text-muted"><?= date('g:i A', strtotime($log->createdAt)) ?></small>
                                 </div>
-                                <div class="small mt-1"><?= htmlspecialchars($log->message) ?></div>
+                                <div class="small mt-1"><?= htmlspecialchars(($log->message) ?? '') ?></div>
                             </div>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -1475,7 +1475,7 @@ async function declineTask(id) {
                         <?= empty($task->projectPath) ? '<span class="text-muted">(no workspace)</span>' : '' ?>
                     </label>
                     <?php if (!empty($task->projectPath)): ?>
-                    <small class="d-block text-muted ms-4"><?= htmlspecialchars($task->projectPath) ?></small>
+                    <small class="d-block text-muted ms-4"><?= htmlspecialchars(($task->projectPath) ?? '') ?></small>
                     <?php endif; ?>
                 </div>
 

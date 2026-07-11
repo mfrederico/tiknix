@@ -27,7 +27,7 @@ $error  = fn($id, $code, $m) => ['jsonrpc' => '2.0', 'id' => $id, 'error' => ['c
 while (($line = fgets(STDIN)) !== false) {
     $line = trim($line);
     if ($line === '') continue;
-    $req = json_decode($line, true);
+    $req = json_decode(($line) ?? '', true);
     if (!is_array($req)) continue;
 
     $id     = $req['id'] ?? null;

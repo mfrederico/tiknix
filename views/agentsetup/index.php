@@ -5,7 +5,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -56,9 +56,9 @@
                                 <tbody>
                                     <?php foreach ($systemServers as $slug => $server): ?>
                                     <tr>
-                                        <td><code><?= htmlspecialchars($slug) ?></code> <span class="badge bg-secondary">Required</span></td>
+                                        <td><code><?= htmlspecialchars(($slug) ?? '') ?></code> <span class="badge bg-secondary">Required</span></td>
                                         <td><span class="badge bg-<?= ($server['config']['type'] ?? 'stdio') === 'http' ? 'info' : 'success' ?>"><?= strtoupper($server['config']['type'] ?? 'stdio') ?></span></td>
-                                        <td class="text-muted small"><?= htmlspecialchars($server['description']) ?></td>
+                                        <td class="text-muted small"><?= htmlspecialchars(($server['description']) ?? '') ?></td>
                                     </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -86,14 +86,14 @@
                                 <tbody>
                                     <?php foreach ($userServers as $slug => $server): $cfg = $server['config']; ?>
                                     <tr>
-                                        <td><code><?= htmlspecialchars($slug) ?></code></td>
+                                        <td><code><?= htmlspecialchars(($slug) ?? '') ?></code></td>
                                         <td><span class="badge bg-<?= ($cfg['type'] ?? 'stdio') === 'http' ? 'info' : 'success' ?>"><?= strtoupper($cfg['type'] ?? 'stdio') ?></span></td>
                                         <td class="small font-monospace text-truncate" style="max-width:300px;">
                                             <?= htmlspecialchars(($cfg['type'] ?? 'stdio') === 'http' ? ($cfg['url'] ?? '') : ($cfg['command'] ?? '')) ?>
                                         </td>
                                         <td class="text-end">
-                                            <button class="btn btn-sm btn-outline-primary" onclick="editServer('<?= htmlspecialchars($slug, ENT_QUOTES) ?>', <?= htmlspecialchars(json_encode($cfg), ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i></button>
-                                            <button class="btn btn-sm btn-outline-danger" onclick="deleteServer('<?= htmlspecialchars($slug, ENT_QUOTES) ?>')"><i class="bi bi-trash"></i></button>
+                                            <button class="btn btn-sm btn-outline-primary" onclick="editServer('<?= htmlspecialchars(($slug) ?? '', ENT_QUOTES) ?>', <?= htmlspecialchars((json_encode($cfg)) ?? '', ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i></button>
+                                            <button class="btn btn-sm btn-outline-danger" onclick="deleteServer('<?= htmlspecialchars(($slug) ?? '', ENT_QUOTES) ?>')"><i class="bi bi-trash"></i></button>
                                         </td>
                                     </tr>
                                     <?php endforeach; ?>
@@ -134,9 +134,9 @@
                                 <tbody>
                                     <?php foreach ($tools as $tool): ?>
                                     <tr>
-                                        <td><code class="small">tiknix_<?= htmlspecialchars($tool['name']) ?></code></td>
-                                        <td class="small text-muted" style="max-width:300px;"><?= htmlspecialchars(substr($tool['description'], 0, 60)) ?><?= strlen($tool['description']) > 60 ? '...' : '' ?></td>
-                                        <td class="small"><code><?= htmlspecialchars($tool['file']) ?></code></td>
+                                        <td><code class="small">tiknix_<?= htmlspecialchars(($tool['name']) ?? '') ?></code></td>
+                                        <td class="small text-muted" style="max-width:300px;"><?= htmlspecialchars((substr($tool['description'], 0, 60)) ?? '') ?><?= strlen($tool['description']) > 60 ? '...' : '' ?></td>
+                                        <td class="small"><code><?= htmlspecialchars(($tool['file']) ?? '') ?></code></td>
                                         <td class="text-end">
                                             <a href="/mcptools/edit?name=<?= urlencode($tool['name']) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
                                         </td>
@@ -177,7 +177,7 @@
                             <?php foreach ($hookFiles as $file): ?>
                             <div class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
-                                    <strong><?= htmlspecialchars($file['name']) ?></strong>
+                                    <strong><?= htmlspecialchars(($file['name']) ?? '') ?></strong>
                                     <br><small class="text-muted"><?= date('M j, g:ia', $file['modTime']) ?> - <?= number_format($file['size']) ?> bytes</small>
                                 </div>
                                 <a href="/hooks/edit?name=<?= urlencode($file['name']) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
@@ -208,7 +208,7 @@
                                     <div id="cfg-<?= $event ?>" class="accordion-collapse collapse">
                                         <div class="accordion-body small py-2">
                                             <?php foreach ($matchers as $m): ?>
-                                            <div class="mb-1"><strong>Matcher:</strong> <code><?= htmlspecialchars($m['matcher'] ?: '*') ?></code></div>
+                                            <div class="mb-1"><strong>Matcher:</strong> <code><?= htmlspecialchars(($m['matcher'] ?: '*') ?? '') ?></code></div>
                                             <?php endforeach; ?>
                                         </div>
                                     </div>

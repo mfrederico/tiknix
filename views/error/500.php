@@ -136,13 +136,13 @@
             <!-- Development Mode: Show full debug information -->
             <div class="file-info">
                 <strong>Exception:</strong> <?= get_class($exception) ?><br>
-                <strong>File:</strong> <?= htmlspecialchars($file) ?><br>
-                <strong>Line:</strong> <?= htmlspecialchars($line) ?>
+                <strong>File:</strong> <?= htmlspecialchars(($file) ?? '') ?><br>
+                <strong>Line:</strong> <?= htmlspecialchars(($line) ?? '') ?>
             </div>
             
             <h3>Error Message</h3>
             <div class="error-details">
-                <?= htmlspecialchars($error) ?>
+                <?= htmlspecialchars(($error) ?? '') ?>
             </div>
             
             <?php if (isset($exception->getPrevious)): ?>
@@ -150,8 +150,8 @@
                 <?php if ($previous): ?>
                     <h3>Previous Exception</h3>
                     <div class="error-details">
-                        <strong><?= get_class($previous) ?>:</strong> <?= htmlspecialchars($previous->getMessage()) ?><br>
-                        <strong>File:</strong> <?= htmlspecialchars($previous->getFile()) ?><br>
+                        <strong><?= get_class($previous) ?>:</strong> <?= htmlspecialchars(($previous->getMessage()) ?? '') ?><br>
+                        <strong>File:</strong> <?= htmlspecialchars(($previous->getFile()) ?? '') ?><br>
                         <strong>Line:</strong> <?= $previous->getLine() ?>
                     </div>
                 <?php endif; ?>
@@ -165,30 +165,30 @@
                         
                         <?php if (isset($frame['file'])): ?>
                             <div class="frame-file">
-                                <?= htmlspecialchars($frame['file']) ?>:<?= $frame['line'] ?? '?' ?>
+                                <?= htmlspecialchars(($frame['file']) ?? '') ?>:<?= $frame['line'] ?? '?' ?>
                             </div>
                         <?php endif; ?>
                         
                         <?php if (isset($frame['class'])): ?>
                             <span class="frame-function">
-                                <?= htmlspecialchars($frame['class']) ?><?= htmlspecialchars($frame['type'] ?? '::') ?><?= htmlspecialchars($frame['function']) ?>()
+                                <?= htmlspecialchars(($frame['class']) ?? '') ?><?= htmlspecialchars($frame['type'] ?? '::') ?><?= htmlspecialchars(($frame['function']) ?? '') ?>()
                             </span>
                         <?php elseif (isset($frame['function'])): ?>
                             <span class="frame-function">
-                                <?= htmlspecialchars($frame['function']) ?>()
+                                <?= htmlspecialchars(($frame['function']) ?? '') ?>()
                             </span>
                         <?php endif; ?>
                         
                         <?php if (!empty($frame['args'])): ?>
                             <div class="frame-args">
-                                Arguments: <?= htmlspecialchars(json_encode($frame['args'], JSON_PRETTY_PRINT)) ?>
+                                Arguments: <?= htmlspecialchars((json_encode($frame['args'], JSON_PRETTY_PRINT)) ?? '') ?>
                             </div>
                         <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
             <?php elseif (!empty($traceString)): ?>
                 <div class="error-details">
-                    <pre><?= htmlspecialchars($traceString) ?></pre>
+                    <pre><?= htmlspecialchars(($traceString) ?? '') ?></pre>
                 </div>
             <?php endif; ?>
             
@@ -198,7 +198,7 @@
             
             <?php if (!empty($error) && $error !== 'An error occurred'): ?>
             <div class="error-details">
-                <?= htmlspecialchars($error) ?>
+                <?= htmlspecialchars(($error) ?? '') ?>
             </div>
             <?php endif; ?>
         <?php endif; ?>

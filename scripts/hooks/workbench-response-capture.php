@@ -62,7 +62,7 @@ try {
 
 // Read the hook input from stdin
 $input = file_get_contents('php://stdin');
-$hookInput = json_decode($input, true);
+$hookInput = json_decode(($input) ?? '', true);
 
 if (!$hookInput) {
     echo json_encode(new stdClass());

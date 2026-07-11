@@ -24,7 +24,7 @@
 
 // Read input from stdin
 $input = file_get_contents('php://stdin');
-$data = json_decode($input, true);
+$data = json_decode(($input) ?? '', true);
 
 if (!$data) {
     exit(0); // Allow if we can't parse input

@@ -49,14 +49,14 @@ $result = Mcp::ensureMcpConfig($testPath, 'test-api-key-12345');
 echo "Result: " . ($result ? 'updated' : 'NO CHANGES (correct)') . "\n\n";
 
 echo "=== Test 5: Preserve custom servers ===\n";
-$config = json_decode(file_get_contents($mcpJson), true);
+$config = json_decode((file_get_contents($mcpJson)) ?? '', true);
 $config['mcpServers']['my-custom-mcp'] = ['command' => 'custom-cmd', 'args' => ['--custom']];
 file_put_contents($mcpJson, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
 echo "Added 'my-custom-mcp' server manually...\n";
 
 $result = Mcp::ensureMcpConfig($testPath, 'test-api-key-12345');
 echo "Result: " . ($result ? 'updated' : 'NO CHANGES (correct)') . "\n";
-$final = json_decode(file_get_contents($mcpJson), true);
+$final = json_decode((file_get_contents($mcpJson)) ?? '', true);
 $preserved = isset($final['mcpServers']['my-custom-mcp']);
 echo "Custom server preserved: " . ($preserved ? 'YES ✓' : 'NO ✗') . "\n";
 echo file_get_contents($mcpJson) . "\n";

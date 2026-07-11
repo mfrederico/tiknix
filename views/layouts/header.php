@@ -22,7 +22,7 @@
                                 <?php if (isset($item['icon'])): ?>
                                     <i class="bi bi-<?= $item['icon'] ?>"></i>
                                 <?php endif; ?>
-                                <?= htmlspecialchars($item['label']) ?>
+                                <?= htmlspecialchars(($item['label']) ?? '') ?>
                             </a>
                             <ul class="dropdown-menu">
                                 <?php foreach ($item['dropdown'] as $subitem): ?>
@@ -31,7 +31,7 @@
                                             <?php if (isset($subitem['icon'])): ?>
                                                 <i class="bi bi-<?= $subitem['icon'] ?>"></i>
                                             <?php endif; ?>
-                                            <?= htmlspecialchars($subitem['label']) ?>
+                                            <?= htmlspecialchars(($subitem['label']) ?? '') ?>
                                         </a>
                                     </li>
                                 <?php endforeach; ?>
@@ -44,7 +44,7 @@
                                 <?php if (isset($item['icon'])): ?>
                                     <i class="bi bi-<?= $item['icon'] ?>"></i>
                                 <?php endif; ?>
-                                <?= htmlspecialchars($item['label']) ?>
+                                <?= htmlspecialchars(($item['label']) ?? '') ?>
                             </a>
                         </li>
                     <?php endif; ?>
@@ -186,11 +186,11 @@
             <?php foreach ($breadcrumbs as $crumb): ?>
                 <?php if (isset($crumb['active']) && $crumb['active']): ?>
                     <li class="breadcrumb-item active" aria-current="page">
-                        <?= htmlspecialchars($crumb['label']) ?>
+                        <?= htmlspecialchars(($crumb['label']) ?? '') ?>
                     </li>
                 <?php else: ?>
                     <li class="breadcrumb-item">
-                        <a href="<?= $crumb['url'] ?>"><?= htmlspecialchars($crumb['label']) ?></a>
+                        <a href="<?= $crumb['url'] ?>"><?= htmlspecialchars(($crumb['label']) ?? '') ?></a>
                     </li>
                 <?php endif; ?>
             <?php endforeach; ?>

@@ -436,7 +436,7 @@ function main(): void
     try {
         // Read input from stdin (JSON format from Claude Code)
         $inputJson = file_get_contents('php://stdin');
-        $inputData = json_decode($inputJson, true);
+        $inputData = json_decode(($inputJson) ?? '', true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             // If input isn't valid JSON, just pass through

@@ -18,7 +18,7 @@
                         <h4 class="alert-heading">Please fix the following errors:</h4>
                         <ul class="mb-0">
                             <?php foreach ($errors as $error): ?>
-                                <li><?= htmlspecialchars($error) ?></li>
+                                <li><?= htmlspecialchars(($error) ?? '') ?></li>
                             <?php endforeach; ?>
                         </ul>
                     </div>
@@ -31,7 +31,7 @@
                             // Include CSRF token if available
                             if (isset($csrf) && is_array($csrf)):
                                 foreach ($csrf as $name => $value): ?>
-                                    <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                    <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                                 <?php endforeach;
                             endif;
                             ?>

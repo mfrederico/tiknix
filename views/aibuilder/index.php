@@ -55,7 +55,7 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
         <div class="lh-sm">
           <div class="lbl text-uppercase text-body-secondary fw-semibold">Working on</div>
           <div class="fw-bold">
-            <?= htmlspecialchars($selected->slug) ?>.tiknix
+            <?= htmlspecialchars(($selected->slug) ?? '') ?>.tiknix
             <?php if ($ab_isDefault): ?><span class="badge text-bg-warning">default · core</span><?php endif; ?>
             <span id="ab-status" class="fw-normal text-body-secondary small">· connecting…</span>
           </div>
@@ -111,13 +111,13 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
             <a href="/aibuilder/open/<?= (int)$inst->id ?>"
                class="list-group-item list-group-item-action <?= $isSel ? 'active' : '' ?>">
               <div class="d-flex justify-content-between">
-                <span class="fw-semibold"><i class="bi bi-caret-right-fill ab-caret me-1"></i><?= htmlspecialchars($inst->displayName ?: $inst->slug) ?></span>
+                <span class="fw-semibold"><i class="bi bi-caret-right-fill ab-caret me-1"></i><?= htmlspecialchars(($inst->displayName ?: $inst->slug) ?? '') ?></span>
                 <span>
                   <?php if (!empty($inst->isDefault)): ?><span class="badge text-bg-warning">default</span> <?php endif; ?>
-                  <span class="badge text-bg-dark"><?= htmlspecialchars($inst->engine) ?></span>
+                  <span class="badge text-bg-dark"><?= htmlspecialchars(($inst->engine) ?? '') ?></span>
                 </span>
               </div>
-              <small class="<?= $isSel ? '' : 'text-body-secondary' ?>"><?= htmlspecialchars($inst->slug) ?>.tiknix</small>
+              <small class="<?= $isSel ? '' : 'text-body-secondary' ?>"><?= htmlspecialchars(($inst->slug) ?? '') ?>.tiknix</small>
             </a>
           <?php endforeach; endif; ?>
         </div>
@@ -138,7 +138,7 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
           <div class="card-header d-flex justify-content-between align-items-center">
             <span class="fw-semibold"><i class="bi bi-terminal me-1"></i>Terminal</span>
             <span class="d-flex align-items-center gap-2">
-              <span class="text-body-secondary small d-none d-md-inline"><i class="bi bi-shield-lock me-1"></i>Sandboxed to <?= htmlspecialchars($selected->slug) ?>.tiknix</span>
+              <span class="text-body-secondary small d-none d-md-inline"><i class="bi bi-shield-lock me-1"></i>Sandboxed to <?= htmlspecialchars(($selected->slug) ?? '') ?>.tiknix</span>
               <button id="ab-restart" class="btn btn-outline-secondary btn-sm" type="button" title="Restart the jailed session (applies updated sandbox settings)"><i class="bi bi-arrow-repeat me-1"></i>Restart</button>
               <button id="ab-delete" class="btn btn-outline-danger btn-sm" type="button" title="Delete this instance (danger zone)"><i class="bi bi-trash me-1"></i>Delete</button>
             </span>

@@ -14,21 +14,21 @@
                         ?>
                         <tr>
                             <th width="30%">Name:</th>
-                            <td><?= htmlspecialchars($fullName) ?></td>
+                            <td><?= htmlspecialchars(($fullName) ?? '') ?></td>
                         </tr>
                         <?php endif; ?>
                         <tr>
                             <th width="30%">Username:</th>
-                            <td><?= htmlspecialchars($member->username) ?></td>
+                            <td><?= htmlspecialchars(($member->username) ?? '') ?></td>
                         </tr>
                         <tr>
                             <th>Email:</th>
-                            <td><?= htmlspecialchars($member->email) ?></td>
+                            <td><?= htmlspecialchars(($member->email) ?? '') ?></td>
                         </tr>
                         <?php if (!empty($member->bio)): ?>
                         <tr>
                             <th>Bio:</th>
-                            <td><?= nl2br(htmlspecialchars($member->bio)) ?></td>
+                            <td><?= nl2br(htmlspecialchars(($member->bio) ?? '')) ?></td>
                         </tr>
                         <?php endif; ?>
                         <tr>
@@ -57,7 +57,7 @@
                         </tr>
                         <tr>
                             <th>Status:</th>
-                            <td><?= htmlspecialchars($member->status) ?></td>
+                            <td><?= htmlspecialchars(($member->status) ?? '') ?></td>
                         </tr>
                         <tr>
                             <th>Member Since:</th>

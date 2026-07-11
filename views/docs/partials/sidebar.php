@@ -53,11 +53,11 @@ $activeSection = $activeSection ?? 'index';
             <ul class="nav flex-column">
                 <?php foreach ($quickLinks as $link): ?>
                 <li class="nav-item">
-                    <a class="nav-link py-1" href="<?= htmlspecialchars($link['href']) ?>">
+                    <a class="nav-link py-1" href="<?= htmlspecialchars(($link['href']) ?? '') ?>">
                         <?php if (isset($link['icon'])): ?>
-                        <i class="bi <?= htmlspecialchars($link['icon']) ?>"></i>
+                        <i class="bi <?= htmlspecialchars(($link['icon']) ?? '') ?>"></i>
                         <?php endif; ?>
-                        <?= htmlspecialchars($link['text']) ?>
+                        <?= htmlspecialchars(($link['text']) ?? '') ?>
                     </a>
                 </li>
                 <?php endforeach; ?>

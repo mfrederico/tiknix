@@ -23,7 +23,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -93,7 +93,7 @@
                 <?php foreach ($instanceTags ?? [] as $it): ?>
                 <li class="nav-item">
                     <a class="nav-link <?= ($filters['instance_tag'] ?? '') === $it['tag'] ? 'active' : '' ?>" href="/workbench?instance_tag=<?= urlencode($it['tag']) ?><?= $statusQ !== '' ? '&status=' . urlencode($statusQ) : '' ?>">
-                        <i class="bi bi-hdd-network"></i> <?= htmlspecialchars($it['tag']) ?>
+                        <i class="bi bi-hdd-network"></i> <?= htmlspecialchars(($it['tag']) ?? '') ?>
                         <span class="badge bg-info rounded-pill ms-1"><?= (int)$it['n'] ?></span>
                     </a>
                 </li>
@@ -214,7 +214,7 @@
                                         <td>
                                             <?php if ($isSub): ?><i class="bi bi-arrow-return-right text-muted me-1"></i><?php endif; ?>
                                             <a href="/workbench/view?id=<?= $task->id ?>" class="text-decoration-none fw-medium">
-                                                <?= htmlspecialchars($task->title) ?>
+                                                <?= htmlspecialchars(($task->title) ?? '') ?>
                                             </a>
                                             <?php if ($task->teamId): ?>
                                                 <br><small class="text-muted"><i class="bi bi-people"></i> Team task</small>
@@ -223,7 +223,7 @@
                                         <td>
                                             <?php if (!empty($task->instanceTag)): ?>
                                                 <a href="/workbench?instance_tag=<?= urlencode($task->instanceTag) ?>" class="badge bg-info-subtle text-info-emphasis border border-info-subtle text-decoration-none" title="Filter to this instance">
-                                                    <i class="bi bi-hdd-network me-1"></i><?= htmlspecialchars($task->instanceTag) ?>
+                                                    <i class="bi bi-hdd-network me-1"></i><?= htmlspecialchars(($task->instanceTag) ?? '') ?>
                                                 </a>
                                             <?php else: ?>
                                                 <span class="text-muted">—</span>
@@ -239,7 +239,7 @@
                                                 <?= $priorityInfo['label'] ?>
                                             </span>
                                         </td>
-                                        <td data-order="<?= htmlspecialchars((string)$task->status) ?>">
+                                        <td data-order="<?= htmlspecialchars(((string)$task->status) ?? '') ?>">
                                             <?php
                                             $statusBadge = match($task->status) {
                                                 'pending' => 'secondary',
@@ -262,7 +262,7 @@
                                                 <?= ucfirst($task->status) ?>
                                             </span>
                                         </td>
-                                        <td data-order="<?= htmlspecialchars((string)$task->createdAt) ?>">
+                                        <td data-order="<?= htmlspecialchars(((string)$task->createdAt) ?? '') ?>">
                                             <small class="text-muted"><?= date('M j', strtotime($task->createdAt)) ?></small>
                                         </td>
                                         <td>

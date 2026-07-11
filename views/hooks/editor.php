@@ -16,7 +16,7 @@ $isEdit = !$isNew;
             foreach ($flash as $msg):
             ?>
                 <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-                    <?= htmlspecialchars($msg['message']) ?>
+                    <?= htmlspecialchars(($msg['message']) ?? '') ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endforeach; ?>
@@ -55,7 +55,7 @@ $isEdit = !$isNew;
                                            id="file_name" name="file_name"
                                            pattern="[a-z][a-z0-9-]*\.php"
                                            placeholder="my-custom-hook.php"
-                                           value="<?= htmlspecialchars($fileName) ?>"
+                                           value="<?= htmlspecialchars(($fileName) ?? '') ?>"
                                            required style="width: 250px;">
                                 </div>
                                 <div class="col">

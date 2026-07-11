@@ -6,7 +6,7 @@
         <div class="col-md-12 mb-4">
             <div class="card bg-primary text-white">
                 <div class="card-body">
-                    <h4 class="card-title">Welcome back, <?= htmlspecialchars($member->username) ?>!</h4>
+                    <h4 class="card-title">Welcome back, <?= htmlspecialchars(($member->username) ?? '') ?>!</h4>
                     <p class="card-text">You are logged in as 
                         <?php
                         $levelName = 'Member';
@@ -113,10 +113,10 @@
                 <div class="card-body">
                     <dl class="row">
                         <dt class="col-sm-4">Username:</dt>
-                        <dd class="col-sm-8"><?= htmlspecialchars($member->username) ?></dd>
+                        <dd class="col-sm-8"><?= htmlspecialchars(($member->username) ?? '') ?></dd>
                         
                         <dt class="col-sm-4">Email:</dt>
-                        <dd class="col-sm-8"><?= htmlspecialchars($member->email) ?></dd>
+                        <dd class="col-sm-8"><?= htmlspecialchars(($member->email) ?? '') ?></dd>
                         
                         <dt class="col-sm-4">Account Level:</dt>
                         <dd class="col-sm-8">

@@ -9,15 +9,15 @@
             <table class="table table-sm mb-0">
                 <tr>
                     <th style="width: 200px;">Server Name</th>
-                    <td><code><?= htmlspecialchars($serverName) ?></code></td>
+                    <td><code><?= htmlspecialchars(($serverName) ?? '') ?></code></td>
                 </tr>
                 <tr>
                     <th>Version</th>
-                    <td><code><?= htmlspecialchars($serverVersion) ?></code></td>
+                    <td><code><?= htmlspecialchars(($serverVersion) ?? '') ?></code></td>
                 </tr>
                 <tr>
                     <th>Protocol Version</th>
-                    <td><code><?= htmlspecialchars($protocolVersion) ?></code></td>
+                    <td><code><?= htmlspecialchars(($protocolVersion) ?? '') ?></code></td>
                 </tr>
                 <tr>
                     <th>Endpoint</th>
@@ -52,8 +52,8 @@
                     <tbody>
                         <?php foreach ($tools as $name => $config): ?>
                         <tr>
-                            <td><code><?= htmlspecialchars($name) ?></code></td>
-                            <td><?= htmlspecialchars($config['description']) ?></td>
+                            <td><code><?= htmlspecialchars(($name) ?? '') ?></code></td>
+                            <td><?= htmlspecialchars(($config['description']) ?? '') ?></td>
                             <td>
                                 <?php
                                 $props = $config['inputSchema']['properties'] ?? [];
@@ -65,8 +65,8 @@
                                     <ul class="list-unstyled mb-0">
                                     <?php foreach ($props as $propName => $propConfig): ?>
                                         <li>
-                                            <code><?= htmlspecialchars($propName) ?></code>
-                                            <span class="text-muted">(<?= htmlspecialchars($propConfig['type']) ?>)</span>
+                                            <code><?= htmlspecialchars(($propName) ?? '') ?></code>
+                                            <span class="text-muted">(<?= htmlspecialchars(($propConfig['type']) ?? '') ?>)</span>
                                             <?php if (in_array($propName, $required)): ?>
                                                 <span class="badge bg-danger">required</span>
                                             <?php endif; ?>
@@ -96,7 +96,7 @@
             <p>Or manually add this to your <code>~/.claude/settings.json</code> or project <code>.mcp.json</code>:</p>
             <pre class="bg-dark text-light p-3 rounded"><code>{
   "mcpServers": {
-    "<?= htmlspecialchars($serverName) ?>": {
+    "<?= htmlspecialchars(($serverName) ?? '') ?>": {
       "type": "http",
       "url": "<?= htmlspecialchars($mcpUrl ?? '') ?>",
       "headers": {

@@ -3,21 +3,21 @@
         <div class="col-md-6">
             <div class="card">
                 <div class="card-header">
-                    <h4><?= htmlspecialchars($title) ?></h4>
+                    <h4><?= htmlspecialchars(($title) ?? '') ?></h4>
                 </div>
                 <div class="card-body">
                     <?php if (!empty($error)): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+                        <div class="alert alert-danger"><?= htmlspecialchars(($error) ?? '') ?></div>
                     <?php endif; ?>
                     
                     <?php if (!empty($success)): ?>
-                        <div class="alert alert-success"><?= htmlspecialchars($success) ?></div>
+                        <div class="alert alert-success"><?= htmlspecialchars(($success) ?? '') ?></div>
                     <?php endif; ?>
                     
                     <form method="POST">
                         <?php if (!empty($csrf) && is_array($csrf)): ?>
                             <?php foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                             <?php endforeach; ?>
                         <?php endif; ?>
                         

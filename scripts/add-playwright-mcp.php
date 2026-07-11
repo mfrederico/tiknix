@@ -10,7 +10,7 @@
 
 function addPlaywright(string $file): string {
     if (!is_file($file)) return "skip: no .mcp.json at $file";
-    $json = json_decode((string)file_get_contents($file), true);
+    $json = json_decode(((string)file_get_contents($file)) ?? '', true);
     if (!is_array($json)) return "skip: invalid JSON in $file";
     $json['mcpServers'] = $json['mcpServers'] ?? [];
     if (isset($json['mcpServers']['playwright'])) return "ok: already present in $file";

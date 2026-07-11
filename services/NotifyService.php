@@ -505,7 +505,7 @@ class NotifyService {
     }
 
     private function wrapInTemplate(string $content): string {
-        $appName  = htmlspecialchars($this->appName ?: 'Tiknix');
+        $appName  = htmlspecialchars(($this->appName ?: 'Tiknix') ?? '');
         $loginUrl = $this->baseUrl ? rtrim($this->baseUrl, '/') : '#';
         $year     = date('Y');
 

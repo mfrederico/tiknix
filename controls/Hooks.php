@@ -332,7 +332,7 @@ class Hooks extends Control {
         $hooksJson = $this->getParam('hooks_json', '{}');
 
         // Validate JSON
-        $hooks = json_decode($hooksJson, true);
+        $hooks = json_decode(($hooksJson) ?? '', true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid JSON: ' . json_last_error_msg()];
             Flight::redirect('/hooks/config');
@@ -381,7 +381,7 @@ class Hooks extends Control {
         }
 
         $content = file_get_contents($this->settingsFile);
-        $settings = json_decode($content, true);
+        $settings = json_decode(($content) ?? '', true);
 
         return is_array($settings) ? $settings : ['hooks' => []];
     }

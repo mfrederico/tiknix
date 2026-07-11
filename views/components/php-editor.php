@@ -24,19 +24,19 @@ $editorReadonly = $editorReadonly ?? false;
 ?>
 
 <!-- CodeMirror 6 Editor Container -->
-<div id="<?= htmlspecialchars($editorId) ?>-container" class="php-editor-container border rounded" style="height: <?= htmlspecialchars($editorHeight) ?>;">
-    <div id="<?= htmlspecialchars($editorId) ?>" class="php-editor" style="height: 100%;"></div>
+<div id="<?= htmlspecialchars(($editorId) ?? '') ?>-container" class="php-editor-container border rounded" style="height: <?= htmlspecialchars(($editorHeight) ?? '') ?>;">
+    <div id="<?= htmlspecialchars(($editorId) ?? '') ?>" class="php-editor" style="height: 100%;"></div>
 </div>
 
 <!-- Hidden textarea for form submission -->
-<textarea id="<?= htmlspecialchars($editorId) ?>-textarea" name="code" style="display: none;"><?= htmlspecialchars($editorCode) ?></textarea>
+<textarea id="<?= htmlspecialchars(($editorId) ?? '') ?>-textarea" name="code" style="display: none;"><?= htmlspecialchars(($editorCode) ?? '') ?></textarea>
 
 <!-- Validation Results -->
-<div id="<?= htmlspecialchars($editorId) ?>-validation" class="mt-2" style="display: none;">
-    <div id="<?= htmlspecialchars($editorId) ?>-errors" class="alert alert-danger small" style="display: none;"></div>
-    <div id="<?= htmlspecialchars($editorId) ?>-warnings" class="alert alert-warning small" style="display: none;"></div>
-    <div id="<?= htmlspecialchars($editorId) ?>-security" class="alert alert-info small" style="display: none;"></div>
-    <div id="<?= htmlspecialchars($editorId) ?>-success" class="alert alert-success small" style="display: none;">
+<div id="<?= htmlspecialchars(($editorId) ?? '') ?>-validation" class="mt-2" style="display: none;">
+    <div id="<?= htmlspecialchars(($editorId) ?? '') ?>-errors" class="alert alert-danger small" style="display: none;"></div>
+    <div id="<?= htmlspecialchars(($editorId) ?? '') ?>-warnings" class="alert alert-warning small" style="display: none;"></div>
+    <div id="<?= htmlspecialchars(($editorId) ?? '') ?>-security" class="alert alert-info small" style="display: none;"></div>
+    <div id="<?= htmlspecialchars(($editorId) ?? '') ?>-success" class="alert alert-success small" style="display: none;">
         <i class="bi bi-check-circle"></i> No syntax errors detected
     </div>
 </div>

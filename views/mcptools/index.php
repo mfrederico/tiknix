@@ -12,7 +12,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -57,17 +57,17 @@
                     ?>
                     <tr>
                         <td>
-                            <code>tiknix_<?= htmlspecialchars($tool['name']) ?></code>
+                            <code>tiknix_<?= htmlspecialchars(($tool['name']) ?? '') ?></code>
                             <?php if ($isSystem): ?>
                                 <span class="badge bg-secondary ms-1">System</span>
                             <?php endif; ?>
                         </td>
                         <td class="text-muted small" style="max-width: 300px;">
-                            <?= htmlspecialchars(substr($tool['description'], 0, 100)) ?>
+                            <?= htmlspecialchars((substr($tool['description'], 0, 100)) ?? '') ?>
                             <?= strlen($tool['description']) > 100 ? '...' : '' ?>
                         </td>
                         <td>
-                            <code class="small"><?= htmlspecialchars($tool['file']) ?></code>
+                            <code class="small"><?= htmlspecialchars(($tool['file']) ?? '') ?></code>
                             <?php if ($tool['modTime']): ?>
                                 <br><small class="text-muted"><?= date('M j, g:ia', $tool['modTime']) ?></small>
                             <?php endif; ?>
@@ -89,7 +89,7 @@
                                     <i class="bi bi-pencil"></i>
                                 </a>
                                 <button type="button" class="btn btn-outline-danger" title="Delete"
-                                        onclick="confirmDelete('<?= htmlspecialchars($tool['name'], ENT_QUOTES) ?>')">
+                                        onclick="confirmDelete('<?= htmlspecialchars(($tool['name']) ?? '', ENT_QUOTES) ?>')">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>

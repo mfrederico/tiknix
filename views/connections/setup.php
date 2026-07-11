@@ -13,7 +13,7 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
     <i class="bi bi-github fs-3"></i>
     <div>
       <h1 class="h4 fw-bold mb-0">Connect GitHub</h1>
-      <div class="text-body-secondary small">for <code><?= htmlspecialchars($instance->slug) ?>.tiknix</code></div>
+      <div class="text-body-secondary small">for <code><?= htmlspecialchars(($instance->slug) ?? '') ?>.tiknix</code></div>
     </div>
   </div>
 
@@ -31,7 +31,7 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
 
   <?php if (!empty($connection)): ?>
     <div class="alert alert-success d-flex justify-content-between align-items-center py-2">
-      <span><i class="bi bi-check-circle me-1"></i>Connected to <strong><?= htmlspecialchars($connection['repo']) ?></strong></span>
+      <span><i class="bi bi-check-circle me-1"></i>Connected to <strong><?= htmlspecialchars(($connection['repo']) ?? '') ?></strong></span>
       <button id="gh-disconnect" class="btn btn-sm btn-outline-danger" data-cid="<?= (int)$connection['id'] ?>">Disconnect</button>
     </div>
   <?php endif; ?>
@@ -76,7 +76,7 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Repository URL</label>
-            <input id="gh-repo-url" class="form-control" placeholder="https://github.com/owner/repo" value="<?= htmlspecialchars($pfUrl) ?>" required>
+            <input id="gh-repo-url" class="form-control" placeholder="https://github.com/owner/repo" value="<?= htmlspecialchars(($pfUrl) ?? '') ?>" required>
             <div class="form-text">Paste the repo's GitHub URL (e.g. <code>https://github.com/mfrederico/run.ngn.sh</code>). It must already exist and your token needs push access.</div>
           </div>
           <div class="form-check mb-3">

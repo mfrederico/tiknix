@@ -46,7 +46,7 @@ class MarkdownParser {
         // Convert code blocks first (triple backticks)
         $text = preg_replace_callback('/```(\w*)\n(.*?)```/s', function($matches) use (&$codeBlocks, &$blockCounter) {
             $language = $matches[1] ?: 'plaintext';
-            $code = htmlspecialchars($matches[2], ENT_QUOTES, 'UTF-8');
+            $code = htmlspecialchars(($matches[2]) ?? '', ENT_QUOTES, 'UTF-8');
             $placeholder = "###CODEBLOCK{$blockCounter}###";
             $codeBlocks[$placeholder] = '<pre><code class="language-' . $language . '">' . $code . '</code></pre>';
             $blockCounter++;
@@ -59,7 +59,7 @@ class MarkdownParser {
 
         // Convert inline code (single backticks) - must be before other inline formatting
         $text = preg_replace_callback('/`([^`\n]+)`/', function($matches) use (&$inlineCode, &$inlineCounter) {
-            $code = htmlspecialchars($matches[1], ENT_QUOTES, 'UTF-8');
+            $code = htmlspecialchars(($matches[1]) ?? '', ENT_QUOTES, 'UTF-8');
             $placeholder = "###INLINECODE{$inlineCounter}###";
             $inlineCode[$placeholder] = '<code>' . $code . '</code>';
             $inlineCounter++;

@@ -48,15 +48,15 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
                     <a href="/communications" class="btn btn-sm btn-outline-secondary d-lg-none">
                         <i class="bi bi-arrow-left"></i>
                     </a>
-                    <span class="comms-avatar"><?= htmlspecialchars(comms_initials($headWho)) ?></span>
+                    <span class="comms-avatar"><?= htmlspecialchars((comms_initials($headWho)) ?? '') ?></span>
                     <div class="min-w-0 flex-grow-1">
-                        <div class="fw-semibold text-truncate"><?= htmlspecialchars($thread->subject ?: '(no subject)') ?></div>
+                        <div class="fw-semibold text-truncate"><?= htmlspecialchars(($thread->subject ?: '(no subject)') ?? '') ?></div>
                         <div class="small text-muted text-truncate">
                             <?= count($messages) ?> msg<?= count($messages) === 1 ? '' : 's' ?>
-                            · <?= htmlspecialchars($headWho) ?>
-                            <?php if ($ownerName !== ''): ?> · owned by <?= htmlspecialchars($ownerName) ?><?php endif; ?>
+                            · <?= htmlspecialchars(($headWho) ?? '') ?>
+                            <?php if ($ownerName !== ''): ?> · owned by <?= htmlspecialchars(($ownerName) ?? '') ?><?php endif; ?>
                             <?php if (!empty($related)): ?>
-                                · <span class="badge bg-info-subtle text-info-emphasis"><?= htmlspecialchars($thread->relatedType) ?> #<?= (int)$thread->relatedId ?></span>
+                                · <span class="badge bg-info-subtle text-info-emphasis"><?= htmlspecialchars(($thread->relatedType) ?? '') ?> #<?= (int)$thread->relatedId ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -82,17 +82,17 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
                                 <div class="comms-msg-system" data-msg-id="<?= (int)$m->id ?>">
                                     <span class="comms-msg-system-inner">
                                         <i class="bi bi-info-circle me-1"></i><?= $m->content ?>
-                                        <span class="ms-1 opacity-75"><?= htmlspecialchars($when) ?></span>
+                                        <span class="ms-1 opacity-75"><?= htmlspecialchars(($when) ?? '') ?></span>
                                     </span>
                                 </div>
                             <?php else: ?>
                                 <div class="comms-msg-row d-flex <?= $isOut ? 'justify-content-end' : 'justify-content-start' ?> align-items-end gap-2" data-msg-id="<?= (int)$m->id ?>">
                                     <?php if (!$isOut): ?>
-                                        <span class="comms-avatar sm"><?= htmlspecialchars(comms_initials($who)) ?></span>
+                                        <span class="comms-avatar sm"><?= htmlspecialchars((comms_initials($who)) ?? '') ?></span>
                                     <?php endif; ?>
                                     <div class="comms-msg-bubble-wrap">
                                         <div class="comms-msg-meta <?= $isOut ? 'text-end' : '' ?>">
-                                            <?= htmlspecialchars($who) ?> · <?= htmlspecialchars($when) ?>
+                                            <?= htmlspecialchars(($who) ?? '') ?> · <?= htmlspecialchars(($when) ?? '') ?>
                                             <?php if ($m->status === 'failed'): ?>
                                                 <span class="text-danger"><i class="bi bi-exclamation-triangle"></i> failed</span>
                                             <?php elseif ($isOut && $m->status === 'sent'): ?>
@@ -102,14 +102,14 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
                                         <div class="comms-msg-bubble <?= $isOut ? 'out' : 'in' ?>">
                                             <?= $m->content ?>
                                             <?php if ($m->status === 'failed' && $m->errorMessage): ?>
-                                                <div class="text-danger small mt-1 border-top pt-1"><?= htmlspecialchars($m->errorMessage) ?></div>
+                                                <div class="text-danger small mt-1 border-top pt-1"><?= htmlspecialchars(($m->errorMessage) ?? '') ?></div>
                                             <?php endif; ?>
                                             <?php if (!empty($atts)): ?>
                                                 <div class="mt-2 pt-2 border-top">
                                                     <?php foreach ($atts as $a): ?>
-                                                        <a href="<?= htmlspecialchars($a->diskPath) ?>" target="_blank" rel="noopener"
+                                                        <a href="<?= htmlspecialchars(($a->diskPath) ?? '') ?>" target="_blank" rel="noopener"
                                                            class="badge bg-secondary-subtle text-secondary-emphasis border text-decoration-none me-1">
-                                                            <i class="bi bi-paperclip"></i> <?= htmlspecialchars($a->filename) ?>
+                                                            <i class="bi bi-paperclip"></i> <?= htmlspecialchars(($a->filename) ?? '') ?>
                                                         </a>
                                                     <?php endforeach; ?>
                                                 </div>
@@ -117,7 +117,7 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
                                         </div>
                                     </div>
                                     <?php if ($isOut): ?>
-                                        <span class="comms-avatar sm"><?= htmlspecialchars(comms_initials($who)) ?></span>
+                                        <span class="comms-avatar sm"><?= htmlspecialchars((comms_initials($who)) ?? '') ?></span>
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>

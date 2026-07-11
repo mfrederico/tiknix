@@ -12,7 +12,7 @@
             <div class="card mb-4">
                 <div class="card-header">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><?= htmlspecialchars($message->subject) ?></h5>
+                        <h5 class="mb-0"><?= htmlspecialchars(($message->subject) ?? '') ?></h5>
                         <?php
                         $statusClass = [
                             'new' => 'primary',
@@ -29,8 +29,8 @@
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <strong>From:</strong> <?= htmlspecialchars($message->name) ?>
-                        &lt;<?= htmlspecialchars($message->email) ?>&gt;
+                        <strong>From:</strong> <?= htmlspecialchars(($message->name) ?? '') ?>
+                        &lt;<?= htmlspecialchars(($message->email) ?? '') ?>&gt;
                     </div>
 
                     <div class="mb-3">
@@ -47,7 +47,7 @@
                     <div class="mb-3">
                         <strong>Member:</strong>
                         <a href="/admin/members/edit?id=<?= $member->id ?>">
-                            <?= htmlspecialchars($member->username) ?>
+                            <?= htmlspecialchars(($member->username) ?? '') ?>
                         </a>
                     </div>
                     <?php endif; ?>
@@ -55,7 +55,7 @@
                     <hr>
 
                     <div class="message-content">
-                        <?= nl2br(htmlspecialchars($message->message)) ?>
+                        <?= nl2br(htmlspecialchars(($message->message) ?? '')) ?>
                     </div>
                 </div>
             </div>
@@ -76,7 +76,7 @@
                             </small>
                         </div>
                         <div class="card-body">
-                            <?= nl2br(htmlspecialchars($response->response)) ?>
+                            <?= nl2br(htmlspecialchars(($response->response) ?? '')) ?>
                         </div>
                     </div>
                 <?php endforeach; ?>
@@ -93,7 +93,7 @@
                         // Include CSRF token if available
                         if (isset($csrf) && is_array($csrf)):
                             foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                             <?php endforeach;
                         endif;
                         ?>
@@ -135,10 +135,10 @@
                 </div>
                 <div class="card-body">
                     <p><strong>IP Address:</strong><br>
-                    <small><?= htmlspecialchars($message->ip_address ?: 'Not recorded') ?></small></p>
+                    <small><?= htmlspecialchars(($message->ip_address ?: 'Not recorded') ?? '') ?></small></p>
 
                     <p><strong>User Agent:</strong><br>
-                    <small><?= htmlspecialchars(substr($message->user_agent ?: 'Not recorded', 0, 100)) ?></small></p>
+                    <small><?= htmlspecialchars((substr($message->user_agent ?: 'Not recorded', 0, 100)) ?? '') ?></small></p>
 
                     <?php if ($message->read_at): ?>
                     <p><strong>First Read:</strong><br>

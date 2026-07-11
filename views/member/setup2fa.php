@@ -7,7 +7,7 @@
                 </div>
                 <div class="card-body">
                     <?php if (!empty($error)): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+                        <div class="alert alert-danger"><?= htmlspecialchars(($error) ?? '') ?></div>
                     <?php endif; ?>
 
                     <p>Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.):</p>
@@ -19,7 +19,7 @@
                     <div class="mb-4">
                         <label class="form-label">Or enter this code manually:</label>
                         <div class="input-group">
-                            <input type="text" class="form-control font-monospace" value="<?= htmlspecialchars($secret) ?>" readonly id="secretKey">
+                            <input type="text" class="form-control font-monospace" value="<?= htmlspecialchars(($secret) ?? '') ?>" readonly id="secretKey">
                             <button class="btn btn-outline-secondary" type="button" onclick="copySecret()">
                                 <i class="bi bi-clipboard"></i>
                             </button>
@@ -31,7 +31,7 @@
                     <form method="POST" action="/member/enable2fa">
                         <?php if (!empty($csrf) && is_array($csrf)): ?>
                             <?php foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                             <?php endforeach; ?>
                         <?php endif; ?>
 

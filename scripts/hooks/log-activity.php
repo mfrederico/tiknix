@@ -23,7 +23,7 @@ $projectDir = dirname(dirname($scriptDir));
 
 // Read hook input from stdin (JSON with tool info)
 $hookInput = file_get_contents('php://stdin');
-$data = json_decode($hookInput, true);
+$data = json_decode(($hookInput) ?? '', true);
 
 if (!$data) {
     exit(0);

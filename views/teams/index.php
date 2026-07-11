@@ -17,7 +17,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -42,7 +42,7 @@
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h5 class="card-title mb-0">
                                     <a href="/teams/view?id=<?= $team['id'] ?>" class="text-decoration-none">
-                                        <?= htmlspecialchars($team['name']) ?>
+                                        <?= htmlspecialchars(($team['name']) ?? '') ?>
                                     </a>
                                 </h5>
                                 <span class="badge bg-<?= $team['role'] === 'owner' ? 'primary' : ($team['role'] === 'admin' ? 'info' : 'secondary') ?>">
@@ -51,7 +51,7 @@
                             </div>
                             <?php if (!empty($team['description'])): ?>
                                 <p class="card-text text-muted small">
-                                    <?= htmlspecialchars(substr($team['description'], 0, 100)) ?>
+                                    <?= htmlspecialchars((substr($team['description'], 0, 100)) ?? '') ?>
                                     <?= strlen($team['description']) > 100 ? '...' : '' ?>
                                 </p>
                             <?php endif; ?>

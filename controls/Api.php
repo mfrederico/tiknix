@@ -31,7 +31,7 @@ class Api extends Control
         }
 
         // Get JSON input
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = json_decode((file_get_contents('php://input')) ?? '', true);
 
         if (!$input || empty($input['code'])) {
             Flight::jsonError('Missing code parameter', 400);
@@ -64,7 +64,7 @@ class Api extends Control
             return;
         }
 
-        $input = json_decode(file_get_contents('php://input'), true);
+        $input = json_decode((file_get_contents('php://input')) ?? '', true);
 
         if (!$input || empty($input['code'])) {
             Flight::jsonError('Missing code parameter', 400);

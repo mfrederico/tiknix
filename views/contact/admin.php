@@ -69,12 +69,12 @@
                                 </span>
                             </td>
                             <td>
-                                <strong><?= htmlspecialchars($msg->name) ?></strong><br>
-                                <small class="text-muted"><?= htmlspecialchars($msg->email) ?></small>
+                                <strong><?= htmlspecialchars(($msg->name) ?? '') ?></strong><br>
+                                <small class="text-muted"><?= htmlspecialchars(($msg->email) ?? '') ?></small>
                             </td>
                             <td>
                                 <a href="/contact/view?id=<?= $msg->id ?>" class="text-decoration-none">
-                                    <?= htmlspecialchars(substr($msg->subject, 0, 50)) ?>
+                                    <?= htmlspecialchars((substr($msg->subject, 0, 50)) ?? '') ?>
                                     <?= strlen($msg->subject) > 50 ? '...' : '' ?>
                                 </a>
                             </td>

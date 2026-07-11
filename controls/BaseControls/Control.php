@@ -178,7 +178,7 @@ abstract class Control {
                 return filter_var($input, FILTER_SANITIZE_URL);
             
             case 'html':
-                return htmlspecialchars($input, ENT_QUOTES, 'UTF-8');
+                return htmlspecialchars(($input) ?? '', ENT_QUOTES, 'UTF-8');
             
             case 'string':
             default:
@@ -357,7 +357,7 @@ abstract class Control {
     protected function getJsonInput(): ?array {
         $raw = file_get_contents('php://input');
         if ($raw === '' || $raw === false) return null;
-        $data = json_decode($raw, true);
+        $data = json_decode(($raw) ?? '', true);
         return is_array($data) ? $data : null;
     }
 

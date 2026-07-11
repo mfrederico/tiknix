@@ -83,7 +83,7 @@ class ListMcpServersTool extends BaseTool {
 
         $result = [];
         foreach ($servers as $server) {
-            $serverTags = json_decode($server->tags, true) ?: [];
+            $serverTags = json_decode(($server->tags) ?? '', true) ?: [];
 
             // Filter by tag if specified
             if ($tag && !in_array($tag, $serverTags)) {
@@ -105,7 +105,7 @@ class ListMcpServersTool extends BaseTool {
             ];
 
             // Include tool definitions if requested
-            $tools = json_decode($server->tools, true) ?: [];
+            $tools = json_decode(($server->tools) ?? '', true) ?: [];
             if ($includeTools) {
                 $serverData['tools'] = $tools;
             } else {

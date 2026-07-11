@@ -163,8 +163,8 @@ try {
         'description' => $task->description,
         'task_type' => $task->taskType,
         'acceptance_criteria' => $task->acceptanceCriteria,
-        'related_files' => json_decode($task->relatedFiles, true) ?: [],
-        'tags' => json_decode($task->tags, true) ?: [],
+        'related_files' => json_decode(($task->relatedFiles) ?? '', true) ?: [],
+        'tags' => json_decode(($task->tags) ?? '', true) ?: [],
     ]);
 
     echo "Prompt built (" . strlen($prompt) . " chars)\n";

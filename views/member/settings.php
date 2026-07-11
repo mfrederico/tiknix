@@ -6,17 +6,17 @@
             <div class="card">
                 <div class="card-body">
                     <?php if (!empty($error)): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
+                        <div class="alert alert-danger"><?= htmlspecialchars(($error) ?? '') ?></div>
                     <?php endif; ?>
                     
                     <?php if (!empty($success)): ?>
-                        <div class="alert alert-success"><?= htmlspecialchars($success) ?></div>
+                        <div class="alert alert-success"><?= htmlspecialchars(($success) ?? '') ?></div>
                     <?php endif; ?>
                     
                     <form method="POST">
                         <?php if (!empty($csrf) && is_array($csrf)): ?>
                             <?php foreach ($csrf as $name => $value): ?>
-                                <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                             <?php endforeach; ?>
                         <?php endif; ?>
                         
@@ -73,12 +73,12 @@
                         <h5 class="mb-3">Two-Factor Authentication</h5>
 
                         <?php if (!empty($_SESSION['flash_error'])): ?>
-                            <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['flash_error']) ?></div>
+                            <div class="alert alert-danger"><?= htmlspecialchars(($_SESSION['flash_error']) ?? '') ?></div>
                             <?php unset($_SESSION['flash_error']); ?>
                         <?php endif; ?>
 
                         <?php if (!empty($_SESSION['flash_success'])): ?>
-                            <div class="alert alert-success"><?= htmlspecialchars($_SESSION['flash_success']) ?></div>
+                            <div class="alert alert-success"><?= htmlspecialchars(($_SESSION['flash_success']) ?? '') ?></div>
                             <?php unset($_SESSION['flash_success']); ?>
                         <?php endif; ?>
 
@@ -195,8 +195,8 @@
                             <tbody>
                                 <?php foreach ($settings as $setting): ?>
                                     <tr>
-                                        <td><small><?= htmlspecialchars($setting->setting_key) ?></small></td>
-                                        <td><small><?= htmlspecialchars(substr($setting->setting_value, 0, 20)) ?></small></td>
+                                        <td><small><?= htmlspecialchars(($setting->setting_key) ?? '') ?></small></td>
+                                        <td><small><?= htmlspecialchars((substr($setting->setting_value, 0, 20)) ?? '') ?></small></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -216,7 +216,7 @@
             <form method="POST" action="/member/disable2fa">
                 <?php if (!empty($csrf) && is_array($csrf)): ?>
                     <?php foreach ($csrf as $name => $value): ?>
-                        <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                        <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                     <?php endforeach; ?>
                 <?php endif; ?>
                 <div class="modal-header">
@@ -249,7 +249,7 @@
             <form method="POST" action="/member/regenerateCodes">
                 <?php if (!empty($csrf) && is_array($csrf)): ?>
                     <?php foreach ($csrf as $name => $value): ?>
-                        <input type="hidden" name="<?= htmlspecialchars($name) ?>" value="<?= htmlspecialchars($value) ?>">
+                        <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
                     <?php endforeach; ?>
                 <?php endif; ?>
                 <div class="modal-header">

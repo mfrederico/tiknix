@@ -52,7 +52,7 @@ class GitHubPublisher {
     public static function publish($inst, $conn): array {
         $fail = fn($msg) => ['ok' => false, 'pushed' => false, 'pr' => null, 'message' => '', 'error' => $msg];
 
-        $meta  = json_decode($conn->metadataJson ?: '{}', true) ?: [];
+        $meta  = json_decode(($conn->metadataJson ?: '{}') ?? '', true) ?: [];
         $owner = $meta['owner'] ?? '';
         $repo  = $meta['repo'] ?? '';
         if ($owner === '' || $repo === '') return $fail('Connection is missing owner/repo');

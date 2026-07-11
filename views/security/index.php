@@ -15,7 +15,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -34,7 +34,7 @@
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Search</label>
-                    <input type="text" name="search" class="form-control" placeholder="Search name, pattern, description..." value="<?= htmlspecialchars($search) ?>">
+                    <input type="text" name="search" class="form-control" placeholder="Search name, pattern, description..." value="<?= htmlspecialchars(($search) ?? '') ?>">
                 </div>
                 <div class="col-md-3 d-flex align-items-end">
                     <button type="submit" class="btn btn-secondary me-2">
@@ -123,9 +123,9 @@
                                 </td>
                                 <td><?= $rule->priority ?></td>
                                 <td>
-                                    <strong><?= htmlspecialchars($rule->name) ?></strong>
+                                    <strong><?= htmlspecialchars(($rule->name) ?? '') ?></strong>
                                     <?php if ($rule->description): ?>
-                                        <br><small class="text-muted"><?= htmlspecialchars($rule->description) ?></small>
+                                        <br><small class="text-muted"><?= htmlspecialchars(($rule->description) ?? '') ?></small>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -139,7 +139,7 @@
                                     ?>
                                     <span class="badge bg-<?= $actionBadge ?>"><?= ucfirst($rule->action) ?></span>
                                 </td>
-                                <td><code class="small"><?= htmlspecialchars($rule->pattern) ?></code></td>
+                                <td><code class="small"><?= htmlspecialchars(($rule->pattern) ?? '') ?></code></td>
                                 <td>
                                     <?php if ($rule->level === null): ?>
                                         <span class="text-muted">All</span>
@@ -204,9 +204,9 @@
                                 </td>
                                 <td><?= $rule->priority ?></td>
                                 <td>
-                                    <strong><?= htmlspecialchars($rule->name) ?></strong>
+                                    <strong><?= htmlspecialchars(($rule->name) ?? '') ?></strong>
                                     <?php if ($rule->description): ?>
-                                        <br><small class="text-muted"><?= htmlspecialchars($rule->description) ?></small>
+                                        <br><small class="text-muted"><?= htmlspecialchars(($rule->description) ?? '') ?></small>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -220,7 +220,7 @@
                                     ?>
                                     <span class="badge bg-<?= $actionBadge ?>"><?= ucfirst($rule->action) ?></span>
                                 </td>
-                                <td><code class="small"><?= htmlspecialchars($rule->pattern) ?></code></td>
+                                <td><code class="small"><?= htmlspecialchars(($rule->pattern) ?? '') ?></code></td>
                                 <td>
                                     <?php if ($rule->level === null): ?>
                                         <span class="text-muted">All</span>

@@ -25,7 +25,7 @@ $email    = $email ?? '';
       <div class="card-body p-4">
         <?php if (!empty($errors)): ?>
           <div class="alert alert-danger py-2">
-            <ul class="mb-0 small"><?php foreach ($errors as $e): ?><li><?= htmlspecialchars($e) ?></li><?php endforeach; ?></ul>
+            <ul class="mb-0 small"><?php foreach ($errors as $e): ?><li><?= htmlspecialchars(($e) ?? '') ?></li><?php endforeach; ?></ul>
           </div>
         <?php endif; ?>
 
@@ -33,11 +33,11 @@ $email    = $email ?? '';
           <?= csrf_field() ?>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Admin username</label>
-            <input name="username" class="form-control" value="<?= htmlspecialchars($username) ?>" pattern="[A-Za-z0-9_.-]{2,50}" required>
+            <input name="username" class="form-control" value="<?= htmlspecialchars(($username) ?? '') ?>" pattern="[A-Za-z0-9_.-]{2,50}" required>
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Email address</label>
-            <input name="email" type="email" class="form-control" value="<?= htmlspecialchars($email) ?>" placeholder="you@example.com" required>
+            <input name="email" type="email" class="form-control" value="<?= htmlspecialchars(($email) ?? '') ?>" placeholder="you@example.com" required>
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">Password</label>

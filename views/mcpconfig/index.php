@@ -12,7 +12,7 @@
     foreach ($flash as $msg):
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
-            <?= htmlspecialchars($msg['message']) ?>
+            <?= htmlspecialchars(($msg['message']) ?? '') ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
@@ -41,7 +41,7 @@
                     <?php foreach ($systemServers as $slug => $server): ?>
                     <tr>
                         <td>
-                            <code><?= htmlspecialchars($slug) ?></code>
+                            <code><?= htmlspecialchars(($slug) ?? '') ?></code>
                             <span class="badge bg-secondary ms-1">Required</span>
                         </td>
                         <td>
@@ -51,7 +51,7 @@
                                 <span class="badge bg-success">STDIO</span>
                             <?php endif; ?>
                         </td>
-                        <td class="text-muted"><?= htmlspecialchars($server['description']) ?></td>
+                        <td class="text-muted"><?= htmlspecialchars(($server['description']) ?? '') ?></td>
                         <td class="text-end">
                             <span class="text-muted small">Cannot modify</span>
                         </td>
@@ -94,7 +94,7 @@
                     ?>
                     <tr>
                         <td>
-                            <code><?= htmlspecialchars($slug) ?></code>
+                            <code><?= htmlspecialchars(($slug) ?? '') ?></code>
                         </td>
                         <td>
                             <?php if ($type === 'http'): ?>
@@ -109,7 +109,7 @@
                             <?php else: ?>
                                 <code class="text-truncate d-inline-block" style="max-width: 300px;"><?= htmlspecialchars($config['command'] ?? '') ?></code>
                                 <?php if (!empty($config['args'])): ?>
-                                    <br><small class="text-muted">Args: <?= htmlspecialchars(json_encode($config['args'])) ?></small>
+                                    <br><small class="text-muted">Args: <?= htmlspecialchars((json_encode($config['args'])) ?? '') ?></small>
                                 <?php endif; ?>
                             <?php endif; ?>
                         </td>
@@ -119,7 +119,7 @@
                                     <i class="bi bi-pencil"></i>
                                 </a>
                                 <button type="button" class="btn btn-outline-danger" title="Delete"
-                                        onclick="confirmDelete('<?= htmlspecialchars($slug, ENT_QUOTES) ?>')">
+                                        onclick="confirmDelete('<?= htmlspecialchars(($slug) ?? '', ENT_QUOTES) ?>')">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>

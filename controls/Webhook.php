@@ -134,7 +134,7 @@ class Webhook extends Control {
             $notify->subject        = $subject;
             $notify->content        = $displayHtml !== ''
                 ? $this->sanitizeInboundHtml($displayHtml)
-                : nl2br(htmlspecialchars($displayPlain, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                : nl2br(htmlspecialchars(($displayPlain) ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8'));
             $notify->bodyPlain      = $displayPlain;
             $notify->messageId      = $messageId;
             $notify->inReplyTo      = $inReplyTo;
@@ -176,7 +176,7 @@ class Webhook extends Control {
      */
     private function handleEvent(string $signingKey): void {
         $raw     = file_get_contents('php://input') ?: '';
-        $payload = json_decode($raw, true);
+        $payload = json_decode(($raw) ?? '', true);
         $data    = $payload['event-data'] ?? [];
         $sig     = $payload['signature']  ?? [];
 
@@ -219,8 +219,8 @@ class Webhook extends Control {
 
             NotifyService::createSystemMessage(
                 (int)$notify->threadId,
-                '<p><strong>Delivery failed</strong> to ' . htmlspecialchars($recipient, ENT_QUOTES) . '.'
-                . ' The message could not be delivered (' . htmlspecialchars($event, ENT_QUOTES) . ').</p>'
+                '<p><strong>Delivery failed</strong> to ' . htmlspecialchars(($recipient) ?? '', ENT_QUOTES) . '.'
+                . ' The message could not be delivered (' . htmlspecialchars(($event) ?? '', ENT_QUOTES) . ').</p>'
             );
             $this->logger?->warning('Webhook: outbound marked failed', [
                 'notify_id' => (int)$notify->id,

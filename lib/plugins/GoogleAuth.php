@@ -164,7 +164,7 @@ class GoogleAuth {
             throw new \RuntimeException("Token exchange failed with HTTP {$httpCode}");
         }
 
-        return json_decode($response, true) ?: [];
+        return json_decode(($response) ?? '', true) ?: [];
     }
 
     /**
@@ -185,7 +185,7 @@ class GoogleAuth {
             throw new \RuntimeException("Failed to get user info with HTTP {$httpCode}");
         }
 
-        return json_decode($response, true) ?: [];
+        return json_decode(($response) ?? '', true) ?: [];
     }
 
     /**

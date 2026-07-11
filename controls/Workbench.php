@@ -453,7 +453,7 @@ class Workbench extends Control {
         foreach ($lines as $ln) {
             $ln = ltrim($ln);
             if ($ln === '' || $ln[0] !== '{') continue;   // skip the [agent] header lines
-            $ev = json_decode($ln, true);
+            $ev = json_decode(($ln) ?? '', true);
             if (!is_array($ev)) continue;
             $type = $ev['type'] ?? '';
             if ($type === 'result') { $out['finished'] = true; continue; }
@@ -612,7 +612,7 @@ class Workbench extends Control {
         // still blocks. Ordering the executor uses is the same depends_on DAG.
         $doneStates = ['merged', 'completed', 'done'];
         $deps = $blocks = [];
-        foreach ((array)json_decode((string)($task->dependsOn ?: '[]'), true) as $did) {
+        foreach ((array)json_decode(((string)($task->dependsOn ?: '[]')) ?? '', true) as $did) {
             $d = Bean::load('workbenchtask', (int)$did);
             if ($d->id) {
                 $deps[] = ['id' => (int)$d->id, 'title' => $d->title, 'status' => $d->status,
@@ -622,7 +622,7 @@ class Workbench extends Control {
         if (!empty($task->parentTaskId)) {
             foreach (Bean::find('workbenchtask', 'parent_task_id = ? AND id != ?',
                      [(int)$task->parentTaskId, (int)$task->id]) as $sib) {
-                $sd = array_map('intval', (array)json_decode((string)($sib->dependsOn ?: '[]'), true));
+                $sd = array_map('intval', (array)json_decode(((string)($sib->dependsOn ?: '[]')) ?? '', true));
                 if (in_array((int)$task->id, $sd, true)) {
                     $blocks[] = ['id' => (int)$sib->id, 'title' => $sib->title, 'status' => $sib->status];
                 }
@@ -1055,8 +1055,8 @@ class Workbench extends Control {
                 'description' => $task->description,
                 'task_type' => $task->taskType,
                 'acceptance_criteria' => $task->acceptanceCriteria,
-                'related_files' => json_decode((string)$task->relatedFiles, true) ?: [],
-                'tags' => json_decode((string)$task->tags, true) ?: [],
+                'related_files' => json_decode(((string)$task->relatedFiles) ?? '', true) ?: [],
+                'tags' => json_decode(((string)$task->tags) ?? '', true) ?: [],
                 'authcontrol_level' => $task->authcontrolLevel,
                 'branch_name' => $task->branchName,
                 'assigned_port' => $task->assignedPort,
@@ -1209,8 +1209,8 @@ class Workbench extends Control {
                 'description' => $task->description,
                 'task_type' => $task->taskType,
                 'acceptance_criteria' => $task->acceptanceCriteria,
-                'related_files' => json_decode((string)$task->relatedFiles, true) ?: [],
-                'tags' => json_decode((string)$task->tags, true) ?: [],
+                'related_files' => json_decode(((string)$task->relatedFiles) ?? '', true) ?: [],
+                'tags' => json_decode(((string)$task->tags) ?? '', true) ?: [],
                 'authcontrol_level' => $task->authcontrolLevel,
                 'branch_name' => $task->branchName,
                 'assigned_port' => $task->assignedPort,

@@ -37,7 +37,7 @@
                 </div>
                 <?php if (isset($contact_email)): ?>
                     <p class="mt-3 text-muted">
-                        <i class="bi bi-envelope"></i> <?= htmlspecialchars($contact_email) ?>
+                        <i class="bi bi-envelope"></i> <?= htmlspecialchars(($contact_email) ?? '') ?>
                     </p>
                 <?php endif; ?>
             </div>

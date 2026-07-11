@@ -10,7 +10,7 @@
         <?php foreach ($authControls as $control => $methods): ?>
             <div class="card mb-3">
                 <div class="card-header">
-                    <h5 class="mb-0">Controller: <?= htmlspecialchars($control) ?></h5>
+                    <h5 class="mb-0">Controller: <?= htmlspecialchars(($control) ?? '') ?></h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -27,7 +27,7 @@
                             <tbody>
                                 <?php foreach ($methods as $method => $perm): ?>
                                     <tr>
-                                        <td><code><?= htmlspecialchars($method) ?></code></td>
+                                        <td><code><?= htmlspecialchars(($method) ?? '') ?></code></td>
                                         <td>
                                             <?php
                                             $levelName = 'Unknown';

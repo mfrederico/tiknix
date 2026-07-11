@@ -18,7 +18,7 @@
                     foreach ($flash as $msg):
                     ?>
                         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?>">
-                            <?= htmlspecialchars($msg['message']) ?>
+                            <?= htmlspecialchars(($msg['message']) ?? '') ?>
                         </div>
                     <?php endforeach; ?>
 

@@ -148,7 +148,7 @@ class TwoFactorAuth {
             return false;
         }
 
-        $hashedCodes = json_decode($member->recoveryCodes, true);
+        $hashedCodes = json_decode(($member->recoveryCodes) ?? '', true);
         if (!is_array($hashedCodes)) {
             return false;
         }
@@ -566,7 +566,7 @@ class TwoFactorAuth {
             return 0;
         }
 
-        $codes = json_decode($member->recoveryCodes, true);
+        $codes = json_decode(($member->recoveryCodes) ?? '', true);
         return is_array($codes) ? count($codes) : 0;
     }
 

@@ -7,7 +7,7 @@
  * Co-Authored-By lines from git commit messages.
  */
 
-$input = json_decode(file_get_contents('php://stdin'), true);
+$input = json_decode((file_get_contents('php://stdin')) ?? '', true);
 
 if (!$input || ($input['tool_name'] ?? '') !== 'Bash') {
     echo json_encode(['decision' => 'approve']);

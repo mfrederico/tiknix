@@ -281,7 +281,7 @@ function mcpRequest(string $baseUrl, string $method, array $params = [], ?string
         return ['error' => $error, 'http_code' => 0];
     }
 
-    $data = json_decode($response, true);
+    $data = json_decode(($response) ?? '', true);
     $data['http_code'] = $httpCode;
     return $data;
 }
@@ -426,7 +426,7 @@ if (!file_exists($hookScript)) {
         escapeshellarg($hookScript)
     );
     $output = shell_exec($cmd);
-    $result = json_decode($output, true);
+    $result = json_decode(($output) ?? '', true);
     $passed = !isset($result['decision']) || $result['decision'] !== 'block';
     printTest("Hook allows valid PHP", $passed);
 
@@ -445,7 +445,7 @@ if (!file_exists($hookScript)) {
         escapeshellarg($hookScript)
     );
     $output = shell_exec($cmd);
-    $result = json_decode($output, true);
+    $result = json_decode(($output) ?? '', true);
     $passed = isset($result['decision']) && $result['decision'] === 'block';
     printTest("Hook blocks SQL injection", $passed);
 
@@ -464,7 +464,7 @@ if (!file_exists($hookScript)) {
         escapeshellarg($hookScript)
     );
     $output = shell_exec($cmd);
-    $result = json_decode($output, true);
+    $result = json_decode(($output) ?? '', true);
     $passed = isset($result['decision']) && $result['decision'] === 'block';
     printTest("Hook blocks command injection", $passed);
 
@@ -483,7 +483,7 @@ if (!file_exists($hookScript)) {
         escapeshellarg($hookScript)
     );
     $output = shell_exec($cmd);
-    $result = json_decode($output, true);
+    $result = json_decode(($output) ?? '', true);
     $passed = isset($result['decision']) && $result['decision'] === 'block';
     printTest("Hook blocks invalid bean name", $passed);
 }

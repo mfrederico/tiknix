@@ -154,7 +154,7 @@ class Aibuilder extends Control {
         $file = $stateDir . '/settings.json';
         $settings = [];
         if (is_file($file)) {
-            $decoded = json_decode((string)@file_get_contents($file), true);
+            $decoded = json_decode(((string)@file_get_contents($file)) ?? '', true);
             if (is_array($decoded)) $settings = $decoded;
         }
         // NOTE: deliberately NOT pinning forceLoginMethod. The default interactive flow
@@ -387,7 +387,7 @@ class Aibuilder extends Control {
             'member_id = ? AND instance_id = ? AND connector_type = ? AND enabled = 1',
             [(int)$this->member->id, (int)$inst->id, 'github']);
         if ($conn && $conn->id) {
-            $meta = json_decode($conn->metadataJson ?: '{}', true) ?: [];
+            $meta = json_decode(($conn->metadataJson ?: '{}') ?? '', true) ?: [];
             if (!empty($meta['autoPublish'])) {
                 $res = GitHubPublisher::publish($inst, $conn);
                 $conn->lastUsedAt = date('Y-m-d H:i:s');
@@ -479,7 +479,7 @@ class Aibuilder extends Control {
         $claim = \app\PlanIngestor::claim($file);
         if ($claim === null) { Flight::jsonError('No plan.json to ingest (or it was already ingested).', 404); return; }
 
-        $plan = json_decode((string)@file_get_contents($claim), true);
+        $plan = json_decode(((string)@file_get_contents($claim)) ?? '', true);
         if (!\app\PlanIngestor::isValidPlan($plan)) {
             @unlink($claim);
             Flight::jsonError('plan.json is not a valid plan {title, subtasks:[...]}.', 422);
@@ -503,7 +503,7 @@ class Aibuilder extends Control {
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
-        $plan = json_decode((string)$this->getParam('plan', ''), true);
+        $plan = json_decode(((string)$this->getParam('plan', '')) ?? '', true);
         if (!$this->validPlan($plan)) { Flight::jsonError('Invalid plan: need {title, subtasks:[...]}', 400); return; }
         Flight::jsonSuccess($this->savePlanTree($inst, $plan), 'Plan saved');
     }
@@ -527,7 +527,7 @@ class Aibuilder extends Control {
                     'id' => (int)$s->id, 'ref' => $s->planRef, 'title' => $s->title, 'description' => $s->description,
                     'priority' => (int)$s->priority, 'engine' => $s->engine, 'status' => $s->status,
                     'files' => $s->relatedFiles,
-                    'depends_on' => json_decode($s->dependsOn ?: '[]', true) ?: [],
+                    'depends_on' => json_decode(($s->dependsOn ?: '[]') ?? '', true) ?: [],
                 ], array_values($subs)),
             ];
         }
@@ -653,7 +653,7 @@ class Aibuilder extends Control {
             $tasks[] = [
                 'id' => (int)$s->id, 'title' => $s->title, 'status' => $s->status,
                 'engine' => $s->engine, 'error' => (string)$s->errorMessage,
-                'depends_on' => json_decode((string)$s->dependsOn ?: '[]', true) ?: [],
+                'depends_on' => json_decode(((string)$s->dependsOn ?: '[]') ?? '', true) ?: [],
             ];
         }
         Flight::jsonSuccess([

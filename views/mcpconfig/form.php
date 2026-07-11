@@ -17,7 +17,7 @@ $type = $server['type'] ?? 'stdio';
             foreach ($flash as $msg):
             ?>
                 <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?>">
-                    <?= htmlspecialchars($msg['message']) ?>
+                    <?= htmlspecialchars(($msg['message']) ?? '') ?>
                 </div>
             <?php endforeach; ?>
 
@@ -35,14 +35,14 @@ $type = $server['type'] ?? 'stdio';
                         <div class="mb-3">
                             <label for="slug" class="form-label">Server Name <span class="text-danger">*</span></label>
                             <?php if ($isEdit): ?>
-                                <input type="text" class="form-control" value="<?= htmlspecialchars($slug) ?>" disabled>
-                                <input type="hidden" name="slug" value="<?= htmlspecialchars($slug) ?>">
+                                <input type="text" class="form-control" value="<?= htmlspecialchars(($slug) ?? '') ?>" disabled>
+                                <input type="hidden" name="slug" value="<?= htmlspecialchars(($slug) ?? '') ?>">
                                 <div class="form-text">Server name cannot be changed after creation.</div>
                             <?php else: ?>
                                 <input type="text" class="form-control" id="slug" name="slug" required
                                        pattern="[a-z0-9][a-z0-9-]*"
                                        placeholder="my-mcp-server"
-                                       value="<?= htmlspecialchars($slug) ?>">
+                                       value="<?= htmlspecialchars(($slug) ?? '') ?>">
                                 <div class="form-text">Lowercase alphanumeric with dashes (e.g., my-mcp-server)</div>
                             <?php endif; ?>
                         </div>
@@ -74,7 +74,7 @@ $type = $server['type'] ?? 'stdio';
                                 <label for="args" class="form-label">Arguments (JSON Array)</label>
                                 <textarea class="form-control font-monospace" id="args" name="args" rows="3"
                                           placeholder='["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]'><?= htmlspecialchars(
-                                    !empty($server['args']) ? json_encode($server['args'], JSON_PRETTY_PRINT) : ''
+                                    (!empty($server['args']) ? json_encode($server['args'], JSON_PRETTY_PRINT) : '') ?? ''
                                 ) ?></textarea>
                                 <div class="form-text">Command line arguments as JSON array</div>
                             </div>
@@ -83,7 +83,7 @@ $type = $server['type'] ?? 'stdio';
                                 <label for="env" class="form-label">Environment Variables (JSON Object)</label>
                                 <textarea class="form-control font-monospace" id="env" name="env" rows="3"
                                           placeholder='{"API_KEY": "your-key", "DEBUG": "1"}'><?= htmlspecialchars(
-                                    !empty($server['env']) ? json_encode($server['env'], JSON_PRETTY_PRINT) : ''
+                                    (!empty($server['env']) ? json_encode($server['env'], JSON_PRETTY_PRINT) : '') ?? ''
                                 ) ?></textarea>
                                 <div class="form-text">Environment variables as JSON object (optional)</div>
                             </div>
@@ -103,7 +103,7 @@ $type = $server['type'] ?? 'stdio';
                                 <label for="headers" class="form-label">Headers (JSON Object)</label>
                                 <textarea class="form-control font-monospace" id="headers" name="headers" rows="3"
                                           placeholder='{"Authorization": "Bearer your-token"}'><?= htmlspecialchars(
-                                    !empty($server['headers']) ? json_encode($server['headers'], JSON_PRETTY_PRINT) : ''
+                                    (!empty($server['headers']) ? json_encode($server['headers'], JSON_PRETTY_PRINT) : '') ?? ''
                                 ) ?></textarea>
                                 <div class="form-text">HTTP headers as JSON object (optional)</div>
                             </div>

@@ -339,14 +339,25 @@ class PermissionCache {
             // / -> /install -> /auth/login -> /install). See defaultLevelFor().
             $level = self::defaultLevelFor($control, $method);
 
-            $auth = Bean::dispense('authcontrol');
-            $auth->control = $control;
-            $auth->method = $method;
-            $auth->level = $level;
-            $auth->description = "Auto-generated permission for {$control}::{$method}";
-            $auth->validcount = 0;
-            $auth->createdAt = date('Y-m-d H:i:s');
-            Bean::store($auth);
+            // Idempotent: the row may already exist in the DB while missing from a
+            // stale/cold cache, or a concurrent request may have just created it.
+            // Reuse it instead of INSERTing (authcontrol has a UNIQUE(control,method)
+            // constraint that would otherwise throw on the duplicate).
+            $auth = Bean::findOne('authcontrol', 'LOWER(control) = ? AND LOWER(method) = ?',
+                [strtolower($control), strtolower($method)]);
+            if (!$auth) {
+                $auth = Bean::dispense('authcontrol');
+                $auth->control = $control;
+                $auth->method = $method;
+                $auth->level = $level;
+                $auth->description = "Auto-generated permission for {$control}::{$method}";
+                $auth->validcount = 0;
+                $auth->createdAt = date('Y-m-d H:i:s');
+                Bean::store($auth);
+            } else {
+                // Existing row wins; sync the level we'll cache to what's stored.
+                $level = (int)$auth->level;
+            }
 
             // Add to local cache immediately
             $key = strtolower("{$control}::{$method}");

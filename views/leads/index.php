@@ -3,7 +3,7 @@
         <!-- Left sidebar navigation (admins) -->
         <aside class="col-12 col-md-3 col-lg-2 mb-4">
             <div class="list-group shadow-sm">
-                <div class="list-group-item bg-dark text-uppercase small fw-bold text-secondary">
+                <div class="list-group-item bg-body-tertiary text-uppercase small fw-bold text-secondary">
                     Admin
                 </div>
                 <a href="/leads" class="list-group-item list-group-item-action active">

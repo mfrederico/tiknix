@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <meta name="csrf-token" content="<?= htmlspecialchars($csrf ?? '', ENT_QUOTES, 'UTF-8') ?>">
+    <meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : (is_array($csrf ?? null) ? (string) reset($csrf) : (string) ($csrf ?? '')), ENT_QUOTES, 'UTF-8') ?>">
     <title><?= htmlspecialchars($title ?? 'App') ?></title>
 
     <!-- Restore saved theme before paint to avoid a flash -->

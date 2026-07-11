@@ -203,8 +203,8 @@
                                 <?php foreach ($tasks as $task): ?>
                                     <?php
                                     if (isset($parentSet[(int)$task->id])) continue; // header row, not a leaf
-                                    $typeInfo = $taskTypes[$task->taskType] ?? $taskTypes['feature'];
-                                    $priorityInfo = $priorities[$task->priority] ?? $priorities[3];
+                                    $typeInfo = $taskTypes[$task->taskType ?? 'feature'] ?? $taskTypes['feature'];
+                                    $priorityInfo = $priorities[$task->priority ?? 3] ?? $priorities[3];
                                     $isSub = !empty($task->parentTaskId);
                                     $groupKey = $isSub ? ('plan:' . (int)$task->parentTaskId) : 'solo';
                                     ?>

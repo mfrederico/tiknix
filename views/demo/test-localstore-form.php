@@ -121,7 +121,7 @@
                         <h6 class="mb-0">Raw LocalStorage Data</h6>
                     </div>
                     <div class="card-body">
-                        <pre id="rawData" class="bg-dark text-light p-3 rounded mb-0" style="max-height: 200px; overflow: auto; font-size: 0.75rem;">No data stored</pre>
+                        <pre id="rawData" class="bg-body-tertiary p-3 rounded mb-0" style="max-height: 200px; overflow: auto; font-size: 0.75rem;">No data stored</pre>
                     </div>
                 </div>
             </div>

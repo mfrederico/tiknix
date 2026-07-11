@@ -39,7 +39,7 @@
 </div>
 
 <!-- AI-First Section -->
-<div class="bg-dark text-white py-5">
+<div class="bg-body-tertiary py-5">
     <div class="container">
         <div class="row align-items-center">
             <div class="col-md-6">

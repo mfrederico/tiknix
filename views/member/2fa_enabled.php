@@ -14,7 +14,7 @@
                         </p>
                     </div>
 
-                    <div class="card bg-dark mb-3">
+                    <div class="card bg-body-tertiary mb-3">
                         <div class="card-body">
                             <div class="row">
                                 <?php foreach ($recovery_codes as $code): ?>

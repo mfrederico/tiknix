@@ -171,7 +171,7 @@
 
 <style>
 .message-content {
-    background-color: #f8f9fa;
+    background-color: var(--bs-tertiary-bg);
     padding: 15px;
     border-radius: 5px;
     white-space: pre-wrap;

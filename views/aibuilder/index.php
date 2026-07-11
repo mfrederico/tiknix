@@ -29,8 +29,8 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
   .ab-file .st.M{background:#3a2f00;color:#e3b341}.ab-file .st.A{background:#0f2e15;color:#3fb950}
   .ab-file .st.D{background:#3a1113;color:#f85149}.ab-file .st.R{background:#0b2b3a;color:#39c5cf}.ab-file .st.U{background:#2d2233;color:#bc8cff}
   .ab-file.fresh { background:rgba(13,202,240,.10); border-radius:.25rem; }
-  .ab-ckpt { font-size:.8rem; padding:.4rem 0; border-bottom:1px solid #2b3035; }
-  .ab-ckpt .desc { color:#adb5bd; }
+  .ab-ckpt { font-size:.8rem; padding:.4rem 0; border-bottom:1px solid var(--bs-border-color); }
+  .ab-ckpt .desc { color:var(--bs-secondary-color); }
   /* Sign-in gate: locks the terminal until this instance is connected to Claude */
   .ab-oauth-gate { position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
     background:rgba(15,17,20,.93); backdrop-filter:blur(3px); border-radius:.375rem; padding:1rem; }

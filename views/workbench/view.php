@@ -47,8 +47,8 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         </div>
                         <div>
                             <?php
-                            $typeInfo = $taskTypes[$task->taskType] ?? $taskTypes['feature'];
-                            $priorityInfo = $priorities[$task->priority] ?? $priorities[3];
+                            $typeInfo = $taskTypes[$task->taskType ?? 'feature'] ?? $taskTypes['feature'];
+                            $priorityInfo = $priorities[$task->priority ?? 3] ?? $priorities[3];
                             $statusBadge = match($task->status) {
                                 'pending' => 'secondary',
                                 'queued' => 'info',

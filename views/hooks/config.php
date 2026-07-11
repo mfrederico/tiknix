@@ -2,7 +2,7 @@
     <div class="row justify-content-center">
         <div class="col-lg-10">
             <div class="mb-4">
-                <a href="/hooks" class="text-decoration-none">
+                <a href="/agentsetup?tab=hooks" class="text-decoration-none">
                     <i class="bi bi-arrow-left"></i> Back to Hooks
                 </a>
             </div>
@@ -50,7 +50,7 @@
                             <button type="button" class="btn btn-outline-secondary" id="validateBtn">
                                 <i class="bi bi-check-circle"></i> Validate
                             </button>
-                            <a href="/hooks" class="btn btn-outline-secondary">Cancel</a>
+                            <a href="/agentsetup?tab=hooks" class="btn btn-outline-secondary">Cancel</a>
                         </div>
                     </form>
                 </div>

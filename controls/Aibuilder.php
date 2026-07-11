@@ -114,6 +114,63 @@ class Aibuilder extends Control {
         return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
     }
 
+    /**
+     * Neutralize Claude's browser-open inside the jail. There's no GUI browser in the
+     * sandbox, so we point $BROWSER at a tiny no-op script; Claude then falls back to
+     * printing its hosted sign-in URL + a "Paste code here" prompt in the terminal,
+     * which the sign-in gate reads (see oauthstatus) and drives. The script also
+     * records the URL to .aibuilder/oauth-request.json as a debug artifact.
+     * Idempotent; safe to call on every open.
+     *
+     * Two files, both under the bind-mounted instance dir so they resolve at the
+     * SAME path inside the jail:
+     *   1. .aibuilder/oauth-browser.sh           — the fake browser (from scripts/)
+     *   2. .aibuilder/state/claude/settings.json  — env.BROWSER -> that script.
+     * Claude applies settings env via Object.assign(process.env, settings.env) at
+     * startup, and CLAUDE_CONFIG_DIR (set by jail-run.sh) points at that state dir,
+     * so this covers BOTH the interactive terminal and task automation with no jail
+     * or bridge changes. Merge-preserving: the operator's creds live in this dir too.
+     */
+    private function ensureOAuthCapture(string $slug): void {
+        if (!preg_match(self::SLUG_RE, $slug)) return;
+        $dir = $this->instanceDir($slug);
+        if (!is_dir($dir)) return;
+
+        $aib     = $dir . '/.aibuilder';
+        $browser = $aib . '/oauth-browser.sh';
+        $src     = dirname(__DIR__) . '/scripts/aibuilder-oauth-browser.sh';
+
+        // (1) Install / refresh the fake browser (copy when missing or changed).
+        $want = is_file($src) ? @file_get_contents($src) : false;
+        if ($want !== false) {
+            if (!is_dir($aib)) @mkdir($aib, 0775, true);
+            if (@file_get_contents($browser) !== $want) @file_put_contents($browser, $want);
+            @chmod($browser, 0755);
+        }
+
+        // (2) Point Claude at it via the persisted per-instance settings.json.
+        $stateDir = $aib . '/state/claude';
+        if (!is_dir($stateDir)) @mkdir($stateDir, 0775, true);
+        $file = $stateDir . '/settings.json';
+        $settings = [];
+        if (is_file($file)) {
+            $decoded = json_decode((string)@file_get_contents($file), true);
+            if (is_array($decoded)) $settings = $decoded;
+        }
+        // NOTE: deliberately NOT pinning forceLoginMethod. The default interactive flow
+        // already uses the Claude.ai (subscription) path via a localhost callback, which
+        // we've verified works end-to-end. Forcing "claudeai" can switch it onto the
+        // HOSTED callback (platform.claude.com/oauth/code/callback), which has an open
+        // "Redirect URI is not supported by client" bug (anthropics/claude-code#36215).
+        // Don't destabilise a working flow — leave the login method to Claude's default.
+        if (!isset($settings['env']) || !is_array($settings['env'])) $settings['env'] = [];
+        if (($settings['env']['BROWSER'] ?? null) !== $browser) {
+            $settings['env']['BROWSER'] = $browser;
+            @file_put_contents($file,
+                json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        }
+    }
+
     // --- routes ---------------------------------------------------------------
 
     /** GET /aibuilder — list instances (optionally ?id= to open one inline). */
@@ -132,6 +189,10 @@ class Aibuilder extends Control {
     private function renderHome(int $selId): void {
         $instances = $this->member->with(' ORDER BY created_at DESC ')->ownInstanceList;
         $selected  = $selId ? $this->ownedInstance($selId) : null;
+
+        // Neutralize Claude's in-jail browser-open before the terminal opens, so a
+        // first-run `claude` sign-in surfaces in the gate instead of a dead browser.
+        if ($selected) $this->ensureOAuthCapture($selected->slug);
 
         $cfg = $this->cfg();
         $this->render('aibuilder/index', [
@@ -182,6 +243,10 @@ class Aibuilder extends Control {
         // Honor the chosen engine (provision wrote the conf default; override if needed).
         @file_put_contents($this->instanceDir($slug) . '/.aibuilder/engine', $engine . "\n");
 
+        // Neutralize Claude's browser-open in the jail (no GUI there) so its first
+        // sign-in falls to the in-terminal URL + paste prompt the gate drives.
+        $this->ensureOAuthCapture($slug);
+
         // Record ownership via the association (sets member_id automatically).
         $member = R::load('member', (int)$this->member->id);
         $inst = R::dispense('instance');
@@ -208,6 +273,69 @@ class Aibuilder extends Control {
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
         Flight::jsonSuccess(['token' => $this->mintToken($inst->slug, (int)$this->member->id)]);
+    }
+
+    /** Path to the instance's jailed tmux control socket. */
+    private function tmuxSock(string $slug): string {
+        return $this->instanceDir($slug) . '/.aibuilder/tmux.sock';
+    }
+
+    /** Best-effort snapshot of the jailed agent's current screen ('' if no session). */
+    private function paneText(string $slug): string {
+        if (!preg_match(self::SLUG_RE, $slug)) return '';
+        $sock = $this->tmuxSock($slug);
+        if (!file_exists($sock)) return '';
+        $out = []; $code = 0;
+        exec('tmux -S ' . escapeshellarg($sock) . ' capture-pane -p -t aib 2>/dev/null', $out, $code);
+        return $code === 0 ? implode("\n", $out) : '';
+    }
+
+    /**
+     * Reassemble a Claude sign-in URL from the agent's screen. Claude hard-wraps the
+     * URL across several terminal lines (that's why it offers its own "c to copy");
+     * URLs contain no spaces, so once we hit the "…/oauth/authorize?" line we glue the
+     * contiguous no-space fragments that follow, stopping at the first line with a
+     * space (the next prompt, e.g. "Paste code here >").
+     */
+    private function signinUrlFromPane(string $pane): string {
+        if ($pane === '') return '';
+        $url = ''; $collecting = false;
+        foreach (explode("\n", $pane) as $line) {
+            $t = trim($line);
+            if (!$collecting) {
+                $pos = stripos($t, 'https://');
+                if ($pos !== false
+                    && preg_match('#^https://[a-z0-9.-]*claude\.(?:com|ai)/[^\s]*oauth/authorize\?#i', substr($t, $pos))) {
+                    $url = substr($t, $pos);
+                    $collecting = true;
+                }
+                continue;
+            }
+            if ($t === '' || preg_match('/\s/', $t)) break;   // continuation ended
+            $url .= $t;
+        }
+        return $url;
+    }
+
+    /**
+     * GET /aibuilder/oauthstatus?id= — is the jailed Claude sitting at its sign-in
+     * screen? Claude prints a hosted sign-in URL (redirect_uri=platform.claude.com/
+     * oauth/code/callback) plus a "Paste code here" prompt right in the terminal, so we
+     * read the agent's screen and hand that URL to the gate. The operator approves in
+     * their own browser, copies the code Anthropic shows, and the gate types it back
+     * into that prompt over the PTY websocket (client-side). JSON: {pending:bool, url?}.
+     */
+    public function oauthstatus($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $url = $this->signinUrlFromPane($this->paneText($inst->slug));
+        if ($url !== '' && preg_match('#^https://[a-z0-9.-]*claude\.(?:com|ai)/[^\s]*oauth/authorize\?#i', $url)) {
+            Flight::jsonSuccess(['pending' => true, 'url' => $url]);
+            return;
+        }
+        Flight::jsonSuccess(['pending' => false]);
     }
 
     /** GET /aibuilder/changes?id= — files changed since the last checkpoint. JSON. */

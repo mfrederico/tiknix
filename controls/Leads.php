@@ -38,12 +38,46 @@ class Leads extends Control {
      * List captured leads (newest first).
      */
     public function index() {
-        $leads = Bean::find('lead', ' ORDER BY created_at DESC ');
-
         $this->render('leads/index', [
             'title' => 'Leads',
-            'leads' => $leads,
-            'total' => count($leads)
+            'total' => Bean::count('lead'),
         ]);
+    }
+
+    /**
+     * AJAX feed for the leads table — speaks the DataTables server-side protocol
+     * via the shared DataTableResponse primitive (SQL paging / search / sort).
+     * Column order MUST match the <thead> in views/leads/index.php.
+     */
+    public function data() {
+        $columns = [
+            ['db' => 'first_name', 'search' => 'like'],   // 0  First Name
+            ['db' => 'last_name',  'search' => 'like'],   // 1  Last Name
+            ['db' => 'email',      'search' => 'like'],   // 2  Email
+            ['db' => 'created_at', 'search' => null],     // 3  Signed Up
+            ['db' => null,         'orderable' => false], // 4  Actions
+        ];
+
+        $resp = DataTableResponse::build('lead', $columns, $this->getParams(), [
+            'globalCols' => ['first_name', 'last_name', 'email'],
+            'row' => function (array $r): array {
+                $email = h($r['email'] ?? '');
+                $name  = trim(((string)($r['first_name'] ?? '')) . ' ' . ((string)($r['last_name'] ?? '')));
+                $btn = $email !== ''
+                    ? '<button type="button" class="btn btn-sm btn-outline-primary lead-email-btn"'
+                      . ' data-email="' . h($r['email'] ?? '') . '" data-name="' . h($name) . '">'
+                      . '<i class="bi bi-envelope"></i> Email</button>'
+                    : '';
+                return [
+                    h($r['first_name'] ?? ''),
+                    h($r['last_name'] ?? ''),
+                    $email !== '' ? '<a href="mailto:' . $email . '">' . $email . '</a>' : '—',
+                    '<span class="ui-mono small text-secondary">' . h($r['created_at'] ?? '') . '</span>',
+                    '<div class="text-end">' . $btn . '</div>',
+                ];
+            },
+        ]);
+
+        Flight::json($resp);
     }
 }

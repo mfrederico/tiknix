@@ -29,49 +29,34 @@
                 </div>
             </div>
 
-            <?php if (empty($leads)): ?>
+            <?php if ((int)($total ?? 0) === 0): ?>
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle"></i> No leads yet. They'll appear here as people sign up on your Coming Soon page.
                 </div>
             <?php else: ?>
                 <div class="ui-panel">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
-                            <thead>
-                                <tr>
-                                    <th>First Name</th>
-                                    <th>Last Name</th>
-                                    <th>Email</th>
-                                    <th>Signed Up</th>
-                                    <th class="text-end">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($leads as $lead): ?>
-                                    <?php
-                                        $_email = (string)($lead->email ?? '');
-                                        $_name  = trim(((string)($lead->firstName ?? '')) . ' ' . ((string)($lead->lastName ?? '')));
-                                    ?>
+                    <div class="ui-panel-body">
+                        <div class="table-responsive">
+                            <!-- Rows are fetched over AJAX from /leads/data (server-side processing
+                                 via the shared dt-server primitive). -->
+                            <table id="leadsTable" class="dt-server table table-hover align-middle mb-0"
+                                   data-dt-url="/leads/data"
+                                   data-dt-order="3:desc"
+                                   data-dt-page-length="25"
+                                   data-dt-search-placeholder="name, email…"
+                                   style="width:100%">
+                                <thead>
                                     <tr>
-                                        <td><?= htmlspecialchars($lead->firstName ?? '') ?></td>
-                                        <td><?= htmlspecialchars($lead->lastName ?? '') ?></td>
-                                        <td>
-                                            <a href="mailto:<?= htmlspecialchars($_email) ?>"><?= htmlspecialchars($_email) ?></a>
-                                        </td>
-                                        <td class="ui-mono small text-secondary"><?= htmlspecialchars($lead->createdAt ?? '') ?></td>
-                                        <td class="text-end">
-                                            <?php if ($_email !== ''): ?>
-                                            <button type="button" class="btn btn-sm btn-outline-primary lead-email-btn"
-                                                    data-email="<?= htmlspecialchars($_email, ENT_QUOTES) ?>"
-                                                    data-name="<?= htmlspecialchars($_name, ENT_QUOTES) ?>">
-                                                <i class="bi bi-envelope"></i> Email
-                                            </button>
-                                            <?php endif; ?>
-                                        </td>
+                                        <th>First Name</th>
+                                        <th>Last Name</th>
+                                        <th>Email</th>
+                                        <th>Signed Up</th>
+                                        <th data-dt-noorder data-dt-nosearch data-dt-class="text-end">Actions</th>
                                     </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -116,23 +101,24 @@
 </div>
 
 <script>
-// Runs on DOMContentLoaded so the Bootstrap bundle (loaded at the end of the
-// layout) is defined before we touch bootstrap.Modal.
+// Rows (and their Email buttons) are injected dynamically by the server-side
+// DataTable, so the click is handled by delegation on document rather than
+// bound per-button. Runs on DOMContentLoaded so bootstrap.Modal is defined.
 document.addEventListener('DOMContentLoaded', function () {
     var modalEl = document.getElementById('leadEmailModal');
     if (!modalEl || typeof bootstrap === 'undefined') return;
     var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    document.querySelectorAll('.lead-email-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var email = btn.getAttribute('data-email') || '';
-            var name  = btn.getAttribute('data-name') || '';
-            document.getElementById('leadEmailTo').value = email;
-            document.getElementById('leadEmailToName').value = name;
-            document.getElementById('leadEmailRecipient').textContent = (name ? name + ' · ' : '') + email;
-            document.getElementById('leadEmailSubject').value = '';
-            document.getElementById('leadEmailBody').value = '';
-            modal.show();
-        });
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.lead-email-btn');
+        if (!btn) return;
+        var email = btn.getAttribute('data-email') || '';
+        var name  = btn.getAttribute('data-name') || '';
+        document.getElementById('leadEmailTo').value = email;
+        document.getElementById('leadEmailToName').value = name;
+        document.getElementById('leadEmailRecipient').textContent = (name ? name + ' · ' : '') + email;
+        document.getElementById('leadEmailSubject').value = '';
+        document.getElementById('leadEmailBody').value = '';
+        modal.show();
     });
 });
 </script>

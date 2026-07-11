@@ -73,6 +73,7 @@ $defaults = [
     ['lead', 'admin', 50, 'View captured leads'],
     ['lead', 'delete', 50, 'Delete a lead'],
     ['lead', 'export', 50, 'Export leads CSV'],
+    ['leads', 'data', 50, 'Leads DataTable AJAX feed'],
     ['mcpregistry', '*', 50, 'MCP Server Registry management'],
 
     // Public webhook (101) — authenticates itself via Mailgun HMAC

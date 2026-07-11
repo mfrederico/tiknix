@@ -38,6 +38,8 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <!-- Custom JS -->
     <script src="/js/app.js"></script>
+    <!-- Server-side DataTables primitive (self-activates only when a .dt-server table exists) -->
+    <script src="/js/dt-server.js"></script>
 
     <!-- Flash Messages -->
     <?php if (isset($_SESSION['flash'])): ?>

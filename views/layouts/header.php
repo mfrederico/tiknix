@@ -17,9 +17,20 @@ $__active = function (string $u) use ($__cur): string {
     return ($u !== '' && $u !== '#' && $u !== '/' && strpos($__cur, $u) === 0) ? ' active' : '';
 };
 
+// loadMenu() uses FontAwesome-style icon names; map them to Bootstrap Icons.
+$__iconMap = [
+    'home' => 'house', 'dashboard' => 'speedometer2', 'user' => 'person', 'cog' => 'gear',
+    'sign-out' => 'box-arrow-right', 'sign-in' => 'box-arrow-in-right', 'user-plus' => 'person-plus',
+];
+$__icon = fn($i) => $__iconMap[$i] ?? ($i ?: 'dot');
+
+// These live elsewhere (Admin section / sidebar foot) — don't repeat them in Main.
+$__skip = ['/auth/logout' => 1, '/admin' => 1];
+
 // Group the dynamic menu by its optional 'section' (default "Main").
 $__sections = [];
 foreach (($menu ?? []) as $__it) {
+    if (isset($__it['url']) && isset($__skip[$__it['url']])) continue;
     $__sections[$__it['section'] ?? 'Main'][] = $__it;
 }
 ?>
@@ -39,13 +50,13 @@ foreach (($menu ?? []) as $__it) {
           <?php if (isset($__it['dropdown'])): ?>
             <?php foreach ($__it['dropdown'] as $__sub): $__u = $__sub['url'] ?? '#'; ?>
               <a class="ui-nav-link<?= $__active($__u) ?>" href="<?= htmlspecialchars($__u) ?>">
-                <i class="bi bi-<?= htmlspecialchars($__sub['icon'] ?? 'dot') ?>"></i>
+                <i class="bi bi-<?= htmlspecialchars($__icon($__sub['icon'] ?? '')) ?>"></i>
                 <?= htmlspecialchars($__sub['label'] ?? '') ?>
               </a>
             <?php endforeach; ?>
           <?php else: $__u = $__it['url'] ?? '#'; ?>
             <a class="ui-nav-link<?= $__active($__u) ?>" href="<?= htmlspecialchars($__u) ?>">
-              <i class="bi bi-<?= htmlspecialchars($__it['icon'] ?? 'dot') ?>"></i>
+              <i class="bi bi-<?= htmlspecialchars($__icon($__it['icon'] ?? '')) ?>"></i>
               <?= htmlspecialchars($__it['label'] ?? '') ?>
             </a>
           <?php endif; ?>
@@ -114,8 +125,6 @@ foreach (($menu ?? []) as $__it) {
               <li><hr class="dropdown-divider"></li>
               <li><a class="dropdown-item" href="/docs"><i class="bi bi-book me-2"></i>Documentation</a></li>
               <li><a class="dropdown-item" href="/help"><i class="bi bi-question-circle me-2"></i>Help</a></li>
-              <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" href="/auth/logout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
             </ul>
           </li>
         <?php else: ?>

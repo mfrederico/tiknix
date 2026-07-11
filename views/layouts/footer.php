@@ -1,136 +1,97 @@
-<!-- Footer -->
-<footer class="footer mt-auto py-3 bg-secondary text-light">
-    <div class="container">
-        <div class="row">
-            <!-- About Section -->
-            <div class="col-md-4">
-                <h5><?= htmlspecialchars($site_name ?? 'Tiknix') ?></h5>
-                <p class="text-muted">
-                    <?= htmlspecialchars($site_description ?? 'A modern PHP application built with Flight, RedBean, and Bootstrap.') ?>
-                </p>
-            </div>
-            
-            <!-- Quick Links -->
-            <div class="col-md-4">
-                <h5>Quick Links</h5>
-                <ul class="list-unstyled">
-                    <li><a href="/" class="text-muted text-decoration-none">Home</a></li>
-                    <li><a href="/docs" class="text-muted text-decoration-none">Documentation</a></li>
-                    <li><a href="/help" class="text-muted text-decoration-none">Help Center</a></li>
-                    <li><a href="/contact" class="text-muted text-decoration-none">Contact</a></li>
-                    <li><a href="/privacy" class="text-muted text-decoration-none">Privacy Policy</a></li>
-                    <li><a href="/terms" class="text-muted text-decoration-none">Terms of Service</a></li>
-                </ul>
-            </div>
-            
-            <!-- Contact Info -->
-            <div class="col-md-4">
-                <h5>Connect</h5>
-                <div class="d-flex gap-3">
-                    <?php if (isset($social_links)): ?>
-                        <?php foreach ($social_links as $social): ?>
-                            <a href="<?= $social['url'] ?>" class="text-muted" target="_blank" rel="noopener">
-                                <i class="bi bi-<?= $social['icon'] ?> fs-4"></i>
-                            </a>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-                <?php if (isset($contact_email)): ?>
-                    <p class="mt-3 text-muted">
-                        <i class="bi bi-envelope"></i> <?= htmlspecialchars(($contact_email) ?? '') ?>
-                    </p>
-                <?php endif; ?>
-            </div>
+      <!-- slim app footer (inside content column) -->
+      <footer class="d-flex justify-content-between flex-wrap gap-2 pt-4 mt-4 small text-secondary"
+              style="border-top:1px solid var(--bs-border-color)">
+        <span>&copy; <?= date('Y') ?> <?= htmlspecialchars($site_name ?? 'Tiknix') ?></span>
+        <span>Built with <i class="bi bi-heart-fill text-danger"></i> using
+          <a href="https://flightphp.com" class="link-secondary text-decoration-none" target="_blank" rel="noopener">Flight</a> &amp;
+          <a href="https://redbeanphp.com" class="link-secondary text-decoration-none" target="_blank" rel="noopener">RedBean</a>
+        </span>
+      </footer>
+    </div><!-- /.ui-content -->
+  </div><!-- /.ui-main -->
+</div><!-- /.ui-shell -->
+
+<!-- Toast Container for Notifications -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100">
+    <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong class="me-auto">Notification</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
         </div>
-        
-        <hr class="my-4 bg-secondary">
-        
-        <!-- Copyright -->
-        <div class="row">
-            <div class="col-md-6">
-                <p class="text-muted mb-0">
-                    &copy; <?= date('Y') ?> <?= htmlspecialchars($site_name ?? 'Tiknix') ?>. All rights reserved.
-                </p>
-            </div>
-            <div class="col-md-6 text-md-end">
-                <p class="text-muted mb-0">
-                    Built with <i class="bi bi-heart-fill text-danger"></i> using 
-                    <a href="https://flightphp.com" class="text-muted" target="_blank">Flight</a> &amp; 
-                    <a href="https://redbeanphp.com" class="text-muted" target="_blank">RedBean</a>
-                </p>
-            </div>
-        </div>
+        <div class="toast-body"></div>
     </div>
-</footer>
+</div>
 
 <!-- Back to Top Button -->
-<button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top" style="position: fixed; bottom: 20px; right: 20px; display: none;">
+<button type="button" class="btn btn-primary btn-lg" id="btn-back-to-top"
+        style="position: fixed; bottom: 20px; right: 20px; display: none; z-index: 1090; border-radius: 12px;">
     <i class="bi bi-arrow-up"></i>
 </button>
 
 <script>
-// Back to top button
-window.onscroll = function() {
-    if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
-        document.getElementById("btn-back-to-top").style.display = "block";
-    } else {
-        document.getElementById("btn-back-to-top").style.display = "none";
+// ── theme toggle (persisted; initial theme applied inline in <head>) ──────
+(function () {
+    var b = document.getElementById('uiThemeToggle');
+    function icon() {
+        var dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        if (b) b.innerHTML = dark ? '<i class="bi bi-sun"></i>' : '<i class="bi bi-moon-stars"></i>';
     }
-};
+    icon();
+    if (b) b.addEventListener('click', function () {
+        var dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        var next = dark ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-bs-theme', next);
+        try { localStorage.setItem('ui-theme', next); } catch (e) {}
+        icon();
+    });
+})();
 
-document.getElementById("btn-back-to-top").addEventListener("click", function() {
-    document.body.scrollTop = 0;
-    document.documentElement.scrollTop = 0;
+// ── mobile sidebar ────────────────────────────────────────────────────────
+function uiToggleSidebar(show) {
+    var s = document.getElementById('uiSidebar'), b = document.getElementById('uiSidebarBackdrop');
+    if (!s) return;
+    s.classList.toggle('show', show);
+    if (b) b.classList.toggle('show', show);
+}
+
+// ── back to top ───────────────────────────────────────────────────────────
+window.addEventListener('scroll', function () {
+    var el = document.getElementById('btn-back-to-top');
+    if (el) el.style.display = (window.scrollY > 200) ? 'block' : 'none';
+});
+document.getElementById('btn-back-to-top').addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
-// Toast notification function with localStorage deduplication
+// ── toast notifications (localStorage-deduplicated) ───────────────────────
 function showToast(type, message, options = {}) {
     const toastEl = document.getElementById('liveToast');
     if (!toastEl) return;
 
-    // Deduplication: prevent showing same message multiple times
     const messageKey = 'toast_' + btoa(unescape(encodeURIComponent(type + ':' + message))).slice(0, 32);
     const now = Date.now();
-    const dedupWindow = options.dedupMs || 60000; // Default: 1 minute dedup window
+    const dedupWindow = options.dedupMs || 60000;
 
-    // Check if we've shown this message recently
     const lastShown = localStorage.getItem(messageKey);
-    if (lastShown && (now - parseInt(lastShown)) < dedupWindow) {
-        console.log('Toast deduplicated:', message);
-        return; // Skip showing duplicate
-    }
-
-    // Mark as shown
+    if (lastShown && (now - parseInt(lastShown)) < dedupWindow) return;
     localStorage.setItem(messageKey, now.toString());
 
-    // Clean up old toast keys (keep localStorage tidy)
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith('toast_')) {
-            const timestamp = parseInt(localStorage.getItem(key));
-            if (now - timestamp > 300000) { // Remove after 5 minutes
-                keysToRemove.push(key);
-            }
+            if (now - parseInt(localStorage.getItem(key)) > 300000) keysToRemove.push(key);
         }
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
 
-    // Configure toast behavior based on type
     const autohide = options.autohide !== undefined ? options.autohide : (type !== 'error');
-    const delay = options.delay || 5000;
-
-    const toast = new bootstrap.Toast(toastEl, {
-        autohide: autohide,
-        delay: delay
-    });
+    const toast = new bootstrap.Toast(toastEl, { autohide: autohide, delay: options.delay || 5000 });
     const toastBody = toastEl.querySelector('.toast-body');
     const toastHeader = toastEl.querySelector('.toast-header');
 
-    // Set message
     toastBody.textContent = message;
-
-    // Set type styling
     toastHeader.className = 'toast-header';
     if (type === 'success') {
         toastHeader.classList.add('bg-success', 'text-white');
@@ -145,18 +106,14 @@ function showToast(type, message, options = {}) {
         toastHeader.classList.add('bg-info', 'text-white');
         toastHeader.querySelector('i').className = 'bi bi-info-circle me-2';
     }
-
     toast.show();
 }
 
-// Clear all toast dedup keys on logout
 function clearToastHistory() {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('toast_')) {
-            keysToRemove.push(key);
-        }
+        if (key && key.startsWith('toast_')) keysToRemove.push(key);
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
 }

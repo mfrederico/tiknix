@@ -1,20 +1,24 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="csrf-token" content="<?= htmlspecialchars($csrf ?? '', ENT_QUOTES, 'UTF-8') ?>">
     <title><?= htmlspecialchars($title ?? 'App') ?></title>
-    
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
+
+    <!-- Restore saved theme before paint to avoid a flash -->
+    <script>(function(){try{var t=localStorage.getItem('ui-theme');if(t)document.documentElement.setAttribute('data-bs-theme',t);}catch(e){}})();</script>
+
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    
-    <!-- Custom CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Custom CSS (tiknix-specific; loaded before the design system so tokens win) -->
     <link href="/css/app.css" rel="stylesheet">
-    
+    <!-- Shared design system — MUST load last so its :root overrides win -->
+    <?php include __DIR__ . '/../components/design-system.php'; ?>
+
     <!-- Additional CSS -->
     <?php if (isset($additional_css)): ?>
         <?php foreach ($additional_css as $css): ?>
@@ -23,35 +27,24 @@
     <?php endif; ?>
 </head>
 <body>
-    <!-- Header -->
+    <!-- Shell: sidebar + topbar open in header, page body, shell closes in footer -->
     <?= $header_content ?>
-    
-    <!-- Main Content -->
-    <main class="flex-shrink-0">
-        <?= $body_content ?>
-    </main>
-    
-    <!-- Footer -->
+    <?= $body_content ?>
     <?= $footer_content ?>
-    
+
     <!-- Bootstrap 5 JS Bundle (includes Popper) -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- jQuery (optional, but useful) -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    
     <!-- Custom JS -->
     <script src="/js/app.js"></script>
-    
+
     <!-- Flash Messages -->
     <?php if (isset($_SESSION['flash'])): ?>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             <?php foreach ($_SESSION['flash'] as $flash): ?>
-                <?php
-                // Clear toast history on logout so welcome message shows on next login
-                $isLogoutMessage = stripos($flash['message'], 'logged out') !== false;
-                ?>
+                <?php $isLogoutMessage = stripos($flash['message'], 'logged out') !== false; ?>
                 <?php if ($isLogoutMessage): ?>
                 clearToastHistory();
                 <?php endif; ?>
@@ -61,7 +54,7 @@
         });
     </script>
     <?php endif; ?>
-    
+
     <!-- Additional JS -->
     <?php if (isset($additional_js)): ?>
         <?php foreach ($additional_js as $js): ?>

@@ -1,200 +1,144 @@
-<!-- Navigation Bar -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container">
-        <!-- Brand -->
-        <a class="navbar-brand" href="/">
-            <i class="bi bi-box"></i> <?= htmlspecialchars($site_name ?? 'Tiknix') ?>
-        </a>
-        
-        <!-- Mobile Toggle -->
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        
-        <!-- Navigation Menu -->
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav me-auto">
-                <?php foreach ($menu ?? [] as $item): ?>
-                    <?php if (isset($item['dropdown'])): ?>
-                        <!-- Dropdown Menu -->
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <?php if (isset($item['icon'])): ?>
-                                    <i class="bi bi-<?= $item['icon'] ?>"></i>
-                                <?php endif; ?>
-                                <?= htmlspecialchars(($item['label']) ?? '') ?>
-                            </a>
-                            <ul class="dropdown-menu">
-                                <?php foreach ($item['dropdown'] as $subitem): ?>
-                                    <li>
-                                        <a class="dropdown-item" href="<?= $subitem['url'] ?>">
-                                            <?php if (isset($subitem['icon'])): ?>
-                                                <i class="bi bi-<?= $subitem['icon'] ?>"></i>
-                                            <?php endif; ?>
-                                            <?= htmlspecialchars(($subitem['label']) ?? '') ?>
-                                        </a>
-                                    </li>
-                                <?php endforeach; ?>
-                            </ul>
-                        </li>
-                    <?php else: ?>
-                        <!-- Regular Menu Item -->
-                        <li class="nav-item">
-                            <a class="nav-link" href="<?= $item['url'] ?>">
-                                <?php if (isset($item['icon'])): ?>
-                                    <i class="bi bi-<?= $item['icon'] ?>"></i>
-                                <?php endif; ?>
-                                <?= htmlspecialchars(($item['label']) ?? '') ?>
-                            </a>
-                        </li>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-                <?php if ($isLoggedIn ?? false): ?>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/communications">
-                            <i class="bi bi-chat-left-dots"></i> Communications
-                        </a>
-                    </li>
-                    <?php if (builder_tools_enabled()): // builder tooling is control-plane-only ?>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/workbench">
-                            <i class="bi bi-hammer"></i> Workbench
-                        </a>
-                    </li>
-                    <?php if (($member['level'] ?? 100) <= 50): ?>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/aibuilder">
-                            <i class="bi bi-robot"></i> AI Builder
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/agentsetup">
-                            <i class="bi bi-robot"></i> Agent Setup
-                        </a>
-                    </li>
-                    <?php endif; ?>
-                    <?php endif; ?>
-                <?php endif; ?>
-            </ul>
-            
-            <!-- Right Side Menu -->
-            <ul class="navbar-nav ms-auto">
-                <?php if ($isLoggedIn ?? false): ?>
-                    <!-- Notification Bell -->
-                    <?php include __DIR__ . '/_notify-bell.php'; ?>
-                    <!-- User Dropdown -->
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-person-circle"></i>
-                            <?= htmlspecialchars($member['username'] ?? 'User') ?>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li>
-                                <a class="dropdown-item" href="/dashboard">
-                                    <i class="bi bi-speedometer2"></i> Dashboard
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/member/settings">
-                                    <i class="bi bi-gear"></i> Settings
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/apikeys">
-                                    <i class="bi bi-key"></i> API Keys
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/teams">
-                                    <i class="bi bi-people"></i> Teams
-                                </a>
-                            </li>
-                            <?php if (($member['level'] ?? 100) <= 50): ?>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item" href="/leads">
-                                        <i class="bi bi-person-lines-fill"></i> Leads
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="/admin">
-                                        <i class="bi bi-shield-lock"></i> Admin Panel
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="/security">
-                                        <i class="bi bi-shield-check"></i> Security Rules
-                                    </a>
-                                </li>
-                            <?php endif; ?>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item" href="/docs">
-                                    <i class="bi bi-book"></i> Documentation
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="/help">
-                                    <i class="bi bi-question-circle"></i> Help
-                                </a>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li>
-                                <a class="dropdown-item" href="/auth/logout">
-                                    <i class="bi bi-box-arrow-right"></i> Logout
-                                </a>
-                            </li>
-                        </ul>
-                    </li>
-                <?php else: ?>
-                    <!-- Login/Register -->
-                    <li class="nav-item">
-                        <a class="nav-link" href="/auth/login">
-                            <i class="bi bi-box-arrow-in-right"></i> Login
-                        </a>
-                    </li>
-                    <?php if (Flight::getSetting('registration_enabled', 0) != '0'): ?>
-                    <li class="nav-item">
-                        <a class="btn btn-primary ms-2" href="/auth/register">
-                            <i class="bi bi-person-plus"></i> Register
-                        </a>
-                    </li>
-                    <?php endif; ?>
-                <?php endif; ?>
-            </ul>
-        </div>
-    </div>
-</nav>
+<?php
+/**
+ * App shell — dark sidebar + slim topbar. Opens .ui-shell > .ui-sidebar +
+ * .ui-main > .ui-topbar + .ui-content; layouts/footer.php closes them.
+ * Design tokens in views/components/design-system.php.
+ */
+$__loggedIn = $isLoggedIn ?? false;
+$__uname = 'User'; $__level = 100;
+if ($__loggedIn && $member) {
+    $__uname = (string)($member['username'] ?? 'User');
+    $__level = (int)($member['level'] ?? 100);
+}
+$__initials = strtoupper(mb_substr($__uname, 0, 2)) ?: 'U';
+$__isAdmin = $__level <= 50;
+$__cur = $_SERVER['REQUEST_URI'] ?? '';
+$__active = function (string $u) use ($__cur): string {
+    return ($u !== '' && $u !== '#' && $u !== '/' && strpos($__cur, $u) === 0) ? ' active' : '';
+};
 
-<!-- Toast Container for Notifications -->
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 11">
-    <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="toast-header">
-            <i class="bi bi-info-circle me-2"></i>
-            <strong class="me-auto">Notification</strong>
-            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
-        </div>
-        <div class="toast-body"></div>
-    </div>
-</div>
+// Group the dynamic menu by its optional 'section' (default "Main").
+$__sections = [];
+foreach (($menu ?? []) as $__it) {
+    $__sections[$__it['section'] ?? 'Main'][] = $__it;
+}
+?>
+<div class="ui-shell">
+  <div class="ui-sidebar-backdrop" id="uiSidebarBackdrop" onclick="uiToggleSidebar(false)"></div>
 
-<!-- Breadcrumb (optional) -->
-<?php if (isset($breadcrumbs) && !empty($breadcrumbs)): ?>
-<nav aria-label="breadcrumb">
-    <div class="container">
-        <ol class="breadcrumb py-2 mb-0">
-            <?php foreach ($breadcrumbs as $crumb): ?>
-                <?php if (isset($crumb['active']) && $crumb['active']): ?>
-                    <li class="breadcrumb-item active" aria-current="page">
-                        <?= htmlspecialchars(($crumb['label']) ?? '') ?>
-                    </li>
-                <?php else: ?>
-                    <li class="breadcrumb-item">
-                        <a href="<?= $crumb['url'] ?>"><?= htmlspecialchars(($crumb['label']) ?? '') ?></a>
-                    </li>
-                <?php endif; ?>
+  <aside class="ui-sidebar" id="uiSidebar">
+    <a class="ui-sidebar-brand" href="/">
+      <span class="ui-brand-mark"><i class="bi bi-hexagon-fill"></i></span>
+      <?= htmlspecialchars($site_name ?? 'Tiknix') ?>
+    </a>
+
+    <nav class="ui-nav">
+      <?php foreach ($__sections as $__secName => $__items): ?>
+        <div class="ui-nav-heading"><?= htmlspecialchars($__secName) ?></div>
+        <?php foreach ($__items as $__it): ?>
+          <?php if (isset($__it['dropdown'])): ?>
+            <?php foreach ($__it['dropdown'] as $__sub): $__u = $__sub['url'] ?? '#'; ?>
+              <a class="ui-nav-link<?= $__active($__u) ?>" href="<?= htmlspecialchars($__u) ?>">
+                <i class="bi bi-<?= htmlspecialchars($__sub['icon'] ?? 'dot') ?>"></i>
+                <?= htmlspecialchars($__sub['label'] ?? '') ?>
+              </a>
             <?php endforeach; ?>
-        </ol>
+          <?php else: $__u = $__it['url'] ?? '#'; ?>
+            <a class="ui-nav-link<?= $__active($__u) ?>" href="<?= htmlspecialchars($__u) ?>">
+              <i class="bi bi-<?= htmlspecialchars($__it['icon'] ?? 'dot') ?>"></i>
+              <?= htmlspecialchars($__it['label'] ?? '') ?>
+            </a>
+          <?php endif; ?>
+        <?php endforeach; ?>
+      <?php endforeach; ?>
+
+      <?php if ($__loggedIn): ?>
+        <div class="ui-nav-heading">Workspace</div>
+        <a class="ui-nav-link<?= $__active('/communications') ?>" href="/communications"><i class="bi bi-chat-left-dots"></i> Communications</a>
+        <?php if (builder_tools_enabled()): ?>
+          <a class="ui-nav-link<?= $__active('/workbench') ?>" href="/workbench"><i class="bi bi-hammer"></i> Workbench</a>
+          <?php if ($__isAdmin): ?>
+            <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> AI Builder</a>
+            <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
+          <?php endif; ?>
+        <?php endif; ?>
+
+        <?php if ($__isAdmin): ?>
+          <div class="ui-nav-heading">Admin</div>
+          <a class="ui-nav-link<?= $__active('/leads') ?>" href="/leads"><i class="bi bi-person-lines-fill"></i> Leads</a>
+          <a class="ui-nav-link<?= $__active('/admin') ?>" href="/admin"><i class="bi bi-shield-lock"></i> Admin</a>
+          <a class="ui-nav-link<?= $__active('/security') ?>" href="/security"><i class="bi bi-shield-check"></i> Security</a>
+        <?php endif; ?>
+      <?php endif; ?>
+    </nav>
+
+    <?php if ($__loggedIn): ?>
+    <div class="ui-sidebar-foot">
+      <div class="d-flex align-items-center gap-2">
+        <span class="ui-avatar" style="background:var(--ui-accent-order)"><?= htmlspecialchars($__initials) ?></span>
+        <div style="min-width:0;line-height:1.2">
+          <div class="text-truncate" style="color:#fff;font-size:.85rem;font-weight:600"><?= htmlspecialchars($__uname) ?></div>
+          <a href="/auth/logout" style="font-size:.72rem;color:var(--ui-sidebar-heading);text-decoration:none">Sign out</a>
+        </div>
+      </div>
     </div>
-</nav>
-<?php endif; ?>
+    <?php endif; ?>
+  </aside>
+
+  <div class="ui-main">
+    <header class="ui-topbar">
+      <button class="ui-btn-icon d-lg-none" type="button" onclick="uiToggleSidebar(true)" aria-label="Open menu"><i class="bi bi-list"></i></button>
+      <div class="ui-topbar-title">
+        <span class="ui-eyebrow"><?= htmlspecialchars($topbar_eyebrow ?? ($site_name ?? 'Tiknix')) ?></span>
+        <strong><?= htmlspecialchars($title ?? 'App') ?></strong>
+      </div>
+
+      <ul class="navbar-nav flex-row align-items-center gap-2 ms-auto mb-0">
+        <li class="nav-item">
+          <button class="ui-btn-icon" id="uiThemeToggle" type="button" aria-label="Toggle theme"><i class="bi bi-moon-stars"></i></button>
+        </li>
+        <?php if ($__loggedIn): ?>
+          <?php include __DIR__ . '/_notify-bell.php'; ?>
+          <li class="nav-item dropdown">
+            <a class="text-decoration-none" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <span class="ui-user-chip">
+                <span class="d-none d-sm-inline" style="font-size:.9rem;color:var(--bs-body-color)"><?= htmlspecialchars($__uname) ?></span>
+                <span class="ui-avatar" style="background:var(--ui-accent-order)"><?= htmlspecialchars($__initials) ?></span>
+              </span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end shadow">
+              <li><a class="dropdown-item" href="/dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
+              <li><a class="dropdown-item" href="/member/settings"><i class="bi bi-gear me-2"></i>Settings</a></li>
+              <li><a class="dropdown-item" href="/apikeys"><i class="bi bi-key me-2"></i>API Keys</a></li>
+              <li><a class="dropdown-item" href="/teams"><i class="bi bi-people me-2"></i>Teams</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item" href="/docs"><i class="bi bi-book me-2"></i>Documentation</a></li>
+              <li><a class="dropdown-item" href="/help"><i class="bi bi-question-circle me-2"></i>Help</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item" href="/auth/logout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+            </ul>
+          </li>
+        <?php else: ?>
+          <li class="nav-item"><a class="btn btn-sm btn-outline-secondary" href="/auth/login">Login</a></li>
+          <?php if (Flight::getSetting('registration_enabled', 0) != '0'): ?>
+          <li class="nav-item"><a class="btn btn-sm btn-primary ms-1" href="/auth/register">Register</a></li>
+          <?php endif; ?>
+        <?php endif; ?>
+      </ul>
+    </header>
+
+    <?php if (!empty($breadcrumbs)): ?>
+    <nav aria-label="breadcrumb" class="px-4 pt-3">
+      <ol class="breadcrumb mb-0">
+        <?php foreach ($breadcrumbs as $crumb): ?>
+          <?php if (!empty($crumb['active'])): ?>
+            <li class="breadcrumb-item active" aria-current="page"><?= htmlspecialchars($crumb['label'] ?? '') ?></li>
+          <?php else: ?>
+            <li class="breadcrumb-item"><a href="<?= htmlspecialchars($crumb['url'] ?? '#') ?>"><?= htmlspecialchars($crumb['label'] ?? '') ?></a></li>
+          <?php endif; ?>
+        <?php endforeach; ?>
+      </ol>
+    </nav>
+    <?php endif; ?>
+
+    <div class="ui-content">

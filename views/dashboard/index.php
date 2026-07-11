@@ -1,193 +1,121 @@
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-md-12">
-            <h1 class="mb-4">Welcome to Your Dashboard</h1>
+<div class="ui-page-header d-flex justify-content-between align-items-end flex-wrap gap-2">
+    <div>
+        <span class="ui-eyebrow">Dashboard</span>
+        <h1>Welcome back, <?= htmlspecialchars($member['username'] ?? 'User') ?></h1>
+        <div class="ui-sub">Your central hub for every feature and tool available to you.</div>
+    </div>
+    <a href="/workbench" class="btn btn-primary"><i class="bi bi-rocket-takeoff"></i> Open Workbench</a>
+</div>
 
-            <div class="alert alert-info alert-dismissible fade show" role="alert">
-                <h4 class="alert-heading">Hello, <?= htmlspecialchars($member['username'] ?? 'User') ?>!</h4>
-                <p>Welcome to the TikNix Framework Dashboard. This is your central hub for accessing all available features and tools.</p>
-                <hr>
-                <p class="mb-0">You're successfully logged in and ready to get started.</p>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+<!-- Workbench feature panel -->
+<div class="ui-panel mb-4 feature-panel">
+    <div class="ui-panel-body">
+        <div class="row align-items-center g-3">
+            <div class="col-md-8">
+                <h3 class="text-primary mb-2"><i class="bi bi-hammer me-2"></i>Build Apps with Claude</h3>
+                <p class="text-secondary mb-3">
+                    Use the Workbench to create, manage, and deploy applications powered by Claude AI.
+                    Define tasks, let Claude write the code, and watch your ideas come to life.
+                </p>
+                <ul class="list-unstyled mb-3 small">
+                    <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Create feature requests, bug fixes, and refactoring tasks</li>
+                    <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Claude writes code following your project conventions</li>
+                    <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Collaborate with your team on shared tasks</li>
+                </ul>
+                <a href="/workbench" class="btn btn-primary"><i class="bi bi-rocket-takeoff"></i> Open Workbench</a>
+                <a href="/teams" class="btn btn-outline-primary ms-2"><i class="bi bi-people"></i> Manage Teams</a>
             </div>
-        </div>
-    </div>
-
-    <!-- Workbench Feature Card -->
-    <div class="row mt-4">
-        <div class="col-md-12">
-            <div class="card border-primary workbench-feature-card">
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col-md-8">
-                            <h3 class="card-title text-primary">
-                                <i class="bi bi-hammer"></i> Build Apps with Claude
-                            </h3>
-                            <p class="card-text lead">
-                                Use the Workbench to create, manage, and deploy applications powered by Claude AI.
-                                Define tasks, let Claude write the code, and watch your ideas come to life.
-                            </p>
-                            <ul class="list-unstyled mb-3">
-                                <li><i class="bi bi-check-circle text-success"></i> Create feature requests, bug fixes, and refactoring tasks</li>
-                                <li><i class="bi bi-check-circle text-success"></i> Claude writes code following your project conventions</li>
-                                <li><i class="bi bi-check-circle text-success"></i> Collaborate with your team on shared tasks</li>
-                            </ul>
-                            <a href="/workbench" class="btn btn-primary btn-lg">
-                                <i class="bi bi-rocket-takeoff"></i> Open Workbench
-                            </a>
-                            <a href="/teams" class="btn btn-outline-primary btn-lg ms-2">
-                                <i class="bi bi-people"></i> Manage Teams
-                            </a>
-                        </div>
-                        <div class="col-md-4 text-center d-none d-md-block">
-                            <i class="bi bi-cpu display-1 text-primary opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="row mt-4">
-        <!-- User Info Card -->
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <i class="bi bi-person-circle"></i> Your Profile
-                </div>
-                <div class="card-body">
-                    <p><strong>Username:</strong> <?= htmlspecialchars($member['username'] ?? 'N/A') ?></p>
-                    <p><strong>Email:</strong> <?= htmlspecialchars($member['email'] ?? 'N/A') ?></p>
-                    <p><strong>Member Since:</strong> <?= $stats['member_since'] ?? 'Unknown' ?></p>
-                    <p><strong>Last Login:</strong> <?= $stats['last_login'] ?? 'Never' ?></p>
-                    <p><strong>Total Logins:</strong> <?= $stats['login_count'] ?? 0 ?></p>
-                    <hr>
-                    <a href="/member/profile" class="btn btn-sm btn-primary">View Profile</a>
-                    <a href="/member/edit" class="btn btn-sm btn-outline-primary">Edit Profile</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Quick Actions Card -->
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header bg-success text-white">
-                    <i class="bi bi-lightning"></i> Quick Actions
-                </div>
-                <div class="card-body">
-                    <div class="d-grid gap-2">
-                        <a href="/workbench" class="btn btn-primary">
-                            <i class="bi bi-hammer"></i> Workbench
-                        </a>
-                        <a href="/teams" class="btn btn-outline-primary">
-                            <i class="bi bi-people"></i> My Teams
-                        </a>
-                        <a href="/member/profile" class="btn btn-outline-success">
-                            <i class="bi bi-person"></i> My Profile
-                        </a>
-                        <a href="/member/settings" class="btn btn-outline-success">
-                            <i class="bi bi-gear"></i> Settings
-                        </a>
-                        <?php if (isset($member['level']) && $member['level'] <= 50): ?>
-                        <a href="/admin" class="btn btn-outline-danger">
-                            <i class="bi bi-shield-lock"></i> Admin Panel
-                        </a>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- System Info Card -->
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header bg-info text-white">
-                    <i class="bi bi-info-circle"></i> System Information
-                </div>
-                <div class="card-body">
-                    <p><strong>Application:</strong> TikNix Framework</p>
-                    <p><strong>Version:</strong> 1.0.0</p>
-                    <p><strong>Environment:</strong> <?= Flight::get('app.environment') ?? 'Development' ?></p>
-                    <p><strong>Your Level:</strong> <?= $member['level'] ?? 'Unknown' ?></p>
-                    
-                    <?php if (isset($stats['total_members'])): ?>
-                    <hr>
-                    <p><strong>Total Members:</strong> <?= $stats['total_members'] ?></p>
-                    <p><strong>Active Members:</strong> <?= $stats['active_members'] ?></p>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="row mt-4">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header bg-secondary text-white">
-                    <i class="bi bi-journal-text"></i> Getting Started
-                </div>
-                <div class="card-body">
-                    <h5>Welcome to TikNix!</h5>
-                    <p>This is your main dashboard where you can access all the features available to you based on your permissions.</p>
-                    
-                    <h6 class="mt-3">Available Features:</h6>
-                    <ul>
-                        <li><strong>Workbench:</strong> Create and manage tasks for Claude to build your apps</li>
-                        <li><strong>Teams:</strong> Collaborate with others on shared projects</li>
-                        <li><strong>Profile Management:</strong> View and edit your personal information</li>
-                        <li><strong>Settings:</strong> Customize your preferences and account settings</li>
-                        <?php if (isset($member['level']) && $member['level'] <= 50): ?>
-                        <li><strong>Admin Panel:</strong> Manage users, permissions, and system settings</li>
-                        <?php endif; ?>
-                    </ul>
-                    
-                    <h6 class="mt-3">Need Help?</h6>
-                    <p>If you need assistance or have questions, please don't hesitate to reach out to our support team.</p>
-                    
-                    <div class="mt-3">
-                        <a href="/help" class="btn btn-outline-secondary">
-                            <i class="bi bi-question-circle"></i> Help Center
-                        </a>
-                        <a href="/contact" class="btn btn-outline-primary">
-                            <i class="bi bi-envelope"></i> Contact Support
-                        </a>
-                    </div>
-                </div>
+            <div class="col-md-4 text-center d-none d-md-block">
+                <i class="bi bi-cpu display-1 text-primary opacity-50"></i>
             </div>
         </div>
     </div>
 </div>
 
+<div class="row g-3">
+    <!-- Profile -->
+    <div class="col-lg-4">
+        <div class="ui-panel h-100">
+            <div class="ui-panel-header"><h3><i class="bi bi-person-circle text-primary me-2"></i>Your Profile</h3></div>
+            <div class="ui-panel-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-secondary fw-normal">Username</dt><dd class="col-7"><?= htmlspecialchars($member['username'] ?? 'N/A') ?></dd>
+                    <dt class="col-5 text-secondary fw-normal">Email</dt><dd class="col-7 text-truncate"><?= htmlspecialchars($member['email'] ?? 'N/A') ?></dd>
+                    <dt class="col-5 text-secondary fw-normal">Member Since</dt><dd class="col-7"><?= htmlspecialchars($stats['member_since'] ?? 'Unknown') ?></dd>
+                    <dt class="col-5 text-secondary fw-normal">Last Login</dt><dd class="col-7"><?= htmlspecialchars($stats['last_login'] ?? 'Never') ?></dd>
+                    <dt class="col-5 text-secondary fw-normal">Total Logins</dt><dd class="col-7 ui-mono"><?= (int)($stats['login_count'] ?? 0) ?></dd>
+                </dl>
+                <hr>
+                <a href="/member/profile" class="btn btn-sm btn-primary">View Profile</a>
+                <a href="/member/edit" class="btn btn-sm btn-outline-primary">Edit Profile</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="col-lg-4">
+        <div class="ui-panel h-100">
+            <div class="ui-panel-header"><h3><i class="bi bi-lightning-charge-fill text-warning me-2"></i>Quick Actions</h3></div>
+            <div class="ui-panel-body">
+                <div class="d-grid gap-2">
+                    <a href="/workbench" class="btn btn-primary"><i class="bi bi-hammer"></i> Workbench</a>
+                    <a href="/teams" class="btn btn-outline-primary"><i class="bi bi-people"></i> My Teams</a>
+                    <a href="/member/profile" class="btn btn-outline-secondary"><i class="bi bi-person"></i> My Profile</a>
+                    <a href="/member/settings" class="btn btn-outline-secondary"><i class="bi bi-gear"></i> Settings</a>
+                    <?php if (isset($member['level']) && $member['level'] <= 50): ?>
+                    <a href="/admin" class="btn btn-outline-danger"><i class="bi bi-shield-lock"></i> Admin Panel</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="col-lg-4">
+        <div class="ui-panel h-100">
+            <div class="ui-panel-header"><h3><i class="bi bi-info-circle text-info me-2"></i>System</h3></div>
+            <div class="ui-panel-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-6 text-secondary fw-normal">Application</dt><dd class="col-6">TikNix</dd>
+                    <dt class="col-6 text-secondary fw-normal">Version</dt><dd class="col-6 ui-mono">1.0.0</dd>
+                    <dt class="col-6 text-secondary fw-normal">Environment</dt><dd class="col-6"><?= htmlspecialchars(Flight::get('app.environment') ?? 'Development') ?></dd>
+                    <dt class="col-6 text-secondary fw-normal">Your Level</dt><dd class="col-6 ui-mono"><?= htmlspecialchars((string)($member['level'] ?? 'Unknown')) ?></dd>
+                    <?php if (isset($stats['total_members'])): ?>
+                    <dt class="col-6 text-secondary fw-normal">Total Members</dt><dd class="col-6 ui-mono"><?= (int)$stats['total_members'] ?></dd>
+                    <dt class="col-6 text-secondary fw-normal">Active Members</dt><dd class="col-6 ui-mono"><?= (int)$stats['active_members'] ?></dd>
+                    <?php endif; ?>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Getting Started -->
+<div class="ui-panel mt-4">
+    <div class="ui-panel-header"><h3><i class="bi bi-journal-text text-primary me-2"></i>Getting Started</h3></div>
+    <div class="ui-panel-body">
+        <p class="text-secondary">This is your main dashboard where you can access all the features available to you based on your permissions.</p>
+        <h6 class="mt-3">Available features</h6>
+        <ul class="text-secondary">
+            <li><strong class="text-body">Workbench</strong> — create and manage tasks for Claude to build your apps</li>
+            <li><strong class="text-body">Teams</strong> — collaborate with others on shared projects</li>
+            <li><strong class="text-body">Profile Management</strong> — view and edit your personal information</li>
+            <li><strong class="text-body">Settings</strong> — customize your preferences and account settings</li>
+            <?php if (isset($member['level']) && $member['level'] <= 50): ?>
+            <li><strong class="text-body">Admin Panel</strong> — manage users, permissions, and system settings</li>
+            <?php endif; ?>
+        </ul>
+        <div class="mt-3">
+            <a href="/help" class="btn btn-outline-secondary"><i class="bi bi-question-circle"></i> Help Center</a>
+            <a href="/contact" class="btn btn-outline-primary"><i class="bi bi-envelope"></i> Contact Support</a>
+        </div>
+    </div>
+</div>
+
 <style>
-.card {
-    margin-bottom: 20px;
-    box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
-    transition: transform 0.2s;
-}
-
-.card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
-}
-
-.workbench-feature-card {
-    background: linear-gradient(135deg, rgba(13, 110, 253, 0.1) 0%, rgba(13, 110, 253, 0.05) 100%);
-    border-width: 2px;
-}
-
-.workbench-feature-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 0.5rem 1.5rem rgba(13, 110, 253, 0.2);
-}
-
-.alert-info {
-    background-color: #1e293b;
-    color: #ffffff;
-    border: 1px solid #334155;
-}
-
-.btn-outline-success:hover,
-.btn-outline-secondary:hover {
-    transform: scale(1.02);
+/* Feature panel — subtle primary tint that adapts to the active theme */
+.feature-panel {
+    background: linear-gradient(135deg, rgba(var(--bs-primary-rgb), 0.10) 0%, rgba(var(--bs-primary-rgb), 0.02) 100%);
+    border-color: rgba(var(--bs-primary-rgb), 0.25);
 }
 </style>

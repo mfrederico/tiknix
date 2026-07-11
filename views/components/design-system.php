@@ -102,7 +102,9 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 .ui-topbar-title{line-height:1.1;}
 .ui-topbar-title .ui-eyebrow{display:block;margin-bottom:1px;}
 .ui-topbar-title strong{font-family:var(--ui-ff-display);font-weight:600;font-size:1.02rem;letter-spacing:-.01em;}
-.ui-content{padding:1.75rem;width:100%;max-width:1280px;}
+.ui-content{padding:1.75rem;width:100%;}
+/* Opt-in readable width for text-heavy pages: <div class="ui-content"><div class="ui-narrow">…</div></div> */
+.ui-narrow{max-width:1180px;margin-inline:auto;}
 
 .ui-btn-icon{width:38px;height:38px;border-radius:11px;border:1px solid var(--bs-border-color);background:var(--ui-surface);color:var(--bs-secondary-color);display:grid;place-items:center;cursor:pointer;transition:.15s;}
 .ui-btn-icon:hover{color:var(--ui-primary);border-color:var(--ui-primary);}

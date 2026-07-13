@@ -174,6 +174,7 @@ class PlanExecutor {
         $t->agentSession   = $session;      // fluid
         $t->startedAt      = date('Y-m-d H:i:s');
         R::store($t);
+        $this->logEvent($t, 'info', 'Build agent started on ' . $branch . ' (engine ' . ($t->engine ?: 'claude') . ')');
         return true;
     }
 
@@ -294,9 +295,37 @@ class PlanExecutor {
         $t->completedAt  = date('Y-m-d H:i:s');
         if ($note !== '') $t->errorMessage = mb_substr($note, 0, 1000);
         R::store($t);
+
+        $labels = [
+            'merged'   => ['info',    'Merged into the instance base branch'],
+            'conflict' => ['warning', 'Merge conflict — left on its branch for manual review'],
+            'failed'   => ['error',   'Build failed'],
+        ];
+        [$lvl, $msg] = $labels[$status] ?? ['info', 'Finished: ' . $status];
+        if ($note !== '') $msg .= ' — ' . mb_substr($note, 0, 300);
+        $this->logEvent($t, $lvl, $msg);
     }
 
     private function fail($t, string $note): void { $this->finish($t, 'failed', $note); }
+
+    /**
+     * Append a tasklog row for a subtask so the Workbench "Recent Logs" panel
+     * reflects the orchestrator path too — it previously only logged the manual
+     * "Run with Claude" flow, leaving every plan-built task blank. Never throws:
+     * a logging failure must not break the build loop.
+     */
+    private function logEvent($t, string $level, string $message): void {
+        try {
+            $log = R::dispense('tasklog');
+            $log->taskId    = (int)$t->id;
+            $log->memberId  = ((int)$t->memberId) ?: null;
+            $log->logLevel  = $level;              // info | warning | error
+            $log->logType   = 'orchestrator';
+            $log->message   = $message;
+            $log->createdAt = date('Y-m-d H:i:s');
+            R::store($log);
+        } catch (\Throwable $e) { /* swallow — logging is best-effort */ }
+    }
 
     // ---- agent invocation --------------------------------------------------
 

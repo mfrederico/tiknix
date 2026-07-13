@@ -657,7 +657,34 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                 </div>
                 <div class="list-group list-group-flush" style="max-height: 300px; overflow-y: auto;" id="logsList">
                     <?php if (empty($logs)): ?>
-                        <div class="list-group-item text-muted small">No logs yet</div>
+                        <?php
+                        // No tasklog rows — e.g. a plan-orchestrated task built before
+                        // orchestrator logging existed. Synthesize a minimal timeline from
+                        // the task's own lifecycle fields so the panel isn't blank.
+                        $synth = [];
+                        if (!empty($task->createdAt)) $synth[] = ['info', 'Task created', $task->createdAt];
+                        if (!empty($task->startedAt)) $synth[] = ['info', 'Build started', $task->startedAt];
+                        $termMap = ['merged' => ['info', 'Merged into base'], 'completed' => ['info', 'Completed'], 'conflict' => ['warning', 'Merge conflict'], 'failed' => ['error', 'Failed']];
+                        if (isset($termMap[$task->status]) && !empty($task->completedAt)) {
+                            [$lv, $lbl] = $termMap[$task->status];
+                            if ($task->status === 'failed' && !empty($task->errorMessage)) $lbl .= ' — ' . $task->errorMessage;
+                            $synth[] = [$lv, $lbl, $task->completedAt];
+                        }
+                        ?>
+                        <?php if (empty($synth)): ?>
+                            <div class="list-group-item text-muted small">No logs yet</div>
+                        <?php else: ?>
+                            <?php foreach ($synth as [$lv, $msg, $ts]): ?>
+                                <div class="list-group-item py-2">
+                                    <div class="d-flex justify-content-between">
+                                        <span class="badge bg-<?= $lv === 'error' ? 'danger' : ($lv === 'warning' ? 'warning' : 'info') ?>"><?= $lv ?></span>
+                                        <small class="text-muted"><?= date('g:i A', strtotime($ts)) ?></small>
+                                    </div>
+                                    <div class="small mt-1"><?= htmlspecialchars($msg) ?></div>
+                                </div>
+                            <?php endforeach; ?>
+                            <div class="list-group-item text-muted" style="font-size:.7rem"><i class="bi bi-info-circle me-1"></i>Synthesized from the task's lifecycle — step-by-step logs appear for tasks built from now on.</div>
+                        <?php endif; ?>
                     <?php else: ?>
                         <?php foreach (array_slice($logs, 0, 10) as $log): ?>
                             <div class="list-group-item py-2">

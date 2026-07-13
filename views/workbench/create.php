@@ -27,6 +27,29 @@
                             <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                         <?php endforeach; ?>
 
+                        <!-- Instance (tenant) — required -->
+                        <div class="mb-3">
+                            <label for="instance_id" class="form-label">Instance <span class="text-danger">*</span></label>
+                            <select class="form-select" id="instance_id" name="instance_id" required>
+                                <option value="" <?= (($preselectInstanceId ?? 0) === 0) ? 'selected' : '' ?> disabled>— Select an instance —</option>
+                                <?php foreach (($instances ?? []) as $inst): ?>
+                                    <option value="<?= (int)$inst['id'] ?>" <?= (($preselectInstanceId ?? 0) === (int)$inst['id']) ? 'selected' : '' ?>><?= htmlspecialchars(($inst['label']) ?? '') ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php if (empty($instances)): ?>
+                                <div class="form-text text-warning"><i class="bi bi-exclamation-triangle"></i> You have no instances yet — provision one in the <a href="/aibuilder">AI Builder</a> first.</div>
+                            <?php else: ?>
+                                <div class="form-text">Which AI Builder instance this task targets.</div>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Title -->
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="title" name="title" required
+                                   placeholder="Describe what needs to be done">
+                        </div>
+
                         <!-- Markdown import (drag & drop) -->
                         <div class="mb-3">
                             <label class="form-label">Start from a Markdown file <span class="text-muted">(optional)</span></label>
@@ -38,35 +61,12 @@
                             <div class="form-text">Loads the file into Title &amp; Description below. Nothing is uploaded until you click Create.</div>
                         </div>
 
-                        <!-- Title -->
-                        <div class="mb-3">
-                            <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="title" name="title" required
-                                   placeholder="Describe what needs to be done">
-                        </div>
-
                         <!-- Description -->
                         <div class="mb-3">
                             <label for="description" class="form-label">Description</label>
                             <textarea class="form-control" id="description" name="description" rows="4"
                                       placeholder="Provide detailed context for Claude..."></textarea>
                             <div class="form-text">Be specific about what you want. Include relevant code paths, requirements, and constraints.</div>
-                        </div>
-
-                        <!-- Instance (tenant) — required -->
-                        <div class="mb-3">
-                            <label for="instance_id" class="form-label">Instance <span class="text-danger">*</span></label>
-                            <select class="form-select" id="instance_id" name="instance_id" required>
-                                <option value="" selected disabled>— Select an instance —</option>
-                                <?php foreach (($instances ?? []) as $inst): ?>
-                                    <option value="<?= (int)$inst['id'] ?>" <?= (($preselectInstanceId ?? 0) === (int)$inst['id']) ? 'selected' : '' ?>><?= htmlspecialchars(($inst['label']) ?? '') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php if (empty($instances)): ?>
-                                <div class="form-text text-warning"><i class="bi bi-exclamation-triangle"></i> You have no instances yet — provision one in the <a href="/aibuilder">AI Builder</a> first.</div>
-                            <?php else: ?>
-                                <div class="form-text">Which AI Builder instance this task targets.</div>
-                            <?php endif; ?>
                         </div>
 
                         <div class="row">

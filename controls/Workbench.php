@@ -146,8 +146,18 @@ class Workbench extends Control {
             ];
         }
         $this->viewData['instances'] = $instances;
-        // Pre-select an instance when linked from the AI Builder ("Plan & build in the Workbench").
-        $this->viewData['preselectInstanceId'] = (int)$this->getParam('instance_id', 0);
+        // Pre-select an instance: by id (AI Builder "Plan & build in the Workbench") or
+        // by tag (New Task from a filtered /workbench?instance_tag=... view).
+        $preselectInstanceId = (int)$this->getParam('instance_id', 0);
+        if (!$preselectInstanceId) {
+            $tag = (string)$this->getParam('instance_tag', '');
+            if ($tag !== '') {
+                foreach ($instances as $inst) {
+                    if (($inst['tag'] ?? '') === $tag) { $preselectInstanceId = (int)$inst['id']; break; }
+                }
+            }
+        }
+        $this->viewData['preselectInstanceId'] = $preselectInstanceId;
 
         $this->render('workbench/create', $this->viewData);
     }

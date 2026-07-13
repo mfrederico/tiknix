@@ -6,10 +6,15 @@
                 <i class="bi bi-people"></i> Teams
             </a>
             <?php
-            $createUrl = '/workbench/create';
+            $createParams = [];
             if (!empty($filters['team_id']) && $filters['team_id'] !== 'personal' && is_numeric($filters['team_id'])) {
-                $createUrl .= '?team_id=' . (int)$filters['team_id'];
+                $createParams['team_id'] = (int)$filters['team_id'];
             }
+            // Carry the current instance filter so the create page pre-selects it.
+            if (!empty($filters['instance_tag'])) {
+                $createParams['instance_tag'] = $filters['instance_tag'];
+            }
+            $createUrl = '/workbench/create' . (!empty($createParams) ? '?' . http_build_query($createParams) : '');
             ?>
             <a href="<?= $createUrl ?>" class="btn btn-primary">
                 <i class="bi bi-plus-lg"></i> New Task

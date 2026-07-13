@@ -59,7 +59,7 @@
                             <select class="form-select" id="instance_id" name="instance_id" required>
                                 <option value="" selected disabled>— Select an instance —</option>
                                 <?php foreach (($instances ?? []) as $inst): ?>
-                                    <option value="<?= (int)$inst['id'] ?>"><?= htmlspecialchars(($inst['label']) ?? '') ?></option>
+                                    <option value="<?= (int)$inst['id'] ?>" <?= (($preselectInstanceId ?? 0) === (int)$inst['id']) ? 'selected' : '' ?>><?= htmlspecialchars(($inst['label']) ?? '') ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <?php if (empty($instances)): ?>

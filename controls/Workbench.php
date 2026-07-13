@@ -146,6 +146,8 @@ class Workbench extends Control {
             ];
         }
         $this->viewData['instances'] = $instances;
+        // Pre-select an instance when linked from the AI Builder ("Plan & build in the Workbench").
+        $this->viewData['preselectInstanceId'] = (int)$this->getParam('instance_id', 0);
 
         $this->render('workbench/create', $this->viewData);
     }

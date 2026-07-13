@@ -221,21 +221,14 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
           </div>
         </div>
         <div class="card shadow-sm mt-3">
-          <div class="card-header fw-semibold"><i class="bi bi-diagram-3 me-1"></i>Plan &amp; build (decompose)</div>
+          <div class="card-header fw-semibold"><i class="bi bi-diagram-3 me-1"></i>Plan &amp; build</div>
           <div class="card-body">
-            <form id="ab-plan-form" class="mb-2">
-              <textarea id="ab-plan-input" class="form-control form-control-sm mb-2" rows="2" placeholder="Describe a goal to decompose into a multi-agent plan…"></textarea>
-              <div class="d-flex gap-2">
-                <button id="ab-plan-generate" class="btn btn-info btn-sm flex-fill" type="submit"><i class="bi bi-stars me-1"></i>Generate plan</button>
-                <button id="ab-plan-copy" class="btn btn-outline-secondary btn-sm" type="button" title="Copy the prompt to run in the Terminal instead"><i class="bi bi-clipboard-plus"></i></button>
-                <button id="ab-plan-ingest" class="btn btn-outline-info btn-sm" type="button" title="Ingest a plan written by the terminal agent"><i class="bi bi-box-arrow-in-down"></i></button>
-                <button id="ab-reuse-digest" class="btn btn-outline-secondary btn-sm" type="button" title="Preview the reuse inventory the planner is grounded on for this instance"><i class="bi bi-recycle"></i></button>
-              </div>
-            </form>
-            <div class="text-body-secondary mb-2" style="font-size:.72rem">Runs a headless Claude (Opus) grounded on this instance's <a href="#" id="ab-reuse-digest-link">reuse inventory</a> (baked into its brief), then decomposes the goal into a dependency graph of tasks that reuse existing primitives. Review them at the Workbench, tagged to this instance.</div>
-            <div id="ab-plan-hint" class="mb-2" style="font-size:.72rem"></div>
-            <pre id="ab-plan-log" class="small mb-2 d-none" style="max-height:16vh;overflow:auto;background:#1e1e1e;color:#ddd;border-radius:.375rem;padding:.5rem;font-size:.7rem;white-space:pre-wrap"></pre>
-            <div id="ab-plan-list" class="small"></div>
+            <p class="text-body-secondary small mb-2">Decompose a goal into a multi-agent plan for this instance — grounded on its reuse inventory so tasks build on what already exists. Planning, review, approve &amp; build all live in the Workbench.</p>
+            <div class="d-flex gap-2">
+              <a href="/workbench/create?instance_id=<?= (int)$selId ?>" class="btn btn-info btn-sm flex-fill"><i class="bi bi-diagram-3 me-1"></i>Plan &amp; build in the Workbench</a>
+              <button id="ab-reuse-digest" class="btn btn-outline-secondary btn-sm text-nowrap" type="button" title="Preview the reuse inventory the planner is grounded on for this instance"><i class="bi bi-recycle me-1"></i>Reuse digest</button>
+            </div>
+            <div class="text-body-secondary mt-2" style="font-size:.72rem">Preview this instance's <a href="#" id="ab-reuse-digest-link">reuse inventory</a>, or review generated plans in the <a href="/workbench" target="_blank">Workbench</a>, tagged to this instance.</div>
           </div>
         </div>
       </div>
@@ -422,111 +415,6 @@ if (AB.has) {
   function doRollback(ckpt){
     if(!confirm('Roll back to '+ckpt+'? This restores code AND data to that checkpoint.')) return;
     post('/aibuilder/rollback/'+encodeURIComponent(ckpt),{}).then(j=>{ loadCheckpoints(); refreshChanges(); });
-  }
-
-  // --- Plan & build: headless claude -p planner (primary) + terminal-copy fallback ---
-  const planHint=document.getElementById('ab-plan-hint');
-  const planLog=document.getElementById('ab-plan-log');
-  function planNote(html){ planHint.innerHTML=html; }
-  function showLog(t){ if(t){ planLog.textContent=t; planLog.classList.remove('d-none'); } }
-  const genBtn=()=>document.getElementById('ab-plan-generate');
-
-  let planPoll=null;
-  function stopPoll(){ if(planPoll){ clearInterval(planPoll); planPoll=null; } }
-  function pollPlanner(){
-    stopPoll();
-    planPoll=setInterval(()=>{
-      fetch('/aibuilder/planstatus?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
-        const d=j.data||{}; showLog(d.log);
-        if(d.plan_ready){ stopPoll(); planNote('✅ Plan ready — ingesting…'); ingestPlan(); }
-        else if(!d.running){ stopPoll(); genBtn().disabled=false; planNote('⚠️ Planner finished without writing a plan. See the log below.'); }
-      }).catch(()=>{});
-    }, 4000);
-  }
-  function generatePlan(goal){
-    genBtn().disabled=true; planLog.classList.add('d-none'); planLog.textContent='';
-    planNote('🧠 Planning with Claude (Opus) — grounding via the tiknix MCP, then decomposing…');
-    post('/aibuilder/plangenerate',{goal:goal}).then(j=>{
-      if(j.success){ pollPlanner(); }
-      else { planNote('⚠️ '+(j.message||'Could not start planner.')); genBtn().disabled=false; }
-    }).catch(()=>{ planNote('⚠️ Network error starting planner.'); genBtn().disabled=false; });
-  }
-  function ingestPlan(){
-    post('/aibuilder/planingest',{}).then(j=>{
-      genBtn().disabled=false;
-      if(j.success){ planNote('✅ Plan ingested — review it at <a href="/workbench" target="_blank">the Workbench</a>, tagged to this instance.'); loadPlans(); loadCheckpoints(); }
-      else planNote('⚠️ '+(j.message||'No plan found. Did the planner call submit_plan?'));
-    }).catch(()=>{ genBtn().disabled=false; planNote('⚠️ Ingest failed.'); });
-  }
-
-  const planForm=document.getElementById('ab-plan-form');
-  if(planForm) planForm.addEventListener('submit',function(e){
-    e.preventDefault(); const goal=document.getElementById('ab-plan-input').value.trim();
-    if(goal.length<10){ planNote('Describe the goal in a sentence or two first.'); return; }
-    generatePlan(goal);
-  });
-  // Fallback: copy a prompt to drive the interactive Terminal agent instead.
-  document.getElementById('ab-plan-copy').addEventListener('click',function(){
-    const req=document.getElementById('ab-plan-input').value.trim(); if(!req){ planNote('Describe the goal first.'); return; }
-    const prompt="PLAN MODE — do NOT modify application files. First use the codebase_map and whatprovides MCP tools to ground yourself. Then decompose into concrete tasks with stable ids + depends_on and call submit_plan with {title, summary, subtasks:[{id, title, description, priority 1-4, engine claude|qwen, files[], depends_on[]}]}. After submit_plan, reply PLAN_WRITTEN.\nRequest: "+req;
-    if(navigator.clipboard) navigator.clipboard.writeText(prompt).then(()=>planNote('✅ Prompt copied — paste into the <strong>Terminal</strong>, then click <i class="bi bi-box-arrow-in-down"></i> to ingest.')).catch(()=>planNote('⚠️ Copy failed.'));
-    else planNote('⚠️ Clipboard unavailable.');
-  });
-  document.getElementById('ab-plan-ingest').addEventListener('click',function(){ planNote('Ingesting…'); ingestPlan(); });
-  const taskStatusColor={pending:'secondary',running:'primary',merged:'success',completed:'success',failed:'danger',conflict:'warning'};
-  const planStatusColor={draft:'secondary',approved:'info',building:'primary',done:'success',stalled:'warning'};
-  let planProgressPoll=null;
-  function stopPlanProgress(){ if(planProgressPoll){ clearInterval(planProgressPoll); planProgressPoll=null; } }
-  function loadPlans(){
-    fetch('/aibuilder/plan?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
-      const box=document.getElementById('ab-plan-list'); const plans=(j.data&&j.data.plans)||[];
-      if(!plans.length){ box.innerHTML='<div class="text-body-secondary">No plans yet.</div>'; return; }
-      box.innerHTML=plans.map(p=>{
-        const ps=p.plan_status||'draft';
-        const psColor=planStatusColor[ps]||'secondary';
-        let actions='';
-        if(ps==='draft') actions='<button class="btn btn-outline-info btn-sm ab-plan-approve" data-plan="'+p.id+'"><i class="bi bi-check2-circle me-1"></i>Approve</button>';
-        else if(ps==='approved'||ps==='stalled') actions='<button class="btn btn-info btn-sm ab-plan-run" data-plan="'+p.id+'"><i class="bi bi-play-fill me-1"></i>Build (&le;3 agents)</button>';
-        else if(ps==='building') actions='<span class="text-primary small"><span class="spinner-border spinner-border-sm me-1"></span>Building…</span>';
-        return '<div class="ab-ckpt" data-plan="'+p.id+'"><div class="d-flex justify-content-between align-items-center"><span class="fw-semibold">'+esc(p.title)+'</span>'
-          +'<span class="badge text-bg-'+psColor+' ab-plan-status">'+esc(ps)+'</span></div>'
-          +(p.checkpoint?'<div class="text-body-secondary" style="font-size:.72rem">baseline: '+esc(p.checkpoint)+'</div>':'')
-          +'<div class="ab-plan-tasks">'+p.subtasks.map(s=>{ const dc=(s.depends_on||[]).length; const sc=taskStatusColor[s.status]||'secondary';
-            return '<div class="ab-file" data-task="'+s.id+'"><span class="st M">P'+esc(String(s.priority))+'</span><span class="flex-grow-1">'+esc(s.title)
-              +' <span class="badge text-bg-dark">'+esc(s.engine)+'</span>'
-              +(dc?' <span class="badge text-bg-secondary" title="depends on '+dc+' task(s)"><i class="bi bi-link-45deg"></i>'+dc+'</span>':'')
-              +'</span><span class="badge text-bg-'+sc+' ab-task-status">'+esc(s.status)+'</span></div>';
-          }).join('')+'</div>'
-          +'<div class="mt-2 ab-plan-actions">'+actions+'</div>'
-          +'</div>';
-      }).join('');
-      box.querySelectorAll('.ab-plan-approve').forEach(b=>b.addEventListener('click',()=>{
-        b.disabled=true; post('/aibuilder/planapprove',{plan:b.dataset.plan}).then(()=>loadPlans());
-      }));
-      box.querySelectorAll('.ab-plan-run').forEach(b=>b.addEventListener('click',()=>{
-        b.disabled=true; b.innerHTML='<span class="spinner-border spinner-border-sm"></span>';
-        post('/aibuilder/planrun',{plan:b.dataset.plan}).then(j=>{ if(!j.success) alert(j.message||'Could not start build.'); loadPlans(); startPlanProgress(); });
-      }));
-      if(plans.some(p=>(p.plan_status||'')==='building')) startPlanProgress();
-    }).catch(()=>{});
-  }
-  function startPlanProgress(){
-    stopPlanProgress();
-    planProgressPoll=setInterval(()=>{
-      const building=[...document.querySelectorAll('.ab-ckpt[data-plan]')].filter(el=>{
-        const b=el.querySelector('.ab-plan-status'); return b && b.textContent==='building'; });
-      if(!building.length){ stopPlanProgress(); return; }
-      building.forEach(el=>{
-        const plan=el.dataset.plan;
-        fetch('/aibuilder/planprogress?plan='+plan,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
-          const d=j.data||{}; if(!Array.isArray(d.tasks)) return;
-          d.tasks.forEach(t=>{ const badge=el.querySelector('.ab-file[data-task="'+t.id+'"] .ab-task-status');
-            if(badge){ badge.className='badge text-bg-'+(taskStatusColor[t.status]||'secondary')+' ab-task-status'; badge.textContent=t.status;
-              if(t.error) badge.title=t.error; } });
-          if(d.plan_status && d.plan_status!=='building'){ stopPlanProgress(); loadPlans(); refreshChanges(); loadCheckpoints(); }
-        }).catch(()=>{});
-      });
-    }, 4000);
   }
 
   // --- Publish to GitHub (push + PR; first-time opens setup in a new tab) ---
@@ -727,18 +615,8 @@ if (AB.has) {
   });
 
   // init
-  setStatus('connecting…'); initTerminal(); refreshChanges(); loadCheckpoints(); loadPlans(); loadGhStatus(); loadUploads();
+  setStatus('connecting…'); initTerminal(); refreshChanges(); loadCheckpoints(); loadGhStatus(); loadUploads();
   setInterval(refreshChanges, 4000);
 
-  // Resume watching an already-running planner: e.g. handed off from the Workbench
-  // "Decompose" flow (?planning=1), or a page reload mid-decompose.
-  if (AB.id) {
-    fetch('/aibuilder/planstatus?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}})
-      .then(r=>r.json()).then(j=>{
-        const d=j.data||{};
-        if(d.running){ const b=genBtn&&genBtn(); if(b)b.disabled=true; planNote('🧠 Planner running — decomposing your goal document…'); pollPlanner(); }
-        else if(d.plan_ready){ planNote('✅ Plan ready — ingesting…'); ingestPlan(); }
-      }).catch(()=>{});
-  }
 }
 </script>

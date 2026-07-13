@@ -63,20 +63,6 @@
                     </a>
                 </div>
             </div>
-
-            <!-- Type Filter -->
-            <div class="card">
-                <div class="card-header">
-                    <h6 class="mb-0">Type</h6>
-                </div>
-                <div class="list-group list-group-flush">
-                    <?php foreach ($taskTypes as $type => $info): ?>
-                        <a href="/workbench?type=<?= $type ?>" class="list-group-item list-group-item-action <?= $filters['task_type'] === $type ? 'active' : '' ?>">
-                            <i class="bi bi-<?= $info['icon'] ?> text-<?= $info['color'] ?>"></i> <?= $info['label'] ?>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            </div>
         </div>
 
         <!-- Task List -->

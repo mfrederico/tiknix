@@ -906,12 +906,29 @@ class Workbench extends Control {
             $snapshots = $task->xownTasksnapshotList;
             $comments = $task->xownTaskcommentList;
 
+            // If this task is a plan parent, deleting it removes the WHOLE chain:
+            // stop its orchestrator, then cascade-delete every subtask (and each
+            // subtask's own logs/snapshots/comments + any running agent session).
+            TmuxManager::kill('tiknix-plan' . $taskId . '-orchestrator');
+            $subtaskCount = 0;
+            foreach (Bean::find('workbenchtask', 'parent_task_id = ?', [$taskId]) as $sub) {
+                if (!empty($sub->agentSession)) TmuxManager::kill((string)$sub->agentSession);
+                $sub->xownTasklogList;
+                $sub->xownTasksnapshotList;
+                $sub->xownTaskcommentList;
+                Bean::trash($sub);
+                $subtaskCount++;
+            }
+
+            // Remember the instance so we return to the same filtered workbench view.
+            $instanceTag = (string)($task->instanceTag ?? '');
+
             Bean::trash($task);
 
-            $this->logger->info('Task deleted', ['task_id' => $taskId, 'member_id' => $this->member->id]);
+            $this->logger->info('Task deleted', ['task_id' => $taskId, 'member_id' => $this->member->id, 'subtasks' => $subtaskCount]);
 
-            $this->flash('success', 'Task deleted');
-            Flight::redirect('/workbench');
+            $this->flash('success', $subtaskCount > 0 ? "Deleted the plan and {$subtaskCount} subtask(s)" : 'Task deleted');
+            Flight::redirect('/workbench' . ($instanceTag !== '' ? '?instance_tag=' . urlencode($instanceTag) : ''));
 
         } catch (Exception $e) {
             $this->logger->error('Failed to delete task', ['error' => $e->getMessage()]);

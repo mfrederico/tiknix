@@ -478,17 +478,11 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                                 <small class="text-muted"><?= date('M j, g:i A', strtotime($comment['created_at'])) ?></small>
                                             </div>
                                             <?php
-                                            // Simple markdown parsing for Claude messages
-                                            $content = htmlspecialchars($comment['content'] ?? '');
-                                            if ($isFromClaude) {
-                                                // Bold: **text** or __text__
-                                                $content = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $content);
-                                                // Italic: *text* or _text_
-                                                $content = preg_replace('/\*(.+?)\*/', '<em>$1</em>', $content);
-                                                // Lists: - item
-                                                $content = preg_replace('/^- (.+)$/m', '<li>$1</li>', $content);
-                                            }
-                                            $content = nl2br($content);
+                                            // Claude messages are markdown → render safely via parseSafe();
+                                            // user comments stay plain (escaped) text.
+                                            $content = $isFromClaude
+                                                ? \app\MarkdownParser::parseSafe($comment['content'] ?? '')
+                                                : nl2br(htmlspecialchars($comment['content'] ?? ''));
                                             ?>
                                             <?php if (!empty($content)): ?>
                                                 <div class="comment-content"><?= $content ?></div>

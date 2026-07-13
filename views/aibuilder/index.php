@@ -229,9 +229,10 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
                 <button id="ab-plan-generate" class="btn btn-info btn-sm flex-fill" type="submit"><i class="bi bi-stars me-1"></i>Generate plan</button>
                 <button id="ab-plan-copy" class="btn btn-outline-secondary btn-sm" type="button" title="Copy the prompt to run in the Terminal instead"><i class="bi bi-clipboard-plus"></i></button>
                 <button id="ab-plan-ingest" class="btn btn-outline-info btn-sm" type="button" title="Ingest a plan written by the terminal agent"><i class="bi bi-box-arrow-in-down"></i></button>
+                <button id="ab-reuse-digest" class="btn btn-outline-secondary btn-sm" type="button" title="Preview the reuse inventory the planner is grounded on for this instance"><i class="bi bi-recycle"></i></button>
               </div>
             </form>
-            <div class="text-body-secondary mb-2" style="font-size:.72rem">Runs a headless Claude (Opus) that grounds itself via the tiknix MCP, then decomposes the goal into a dependency graph of tasks. Review them at the Workbench, tagged to this instance.</div>
+            <div class="text-body-secondary mb-2" style="font-size:.72rem">Runs a headless Claude (Opus) grounded on this instance's <a href="#" id="ab-reuse-digest-link">reuse inventory</a> (baked into its brief), then decomposes the goal into a dependency graph of tasks that reuse existing primitives. Review them at the Workbench, tagged to this instance.</div>
             <div id="ab-plan-hint" class="mb-2" style="font-size:.72rem"></div>
             <pre id="ab-plan-log" class="small mb-2 d-none" style="max-height:16vh;overflow:auto;background:#1e1e1e;color:#ddd;border-radius:.375rem;padding:.5rem;font-size:.7rem;white-space:pre-wrap"></pre>
             <div id="ab-plan-list" class="small"></div>
@@ -265,6 +266,26 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button id="ab-del-confirm" class="btn btn-danger" type="button" disabled><i class="bi bi-trash me-1"></i>Delete permanently</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reuse digest: what the planner is grounded on for this instance -->
+<div class="modal fade" id="ab-reuse-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-recycle me-2"></i>Reuse inventory — <code id="ab-reuse-slug"></code></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-body-secondary small mb-2">This is the exact "what already exists, reuse it" inventory injected into this instance's planner brief (and available in-instance via the <code>reuse_digest</code> MCP tool). Decomposition is told to REUSE/EXTEND these before creating anything new.</p>
+        <pre id="ab-reuse-body" class="small mb-0" style="max-height:60vh;overflow:auto;background:#1e1e1e;color:#ddd;border-radius:.375rem;padding:.75rem;font-size:.72rem;white-space:pre-wrap">Loading…</pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="ab-reuse-copy"><i class="bi bi-clipboard me-1"></i>Copy</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
@@ -678,6 +699,32 @@ if (AB.has) {
         }).catch(()=>{});
     }, 2500);
   })();
+
+  // --- Reuse digest preview (what the planner is grounded on) ---
+  function openReuseDigest(){
+    if(!AB.id) return;
+    const modalEl=document.getElementById('ab-reuse-modal');
+    const body=document.getElementById('ab-reuse-body');
+    const slug=document.getElementById('ab-reuse-slug');
+    if(!modalEl||!body) return;
+    body.textContent='Loading…'; if(slug) slug.textContent='';
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    fetch('/aibuilder/reusedigest?id='+AB.id,{headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(r=>r.json()).then(j=>{
+        const d=(j&&j.data)||{};
+        if(j&&j.success&&d.digest){ body.textContent=d.digest; if(slug) slug.textContent=d.slug||''; }
+        else { body.textContent='Could not load digest: '+((j&&j.message)||'unknown error'); }
+      }).catch(e=>{ body.textContent='Request failed: '+e; });
+  }
+  const rdBtn=document.getElementById('ab-reuse-digest');
+  if(rdBtn) rdBtn.addEventListener('click', openReuseDigest);
+  const rdLink=document.getElementById('ab-reuse-digest-link');
+  if(rdLink) rdLink.addEventListener('click', e=>{ e.preventDefault(); openReuseDigest(); });
+  const rdCopy=document.getElementById('ab-reuse-copy');
+  if(rdCopy) rdCopy.addEventListener('click', ()=>{
+    const t=document.getElementById('ab-reuse-body'); if(!t) return;
+    navigator.clipboard.writeText(t.textContent||'').then(()=>{ rdCopy.innerHTML='<i class="bi bi-check2 me-1"></i>Copied'; setTimeout(()=>{ rdCopy.innerHTML='<i class="bi bi-clipboard me-1"></i>Copy'; },1500); });
+  });
 
   // init
   setStatus('connecting…'); initTerminal(); refreshChanges(); loadCheckpoints(); loadPlans(); loadGhStatus(); loadUploads();

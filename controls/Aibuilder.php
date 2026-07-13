@@ -358,6 +358,28 @@ class Aibuilder extends Control {
         Flight::jsonSuccess(['files' => $files, 'count' => count($files)]);
     }
 
+    /**
+     * GET /aibuilder/reusedigest?id= — the auto-generated reuse inventory the planner
+     * is fed for this instance (controllers, models, libs, permissions, seeders). Lets
+     * the operator SEE exactly what decomposition is grounded on. JSON.
+     */
+    public function reusedigest($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+
+        $file = dirname(__DIR__) . '/mcptools/Introspector.php';
+        if (is_file($file)) require_once $file;
+        $cls = 'app\\mcptools\\Introspector';
+        if (!class_exists($cls)) { Flight::jsonError('Introspector unavailable', 500); return; }
+        try {
+            $digest = (new $cls($this->instanceDir($inst->slug)))->digest();
+        } catch (\Throwable $e) {
+            Flight::jsonError('Digest failed: ' . $e->getMessage(), 500); return;
+        }
+        Flight::jsonSuccess(['slug' => $inst->slug, 'digest' => $digest]);
+    }
+
     /** POST /aibuilder/checkpoint?id= — checkpoint with an optional description. JSON. */
     public function checkpoint($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;

@@ -1101,11 +1101,23 @@ class Workbench extends Control {
                 }
                 $instDir = $this->instanceDirForTask($task);
                 if ($instDir !== null) {
+                    // Instance task: build on TOP of the instance's live app, which lives
+                    // on the instance repo's checked-out branch (e.g. instance/<slug>).
+                    // That repo's 'main' is only the empty starter skeleton, and any
+                    // base_branch picked on the create form came from the CONTROL-PLANE
+                    // repo — meaningless here. So always base off the instance repo's
+                    // current HEAD unless an explicit non-'main' branch that actually
+                    // exists in the instance repo was chosen.
                     $cloneUrl = $instDir;
-                    if (empty($task->baseBranch)) {
-                        $cur = trim((string)@shell_exec('git -C ' . escapeshellarg($instDir) . ' rev-parse --abbrev-ref HEAD 2>/dev/null'));
-                        if ($cur !== '' && $cur !== 'HEAD') $baseBranch = $cur;
+                    $head = trim((string)@shell_exec('git -C ' . escapeshellarg($instDir) . ' rev-parse --abbrev-ref HEAD 2>/dev/null'));
+                    $useHead = $head !== '' && $head !== 'HEAD';
+                    $stored = trim((string)$task->baseBranch);
+                    if ($stored !== '' && strtolower($stored) !== 'main') {
+                        $exists = trim((string)@shell_exec('git -C ' . escapeshellarg($instDir)
+                            . ' rev-parse --verify --quiet ' . escapeshellarg($stored) . ' 2>/dev/null'));
+                        if ($exists !== '') $useHead = false;   // honor a real, deliberate choice
                     }
+                    if ($useHead) $baseBranch = $head;
                 }
 
                 // Clone repository into isolated workspace (clones the base branch)

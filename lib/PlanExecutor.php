@@ -393,6 +393,9 @@ commit and merge your work — you just make the code changes.
   before writing. If a "Reuse these" section is present above, build ON those
   primitives — extend them, do not create parallel duplicates.
 - Stay within the scope of THIS task. Do not edit files owned by other tasks.
+- Write any summary, notes, or final message in **Markdown** (`##` sub-headers,
+  `-` lists, `` `code` `` for files/beans/routes) — it renders in the task view,
+  so keep it scannable header-first.
 - Do not run git, do not push, do not start servers. Just implement, then stop.
 - Database / permission changes: do NOT write to the database directly, do NOT run
   migration or seed scripts, and do NOT edit conf/config*.ini. The live SQLite DB is

@@ -358,9 +358,20 @@ class Workbench extends Control {
             Flight::jsonError('Approve the plan before building it (or it is already building).', 409);
             return;
         }
-        $session = 'tiknix-plan' . (int)$plan->id . '-orchestrator';
-        if (TmuxManager::exists($session)) { Flight::jsonError('This plan is already running.', 409); return; }
+        if (TmuxManager::exists('tiknix-plan' . (int)$plan->id . '-orchestrator')) { Flight::jsonError('This plan is already running.', 409); return; }
+        if (!$this->startOrchestrator($plan, $inst)) {
+            Flight::jsonError('Could not start the orchestrator.', 500);
+            return;
+        }
+        $plan->planStatus = 'building';
+        $plan->status     = 'running';
+        $plan->updatedAt  = date('Y-m-d H:i:s');
+        Bean::store($plan);
+        Flight::jsonSuccess(['plan_status' => 'building'], 'Build started — up to ' . PlanExecutor::MAX_CONCURRENT . ' agents running.');
+    }
 
+    /** Launch the detached worktree orchestrator for a plan. Returns true on success. */
+    private function startOrchestrator($plan, $inst): bool {
         $dir = '/var/www/html/default/' . $inst->slug . '.' . ($inst->app ?: 'tiknix');
         $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
              . ' --plan=' . (int)$plan->id
@@ -373,15 +384,48 @@ class Workbench extends Control {
         $scriptFile = $ab . '/run-orchestrator.sh';
         file_put_contents($scriptFile, "#!/bin/bash\n" . $cmd . ' 2>&1 | tee ' . escapeshellarg($ab . '/orchestrator.log') . "\n");
         @chmod($scriptFile, 0755);
-        if (!TmuxManager::create($session, $scriptFile, $dir)) {
+        return TmuxManager::create('tiknix-plan' . (int)$plan->id . '-orchestrator', $scriptFile, $dir);
+    }
+
+    /**
+     * POST /workbench/taskretry — recover a failed plan subtask: reset it to pending
+     * (fresh auto-retry budget), re-open the plan, and re-launch the orchestrator,
+     * which rebuilds the task and auto-corrects known blockers toward completion. JSON.
+     */
+    public function taskretry($params = []) {
+        if (!$this->planActionGuard()) return;
+
+        $task = Bean::load('workbenchtask', (int)$this->getParam('task_id', 0));
+        if (!$task->id || (int)$task->memberId !== (int)$this->member->id) { Flight::jsonError('No such task', 404); return; }
+        if (empty($task->parentTaskId)) { Flight::jsonError('Only a plan subtask can be retried this way.', 409); return; }
+        if (!in_array($task->status, ['failed', 'conflict'], true)) { Flight::jsonError('Only a failed task can be retried.', 409); return; }
+
+        $plan = Bean::load('workbenchtask', (int)$task->parentTaskId);
+        if (!$plan->id) { Flight::jsonError('Parent plan not found', 404); return; }
+        $inst = $plan->instanceId ? Bean::load('instance', (int)$plan->instanceId) : null;
+        if (!$inst || !$inst->id) { Flight::jsonError('This plan has no linked instance.', 409); return; }
+        if (TmuxManager::exists('tiknix-plan' . (int)$plan->id . '-orchestrator')) {
+            Flight::jsonError('This plan is already building — the task will be picked up in that run.', 409);
+            return;
+        }
+
+        // Reset the task for a fresh attempt (fresh auto-retry budget).
+        $task->status       = 'pending';
+        $task->errorMessage = '';
+        $task->retryCount   = 0;
+        $task->updatedAt    = date('Y-m-d H:i:s');
+        Bean::store($task);
+
+        if (!$this->startOrchestrator($plan, $inst)) {
             Flight::jsonError('Could not start the orchestrator.', 500);
             return;
         }
+        // Reflect that the orchestrator is now running (matches planbuild).
         $plan->planStatus = 'building';
         $plan->status     = 'running';
         $plan->updatedAt  = date('Y-m-d H:i:s');
         Bean::store($plan);
-        Flight::jsonSuccess(['plan_status' => 'building'], 'Build started — up to ' . PlanExecutor::MAX_CONCURRENT . ' agents running.');
+        Flight::jsonSuccess(['plan_status' => 'building'], 'Retrying — the orchestrator will rebuild this task and auto-correct known blockers.');
     }
 
     /** POST /workbench/plandelete — delete a whole plan (task-chain): parent + all subtasks. JSON. */

@@ -201,7 +201,13 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <h5 class="mb-0"><i class="bi bi-x-circle"></i> Task Failed</h5>
                     </div>
                     <div class="card-body">
-                        <pre class="mb-0 text-danger"><?= htmlspecialchars(($task->errorMessage) ?? '') ?></pre>
+                        <pre class="<?= !empty($task->parentTaskId) ? 'mb-3' : 'mb-0' ?> text-danger"><?= htmlspecialchars(($task->errorMessage) ?? '') ?></pre>
+                        <?php if (!empty($task->parentTaskId)): ?>
+                            <button class="btn btn-danger" onclick="taskRetry(<?= (int)$task->id ?>, this)">
+                                <i class="bi bi-arrow-clockwise me-1"></i> Fix &amp; retry
+                            </button>
+                            <div class="form-text mt-1">Clears known blockers (e.g. a dirty working tree), rebuilds this task, and auto-retries toward completion.</div>
+                        <?php endif; ?>
                     </div>
                 </div>
             <?php endif; ?>
@@ -727,6 +733,21 @@ const taskId = <?= $task->id ?>;
 const taskStatus = '<?= $task->status ?>';
 const csrfToken = '<?= \app\SimpleCsrf::getToken() ?>';
 let pollInterval = null;
+
+// Recover a failed plan subtask: reset + re-launch the orchestrator (which auto-retries).
+async function taskRetry(id, btn) {
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Retrying…'; }
+    try {
+        const fd = new FormData();
+        fd.append('task_id', id);
+        fd.append('_csrf_token', csrfToken);
+        const r = await fetch('/workbench/taskretry', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (j.success) { location.reload(); return; }
+        alert(j.message || 'Retry failed');
+    } catch (e) { alert('Retry failed: ' + e); }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Fix &amp; retry'; }
+}
 
 // Task actions
 async function runTask(id) {

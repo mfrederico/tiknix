@@ -25,6 +25,7 @@ use RedBeanPHP\R;
 class PlanExecutor {
 
     public const MAX_CONCURRENT = 3;   // hard cap — protects the operator's Claude quota
+    public const MAX_AUTO_RETRIES = 3; // bounded backstop for auto-correction; stops earlier if the same error repeats
 
     private int $planId;
     private string $slug;
@@ -291,6 +292,14 @@ class PlanExecutor {
     }
 
     private function finish($t, string $status, string $note): void {
+        // Auto-retry: a retryable failure — under the cap and not repeating the exact
+        // same error — gets its blocker corrected and is re-queued (status 'pending')
+        // instead of failing terminally. The orchestrator loop then re-attempts it, so
+        // it keeps trying toward the goal until it merges or the backstop trips.
+        if ($status === 'failed' && $this->autoRetry($t, $note)) {
+            return;
+        }
+
         $t->status       = $status;
         $t->completedAt  = date('Y-m-d H:i:s');
         if ($note !== '') $t->errorMessage = mb_substr($note, 0, 1000);
@@ -307,6 +316,60 @@ class PlanExecutor {
     }
 
     private function fail($t, string $note): void { $this->finish($t, 'failed', $note); }
+
+    /**
+     * Try to auto-correct a failed task and re-queue it. Returns true if it took
+     * over (task set back to 'pending' for the orchestrator to re-launch), false to
+     * let the caller fail it terminally. Bounded by MAX_AUTO_RETRIES; also stops
+     * early when the exact same failure repeats (correction isn't helping → futile).
+     */
+    private function autoRetry($t, string $note): bool {
+        $tri = $this->triage($note);
+        if (!$tri['retryable']) return false;
+
+        $retries = (int)$t->retryCount;
+        if ($retries >= self::MAX_AUTO_RETRIES) {
+            $this->logEvent($t, 'error', 'Gave up after ' . $retries . ' auto-retries (' . $tri['class'] . ')');
+            return false;
+        }
+        if ((string)$t->lastFailReason === $note) {
+            $this->logEvent($t, 'error', 'Auto-retry stopped — same failure repeated (' . $tri['class'] . '); correction did not resolve it');
+            return false;
+        }
+
+        $this->applyCorrection($tri['class']);
+        $t->retryCount     = $retries + 1;
+        $t->lastFailReason = mb_substr($note, 0, 1000);
+        $t->status         = 'pending';   // orchestrator re-launches it next tick
+        $t->errorMessage   = '';
+        R::store($t);
+        $this->logEvent($t, 'warning', 'Auto-retry ' . ($retries + 1) . '/' . self::MAX_AUTO_RETRIES . ' — ' . $tri['class'] . ': ' . mb_substr($note, 0, 160));
+        return true;
+    }
+
+    /** Classify a failure reason → correction class + whether it's auto-retryable. */
+    private function triage(string $note): array {
+        $n = strtolower($note);
+        if (strpos($n, 'uncommitted edits') !== false)     return ['class' => 'dirty-tree', 'retryable' => true];
+        if (strpos($n, 'worktree add failed') !== false)   return ['class' => 'worktree',   'retryable' => true];
+        if (strpos($n, 'could not start agent') !== false) return ['class' => 'session',    'retryable' => true];
+        // Merge conflicts and code/logic failures are NOT mechanically correctable —
+        // they need a rebase or a correction agent (a follow-up), so let them fail.
+        return ['class' => 'unknown', 'retryable' => false];
+    }
+
+    /** Apply the mechanical correction for a failure class before re-queueing. */
+    private function applyCorrection(string $class): void {
+        if ($class === 'dirty-tree') {
+            // Commit the instance's stray working-tree edits so the merge guard passes
+            // on the next attempt — exactly the "checkpoint, then re-run" the guard asks
+            // for. Fully recoverable via git history.
+            $this->git(['add', '-A']);
+            $this->git(['commit', '-m', 'checkpoint: auto-commit stray edits before plan retry']);
+        }
+        // 'worktree' / 'session': no correction needed — a fresh launch (new worktree /
+        // new tmux session) is itself the retry.
+    }
 
     /**
      * Append a tasklog row for a subtask so the Workbench "Recent Logs" panel

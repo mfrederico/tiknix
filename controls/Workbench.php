@@ -1429,10 +1429,12 @@ class Workbench extends Control {
                 $this->logTaskEvent($taskId, 'info', 'system', "Deleted proxy file: {$task->proxyFile}");
             }
 
-            // Create PR if task has a branch, workspace, and no PR yet
+            // Create PR if task has a branch, workspace, and no PR yet — but never for
+            // instance tasks (local sandboxes: no gh CLI / remote, changes stay local).
             $prUrl = null;
             $prError = null;
-            if (!empty($task->branchName) && !empty($task->projectPath) && empty($task->prUrl)) {
+            if (!empty($task->branchName) && !empty($task->projectPath) && empty($task->prUrl)
+                && $this->instanceDirForTask($task) === null) {
                 $prResult = $this->createPRViaCli($task);
                 $prUrl = $prResult['url'] ?? null;
                 $prError = $prResult['error'] ?? null;
@@ -1525,8 +1527,14 @@ class Workbench extends Control {
             $workspaceDeleted = false;
             $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
 
-            // Create PR if requested and doesn't exist
-            if ($createPr && empty($task->prUrl) && !empty($task->branchName) && $workspacePath) {
+            // Instance tasks are local sandboxes: their changes merge into the live
+            // instance repo locally (localMergeBack below), so we never open a GitHub PR
+            // for them — no `gh` CLI or remote required. PRs are only for clone-based
+            // tasks that target a real GitHub remote.
+            $isInstanceTask = $this->instanceDirForTask($task) !== null;
+
+            // Create PR if requested and doesn't exist (clone-based, GitHub-backed tasks only)
+            if ($createPr && !$isInstanceTask && empty($task->prUrl) && !empty($task->branchName) && $workspacePath) {
                 $prResult = $this->createPRViaCli($task);
                 if (!empty($prResult['url'])) {
                     $task->prUrl = $prResult['url'];

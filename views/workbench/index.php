@@ -219,6 +219,18 @@
                                             <?php if ($task->teamId): ?>
                                                 <br><small class="text-muted"><i class="bi bi-people"></i> Team task</small>
                                             <?php endif; ?>
+                                            <?php
+                                            $reuses = json_decode((string)($task->reuses ?? ''), true);
+                                            if (is_array($reuses) && $reuses):
+                                            ?>
+                                                <div class="mt-1 d-flex flex-wrap gap-1 align-items-center">
+                                                    <span class="text-muted" style="font-size:.62rem" title="Existing primitives this task reuses"><i class="bi bi-recycle"></i></span>
+                                                    <?php foreach (array_slice($reuses, 0, 6) as $ru): ?>
+                                                        <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle fw-normal" style="font-size:.62rem"><?= htmlspecialchars((string)$ru) ?></span>
+                                                    <?php endforeach; ?>
+                                                    <?php if (count($reuses) > 6): ?><span class="text-muted" style="font-size:.62rem">+<?= count($reuses) - 6 ?></span><?php endif; ?>
+                                                </div>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <?php if (!empty($task->instanceTag)): ?>

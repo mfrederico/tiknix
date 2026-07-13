@@ -551,6 +551,21 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <?php endif; ?>
 
                         <?php
+                        $reuses = json_decode(((string)($task->reuses ?? '')), true) ?: [];
+                        if (!empty($reuses)):
+                        ?>
+                            <dt><i class="bi bi-recycle text-success me-1"></i>Reuses</dt>
+                            <dd>
+                                <div class="d-flex flex-wrap gap-1">
+                                    <?php foreach ($reuses as $ru): ?>
+                                        <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle fw-normal"><?= htmlspecialchars((string)$ru) ?></span>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div class="form-text">Existing primitives this task builds on instead of reinventing.</div>
+                            </dd>
+                        <?php endif; ?>
+
+                        <?php
                         $tags = json_decode(((string)$task->tags) ?? '', true) ?: [];
                         if (!empty($tags)):
                         ?>

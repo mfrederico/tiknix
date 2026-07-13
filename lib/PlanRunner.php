@@ -174,6 +174,7 @@ BASH;
      */
     private function buildPlanRequest(string $goal): string {
         $goal = trim($goal);
+        $digest = $this->codebaseDigest();
         return <<<MD
 # AI Builder — Plan Decomposition
 
@@ -185,14 +186,26 @@ edit files — you produce a plan that other agents will build.
 
 {$goal}
 
+## What already exists in THIS codebase — REUSE it, do not reinvent
+
+The inventory below was auto-generated from the live instance. Treat it as ground
+truth: it is what already exists right now. You do NOT need to call `codebase_map`
+(it's baked in below). You MAY still call `describe("<name>")` or
+`whatprovides("<concept>")` to drill into any single primitive before you commit.
+
+{$digest}
+
 ## How to work
 
-1. **Ground yourself first.** Use the `tiknix` MCP tools before planning:
-   - `codebase_map` — get the lay of the land (controllers, models, libs, config).
-   - `whatprovides("<concept>")` — find where a concept already lives.
-   - `describe("<name>")` — routes/columns/methods for a specific primitive.
-   Reuse existing conventions (FlightPHP controllers, RedBeanPHP beans, the Bean
-   wrapper). Do NOT reinvent what already exists.
+1. **MATCH the goal against the inventory above — this is the most important step.**
+   For every capability the goal needs, classify it explicitly as ONE of:
+   - **REUSE** `<existing controller/model/lib>` — it already does this; wire to it.
+   - **EXTEND** `<existing>` — add a method / column / route to something that exists.
+   - **NEW** — nothing above fits; you MUST justify in the task's description why no
+     existing primitive covers it.
+   Bias hard toward REUSE/EXTEND. A plan that proposes NEW controllers, models, or
+   services when a close match already exists above is a defect — prefer a method on
+   an existing controller and a column on an existing model.
 
 2. **Decompose into the smallest sensible tasks.** Each task is one focused unit
    of work a single agent can complete and commit on its own.
@@ -208,20 +221,50 @@ edit files — you produce a plan that other agents will build.
 4. **Pick an engine per task.** `claude` for anything requiring judgement;
    `qwen` only for simple mechanical edits.
 
+5. **Account for data & permissions as seeds — never write the live DB directly.**
+   A new route needs an `authcontrol` entry; new/seed data needs an idempotent
+   `database/seeds/*.php` script (Bean wrapper: findOne/dispense/store). RedBean
+   auto-creates a model's table on first store, so there is no CREATE TABLE — but the
+   permission row and any starter data MUST be shipped as a seed task. Reuse an
+   existing `<controller>::* = <level>` permission pattern from the inventory.
+
 ## Deliverable
 
-When (and only when) you have grounded yourself and decided the breakdown, call
-the **`submit_plan`** MCP tool exactly once with:
+When (and only when) you have MATCHED against the inventory and decided the breakdown,
+call the **`submit_plan`** MCP tool exactly once with:
 
 - `title` — short name for the whole plan
-- `summary` — 1-3 sentences on the approach
-- `subtasks` — the array of tasks, each with: `id`, `title`, `description`,
-  `priority` (1 highest .. 4 lowest), `engine`, `files` (likely paths), and
-  `depends_on` (array of prerequisite ids).
+- `summary` — 1-3 sentences on the approach, naming the main things you REUSE
+- `subtasks` — the array of tasks, each with:
+  - `id`, `title`, `description`, `priority` (1 highest .. 4 lowest), `engine`
+  - `files` — likely paths
+  - `depends_on` — array of prerequisite ids
+  - `reuses` — array of existing primitives this task builds on, as `kind/name`
+    strings (e.g. `["controller/Lead","model/member","lib/Mailer"]`). Empty ONLY for
+    genuinely new ground — and if it's empty, the description must say why.
 
 Do not ask the operator questions — make reasonable assumptions and note them in
 the relevant task descriptions. After `submit_plan` returns, reply `PLAN_WRITTEN`
 and stop.
 MD;
+    }
+
+    /**
+     * Auto-generated reuse inventory for the instance, injected into the plan
+     * brief so decomposition reuses existing primitives. Reuses the same
+     * Introspector that backs the tiknix MCP tools, pointed at the instance
+     * root. Never throws — a digest failure must not block planning.
+     */
+    private function codebaseDigest(): string {
+        try {
+            $file = dirname(__DIR__) . '/mcptools/Introspector.php';
+            if (is_file($file)) require_once $file;
+            $cls = 'app\\mcptools\\Introspector';
+            if (!class_exists($cls)) return '_(codebase inventory unavailable)_';
+            $d = (new $cls($this->instanceDir))->digest();
+            return $d !== '' ? $d : '_(codebase inventory unavailable)_';
+        } catch (\Throwable $e) {
+            return '_(codebase inventory unavailable: ' . $e->getMessage() . ')_';
+        }
     }
 }

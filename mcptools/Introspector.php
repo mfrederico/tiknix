@@ -121,6 +121,93 @@ class Introspector {
         return array_map(fn($h) => array_diff_key($h, ['_s' => 1]), array_slice($hits, 0, $limit));
     }
 
+    /**
+     * Reuse digest — a compact, prose inventory of everything that already
+     * exists (controllers, models+columns, lib services, permissions, config,
+     * seeders), meant to be INJECTED into the planner prompt so decomposition
+     * reuses existing primitives instead of reinventing them. Token-bounded:
+     * long lists are capped with a "+N more" marker (the planner can drill with
+     * describe()). Degrades gracefully when no DB is present (structural parts
+     * still render; DB-derived parts note they're not live yet).
+     */
+    public function digest(int $maxColsPerModel = 14, int $maxMethodsPerLib = 10, int $maxRoutesPerCtrl = 12): string {
+        $names = [1 => 'ROOT', 50 => 'ADMIN', 100 => 'MEMBER', 101 => 'PUBLIC'];
+        $lvl = fn($n) => $n === null ? '?' : ($names[$n] ?? (string)$n);
+        $out = [];
+
+        // --- Controllers -----------------------------------------------------
+        $ctrls = $this->controllers();
+        $out[] = '### Controllers (' . count($ctrls) . ') — reuse an existing route/controller before adding one';
+        foreach ($ctrls as $c) {
+            $slug = strtolower($c['name']);
+            $methods = array_column($c['methods'], 'name');
+            $levels = [];
+            foreach ($c['methods'] as $m) { $levels[$lvl($this->routeLevel($slug, $m['name']))] = true; }
+            $lv = $levels ? ' [' . implode(',', array_keys($levels)) . ']' : '';
+            $shown = array_slice($methods, 0, $maxRoutesPerCtrl);
+            $more = count($methods) > $maxRoutesPerCtrl ? ' +' . (count($methods) - $maxRoutesPerCtrl) : '';
+            $out[] = "- **{$c['name']}**{$lv} — " . implode(', ', $shown) . $more;
+        }
+
+        // --- Models / tables -------------------------------------------------
+        $models = $this->models();
+        $out[] = '';
+        $out[] = '### Models / tables (' . count($models) . ') — reuse a bean before creating a near-duplicate';
+        foreach ($models as $m) {
+            $cols = array_column($this->columns($m['table']), 'name');
+            $colShown = array_slice($cols, 0, $maxColsPerModel);
+            $colMore = count($cols) > $maxColsPerModel ? ' +' . (count($cols) - $maxColsPerModel) : '';
+            $rels = array_map(fn($r) => '→' . $r['belongsTo'], $this->relations($m['table']));
+            $relStr = $rels ? '  {rel: ' . implode(' ', $rels) . '}' : '';
+            $colStr = $cols ? implode(', ', $colShown) . $colMore : '(no live table yet)';
+            $out[] = "- **{$m['name']}** — {$colStr}{$relStr}";
+        }
+
+        // --- Lib services ----------------------------------------------------
+        $libs = $this->libs();
+        $out[] = '';
+        $out[] = '### Lib services (' . count($libs) . ') — reuse a service before writing new logic';
+        foreach ($libs as $l) {
+            if (!$l['methods']) continue;
+            $shown = array_slice($l['methods'], 0, $maxMethodsPerLib);
+            $more = count($l['methods']) > $maxMethodsPerLib ? ' +' . (count($l['methods']) - $maxMethodsPerLib) : '';
+            $out[] = "- **{$l['name']}**: " . implode(', ', $shown) . $more;
+        }
+
+        // --- Permissions (authcontrol) --------------------------------------
+        $rows = $this->authcontrolRows();
+        if ($rows) {
+            $wild = array_values(array_filter($rows, fn($r) => $r['method'] === '*'));
+            usort($wild, fn($a, $b) => $a['level'] <=> $b['level']);
+            $out[] = '';
+            $out[] = '### Permissions (authcontrol, ' . count($rows) . ' rows) — every NEW route needs an entry here (ship it as a seed)';
+            foreach ($wild as $r) {
+                $ln = $lvl($r['level']);
+                $out[] = "- {$r['control']}::* = {$r['level']} ({$ln})";
+            }
+            $rest = count($rows) - count($wild);
+            if ($rest > 0) $out[] = "- …plus {$rest} per-method entries — use describe(\"<controller>\") for specifics";
+        }
+
+        // --- Config ----------------------------------------------------------
+        $conf = $this->confSections();
+        if ($conf) {
+            $out[] = '';
+            $out[] = '### Config sections (conf/config.ini): ' . implode(' ', array_map(fn($s) => "[$s]", $conf));
+        }
+
+        // --- Seeding ---------------------------------------------------------
+        $base = $this->seedScripts('services/Schema/Seeds');
+        $plan = $this->seedScripts('database/seeds');
+        $out[] = '';
+        $out[] = '### Seeding — how DB / permission changes ship (never write the live DB directly)';
+        $out[] = '- Base schema seeds (run at instance creation): ' . ($base ? implode(', ', $base) : '(none)');
+        $out[] = '- Plan seeds — idempotent PHP in `database/seeds/*.php`, applied ONCE post-merge via the `\\app\\Bean` wrapper (findOne/dispense/store): ' . ($plan ? implode(', ', $plan) : '(none yet)');
+        $out[] = '- A new route\'s permission == a seed here that upserts an `authcontrol` row (control, method, level). RedBean auto-creates a model\'s table on first store — no CREATE TABLE.';
+
+        return implode("\n", $out);
+    }
+
     // === scanners ============================================================
 
     private array $_ctrl;
@@ -227,5 +314,24 @@ class Introspector {
             } catch (\Throwable $e) { $this->_levels = []; }
         }
         return $this->_levels["{$control}::{$method}"] ?? $this->_levels["{$control}::*"] ?? null;
+    }
+
+    /** All authcontrol rows (control, method, level), for the reuse digest. */
+    private function authcontrolRows(): array {
+        if (!$this->db) return [];
+        $out = [];
+        try {
+            foreach ($this->db->query("SELECT control, method, level FROM authcontrol ORDER BY level, control") ?: [] as $r) {
+                $out[] = ['control' => $r['control'], 'method' => $r['method'], 'level' => (int)$r['level']];
+            }
+        } catch (\Throwable $e) {}
+        return $out;
+    }
+
+    /** Basenames of the seed scripts under a relative dir (e.g. database/seeds). */
+    private function seedScripts(string $rel): array {
+        $files = glob("{$this->root}/{$rel}/*.php") ?: [];
+        sort($files);
+        return array_map(fn($f) => basename($f), $files);
     }
 }

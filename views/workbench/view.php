@@ -224,7 +224,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <h5 class="mb-0">Description</h5>
                     </div>
                     <div class="card-body">
-                        <div class="prose"><?= nl2br(htmlspecialchars(($task->description) ?? '')) ?></div>
+                        <div class="prose"><?= \app\MarkdownParser::parseSafe($task->description ?? '') ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -236,7 +236,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                         <h5 class="mb-0">Acceptance Criteria</h5>
                     </div>
                     <div class="card-body">
-                        <div class="prose"><?= nl2br(htmlspecialchars(($task->acceptanceCriteria) ?? '')) ?></div>
+                        <div class="prose"><?= \app\MarkdownParser::parseSafe($task->acceptanceCriteria ?? '') ?></div>
                     </div>
                 </div>
             <?php endif; ?>

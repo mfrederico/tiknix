@@ -31,6 +31,31 @@ class MarkdownParser {
     }
 
     /**
+     * Parse UNTRUSTED markdown safely (task descriptions, acceptance criteria,
+     * planner/LLM output, anything a user typed). Unlike parse() — which trusts
+     * its input and is only for dev-authored docs — this:
+     *   1. strip_tags() the source, removing any injected HTML (<script>, <img
+     *      onerror>, <iframe>, event-handler tags, …) before rendering;
+     *   2. renders markdown via parse();
+     *   3. neutralizes javascript:/data:/vbscript: hrefs that the [text](url)
+     *      link syntax can generate AFTER strip_tags has run (the one vector
+     *      strip_tags structurally can't catch).
+     * Reuse this anywhere user- or model-authored text is displayed as HTML.
+     *
+     * Tradeoff: strip_tags also removes literal angle brackets, so inline
+     * `<Foo>` in prose is lost (fenced code is the place for that anyway).
+     *
+     * @param string $text Untrusted markdown
+     * @return string Safe HTML
+     */
+    public static function parseSafe($text) {
+        $html = self::parse(strip_tags((string)($text ?? '')));
+        // Scrub dangerous hrefs the markdown link syntax may have produced.
+        $html = preg_replace('/\shref\s*=\s*"\s*(?:javascript|data|vbscript):[^"]*"/i', ' href="#"', $html);
+        return $html;
+    }
+
+    /**
      * Parse markdown text and convert to HTML
      *
      * @param string $text Markdown text to parse

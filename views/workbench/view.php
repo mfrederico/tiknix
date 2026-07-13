@@ -154,6 +154,58 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                 </div>
             </div>
 
+            <!-- Outcome banner — status at a glance, kept at the top for fast scanning -->
+            <!-- Results (when completed or merged) -->
+            <?php if (in_array($task->status, ['completed', 'merged'])): ?>
+                <div class="card mb-4 border-success">
+                    <div class="card-header bg-success text-white">
+                        <?php if ($task->status === 'merged'): ?>
+                            <h5 class="mb-0"><i class="bi bi-git me-1"></i> Merged</h5>
+                        <?php else: ?>
+                            <h5 class="mb-0"><i class="bi bi-check-circle"></i> Task Completed</h5>
+                        <?php endif; ?>
+                    </div>
+                    <div class="card-body">
+                        <?php if ($task->status === 'merged' && $task->branchName): ?>
+                            <?php
+                            // Extract repo from PR URL if available
+                            $mergedTo = 'main';
+                            if ($task->prUrl && preg_match('#github\.com/([^/]+/[^/]+)#', $task->prUrl, $matches)) {
+                                $mergedTo = $matches[1] . '/main';
+                            }
+                            ?>
+                            <p class="mb-2">
+                                <i class="bi bi-check-circle-fill text-success me-1"></i>
+                                <strong>Merged to:</strong> <code><?= htmlspecialchars(($mergedTo) ?? '') ?></code>
+                            </p>
+                            <p><strong>From branch:</strong> <code><?= htmlspecialchars(($task->branchName) ?? '') ?></code></p>
+                        <?php elseif ($task->branchName): ?>
+                            <p><strong>Branch:</strong> <code><?= htmlspecialchars(($task->branchName) ?? '') ?></code></p>
+                        <?php endif; ?>
+                        <?php if ($task->prUrl): ?>
+                            <p><strong>Pull Request:</strong> <a href="<?= htmlspecialchars(($task->prUrl) ?? '') ?>" target="_blank"><?= htmlspecialchars(($task->prUrl) ?? '') ?></a></p>
+                        <?php endif; ?>
+                        <?php if ($task->mergedAt): ?>
+                            <p><strong>Merged:</strong> <?= date('M j, Y g:i A', strtotime($task->mergedAt)) ?></p>
+                        <?php elseif ($task->completedAt): ?>
+                            <p><strong>Completed:</strong> <?= date('M j, Y g:i A', strtotime($task->completedAt)) ?></p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Error (when failed) -->
+            <?php if ($task->status === 'failed' && $task->errorMessage): ?>
+                <div class="card mb-4 border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0"><i class="bi bi-x-circle"></i> Task Failed</h5>
+                    </div>
+                    <div class="card-body">
+                        <pre class="mb-0 text-danger"><?= htmlspecialchars(($task->errorMessage) ?? '') ?></pre>
+                    </div>
+                </div>
+            <?php endif; ?>
+
             <!-- Dependencies — what Claude is waiting on before it can start this task -->
             <?php if (!empty($deps) || !empty($blocks)): ?>
                 <?php
@@ -359,57 +411,6 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             <strong>Latest Activity:</strong>
                             <pre class="bg-dark text-light p-3 rounded mt-2 small" style="max-height: 300px; overflow-y: auto;" id="snapshotText"></pre>
                         </div>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <!-- Results (when completed or merged) -->
-            <?php if (in_array($task->status, ['completed', 'merged'])): ?>
-                <div class="card mb-4 border-success">
-                    <div class="card-header bg-success text-white">
-                        <?php if ($task->status === 'merged'): ?>
-                            <h5 class="mb-0"><i class="bi bi-git me-1"></i> Merged</h5>
-                        <?php else: ?>
-                            <h5 class="mb-0"><i class="bi bi-check-circle"></i> Task Completed</h5>
-                        <?php endif; ?>
-                    </div>
-                    <div class="card-body">
-                        <?php if ($task->status === 'merged' && $task->branchName): ?>
-                            <?php
-                            // Extract repo from PR URL if available
-                            $mergedTo = 'main';
-                            if ($task->prUrl && preg_match('#github\.com/([^/]+/[^/]+)#', $task->prUrl, $matches)) {
-                                $mergedTo = $matches[1] . '/main';
-                            }
-                            ?>
-                            <p class="mb-2">
-                                <i class="bi bi-check-circle-fill text-success me-1"></i>
-                                <strong>Merged to:</strong> <code><?= htmlspecialchars(($mergedTo) ?? '') ?></code>
-                            </p>
-                            <p><strong>From branch:</strong> <code><?= htmlspecialchars(($task->branchName) ?? '') ?></code></p>
-                        <?php elseif ($task->branchName): ?>
-                            <p><strong>Branch:</strong> <code><?= htmlspecialchars(($task->branchName) ?? '') ?></code></p>
-                        <?php endif; ?>
-                        <?php if ($task->prUrl): ?>
-                            <p><strong>Pull Request:</strong> <a href="<?= htmlspecialchars(($task->prUrl) ?? '') ?>" target="_blank"><?= htmlspecialchars(($task->prUrl) ?? '') ?></a></p>
-                        <?php endif; ?>
-                        <?php if ($task->mergedAt): ?>
-                            <p><strong>Merged:</strong> <?= date('M j, Y g:i A', strtotime($task->mergedAt)) ?></p>
-                        <?php elseif ($task->completedAt): ?>
-                            <p><strong>Completed:</strong> <?= date('M j, Y g:i A', strtotime($task->completedAt)) ?></p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <!-- Error (when failed) -->
-            <?php if ($task->status === 'failed' && $task->errorMessage): ?>
-                <div class="card mb-4 border-danger">
-                    <div class="card-header bg-danger text-white">
-                        <h5 class="mb-0"><i class="bi bi-x-circle"></i> Task Failed</h5>
-                    </div>
-                    <div class="card-body">
-                        <pre class="mb-0 text-danger"><?= htmlspecialchars(($task->errorMessage) ?? '') ?></pre>
                     </div>
                 </div>
             <?php endif; ?>

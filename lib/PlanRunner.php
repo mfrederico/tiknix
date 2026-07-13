@@ -236,7 +236,11 @@ call the **`submit_plan`** MCP tool exactly once with:
 - `title` — short name for the whole plan
 - `summary` — 1-3 sentences on the approach, naming the main things you REUSE
 - `subtasks` — the array of tasks, each with:
-  - `id`, `title`, `description`, `priority` (1 highest .. 4 lowest), `engine`
+  - `id`, `title`, `priority` (1 highest .. 4 lowest), `engine`
+  - `description` — written in **Markdown**: lead with a one-line summary, then use
+    `##` sub-headers (e.g. What to build / Steps / Notes), `-` bullet lists, and
+    `` `inline code` `` for files, beans, and routes. Structure it so a builder agent
+    can scan the headers first, then drill into details.
   - `files` — likely paths
   - `depends_on` — array of prerequisite ids
   - `reuses` — array of existing primitives this task builds on, as `kind/name`

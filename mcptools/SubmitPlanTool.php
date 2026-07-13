@@ -28,7 +28,7 @@ class SubmitPlanTool extends BaseTool {
                     'properties' => [
                         'id'          => ['type' => 'string', 'description' => 'Stable short id for this task (e.g. "t1"), referenced by other tasks depends_on'],
                         'title'       => ['type' => 'string'],
-                        'description' => ['type' => 'string'],
+                        'description' => ['type' => 'string', 'description' => 'What to build, in GitHub-flavored Markdown: a one-line summary, then `##` sub-headers, `-` bullet lists, and `inline code` for files/beans/routes — scannable header-first, then details.'],
                         'priority'    => ['type' => 'integer', 'description' => '1 (highest) .. 4 (lowest)'],
                         'engine'      => ['type' => 'string', 'description' => 'claude or qwen — pick qwen for simple mechanical tasks'],
                         'files'       => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'likely files to touch'],

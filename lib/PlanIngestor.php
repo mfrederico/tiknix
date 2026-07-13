@@ -84,6 +84,7 @@ class PlanIngestor
             $t->instanceTag  = $tag;
             $t->engine       = in_array($st['engine'] ?? '', ['claude', 'qwen'], true) ? $st['engine'] : $inst->engine;
             $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
+            $t->reuses       = json_encode(is_array($st['reuses'] ?? null) ? array_values($st['reuses']) : []);
             $t->planRef      = $ref;
             $t->memberId     = $memberId;
             $t->createdAt    = $now;
@@ -108,6 +109,7 @@ class PlanIngestor
             $subs[] = [
                 'id' => (int)$t->id, 'ref' => $ref, 'title' => $t->title,
                 'priority' => (int)$t->priority, 'engine' => $t->engine, 'depends_on' => $deps,
+                'reuses' => json_decode((string)$t->reuses, true) ?: [],
             ];
         }
 

@@ -341,6 +341,7 @@ BASH;
         $files = is_array($files) ? implode("\n", array_map(fn($f) => "- $f", $files)) : '';
         $title = (string)$t->title;
         $desc  = (string)$t->description;
+        $reuse = $this->reuseBrief($t);
         return <<<MD
 # Build task: {$title}
 
@@ -355,11 +356,13 @@ commit and merge your work — you just make the code changes.
 ## Likely files
 
 {$files}
-
+{$reuse}
 ## Rules
 - Follow the existing codebase conventions (FlightPHP controllers, RedBeanPHP via
   the Bean wrapper, the project's CLAUDE.md standards). Use the tiknix MCP
-  (codebase_map / whatprovides / describe) to check conventions before writing.
+  (reuse_digest / codebase_map / whatprovides / describe) to check conventions
+  before writing. If a "Reuse these" section is present above, build ON those
+  primitives — extend them, do not create parallel duplicates.
 - Stay within the scope of THIS task. Do not edit files owned by other tasks.
 - Do not run git, do not push, do not start servers. Just implement, then stop.
 - Database / permission changes: do NOT write to the database directly, do NOT run
@@ -376,6 +379,54 @@ commit and merge your work — you just make the code changes.
       \$app = new \\app\\Bootstrap();
   A wrong relative depth (e.g. '/../bootstrap.php') will fatal — the seed is two dirs deep.
 MD;
+    }
+
+    /**
+     * Expand a task's declared `reuses` (["controller/Lead","model/member",...])
+     * into a focused detail block for the build brief, using the same
+     * Introspector that backs the tiknix MCP tools — pointed at the instance base
+     * (not the worktree) so it reflects the live primitives + schema. Deterministic:
+     * the builder agent gets the exact routes/columns/methods of what it extends,
+     * rather than being told to go look. Never throws — empty on any failure.
+     */
+    private function reuseBrief($t): string {
+        $reuses = json_decode((string)$t->reuses, true);
+        if (!is_array($reuses) || !$reuses) return '';
+        try {
+            $file = dirname(__DIR__) . '/mcptools/Introspector.php';
+            if (is_file($file)) require_once $file;
+            $cls = 'app\\mcptools\\Introspector';
+            if (!class_exists($cls)) return '';
+            $intro = new $cls($this->instanceDir);
+        } catch (\Throwable $e) { return ''; }
+
+        $lines = [];
+        foreach ($reuses as $r) {
+            $r = trim((string)$r);
+            if ($r === '') continue;
+            // "kind/name" — honor the kind prefix so model/member doesn't also pull the Member controller.
+            $kind = ''; $name = $r;
+            if (strpos($r, '/') !== false) { [$kind, $name] = explode('/', $r, 2); $kind = strtolower(trim($kind)); }
+            try { $hits = $intro->describe($name); } catch (\Throwable $e) { $hits = []; }
+            $kindMap = ['controller' => 'controller', 'controllers' => 'controller', 'model' => 'model', 'models' => 'model', 'lib' => 'lib', 'libs' => 'lib', 'service' => 'lib'];
+            $want = $kindMap[$kind] ?? '';
+            if ($want !== '') $hits = array_values(array_filter($hits, fn($h) => ($h['kind'] ?? '') === $want));
+            if (!$hits) { $lines[] = "- **{$r}** — not found in the current codebase; verify it exists before assuming."; continue; }
+            foreach ($hits as $h) {
+                if (($h['kind'] ?? '') === 'controller') {
+                    $routes = array_map(fn($x) => $x['method'] . ($x['level'] !== null ? "[{$x['level']}]" : ''), $h['routes']);
+                    $lines[] = "- **controller/{$h['name']}** ({$h['path']}) — routes: " . implode(', ', array_slice($routes, 0, 16));
+                } elseif (($h['kind'] ?? '') === 'model') {
+                    $cols = array_column($h['columns'], 'name');
+                    $rel  = array_map(fn($x) => '→' . $x['belongsTo'], $h['relations']);
+                    $lines[] = "- **model/{$h['name']}** (table {$h['table']}) — cols: " . implode(', ', $cols) . ($rel ? '  rel: ' . implode(' ', $rel) : '');
+                } elseif (($h['kind'] ?? '') === 'lib') {
+                    $lines[] = "- **lib/{$h['name']}** ({$h['path']}) — methods: " . implode(', ', array_slice($h['methods'], 0, 16));
+                }
+            }
+        }
+        if (!$lines) return '';
+        return "\n## Reuse these — build on them, do not reinvent\n" . implode("\n", $lines) . "\n";
     }
 
     // ---- git plumbing ------------------------------------------------------

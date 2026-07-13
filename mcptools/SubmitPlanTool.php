@@ -33,6 +33,7 @@ class SubmitPlanTool extends BaseTool {
                         'engine'      => ['type' => 'string', 'description' => 'claude or qwen — pick qwen for simple mechanical tasks'],
                         'files'       => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'likely files to touch'],
                         'depends_on'  => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'ids of tasks that MUST finish before this one (empty = can start immediately / run in parallel)'],
+                        'reuses'      => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'existing primitives this task builds on, as "kind/name" (e.g. "controller/Lead", "model/member", "lib/Mailer"). Empty ONLY for genuinely new ground.'],
                     ],
                     'required' => ['title'],
                 ],

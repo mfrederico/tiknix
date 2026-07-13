@@ -20,12 +20,15 @@ require __DIR__ . '/../vendor/autoload.php';
 use RedBeanPHP\R;
 use app\PlanIngestor;
 
-$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::']);
+$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::']);
 $slug   = (string)($o['slug'] ?? '');
 $dir    = rtrim((string)($o['dir'] ?? ''), '/');
 $member = (int)($o['member'] ?? 0);
 $app    = (string)($o['app'] ?? 'tiknix');
 $db     = (string)($o['db'] ?? (dirname(__DIR__) . '/database/tiknix.db'));
+// Original task ids to remove ONCE the new (consolidated) plan is ingested — the
+// delete-and-replace half of the Consolidate feature. Runs only on success below.
+$supersede = array_values(array_filter(array_map('intval', explode(',', (string)($o['supersede'] ?? '')))));
 
 if ($slug === '' || $dir === '' || !$member) {
     fwrite(STDERR, "usage: --slug=<slug> --dir=<instanceDir> --member=<id> [--app=tiknix] [--db=<path>]\n");
@@ -62,4 +65,29 @@ try {
 @unlink($claim);
 echo "[ingest] plan #{$res['parent']['id']} \"{$res['parent']['title']}\" with "
    . count($res['subtasks']) . " subtask(s) — tagged {$slug}.{$app}\n";
+
+// Delete-and-replace: now that the consolidated plan exists, remove the originals
+// (only tasks owned by this member) and any parent plan left empty by the removal.
+if ($supersede) {
+    $parents = [];
+    $removed = 0;
+    foreach ($supersede as $tid) {
+        $t = R::load('workbenchtask', $tid);
+        if (!$t->id || (int)$t->memberId !== $member) continue;
+        if ($t->parentTaskId) $parents[(int)$t->parentTaskId] = true;
+        $t->xownTasklogList; $t->xownTasksnapshotList; $t->xownTaskcommentList; // cascade children
+        R::trash($t);
+        $removed++;
+    }
+    foreach (array_keys($parents) as $pid) {
+        if ((int)R::count('workbenchtask', 'parent_task_id = ?', [$pid]) === 0) {
+            $p = R::load('workbenchtask', $pid);
+            if ($p->id && empty($p->parentTaskId) && (int)$p->memberId === $member) {
+                $p->xownTasklogList; $p->xownTasksnapshotList; $p->xownTaskcommentList;
+                R::trash($p);
+            }
+        }
+    }
+    echo "[ingest] superseded {$removed} original task(s)\n";
+}
 R::close();

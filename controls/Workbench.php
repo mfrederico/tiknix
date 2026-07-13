@@ -326,6 +326,92 @@ class Workbench extends Control {
         Flight::redirect('/workbench?instance_tag=' . urlencode($slug . '.' . $app) . '&decomposing=' . (int)$instance->id);
     }
 
+    /**
+     * POST /workbench/consolidate — merge 2+ non-approved tasks into one deduplicated
+     * draft plan. Runs a headless planner over the selected tasks (+ reuse digest) to
+     * remove overlap, then supersedes (deletes) the originals once the merged plan is
+     * ingested. Tasks must be the member's own, still 'pending', same instance. JSON.
+     */
+    public function consolidate($params = []) {
+        if (!$this->planActionGuard()) return;   // login + POST + CSRF
+
+        $raw = $this->getParam('task_ids', '');
+        $ids = is_array($raw) ? $raw : explode(',', (string)$raw);
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if (count($ids) < 2) { Flight::jsonError('Select at least two tasks to consolidate.', 400); return; }
+
+        $tasks = [];
+        $instanceId = null;
+        $parentIds = [];
+        foreach ($ids as $id) {
+            $t = Bean::load('workbenchtask', $id);
+            if (!$t->id || (int)$t->memberId !== (int)$this->member->id) { Flight::jsonError("Task {$id} not found or not yours.", 404); return; }
+            if ($t->status !== 'pending') { Flight::jsonError('Only non-approved (pending) tasks can be consolidated.', 409); return; }
+            if ($instanceId === null) { $instanceId = (int)$t->instanceId; }
+            elseif ((int)$t->instanceId !== $instanceId) { Flight::jsonError('All selected tasks must belong to the same instance.', 409); return; }
+            if ($t->parentTaskId) { $parentIds[(int)$t->parentTaskId] = true; }
+            $tasks[] = $t;
+        }
+
+        $inst = $instanceId ? Bean::load('instance', $instanceId) : null;
+        if (!$inst || !$inst->id || (int)$inst->memberId !== (int)$this->member->id) { Flight::jsonError('No valid instance for these tasks.', 409); return; }
+
+        // Don't consolidate tasks whose plan is actively building.
+        foreach (array_keys($parentIds) as $pid) {
+            if (TmuxManager::exists('tiknix-plan' . $pid . '-orchestrator')) {
+                Flight::jsonError('A plan involved is currently building — stop it before consolidating.', 409);
+                return;
+            }
+        }
+
+        $slug = (string)$inst->slug;
+        $app  = $inst->app ?: 'tiknix';
+        $instanceDir = '/var/www/html/default/' . $slug . '.' . $app;
+        if (!is_file($instanceDir . '/public/index.php')) { Flight::jsonError('That instance is not available on disk.', 409); return; }
+
+        try {
+            $runner = new PlanRunner(
+                $slug, $instanceDir, (int)$this->member->id,
+                (int)$this->member->level, (string)($inst->engine ?: 'claude')
+            );
+            $runner->start($this->buildConsolidationGoal($tasks), $ids);
+        } catch (\Throwable $e) {
+            $this->logger->error('Consolidate failed to start', ['error' => $e->getMessage(), 'instance' => $slug]);
+            Flight::jsonError('Could not start consolidation: ' . $e->getMessage(), 500);
+            return;
+        }
+
+        $this->logger->info('Consolidation started', ['instance' => $slug, 'tasks' => $ids, 'member_id' => $this->member->id]);
+        Flight::jsonSuccess(
+            ['instance_tag' => $slug . '.' . $app, 'instance_id' => (int)$inst->id],
+            'Consolidating ' . count($tasks) . ' tasks — a single merged draft plan will appear shortly; the originals are replaced once it lands.'
+        );
+    }
+
+    /** Build the goal document fed to the consolidation planner from the selected tasks. */
+    private function buildConsolidationGoal(array $tasks): string {
+        $out  = "# Consolidate overlapping tasks into ONE minimal plan\n\n";
+        $out .= "The tasks below were planned independently and OVERLAP — they build duplicate "
+              . "models, seeds, endpoints, and UI. Merge them into a SINGLE, minimal, "
+              . "non-overlapping plan that delivers everything they collectively intend, with NO "
+              . "duplicated work. When two tasks describe the same model / seed / route / view, "
+              . "emit exactly ONE task for it. Preserve every distinct capability; drop only the "
+              . "redundancy. Keep tasks that must run in sequence chained via depends_on.\n\n";
+        $out .= "## Tasks to merge\n\n";
+        $i = 0;
+        foreach ($tasks as $t) {
+            $i++;
+            $files  = json_decode((string)$t->relatedFiles, true);
+            $reuses = json_decode((string)$t->reuses, true);
+            $out .= "### {$i}. " . trim((string)$t->title) . "\n\n";
+            $out .= trim((string)$t->description) . "\n\n";
+            if (is_array($files) && $files)   { $out .= "Files: "  . implode(', ', $files)  . "\n"; }
+            if (is_array($reuses) && $reuses) { $out .= "Reuses: " . implode(', ', $reuses) . "\n"; }
+            $out .= "\n";
+        }
+        return $out;
+    }
+
     /** Load a plan (parent task) the member owns; returns [plan, instance|null] or null. */
     private function ownedPlan($planId): ?array {
         $planId = (int)$planId;

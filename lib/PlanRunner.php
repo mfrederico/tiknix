@@ -28,6 +28,8 @@ class PlanRunner {
     private int $memberLevel;
     private string $engine;
     private string $sessionName;
+    /** Original task ids to remove after the produced plan is ingested (Consolidate feature). */
+    private array $supersedeIds = [];
 
     public function __construct(string $slug, string $instanceDir, int $memberId, int $memberLevel = 50, string $engine = 'claude') {
         $this->slug        = $slug;
@@ -64,7 +66,8 @@ class PlanRunner {
      * plan, and starts a detached tmux session running `claude -p`. Returns the
      * session name. Throws on setup failure.
      */
-    public function start(string $goal): string {
+    public function start(string $goal, array $supersedeIds = []): string {
+        $this->supersedeIds = array_values(array_filter(array_map('intval', $supersedeIds)));
         if ($this->running()) {
             throw new \Exception('A planner is already running for this instance.');
         }
@@ -143,6 +146,9 @@ class PlanRunner {
         $planJsonArg = escapeshellarg($ws . '/.aibuilder/plan.json');
         $slugArg    = escapeshellarg($this->slug);
         $wsArg      = escapeshellarg($ws);
+        $supersedeArg = $this->supersedeIds
+            ? ' --supersede=' . escapeshellarg(implode(',', $this->supersedeIds))
+            : '';
         return <<<BASH
 #!/bin/bash
 # Tiknix headless planner (claude -p) — instance {$this->slug}
@@ -161,7 +167,7 @@ echo "[planner] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
 # race-safe with the AI Builder browser poll (whichever wins ingests once).
 if [ -f {$planJsonArg} ]; then
   echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
-  php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix 2>&1 | tee -a {$logArg}
+  php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg} 2>&1 | tee -a {$logArg}
 fi
 BASH;
     }

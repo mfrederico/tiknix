@@ -175,6 +175,13 @@
                 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
                 <link rel="stylesheet" href="https://cdn.datatables.net/rowgroup/1.4.1/css/rowGroup.bootstrap5.min.css">
                 <style>#wbTasks .wb-grp{display:none}</style>
+
+                <!-- Consolidate action bar: appears when 2+ pending tasks are checked -->
+                <div id="wbConsolBar" class="bg-dark text-white shadow rounded-pill px-3 py-2" style="display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:1.25rem; z-index:1050; align-items:center; gap:.75rem;">
+                    <span><i class="bi bi-check2-square me-1"></i><span id="wbConsolCount">0</span> selected</span>
+                    <button id="wbConsolBtn" class="btn btn-warning btn-sm" type="button" disabled><i class="bi bi-union me-1"></i>Consolidate into one</button>
+                    <button id="wbConsolCancel" class="btn btn-outline-light btn-sm" type="button">Clear</button>
+                </div>
                 <div class="card">
                     <div class="card-body">
                         <table id="wbTasks" class="table table-hover align-middle mb-0" style="width:100%">
@@ -203,6 +210,9 @@
                                         <?php // Prefix an inverted-timestamp so string-sorting column 0 puts newest groups first, while the value still groups by key (parsed back out in startRender). ?>
                                         <td class="wb-grp"><?= htmlspecialchars(sprintf('%010d', 9999999999 - (int)($groupOrder[$groupKey] ?? 0)) . '~' . $groupKey) ?></td>
                                         <td>
+                                            <?php if ($task->status === 'pending'): ?>
+                                                <input type="checkbox" class="form-check-input wb-consol me-1 align-middle" value="<?= (int)$task->id ?>" title="Select to consolidate with other pending tasks">
+                                            <?php endif; ?>
                                             <?php if ($isSub): ?><i class="bi bi-arrow-return-right text-muted me-1"></i><?php endif; ?>
                                             <a href="/workbench/view?id=<?= $task->id ?>" class="text-decoration-none fw-medium">
                                                 <?= htmlspecialchars(($task->title) ?? '') ?>
@@ -385,6 +395,69 @@
                         if (window.jQuery){ $ = window.jQuery; loadSeq(DT_ASSETS, initTable); }
                         else if (n < 200){ setTimeout(function(){ waitJQ(n + 1); }, 50); }   // ~10s cap
                     })(0);
+                })();
+                </script>
+
+                <!-- Consolidate: multi-select pending tasks -> merged draft plan -->
+                <script>
+                (function(){
+                    var selected = new Set();
+                    var bar, countEl, btn, cancel;
+                    var BTN_HTML = '<i class="bi bi-union me-1"></i>Consolidate into one';
+                    function refresh(){
+                        if (!bar) return;
+                        countEl.textContent = selected.size;
+                        bar.style.display = selected.size > 0 ? 'flex' : 'none';
+                        btn.disabled = selected.size < 2;
+                    }
+                    // Re-apply checkbox state after DataTables recreates rows on sort/search/paginate.
+                    function applyChecks(){
+                        document.querySelectorAll('#wbTasks .wb-consol').forEach(function(cb){
+                            cb.checked = selected.has(cb.value);
+                        });
+                    }
+                    document.addEventListener('change', function(e){
+                        var cb = e.target && e.target.closest ? e.target.closest('.wb-consol') : null;
+                        if (!cb) return;
+                        if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
+                        refresh();
+                    });
+                    var tbl = document.getElementById('wbTasks');
+                    if (tbl && window.MutationObserver) {
+                        new MutationObserver(function(){ applyChecks(); }).observe(tbl, { childList: true, subtree: true });
+                    }
+                    function doConsolidate(){
+                        if (selected.size < 2) return;
+                        if (!window.confirm('Consolidate ' + selected.size + ' tasks into one deduplicated plan? The originals are replaced once the merged plan is ready.')) return;
+                        btn.disabled = true;
+                        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Consolidating…';
+                        fetch('/workbench/consolidate', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-CSRF-TOKEN': window.WB_CSRF || '',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: 'task_ids=' + encodeURIComponent(Array.from(selected).join(',')) + '&_csrf_token=' + encodeURIComponent(window.WB_CSRF || '')
+                        }).then(function(r){ return r.json(); }).then(function(j){
+                            if (j && j.success) {
+                                var tag = (j.data && j.data.instance_tag) ? j.data.instance_tag : '';
+                                window.location = '/workbench' + (tag ? '?instance_tag=' + encodeURIComponent(tag) + '&decomposing=' + encodeURIComponent((j.data && j.data.instance_id) || '') : '');
+                            } else {
+                                window.alert((j && j.message) || 'Consolidation failed');
+                                btn.disabled = false; btn.innerHTML = BTN_HTML;
+                            }
+                        }).catch(function(){ window.alert('Network error'); btn.disabled = false; btn.innerHTML = BTN_HTML; });
+                    }
+                    document.addEventListener('DOMContentLoaded', function(){
+                        bar = document.getElementById('wbConsolBar');
+                        countEl = document.getElementById('wbConsolCount');
+                        btn = document.getElementById('wbConsolBtn');
+                        cancel = document.getElementById('wbConsolCancel');
+                        if (cancel) cancel.addEventListener('click', function(){ selected.clear(); applyChecks(); refresh(); });
+                        if (btn) btn.addEventListener('click', doConsolidate);
+                        refresh();
+                    });
                 })();
                 </script>
             <?php endif; ?>

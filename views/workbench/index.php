@@ -147,6 +147,15 @@
                 // A plan parent that HAS visible children becomes the header, so it is
                 // skipped as a body row; everything else (subtasks, standalone tasks) is a leaf.
                 $parentSet = array_flip($parentIdsWithChildren ?? []);
+                // Pending (non-approved) task ids per group — powers the plan-level
+                // "select the whole plan" checkbox in each group header.
+                $groupPendingIds = [];
+                foreach ($tasks as $t) {
+                    if (isset($parentSet[(int)$t->id])) continue;
+                    if (($t->status ?? '') !== 'pending') continue;
+                    $gk = !empty($t->parentTaskId) ? ('plan:' . (int)$t->parentTaskId) : 'solo';
+                    $groupPendingIds[$gk][] = (int)$t->id;
+                }
                 $planMetaJs = [];
                 foreach (($planMeta ?? []) as $pid => $m) {
                     $planMetaJs['plan:' . $pid] = [
@@ -156,9 +165,10 @@
                         'status'      => $m['planStatus'] ?: $m['status'],
                         'plan_status' => $m['planStatus'] ?: '',
                         'url'         => '/workbench/view?id=' . $pid,
+                        'taskIds'     => $groupPendingIds['plan:' . $pid] ?? [],
                     ];
                 }
-                $planMetaJs['solo'] = ['id' => 0, 'title' => 'Standalone tasks', 'tag' => null, 'status' => null, 'plan_status' => '', 'url' => null];
+                $planMetaJs['solo'] = ['id' => 0, 'title' => 'Standalone tasks', 'tag' => null, 'status' => null, 'plan_status' => '', 'url' => null, 'taskIds' => $groupPendingIds['solo'] ?? []];
 
                 // Group ordering key: the most recent createdAt in each group, so the
                 // whole table defaults to newest-first BY GROUP (not by plan-id string).
@@ -174,7 +184,12 @@
                 ?>
                 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
                 <link rel="stylesheet" href="https://cdn.datatables.net/rowgroup/1.4.1/css/rowGroup.bootstrap5.min.css">
-                <style>#wbTasks .wb-grp{display:none}</style>
+                <style>
+                    #wbTasks .wb-grp{display:none}
+                    #wbTasks .wb-consol,#wbTasks .wb-consol-group{width:1.15em;height:1.15em;cursor:pointer;border:1px solid #6c757d;opacity:1;vertical-align:-.15em}
+                    #wbTasks .wb-consol:checked,#wbTasks .wb-consol-group:checked{background-color:#ffc107;border-color:#ffc107}
+                    #wbTasks .wb-consol-group{width:1.25em;height:1.25em}
+                </style>
 
                 <!-- Consolidate action bar: appears when 2+ pending tasks are checked -->
                 <div id="wbConsolBar" class="bg-dark text-white shadow rounded-pill px-3 py-2" style="display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:1.25rem; z-index:1050; align-items:center; gap:.75rem;">
@@ -352,8 +367,12 @@
                                         : '<span class="fw-semibold">'+esc(m.title)+'</span>';
                                     var tag = m.tag ? ' <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-2"><i class="bi bi-hdd-network me-1"></i>'+esc(m.tag)+'</span>' : '';
                                     var count = ' <span class="text-muted small ms-2">'+n+' task'+(n===1?'':'s')+'</span>';
+                                    // Plan-level consolidate checkbox — selects every pending task in the group at once.
+                                    var groupCb = (m.taskIds && m.taskIds.length)
+                                        ? '<input type="checkbox" class="form-check-input wb-consol-group me-2 align-middle" data-ids="'+m.taskIds.join(',')+'" title="Select all '+m.taskIds.length+' pending task(s) in this plan to consolidate">'
+                                        : '';
                                     return $('<tr class="table-active">').append(
-                                        '<td colspan="7">'+planActions(m)+icon+title+tag+statusBadge(m.status)+count+'</td>'
+                                        '<td colspan="7">'+groupCb+planActions(m)+icon+title+tag+statusBadge(m.status)+count+'</td>'
                                     );
                                 }
                             },
@@ -411,16 +430,30 @@
                         btn.disabled = selected.size < 2;
                     }
                     // Re-apply checkbox state after DataTables recreates rows on sort/search/paginate.
+                    // Plan-header checkboxes reflect "all my pending tasks are selected".
                     function applyChecks(){
                         document.querySelectorAll('#wbTasks .wb-consol').forEach(function(cb){
                             cb.checked = selected.has(cb.value);
                         });
+                        document.querySelectorAll('#wbTasks .wb-consol-group').forEach(function(g){
+                            var ids = (g.getAttribute('data-ids') || '').split(',').filter(Boolean);
+                            g.checked = ids.length > 0 && ids.every(function(id){ return selected.has(id); });
+                        });
                     }
                     document.addEventListener('change', function(e){
-                        var cb = e.target && e.target.closest ? e.target.closest('.wb-consol') : null;
+                        var t = e.target;
+                        if (!t || !t.closest) return;
+                        var grp = t.closest('.wb-consol-group');
+                        if (grp) {
+                            (grp.getAttribute('data-ids') || '').split(',').filter(Boolean).forEach(function(id){
+                                if (grp.checked) selected.add(id); else selected.delete(id);
+                            });
+                            applyChecks(); refresh(); return;
+                        }
+                        var cb = t.closest('.wb-consol');
                         if (!cb) return;
                         if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
-                        refresh();
+                        applyChecks(); refresh();   // keep the plan-header checkbox in sync
                     });
                     var tbl = document.getElementById('wbTasks');
                     if (tbl && window.MutationObserver) {

@@ -472,6 +472,9 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             <button class="btn btn-outline-success" onclick="markComplete(<?= $task->id ?>)">
                                 <i class="bi bi-check-circle me-1"></i> Mark Complete <span class="small">(no merge)</span>
                             </button>
+                            <button class="btn btn-success" onclick="markCompleteMerge(<?= $task->id ?>)">
+                                <i class="bi bi-check2-circle me-1"></i> Mark Complete <span class="small">(&amp; merge)</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1123,6 +1126,42 @@ async function markComplete(id) {
         alert('Error: ' + e.message);
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-check-circle"></i> Mark Complete';
+    }
+}
+
+// Mark complete AND merge the task branch back into its base (instance/<slug> for
+// instance tasks) — the same gh-free local merge as Approve & Merge.
+async function markCompleteMerge(id) {
+    if (!confirm('Merge this task\'s changes into the instance and mark it complete?')) return;
+
+    const btn = event.target.closest('button');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Merging...';
+
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('merge', '1');
+        formData.append('_csrf_token', csrfToken);
+
+        const response = await fetch('/workbench/complete', { method: 'POST', body: formData });
+        const data = await response.json();
+
+        if (data.success) {
+            if (data.merged === false && data.merge_reason) {
+                alert('Marked complete, but NOT merged:\n\n' + data.merge_reason);
+            }
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = orig;
     }
 }
 

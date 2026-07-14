@@ -1554,6 +1554,19 @@ class Workbench extends Control {
         }
 
         try {
+            // Opt-in merge: "Mark Complete & merge" merges the task branch into its
+            // base (instance/<slug> for instance tasks) using the same gh-free path
+            // as Approve & Merge. Must run BEFORE we tear down the workspace/session.
+            $doMerge     = $this->getParam('merge') === '1';
+            $merged      = false;
+            $mergeReason = null;
+            if ($doMerge) {
+                $lm = $this->localMergeBack($task);
+                $merged = $lm['merged'] && $lm['pushed'];
+                $mergeReason = $lm['reason'];
+                $this->logTaskEvent($taskId, $merged ? 'info' : 'warning', 'system', 'Local merge: ' . $lm['reason']);
+            }
+
             // Kill any existing tmux session
             if ($task->tmuxSession) {
                 $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
@@ -1575,10 +1588,11 @@ class Workbench extends Control {
             }
 
             // Create PR if task has a branch, workspace, and no PR yet — but never for
-            // instance tasks (local sandboxes: no gh CLI / remote, changes stay local).
+            // instance tasks (local sandboxes: no gh CLI / remote, changes stay local)
+            // and not when we just merged locally.
             $prUrl = null;
             $prError = null;
-            if (!empty($task->branchName) && !empty($task->projectPath) && empty($task->prUrl)
+            if (!$doMerge && !empty($task->branchName) && !empty($task->projectPath) && empty($task->prUrl)
                 && $this->instanceDirForTask($task) === null) {
                 $prResult = $this->createPRViaCli($task);
                 $prUrl = $prResult['url'] ?? null;
@@ -1589,8 +1603,10 @@ class Workbench extends Control {
                 }
             }
 
-            // Mark as completed and clear session fields
-            $task->status = 'completed';
+            // Mark as completed (or merged when a local merge actually landed) and
+            // clear session fields.
+            $task->status = $merged ? 'merged' : 'completed';
+            if ($merged) $task->mergedAt = date('Y-m-d H:i:s');
             $task->completedAt = date('Y-m-d H:i:s');
             $task->tmuxSession = null;
             $task->testServerSession = null;
@@ -1602,8 +1618,13 @@ class Workbench extends Control {
 
             $response = [
                 'success' => true,
-                'message' => 'Task completed'
+                'message' => $merged ? 'Task completed and merged' : 'Task completed',
+                'merged'  => $merged,
             ];
+            if ($doMerge && !$merged) {
+                $response['message'] = 'Marked complete, but NOT merged';
+                $response['merge_reason'] = $mergeReason;
+            }
             if ($prUrl) {
                 $response['pr_url'] = $prUrl;
                 $response['message'] = 'Task completed - PR created';

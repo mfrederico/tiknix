@@ -130,8 +130,30 @@ class Firehose extends Control {
             return ['action' => 'deferred', 'reason' => 'instance has an active build'];
         }
 
-        // Create the highlighted triage task (Layer 3 dedup already guaranteed one
-        // detectederror per signature, so this fires at most once per bug).
+        // Auto-launch is per-instance opt-in (instance.auto_triage). When on, run
+        // the fix through the existing headless plan orchestrator (worktree +
+        // merge-back + auto-retry). When off, create a highlighted task the human
+        // can Run. Layer 3 dedup already guarantees this fires once per signature.
+        if (filter_var($inst->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $planId = $this->launchViaOrchestrator($err, $inst);
+            if ($planId) {
+                $err->taskId = $planId;
+                $err->status = 'building';
+                Bean::store($err);
+                return ['action' => 'launched', 'plan_id' => $planId];
+            }
+            // Launch failed — fall through to a plain triage task so nothing is lost.
+        }
+
+        $task = $this->createTriageTask($err, $inst, $tag);
+        $err->taskId = (int)$task->id;
+        $err->status = 'triaged';
+        Bean::store($err);
+        return ['action' => 'task_created', 'task_id' => (int)$task->id];
+    }
+
+    /** A standalone highlighted triage task (used when auto-launch is off/failed). */
+    private function createTriageTask($err, $inst, string $tag) {
         $now  = date('Y-m-d H:i:s');
         $task = Bean::dispense('workbenchtask');
         $task->title           = 'Fix: ' . mb_substr((string)$err->message, 0, 120);
@@ -144,31 +166,12 @@ class Firehose extends Control {
         $task->instanceTag     = $tag;
         $task->baseBranch      = '';               // resolves to instance/<slug> at run time
         $task->authcontrolLevel= 1;
-        $task->source          = 'detected_error'; // powers the workbench highlight (Phase 4)
+        $task->source          = 'detected_error'; // powers the workbench highlight
         $task->detectederrorId = (int)$err->id;
         $task->createdAt       = $now;
         $task->updatedAt       = $now;
         Bean::store($task);
-
-        $err->taskId = (int)$task->id;
-        $err->status = 'triaged';
-        Bean::store($err);
-
-        // Auto-launch the fix is per-instance opt-in (instance.auto_triage). When
-        // off, the task waits in the feed for a human to click Run.
-        $launched = false;
-        if (filter_var($inst->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN)) {
-            $launched = $this->launchFix($task, $inst);
-            if ($launched) {
-                $err->status = 'building';
-                Bean::store($err);
-            }
-        }
-
-        return [
-            'action'  => $launched ? 'launched' : 'task_created',
-            'task_id' => (int)$task->id,
-        ];
+        return $task;
     }
 
     /** Layer 2: is an agent currently building/running against this instance? */
@@ -211,10 +214,64 @@ class Firehose extends Control {
     }
 
     /**
-     * Auto-launch the fix agent for a triage task (Phase 3b). Returns true when a
-     * build was actually started. Implemented via the headless task launcher.
+     * Auto-launch the fix by wrapping the detected error as a 1-task plan and
+     * running it through the existing headless orchestrator (worktree off
+     * instance/<slug> + merge-back + auto-retry). Returns the plan id, or 0 on
+     * failure (caller falls back to a plain triage task).
      */
-    private function launchFix($task, $inst): bool {
-        return false;
+    private function launchViaOrchestrator($err, $inst): int {
+        try {
+            $app  = $inst->app ?: 'tiknix';
+            $plan = [
+                'title'    => 'Fix: ' . mb_substr((string)$err->message, 0, 120),
+                'summary'  => 'Auto-triaged from a detected runtime error on ' . $err->instanceTag . '.',
+                'subtasks' => [[
+                    'id'          => 't1',
+                    'title'       => 'Fix: ' . mb_substr((string)$err->message, 0, 120),
+                    'description' => $this->triageBrief($err),
+                    'files'       => $err->file ? [(string)$err->file] : [],
+                    'priority'    => 2,
+                    'depends_on'  => [],
+                ]],
+            ];
+            $res    = \app\PlanIngestor::ingest($inst, $plan, (int)$inst->memberId, '', $app);
+            $planId = (int)($res['parent']['id'] ?? 0);
+            if (!$planId) return 0;
+
+            // Mark the plan building (mirrors Workbench::planbuild) + tag it as
+            // detected-error so the workbench can highlight it.
+            $parent = Bean::load('workbenchtask', $planId);
+            $parent->planStatus      = 'building';
+            $parent->status          = 'running';
+            $parent->source          = 'detected_error';
+            $parent->detectederrorId = (int)$err->id;
+            $parent->updatedAt       = date('Y-m-d H:i:s');
+            Bean::store($parent);
+
+            $level = (int)((Bean::load('member', (int)$inst->memberId)->level) ?: 1);
+            return $this->startOrchestrator($planId, $inst, $level) ? $planId : 0;
+        } catch (\Throwable $e) {
+            $this->logger->error('Firehose auto-launch failed: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /** Launch the detached worktree orchestrator for a plan (headless mirror of Workbench). */
+    private function startOrchestrator(int $planId, $inst, int $level): bool {
+        $app = $inst->app ?: 'tiknix';
+        $dir = '/var/www/html/default/' . $inst->slug . '.' . $app;
+        if (\app\TmuxManager::exists('tiknix-plan' . $planId . '-orchestrator')) return true;
+        $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
+             . ' --plan=' . $planId
+             . ' --slug=' . escapeshellarg((string)$inst->slug)
+             . ' --dir='  . escapeshellarg($dir)
+             . ' --model=sonnet'
+             . ' --level=' . $level;
+        $ab = $dir . '/.aibuilder';
+        @mkdir($ab, 0775, true);
+        $scriptFile = $ab . '/run-orchestrator.sh';
+        file_put_contents($scriptFile, "#!/bin/bash\n" . $cmd . ' 2>&1 | tee ' . escapeshellarg($ab . '/orchestrator.log') . "\n");
+        @chmod($scriptFile, 0755);
+        return \app\TmuxManager::create('tiknix-plan' . $planId . '-orchestrator', $scriptFile, $dir);
     }
 }

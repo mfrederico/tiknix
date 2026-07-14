@@ -2,6 +2,9 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">Workbench</h1>
         <div>
+            <a href="/firehose" class="btn btn-outline-danger me-2" title="Errors captured live from your instances">
+                <i class="bi bi-fire"></i> Firehose
+            </a>
             <a href="/teams" class="btn btn-outline-secondary me-2">
                 <i class="bi bi-people"></i> Teams
             </a>
@@ -232,6 +235,9 @@
                                             <a href="/workbench/view?id=<?= $task->id ?>" class="text-decoration-none fw-medium">
                                                 <?= htmlspecialchars(($task->title) ?? '') ?>
                                             </a>
+                                            <?php if (($task->source ?? '') === 'detected_error'): ?>
+                                                <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle ms-1" title="Auto-created from a detected runtime error"><i class="bi bi-fire"></i> detected</span>
+                                            <?php endif; ?>
                                             <?php if ($task->teamId): ?>
                                                 <br><small class="text-muted"><i class="bi bi-people"></i> Team task</small>
                                             <?php endif; ?>

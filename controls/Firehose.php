@@ -30,6 +30,53 @@ class Firehose extends Control {
         parent::__construct();
     }
 
+    /** GET /firehose — admin feed of detected errors (newest first, 'new' on top). */
+    public function index() {
+        if (!$this->requireLogin()) return;
+        $this->requireBuilderTools('Firehose');
+        if ($this->member->level > LEVELS['ADMIN']) {
+            $this->flash('error', 'The error firehose is admin-only.');
+            Flight::redirect('/dashboard');
+            return;
+        }
+
+        $rows = Bean::find('detectederror',
+            "ORDER BY CASE WHEN status = 'new' THEN 0 ELSE 1 END, last_seen_at DESC LIMIT 300");
+        $errors = [];
+        foreach ($rows as $e) {
+            $task = $e->taskId ? Bean::load('workbenchtask', (int)$e->taskId) : null;
+            $errors[] = ['e' => $e, 'task' => ($task && $task->id) ? $task : null];
+        }
+
+        $this->viewData['title']  = 'Error Firehose';
+        $this->viewData['errors'] = $errors;
+        $this->viewData['counts'] = [
+            'new'      => (int)Bean::count('detectederror', "status = 'new'"),
+            'open'     => (int)Bean::count('detectederror', "status IN ('new','triaged','building','reopened','deferred')"),
+            'resolved' => (int)Bean::count('detectederror', "status = 'resolved'"),
+        ];
+        $this->render('firehose/index', $this->viewData);
+    }
+
+    /** POST /firehose/resolve — admin sets a detected error's status (resolved/ignored/new). */
+    public function resolve() {
+        if (!$this->requireLogin()) return;
+        if (Flight::request()->method !== 'POST') { Flight::redirect('/firehose'); return; }
+        if (!\app\SimpleCsrf::validate()) { Flight::jsonError('CSRF validation failed', 403); return; }
+        if ($this->member->level > LEVELS['ADMIN']) { Flight::jsonError('Admins only', 403); return; }
+
+        $id     = (int)$this->getParam('id');
+        $status = (string)$this->getParam('status', 'resolved');
+        if (!in_array($status, ['resolved', 'ignored', 'new'], true)) { Flight::jsonError('bad status', 422); return; }
+
+        $e = Bean::load('detectederror', $id);
+        if (!$e->id) { Flight::jsonError('not found', 404); return; }
+        $e->status    = $status;
+        $e->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($e);
+        Flight::jsonSuccess(['id' => $id, 'status' => $status]);
+    }
+
     /** POST /firehose/report — JSON error ingest. Self-authed by shared key. */
     public function report() {
         $data = json_decode((string)file_get_contents('php://input'), true);

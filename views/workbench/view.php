@@ -113,7 +113,21 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             </button>
                         <?php endif; ?>
 
-                        <?php if ($canRun && in_array($task->status, ['awaiting', 'completed'])): ?>
+                        <?php if (!empty($planRollup)): ?>
+                            <?php
+                            // Plan PARENT: no branch of its own — subtasks already merged into the
+                            // instance's live branch individually. Show the rollup, not a dead button.
+                            $pr = $planRollup;
+                            $allDone = $pr['done'] >= $pr['total'] && $pr['total'] > 0;
+                            ?>
+                            <span class="badge bg-<?= $allDone ? 'success' : 'secondary' ?> fs-6 align-middle">
+                                <i class="bi bi-diagram-3 me-1"></i>Plan · <?= (int)$pr['done'] ?>/<?= (int)$pr['total'] ?> subtasks merged into <code class="text-white"><?= htmlspecialchars($pr['branch']) ?></code>
+                            </span>
+                            <div class="form-text mt-1">
+                                A plan has no branch of its own — each subtask merges into <code><?= htmlspecialchars($pr['branch']) ?></code> as it completes.
+                                Approve/merge happens per subtask, not on the plan.
+                            </div>
+                        <?php elseif ($canRun && in_array($task->status, ['awaiting', 'completed'])): ?>
                             <?php
                             // Check if current user is admin (can approve/decline)
                             $isAdmin = isset($member) && $member->level <= LEVELS['ADMIN'];

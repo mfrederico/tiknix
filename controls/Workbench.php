@@ -783,6 +783,32 @@ class Workbench extends Control {
         }
         $this->viewData['reviewChanges'] = $reviewChanges;
 
+        // Plan rollup — a plan PARENT has no branch of its own; its subtasks each
+        // merge into the instance's live branch as they finish. So "Approve & Merge"
+        // is a no-op on the parent. Detect it and hand the view a status rollup to
+        // show instead of a dead merge button.
+        $planRollup = null;
+        if (empty($task->parentTaskId)) {
+            $subs = Bean::find('workbenchtask', 'parent_task_id = ?', [(int)$task->id]);
+            if ($subs) {
+                $doneStates = ['merged', 'completed', 'done'];
+                $done = 0; $counts = [];
+                foreach ($subs as $s) {
+                    $st = (string)$s->status;
+                    $counts[$st] = ($counts[$st] ?? 0) + 1;
+                    if (in_array($st, $doneStates, true)) $done++;
+                }
+                $mergeBranch = 'main';
+                $instDir = $this->instanceDirForTask($task);
+                if ($instDir !== null) {
+                    $head = trim((string)@shell_exec('git -C ' . escapeshellarg($instDir) . ' rev-parse --abbrev-ref HEAD 2>/dev/null'));
+                    if ($head !== '' && $head !== 'HEAD') $mergeBranch = $head;
+                }
+                $planRollup = ['total' => count($subs), 'done' => $done, 'counts' => $counts, 'branch' => $mergeBranch];
+            }
+        }
+        $this->viewData['planRollup'] = $planRollup;
+
         $this->viewData['title'] = $task->title;
         $this->viewData['task'] = $task;
         $this->viewData['logs'] = $logs;

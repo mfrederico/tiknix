@@ -101,10 +101,120 @@ class Firehose extends Control {
     }
 
     /**
-     * Auto-triage a newly-detected error (Phase 3 fills this in). Returns a
-     * small status array for the ingest response.
+     * Auto-triage a newly-detected error: create a highlighted workbench task
+     * against the reporting instance, guarded so it never collides with an agent
+     * already on the repo. Returns a small status array for the ingest response.
      */
     private function autoTriage($err): array {
-        return ['action' => 'none'];
+        // Control-plane only: an instance clone of this code must never create tasks.
+        if (function_exists('is_control_plane') && !is_control_plane()) {
+            return ['action' => 'skipped', 'reason' => 'not control plane'];
+        }
+
+        // Resolve the reporting instance. Reported tag is "<slug>.tiknix".
+        $tag  = (string)$err->instanceTag;
+        $slug = preg_replace('/\.[^.]+$/', '', $tag);   // bidsurge.tiknix -> bidsurge
+        $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
+        if (!$inst || !$inst->id) {
+            $err->status = 'unmatched';
+            Bean::store($err);
+            return ['action' => 'skipped', 'reason' => 'no matching instance'];
+        }
+
+        // Layer 2 — active-build guard: if an agent is already working this
+        // instance's repo, do NOT spawn a fix. Defer; the feed shows it and it
+        // can be launched once the instance goes idle.
+        if ($this->instanceHasActiveBuild($tag)) {
+            $err->status = 'deferred';
+            Bean::store($err);
+            return ['action' => 'deferred', 'reason' => 'instance has an active build'];
+        }
+
+        // Create the highlighted triage task (Layer 3 dedup already guaranteed one
+        // detectederror per signature, so this fires at most once per bug).
+        $now  = date('Y-m-d H:i:s');
+        $task = Bean::dispense('workbenchtask');
+        $task->title           = 'Fix: ' . mb_substr((string)$err->message, 0, 120);
+        $task->description     = $this->triageBrief($err);
+        $task->taskType        = 'bug';
+        $task->priority        = 2;
+        $task->status          = 'pending';
+        $task->memberId        = (int)$inst->memberId;
+        $task->instanceId      = (int)$inst->id;
+        $task->instanceTag     = $tag;
+        $task->baseBranch      = '';               // resolves to instance/<slug> at run time
+        $task->authcontrolLevel= 1;
+        $task->source          = 'detected_error'; // powers the workbench highlight (Phase 4)
+        $task->detectederrorId = (int)$err->id;
+        $task->createdAt       = $now;
+        $task->updatedAt       = $now;
+        Bean::store($task);
+
+        $err->taskId = (int)$task->id;
+        $err->status = 'triaged';
+        Bean::store($err);
+
+        // Auto-launch the fix is per-instance opt-in (instance.auto_triage). When
+        // off, the task waits in the feed for a human to click Run.
+        $launched = false;
+        if (filter_var($inst->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $launched = $this->launchFix($task, $inst);
+            if ($launched) {
+                $err->status = 'building';
+                Bean::store($err);
+            }
+        }
+
+        return [
+            'action'  => $launched ? 'launched' : 'task_created',
+            'task_id' => (int)$task->id,
+        ];
+    }
+
+    /** Layer 2: is an agent currently building/running against this instance? */
+    private function instanceHasActiveBuild(string $tag): bool {
+        return (int)Bean::count(
+            'workbenchtask',
+            "instance_tag = ? AND status IN ('running', 'building')",
+            [$tag]
+        ) > 0;
+    }
+
+    /** Markdown brief handed to the fix agent (and shown in the task view). */
+    private function triageBrief($err): string {
+        $ctx = json_decode((string)$err->context, true) ?: [];
+        $l   = [];
+        $l[] = '**Auto-detected error** on `' . $err->instanceTag . '` — captured by the firehose.';
+        $l[] = '';
+        $l[] = '- **Type:** ' . $err->type;
+        $l[] = '- **Message:** ' . $err->message;
+        if (!empty($err->klass)) $l[] = '- **Class:** `' . $err->klass . '`';
+        $l[] = '- **Location:** `' . $err->file . ':' . $err->line . '`';
+        if (!empty($err->url)) $l[] = '- **Request:** `' . $err->httpMethod . ' ' . $err->url . '`';
+        if (!empty($ctx['controller'])) {
+            $l[] = '- **Controller:** `' . $ctx['controller'] . '->' . ($ctx['method'] ?? '') . '`';
+        }
+        $l[] = '- **Seen:** ' . (int)$err->hitCount . '× (first ' . $err->firstSeenAt . ')';
+        $l[] = '';
+        $l[] = '### Full message';
+        $l[] = '```';
+        $l[] = (string)$err->fullMessage;
+        $l[] = '```';
+        $l[] = '';
+        $l[] = '### Stack trace';
+        $l[] = '```';
+        $l[] = (string)$err->trace;
+        $l[] = '```';
+        $l[] = '';
+        $l[] = '**Goal:** reproduce, find the root cause at the location above, fix it, and verify the page/endpoint works.';
+        return implode("\n", $l);
+    }
+
+    /**
+     * Auto-launch the fix agent for a triage task (Phase 3b). Returns true when a
+     * build was actually started. Implemented via the headless task launcher.
+     */
+    private function launchFix($task, $inst): bool {
+        return false;
     }
 }

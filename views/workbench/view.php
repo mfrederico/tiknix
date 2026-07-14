@@ -121,11 +121,12 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             $allDone = $pr['done'] >= $pr['total'] && $pr['total'] > 0;
                             ?>
                             <span class="badge bg-<?= $allDone ? 'success' : 'secondary' ?> fs-6 align-middle">
-                                <i class="bi bi-diagram-3 me-1"></i>Plan · <?= (int)$pr['done'] ?>/<?= (int)$pr['total'] ?> subtasks merged into <code class="text-white"><?= htmlspecialchars($pr['branch']) ?></code>
+                                <i class="bi bi-diagram-3 me-1"></i>Plan · <?= (int)$pr['done'] ?>/<?= (int)$pr['total'] ?> subtasks <?= $allDone ? 'live' : 'done' ?>
                             </span>
                             <div class="form-text mt-1">
-                                A plan has no branch of its own — each subtask merges into <code><?= htmlspecialchars($pr['branch']) ?></code> as it completes.
-                                Approve/merge happens per subtask, not on the plan.
+                                <?= $allDone
+                                    ? 'All subtasks are complete and live on your instance — nothing left to approve here.'
+                                    : 'Subtasks go live on your instance as each one finishes — there is nothing to approve on the plan itself.' ?>
                             </div>
                         <?php elseif ($canRun && in_array($task->status, ['awaiting', 'completed'])): ?>
                             <?php

@@ -798,13 +798,7 @@ class Workbench extends Control {
                     $counts[$st] = ($counts[$st] ?? 0) + 1;
                     if (in_array($st, $doneStates, true)) $done++;
                 }
-                $mergeBranch = 'main';
-                $instDir = $this->instanceDirForTask($task);
-                if ($instDir !== null) {
-                    $head = trim((string)@shell_exec('git -C ' . escapeshellarg($instDir) . ' rev-parse --abbrev-ref HEAD 2>/dev/null'));
-                    if ($head !== '' && $head !== 'HEAD') $mergeBranch = $head;
-                }
-                $planRollup = ['total' => count($subs), 'done' => $done, 'counts' => $counts, 'branch' => $mergeBranch];
+                $planRollup = ['total' => count($subs), 'done' => $done, 'counts' => $counts];
             }
         }
         $this->viewData['planRollup'] = $planRollup;

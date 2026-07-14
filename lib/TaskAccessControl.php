@@ -276,9 +276,13 @@ class TaskAccessControl {
      */
     public function getMemberTeamIds(int $memberId): array {
         $memberships = Bean::find('teammember', 'member_id = ?', [$memberId]);
-        return array_map(function($m) {
+        // Bean::find keys results by bean id — array_values() drops those keys so the
+        // list is sequentially keyed. Non-sequential integer keys are a footgun: passed
+        // into an "IN (?,?)" binding, RedBean maps each key to a positional parameter
+        // index, producing "column index out of range".
+        return array_values(array_map(function($m) {
             return (int)$m->teamId;
-        }, $memberships);
+        }, $memberships));
     }
 
     /**

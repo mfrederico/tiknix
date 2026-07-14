@@ -298,6 +298,49 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
   </div>
 </div>
 
+<!-- Checkpoint: roll back OR fork a new instance -->
+<div class="modal fade" id="ab-ckpt-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>Checkpoint <code id="ab-ck-name" class="ms-1"></code></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Roll back (owner only) -->
+        <?php if ($ab_isOwner): ?>
+        <div class="border rounded p-3 mb-3">
+          <div class="fw-semibold mb-1"><i class="bi bi-arrow-counterclockwise me-1"></i>Roll back this instance</div>
+          <p class="small text-body-secondary mb-2">Restores <strong>code and data</strong> of this instance to this checkpoint. Anything since is lost.</p>
+          <button id="ab-ck-rollback" class="btn btn-outline-danger btn-sm" type="button"><i class="bi bi-arrow-counterclockwise me-1"></i>Roll back to here</button>
+        </div>
+        <?php endif; ?>
+        <!-- Fork (admin only) -->
+        <?php if ($ab_canCreate): ?>
+        <div class="border rounded p-3">
+          <div class="fw-semibold mb-1"><i class="bi bi-diagram-2 me-1"></i>Create a new instance from this checkpoint</div>
+          <p class="small text-body-secondary mb-2">Spins up a brand-new instance with this checkpoint's <strong>code and data</strong>. Connections and secrets reset — it gets its own subdomain, database, and sign-in.</p>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Name (slug)</label>
+            <input id="ab-fork-slug" class="form-control form-control-sm" placeholder="myapp2" pattern="[a-z][a-z0-9]{1,49}" autocomplete="off" spellcheck="false">
+            <div class="form-text">Becomes <code>&lt;slug&gt;.tiknix</code>.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Display name</label>
+            <input id="ab-fork-name" class="form-control form-control-sm" placeholder="My App (fork)" autocomplete="off">
+          </div>
+          <button id="ab-ck-fork" class="btn btn-primary btn-sm" type="button"><i class="bi bi-diagram-2 me-1"></i>Create instance</button>
+          <div id="ab-fork-msg" class="form-text mt-2"></div>
+        </div>
+        <?php endif; ?>
+        <?php if (!$ab_isOwner && !$ab_canCreate): ?>
+        <p class="small text-body-secondary mb-0">Rolling back and forking are limited to the instance owner. You can still create checkpoints from the panel.</p>
+        <?php endif; ?>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Reuse digest: what the planner is grounded on for this instance -->
 <div class="modal fade" id="ab-reuse-modal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -426,10 +469,10 @@ if (AB.has) {
         const box=document.getElementById('ab-ckpt-list'); const cps=(j.data&&j.data.checkpoints)||[];
         if(!cps.length){ box.innerHTML='<div class="text-body-secondary">No checkpoints yet.</div>'; return; }
         box.innerHTML=cps.map(c=>'<div class="ab-ckpt"><div class="d-flex justify-content-between"><span class="fw-semibold">'+esc(c.name.replace(/^checkpoint-/,''))+'</span>'
-          +'<button class="btn btn-link btn-sm p-0 ab-rb" data-ckpt="'+esc(c.name)+'" title="Roll back to here"><i class="bi bi-arrow-counterclockwise"></i></button></div>'
+          +'<button class="btn btn-link btn-sm p-0 ab-rb" data-ckpt="'+esc(c.name)+'" title="Roll back or fork from here"><i class="bi bi-three-dots"></i></button></div>'
           +(c.description?'<div class="desc">'+esc(c.description)+'</div>':'')
           +'<div class="text-body-secondary" style="font-size:.72rem">'+esc(c.date)+' · '+esc(c.commit)+'</div></div>').join('');
-        box.querySelectorAll('.ab-rb').forEach(b=>b.addEventListener('click',()=>doRollback(b.dataset.ckpt)));
+        box.querySelectorAll('.ab-rb').forEach(b=>b.addEventListener('click',()=>openCkptModal(b.dataset.ckpt)));
       }).catch(()=>{});
   }
   const post=(url,extra)=>fetch(url,{method:'POST',
@@ -465,10 +508,40 @@ if (AB.has) {
         else { m.className='small mt-2 text-danger'; m.textContent='Auto-publish failed: '+(p.error||''); } }
     }).finally(()=>btn.disabled=false);
   });
+  let _ckpt=null;
+  function openCkptModal(ckpt){
+    _ckpt=ckpt;
+    const nm=document.getElementById('ab-ck-name'); if(nm) nm.textContent=ckpt.replace(/^checkpoint-/,'');
+    const fs=document.getElementById('ab-fork-slug'), fn=document.getElementById('ab-fork-name'), fm=document.getElementById('ab-fork-msg');
+    if(fs) fs.value=''; if(fn) fn.value=''; if(fm) fm.textContent='';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('ab-ckpt-modal')).show();
+  }
   function doRollback(ckpt){
     if(!confirm('Roll back to '+ckpt+'? This restores code AND data to that checkpoint.')) return;
     post('/aibuilder/rollback/'+encodeURIComponent(ckpt),{}).then(j=>{ loadCheckpoints(); refreshChanges(); });
   }
+  document.getElementById('ab-ck-rollback')?.addEventListener('click',function(){
+    if(!_ckpt) return;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('ab-ckpt-modal')).hide();
+    doRollback(_ckpt);
+  });
+  document.getElementById('ab-ck-fork')?.addEventListener('click',function(){
+    if(!_ckpt) return;
+    const slug=(document.getElementById('ab-fork-slug').value||'').trim();
+    const name=(document.getElementById('ab-fork-name').value||'').trim();
+    const msg=document.getElementById('ab-fork-msg');
+    if(!/^[a-z][a-z0-9]{1,49}$/.test(slug)){ msg.className='form-text mt-2 text-danger'; msg.textContent='Enter a valid slug (lowercase, starts with a letter).'; return; }
+    this.disabled=true; msg.className='form-text mt-2 text-body-secondary';
+    msg.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Provisioning &amp; copying data… this can take a minute.';
+    post('/aibuilder/fork',{id:AB.id,checkpoint:_ckpt,slug:slug,name:name}).then(j=>{
+      this.disabled=false;
+      if(j&&j.success){
+        const url='/aibuilder/open/'+(j.data&&j.data.id);
+        msg.className='form-text mt-2 text-success';
+        msg.innerHTML='<i class="bi bi-check-circle me-1"></i>'+esc(j.message||'Created')+' — <a href="'+url+'">open '+esc(slug)+'.tiknix</a>';
+      } else { msg.className='form-text mt-2 text-danger'; msg.textContent=(j&&j.message)||'Fork failed'; }
+    }).catch(()=>{ this.disabled=false; msg.className='form-text mt-2 text-danger'; msg.textContent='Fork failed'; });
+  });
 
   // --- Publish to GitHub (push + PR; first-time opens setup in a new tab) ---
   let ghConnected=false, ghRepo='';

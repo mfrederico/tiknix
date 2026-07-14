@@ -594,6 +594,132 @@ class Aibuilder extends Control {
         );
     }
 
+    /** The configured sqlite db path (relative) for an instance, e.g. "database/foo.db". */
+    private function instanceDbRel(string $slug): string {
+        $ini = @parse_ini_file($this->instanceDir($slug) . '/conf/config.ini', true) ?: [];
+        $p   = (string)($ini['database']['path'] ?? '');
+        return preg_match('#^database/[A-Za-z0-9._-]+\.db$#', $p) ? $p : 'database/' . $slug . '.db';
+    }
+
+    /** Register an instance bean owned by the current member (shared by create/fork). */
+    private function registerInstanceBean(string $slug, string $name, string $engine): object {
+        $member = R::load('member', (int)$this->member->id);
+        $inst = R::dispense('instance');
+        $inst->slug        = $slug;
+        $inst->app         = $this->appNamespace();
+        $inst->displayName = $name;
+        $inst->engine      = $engine;
+        $inst->status      = 'active';
+        $inst->isDefault   = 0;   // forks/creates by non-root are never the core default
+        $inst->createdAt   = date('Y-m-d H:i:s');
+        $member->ownInstanceList[] = $inst;
+        R::store($member);
+        return $inst;
+    }
+
+    /**
+     * POST /aibuilder/fork — create a NEW instance from a source instance's checkpoint.
+     * Carries code + data (the tracked sqlite db) from the checkpoint; connections and
+     * secrets reset because the fresh instance keeps its own provisioned config (new
+     * subdomain, db path, app_key). The forker becomes the owner. Provisioning is
+     * ADMIN-only. JSON.
+     */
+    public function fork($params = []): void {
+        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
+        if (!$this->validateCSRF()) return;
+
+        $src = $this->accessibleInstance($this->getParam('id', 0));
+        if (!$src) { Flight::jsonError('No such source instance', 404); return; }
+
+        $ckpt = (string)($params['operation']->name ?? $this->getParam('checkpoint', 'checkpoint-baseline'));
+        if (!preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $ckpt)) { Flight::jsonError('Invalid checkpoint name', 400); return; }
+        // The tag must exist in the source repo.
+        $tagCheck = $this->gitInstance($src->slug, ['tag', '-l', $ckpt]);
+        if (trim($tagCheck['out']) !== $ckpt) { Flight::jsonError('Checkpoint not found in source instance', 404); return; }
+
+        $slug   = strtolower(trim((string)$this->getParam('slug', '')));
+        $name   = trim((string)$this->getParam('name', '')) ?: ucfirst($slug);
+        $engine = (string)($src->engine ?: 'claude');
+        if (!preg_match(self::SLUG_RE, $slug)) {
+            Flight::jsonError('Invalid name: use 2-50 lowercase letters/numbers, starting with a letter.', 400);
+            return;
+        }
+        if (R::count('instance', 'slug = ?', [$slug]) > 0 || is_dir($this->instanceDir($slug))) {
+            Flight::jsonError('That name is already taken.', 409);
+            return;
+        }
+
+        $srcDir = $this->instanceDir($src->slug);
+        $newDir = $this->instanceDir($slug);
+
+        // 1) Provision a fresh skeleton (own db + config + jail + fresh secrets).
+        $out = $this->runScript('provision-instance.sh',
+            [$this->appNamespace(), $slug, '--admin', (string)$this->member->email, '--name', $name]);
+        if (!is_file($newDir . '/public/index.php')) {
+            $this->logger->error('aibuilder fork: provision failed', ['slug' => $slug, 'out' => $out['out']]);
+            Flight::jsonError('Provisioning failed. ' . substr(trim($out['out']), -300), 500);
+            return;
+        }
+
+        // 2) Overlay the source checkpoint CODE (tracked tree minus database/, which is
+        //    instance-specific) onto the fresh instance. Config is gitignored, so the
+        //    new instance keeps its own — that's the secret/connection reset.
+        $tar = $newDir . '/.aibuilder/fork-src.tar';
+        @mkdir(dirname($tar), 0775, true);
+        $a = []; $ac = 0;
+        exec('git -C ' . escapeshellarg($srcDir) . ' archive ' . escapeshellarg($ckpt)
+             . ' -o ' . escapeshellarg($tar) . ' 2>&1', $a, $ac);
+        if ($ac !== 0) {
+            $this->logger->error('aibuilder fork: archive failed', ['slug' => $slug, 'out' => implode("\n", $a)]);
+            Flight::jsonError('Could not read the checkpoint tree.', 500);
+            return;
+        }
+        $e = []; $ec = 0;
+        exec('tar -xf ' . escapeshellarg($tar) . ' -C ' . escapeshellarg($newDir)
+             . ' --exclude=' . escapeshellarg('database') . ' --exclude=' . escapeshellarg('database/*')
+             . ' 2>&1', $e, $ec);
+        @unlink($tar);
+        if ($ec !== 0) {
+            $this->logger->error('aibuilder fork: extract failed', ['slug' => $slug, 'out' => implode("\n", $e)]);
+            Flight::jsonError('Could not apply the checkpoint code (permissions?).', 500);
+            return;
+        }
+
+        // 3) Carry DATA: stream the source checkpoint's tracked sqlite db into the new
+        //    instance's configured db path (overwriting the freshly-seeded db).
+        $srcDbRel = $this->instanceDbRel($src->slug);   // e.g. database/bidsurge.db
+        $newDb    = $newDir . '/' . $this->instanceDbRel($slug);
+        $carried  = false;
+        // Confirm the db blob exists in the tag before copying.
+        $lt = $this->gitInstance($src->slug, ['cat-file', '-e', $ckpt . ':' . $srcDbRel]);
+        if ($lt['ok']) {
+            $d = []; $dc = 0;
+            exec('git -C ' . escapeshellarg($srcDir) . ' show ' . escapeshellarg($ckpt . ':' . $srcDbRel)
+                 . ' > ' . escapeshellarg($newDb) . ' 2>&1', $d, $dc);
+            $carried = ($dc === 0 && is_file($newDb) && filesize($newDb) > 0);
+            if (!$carried) {
+                $this->logger->warning('aibuilder fork: db copy failed', ['slug' => $slug, 'out' => implode("\n", $d)]);
+            }
+        }
+
+        // 4) Commit the overlaid tree as the new instance's baseline.
+        $this->gitInstance($slug, ['add', '-A']);
+        $this->gitInstance($slug, ['commit', '--no-verify', '-m',
+            'Fork from ' . $src->slug . '@' . $ckpt . ($carried ? ' (code+data)' : ' (code only)')]);
+
+        // 5) Neutralize the in-jail browser + register ownership (forker owns it).
+        $this->ensureOAuthCapture($slug);
+        $inst = $this->registerInstanceBean($slug, $name, $engine);
+
+        $this->logger->info('aibuilder instance forked', [
+            'from' => $src->slug, 'checkpoint' => $ckpt, 'slug' => $slug, 'by' => $this->member->id, 'data' => $carried,
+        ]);
+        Flight::jsonSuccess(
+            ['id' => $inst->id, 'slug' => $slug, 'data_carried' => $carried],
+            'New instance created from ' . $ckpt . ($carried ? '' : ' (code only — data not carried)')
+        );
+    }
+
     /** Validate a decomposed-plan array: {title, subtasks:[{title,...}]}. */
     private function validPlan($plan): bool {
         return is_array($plan) && !empty($plan['title']) && !empty($plan['subtasks']) && is_array($plan['subtasks']);

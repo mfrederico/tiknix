@@ -182,6 +182,22 @@ class Teams extends Control {
             $invitations = $team->withCondition(' accepted_at IS NULL ORDER BY created_at DESC ')->ownTeaminvitationList;
         }
 
+        // Instances shared with this team (many-to-many via instance_team), plus the
+        // current member's own instances they can toggle for this team.
+        $hasShare       = in_array('instance_team', \RedBeanPHP\R::inspect(), true);
+        $sharedHereIds  = $hasShare
+            ? array_map('intval', \RedBeanPHP\R::getCol('SELECT instance_id FROM instance_team WHERE team_id = ?', [$teamId]))
+            : [];
+        $teamInstances = [];
+        if ($sharedHereIds) {
+            // genSlots builds the "?,?,?" list; array_values() keeps the binding
+            // positional (find() results/getCol are already sequential here, but this
+            // is the safe idiom for any id list).
+            $vals = array_values($sharedHereIds);
+            $teamInstances = \RedBeanPHP\R::find('instance', 'id IN (' . \RedBeanPHP\R::genSlots($vals) . ') ORDER BY slug', $vals);
+        }
+        $myInstances = \RedBeanPHP\R::find('instance', 'member_id = ? ORDER BY slug', [(int)$this->member->id]);
+
         $this->viewData['title'] = $team->name;
         $this->viewData['team'] = $team;
         $this->viewData['memberships'] = $memberships;
@@ -190,6 +206,10 @@ class Teams extends Control {
         $this->viewData['userRole'] = $this->access->getTeamRole($teamId, $this->member->id);
         $this->viewData['isAdmin'] = $this->access->isTeamAdmin($teamId, $this->member->id);
         $this->viewData['isOwner'] = $this->access->isTeamOwner($teamId, $this->member->id);
+        $this->viewData['teamInstances'] = array_values($teamInstances);
+        $this->viewData['myInstances']   = array_values($myInstances);
+        $this->viewData['sharedHereIds'] = $sharedHereIds;
+        $this->viewData['memberId']      = (int)$this->member->id;
 
         $this->render('teams/view', $this->viewData);
     }

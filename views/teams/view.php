@@ -51,6 +51,52 @@
                 </div>
             </div>
 
+            <!-- Instances -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-hdd-network me-1"></i>Instances</h5>
+                    <a href="/aibuilder" class="btn btn-sm btn-link">AI Builder</a>
+                </div>
+                <div class="card-body">
+                    <?php $teamInstances = $teamInstances ?? []; $myInstances = $myInstances ?? []; $sharedHereIds = array_map('intval', $sharedHereIds ?? []); $memberId = (int)($memberId ?? 0); ?>
+
+                    <!-- Instances currently shared with this team -->
+                    <?php if (empty($teamInstances)): ?>
+                        <p class="text-muted small mb-3">No instances shared with this team yet. Owners can share theirs below.</p>
+                    <?php else: ?>
+                        <div class="list-group list-group-flush mb-3">
+                            <?php foreach ($teamInstances as $inst): ?>
+                                <a href="/aibuilder/open/<?= (int)$inst->id ?>" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-0">
+                                    <span>
+                                        <i class="bi bi-box-seam me-1"></i>
+                                        <span class="fw-medium"><?= htmlspecialchars(($inst->displayName ?: $inst->slug) ?? '') ?></span>
+                                        <small class="text-muted"><?= htmlspecialchars(($inst->slug) ?? '') ?>.tiknix</small>
+                                    </span>
+                                    <?php if ((int)$inst->memberId === $memberId): ?><span class="badge text-bg-light">yours</span><?php endif; ?>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <!-- Share your own instances with this team (owner-only toggles) -->
+                    <?php if (!empty($myInstances)): ?>
+                        <div class="border-top pt-3">
+                            <div class="small text-uppercase text-muted fw-semibold mb-2">Share your instances</div>
+                            <?php foreach ($myInstances as $inst): if (!empty($inst->isDefault)) continue; $on = in_array((int)$inst->id, $sharedHereIds, true); ?>
+                                <div class="form-check">
+                                    <input class="form-check-input team-share-instance" type="checkbox" value="<?= (int)$inst->id ?>" id="ti<?= (int)$inst->id ?>" <?= $on ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="ti<?= (int)$inst->id ?>">
+                                        <?= htmlspecialchars(($inst->displayName ?: $inst->slug) ?? '') ?>
+                                        <small class="text-muted"><?= htmlspecialchars(($inst->slug) ?? '') ?>.tiknix</small>
+                                    </label>
+                                </div>
+                            <?php endforeach; ?>
+                            <div id="teamShareMsg" class="form-text"></div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
             <!-- Recent Tasks -->
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -196,6 +242,27 @@
         </div>
     </div>
 </div>
+
+<!-- Share instances with this team (owner-only toggles; reuses /aibuilder/share) -->
+<script>
+(function(){
+  const TOKEN = <?= json_encode(csrf_token()) ?>;
+  const TEAM  = <?= (int)$team->id ?>;
+  document.querySelectorAll('.team-share-instance').forEach(cb => cb.addEventListener('change', function(){
+    const msg = document.getElementById('teamShareMsg');
+    this.disabled = true; if (msg) msg.textContent = 'saving…';
+    fetch('/aibuilder/share', {
+      method: 'POST',
+      headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':TOKEN,'X-Requested-With':'XMLHttpRequest'},
+      body: new URLSearchParams({csrf_token:TOKEN, id:this.value, team_id:TEAM, shared:this.checked?1:0}).toString()
+    }).then(r => r.json()).then(j => {
+      this.disabled = false;
+      if (j && j.success) { if (msg) { msg.textContent = j.message || ''; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2500); } }
+      else { this.checked = !this.checked; if (msg) msg.textContent = (j && j.message) || 'Failed'; }
+    }).catch(() => { this.disabled = false; this.checked = !this.checked; if (msg) msg.textContent = 'Failed'; });
+  }));
+})();
+</script>
 
 <!-- Invite Modal -->
 <?php if ($isAdmin): ?>

@@ -68,8 +68,8 @@ foreach (($menu ?? []) as $__it) {
         <a class="ui-nav-link<?= $__active('/communications') ?>" href="/communications"><i class="bi bi-chat-left-dots"></i> Communications</a>
         <?php if (builder_tools_enabled()): ?>
           <a class="ui-nav-link<?= $__active('/workbench') ?>" href="/workbench"><i class="bi bi-hammer"></i> Workbench</a>
+          <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> AI Builder</a>
           <?php if ($__isAdmin): ?>
-            <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> AI Builder</a>
             <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
           <?php endif; ?>
         <?php endif; ?>

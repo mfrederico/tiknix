@@ -9,6 +9,7 @@ $csrfTok = csrf_token();
 $selId   = $selected ? (int)$selected->id : 0;
 $ab_isDefault = $ab_isDefault ?? false;
 $ab_isRoot    = $ab_isRoot ?? false;
+$ab_canCreate = $ab_canCreate ?? false;
 $ab_isOwner       = $ab_isOwner ?? false;
 $shareTeams       = $shareTeams ?? [];
 $ab_sharedTeamIds = array_map('intval', $ab_sharedTeamIds ?? []);
@@ -104,8 +105,9 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
       <div class="card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
           <span class="fw-semibold">Your Instances</span>
-          <button class="btn btn-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#ab-new-form"><i class="bi bi-plus-lg"></i></button>
+          <?php if ($ab_canCreate): ?><button class="btn btn-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#ab-new-form"><i class="bi bi-plus-lg"></i></button><?php endif; ?>
         </div>
+        <?php if ($ab_canCreate): ?>
         <div class="collapse <?= empty($instances) ? 'show' : '' ?>" id="ab-new-form">
           <div class="card-body border-bottom">
             <form id="ab-create-form">
@@ -126,6 +128,7 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
             </form>
           </div>
         </div>
+        <?php endif; ?>
         <div class="list-group list-group-flush">
           <?php if ($ab_isRoot && !$hasDefault): ?>
             <button id="ab-create-core" type="button" class="list-group-item list-group-item-action list-group-item-warning">
@@ -134,7 +137,7 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
             </button>
           <?php endif; ?>
           <?php if (empty($instances)): ?>
-            <div class="list-group-item text-body-secondary small">No instances yet. Create one above.</div>
+            <div class="list-group-item text-body-secondary small"><?= $ab_canCreate ? 'No instances yet. Create one above.' : 'No instances shared with you yet. Ask an instance owner to share one with your team.' ?></div>
           <?php else: foreach ($instances as $inst): $isSel = ($selId === (int)$inst->id); ?>
             <a href="/aibuilder/open/<?= (int)$inst->id ?>"
                class="list-group-item list-group-item-action <?= $isSel ? 'active' : '' ?>">

@@ -43,7 +43,11 @@ class Aibuilder extends Control {
     }
 
     private function minLevel(): int {
-        return (int)($this->cfg()['access']['min_level'] ?? LEVELS['ADMIN']);
+        // Floor to REACH AI Builder. Members (100) may use instances shared with
+        // their team; per-instance authorization is enforced by accessibleInstance()
+        // / ownedInstance() on each endpoint. Provisioning (create) is ADMIN-gated
+        // separately. Configurable via [access] min_level.
+        return (int)($this->cfg()['access']['min_level'] ?? LEVELS['MEMBER']);
     }
 
     /**
@@ -290,14 +294,16 @@ class Aibuilder extends Control {
             'ab_hasInstance' => (bool)$selected,
             'ab_isDefault'   => $selected ? (bool)$selected->isDefault : false,
             'ab_isRoot'      => Flight::hasLevel(LEVELS['ROOT']),
+            'ab_canCreate'   => Flight::hasLevel(LEVELS['ADMIN']),
             'ab_mainRepo'    => GitHubPublisher::mainGithubRepo(),
             'ab_url'         => $selected ? 'https://' . $selected->slug . '.' . $this->appNamespace() . '.com' : '',
         ]);
     }
 
-    /** POST /aibuilder/create — provision a new instance. JSON. */
+    /** POST /aibuilder/create — provision a new instance. JSON. Provisioning is
+     *  ADMIN-only even though using instances is open to members. */
     public function create($params = []): void {
-        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
         if (!$this->validateCSRF()) return;
 
         $slug   = strtolower(trim((string)$this->getParam('slug', '')));

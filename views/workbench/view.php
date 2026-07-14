@@ -460,14 +460,11 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             </div>
                         <?php endif; ?>
 
-                        <!-- Inline instruction form -->
-                        <div class="mb-3">
-                            <textarea class="form-control" id="inlineCommentContent" rows="3" placeholder="Answer Claude's question, or send follow-up instructions..."></textarea>
-                        </div>
-
+                        <!-- Reply/instruct via the single Conversation pane below (was a
+                             duplicate comment box here — removed to avoid two inputs). -->
                         <div class="d-flex gap-2 flex-wrap">
-                            <button class="btn btn-primary" onclick="sendInlineComment()">
-                                <i class="bi bi-send me-1"></i> Send
+                            <button class="btn btn-primary" onclick="document.getElementById('commentContent').focus()">
+                                <i class="bi bi-chat-dots me-1"></i> Reply in Conversation
                             </button>
                             <button class="btn btn-outline-success" onclick="markComplete(<?= $task->id ?>)">
                                 <i class="bi bi-check-circle me-1"></i> Mark Complete <span class="small">(no merge)</span>

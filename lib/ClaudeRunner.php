@@ -366,19 +366,30 @@ BASH;
             return false;
         }
 
-        // Escape special characters for tmux
-        $escaped = str_replace(
-            ["'", '"', '\\', '$', '`'],
-            ["\\'", '\\"', '\\\\', '\\$', '\\`'],
-            $message
-        );
-
-        // Send keys then Enter
-        if (!TmuxManager::sendKeys($this->sessionName, $escaped)) {
-            return false;
+        // Paste via a tmux buffer (reliable for any length / special chars), then
+        // submit. This mirrors sendPrompt(): a plain send-keys + single immediate
+        // Enter races the TUI and often leaves the text sitting unsubmitted in the
+        // composer (looks "stuck on working"). Buffer-paste + delay + a confirming
+        // second Enter is the robust path.
+        if (!TmuxManager::sendTextViaBuffer($this->sessionName, $message, 'tiknix-msg')) {
+            // Fallback: escaped send-keys for environments without buffer paste.
+            $escaped = str_replace(
+                ["'", '"', '\\', '$', '`'],
+                ["\\'", '\\"', '\\\\', '\\$', '\\`'],
+                $message
+            );
+            if (!TmuxManager::sendKeys($this->sessionName, $escaped)) {
+                return false;
+            }
         }
 
-        return TmuxManager::sendKeys($this->sessionName, 'Enter');
+        usleep(150000); // 150ms — let the paste settle before submitting
+        if (!TmuxManager::sendKeys($this->sessionName, 'Enter')) {
+            return false;
+        }
+        usleep(50000);  // 50ms
+        TmuxManager::sendKeys($this->sessionName, 'Enter'); // confirming Enter (TUI may need it)
+        return true;
     }
 
     /**

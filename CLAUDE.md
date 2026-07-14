@@ -250,6 +250,29 @@ If you use R::exec for simple CRUD, the ORM becomes useless and models are ignor
 | `R::count($type, $sql, $params)` | Integer | Count rows |
 | `R::getAll($sql, $params)` | Array of arrays | Complex SELECT with joins |
 
+### CRITICAL: find() returns id-KEYED arrays — array_values() before IN() bindings
+
+`R::find` / `R::findAll` / `Bean::find` return beans **keyed by bean id**, NOT 0,1,2.
+`array_map()` over such a result **preserves those id keys**. If you then pass that
+array straight into a query with an `IN (?,?)` binding, RedBeanPHP maps each integer
+KEY to a **positional parameter index** — so `[3 => 5, 7 => 9]` binds params at
+positions 3 and 7 in a 2-placeholder query → `SQLSTATE[HY000]: General error: 25
+column index out of range`.
+
+```php
+// WRONG — id-keyed array flows into an IN() binding
+$teamIds = array_map(fn($m) => (int)$m->teamId, R::find('teammember', 'member_id = ?', [$id]));
+R::getCol("SELECT id FROM instance WHERE team_id IN (" . implode(',', array_fill(0, count($teamIds), '?')) . ")", $teamIds); // BOOM
+
+// CORRECT — array_values() drops the id keys (fix at the SOURCE getter so every caller is safe)
+$teamIds = array_values(array_map(fn($m) => (int)$m->teamId, R::find('teammember', 'member_id = ?', [$id])));
+```
+
+`array_merge($a, $b)` also reindexes integer keys, so params built via `array_merge`
+are accidentally safe — which MASKS the bug until someone passes the raw array through
+directly. Any `find()`/relation-list result or `array_map` over one that flows into
+`R::exec`/`getCol`/`getAll`/`find` params must be `array_values()`'d first.
+
 ### Quick Reference: PHP Property → Database Column
 
 | PHP (camelCase) | Database (auto-converted) |

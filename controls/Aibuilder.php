@@ -262,7 +262,9 @@ class Aibuilder extends Control {
 
         // Which of the displayed instances have ANY share (for the picker badges),
         // and which teams the SELECTED instance is shared with (for checkbox state).
-        $displayIds = array_map(fn($i) => (int)$i->id, $instances);
+        // array_values(): R::find keys results by bean id; those keys must not leak
+        // into the IN() binding below (RedBean maps int keys to param positions).
+        $displayIds = array_values(array_map(fn($i) => (int)$i->id, $instances));
         $instSharedIds = [];
         if ($displayIds && $this->hasShareTable()) {
             $ph = implode(',', array_fill(0, count($displayIds), '?'));

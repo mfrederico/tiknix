@@ -92,6 +92,31 @@ class Aibuilder extends Control {
         return $inst;
     }
 
+    /**
+     * An instance the current member may USE: their own, OR one shared with a team
+     * they belong to. Owner-only actions (share/unshare, delete, rollback) keep
+     * using ownedInstance() instead.
+     */
+    private function accessibleInstance($id) {
+        $id = (int)$id;
+        if (!$id) return null;
+        $inst = R::load('instance', $id);
+        if (!$inst->id) return null;
+        $mine   = (int)$inst->memberId === (int)$this->member->id;
+        $shared = !$mine && (int)($inst->teamId ?? 0) > 0 && (int)R::getCell(
+            'SELECT COUNT(*) FROM teammember WHERE team_id = ? AND member_id = ?',
+            [(int)$inst->teamId, (int)$this->member->id]
+        ) > 0;
+        if (!$mine && !$shared) return null;
+        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        return $inst;
+    }
+
+    /** True when the current member owns the instance (for owner-only actions). */
+    private function isInstanceOwner($inst): bool {
+        return $inst && (int)$inst->memberId === (int)$this->member->id;
+    }
+
     /** Run git inside an instance's directory (read/write its own repo only). */
     private function gitInstance(string $slug, array $args): array {
         if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'out' => '', 'code' => 1];
@@ -187,17 +212,35 @@ class Aibuilder extends Control {
 
     /** Render the instance picker plus, if one is selected, its Terminal/Chat. */
     private function renderHome(int $selId): void {
-        $instances = $this->member->with(' ORDER BY created_at DESC ')->ownInstanceList;
-        $selected  = $selId ? $this->ownedInstance($selId) : null;
+        // Owned instances + any shared with a team the member belongs to.
+        $mid     = (int)$this->member->id;
+        $teamIds = array_map('intval', R::getCol('SELECT team_id FROM teammember WHERE member_id = ?', [$mid]));
+        if ($teamIds) {
+            $ph = implode(',', array_fill(0, count($teamIds), '?'));
+            $instances = R::find('instance', 'member_id = ? OR team_id IN (' . $ph . ') ORDER BY created_at DESC',
+                array_merge([$mid], $teamIds));
+        } else {
+            $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [$mid]);
+        }
+        $selected  = $selId ? $this->accessibleInstance($selId) : null;
 
         // Neutralize Claude's in-jail browser-open before the terminal opens, so a
         // first-run `claude` sign-in surfaces in the gate instead of a dead browser.
         if ($selected) $this->ensureOAuthCapture($selected->slug);
 
+        // Teams the member can share an owned instance INTO (for the share control).
+        $shareTeams = $teamIds
+            ? R::find('team', 'id IN (' . implode(',', array_fill(0, count($teamIds), '?')) . ') ORDER BY name', $teamIds)
+            : [];
+
         $cfg = $this->cfg();
         $this->render('aibuilder/index', [
             'title'          => 'AI Builder',
             'instances'      => array_values($instances),
+            'shareTeams'     => array_values($shareTeams),
+            'ab_memberId'    => $mid,
+            'ab_isOwner'     => $selected ? $this->isInstanceOwner($selected) : false,
+            'ab_selTeamId'   => $selected ? (int)$selected->teamId : 0,
             'selected'       => $selected,
             'ab_sub'         => $selected ? $selected->slug : '',
             'ab_token'       => $selected ? $this->mintToken($selected->slug, (int)$this->member->id) : '',
@@ -270,7 +313,7 @@ class Aibuilder extends Control {
     /** GET /aibuilder/refresh?id= — re-mint a token (AJAX reconnect). JSON. */
     public function refresh($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
         Flight::jsonSuccess(['token' => $this->mintToken($inst->slug, (int)$this->member->id)]);
     }
@@ -327,7 +370,7 @@ class Aibuilder extends Control {
      */
     public function oauthstatus($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $url = $this->signinUrlFromPane($this->paneText($inst->slug));
@@ -341,7 +384,7 @@ class Aibuilder extends Control {
     /** GET /aibuilder/changes?id= — files changed since the last checkpoint. JSON. */
     public function changes($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         // Uncommitted working-tree changes == the delta since the last checkpoint
@@ -365,7 +408,7 @@ class Aibuilder extends Control {
      */
     public function reusedigest($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $file = dirname(__DIR__) . '/mcptools/Introspector.php';
@@ -384,7 +427,7 @@ class Aibuilder extends Control {
     public function checkpoint($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $desc = mb_substr(trim(preg_replace('/[\r\n]+/', ' ', (string)$this->getParam('label', ''))), 0, 200);
@@ -427,7 +470,7 @@ class Aibuilder extends Control {
     /** GET /aibuilder/checkpoints?id= — list checkpoints with descriptions. JSON. */
     public function checkpoints($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $out = $this->gitInstance($inst->slug, ['for-each-ref', '--sort=-creatordate',
@@ -451,8 +494,9 @@ class Aibuilder extends Control {
     public function rollback($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
+        // Owner-only: rollback resets the whole (possibly team-shared) instance.
         $inst = $this->ownedInstance($this->getParam('id', 0));
-        if (!$inst) { Flight::jsonError('No such instance', 404); return; }
+        if (!$inst) { Flight::jsonError('No such instance (owner only)', 404); return; }
 
         $ckpt = (string)($params['operation']->name ?? $this->getParam('checkpoint', 'checkpoint-baseline'));
         if (!preg_match('/^[a-z0-9-]{3,60}$/i', $ckpt)) {
@@ -461,6 +505,35 @@ class Aibuilder extends Control {
         $out = $this->runScript('rollback-instance.sh', [$this->appNamespace(), $inst->slug, $ckpt]);
         if ($out['ok']) Flight::jsonSuccess(['log' => $out['out']], 'Rolled back to ' . $ckpt);
         else            Flight::jsonError('Rollback failed: ' . substr(trim($out['out']), -300), 500);
+    }
+
+    /**
+     * POST /aibuilder/share — owner shares an instance with a team (team_id) or
+     * makes it personal again (team_id=0). Team members then get full use of it
+     * (terminal, build, checkpoint) and see its tasks in the Workbench. JSON.
+     */
+    public function share($params = []): void {
+        if (!$this->requireLevel($this->minLevel())) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));   // owner only
+        if (!$inst) { Flight::jsonError('No such instance (owner only)', 404); return; }
+
+        $teamId = (int)$this->getParam('team_id', 0);
+        if ($teamId > 0) {
+            $ok = (int)R::getCell('SELECT COUNT(*) FROM teammember WHERE team_id = ? AND member_id = ?',
+                    [$teamId, (int)$this->member->id]) > 0;
+            if (!$ok) { Flight::jsonError('You are not a member of that team', 403); return; }
+            $inst->teamId = $teamId;
+        } else {
+            $inst->teamId = null;
+        }
+        R::store($inst);
+
+        $team = $teamId ? R::load('team', $teamId) : null;
+        Flight::jsonSuccess(
+            ['team_id' => $inst->teamId, 'team_name' => $team && $team->id ? $team->name : null],
+            $teamId ? 'Shared with team' : 'Instance is now personal'
+        );
     }
 
     /** Validate a decomposed-plan array: {title, subtasks:[{title,...}]}. */
@@ -492,7 +565,7 @@ class Aibuilder extends Control {
     public function planingest($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $file  = $this->instanceDir($inst->slug) . '/.aibuilder/plan.json';
@@ -522,7 +595,7 @@ class Aibuilder extends Control {
     public function plansave($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $plan = json_decode(((string)$this->getParam('plan', '')) ?? '', true);
@@ -533,7 +606,7 @@ class Aibuilder extends Control {
     /** GET /aibuilder/plan?id= — list saved plans (task trees) for an instance. JSON. */
     public function plan($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $parents = R::find('workbenchtask', 'instance_id = ? AND parent_task_id IS NULL ORDER BY created_at DESC', [(int)$inst->id]);
@@ -564,7 +637,7 @@ class Aibuilder extends Control {
     public function plangenerate($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $goal = trim((string)$this->getParam('goal', ''));
@@ -585,7 +658,7 @@ class Aibuilder extends Control {
     /** GET /aibuilder/planstatus?id= — poll the headless planner (running / plan_ready / log). JSON. */
     public function planstatus($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $runner = new PlanRunner($inst->slug, $this->instanceDir($inst->slug),
@@ -603,7 +676,7 @@ class Aibuilder extends Control {
         if ($planId <= 0) return null;
         $plan = R::load('workbenchtask', $planId);
         if (!$plan->id || $plan->parentTaskId) return null;         // must be a plan parent
-        $inst = $this->ownedInstance((int)$plan->instanceId);
+        $inst = $this->accessibleInstance((int)$plan->instanceId);
         if (!$inst) return null;
         return [$plan, $inst];
     }
@@ -693,7 +766,7 @@ class Aibuilder extends Control {
     public function restart($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
         $sock = $this->instanceDir($inst->slug) . '/.aibuilder/tmux.sock';
         if (@file_exists($sock)) {
@@ -876,7 +949,7 @@ class Aibuilder extends Control {
     public function upload($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
 
         $bucket    = $this->getParam('bucket', 'secure') === 'public' ? 'public' : 'secure';
@@ -928,7 +1001,7 @@ class Aibuilder extends Control {
     /** GET /aibuilder/uploads?id= — list uploaded files by bucket. JSON. */
     public function uploads($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
         $out = ['secure' => [], 'public' => []];
         foreach (['secure', 'public'] as $b) {
@@ -949,7 +1022,7 @@ class Aibuilder extends Control {
     public function deleteupload($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
         if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('No such instance', 404); return; }
         $bucket = $this->getParam('bucket', 'secure') === 'public' ? 'public' : 'secure';
         $name   = basename((string)$this->getParam('name', ''));

@@ -30,13 +30,33 @@ class TaskAccessControl {
     public function canView(int $memberId, $task): bool {
         $task = $this->toArray($task);
 
-        // Personal task: only owner
+        // Personal task: owner, or a teammate of the instance it lives on (team-shared instance)
         if (empty($task['team_id'])) {
-            return (int)$task['member_id'] === $memberId;
+            return (int)$task['member_id'] === $memberId
+                || $this->isSharedInstanceTask($memberId, $task);
         }
 
         // Team task: any team member
         return $this->isTeamMember((int)$task['team_id'], $memberId);
+    }
+
+    /**
+     * A personal task (team_id NULL) whose instance has been shared into one of the
+     * member's teams is visible/usable by that member under the "full use" model.
+     *
+     * @param int $memberId
+     * @param array $task  Task as array (from toArray)
+     * @return bool
+     */
+    private function isSharedInstanceTask(int $memberId, array $task): bool {
+        $instanceId = (int)($task['instance_id'] ?? 0);
+        if ($instanceId <= 0) return false;
+        if (!$this->columnExists('instance', 'team_id')) return false;
+
+        $teamId = (int)R::getCell('SELECT team_id FROM instance WHERE id = ?', [$instanceId]);
+        if ($teamId <= 0) return false;
+
+        return $this->isTeamMember($teamId, $memberId);
     }
 
     /**
@@ -49,9 +69,10 @@ class TaskAccessControl {
     public function canEdit(int $memberId, $task): bool {
         $task = $this->toArray($task);
 
-        // Personal task: only owner
+        // Personal task: owner, or a teammate of the instance it lives on
         if (empty($task['team_id'])) {
-            return (int)$task['member_id'] === $memberId;
+            return (int)$task['member_id'] === $memberId
+                || $this->isSharedInstanceTask($memberId, $task);
         }
 
         // Task owner can always edit
@@ -73,9 +94,10 @@ class TaskAccessControl {
     public function canRun(int $memberId, $task): bool {
         $task = $this->toArray($task);
 
-        // Personal task: only owner
+        // Personal task: owner, or a teammate of the instance it lives on
         if (empty($task['team_id'])) {
-            return (int)$task['member_id'] === $memberId;
+            return (int)$task['member_id'] === $memberId
+                || $this->isSharedInstanceTask($memberId, $task);
         }
 
         // Task owner can always run
@@ -288,18 +310,28 @@ class TaskAccessControl {
         $conditions = [];
         $params = [];
 
-        // Personal tasks OR team tasks
-        if (empty($teamIds)) {
-            // No teams - only personal tasks
-            $conditions[] = "(member_id = ? AND team_id IS NULL)";
-            $params[] = $memberId;
-        } else {
-            // Personal tasks + team tasks
-            $placeholders = implode(',', array_fill(0, count($teamIds), '?'));
-            $conditions[] = "(member_id = ? AND team_id IS NULL) OR (team_id IN ($placeholders))";
-            $params[] = $memberId;
+        // Instances shared with the member's teams — their tasks are visible too,
+        // even though the tasks themselves are personal (team_id NULL).
+        $sharedInstanceIds = [];
+        if (!empty($teamIds) && $this->columnExists('instance', 'team_id')
+            && $this->columnExists('workbenchtask', 'instance_id')) {
+            $tph = implode(',', array_fill(0, count($teamIds), '?'));
+            $sharedInstanceIds = array_map('intval', \RedBeanPHP\R::getCol(
+                "SELECT id FROM instance WHERE team_id IN ($tph)", $teamIds));
+        }
+
+        // Visibility: personal tasks OR team tasks OR tasks of a team-shared instance.
+        $vis = ["member_id = ? AND team_id IS NULL"];
+        $params[] = $memberId;
+        if (!empty($teamIds)) {
+            $vis[] = "team_id IN (" . implode(',', array_fill(0, count($teamIds), '?')) . ")";
             $params = array_merge($params, $teamIds);
         }
+        if (!empty($sharedInstanceIds)) {
+            $vis[] = "instance_id IN (" . implode(',', array_fill(0, count($sharedInstanceIds), '?')) . ")";
+            $params = array_merge($params, $sharedInstanceIds);
+        }
+        $conditions[] = implode(' OR ', array_map(fn($c) => "($c)", $vis));
 
         // Apply filters
         if (!empty($filters['status'])) {

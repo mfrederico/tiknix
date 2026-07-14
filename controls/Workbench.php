@@ -1616,6 +1616,9 @@ class Workbench extends Control {
 
             $this->logTaskEvent($taskId, 'info', 'user', 'Task marked complete by ' . ($this->member->displayName ?? $this->member->email));
 
+            // Close the firehose loop: a detected-error task that merged is now fixed.
+            if ($merged) $this->resolveDetectedError($task);
+
             $response = [
                 'success' => true,
                 'message' => $merged ? 'Task completed and merged' : 'Task completed',
@@ -1790,6 +1793,9 @@ class Workbench extends Control {
             }
             $task->updatedAt = date('Y-m-d H:i:s');
             Bean::store($task);
+
+            // Close the firehose loop: a detected-error task that merged is now fixed.
+            if ($merged) $this->resolveDetectedError($task);
 
             // Build log message
             $message = 'Task approved by ' . ($this->member->displayName ?? $this->member->email);
@@ -2810,6 +2816,23 @@ class Workbench extends Control {
      *
      * @return array ['merged' => bool, 'pushed' => bool, 'reason' => string]
      */
+    /**
+     * Close the firehose loop: when a detected-error task (or the plan it became)
+     * merges, flip its linked detectederror to 'resolved'. Idempotent; a no-op for
+     * ordinary tasks. Covers both the standalone-task and orchestrator-plan paths
+     * via the detectererror_id link, with a task_id fallback.
+     */
+    private function resolveDetectedError($task): void {
+        $eid = (int)($task->detectederrorId ?? 0);
+        $e = $eid ? Bean::load('detectederror', $eid) : Bean::findOne('detectederror', 'task_id = ?', [(int)$task->id]);
+        if ($e && $e->id && !in_array($e->status, ['resolved', 'ignored'], true)) {
+            $e->status    = 'resolved';
+            $e->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($e);
+            $this->logTaskEvent((int)$task->id, 'info', 'system', 'Firehose: detected error #' . (int)$e->id . ' resolved on merge');
+        }
+    }
+
     private function localMergeBack($task): array {
         $ws   = (string)($task->projectPath ?? '');
         $br   = (string)($task->branchName ?? '');

@@ -107,6 +107,18 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             </button>
                         <?php endif; ?>
 
+                        <?php // Always offer a finish path while active — a worker can finish (or
+                              // wedge) without the status flipping to 'awaiting', and completing
+                              // stops the session first, so this is safe either way. ?>
+                        <?php if ($canRun && in_array($task->status, ['running', 'queued'])): ?>
+                            <button class="btn btn-outline-success" onclick="markComplete(<?= $task->id ?>)">
+                                <i class="bi bi-check-circle"></i> Mark Complete <span class="small">(no merge)</span>
+                            </button>
+                            <button class="btn btn-success" onclick="markCompleteMerge(<?= $task->id ?>)">
+                                <i class="bi bi-check2-circle"></i> Mark Complete <span class="small">(&amp; merge)</span>
+                            </button>
+                        <?php endif; ?>
+
                         <?php if ($canRun && $task->status === 'paused'): ?>
                             <button class="btn btn-success" onclick="resumeTask(<?= $task->id ?>)">
                                 <i class="bi bi-play-fill"></i> Resume

@@ -308,6 +308,12 @@ class WorkspaceManager
             $config
         );
 
+        // Firehose Layer 1 origin gate: mute error reporting from this workspace.
+        // A task workspace is where an agent builds/tests; its errors must NEVER
+        // reach the firehose or they'd auto-spawn a duplicate fix while this agent
+        // is already on it. Appended last so it overrides any inherited [firehose].
+        $config = rtrim($config) . "\n\n[firehose]\nreport = false\nrole = \"workspace\"\n";
+
         file_put_contents($configPath, $config);
     }
 

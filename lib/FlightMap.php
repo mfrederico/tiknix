@@ -23,6 +23,12 @@ foreach($_REGISTER_CLASSES as $_CLASS) {
 // Register RedBeanPHP
 Flight::register('R', '\RedBeanPHP\R');
 
+// Firehose: register the fatal-error shutdown hook. Self-gates — only a live,
+// firehose-provisioned instance actually reports (see lib/ErrorReporter.php).
+if (class_exists('\\app\\ErrorReporter')) {
+    \app\ErrorReporter::register();
+}
+
 /**
  * Core routing function - handles /class/method/operation/id pattern
  * This is the heart of the auto-routing system
@@ -92,6 +98,11 @@ Flight::map('defaultRoute', function($prefix = '') {
             } catch(\Throwable $e) {
                 // Catch both Exception and Error (PHP 7+)
                 Flight::get('log')->error("Controller error: ".$e->getMessage());
+                // Ship to the control-plane firehose (self-gates: only a live,
+                // firehose-provisioned instance actually reports). Never throws.
+                if (class_exists('\\app\\ErrorReporter')) {
+                    \app\ErrorReporter::capture($e, 'controller', ['controller' => $classname, 'method' => $function]);
+                }
                 Flight::notFound();
             }
         } else {

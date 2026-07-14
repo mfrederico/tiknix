@@ -391,6 +391,9 @@ class PermissionCache {
         $m = strtolower((string)$method);
         // Whole controllers that are public: install wizard + home/landing.
         if ($c === 'install' || $c === 'index') return LEVELS['PUBLIC'];
+        // Firehose ingest is reachable but self-authed by API key (like mcp::message).
+        // The feed (firehose::index) stays ADMIN via the default below.
+        if ($c === 'firehose' && $m === 'report') return LEVELS['PUBLIC'];
         // Pre-auth auth routes only (NOT logout/account management).
         if ($c === 'auth') {
             $publicAuth = [

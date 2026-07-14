@@ -41,8 +41,9 @@ class TaskAccessControl {
     }
 
     /**
-     * A personal task (team_id NULL) whose instance has been shared into one of the
+     * A personal task (team_id NULL) whose instance is shared into one of the
      * member's teams is visible/usable by that member under the "full use" model.
+     * Instances are shared many-to-many via the instance_team link table.
      *
      * @param int $memberId
      * @param array $task  Task as array (from toArray)
@@ -51,12 +52,12 @@ class TaskAccessControl {
     private function isSharedInstanceTask(int $memberId, array $task): bool {
         $instanceId = (int)($task['instance_id'] ?? 0);
         if ($instanceId <= 0) return false;
-        if (!$this->columnExists('instance', 'team_id')) return false;
+        if (!in_array('instance_team', R::inspect(), true)) return false;
 
-        $teamId = (int)R::getCell('SELECT team_id FROM instance WHERE id = ?', [$instanceId]);
-        if ($teamId <= 0) return false;
-
-        return $this->isTeamMember($teamId, $memberId);
+        return (int)R::getCell(
+            'SELECT COUNT(*) FROM instance_team it
+               JOIN teammember tm ON tm.team_id = it.team_id
+             WHERE it.instance_id = ? AND tm.member_id = ?', [$instanceId, $memberId]) > 0;
     }
 
     /**
@@ -314,14 +315,14 @@ class TaskAccessControl {
         $conditions = [];
         $params = [];
 
-        // Instances shared with the member's teams — their tasks are visible too,
-        // even though the tasks themselves are personal (team_id NULL).
+        // Instances shared (many-to-many) with the member's teams — their tasks are
+        // visible too, even though the tasks themselves are personal (team_id NULL).
         $sharedInstanceIds = [];
-        if (!empty($teamIds) && $this->columnExists('instance', 'team_id')
-            && $this->columnExists('workbenchtask', 'instance_id')) {
+        if (!empty($teamIds) && $this->columnExists('workbenchtask', 'instance_id')
+            && in_array('instance_team', \RedBeanPHP\R::inspect(), true)) {
             $tph = implode(',', array_fill(0, count($teamIds), '?'));
             $sharedInstanceIds = array_map('intval', \RedBeanPHP\R::getCol(
-                "SELECT id FROM instance WHERE team_id IN ($tph)", $teamIds));
+                "SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ($tph)", $teamIds));
         }
 
         // Visibility: personal tasks OR team tasks OR tasks of a team-shared instance.

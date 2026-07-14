@@ -9,9 +9,10 @@ $csrfTok = csrf_token();
 $selId   = $selected ? (int)$selected->id : 0;
 $ab_isDefault = $ab_isDefault ?? false;
 $ab_isRoot    = $ab_isRoot ?? false;
-$ab_isOwner   = $ab_isOwner ?? false;
-$shareTeams   = $shareTeams ?? [];
-$ab_selTeamId = (int)($ab_selTeamId ?? 0);
+$ab_isOwner       = $ab_isOwner ?? false;
+$shareTeams       = $shareTeams ?? [];
+$ab_sharedTeamIds = array_map('intval', $ab_sharedTeamIds ?? []);
+$ab_instSharedIds = array_map('intval', $ab_instSharedIds ?? []);
 $hasDefault = false;
 foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true; break; } }
 ?>
@@ -69,31 +70,26 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
         </button>
         <span id="ab-gh-state" class="small text-body-secondary"></span>
         <span id="ab-publish-msg" class="small"></span>
-        <?php if ($ab_isOwner && !$ab_isDefault): ?>
+        <?php if ($ab_isOwner && !$ab_isDefault): $sharedCount = count($ab_sharedTeamIds); ?>
           <div class="vr d-none d-sm-block mx-1"></div>
           <div class="dropdown" id="ab-share-wrap">
-            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Share this instance with a team">
-              <i class="bi bi-people me-1"></i><span id="ab-share-label"><?= $ab_selTeamId ? 'Shared' : 'Share' ?></span>
+            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Share this instance with one or more teams">
+              <i class="bi bi-people me-1"></i><span id="ab-share-label"><?= $sharedCount ? ('Shared · ' . $sharedCount) : 'Share' ?></span>
             </button>
-            <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:14rem;">
-              <li><h6 class="dropdown-header">Share with team</h6></li>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm p-2" style="min-width:15rem;">
+              <li><h6 class="dropdown-header px-1">Share with teams</h6></li>
               <?php if (empty($shareTeams)): ?>
                 <li><span class="dropdown-item-text small text-body-secondary">You're not on any team yet.</span></li>
-              <?php else: foreach ($shareTeams as $__t): ?>
+              <?php else: foreach ($shareTeams as $__t): $on = in_array((int)$__t->id, $ab_sharedTeamIds, true); ?>
                 <li>
-                  <button type="button" class="dropdown-item ab-share-opt d-flex justify-content-between align-items-center" data-team="<?= (int)$__t->id ?>">
+                  <label class="dropdown-item d-flex align-items-center gap-2 rounded">
+                    <input type="checkbox" class="form-check-input mt-0 ab-share-team" value="<?= (int)$__t->id ?>" <?= $on ? 'checked' : '' ?>>
                     <span><?= htmlspecialchars(($__t->name) ?? '') ?></span>
-                    <?php if ($ab_selTeamId === (int)$__t->id): ?><i class="bi bi-check-lg text-success"></i><?php endif; ?>
-                  </button>
+                  </label>
                 </li>
               <?php endforeach; endif; ?>
               <li><hr class="dropdown-divider"></li>
-              <li>
-                <button type="button" class="dropdown-item ab-share-opt text-danger" data-team="0">
-                  <i class="bi bi-lock me-1"></i>Make personal (unshare)
-                </button>
-              </li>
-              <li><span class="dropdown-item-text small text-body-secondary">Teammates can build, run &amp; checkpoint. Only you can share, unshare, or delete.</span></li>
+              <li><span class="dropdown-item-text small text-body-secondary">Members of any checked team get full use (build, run, checkpoint) and see its Workbench tasks. Only you can share, unshare, or delete.</span></li>
             </ul>
           </div>
           <span id="ab-share-msg" class="small"></span>
@@ -146,8 +142,9 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
                 <span class="fw-semibold"><i class="bi bi-caret-right-fill ab-caret me-1"></i><?= htmlspecialchars(($inst->displayName ?: $inst->slug) ?? '') ?></span>
                 <span>
                   <?php if (!empty($inst->isDefault)): ?><span class="badge text-bg-warning">default</span> <?php endif; ?>
-                  <?php if (!empty($inst->teamId) && (int)$inst->memberId !== (int)($ab_memberId ?? 0)): ?><span class="badge text-bg-info" title="Shared with your team"><i class="bi bi-people-fill"></i></span> <?php endif; ?>
-                  <?php if (!empty($inst->teamId) && (int)$inst->memberId === (int)($ab_memberId ?? 0)): ?><span class="badge text-bg-info" title="You shared this with a team"><i class="bi bi-share-fill"></i></span> <?php endif; ?>
+                  <?php $__mine = (int)$inst->memberId === (int)($ab_memberId ?? 0); $__shared = in_array((int)$inst->id, $ab_instSharedIds, true); ?>
+                  <?php if (!$__mine): ?><span class="badge text-bg-info" title="Shared with your team"><i class="bi bi-people-fill"></i></span> <?php endif; ?>
+                  <?php if ($__mine && $__shared): ?><span class="badge text-bg-info" title="You shared this with a team"><i class="bi bi-share-fill"></i></span> <?php endif; ?>
                   <span class="badge text-bg-dark"><?= htmlspecialchars(($inst->engine) ?? '') ?></span>
                 </span>
               </div>
@@ -436,14 +433,23 @@ if (AB.has) {
     headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':AB.csrf,'X-Requested-With':'XMLHttpRequest'},
     body:new URLSearchParams(Object.assign({csrf_token:AB.csrf,id:AB.id},extra||{})).toString()}).then(r=>r.json());
 
-  // --- Share instance with a team (owner only) -------------------------------
-  document.querySelectorAll('.ab-share-opt').forEach(btn=>btn.addEventListener('click',function(){
-    const teamId=this.dataset.team||'0';
-    const msg=document.getElementById('ab-share-msg'); if(msg) msg.textContent='saving…';
-    post('/aibuilder/share',{team_id:teamId}).then(j=>{
-      if(j&&j.success){ if(msg) msg.textContent=''; location.reload(); }
-      else { if(msg) msg.textContent=(j&&j.message)||'Share failed'; }
-    }).catch(()=>{ if(msg) msg.textContent='Share failed'; });
+  // --- Share instance with teams (owner only, many-to-many) ------------------
+  document.querySelectorAll('.ab-share-team').forEach(cb=>cb.addEventListener('change',function(){
+    const teamId=this.value, shared=this.checked?1:0;
+    const msg=document.getElementById('ab-share-msg'), lbl=document.getElementById('ab-share-label');
+    if(msg) msg.textContent='saving…';
+    this.disabled=true;
+    post('/aibuilder/share',{team_id:teamId,shared:shared}).then(j=>{
+      this.disabled=false;
+      if(j&&j.success){
+        const n=(j.data&&j.data.shared_team_ids?j.data.shared_team_ids.length:0);
+        if(lbl) lbl.textContent = n ? ('Shared · '+n) : 'Share';
+        if(msg){ msg.textContent=j.message||''; setTimeout(()=>{ if(msg) msg.textContent=''; },2500); }
+      } else {
+        this.checked=!this.checked; // revert
+        if(msg) msg.textContent=(j&&j.message)||'Share failed';
+      }
+    }).catch(()=>{ this.disabled=false; this.checked=!this.checked; if(msg) msg.textContent='Share failed'; });
   }));
 
   document.getElementById('ab-ckpt-form').addEventListener('submit',function(e){

@@ -102,12 +102,17 @@ class Aibuilder extends Control {
         if (!$id) return null;
         $inst = R::load('instance', $id);
         if (!$inst->id) return null;
-        $mine   = (int)$inst->memberId === (int)$this->member->id;
-        $shared = !$mine && (int)($inst->teamId ?? 0) > 0 && (int)R::getCell(
-            'SELECT COUNT(*) FROM teammember WHERE team_id = ? AND member_id = ?',
-            [(int)$inst->teamId, (int)$this->member->id]
-        ) > 0;
-        if (!$mine && !$shared) return null;
+        $mid  = (int)$this->member->id;
+        $mine = (int)$inst->memberId === $mid;
+        if (!$mine) {
+            // Shared with one of the member's teams (many-to-many via instance_team)?
+            if (!$this->hasShareTable()) return null;
+            $shared = (int)R::getCell(
+                'SELECT COUNT(*) FROM instance_team it
+                   JOIN teammember tm ON tm.team_id = it.team_id
+                 WHERE it.instance_id = ? AND tm.member_id = ?', [$id, $mid]) > 0;
+            if (!$shared) return null;
+        }
         if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;
     }
@@ -115,6 +120,27 @@ class Aibuilder extends Control {
     /** True when the current member owns the instance (for owner-only actions). */
     private function isInstanceOwner($inst): bool {
         return $inst && (int)$inst->memberId === (int)$this->member->id;
+    }
+
+    /** The instance<->team link table appears only after the first share. */
+    private function hasShareTable(): bool {
+        return in_array('instance_team', R::inspect(), true);
+    }
+
+    /** Instance ids shared with ANY of the given teams (empty if unshared / no table). */
+    private function instanceIdsSharedWithTeams(array $teamIds): array {
+        $teamIds = array_values(array_map('intval', $teamIds));
+        if (!$teamIds || !$this->hasShareTable()) return [];
+        $ph = implode(',', array_fill(0, count($teamIds), '?'));
+        return array_map('intval', R::getCol(
+            "SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ($ph)", $teamIds));
+    }
+
+    /** Team ids a given instance is currently shared with. */
+    private function teamIdsForInstance(int $instanceId): array {
+        if (!$instanceId || !$this->hasShareTable()) return [];
+        return array_map('intval', R::getCol(
+            'SELECT team_id FROM instance_team WHERE instance_id = ?', [$instanceId]));
     }
 
     /** Run git inside an instance's directory (read/write its own repo only). */
@@ -212,16 +238,17 @@ class Aibuilder extends Control {
 
     /** Render the instance picker plus, if one is selected, its Terminal/Chat. */
     private function renderHome(int $selId): void {
-        // Owned instances + any shared with a team the member belongs to.
+        // Owned instances + any shared with a team the member belongs to (many-to-many).
         $mid     = (int)$this->member->id;
-        $teamIds = array_map('intval', R::getCol('SELECT team_id FROM teammember WHERE member_id = ?', [$mid]));
-        if ($teamIds) {
-            $ph = implode(',', array_fill(0, count($teamIds), '?'));
-            $instances = R::find('instance', 'member_id = ? OR team_id IN (' . $ph . ') ORDER BY created_at DESC',
-                array_merge([$mid], $teamIds));
-        } else {
-            $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [$mid]);
+        $teamIds = array_values(array_map('intval', R::getCol('SELECT team_id FROM teammember WHERE member_id = ?', [$mid])));
+        $sharedInstanceIds = $this->instanceIdsSharedWithTeams($teamIds);
+        $where = 'member_id = ?';
+        $args  = [$mid];
+        if ($sharedInstanceIds) {
+            $where .= ' OR id IN (' . implode(',', array_fill(0, count($sharedInstanceIds), '?')) . ')';
+            $args   = array_merge($args, $sharedInstanceIds);
         }
+        $instances = R::find('instance', $where . ' ORDER BY created_at DESC', $args);
         $selected  = $selId ? $this->accessibleInstance($selId) : null;
 
         // Neutralize Claude's in-jail browser-open before the terminal opens, so a
@@ -233,14 +260,26 @@ class Aibuilder extends Control {
             ? R::find('team', 'id IN (' . implode(',', array_fill(0, count($teamIds), '?')) . ') ORDER BY name', $teamIds)
             : [];
 
+        // Which of the displayed instances have ANY share (for the picker badges),
+        // and which teams the SELECTED instance is shared with (for checkbox state).
+        $displayIds = array_map(fn($i) => (int)$i->id, $instances);
+        $instSharedIds = [];
+        if ($displayIds && $this->hasShareTable()) {
+            $ph = implode(',', array_fill(0, count($displayIds), '?'));
+            $instSharedIds = array_map('intval', R::getCol(
+                "SELECT DISTINCT instance_id FROM instance_team WHERE instance_id IN ($ph)", $displayIds));
+        }
+        $selSharedTeamIds = $selected ? $this->teamIdsForInstance((int)$selected->id) : [];
+
         $cfg = $this->cfg();
         $this->render('aibuilder/index', [
-            'title'          => 'AI Builder',
-            'instances'      => array_values($instances),
-            'shareTeams'     => array_values($shareTeams),
-            'ab_memberId'    => $mid,
-            'ab_isOwner'     => $selected ? $this->isInstanceOwner($selected) : false,
-            'ab_selTeamId'   => $selected ? (int)$selected->teamId : 0,
+            'title'            => 'AI Builder',
+            'instances'        => array_values($instances),
+            'shareTeams'       => array_values($shareTeams),
+            'ab_memberId'      => $mid,
+            'ab_isOwner'       => $selected ? $this->isInstanceOwner($selected) : false,
+            'ab_sharedTeamIds' => array_values($selSharedTeamIds),
+            'ab_instSharedIds' => array_values($instSharedIds),
             'selected'       => $selected,
             'ab_sub'         => $selected ? $selected->slug : '',
             'ab_token'       => $selected ? $this->mintToken($selected->slug, (int)$this->member->id) : '',
@@ -508,9 +547,11 @@ class Aibuilder extends Control {
     }
 
     /**
-     * POST /aibuilder/share — owner shares an instance with a team (team_id) or
-     * makes it personal again (team_id=0). Team members then get full use of it
-     * (terminal, build, checkpoint) and see its tasks in the Workbench. JSON.
+     * POST /aibuilder/share — owner toggles whether an instance is shared with a
+     * given team (team_id + shared=1|0). Many-to-many: an instance can be shared
+     * with several teams at once ("work between teams"). Team members then get full
+     * use of it (terminal, build, checkpoint) and see its tasks in the Workbench.
+     * JSON.
      */
     public function share($params = []): void {
         if (!$this->requireLevel($this->minLevel())) return;
@@ -519,20 +560,29 @@ class Aibuilder extends Control {
         if (!$inst) { Flight::jsonError('No such instance (owner only)', 404); return; }
 
         $teamId = (int)$this->getParam('team_id', 0);
-        if ($teamId > 0) {
-            $ok = (int)R::getCell('SELECT COUNT(*) FROM teammember WHERE team_id = ? AND member_id = ?',
-                    [$teamId, (int)$this->member->id]) > 0;
-            if (!$ok) { Flight::jsonError('You are not a member of that team', 403); return; }
-            $inst->teamId = $teamId;
-        } else {
-            $inst->teamId = null;
-        }
+        $shared = (int)$this->getParam('shared', 0) === 1;
+        if ($teamId <= 0) { Flight::jsonError('Pick a team', 400); return; }
+
+        // Owner must belong to the team they share into.
+        $isMember = (int)R::getCell('SELECT COUNT(*) FROM teammember WHERE team_id = ? AND member_id = ?',
+                [$teamId, (int)$this->member->id]) > 0;
+        if (!$isMember) { Flight::jsonError('You are not a member of that team', 403); return; }
+        $team = R::load('team', $teamId);
+        if (!$team->id) { Flight::jsonError('No such team', 404); return; }
+
+        // Add/remove this team in the instance's shared-team set (keyed by bean id,
+        // so the toggle is idempotent). RedBean reconciles the instance_team link
+        // table on store.
+        $teams = $inst->sharedTeamList;
+        if ($shared) $teams[$team->id] = $team;
+        else         unset($teams[$team->id]);
+        $inst->sharedTeamList = $teams;
         R::store($inst);
 
-        $team = $teamId ? R::load('team', $teamId) : null;
+        $ids = array_map('intval', array_keys($inst->sharedTeamList));
         Flight::jsonSuccess(
-            ['team_id' => $inst->teamId, 'team_name' => $team && $team->id ? $team->name : null],
-            $teamId ? 'Shared with team' : 'Instance is now personal'
+            ['team_id' => $teamId, 'team_name' => $team->name, 'shared' => $shared, 'shared_team_ids' => array_values($ids)],
+            $shared ? ('Shared with ' . $team->name) : ('Removed from ' . $team->name)
         );
     }
 

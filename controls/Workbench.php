@@ -2252,6 +2252,35 @@ class Workbench extends Control {
     }
 
     /**
+     * GET /workbench/console?id= — read-only tmux pane capture of the task's live
+     * worker session. Returned as raw text; the view paints it into a <pre> via
+     * textContent, so any <script>/HTML in the agent output is inert. Polled while
+     * the task is active. Manual runs use tmux_session; plan subtasks use
+     * agent_session — both live on the default tmux socket.
+     */
+    public function console($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $taskId = (int)$this->getParam('id');
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id || !$this->access->canView($this->member->id, $task)) {
+            Flight::jsonError('Access denied', 403);
+            return;
+        }
+
+        $session = (string)($task->tmuxSession ?: $task->agentSession ?: '');
+        $lines   = max(50, min(4000, (int)$this->getParam('lines', 1500)));
+        $alive   = $session !== '' && TmuxManager::exists($session);
+
+        Flight::jsonSuccess([
+            'session' => $session,
+            'alive'   => $alive,
+            'content' => $alive ? TmuxManager::capture($session, $lines) : '',
+            'status'  => $task->status,
+        ]);
+    }
+
+    /**
      * Get task progress (AJAX polling)
      */
     public function progress($params = []) {

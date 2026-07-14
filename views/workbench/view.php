@@ -350,6 +350,69 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                 </div>
             <?php endif; ?>
 
+            <!-- Live Console (read-only tmux capture of the worker session) -->
+            <?php
+            $consoleSession = (string)($task->tmuxSession ?: $task->agentSession ?: '');
+            $showConsole = $consoleSession !== '' || in_array($task->status, ['running', 'queued', 'awaiting', 'paused'], true);
+            ?>
+            <?php if ($showConsole): ?>
+                <div class="card mb-4" id="consoleCard">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-terminal me-2"></i>Live Console <span class="badge bg-secondary ms-1">read-only</span></h5>
+                        <span class="small text-muted d-flex align-items-center gap-2">
+                            <span id="consoleDot" class="d-inline-block rounded-circle" style="width:.6rem;height:.6rem;background:#6c757d;"></span>
+                            <span id="consoleState">connecting…</span>
+                            <label class="ms-2 mb-0"><input type="checkbox" id="consoleFollow" checked> follow</label>
+                        </span>
+                    </div>
+                    <pre id="wbConsole" class="mb-0 p-3" style="background:#1e1e1e;color:#d4d4d4;max-height:60vh;overflow:auto;font-size:.8rem;line-height:1.35;white-space:pre-wrap;word-break:break-word;border-radius:0 0 .375rem .375rem;">Connecting…</pre>
+                </div>
+                <script>
+                (function(){
+                    var pre = document.getElementById('wbConsole'),
+                        dot = document.getElementById('consoleDot'),
+                        state = document.getElementById('consoleState'),
+                        follow = document.getElementById('consoleFollow');
+                    if (!pre) return;
+                    var taskId = <?= (int)$task->id ?>, timer = null, busy = false;
+                    function nearBottom(){ return pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 40; }
+                    function paint(text){
+                        var stick = follow.checked && nearBottom();
+                        // textContent (never innerHTML): any <script>/HTML in the agent
+                        // output is shown literally and can never execute.
+                        pre.textContent = text && text.length ? text : '(no output captured)';
+                        if (stick) pre.scrollTop = pre.scrollHeight;
+                    }
+                    function tick(){
+                        if (busy) return; busy = true;
+                        fetch('/workbench/console?id=' + taskId + '&lines=1500', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+                            .then(function(r){ return r.json(); })
+                            .then(function(j){
+                                busy = false;
+                                var d = (j && j.data) ? j.data : {};
+                                if (d.alive) { dot.style.background = '#28a745'; state.textContent = 'live'; paint(d.content); }
+                                else {
+                                    dot.style.background = '#6c757d'; state.textContent = 'session ended';
+                                    if (d.content) paint(d.content);
+                                    // Only stop polling once the task is truly done — otherwise keep
+                                    // reconnecting (a run may just be starting up).
+                                    if (['running','queued','awaiting','paused'].indexOf(d.status) < 0 && timer) {
+                                        clearInterval(timer); timer = null;
+                                    }
+                                }
+                            })
+                            .catch(function(){ busy = false; });
+                    }
+                    tick();
+                    timer = setInterval(tick, 1500);
+                    document.addEventListener('visibilitychange', function(){
+                        if (document.hidden) { if (timer) { clearInterval(timer); timer = null; } }
+                        else if (!timer) { tick(); timer = setInterval(tick, 1500); }
+                    });
+                })();
+                </script>
+            <?php endif; ?>
+
             <!-- Your Turn Card (when awaiting) -->
             <?php if ($task->status === 'awaiting'): ?>
                 <div class="card mb-4 border-warning" id="progressCard">

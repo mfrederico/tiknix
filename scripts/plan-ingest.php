@@ -42,8 +42,16 @@ R::setup('sqlite:' . $db);
 R::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "[ingest] cannot open db: $db\n"); exit(1); }
 
-$inst = R::findOne('instance', 'slug = ? AND member_id = ?', [$slug, $member]);
-if (!$inst || !$inst->id) { fwrite(STDERR, "[ingest] no instance '$slug' owned by member $member\n"); exit(1); }
+// Resolve by slug (+app to disambiguate), then AUTHORIZE: the member must OWN the
+// instance or be on a team it's shared with — a team member decomposing a shared
+// workspace produces a plan.json here too. Mirrors Workbench::decompose /
+// TaskAccessControl::canAccessInstance so ingest matches the UI's access policy.
+$inst = R::findOne('instance', 'slug = ? AND app = ?', [$slug, $app]);
+if (!$inst || !$inst->id) { $inst = R::findOne('instance', 'slug = ?', [$slug]); }
+if (!$inst || !$inst->id) { fwrite(STDERR, "[ingest] no instance '$slug'\n"); exit(1); }
+if (!(new \app\TaskAccessControl())->canAccessInstance($member, (int)$inst->id)) {
+    fwrite(STDERR, "[ingest] member $member has no access to instance '$slug'\n"); exit(1);
+}
 
 // Atomic claim: if the browser poll already ingested it, skip cleanly.
 $claim = PlanIngestor::claim($planFile);

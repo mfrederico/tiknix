@@ -43,6 +43,11 @@ $defaults = [
     ['auth', 'twofaskip', 101, '2FA skip setup (optional mode)'],
     ['auth', 'twofarecoverycodes', 101, '2FA recovery codes'],
     ['auth', 'setpassword', 101, 'Set password (post-2FA / oauth)'],
+    // Public so a logged-OUT invitee can open the token link: join() self-serves a
+    // new account for the invited email, then hands off to auth::setpassword. The
+    // teams::* wildcard (100) would otherwise bounce them to login before they can
+    // create an account. The token is the credential; only a valid invite gets in.
+    ['teams', 'join', 101, 'Accept a team invite via token (public, self-serve account create)'],
     ['install', 'index', 101, 'First-run setup wizard'],
     ['install', 'save', 101, 'First-run setup wizard submit'],
     ['docs', '*', 101, 'Documentation'],

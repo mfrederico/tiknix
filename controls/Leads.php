@@ -39,7 +39,21 @@ class Leads extends Control {
     /**
      * List captured leads (newest first).
      */
+    /**
+     * The leads list is admin data where a deleted row MUST disappear at once.
+     * The query cache doesn't reliably observe a cross-request DELETE (writes can
+     * run on a non-cached adapter after R::selectDatabase swaps), leaving stale
+     * rows on screen. Bust the lead table version before every read and after
+     * every write so the view is always authoritative.
+     */
+    private function bustLeadCache(): void {
+        $ad = Flight::get('cachedDatabaseAdapter');
+        if ($ad instanceof \app\CachedDatabaseAdapter) $ad->invalidateTable('lead');
+    }
+
     public function index() {
+        $this->bustLeadCache();
+
         // Count how many stored leads trip the bot-name heuristic so the view can
         // offer a one-click "purge flagged" action. Names only — cheap scan.
         $flagged = 0;
@@ -60,6 +74,8 @@ class Leads extends Control {
      * Column order MUST match the <thead> in views/leads/index.php.
      */
     public function data() {
+        $this->bustLeadCache();   // never serve deleted leads from a stale cache
+
         $columns = [
             ['db' => 'first_name', 'search' => 'like'],   // 0  First Name
             ['db' => 'last_name',  'search' => 'like'],   // 1  Last Name
@@ -125,6 +141,7 @@ class Leads extends Control {
                     $deleted++;
                 }
             }
+            $this->bustLeadCache();
             $this->logger->info('Leads purged (flagged as bot)', ['count' => $deleted, 'by' => $this->member->id]);
             Flight::jsonSuccess(['deleted' => $deleted], $deleted . ' flagged lead' . ($deleted === 1 ? '' : 's') . ' deleted.');
             return;
@@ -134,6 +151,7 @@ class Leads extends Control {
         $lead = $id ? Bean::load('lead', $id) : null;
         if (!$lead || !$lead->id) { Flight::jsonError('Lead not found', 404); return; }
         Bean::trash($lead);
+        $this->bustLeadCache();
         $this->logger->info('Lead deleted', ['lead_id' => $id, 'by' => $this->member->id]);
         Flight::jsonSuccess(['deleted' => 1], 'Lead deleted.');
     }

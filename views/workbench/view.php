@@ -140,6 +140,16 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                     ? 'All subtasks are complete and live on your instance — nothing left to approve here.'
                                     : 'Subtasks go live on your instance as each one finishes — there is nothing to approve on the plan itself.' ?>
                             </div>
+                            <?php $auditStatus = (string)($task->auditStatus ?? ''); if ($auditStatus !== ''): $af = (int)($task->auditFailures ?? 0); ?>
+                                <div class="mt-2">
+                                    <?php if ($auditStatus === 'passed'): ?>
+                                        <span class="badge bg-success"><i class="bi bi-shield-check me-1"></i>Audit passed</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-danger"><i class="bi bi-shield-exclamation me-1"></i>Audit failed<?= $af > 0 ? ' · ' . $af . ' issue' . ($af === 1 ? '' : 's') : ($af < 0 ? ' · no results' : '') ?></span>
+                                    <?php endif; ?>
+                                    <span class="text-body-secondary small ms-1">Definition-of-Done QA<?= !empty($task->auditAt) ? ' · ' . htmlspecialchars((string)$task->auditAt) : '' ?> — proof-of-life screenshots below</span>
+                                </div>
+                            <?php endif; ?>
                         <?php elseif ($canRun && in_array($task->status, ['awaiting', 'completed'])): ?>
                             <?php
                             // Check if current user is admin (can approve/decline)

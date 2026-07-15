@@ -91,11 +91,11 @@ class AuditReporter {
         $out = ["**Definition-of-Done audit**"];
         foreach (($g['checks'] ?? []) as $c) {
             $out[] = '- ✅ ' . self::s($c['label'] ?? 'check') . ' _(' . self::s($c['level'] ?? '') . ')_';
-            foreach (($c['screens'] ?? []) as $sc) $out[] = '  ![' . self::s($c['label'] ?? '') . '](' . $web($sc) . ')';
+            foreach (($c['screens'] ?? []) as $sc) $out[] = '  - [📷 screenshot](' . $web($sc) . ')';
         }
         foreach (($g['failures'] ?? []) as $f) {
             $out[] = '- ❌ ' . self::s($f['label'] ?? 'failure') . ' _(' . self::s($f['level'] ?? '') . ')_ — ' . self::s($f['message'] ?? '');
-            foreach (($f['screens'] ?? []) as $sc) $out[] = '  ![' . self::s($f['label'] ?? '') . '](' . $web($sc) . ')';
+            foreach (($f['screens'] ?? []) as $sc) $out[] = '  - [📷 screenshot](' . $web($sc) . ')';
         }
         return implode("\n", $out);
     }
@@ -117,7 +117,7 @@ class AuditReporter {
             foreach ($failures as $f) {
                 $out[] = '- ❌ ' . self::s($f['label'] ?? '') . ' — ' . self::s($f['message'] ?? '')
                        . (!empty($f['url']) ? ' (`' . self::s($f['url']) . '`)' : '');
-                foreach (($f['screens'] ?? []) as $sc) $out[] = '  ![failure](' . $web($sc) . ')';
+                foreach (($f['screens'] ?? []) as $sc) $out[] = '  - [📷 screenshot](' . $web($sc) . ')';
             }
             $out[] = '';
             $out[] = '_Failures were sent to the firehose — fixes will be triaged and re-audited._';

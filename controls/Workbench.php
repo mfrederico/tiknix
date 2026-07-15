@@ -41,6 +41,13 @@ class Workbench extends Control {
 
         $this->viewData['title'] = 'Workbench';
 
+        // Freshly-ingested tasks (written by the headless plan-ingest.php CLI, which
+        // has its own DB connection) don't invalidate this web process's query cache,
+        // so a just-decomposed plan could stay hidden for up to the cache TTL. Bust
+        // the task table before reading so newly-landed plans show immediately.
+        $ad = Flight::get('cachedDatabaseAdapter');
+        if ($ad instanceof \app\CachedDatabaseAdapter) $ad->invalidateTable('workbenchtask');
+
         // Get filter parameters
         $filters = [
             'status' => $this->getParam('status'),
@@ -97,6 +104,25 @@ class Workbench extends Control {
         $this->viewData['planMeta'] = $planMeta;
         $this->viewData['parentIdsWithChildren'] = array_keys($childParentIds);
         $this->viewData['decomposingInstance'] = (int)$this->getParam('decomposing', 0);
+
+        // Persistent "decomposing…" indicator: find planner sessions still alive for
+        // THIS member so the banner shows even after they navigate away from the
+        // create page. Session name mirrors PlanRunner: tiknix-<memberId>-plan-<slug>.
+        $decomposing = [];
+        $prefix = 'tiknix-' . (int)$this->member->id . '-plan-';
+        $active = \app\TmuxManager::list($prefix);
+        if ($active) {
+            $accIds = $this->access->getAccessibleInstanceIds((int)$this->member->id);
+            if ($accIds) {
+                $ph = implode(',', array_fill(0, count($accIds), '?'));
+                foreach (Bean::find('instance', "id IN ($ph) ORDER BY slug ASC", $accIds) as $inst) {
+                    if (in_array($prefix . $inst->slug, $active, true)) {
+                        $decomposing[] = ['id' => (int)$inst->id, 'tag' => $inst->slug . '.' . ($inst->app ?: 'tiknix')];
+                    }
+                }
+            }
+        }
+        $this->viewData['decomposingInstances'] = $decomposing;
 
         $this->render('workbench/index', $this->viewData);
     }

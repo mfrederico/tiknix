@@ -96,37 +96,59 @@
 
             <script>window.WB_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;</script>
 
-            <?php if (!empty($decomposingInstance)): ?>
-                <div id="wbDecomposeBanner" class="alert alert-info d-flex align-items-center" data-instance-id="<?= (int)$decomposingInstance ?>">
+            <?php
+            // Show a decomposing banner for every instance with a live planner
+            // session (detected server-side, so it survives navigating away), unioned
+            // with the ?decomposing=<id> hint from the just-submitted redirect.
+            $wbDecomposing = $decomposingInstances ?? [];
+            $wbSeen = array_map(fn($d) => (int)$d['id'], $wbDecomposing);
+            if (!empty($decomposingInstance) && !in_array((int)$decomposingInstance, $wbSeen, true)) {
+                $wbDecomposing[] = ['id' => (int)$decomposingInstance, 'tag' => ''];
+            }
+            ?>
+            <?php if (!empty($wbDecomposing)): ?>
+                <div id="wbDecomposeBanner" class="alert alert-info d-flex align-items-center"
+                     data-instance-ids="<?= htmlspecialchars(implode(',', array_map(fn($d) => (int)$d['id'], $wbDecomposing))) ?>">
                     <span class="spinner-border spinner-border-sm me-2" role="status"></span>
                     <div>
-                        <strong>Decomposing your goal into a plan…</strong>
-                        <div class="small text-muted">The planner is grounding itself in the codebase and drafting tasks. This page refreshes automatically when the plan is ready.</div>
+                        <strong>Decomposing your goal into a plan<?= count($wbDecomposing) > 1 ? 's' : '' ?>…</strong>
+                        <?php $wbTags = array_filter(array_map(fn($d) => (string)($d['tag'] ?? ''), $wbDecomposing)); ?>
+                        <?php if ($wbTags): ?>
+                            <span class="ui-mono small">(<?= htmlspecialchars(implode(', ', $wbTags)) ?>)</span>
+                        <?php endif; ?>
+                        <div class="small text-muted">The planner is grounding itself in the codebase and drafting tasks. This page refreshes automatically when the plan is ready — you can browse away and it'll keep working.</div>
                     </div>
                 </div>
                 <script>
                 (function(){
                     var el = document.getElementById('wbDecomposeBanner');
                     if (!el) return;
-                    var iid = el.getAttribute('data-instance-id');
-                    var baseline = null, tries = 0;
+                    var ids = (el.getAttribute('data-instance-ids') || '').split(',').filter(Boolean);
+                    if (!ids.length) return;
+                    var baseline = {}, tries = 0;
                     function done(){
                         var u = new URL(window.location.href);
                         u.searchParams.delete('decomposing');   // drop so the banner does not re-arm
                         window.location.href = u.toString();
                     }
                     function poll(){
-                        fetch('/workbench/decomposestatus?instance_id=' + encodeURIComponent(iid), {headers:{'X-Requested-With':'XMLHttpRequest'}})
-                            .then(function(r){ return r.json(); })
-                            .then(function(j){
-                                var d = (j && j.data) ? j.data : j;   // jsonSuccess wraps payload in .data
-                                var newest = d ? (d.newest_plan_id || 0) : 0;
-                                if (baseline === null) baseline = newest;
-                                if (newest > baseline) return done();       // a new plan landed
-                                if (d && d.running === false) return done(); // planner exited (ingest runs before it dies)
-                                if (++tries < 240) setTimeout(poll, 3000);   // ~12 min cap
-                            })
-                            .catch(function(){ if (++tries < 240) setTimeout(poll, 3000); });
+                        Promise.all(ids.map(function(iid){
+                            return fetch('/workbench/decomposestatus?instance_id=' + encodeURIComponent(iid), {headers:{'X-Requested-With':'XMLHttpRequest'}})
+                                .then(function(r){ return r.json(); })
+                                .then(function(j){ return {iid: iid, d: (j && j.data) ? j.data : j}; })
+                                .catch(function(){ return {iid: iid, d: null}; });
+                        })).then(function(results){
+                            var anyDone = false, allStopped = true;
+                            results.forEach(function(res){
+                                var d = res.d; if (!d) { return; }
+                                var newest = d.newest_plan_id || 0;
+                                if (baseline[res.iid] === undefined) baseline[res.iid] = newest;
+                                if (newest > baseline[res.iid]) anyDone = true;   // a new plan landed
+                                if (d.running !== false) allStopped = false;      // still decomposing
+                            });
+                            if (anyDone || allStopped) return done();
+                            if (++tries < 240) setTimeout(poll, 3000);            // ~12 min cap
+                        });
                     }
                     setTimeout(poll, 3000);
                 })();

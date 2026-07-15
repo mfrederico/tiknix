@@ -27,6 +27,24 @@ class TmuxManager {
     }
 
     /**
+     * List live session names in ONE `tmux ls` call, optionally filtered to those
+     * starting with $prefix. Cheaper than calling exists() per candidate when you
+     * need to discover which of many sessions are alive.
+     *
+     * @param string $prefix Only return sessions whose name starts with this.
+     * @return string[] Matching session names (empty if tmux has no server/sessions).
+     */
+    public static function list(string $prefix = ''): array {
+        exec('tmux ls -F "#{session_name}" 2>/dev/null', $output, $returnCode);
+        if ($returnCode !== 0) return [];   // no server / no sessions
+        $names = array_filter(array_map('trim', (array)$output), fn($n) => $n !== '');
+        if ($prefix !== '') {
+            $names = array_filter($names, fn($n) => strncmp($n, $prefix, strlen($prefix)) === 0);
+        }
+        return array_values($names);
+    }
+
+    /**
      * Create a new tmux session
      *
      * @param string $sessionName The session name

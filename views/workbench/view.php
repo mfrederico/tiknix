@@ -8,8 +8,14 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
         <!-- Main Content -->
         <div class="col-lg-8">
             <div class="mb-3">
-                <a href="/workbench" class="text-decoration-none text-muted">
-                    <i class="bi bi-arrow-left"></i> Back to Workbench
+                <?php $wbBack = !empty($task->instanceTag)
+                    ? '/workbench?instance_tag=' . urlencode($task->instanceTag)
+                    : '/workbench'; ?>
+                <a href="<?= htmlspecialchars($wbBack) ?>" class="text-decoration-none text-muted">
+                    <i class="bi bi-arrow-left"></i>
+                    <?= !empty($task->instanceTag)
+                        ? 'Back to ' . htmlspecialchars($task->instanceTag)
+                        : 'Back to Workbench' ?>
                 </a>
             </div>
 

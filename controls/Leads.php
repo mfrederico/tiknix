@@ -8,6 +8,8 @@ namespace app;
 
 use \Flight as Flight;
 use \app\Bean;
+use \app\LeadSpamCheck;
+use \RedBeanPHP\R;
 use app\BaseControls\Control;
 
 class Leads extends Control {
@@ -38,9 +40,17 @@ class Leads extends Control {
      * List captured leads (newest first).
      */
     public function index() {
+        // Count how many stored leads trip the bot-name heuristic so the view can
+        // offer a one-click "purge flagged" action. Names only — cheap scan.
+        $flagged = 0;
+        foreach (R::getAll('SELECT first_name, last_name FROM lead') as $r) {
+            if (LeadSpamCheck::isSuspicious($r['first_name'] ?? '', $r['last_name'] ?? '')) $flagged++;
+        }
+
         $this->render('leads/index', [
-            'title' => 'Leads',
-            'total' => Bean::count('lead'),
+            'title'   => 'Leads',
+            'total'   => Bean::count('lead'),
+            'flagged' => $flagged,
         ]);
     }
 
@@ -61,23 +71,70 @@ class Leads extends Control {
         $resp = DataTableResponse::build('lead', $columns, $this->getParams(), [
             'globalCols' => ['first_name', 'last_name', 'email'],
             'row' => function (array $r): array {
+                $id    = (int)($r['id'] ?? 0);
                 $email = h($r['email'] ?? '');
-                $name  = trim(((string)($r['first_name'] ?? '')) . ' ' . ((string)($r['last_name'] ?? '')));
-                $btn = $email !== ''
-                    ? '<button type="button" class="btn btn-sm btn-outline-primary lead-email-btn"'
-                      . ' data-email="' . h($r['email'] ?? '') . '" data-name="' . h($name) . '">'
-                      . '<i class="bi bi-envelope"></i> Email</button>'
+                $first = (string)($r['first_name'] ?? '');
+                $last  = (string)($r['last_name'] ?? '');
+                $name  = trim($first . ' ' . $last);
+
+                // Flag garbage/bot names (low vowel ratio / consonant mash) so an
+                // admin can spot and delete them at a glance.
+                $spam = LeadSpamCheck::evaluate($first, $last);
+                $flag = $spam['suspicious']
+                    ? ' <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"'
+                      . ' title="' . h(implode('; ', $spam['reasons'])) . '"><i class="bi bi-robot"></i> likely bot</span>'
                     : '';
+
+                $emailBtn = $email !== ''
+                    ? '<button type="button" class="btn btn-sm btn-outline-primary lead-email-btn me-1"'
+                      . ' data-email="' . $email . '" data-name="' . h($name) . '" title="Email lead">'
+                      . '<i class="bi bi-envelope"></i></button>'
+                    : '';
+                $deleteBtn = '<button type="button" class="btn btn-sm btn-outline-danger lead-delete-btn"'
+                    . ' data-id="' . $id . '" data-name="' . h($name !== '' ? $name : ($email !== '' ? $email : 'this lead')) . '"'
+                    . ' title="Delete lead"><i class="bi bi-trash"></i></button>';
+
                 return [
-                    h($r['first_name'] ?? ''),
-                    h($r['last_name'] ?? ''),
+                    h($first) . $flag,
+                    h($last),
                     $email !== '' ? '<a href="mailto:' . $email . '">' . $email . '</a>' : '—',
                     '<span class="ui-mono small text-secondary">' . h($r['created_at'] ?? '') . '</span>',
-                    '<div class="text-end">' . $btn . '</div>',
+                    '<div class="text-end text-nowrap">' . $emailBtn . $deleteBtn . '</div>',
                 ];
             },
         ]);
 
         Flight::json($resp);
+    }
+
+    /**
+     * Delete a lead (JSON). Two modes:
+     *   - id=<n>        delete one lead
+     *   - mode=flagged  purge EVERY lead whose name trips the bot heuristic
+     * Admin-only (enforced by the constructor) + CSRF.
+     */
+    public function delete() {
+        if (Flight::request()->method !== 'POST') { Flight::jsonError('POST required', 405); return; }
+        if (!$this->validateCSRF()) return;   // AJAX-aware: emits JSON 403 on failure
+
+        if ((string)$this->getParam('mode', '') === 'flagged') {
+            $deleted = 0;
+            foreach (Bean::findAll('lead') as $lead) {
+                if (LeadSpamCheck::isSuspicious($lead->firstName, $lead->lastName)) {
+                    Bean::trash($lead);
+                    $deleted++;
+                }
+            }
+            $this->logger->info('Leads purged (flagged as bot)', ['count' => $deleted, 'by' => $this->member->id]);
+            Flight::jsonSuccess(['deleted' => $deleted], $deleted . ' flagged lead' . ($deleted === 1 ? '' : 's') . ' deleted.');
+            return;
+        }
+
+        $id   = (int)$this->getParam('id', 0);
+        $lead = $id ? Bean::load('lead', $id) : null;
+        if (!$lead || !$lead->id) { Flight::jsonError('Lead not found', 404); return; }
+        Bean::trash($lead);
+        $this->logger->info('Lead deleted', ['lead_id' => $id, 'by' => $this->member->id]);
+        Flight::jsonSuccess(['deleted' => 1], 'Lead deleted.');
     }
 }

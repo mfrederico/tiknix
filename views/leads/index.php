@@ -27,6 +27,11 @@
                     <h1>Leads</h1>
                     <div class="ui-sub"><?= (int)($total ?? 0) ?> total &middot; email them straight from here.</div>
                 </div>
+                <?php if ((int)($flagged ?? 0) > 0): ?>
+                    <button type="button" id="leadsPurgeFlagged" class="btn btn-outline-danger" data-count="<?= (int)$flagged ?>">
+                        <i class="bi bi-robot"></i> Purge <?= (int)$flagged ?> flagged
+                    </button>
+                <?php endif; ?>
             </div>
 
             <?php if ((int)($total ?? 0) === 0): ?>
@@ -120,5 +125,56 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('leadEmailBody').value = '';
         modal.show();
     });
+
+    // --- Delete + purge-flagged (JSON, CSRF-protected) ----------------------
+    var CSRF = <?= json_encode(function_exists('csrf_token') ? csrf_token() : '', JSON_UNESCAPED_SLASHES) ?>;
+    function leadDelete(body) {
+        return fetch('/leads/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRF-TOKEN': CSRF,
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: new URLSearchParams(body).toString()
+        }).then(function (r) { return r.json(); });
+    }
+    function reloadTable() {
+        var el = document.getElementById('leadsTable');
+        if (el && el._dtApi) { el._dtApi.ajax.reload(null, false); }
+        else { window.location.reload(); }
+    }
+
+    // Single-row delete
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.lead-delete-btn');
+        if (!btn) return;
+        var name = btn.getAttribute('data-name') || 'this lead';
+        if (!confirm('Delete ' + name + '? This cannot be undone.')) return;
+        btn.disabled = true;
+        leadDelete({ _csrf_token: CSRF, id: btn.getAttribute('data-id') })
+            .then(function (j) {
+                if (j && j.success) { reloadTable(); }
+                else { btn.disabled = false; alert((j && (j.message || j.error)) || 'Could not delete lead.'); }
+            })
+            .catch(function () { btn.disabled = false; alert('Could not delete lead.'); });
+    });
+
+    // Bulk purge of every bot-flagged lead
+    var purgeBtn = document.getElementById('leadsPurgeFlagged');
+    if (purgeBtn) {
+        purgeBtn.addEventListener('click', function () {
+            var n = purgeBtn.getAttribute('data-count') || 'the';
+            if (!confirm('Delete all ' + n + ' flagged (likely-bot) leads? This cannot be undone.')) return;
+            purgeBtn.disabled = true;
+            purgeBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Purging…';
+            leadDelete({ _csrf_token: CSRF, mode: 'flagged' })
+                .then(function (j) {
+                    alert((j && j.message) || (j && j.success ? 'Done.' : 'Could not purge.'));
+                    window.location.reload();
+                })
+                .catch(function () { window.location.reload(); });
+        });
+    }
 });
 </script>

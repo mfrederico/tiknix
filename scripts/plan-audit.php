@@ -142,7 +142,7 @@ if (!is_array($manifest)) {
     exit(1);
 }
 
-$res = AuditReporter::report($manifest, $plan, $inst, $dir);
+$res = AuditReporter::report($manifest, $plan, $inst, $dir, (int)($plan->auditCycle ?? 0));
 alog('reported: ' . json_encode($res));
 
 // --- 5) Tear down test users --------------------------------------------------

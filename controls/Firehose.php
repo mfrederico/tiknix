@@ -215,6 +215,7 @@ class Firehose extends Control {
         $task->authcontrolLevel= 1;
         $task->source          = 'detected_error'; // powers the workbench highlight
         $task->detectederrorId = (int)$err->id;
+        $task->auditCycle      = (int)(json_decode((string)$err->context, true)['audit_cycle'] ?? 0);
         $task->createdAt       = $now;
         $task->updatedAt       = $now;
         Bean::store($task);
@@ -292,6 +293,9 @@ class Firehose extends Control {
             $parent->status          = 'running';
             $parent->source          = 'detected_error';
             $parent->detectederrorId = (int)$err->id;
+            // Inherit the audit-chain depth so this fix's own post-build audit knows
+            // how deep it is and the audit->fix loop terminates (see AuditReporter).
+            $parent->auditCycle      = (int)(json_decode((string)$err->context, true)['audit_cycle'] ?? 0);
             $parent->updatedAt       = date('Y-m-d H:i:s');
             Bean::store($parent);
 

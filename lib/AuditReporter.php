@@ -24,8 +24,14 @@ use \app\Bean;
 
 class AuditReporter {
 
-    /** Consume a parsed manifest for a plan. Returns a small result summary. */
-    public static function report(array $m, $plan, $inst, string $instanceDir): array {
+    /** Max audit→fix→re-audit cycles before we stop auto-spawning fixes and ask for
+     *  a human. A plan spawned as a fix inherits its parent's cycle + 1 (see Firehose),
+     *  so the chain terminates instead of looping forever on an unfixable failure. */
+    const MAX_AUDIT_CYCLES = 2;
+
+    /** Consume a parsed manifest for a plan. Returns a small result summary.
+     *  $auditCycle = how deep this plan is in an audit→fix chain (0 for a first build). */
+    public static function report(array $m, $plan, $inst, string $instanceDir, int $auditCycle = 0): array {
         $slug = (string)$inst->slug;
         $app  = (string)($inst->app ?: 'tiknix');
         $baseUrl  = rtrim((string)($m['base_url'] ?? "https://{$slug}.{$app}.com"), '/');
@@ -63,15 +69,22 @@ class AuditReporter {
             self::postComment((int)$byRef[$ref]->id, (int)$inst->memberId, self::subtaskMd($g, $web));
         }
 
-        // 2) Summary comment on the parent plan task.
-        self::postComment((int)$plan->id, (int)$inst->memberId, self::summaryMd($m, $passed, $levels, $checks, $failures, $web));
+        // Cap the audit->fix->re-audit chain: past the limit we stop spawning fixes
+        // and leave it for a human (comment + email still go out).
+        $capped = ($auditCycle >= self::MAX_AUDIT_CYCLES);
 
-        // 3) Report failures to the firehose (auto-triage -> fix -> re-audit loop).
+        // 2) Summary comment on the parent plan task.
+        self::postComment((int)$plan->id, (int)$inst->memberId, self::summaryMd($m, $passed, $levels, $checks, $failures, $web, $capped));
+
+        // 3) Report failures to the firehose (auto-triage -> fix -> re-audit loop),
+        //    stamping the NEXT cycle so the spawned fix knows its depth.
         $reported = 0;
-        foreach ($failures as $f) { if (self::reportFailure($f, $inst, (int)$plan->id)) $reported++; }
+        if (!$capped) {
+            foreach ($failures as $f) { if (self::reportFailure($f, $inst, (int)$plan->id, $auditCycle + 1)) $reported++; }
+        }
 
         // 4) Email owner + shared-team members.
-        $emailed = self::emailReport($m, $plan, $inst, $passed, $checks, $failures, $levels, $web, $fs);
+        $emailed = self::emailReport($m, $plan, $inst, $passed, $checks, $failures, $levels, $web, $fs, $capped);
 
         // 5) Stamp the plan (fluid columns; driver runs unfrozen).
         try {
@@ -100,7 +113,7 @@ class AuditReporter {
         return implode("\n", $out);
     }
 
-    private static function summaryMd(array $m, bool $passed, array $levels, array $checks, array $failures, callable $web): string {
+    private static function summaryMd(array $m, bool $passed, array $levels, array $checks, array $failures, callable $web, bool $capped = false): string {
         $out = [];
         $out[] = ($passed ? '## ✅ Audit passed' : '## ❌ Audit failed');
         if (!empty($m['summary'])) $out[] = '_' . self::s($m['summary']) . '_';
@@ -120,7 +133,9 @@ class AuditReporter {
                 foreach (($f['screens'] ?? []) as $sc) $out[] = '  - [📷 screenshot](' . $web($sc) . ')';
             }
             $out[] = '';
-            $out[] = '_Failures were sent to the firehose — fixes will be triaged and re-audited._';
+            $out[] = $capped
+                ? '_⚠️ Max audit cycles reached — no more auto-fixes will be spawned. These need manual review._'
+                : '_Failures were sent to the firehose — fixes will be triaged and re-audited._';
         }
         return implode("\n", $out);
     }
@@ -143,7 +158,7 @@ class AuditReporter {
 
     // --- firehose -------------------------------------------------------------
 
-    private static function reportFailure(array $f, $inst, int $planId): bool {
+    private static function reportFailure(array $f, $inst, int $planId, int $nextCycle = 1): bool {
         $key = (string)\Flight::get('firehose.ingest_key');
         $url = rtrim((string)\Flight::get('app.baseurl'), '/') . '/firehose/report';
         if ($key === '' || $url === '/firehose/report') return false;
@@ -157,7 +172,9 @@ class AuditReporter {
             'class'        => 'AuditFailure',
             'url'          => mb_substr((string)($f['url'] ?? ''), 0, 500),
             'http_method'  => 'GET',
-            'context'      => ['source' => 'audit', 'plan_id' => $planId, 'level' => (string)($f['level'] ?? '')],
+            // audit_cycle rides in context so the spawned fix plan inherits its depth
+            // (see Firehose::createTriageTask / launchViaOrchestrator) and the chain caps.
+            'context'      => ['source' => 'audit', 'plan_id' => $planId, 'level' => (string)($f['level'] ?? ''), 'audit_cycle' => $nextCycle],
         ];
         try {
             $ch = curl_init($url);
@@ -177,7 +194,7 @@ class AuditReporter {
 
     // --- email ----------------------------------------------------------------
 
-    private static function emailReport(array $m, $plan, $inst, bool $passed, array $checks, array $failures, array $levels, callable $web, callable $fs): int {
+    private static function emailReport(array $m, $plan, $inst, bool $passed, array $checks, array $failures, array $levels, callable $web, callable $fs, bool $capped = false): int {
         $recipients = self::recipients($inst);
         if (!$recipients) return 0;
         if (!\app\Mailer::isConfigured()) return 0;
@@ -217,7 +234,9 @@ class AuditReporter {
                        . '<tr><th></th><th align="left">Check</th><th align="left">Level</th></tr>' . $rows . '</table>' : '')
               . ($gallery ? '<h3>Proof of life</h3><div>' . $gallery . '</div>' : '')
               . '<p><a href="' . self::h($planUrl) . '">Open the plan in the Workbench &rarr;</a></p>'
-              . (!$passed ? '<p style="color:#a00">Failures were sent to triage — fixes will be built and re-audited automatically.</p>' : '');
+              . (!$passed ? '<p style="color:#a00">' . ($capped
+                    ? 'Max audit cycles reached — no more auto-fixes will be spawned. These failures need manual review.'
+                    : 'Failures were sent to triage — fixes will be built and re-audited automatically.') . '</p>' : '');
 
         $subject = "[{$slug}] Build audit " . ($passed ? 'passed' : 'FAILED') . ' — ' . $title;
 

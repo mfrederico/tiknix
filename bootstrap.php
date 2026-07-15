@@ -253,7 +253,6 @@ class Bootstrap {
                 try {
                     $__wr = R::getWriter();
                     $__rp = new \ReflectionProperty($__wr, 'adapter');
-                    $__rp->setAccessible(true);
                     $__rp->setValue($__wr, $cachedAdapter);
                 } catch (\Throwable $__e) {
                     $this->logger->warning('CachedDatabaseAdapter: could not rebind writer adapter: ' . $__e->getMessage());

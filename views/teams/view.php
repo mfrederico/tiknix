@@ -196,6 +196,14 @@
                             <span class="badge bg-<?= $tm->role === 'owner' ? 'primary' : ($tm->role === 'admin' ? 'info' : 'secondary') ?> small">
                                 <?= ucfirst($tm->role) ?>
                             </span>
+                            <?php if ($isAdmin && $tm->role !== 'owner' && (int)$member->id !== $memberId): ?>
+                                <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-2 team-remove-member"
+                                        data-member="<?= (int)$member->id ?>"
+                                        title="Remove from team"
+                                        aria-label="Remove <?= htmlspecialchars($member->displayName() ?? '') ?> from team">
+                                    <i class="bi bi-person-x"></i>
+                                </button>
+                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                     <?php if (count($memberships) > 5): ?>
@@ -214,11 +222,17 @@
                     </div>
                     <div class="list-group list-group-flush">
                         <?php foreach ($invitations as $inv): ?>
-                            <div class="list-group-item">
-                                <div class="small"><?= htmlspecialchars(($inv->email) ?? '') ?></div>
-                                <small class="text-muted">
-                                    Expires <?= date('M j', strtotime($inv->expiresAt)) ?>
-                                </small>
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div class="me-2" style="min-width:0">
+                                    <div class="small text-truncate"><?= htmlspecialchars(($inv->email) ?? '') ?></div>
+                                    <small class="text-muted">
+                                        Expires <?= date('M j', strtotime($inv->expiresAt)) ?>
+                                    </small>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 team-resend-invite"
+                                        data-invite="<?= (int)$inv->id ?>" title="Resend invitation email">
+                                    <i class="bi bi-envelope-arrow-up"></i> Resend
+                                </button>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -260,6 +274,29 @@
       if (j && j.success) { if (msg) { msg.textContent = j.message || ''; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2500); } }
       else { this.checked = !this.checked; if (msg) msg.textContent = (j && j.message) || 'Failed'; }
     }).catch(() => { this.disabled = false; this.checked = !this.checked; if (msg) msg.textContent = 'Failed'; });
+  }));
+
+  const post = (url, body) => fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':TOKEN,'X-Requested-With':'XMLHttpRequest'},
+    body: new URLSearchParams(Object.assign({csrf_token:TOKEN, team_id:TEAM}, body)).toString()
+  }).then(r => r.json());
+
+  // Remove a member from the team (admins only; owner/self are never shown a button).
+  document.querySelectorAll('.team-remove-member').forEach(btn => btn.addEventListener('click', function(){
+    if (!confirm('Remove this member from the team? They will lose access to shared instances and tasks.')) return;
+    const b = this; b.disabled = true;
+    post('/teams/removemember', {member_id: b.dataset.member})
+      .then(j => { if (j && j.success) { location.reload(); } else { b.disabled = false; alert((j && j.message) || 'Could not remove member'); } })
+      .catch(() => { b.disabled = false; alert('Could not remove member'); });
+  }));
+
+  // Resend a pending invitation email (refreshes its expiry, keeps the same link).
+  document.querySelectorAll('.team-resend-invite').forEach(btn => btn.addEventListener('click', function(){
+    const b = this, orig = b.innerHTML; b.disabled = true; b.textContent = 'Sending…';
+    post('/teams/resendinvite', {invitation_id: b.dataset.invite})
+      .then(j => { b.disabled = false; b.innerHTML = orig; alert((j && j.message) || (j && j.success ? 'Invitation resent' : 'Could not resend invitation')); })
+      .catch(() => { b.disabled = false; b.innerHTML = orig; alert('Could not resend invitation'); });
   }));
 })();
 </script>

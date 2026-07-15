@@ -118,6 +118,7 @@
                             <th>Role</th>
                             <th>Sent</th>
                             <th>Expires</th>
+                            <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -138,6 +139,12 @@
                                     <small class="<?= $isExpired ? 'text-danger' : 'text-muted' ?>">
                                         <?= $isExpired ? 'Expired' : date('M j, Y', $expires) ?>
                                     </small>
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                            onclick="resendInvite(this, <?= (int)$inv->id ?>)" title="Resend invitation email">
+                                        <i class="bi bi-envelope-arrow-up"></i> Resend
+                                    </button>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -246,6 +253,31 @@ async function removeMember(memberId, memberName) {
         }
     } catch (e) {
         alert('Error removing member: ' + e.message);
+    }
+}
+
+async function resendInvite(btn, invitationId) {
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+        const formData = new FormData();
+        formData.append('team_id', teamId);
+        formData.append('invitation_id', invitationId);
+
+        const response = await fetch('/teams/resendinvite', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+        alert(data.message || (data.success ? 'Invitation resent' : 'Could not resend invitation'));
+    } catch (e) {
+        alert('Error resending invitation: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
     }
 }
 

@@ -697,6 +697,76 @@ class Teams extends Control {
     }
 
     /**
+     * Resend a pending team invitation (admins/owners). Refreshes the 7-day expiry
+     * window and re-sends the invite email; the existing token/join link stays valid.
+     */
+    public function resendinvite($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') {
+            Flight::redirect('/teams');
+            return;
+        }
+
+        $teamId       = (int)$this->getParam('team_id');
+        $invitationId = (int)$this->getParam('invitation_id');
+        if (!$teamId || !$invitationId) {
+            Flight::jsonError('Invalid parameters', 400);
+            return;
+        }
+
+        $team = Bean::load('team', $teamId);
+        if (!$team->id) {
+            Flight::jsonError('Team not found', 404);
+            return;
+        }
+
+        if (!$this->access->canInviteToTeam($teamId, $this->member->id)) {
+            Flight::jsonError('You cannot manage invitations for this team', 403);
+            return;
+        }
+
+        $invitation = Bean::load('teaminvitation', $invitationId);
+        if (!$invitation->id || (int)$invitation->teamId !== $teamId || $invitation->acceptedAt) {
+            Flight::jsonError('Pending invitation not found', 404);
+            return;
+        }
+
+        // Refresh the expiry so a stale invite is usable again; keep the same token.
+        $invitation->expiresAt = date('Y-m-d H:i:s', strtotime('+7 days'));
+        $invitation->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($invitation);
+
+        $joinUrl     = Flight::get('baseurl') . '/teams/join?token=' . $invitation->token;
+        $inviterName = $this->member->displayName ?? $this->member->username ?? 'A team admin';
+
+        $emailSent = false;
+        if (Mailer::isConfigured()) {
+            $emailSent = Mailer::sendTeamInvite($invitation->email, $team->name, $inviterName, $invitation->role, $joinUrl);
+            if ($emailSent) {
+                $invitation->emailSent = 1;
+                $invitation->emailSentAt = date('Y-m-d H:i:s');
+                Bean::store($invitation);
+            }
+        }
+
+        $this->logger->info('Team invitation resent', [
+            'team_id' => $teamId,
+            'invitation_id' => $invitationId,
+            'email' => $invitation->email,
+            'resent_by' => $this->member->id,
+            'email_sent' => $emailSent
+        ]);
+
+        Flight::json([
+            'success' => true,
+            'message' => $emailSent ? 'Invitation resent' : 'Invitation refreshed (email not configured)',
+            'join_url' => $joinUrl
+        ]);
+    }
+
+    /**
      * Update member role (admin only)
      */
     public function updaterole($params = []) {

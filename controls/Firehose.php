@@ -258,6 +258,20 @@ class Firehose extends Control {
         $l[] = '```';
         $l[] = '';
         $l[] = '**Goal:** reproduce, find the root cause at the location above, fix it, and verify the page/endpoint works.';
+
+        // Visual evidence from the audit that surfaced this failure. Rendered as
+        // inline images (MarkdownParser supports ![](url)); the agent reads them as
+        // markdown pointers to the exact broken screen. Kept OUTSIDE the code fences
+        // above so they display rather than being escaped.
+        $shots = $ctx['screens'] ?? [];
+        if (is_array($shots) && $shots) {
+            $l[] = '';
+            $l[] = '### Screenshots from the failing audit';
+            $l[] = '_Visual proof of the defect — reproduce against these._';
+            foreach (array_slice($shots, 0, 6) as $u) {
+                if (is_string($u) && preg_match('#^https?://#i', $u)) $l[] = '![screenshot](' . $u . ')';
+            }
+        }
         return implode("\n", $l);
     }
 
@@ -312,11 +326,16 @@ class Firehose extends Control {
         $app = $inst->app ?: 'tiknix';
         $dir = '/var/www/html/default/' . $inst->slug . '.' . $app;
         if (\app\TmuxManager::exists('tiknix-plan' . $planId . '-orchestrator')) return true;
+        // Escalate the FINAL cap-cycle fix to a stronger model. The audit->fix loop
+        // gets MAX_AUDIT_CYCLES attempts; the last one is the last auto-shot before a
+        // human takes over, so give it opus (the earlier, cheaper cycles stay sonnet).
+        $auditCycle = (int)(Bean::load('workbenchtask', $planId)->auditCycle ?? 0);
+        $model = ($auditCycle >= \app\AuditReporter::MAX_AUDIT_CYCLES) ? 'opus' : 'sonnet';
         $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
              . ' --plan=' . $planId
              . ' --slug=' . escapeshellarg((string)$inst->slug)
              . ' --dir='  . escapeshellarg($dir)
-             . ' --model=sonnet'
+             . ' --model=' . $model
              . ' --level=' . $level;
         $ab = $dir . '/.aibuilder';
         @mkdir($ab, 0775, true);

@@ -33,6 +33,19 @@ foreach (($menu ?? []) as $__it) {
     if (isset($__it['url']) && isset($__skip[$__it['url']])) continue;
     $__sections[$__it['section'] ?? 'Main'][] = $__it;
 }
+// Surface Teams + Communications in the "Main" group for logged-in users. Teams was
+// only reachable from the topbar dropdown; Communications moved here out of Workspace.
+// Dedupe against whatever the dynamic menu already provides so nothing doubles up.
+if ($__loggedIn) {
+    $__have = [];
+    foreach ($__sections as $__grp) foreach ($__grp as $__i) { if (isset($__i['url'])) $__have[$__i['url']] = 1; }
+    foreach ([
+        ['url' => '/teams',          'label' => 'Teams',          'icon' => 'people'],
+        ['url' => '/communications', 'label' => 'Communications', 'icon' => 'chat-left-dots'],
+    ] as $__add) {
+        if (!isset($__have[$__add['url']])) $__sections['Main'][] = $__add;
+    }
+}
 ?>
 <div class="ui-shell">
   <div class="ui-sidebar-backdrop" id="uiSidebarBackdrop" onclick="uiToggleSidebar(false)"></div>
@@ -64,19 +77,18 @@ foreach (($menu ?? []) as $__it) {
       <?php endforeach; ?>
 
       <?php if ($__loggedIn): ?>
-        <div class="ui-nav-heading">Workspace</div>
-        <a class="ui-nav-link<?= $__active('/communications') ?>" href="/communications"><i class="bi bi-chat-left-dots"></i> Communications</a>
         <?php if (builder_tools_enabled()): ?>
+          <div class="ui-nav-heading">Workspace</div>
           <a class="ui-nav-link<?= $__active('/workbench') ?>" href="/workbench"><i class="bi bi-hammer"></i> Workbench</a>
           <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> AI Builder</a>
-          <?php if ($__isAdmin): ?>
-            <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
-          <?php endif; ?>
         <?php endif; ?>
 
         <?php if ($__isAdmin): ?>
           <div class="ui-nav-heading">Admin</div>
           <a class="ui-nav-link<?= $__active('/leads') ?>" href="/leads"><i class="bi bi-person-lines-fill"></i> Leads</a>
+          <?php if (builder_tools_enabled()): ?>
+            <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
+          <?php endif; ?>
           <a class="ui-nav-link<?= $__active('/admin') ?>" href="/admin"><i class="bi bi-shield-lock"></i> Admin</a>
           <a class="ui-nav-link<?= $__active('/security') ?>" href="/security"><i class="bi bi-shield-check"></i> Security</a>
         <?php endif; ?>

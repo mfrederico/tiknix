@@ -93,6 +93,17 @@ foreach ($specs as $role => $lvl) {
 if (!$creds) { alog('no test users could be created — aborting'); exit(1); }
 alog('created ' . count($creds) . ' test users');
 
+// Crash-safe teardown: if the QA agent hangs past the deadline, a fatal aborts the
+// script, or the tmux session is killed, the normal deleteTestUsers() below is
+// skipped and the ephemeral qa-* accounts leak. Register the teardown as a shutdown
+// handler (idempotent — clitool no-ops on an already-deleted user) so it ALWAYS runs.
+$teardownDone = false;
+register_shutdown_function(function () use ($dir, $creds, &$teardownDone) {
+    if ($teardownDone) return;
+    deleteTestUsers($dir, $creds);
+    fwrite(STDOUT, "[audit] teardown via shutdown handler (deadline/fatal/kill)\n");
+});
+
 // --- 2) Build the "what changed" checklist from the plan's subtasks -----------
 $checklist = [];
 foreach (R::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [$planId]) as $s) {
@@ -147,6 +158,7 @@ alog('reported: ' . json_encode($res));
 
 // --- 5) Tear down test users --------------------------------------------------
 deleteTestUsers($dir, $creds);
+$teardownDone = true;   // normal path done; stop the shutdown handler re-running it
 alog('test users removed; done ' . ($res['passed'] ? 'PASS' : 'FAIL'));
 
 // --- 6) Idle-sweep: the instance is now idle, so drain ONE deferred fix. The
@@ -200,11 +212,13 @@ function sweepOneDeferred($inst, string $dir, int $level): int {
         R::store($parent);
 
         // Spawn the detached orchestrator (mirrors Firehose::startOrchestrator).
+        // Escalate the final cap-cycle fix to opus; earlier cycles stay on sonnet.
+        $model = ((int)$parent->auditCycle >= \app\AuditReporter::MAX_AUDIT_CYCLES) ? 'opus' : 'sonnet';
         $session = 'tiknix-plan' . $planId . '-orchestrator';
         if (!\app\TmuxManager::exists($session)) {
             $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
                  . ' --plan=' . $planId . ' --slug=' . escapeshellarg((string)$inst->slug)
-                 . ' --dir=' . escapeshellarg($dir) . ' --model=sonnet --level=' . $level;
+                 . ' --dir=' . escapeshellarg($dir) . ' --model=' . $model . ' --level=' . $level;
             $ab = $dir . '/.aibuilder'; @mkdir($ab, 0775, true);
             $sf = $ab . '/run-orchestrator.sh';
             file_put_contents($sf, "#!/bin/bash\n" . $cmd . ' 2>&1 | tee ' . escapeshellarg($ab . '/orchestrator.log') . "\n");

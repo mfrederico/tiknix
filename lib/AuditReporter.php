@@ -80,7 +80,13 @@ class AuditReporter {
         //    stamping the NEXT cycle so the spawned fix knows its depth.
         $reported = 0;
         if (!$capped) {
-            foreach ($failures as $f) { if (self::reportFailure($f, $inst, (int)$plan->id, $auditCycle + 1)) $reported++; }
+            foreach ($failures as $f) {
+                // Carry this failure's screenshots (as public web URLs) into the
+                // firehose so the spawned fix task shows the agent + human the
+                // actual broken UI, not just the text of the failure.
+                $shots = is_array($f['screens'] ?? null) ? array_values(array_map($web, $f['screens'])) : [];
+                if (self::reportFailure($f, $inst, (int)$plan->id, $auditCycle + 1, $shots)) $reported++;
+            }
         }
 
         // 4) Email owner + shared-team members.
@@ -94,6 +100,24 @@ class AuditReporter {
             $plan->updatedAt     = date('Y-m-d H:i:s');
             Bean::store($plan);
         } catch (\Throwable $e) { /* best-effort */ }
+
+        // 6) Cap terminus: a fix that failed its audit AT the cap gets no further
+        //    auto-retry, so flip the source detected error to a distinct 'capped'
+        //    status. Without this it sticks at 'building' forever (looks perpetually
+        //    in-progress) and the idle-sweep, which only drains deferred/reopened,
+        //    never touches it — surfacing it as "needs a human / escalation".
+        if ($capped && !$passed && (int)($plan->detectederrorId ?? 0) > 0) {
+            try {
+                $err = Bean::load('detectederror', (int)$plan->detectederrorId);
+                if ($err->id) {
+                    $err->status      = 'capped';
+                    $err->cappedAt    = date('Y-m-d H:i:s');
+                    $err->cappedPlanId = (int)$plan->id;
+                    $err->updatedAt   = date('Y-m-d H:i:s');
+                    Bean::store($err);
+                }
+            } catch (\Throwable $e) { /* best-effort */ }
+        }
 
         return ['passed' => $passed, 'failures' => count($failures), 'firehose' => $reported, 'emailed' => $emailed];
     }
@@ -158,7 +182,7 @@ class AuditReporter {
 
     // --- firehose -------------------------------------------------------------
 
-    private static function reportFailure(array $f, $inst, int $planId, int $nextCycle = 1): bool {
+    private static function reportFailure(array $f, $inst, int $planId, int $nextCycle = 1, array $screenUrls = []): bool {
         $key = (string)\Flight::get('firehose.ingest_key');
         $url = rtrim((string)\Flight::get('app.baseurl'), '/') . '/firehose/report';
         if ($key === '' || $url === '/firehose/report') return false;
@@ -177,7 +201,7 @@ class AuditReporter {
             'http_method'  => 'GET',
             // audit_cycle rides in context so the spawned fix plan inherits its depth
             // (see Firehose::createTriageTask / launchViaOrchestrator) and the chain caps.
-            'context'      => ['source' => 'audit', 'plan_id' => $planId, 'level' => (string)($f['level'] ?? ''), 'audit_cycle' => $nextCycle],
+            'context'      => ['source' => 'audit', 'plan_id' => $planId, 'level' => (string)($f['level'] ?? ''), 'audit_cycle' => $nextCycle, 'screens' => array_slice($screenUrls, 0, 6)],
         ];
         try {
             $ch = curl_init($url);

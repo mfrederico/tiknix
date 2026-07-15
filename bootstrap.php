@@ -237,6 +237,28 @@ class Bootstrap {
                 $cachedAdapter = new \app\CachedDatabaseAdapter(R::getDatabaseAdapter()->getDatabase());
                 $toolbox = new \RedBeanPHP\ToolBox(R::getRedBean(), $cachedAdapter, R::getWriter());
                 R::configureFacadeWithToolbox($toolbox);
+                // Register the cached toolbox under the 'default' key too, so a later
+                // R::selectDatabase('default') (after the security firewall switches to
+                // its own DB and back) restores the CACHED adapter — not the plain
+                // toolbox that setup() left in the registry. Without this, writes after
+                // a selectDatabase swap bypass query-cache invalidation and leave stale
+                // rows on admin lists (leads, vendors, workbench, etc.).
+                // Point the query WRITER at the cached adapter too. Facade raw queries
+                // (R::getAll/getCell/getCol) already run through the cached adapter, but ALL
+                // bean CRUD (find/load/store/trash) goes through the WRITER's own adapter,
+                // which setup() left as the plain, uncached one. That split meant bean writes
+                // never invalidated the query cache — stale rows lingered on admin lists.
+                // Rebinding the writer's adapter routes every bean op through the cache so
+                // writes invalidate. Guarded: a RedBean internals change must not fatal boot.
+                try {
+                    $__wr = R::getWriter();
+                    $__rp = new \ReflectionProperty($__wr, 'adapter');
+                    $__rp->setAccessible(true);
+                    $__rp->setValue($__wr, $cachedAdapter);
+                } catch (\Throwable $__e) {
+                    $this->logger->warning('CachedDatabaseAdapter: could not rebind writer adapter: ' . $__e->getMessage());
+                }
+                R::addToolBoxWithKey('default', $toolbox);
                 // Store adapter in Flight so it survives R::selectDatabase() calls
                 Flight::set('cachedDatabaseAdapter', $cachedAdapter);
                 $this->logger->info('CachedDatabaseAdapter initialized');

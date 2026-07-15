@@ -414,6 +414,27 @@ class TaskAccessControl {
     }
 
     /**
+     * Instance-level access gate — the workspace analogue of canRun/canEdit for
+     * tasks. True when the member OWNS the instance or it is shared with one of
+     * their teams. Use for anything that operates INSIDE a workspace: creating
+     * tasks, decomposing, building, polling status.
+     */
+    public function canAccessInstance(int $memberId, int $instanceId): bool {
+        return $instanceId > 0
+            && in_array($instanceId, $this->getAccessibleInstanceIds($memberId), true);
+    }
+
+    /**
+     * Instance ownership gate — the workspace analogue of canDelete for tasks:
+     * OWNER only. Use for destructive/admin instance actions (delete, fork,
+     * provision, share management, restart).
+     */
+    public function ownsInstance(int $memberId, int $instanceId): bool {
+        if ($instanceId <= 0 || !in_array('instance', \RedBeanPHP\R::inspect(), true)) return false;
+        return (int)\RedBeanPHP\R::getCell('SELECT member_id FROM instance WHERE id = ?', [$instanceId]) === $memberId;
+    }
+
+    /**
      * Workspace tabs for the workbench: one per instance the member owns OR that is
      * shared with their teams — derived from the instance table, NOT from the
      * member's own tasks, so a shared workspace shows up even when the member owns

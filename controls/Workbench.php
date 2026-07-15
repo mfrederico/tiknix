@@ -220,8 +220,7 @@ class Workbench extends Control {
         // with their teams (mirrors the create-form picker and getVisibleTasks).
         $instanceId = (int)$this->getParam('instance_id', 0);
         $instance = $instanceId ? Bean::load('instance', $instanceId) : null;
-        if (!$instance || !$instance->id
-            || !in_array((int)$instance->id, $this->access->getAccessibleInstanceIds($this->member->id), true)) {
+        if (!$instance || !$instance->id || !$this->access->canAccessInstance((int)$this->member->id, (int)$instance->id)) {
             $this->flash('error', 'Please select a valid instance for this task');
             Flight::redirect('/workbench/create');
             return;
@@ -288,10 +287,11 @@ class Workbench extends Control {
             return;
         }
 
-        // Instance (tenant) is required and must belong to the member.
+        // Instance (tenant) is required — one the member owns OR one shared with
+        // their teams (mirrors the create picker and store/getVisibleTasks).
         $instanceId = (int)$this->getParam('instance_id', 0);
         $instance = $instanceId ? Bean::load('instance', $instanceId) : null;
-        if (!$instance || !$instance->id || (int)$instance->memberId !== (int)$this->member->id) {
+        if (!$instance || !$instance->id || !$this->access->canAccessInstance((int)$this->member->id, (int)$instance->id)) {
             $this->flash('error', 'Please select a valid instance to decompose for');
             Flight::redirect('/workbench/create');
             return;
@@ -355,7 +355,7 @@ class Workbench extends Control {
         $parentIds = [];
         foreach ($ids as $id) {
             $t = Bean::load('workbenchtask', $id);
-            if (!$t->id || (int)$t->memberId !== (int)$this->member->id) { Flight::jsonError("Task {$id} not found or not yours.", 404); return; }
+            if (!$t->id || !$this->access->canEdit((int)$this->member->id, $t)) { Flight::jsonError("Task {$id} not found or not yours.", 404); return; }
             if ($t->status !== 'pending') { Flight::jsonError('Only non-approved (pending) tasks can be consolidated.', 409); return; }
             if ($instanceId === null) { $instanceId = (int)$t->instanceId; }
             elseif ((int)$t->instanceId !== $instanceId) { Flight::jsonError('All selected tasks must belong to the same instance.', 409); return; }
@@ -364,7 +364,7 @@ class Workbench extends Control {
         }
 
         $inst = $instanceId ? Bean::load('instance', $instanceId) : null;
-        if (!$inst || !$inst->id || (int)$inst->memberId !== (int)$this->member->id) { Flight::jsonError('No valid instance for these tasks.', 409); return; }
+        if (!$inst || !$inst->id || !$this->access->canAccessInstance((int)$this->member->id, (int)$inst->id)) { Flight::jsonError('No valid instance for these tasks.', 409); return; }
 
         // Don't consolidate tasks whose plan is actively building.
         foreach (array_keys($parentIds) as $pid) {
@@ -422,13 +422,27 @@ class Workbench extends Control {
         return $out;
     }
 
-    /** Load a plan (parent task) the member owns; returns [plan, instance|null] or null. */
+    /** Load a plan (parent task) the member OWNS; returns [plan, instance|null] or null.
+     *  Owner-only gate (canDelete policy) — use for destructive actions like delete. */
     private function ownedPlan($planId): ?array {
         $planId = (int)$planId;
         if (!$planId) return null;
         $plan = Bean::load('workbenchtask', $planId);
         if (!$plan->id || !empty($plan->parentTaskId)) return null;      // must be a plan parent
-        if ((int)$plan->memberId !== (int)$this->member->id) return null; // must own it
+        if (!$this->access->canDelete((int)$this->member->id, $plan)) return null;
+        $inst = $plan->instanceId ? Bean::load('instance', (int)$plan->instanceId) : null;
+        return [$plan, ($inst && $inst->id) ? $inst : null];
+    }
+
+    /** Load a plan (parent task) the member can ACT ON — owns it, or it lives in an
+     *  instance shared with their team (canRun policy). Returns [plan, inst|null] or
+     *  null. Use for approve/build/retry/progress; keep ownedPlan() for delete. */
+    private function accessiblePlan($planId): ?array {
+        $planId = (int)$planId;
+        if (!$planId) return null;
+        $plan = Bean::load('workbenchtask', $planId);
+        if (!$plan->id || !empty($plan->parentTaskId)) return null;      // must be a plan parent
+        if (!$this->access->canRun((int)$this->member->id, $plan)) return null;
         $inst = $plan->instanceId ? Bean::load('instance', (int)$plan->instanceId) : null;
         return [$plan, ($inst && $inst->id) ? $inst : null];
     }
@@ -443,7 +457,7 @@ class Workbench extends Control {
     /** POST /workbench/planapprove — approve a plan (task-chain) so it can be built. JSON. */
     public function planapprove($params = []) {
         if (!$this->planActionGuard()) return;
-        $pi = $this->ownedPlan($this->getParam('plan_id', 0));
+        $pi = $this->accessiblePlan($this->getParam('plan_id', 0));
         if (!$pi) { Flight::jsonError('No such plan', 404); return; }
         [$plan] = $pi;
         if ($plan->planStatus === 'building') { Flight::jsonError('This plan is already building.', 409); return; }
@@ -456,7 +470,7 @@ class Workbench extends Control {
     /** POST /workbench/planbuild — launch the worktree orchestrator for an approved plan. JSON. */
     public function planbuild($params = []) {
         if (!$this->planActionGuard()) return;
-        $pi = $this->ownedPlan($this->getParam('plan_id', 0));
+        $pi = $this->accessiblePlan($this->getParam('plan_id', 0));
         if (!$pi) { Flight::jsonError('No such plan', 404); return; }
         [$plan, $inst] = $pi;
         if (!$inst) { Flight::jsonError('This plan has no linked instance to build in.', 409); return; }
@@ -502,7 +516,7 @@ class Workbench extends Control {
         if (!$this->planActionGuard()) return;
 
         $task = Bean::load('workbenchtask', (int)$this->getParam('task_id', 0));
-        if (!$task->id || (int)$task->memberId !== (int)$this->member->id) { Flight::jsonError('No such task', 404); return; }
+        if (!$task->id || !$this->access->canRun((int)$this->member->id, $task)) { Flight::jsonError('No such task', 404); return; }
         if (empty($task->parentTaskId)) { Flight::jsonError('Only a plan subtask can be retried this way.', 409); return; }
         if (!in_array($task->status, ['failed', 'conflict'], true)) { Flight::jsonError('Only a failed task can be retried.', 409); return; }
 
@@ -553,7 +567,7 @@ class Workbench extends Control {
     /** GET /workbench/planprogress — per-task status for a plan (for the build poller). JSON. */
     public function planprogress($params = []) {
         if (!$this->requireLogin()) return;
-        $pi = $this->ownedPlan($this->getParam('plan_id', 0));
+        $pi = $this->accessiblePlan($this->getParam('plan_id', 0));
         if (!$pi) { Flight::jsonError('No such plan', 404); return; }
         [$plan] = $pi;
         $tasks = [];
@@ -568,7 +582,7 @@ class Workbench extends Control {
         if (!$this->requireLogin()) return;
         $instanceId = (int)$this->getParam('instance_id', 0);
         $inst = $instanceId ? Bean::load('instance', $instanceId) : null;
-        if (!$inst || !$inst->id || (int)$inst->memberId !== (int)$this->member->id) {
+        if (!$inst || !$inst->id || !$this->access->canAccessInstance((int)$this->member->id, (int)$inst->id)) {
             Flight::jsonError('No such instance', 404);
             return;
         }

@@ -114,6 +114,19 @@ class MarkdownParser {
         $text = preg_replace('/\*\*(.*?)\*\*/s', '<strong>$1</strong>', $text);
         $text = preg_replace('/(?<!\*)\*(?!\*)([^*\n]+)\*(?!\*)/s', '<em>$1</em>', $text);
 
+        // Convert images ![alt](url) -> a clickable thumbnail. MUST run before links
+        // (image syntax is a link with a leading '!'). Only http(s) srcs are allowed;
+        // anything else falls back to literal text so no javascript:/data: sneaks in.
+        $text = preg_replace_callback('/!\[([^\]]*)\]\(([^)\s]+)\)/', function ($m) {
+            $src = trim($m[2]);
+            if (!preg_match('#^https?://#i', $src)) return htmlspecialchars($m[0], ENT_QUOTES);
+            $srcE = htmlspecialchars($src, ENT_QUOTES);
+            $altE = htmlspecialchars($m[1], ENT_QUOTES);
+            return '<a href="' . $srcE . '" target="_blank" rel="noopener">'
+                 . '<img src="' . $srcE . '" alt="' . $altE . '" loading="lazy" '
+                 . 'style="max-width:100%;max-height:320px;border:1px solid #ddd;border-radius:6px;margin:6px 0"></a>';
+        }, $text);
+
         // Convert links
         $text = preg_replace('/\[([^\]]+)\]\(([^)]+)\)/', '<a href="$2">$1</a>', $text);
 

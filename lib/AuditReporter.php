@@ -104,11 +104,11 @@ class AuditReporter {
         $out = ["**Definition-of-Done audit**"];
         foreach (($g['checks'] ?? []) as $c) {
             $out[] = '- ✅ ' . self::s($c['label'] ?? 'check') . ' _(' . self::s($c['level'] ?? '') . ')_';
-            foreach (($c['screens'] ?? []) as $sc) $out[] = '  - [📷 screenshot](' . $web($sc) . ')';
+            foreach (($c['screens'] ?? []) as $sc) $out[] = '![screenshot](' . $web($sc) . ')';
         }
         foreach (($g['failures'] ?? []) as $f) {
             $out[] = '- ❌ ' . self::s($f['label'] ?? 'failure') . ' _(' . self::s($f['level'] ?? '') . ')_ — ' . self::s($f['message'] ?? '');
-            foreach (($f['screens'] ?? []) as $sc) $out[] = '  - [📷 screenshot](' . $web($sc) . ')';
+            foreach (($f['screens'] ?? []) as $sc) $out[] = '![screenshot](' . $web($sc) . ')';
         }
         return implode("\n", $out);
     }
@@ -130,7 +130,7 @@ class AuditReporter {
             foreach ($failures as $f) {
                 $out[] = '- ❌ ' . self::s($f['label'] ?? '') . ' — ' . self::s($f['message'] ?? '')
                        . (!empty($f['url']) ? ' (`' . self::s($f['url']) . '`)' : '');
-                foreach (($f['screens'] ?? []) as $sc) $out[] = '  - [📷 screenshot](' . $web($sc) . ')';
+                foreach (($f['screens'] ?? []) as $sc) $out[] = '![screenshot](' . $web($sc) . ')';
             }
             $out[] = '';
             $out[] = $capped
@@ -163,9 +163,12 @@ class AuditReporter {
         $url = rtrim((string)\Flight::get('app.baseurl'), '/') . '/firehose/report';
         if ($key === '' || $url === '/firehose/report') return false;
 
+        $instTag = (string)$inst->slug . '.' . (string)($inst->app ?: 'tiknix');
         $payload = [
-            'signature'    => sha1('audit:' . $planId . ':' . ($f['label'] ?? '') . ':' . ($f['url'] ?? '')),
-            'instance'     => (string)$inst->slug . '.' . (string)($inst->app ?: 'tiknix'),
+            // Plan-INDEPENDENT signature: the same logical failure dedups across plans
+            // and audit cycles (keyed by instance + label + url, not the plan id).
+            'signature'    => sha1('audit:' . $instTag . ':' . trim((string)($f['label'] ?? '')) . ':' . trim((string)($f['url'] ?? ''))),
+            'instance'     => $instTag,
             'type'         => 'audit_failure',
             'message'      => mb_substr((string)($f['label'] ?? 'Audit failure'), 0, 500),
             'full_message' => mb_substr((string)($f['message'] ?? ''), 0, 2000),

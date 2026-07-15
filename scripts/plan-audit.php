@@ -149,5 +149,75 @@ alog('reported: ' . json_encode($res));
 deleteTestUsers($dir, $creds);
 alog('test users removed; done ' . ($res['passed'] ? 'PASS' : 'FAIL'));
 
+// --- 6) Idle-sweep: the instance is now idle, so drain ONE deferred fix. The
+//        active-build guard defers fixes while an agent is on the repo (and the
+//        plan-independent dedup won't re-triage them), so without this a deferred
+//        403/error would stick. Launching one at a time lets them drain across
+//        cycles: fix builds -> re-audits -> on completion this sweep fires again.
+sweepOneDeferred($inst, $dir, $level);
+
 R::close();
 exit($res['passed'] ? 0 : 2);
+
+/** Launch one deferred/reopened auto-triage fix for an idle instance. Returns plan id or 0. */
+function sweepOneDeferred($inst, string $dir, int $level): int {
+    $tag = (string)$inst->slug . '.' . (string)($inst->app ?: 'tiknix');
+    if (!filter_var($inst->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN)) return 0;
+    // Idle only: no task for this instance currently running/building.
+    if ((int)R::getCell("SELECT COUNT(*) FROM workbenchtask WHERE instance_tag = ? AND status IN ('running','building')", [$tag]) > 0) {
+        alog('idle-sweep skipped — instance still has an active build');
+        return 0;
+    }
+    $err = R::findOne('detectederror',
+        "instance_tag = ? AND status IN ('deferred','reopened') ORDER BY id ASC", [$tag]);
+    if (!$err || !$err->id) return 0;
+
+    $ctx  = json_decode((string)$err->context, true) ?: [];
+    $desc = "Auto-triaged (idle sweep) from a detected error on {$tag}.\n\n"
+          . "**Message:** " . (string)$err->message . "\n"
+          . ((string)$err->url ? "**URL:** " . (string)$err->url . "\n" : '')
+          . ((string)$err->fullMessage ? "\n" . (string)$err->fullMessage . "\n" : '');
+    $plan = [
+        'title'    => 'Fix: ' . mb_substr((string)$err->message, 0, 120),
+        'summary'  => 'Auto-triaged (idle sweep) from a detected error on ' . $tag . '.',
+        'subtasks' => [[
+            'id' => 't1', 'title' => 'Fix: ' . mb_substr((string)$err->message, 0, 120),
+            'description' => $desc, 'files' => $err->file ? [(string)$err->file] : [],
+            'priority' => 2, 'depends_on' => [],
+        ]],
+    ];
+    try {
+        $r = \app\PlanIngestor::ingest($inst, $plan, (int)$inst->memberId, '', (string)($inst->app ?: 'tiknix'));
+        $planId = (int)($r['parent']['id'] ?? 0);
+        if (!$planId) return 0;
+        $parent = R::load('workbenchtask', $planId);
+        $parent->planStatus      = 'building';
+        $parent->status          = 'running';
+        $parent->source          = 'detected_error';
+        $parent->detectederrorId = (int)$err->id;
+        $parent->auditCycle      = (int)($ctx['audit_cycle'] ?? 0);   // preserve chain depth for the cap
+        $parent->updatedAt       = date('Y-m-d H:i:s');
+        R::store($parent);
+
+        // Spawn the detached orchestrator (mirrors Firehose::startOrchestrator).
+        $session = 'tiknix-plan' . $planId . '-orchestrator';
+        if (!\app\TmuxManager::exists($session)) {
+            $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
+                 . ' --plan=' . $planId . ' --slug=' . escapeshellarg((string)$inst->slug)
+                 . ' --dir=' . escapeshellarg($dir) . ' --model=sonnet --level=' . $level;
+            $ab = $dir . '/.aibuilder'; @mkdir($ab, 0775, true);
+            $sf = $ab . '/run-orchestrator.sh';
+            file_put_contents($sf, "#!/bin/bash\n" . $cmd . ' 2>&1 | tee ' . escapeshellarg($ab . '/orchestrator.log') . "\n");
+            @chmod($sf, 0755);
+            \app\TmuxManager::create($session, $sf, $dir);
+        }
+        $err->taskId = $planId;
+        $err->status = 'building';
+        R::store($err);
+        alog("idle-sweep launched deferred fix plan #$planId for: " . mb_substr((string)$err->message, 0, 60));
+        return $planId;
+    } catch (\Throwable $e) {
+        alog('idle-sweep failed: ' . $e->getMessage());
+        return 0;
+    }
+}

@@ -78,13 +78,15 @@ echo "  wrote $cfgRel + conf/config.ini (db: $dbRel)\n";
 // dir on first request, but if php-fpm gets there first the dir lands with the
 // wrong owner and the jailed agent (or vice-versa) can't write. Seeding them here
 // with 0775 keeps both writers happy. database/log = where [logging] file points;
-// storage = app logs/scratch; uploads/{secure,public} = the two upload buckets.
-foreach (['database/log', 'storage/logs', 'cache', 'log', 'uploads/secure', 'uploads/public'] as $rel) {
+// storage = app logs/scratch; the two upload buckets are public/uploads (web-served)
+// and secure/uploads (outside docroot) — matching Aibuilder::uploadBucketRel, NOT the
+// reversed uploads/{public,secure} this used to create (which the app never reads).
+foreach (['database/log', 'storage/logs', 'cache', 'log', 'public/uploads', 'secure/uploads'] as $rel) {
     $dir = "$ROOT/$rel";
     if (!is_dir($dir)) @mkdir($dir, 0775, true);
     @chmod($dir, 0775);
 }
-echo "  ensured runtime dirs (database/log, storage/logs, cache, log, uploads/{secure,public})\n";
+echo "  ensured runtime dirs (database/log, storage/logs, cache, log, public/uploads, secure/uploads)\n";
 
 // --- 1b) real per-instance vendor (composer install) ------------------------
 // provision-instance.sh symlinks vendor/ to the SOURCE app, but that makes

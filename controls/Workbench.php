@@ -135,15 +135,23 @@ class Workbench extends Control {
         $this->viewData['branches'] = $remoteBranches;
         $this->viewData['currentBranch'] = in_array($currentBranch, $remoteBranches) ? $currentBranch : 'main';
 
-        // AI Builder instances (tenants) this member owns — a task must target one.
+        // AI Builder instances (tenants) a task can target: ones this member OWNS
+        // plus ones shared with their teams. A shared workspace is labelled so.
         $instances = [];
-        foreach (Bean::find('instance', 'member_id = ? AND status = ? ORDER BY slug ASC', [$this->member->id, 'active']) as $inst) {
-            $tag = $inst->slug . '.' . ($inst->app ?: 'tiknix');
-            $instances[] = [
-                'id'    => (int)$inst->id,
-                'tag'   => $tag,
-                'label' => ($inst->displayName ? $inst->displayName . ' — ' : '') . $tag,
-            ];
+        $accessibleIds = $this->access->getAccessibleInstanceIds($this->member->id);
+        if (!empty($accessibleIds)) {
+            $ph = implode(',', array_fill(0, count($accessibleIds), '?'));
+            $rows = Bean::find('instance', "id IN ($ph) AND status = ? ORDER BY slug ASC",
+                array_merge($accessibleIds, ['active']));
+            foreach ($rows as $inst) {
+                $tag      = $inst->slug . '.' . ($inst->app ?: 'tiknix');
+                $isShared = (int)$inst->memberId !== (int)$this->member->id;
+                $instances[] = [
+                    'id'    => (int)$inst->id,
+                    'tag'   => $tag,
+                    'label' => ($inst->displayName ? $inst->displayName . ' — ' : '') . $tag . ($isShared ? ' (shared)' : ''),
+                ];
+            }
         }
         $this->viewData['instances'] = $instances;
         // Pre-select an instance: by id (AI Builder "Plan & build in the Workbench") or
@@ -208,10 +216,12 @@ class Workbench extends Control {
             $authcontrolLevel = $this->member->level; // Can't assign higher privilege than you have
         }
 
-        // Instance (tenant) is required — must be one of the member's own active instances.
+        // Instance (tenant) is required — must be one the member owns OR one shared
+        // with their teams (mirrors the create-form picker and getVisibleTasks).
         $instanceId = (int)$this->getParam('instance_id', 0);
         $instance = $instanceId ? Bean::load('instance', $instanceId) : null;
-        if (!$instance || !$instance->id || (int)$instance->memberId !== (int)$this->member->id) {
+        if (!$instance || !$instance->id
+            || !in_array((int)$instance->id, $this->access->getAccessibleInstanceIds($this->member->id), true)) {
             $this->flash('error', 'Please select a valid instance for this task');
             Flight::redirect('/workbench/create');
             return;

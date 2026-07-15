@@ -387,19 +387,54 @@ class TaskAccessControl {
      * for the Workbench tenant filter. Returns [] before any plan exists (the
      * fluid instance_tag column isn't there yet).
      */
+    /**
+     * Instance IDs shared (many-to-many) with any team the member belongs to.
+     * array_values so the id-keyed getCol result is safe to splat into IN() bindings.
+     */
+    public function getSharedInstanceIds(int $memberId): array {
+        $teamIds = $this->getMemberTeamIds($memberId);
+        if (empty($teamIds) || !in_array('instance_team', \RedBeanPHP\R::inspect(), true)) return [];
+        $tph = implode(',', array_fill(0, count($teamIds), '?'));
+        return array_values(array_map('intval', \RedBeanPHP\R::getCol(
+            "SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ($tph)", $teamIds)));
+    }
+
+    /**
+     * Instance IDs the member can work in: ones they OWN plus ones shared with any
+     * of their teams. This is the single source of truth for "which workspaces can
+     * I see / create tasks in" (workbench tabs + the New Task instance picker).
+     */
+    public function getAccessibleInstanceIds(int $memberId): array {
+        $ids = [];
+        if (in_array('instance', \RedBeanPHP\R::inspect(), true)) {
+            $ids = array_map('intval', \RedBeanPHP\R::getCol(
+                'SELECT id FROM instance WHERE member_id = ?', [$memberId]));
+        }
+        return array_values(array_unique(array_merge($ids, $this->getSharedInstanceIds($memberId))));
+    }
+
+    /**
+     * Workspace tabs for the workbench: one per instance the member owns OR that is
+     * shared with their teams — derived from the instance table, NOT from the
+     * member's own tasks, so a shared workspace shows up even when the member owns
+     * no tasks in it (or it has no tasks yet). `n` counts that instance's plans.
+     */
     public function getInstanceTags(int $memberId): array {
-        if (!$this->columnExists('workbenchtask', 'instance_tag')) return [];
+        if (!in_array('instance', \RedBeanPHP\R::inspect(), true)) return [];
+        $ids = $this->getAccessibleInstanceIds($memberId);
+        if (empty($ids)) return [];
         try {
-            $rows = \RedBeanPHP\R::getAll(
-                "SELECT instance_tag AS tag, COUNT(*) AS n
-                 FROM workbenchtask
-                 WHERE member_id = ? AND parent_task_id IS NULL
-                   AND instance_tag IS NOT NULL AND instance_tag != ''
-                 GROUP BY instance_tag
-                 ORDER BY instance_tag ASC",
-                [$memberId]
-            );
-            return $rows ?: [];
+            $hasIid = $this->columnExists('workbenchtask', 'instance_id');
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $out = [];
+            foreach (\RedBeanPHP\R::find('instance', "id IN ($ph) ORDER BY slug ASC", $ids) as $inst) {
+                $tag = (string)$inst->slug . '.' . ((string)($inst->app ?: 'tiknix'));
+                $n = $hasIid ? (int)\RedBeanPHP\R::getCell(
+                    "SELECT COUNT(*) FROM workbenchtask WHERE instance_id = ? AND parent_task_id IS NULL",
+                    [(int)$inst->id]) : 0;
+                $out[$tag] = ['tag' => $tag, 'n' => $n];
+            }
+            return array_values($out);
         } catch (\Throwable $e) {
             return [];
         }

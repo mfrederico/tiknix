@@ -72,3 +72,20 @@ R::store($parent);
 R::close();
 
 echo "[orchestrator] plan #$planId finished status={$parent->planStatus} " . date('c') . "\n";
+
+// Definition-of-Done audit — only for a plan that actually completed. Spawned
+// DETACHED (the auditor drives Playwright for several minutes on its own), so
+// this orchestrator process is free to exit. Opt-out via aibuilder.ini [audit].
+if (empty($res['stalled'])) {
+    $aib = @parse_ini_file(__DIR__ . '/../conf/aibuilder.ini', true) ?: [];
+    if (filter_var($aib['audit']['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN)) {
+        $cmd = 'nohup php ' . escapeshellarg(__DIR__ . '/plan-audit.php')
+             . ' --plan=' . (int)$planId
+             . ' --slug=' . escapeshellarg($slug)
+             . ' --dir='  . escapeshellarg($dir)
+             . ' --level=' . (int)$level
+             . ' > ' . escapeshellarg($dir . '/.aibuilder/audit-driver.log') . ' 2>&1 &';
+        exec($cmd);
+        echo "[orchestrator] launched Definition-of-Done audit for plan #$planId\n";
+    }
+}

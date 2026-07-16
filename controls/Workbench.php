@@ -707,6 +707,15 @@ class Workbench extends Control {
             return;
         }
 
+        // Subtasks are written by the headless plan-ingest.php CLI, whose separate DB
+        // connection can't invalidate this web process's query cache. Without busting
+        // it here, a plan parent viewed soon after decompose can read a stale-EMPTY
+        // subtask list — dropping $planRollup and rendering the task-level
+        // "Approve & Merge" button on a plan parent, which merges the (branchless)
+        // parent and corrupts its status. Bust before we load/find anything.
+        $ad = Flight::get('cachedDatabaseAdapter');
+        if ($ad instanceof \app\CachedDatabaseAdapter) $ad->invalidateTable('workbenchtask');
+
         $task = Bean::load('workbenchtask', $taskId);
         if (!$task->id) {
             $this->flash('error', 'Task not found');
@@ -1716,6 +1725,15 @@ class Workbench extends Control {
 
         if (!$task->id) {
             Flight::jsonError('Task not found', 404);
+            return;
+        }
+
+        // A plan PARENT has no branch of its own — its subtasks merge into the
+        // instance's live branch individually. Merging the parent as a task is a
+        // no-op that corrupts its status (status='merged' while plan_status stays
+        // 'draft'). Route plan parents through planapprove/planbuild instead.
+        if (empty($task->parentTaskId) && !empty($task->planStatus)) {
+            Flight::jsonError('This is a plan — approve or build it from the workbench list, not the task merge flow.', 409);
             return;
         }
 

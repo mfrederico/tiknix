@@ -951,7 +951,7 @@ class Mcp extends BaseControls\Control {
         $initHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
         $initError = curl_error($ch);
-        curl_close($ch);
+
 
         if ($initError) {
             throw new \Exception("Connection error: {$initError}");
@@ -994,7 +994,7 @@ class Mcp extends BaseControls\Control {
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
+
 
         if ($error) {
             throw new \Exception("Connection error: {$error}");
@@ -1177,7 +1177,7 @@ class Mcp extends BaseControls\Control {
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
+
 
         $this->logger->info('Proxy response', [
             'httpCode' => $httpCode,
@@ -1219,7 +1219,7 @@ class Mcp extends BaseControls\Control {
                 $response = curl_exec($ch);
                 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $error = curl_error($ch);
-                curl_close($ch);
+
 
                 if ($error) {
                     throw new \Exception("Backend connection error after auto-start: {$error}");
@@ -1257,7 +1257,7 @@ class Mcp extends BaseControls\Control {
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $error = curl_error($ch);
-            curl_close($ch);
+
 
             if ($error) {
                 throw new \Exception("Backend connection error: {$error}");
@@ -1409,7 +1409,7 @@ class Mcp extends BaseControls\Control {
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $error = curl_error($ch);
-            curl_close($ch);
+
 
             if ($httpCode >= 200 && $httpCode < 300) {
                 $isRunning = true;
@@ -1474,7 +1474,7 @@ class Mcp extends BaseControls\Control {
         $initHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
         $initError = curl_error($ch);
-        curl_close($ch);
+
 
         // If connection failed and this is not already a retry, try to auto-start the server
         if ($initError && !$isRetry) {

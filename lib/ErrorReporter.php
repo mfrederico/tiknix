@@ -125,7 +125,7 @@ class ErrorReporter
             CURLOPT_CONNECTTIMEOUT => self::TIMEOUT,
         ]);
         curl_exec($ch);
-        curl_close($ch);
+
     }
 
     private static function rateLimited(string $sig): bool

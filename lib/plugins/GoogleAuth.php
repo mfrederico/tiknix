@@ -158,7 +158,7 @@ class GoogleAuth {
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+
 
         if ($httpCode !== 200) {
             throw new \RuntimeException("Token exchange failed with HTTP {$httpCode}");
@@ -179,7 +179,7 @@ class GoogleAuth {
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+
 
         if ($httpCode !== 200) {
             throw new \RuntimeException("Failed to get user info with HTTP {$httpCode}");

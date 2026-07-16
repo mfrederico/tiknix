@@ -241,7 +241,7 @@ class Connections extends Control {
             ]),
             CURLOPT_TIMEOUT        => 15,
         ]);
-        $resp = curl_exec($ch); curl_close($ch);
+        $resp = curl_exec($ch);
         $j = json_decode(($resp ?: '') ?? '', true);
         $tok = is_array($j) ? ($j['access_token'] ?? '') : '';
         return $tok !== '' ? $tok : null;
@@ -255,7 +255,7 @@ class Connections extends Control {
             CURLOPT_HTTPHEADER     => ['Accept: application/vnd.github+json', 'Authorization: Bearer ' . $token, 'User-Agent: tiknix-aibuilder'],
             CURLOPT_TIMEOUT        => 15,
         ]);
-        $resp = curl_exec($ch); curl_close($ch);
+        $resp = curl_exec($ch);
         $arr  = json_decode(($resp ?: '') ?? '', true) ?: [];
         $out  = [];
         foreach ($arr as $r) {

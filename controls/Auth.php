@@ -549,7 +549,7 @@ class Auth extends BaseControls\Control {
             $_SESSION['2fa_pending_member_id'] = $member->id;
             $_SESSION['2fa_pending_redirect'] = '/dashboard';
             $this->logger->info('2FA setup required for OAuth user', ['id' => $member->id]);
-            Flight::redirect('/auth/2fa-setup');
+            Flight::redirect('/auth/twofasetup');
             return;
         }
 
@@ -557,7 +557,7 @@ class Auth extends BaseControls\Control {
             $_SESSION['2fa_pending_member_id'] = $member->id;
             $_SESSION['2fa_pending_redirect'] = '/dashboard';
             $this->logger->info('2FA verification required for OAuth user', ['id' => $member->id]);
-            Flight::redirect('/auth/2fa-verify');
+            Flight::redirect('/auth/twofaverify');
             return;
         }
 

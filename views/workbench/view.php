@@ -156,7 +156,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                                     <span class="text-body-secondary small ms-1">Definition-of-Done QA<?= !empty($task->auditAt) ? ' · ' . htmlspecialchars((string)$task->auditAt) : '' ?> — proof-of-life screenshots below</span>
                                 </div>
                             <?php endif; ?>
-                        <?php elseif ($canRun && in_array($task->status, ['awaiting', 'completed'])): ?>
+                        <?php elseif ($canRun && empty($task->planStatus) && in_array($task->status, ['awaiting', 'completed'])): ?>
                             <?php
                             // Check if current user is admin (can approve/decline)
                             $isAdmin = isset($member) && $member->level <= LEVELS['ADMIN'];

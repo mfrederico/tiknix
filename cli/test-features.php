@@ -275,7 +275,7 @@ function mcpRequest(string $baseUrl, string $method, array $params = [], ?string
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
-    curl_close($ch);
+
 
     if ($error) {
         return ['error' => $error, 'http_code' => 0];
@@ -366,7 +366,7 @@ function httpGet(string $url): array {
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
-    curl_close($ch);
+
 
     return [
         'code' => $httpCode,

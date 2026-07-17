@@ -367,7 +367,7 @@ class Connections extends Control {
             'instance'     => $inst,
             'connections'  => $connections,
             'connectors'   => $connectors,
-            'environments' => ['development', 'staging', 'production'],
+            'environments' => ['development', 'production'],
         ]);
     }
 

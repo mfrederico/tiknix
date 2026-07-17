@@ -8,7 +8,7 @@
  * navigates top-level into the store's sign-in. Disconnect posts via fetch with CSRF.
  */
 $iid = (int)$instance->id;
-$envBadge = ['development' => 'secondary', 'staging' => 'info', 'production' => 'success'];
+$envBadge = ['development' => 'secondary', 'production' => 'success'];
 ?>
 <div class="container py-4" style="max-width:820px">
 
@@ -55,7 +55,7 @@ $envBadge = ['development' => 'secondary', 'staging' => 'info', 'production' => 
                 <label class="form-label small mb-1">Use for</label>
                 <select name="env" class="form-select form-select-sm">
                   <?php foreach ($environments as $e): ?>
-                    <option value="<?= htmlspecialchars($e) ?>"<?= $e === 'production' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live site' : ($e === 'staging' ? 'Staging' : 'Testing') ?></option>
+                    <option value="<?= htmlspecialchars($e) ?>"<?= $e === 'development' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live site' : 'Development' ?></option>
                   <?php endforeach; ?>
                 </select>
               </div>
@@ -63,7 +63,7 @@ $envBadge = ['development' => 'secondary', 'staging' => 'info', 'production' => 
                 <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-box-arrow-up-right me-1"></i>Connect</button>
               </div>
             </form>
-            <div class="form-text mt-1">Connect a separate store for testing and for your live site if you like.</div>
+            <div class="form-text mt-1">Connect a separate store for development and for your live site if you like.</div>
           <?php endif; ?>
         </div>
       </div>
@@ -83,7 +83,7 @@ $envBadge = ['development' => 'secondary', 'staging' => 'info', 'production' => 
           </tr>
         </thead>
         <tbody>
-          <?php foreach ($connections as $row): $usedFor = $row['environment'] === 'production' ? 'Live site' : ($row['environment'] === 'staging' ? 'Staging' : 'Testing'); ?>
+          <?php foreach ($connections as $row): $usedFor = $row['environment'] === 'production' ? 'Live site' : 'Development'; ?>
             <tr>
               <td class="fw-semibold text-capitalize"><?= htmlspecialchars($row['type']) ?></td>
               <td><span class="badge bg-<?= $envBadge[$row['environment']] ?? 'secondary' ?>-subtle text-<?= $envBadge[$row['environment']] ?? 'secondary' ?>-emphasis border"><?= htmlspecialchars($usedFor) ?></span></td>

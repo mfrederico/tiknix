@@ -36,6 +36,7 @@ use app\EncryptionService;
 use app\GitHubService;
 use app\GitHubPublisher;
 use app\OAuthStateService;
+use app\BrokerService;
 use app\services\connectors\ConnectorRegistry;
 use RedBeanPHP\R;
 
@@ -362,6 +363,33 @@ class Connections extends Control {
             'connectors'   => $connectors,
             'environments' => ['development', 'staging', 'production'],
         ]);
+    }
+
+    /**
+     * POST /connections/broker — mint/rotate this instance's broker key, revealed
+     * ONCE. Owner-only. The instance presents this as a Bearer token to the MCP
+     * gateway to reach its own connected stores; it decrypts nothing and can be
+     * rotated or revoked here at any time.
+     */
+    public function broker($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+
+        // Advisory allowlist: the connectors this instance actually has connections for.
+        $conns = Bean::find('connections', 'instance_id = ? AND enabled = 1', [(int)$inst->id]);
+        $keys = [];
+        foreach ($conns as $c) { if ($c->connectorType) $keys[(string)$c->connectorType] = true; }
+
+        $res = BrokerService::mint((int)$inst->id, (int)$this->member->id, array_keys($keys));
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        $host  = $_SERVER['HTTP_HOST'] ?? 'tiknix.com';
+        $this->jsonSuccess([
+            'token'    => $res['token'],
+            'endpoint' => ($https ? 'https' : 'http') . '://' . $host . '/mcp/message',
+        ], 'Broker key minted — copy it now; it is shown only once.');
     }
 
     /** Constrain a free-text environment to the known set; default production. */

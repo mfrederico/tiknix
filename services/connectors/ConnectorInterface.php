@@ -41,4 +41,25 @@ interface ConnectorInterface {
      * @throws \Exception on verification or exchange failure
      */
     public function exchangeCode(array $ctx): array;
+
+    /**
+     * The read/data tools this connector exposes over the MCP broker, as MCP tool
+     * definitions: [ ['name' => 'get_products', 'description' => ..., 'inputSchema' => [...]], ... ].
+     * The gateway namespaces these as "<key>:<name>" (e.g. shopify:get_products).
+     * Return [] for connectors with no broker tools.
+     */
+    public function brokerTools(): array;
+
+    /**
+     * Execute a broker tool against a live connection. Runs ONLY on the control
+     * plane: it receives the already-decrypted access token and returns DATA — the
+     * token must never appear in the return value. The gateway JSON-encodes the result.
+     *
+     * @param string $tool  the tool name (without the "<key>:" prefix)
+     * @param object $conn  the connections bean (shop domain, metadata, scopes)
+     * @param string $token the decrypted access token (in-process only)
+     * @param array  $args  caller arguments
+     * @throws \Exception on unknown tool or API failure
+     */
+    public function callBrokerTool(string $tool, $conn, string $token, array $args): array;
 }

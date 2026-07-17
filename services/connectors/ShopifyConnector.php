@@ -116,6 +116,71 @@ class ShopifyConnector extends AbstractConnector {
         ];
     }
 
+    // --- Broker (read) tools --------------------------------------------------
+
+    public function brokerTools(): array {
+        return [
+            [
+                'name'        => 'get_shop',
+                'description' => 'Fetch the connected Shopify store profile (name, domain, plan, currency).',
+                'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()],
+            ],
+            [
+                'name'        => 'get_products',
+                'description' => 'List products from the connected Shopify store.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'limit'       => ['type' => 'integer', 'description' => 'Max products, 1-250 (default 20).'],
+                    'environment' => ['type' => 'string', 'description' => 'Which connection: development|staging|production (default production).'],
+                ]],
+            ],
+            [
+                'name'        => 'get_orders',
+                'description' => 'List recent orders from the connected Shopify store.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'limit'       => ['type' => 'integer', 'description' => 'Max orders, 1-250 (default 20).'],
+                    'status'      => ['type' => 'string', 'description' => 'Filter: any|open|closed|cancelled (default any).'],
+                    'environment' => ['type' => 'string', 'description' => 'Which connection: development|staging|production (default production).'],
+                ]],
+            ],
+        ];
+    }
+
+    public function callBrokerTool(string $tool, $conn, string $token, array $args): array {
+        $shop = self::normalizeShopDomain((string)($conn->externalEid ?? ''));
+        if ($shop === '') throw new \Exception('Connection has no valid store domain.');
+        $meta  = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
+        $ver   = (string)($meta['api_version'] ?? $this->apiVersion());
+        $limit = max(1, min(250, (int)($args['limit'] ?? 20)));
+
+        switch ($tool) {
+            case 'get_shop':
+                return $this->adminGet($shop, $ver, $token, 'shop.json');
+            case 'get_products':
+                return $this->adminGet($shop, $ver, $token, 'products.json?limit=' . $limit);
+            case 'get_orders':
+                $status = in_array(($args['status'] ?? 'any'), ['any', 'open', 'closed', 'cancelled'], true)
+                    ? (string)$args['status'] : 'any';
+                return $this->adminGet($shop, $ver, $token, 'orders.json?limit=' . $limit . '&status=' . $status);
+            default:
+                throw new \Exception('Unknown Shopify broker tool: ' . $tool);
+        }
+    }
+
+    /** GET the Shopify Admin REST API with the store token; decode to an array. */
+    private function adminGet(string $shop, string $ver, string $token, string $path): array {
+        [$status, $body] = $this->http('GET',
+            'https://' . $shop . '/admin/api/' . $ver . '/' . $path,
+            ['headers' => ['X-Shopify-Access-Token: ' . $token, 'Accept: application/json']]);
+        if ($status === 401 || $status === 403) {
+            throw new \Exception('Shopify rejected the token (HTTP ' . $status . ') — reconnect the store.');
+        }
+        if ($status < 200 || $status >= 300) {
+            throw new \Exception('Shopify API error (HTTP ' . $status . ').');
+        }
+        $j = json_decode($body, true);
+        return is_array($j) ? $j : [];
+    }
+
     /**
      * Verify the `hmac` query param Shopify appends to the callback: drop hmac +
      * signature, sort the rest by key, join as k=v&..., HMAC-SHA256 with the app

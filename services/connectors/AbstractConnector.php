@@ -27,6 +27,15 @@ abstract class AbstractConnector implements ConnectorInterface {
         return !empty($o['client_id']) && !empty($o['client_secret']);
     }
 
+    /** Connectors expose no broker tools by default; override to add them. */
+    public function brokerTools(): array {
+        return [];
+    }
+
+    public function callBrokerTool(string $tool, $conn, string $token, array $args): array {
+        throw new \Exception('Connector "' . $this->key() . '" exposes no broker tools.');
+    }
+
     /**
      * Minimal cURL request. Returns [httpStatus, body].
      * @param array $opts ['headers' => string[], 'body' => string]

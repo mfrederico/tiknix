@@ -67,6 +67,8 @@ namespace app;
 use \Flight as Flight;
 use \app\Bean;
 use \app\mcptools\ToolLoader;
+use \app\EncryptionService;
+use \app\services\connectors\ConnectorRegistry;
 
 class Mcp extends BaseControls\Control {
 
@@ -823,6 +825,22 @@ class Mcp extends BaseControls\Control {
             }
         }
 
+        // Broker tools: when authenticated with a broker key, expose each reachable
+        // connector's data tools (namespaced <connector>:<tool>, e.g. shopify:get_products).
+        if ($this->authApiKey && ($this->authApiKey->keyClass ?? '') === 'broker') {
+            $allowed = json_decode((string)($this->authApiKey->allowedServers ?? '[]'), true) ?: [];
+            foreach (ConnectorRegistry::all() as $connector) {
+                if (!empty($allowed) && !in_array($connector->key(), $allowed, true)) continue;
+                foreach ($connector->brokerTools() as $bt) {
+                    $toolList[] = [
+                        'name' => $connector->key() . ':' . $bt['name'],
+                        'description' => '[' . ucfirst($connector->key()) . '] ' . ($bt['description'] ?? ''),
+                        'inputSchema' => $bt['inputSchema'] ?? ['type' => 'object', 'properties' => (object)[]],
+                    ];
+                }
+            }
+        }
+
         // Fix empty properties arrays to be objects for JSON Schema compliance
         $toolList = array_map([$this, 'fixToolSchema'], $toolList);
 
@@ -1061,6 +1079,9 @@ class Mcp extends BaseControls\Control {
                 $toolResult = $tools[$toolName]->execute($arguments);
                 $result = $toolResult->content[0]->text ?? '';
                 $isError = $toolResult->isError;
+            } else if (ConnectorRegistry::has($serverSlug)) {
+                // Broker: reach one of the instance's connected third-party stores.
+                $result = $this->brokerToolCall($serverSlug, $toolName, $arguments);
             } else {
                 // Proxy to backend server
                 $result = $this->proxyToolCall($serverSlug, $toolName, $arguments);
@@ -1086,6 +1107,74 @@ class Mcp extends BaseControls\Control {
 
         // Log usage
         $this->logUsage($serverSlug, $toolName, $arguments, $responseStatus, $errorMessage, $startTime);
+    }
+
+    /**
+     * Broker a data call to one of an instance's connected third-party stores.
+     *
+     * Requires a broker-class API key. The connection is resolved by the KEY's
+     * instance (never a caller-supplied id) + the requested connector + environment;
+     * the token is decrypted in-process and NEVER returned or logged — only DATA
+     * comes back. This is the choke point that lets an untrusted instance USE a
+     * store without ever possessing its credentials.
+     */
+    private function brokerToolCall(string $connectorKey, string $toolName, array $arguments): string {
+        $key = $this->authApiKey;
+        if (!$key || ($key->keyClass ?? '') !== 'broker') {
+            throw new \Exception('This tool requires a broker key.');
+        }
+        $instanceId = (int)($key->instanceId ?? 0);
+        if ($instanceId <= 0) {
+            throw new \Exception('Broker key is not bound to an instance.');
+        }
+
+        $connector = ConnectorRegistry::get($connectorKey);
+        if (!$connector) {
+            throw new \Exception('Unknown connector: ' . $connectorKey);
+        }
+        // Key-level connector allowlist (empty = every connector for this instance).
+        $allowedServers = json_decode((string)($key->allowedServers ?? '[]'), true) ?: [];
+        if (!empty($allowedServers) && !in_array($connectorKey, $allowedServers, true)) {
+            throw new \Exception('Broker key is not permitted for connector: ' . $connectorKey);
+        }
+
+        $env  = $this->normalizeBrokerEnv($arguments['environment'] ?? 'production');
+        // Query only on columns guaranteed to exist; check revoked state in PHP so a
+        // never-populated revoked_at column can't make this silently return nothing.
+        $conn = Bean::findOne('connections',
+            'instance_id = ? AND connector_type = ? AND environment = ? AND enabled = 1',
+            [$instanceId, $connectorKey, $env]);
+        if (!$conn || !$conn->id) {
+            throw new \Exception("No enabled {$connectorKey} connection for environment '{$env}'.");
+        }
+        if (!empty($conn->revokedAt)) {
+            throw new \Exception("The {$connectorKey} connection for environment '{$env}' was revoked.");
+        }
+        // Binding (defense-in-depth): the connection MUST belong to the key's instance.
+        if ((int)$conn->instanceId !== $instanceId) {
+            throw new \Exception('Connection/instance binding mismatch.');
+        }
+        // Optional per-connection allowlist on the key (empty = all this instance's).
+        $allowed = json_decode((string)($key->connectionIds ?? '[]'), true) ?: [];
+        if (!empty($allowed) && !in_array((int)$conn->id, array_map('intval', $allowed), true)) {
+            throw new \Exception('Broker key is not scoped to this connection.');
+        }
+
+        $token = EncryptionService::decrypt($conn->accessToken);
+        try {
+            $data = $connector->callBrokerTool($toolName, $conn, $token, $arguments);
+        } finally {
+            sodium_memzero($token);
+        }
+        $conn->lastUsedAt = date('Y-m-d H:i:s');
+        Bean::store($conn);
+        return json_encode($data);
+    }
+
+    /** Constrain a broker environment argument to the known set; default production. */
+    private function normalizeBrokerEnv($env): string {
+        $env = strtolower(trim((string)$env));
+        return in_array($env, ['development', 'staging', 'production'], true) ? $env : 'production';
     }
 
     /**
@@ -1668,6 +1757,13 @@ class Mcp extends BaseControls\Control {
 
         // Find the API key
         $key = Bean::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
+
+        if (!$key) {
+            // Broker keys are stored as a sha-256 hash, never as plaintext — look
+            // those up by hash so a DB read can't reveal a usable broker token.
+            $key = Bean::findOne('apikey', 'token_hash = ? AND key_class = ? AND is_active = 1',
+                [EncryptionService::hashHex($token), 'broker']);
+        }
 
         if (!$key) {
             return false;

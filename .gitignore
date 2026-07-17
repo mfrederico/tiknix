@@ -4,6 +4,7 @@ conf/mailgun.ini
 conf/aibuilder.ini
 conf/github.ini
 conf/shopify.ini
+conf/broker.ini
 conf/config.*.ini
 !conf/*.example.ini
 

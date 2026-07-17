@@ -107,11 +107,44 @@ $envBadge = ['development' => 'secondary', 'staging' => 'info', 'production' => 
       </table>
     </div>
   <?php endif; ?>
+
+  <!-- Broker key -->
+  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-5" style="letter-spacing:.06em">Broker key</h2>
+  <div class="card border">
+    <div class="card-body">
+      <div class="text-body-secondary small mb-2">
+        Your instance uses this key to reach its connected stores through the tiknix broker — the store token
+        never leaves the control plane. Shown once; rotating replaces the old key immediately.
+      </div>
+      <button id="broker-mint" class="btn btn-sm btn-outline-primary"><i class="bi bi-key me-1"></i>Generate / rotate broker key</button>
+      <div id="broker-out" class="mt-3 d-none">
+        <label class="form-label small mb-1">Add to your instance's <code>conf/broker.ini</code> (copy now — shown once):</label>
+        <pre class="bg-body-secondary border rounded p-2 small mb-0" id="broker-snippet" style="white-space:pre-wrap"></pre>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
 (function(){
   const csrf = <?= json_encode(csrf_token()) ?>;
+  const iid = <?= $iid ?>;
+  const bmint = document.getElementById('broker-mint');
+  if (bmint) bmint.addEventListener('click', function(){
+    bmint.disabled = true;
+    fetch('/connections/broker', {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+      body:new URLSearchParams({csrf_token:csrf, id:iid}).toString()
+    }).then(r=>r.json()).then(function(j){
+      bmint.disabled = false;
+      if (j && j.success && j.data && j.data.token) {
+        document.getElementById('broker-out').classList.remove('d-none');
+        document.getElementById('broker-snippet').textContent =
+          '[broker]\nendpoint = "' + j.data.endpoint + '"\nkey = "' + j.data.token + '"';
+      } else { alert((j && j.message) || 'Could not mint broker key'); }
+    }).catch(function(){ bmint.disabled = false; alert('Could not mint broker key'); });
+  });
   document.querySelectorAll('[data-disconnect]').forEach(function(btn){
     btn.addEventListener('click', function(){
       if (!confirm('Disconnect this integration? Your app will lose access to that store.')) return;

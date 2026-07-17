@@ -469,7 +469,8 @@ class Connections extends Control {
         }
         $iid = (int)($claims['instance_id'] ?? 0);
         // Re-assert ownership at callback time (a connection cannot outlive its owner's grant).
-        if (!$this->ownedInstance($iid)) {
+        $inst = $this->ownedInstance($iid);
+        if (!$inst) {
             $this->flash('error', 'You no longer own that instance.');
             Flight::redirect('/aibuilder'); return;
         }
@@ -485,6 +486,13 @@ class Connections extends Control {
             error_log('[connections] ' . $type . ' callback failed: ' . $e->getMessage());
             $this->flash('error', ucfirst($type) . ' connection failed: ' . $e->getMessage());
             Flight::redirect('/connections?id=' . $iid); return;
+        }
+        // Wire the instance so its app can reach this store immediately — no keys
+        // for the user to handle. Best-effort: never fail the connect over this.
+        try {
+            BrokerService::ensureInstanceConfig($iid, (int)$this->member->id, $this->instanceDir($inst->slug));
+        } catch (\Throwable $e) {
+            error_log('[connections] store wiring failed for instance ' . $iid . ': ' . $e->getMessage());
         }
         $this->flash('success', ucfirst($type) . ' store connected.');
         Flight::redirect('/connections?id=' . $iid);

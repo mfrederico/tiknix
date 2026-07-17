@@ -8,16 +8,23 @@
  * [security] app_key). Ownership is enforced per member+instance — a connection is
  * only ever readable/usable by the member who owns the instance it is bound to.
  *
- * Routes (auto-routed /connections/<method>):
- *   GET  /connections/setup?id=<instance>  - guided connect page (opened in a new tab)
- *   GET  /connections/status?id=<instance> - JSON: is this instance connected?
- *   POST /connections/add                  - store/replace a GitHub PAT connection
- *   POST /connections/test                 - re-validate a stored connection
- *   POST /connections/disconnect           - remove a connection
- *   POST /connections/publish              - push HEAD + open/reuse a PR on the repo
+ * GitHub keeps a bespoke flow (PAT + publish->PR). Every other connector is
+ * registry-driven (app\services\connectors\*Connector) and shares one generic
+ * OAuth path: connect() -> signed state (OAuthStateService) -> provider ->
+ * callback() -> connector->exchangeCode() -> encrypted connections row. Tokens are
+ * held ONLY on the control plane; instances reach a store through the MCP broker.
+ * A connection is scoped to member + instance + environment (dev/staging/prod).
  *
- * The full pluggable connector registry (OAuth, Shopify, Jira) is deferred; this
- * hardcodes GitHub to get the publish->PR loop working end to end.
+ * Routes (auto-routed /connections/<method>):
+ *   GET  /connections?id=<instance>            - connections hub (list + add)
+ *   GET  /connections/connect/<type>?id=&env=  - start a connector's OAuth
+ *   GET  /connections/callback/<type>          - OAuth redirect target
+ *   GET  /connections/setup?id=<instance>      - guided GitHub connect page (new tab)
+ *   GET  /connections/status?id=<instance>     - JSON: is this instance GitHub-connected?
+ *   POST /connections/add                      - store/replace a GitHub PAT connection
+ *   POST /connections/test                     - re-validate a stored connection
+ *   POST /connections/disconnect               - remove a connection (any connector)
+ *   POST /connections/publish                  - push HEAD + open/reuse a PR on the repo
  */
 
 namespace app;
@@ -28,6 +35,8 @@ use app\Bean;
 use app\EncryptionService;
 use app\GitHubService;
 use app\GitHubPublisher;
+use app\OAuthStateService;
+use app\services\connectors\ConnectorRegistry;
 use RedBeanPHP\R;
 
 class Connections extends Control {
@@ -270,7 +279,8 @@ class Connections extends Control {
     public function connect($params = []): void {
         if (!$this->requireLogin()) return;
         $type = strtolower((string)($params['operation']->name ?? 'github'));
-        if ($type !== 'github' || !$this->oauthEnabled()) { Flight::redirect('/aibuilder'); return; }
+        if ($type !== 'github') { $this->connectorConnect($type); return; }
+        if (!$this->oauthEnabled()) { Flight::redirect('/aibuilder'); return; }
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::redirect('/aibuilder'); return; }
         if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/aibuilder'); return; }
@@ -290,6 +300,7 @@ class Connections extends Control {
     /** GET /connections/callback/github?code=&state= — OAuth redirect target. */
     public function callback($params = []): void {
         $type  = strtolower((string)($params['operation']->name ?? 'github'));
+        if ($type !== 'github') { $this->connectorCallback($type); return; }
         $sess  = $_SESSION['gh_oauth'] ?? null;
         $state = (string)$this->getParam('state', '');
         $code  = (string)$this->getParam('code', '');
@@ -313,6 +324,184 @@ class Connections extends Control {
         $sess = $_SESSION['gh_oauth'] ?? null;
         if (!$sess || empty($sess['token'])) { $this->jsonError('No pending GitHub authorization', 400); return; }
         $this->jsonSuccess(['repos' => $this->githubUserRepos((string)$sess['token'])]);
+    }
+
+    // --- Generic connector OAuth (registry-driven; e.g. Shopify) --------------
+
+    /** GET /connections — connections hub for an instance (?id=<instance>). */
+    public function index($params = []): void {
+        if (!$this->requireLogin()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::redirect('/aibuilder'); return; }
+
+        $rows = Bean::find('connections',
+            'member_id = ? AND instance_id = ? ORDER BY connector_type, environment',
+            [(int)$this->member->id, (int)$inst->id]);
+        $connections = [];
+        foreach ($rows as $c) {
+            $connections[] = [
+                'id'          => (int)$c->id,
+                'type'        => $c->connectorType,
+                'environment' => $c->environment ?: 'production',
+                'name'        => $c->externalName ?: $c->externalEid,
+                'eid'         => $c->externalEid,
+                'scopes'      => $c->scopes,
+                'enabled'     => (int)$c->enabled === 1,
+                'revoked'     => !empty($c->revokedAt),
+                'lastUsed'    => $c->lastUsedAt,
+                'lastError'   => $c->lastError,
+            ];
+        }
+        $connectors = [];
+        foreach (ConnectorRegistry::all() as $conn) {
+            $connectors[] = ['key' => $conn->key(), 'meta' => $conn->meta(), 'configured' => $conn->isConfigured()];
+        }
+        $this->render('connections/index', [
+            'instance'     => $inst,
+            'connections'  => $connections,
+            'connectors'   => $connectors,
+            'environments' => ['development', 'staging', 'production'],
+        ]);
+    }
+
+    /** Constrain a free-text environment to the known set; default production. */
+    private function normalizeEnv($env): string {
+        $env = strtolower(trim((string)$env));
+        return in_array($env, ['development', 'staging', 'production'], true) ? $env : 'production';
+    }
+
+    /** The exact, provider-allowlisted callback URL for a connector on this host. */
+    private function connectorRedirectUri(string $type): string {
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        return ($https ? 'https' : 'http') . '://' . $host . '/connections/callback/' . $type;
+    }
+
+    /** GET /connections/connect/<type>?id=&env=&shop= — start a registry connector's OAuth. */
+    private function connectorConnect(string $type): void {
+        $connector = ConnectorRegistry::get($type);
+        if (!$connector) { Flight::redirect('/aibuilder'); return; }
+        if (!$connector->isConfigured()) {
+            $this->flash('error', ucfirst($type) . ' is not configured on this server.');
+            Flight::redirect('/aibuilder'); return;
+        }
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::redirect('/aibuilder'); return; }
+        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/aibuilder'); return; }
+
+        $env  = $this->normalizeEnv($this->getParam('env', 'production'));
+        $shop = trim((string)$this->getParam('shop', ''));
+
+        // The signed state is the ONLY source of identity at callback time.
+        $state = OAuthStateService::issue([
+            'provider'    => $type,
+            'member_id'   => (int)$this->member->id,
+            'instance_id' => (int)$inst->id,
+            'environment' => $env,
+            'shop'        => $shop,
+        ]);
+        // Double-submit: proves the callback lands in the same browser session.
+        $_SESSION['oauth_state_hash'] = hash('sha256', $state);
+
+        try {
+            $url = $connector->authorizeUrl([
+                'state'        => $state,
+                'redirect_uri' => $this->connectorRedirectUri($type),
+                'shop'         => $shop,
+            ]);
+        } catch (\Throwable $e) {
+            $this->flash('error', $e->getMessage());
+            Flight::redirect('/connections?id=' . (int)$inst->id); return;
+        }
+        Flight::redirect($url);
+    }
+
+    /** GET /connections/callback/<type> — registry connector OAuth redirect target. */
+    private function connectorCallback(string $type): void {
+        $connector = ConnectorRegistry::get($type);
+        if (!$connector) { Flight::redirect('/aibuilder'); return; }
+        if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
+
+        $state    = (string)$this->getParam('state', '');
+        $claims   = $state !== '' ? OAuthStateService::verify($state) : null;
+        $sessHash = (string)($_SESSION['oauth_state_hash'] ?? '');
+        unset($_SESSION['oauth_state_hash']);
+
+        if (!$claims
+            || $sessHash === '' || !hash_equals($sessHash, hash('sha256', $state))
+            || (string)($claims['provider'] ?? '') !== $type) {
+            $this->flash('error', 'Authorization expired or invalid — please reconnect.');
+            Flight::redirect('/aibuilder'); return;
+        }
+        // Identity comes from the signed state, never from the query string.
+        if ((int)($claims['member_id'] ?? 0) !== (int)$this->member->id) {
+            $this->flash('error', 'This authorization was started by a different account.');
+            Flight::redirect('/aibuilder'); return;
+        }
+        $iid = (int)($claims['instance_id'] ?? 0);
+        // Re-assert ownership at callback time (a connection cannot outlive its owner's grant).
+        if (!$this->ownedInstance($iid)) {
+            $this->flash('error', 'You no longer own that instance.');
+            Flight::redirect('/aibuilder'); return;
+        }
+
+        try {
+            $payload = $connector->exchangeCode([
+                'params'       => $_GET,
+                'claims'       => $claims,
+                'redirect_uri' => $this->connectorRedirectUri($type),
+            ]);
+            $this->upsertConnection($type, $claims, $payload);
+        } catch (\Throwable $e) {
+            error_log('[connections] ' . $type . ' callback failed: ' . $e->getMessage());
+            $this->flash('error', ucfirst($type) . ' connection failed: ' . $e->getMessage());
+            Flight::redirect('/connections?id=' . $iid); return;
+        }
+        $this->flash('success', ucfirst($type) . ' store connected.');
+        Flight::redirect('/connections?id=' . $iid);
+    }
+
+    /**
+     * Upsert an encrypted connection for a registry connector. One row per
+     * (member, instance, connector, environment, store) so a builder can hold
+     * distinct dev / staging / production stores side by side.
+     */
+    private function upsertConnection(string $type, array $claims, array $payload): int {
+        $memberId   = (int)$claims['member_id'];
+        $instanceId = (int)$claims['instance_id'];
+        $env        = $this->normalizeEnv($claims['environment'] ?? 'production');
+        $eid        = (string)($payload['external_eid'] ?? '');
+
+        $conn = Bean::findOne('connections',
+            'member_id = ? AND instance_id = ? AND connector_type = ? AND environment = ? AND external_eid = ?',
+            [$memberId, $instanceId, $type, $env, $eid]);
+        if (!$conn || !$conn->id) $conn = Bean::dispense('connections');
+
+        $now = date('Y-m-d H:i:s');
+        $conn->connectorType  = $type;
+        $conn->memberId       = $memberId;
+        $conn->instanceId     = $instanceId;
+        $conn->environment    = $env;
+        $conn->authType       = 'oauth';
+        $conn->accessToken    = EncryptionService::encrypt((string)$payload['access_token']);
+        $conn->tokenType      = (string)($payload['token_type'] ?? 'Bearer');
+        $conn->scopes         = (string)($payload['scopes'] ?? '');
+        $conn->externalEid    = $eid;
+        $conn->externalName   = (string)($payload['external_name'] ?? $eid);
+        $conn->externalUrl    = (string)($payload['external_url'] ?? '');
+        $conn->connectionName = (string)($payload['external_name'] ?? $eid) . ' (' . $env . ')';
+        $conn->metadataJson   = json_encode($payload['metadata'] ?? []);
+        $conn->enabled        = 1;
+        $conn->shared         = 0;
+        $conn->revokedAt      = null;
+        $conn->exportedAt     = $conn->exportedAt ?? null;
+        $conn->lastError      = null;
+        $conn->lastUsedAt     = $now;
+        if (!$conn->id) $conn->createdAt = $now;
+        $conn->updatedAt      = $now;
+        Bean::store($conn);
+        return (int)$conn->id;
     }
 
     /** POST /connections/test — re-validate a stored connection. */

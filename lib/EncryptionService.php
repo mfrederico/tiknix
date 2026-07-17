@@ -101,6 +101,19 @@ class EncryptionService {
     }
 
     /**
+     * Derive a stable 32-byte subkey from the master app_key for a named context
+     * (e.g. HMAC-signing OAuth state). Callers that need to sign/verify — not
+     * encrypt — use this so the raw master key never leaves this class and a leak
+     * of one context's subkey can't unwrap another's. Deterministic per context.
+     */
+    public static function deriveKey(string $context): string {
+        $master = self::getKey();
+        $sub = hash_hmac('sha256', 'tiknix-derive-v1:' . $context, $master, true);
+        sodium_memzero($master);
+        return $sub; // 32 raw bytes
+    }
+
+    /**
      * Constant-time comparison for sensitive values.
      */
     public static function constantTimeCompare(string $a, string $b): bool {

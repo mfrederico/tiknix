@@ -335,6 +335,12 @@ class Connections extends Control {
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::redirect('/aibuilder'); return; }
 
+        // A just-completed connect (a prior request) writes a connections row; bust
+        // the cache before reading so a newly-connected store shows on the FIRST view
+        // instead of after a second connect / cache TTL.
+        $ad = Flight::get('cachedDatabaseAdapter');
+        if ($ad instanceof \app\CachedDatabaseAdapter) $ad->invalidateTable('connections');
+
         $rows = Bean::find('connections',
             'member_id = ? AND instance_id = ? ORDER BY connector_type, environment',
             [(int)$this->member->id, (int)$inst->id]);

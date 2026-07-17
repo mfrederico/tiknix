@@ -55,7 +55,9 @@ class CachedDatabaseAdapter extends DBAdapter {
     public function get($sql, $bindings = array()) {
         // Only cache SELECT queries
         if (!$this->enabled || !$this->isSelectQuery($sql)) {
-            return parent::get($sql, $bindings);
+            $result = parent::get($sql, $bindings);
+            $this->maybeInvalidate($sql);
+            return $result;
         }
 
         // Check cache first
@@ -84,7 +86,9 @@ class CachedDatabaseAdapter extends DBAdapter {
      */
     public function getCell($sql, $bindings = array(), $noSignal = null) {
         if (!$this->enabled || !$this->isSelectQuery($sql)) {
-            return parent::getCell($sql, $bindings, $noSignal);
+            $result = parent::getCell($sql, $bindings, $noSignal);
+            $this->maybeInvalidate($sql); // RedBean runs INSERTs through here
+            return $result;
         }
 
         $cacheKey = $this->getCacheKey('cell_' . $sql, $bindings);
@@ -107,7 +111,9 @@ class CachedDatabaseAdapter extends DBAdapter {
      */
     public function getCol($sql, $bindings = array()) {
         if (!$this->enabled || !$this->isSelectQuery($sql)) {
-            return parent::getCol($sql, $bindings);
+            $result = parent::getCol($sql, $bindings);
+            $this->maybeInvalidate($sql);
+            return $result;
         }
 
         $cacheKey = $this->getCacheKey('col_' . $sql, $bindings);
@@ -130,7 +136,9 @@ class CachedDatabaseAdapter extends DBAdapter {
      */
     public function getRow($sql, $bindings = array()) {
         if (!$this->enabled || !$this->isSelectQuery($sql)) {
-            return parent::getRow($sql, $bindings);
+            $result = parent::getRow($sql, $bindings);
+            $this->maybeInvalidate($sql);
+            return $result;
         }
 
         $cacheKey = $this->getCacheKey('row_' . $sql, $bindings);
@@ -153,7 +161,9 @@ class CachedDatabaseAdapter extends DBAdapter {
      */
     public function getAssoc($sql, $bindings = array()) {
         if (!$this->enabled || !$this->isSelectQuery($sql)) {
-            return parent::getAssoc($sql, $bindings);
+            $result = parent::getAssoc($sql, $bindings);
+            $this->maybeInvalidate($sql);
+            return $result;
         }
 
         $cacheKey = $this->getCacheKey('assoc_' . $sql, $bindings);
@@ -325,6 +335,19 @@ class CachedDatabaseAdapter extends DBAdapter {
 
         foreach ($tables as $table) {
             $this->invalidateTable($table);
+        }
+    }
+
+    /**
+     * Invalidate affected tables when a NON-select statement slips through a get*()
+     * method. RedBeanPHP executes INSERTs via getCell() (to return the new row id),
+     * so those writes never reach exec() — without this, a bean insert would not bust
+     * cached SELECTs and a new row could stay hidden until the TTL lapsed. Safe for
+     * any non-write statement: extractTables() finds no tables and this is a no-op.
+     */
+    private function maybeInvalidate($sql) {
+        if ($this->enabled && !$this->isSelectQuery($sql)) {
+            $this->invalidateFromSQL($sql);
         }
     }
 

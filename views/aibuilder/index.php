@@ -71,6 +71,13 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
         </button>
         <span id="ab-gh-state" class="small text-body-secondary"></span>
         <span id="ab-publish-msg" class="small"></span>
+        <?php if ($ab_isOwner): ?>
+          <div class="vr d-none d-sm-block mx-1"></div>
+          <a href="/connections?id=<?= (int)$selected->id ?>" target="_blank" rel="noopener"
+             class="btn btn-outline-secondary btn-sm" title="Store &amp; service connections for this instance (Shopify, GitHub, …)">
+            <i class="bi bi-plug me-1"></i>Connections
+          </a>
+        <?php endif; ?>
         <?php if ($ab_isOwner && !$ab_isDefault): $sharedCount = count($ab_sharedTeamIds); ?>
           <div class="vr d-none d-sm-block mx-1"></div>
           <div class="dropdown" id="ab-share-wrap">

@@ -43,6 +43,19 @@ interface ConnectorInterface {
     public function exchangeCode(array $ctx): array;
 
     /**
+     * Validate a pasted API key against the provider and normalize it into the
+     * SAME payload shape exchangeCode() returns:
+     *   [ 'access_token', 'token_type', 'scopes', 'external_eid',
+     *     'external_name', 'external_url', 'metadata' => [] ]
+     * Only meaningful for connectors whose meta()['auth_type'] === 'api_key'.
+     *
+     * @param string $key the pasted secret/restricted key (in-process only)
+     * @throws \Exception when the connector does not support API-key auth or the
+     *                    provider rejects the key
+     */
+    public function validateApiKey(string $key): array;
+
+    /**
      * The read/data tools this connector exposes over the MCP broker, as MCP tool
      * definitions: [ ['name' => 'get_products', 'description' => ..., 'inputSchema' => [...]], ... ].
      * The gateway namespaces these as "<key>:<name>" (e.g. shopify:get_products).

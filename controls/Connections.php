@@ -22,6 +22,7 @@
  *   GET  /connections/setup?id=<instance>      - guided GitHub connect page (new tab)
  *   GET  /connections/status?id=<instance>     - JSON: is this instance GitHub-connected?
  *   POST /connections/add                      - store/replace a GitHub PAT connection
+ *   POST /connections/connectkey               - connect an api_key connector (validated paste)
  *   POST /connections/test                     - re-validate a stored connection
  *   POST /connections/disconnect               - remove a connection (any connector)
  *   POST /connections/publish                  - push HEAD + open/reuse a PR on the repo
@@ -416,6 +417,12 @@ class Connections extends Control {
     private function connectorConnect(string $type): void {
         $connector = ConnectorRegistry::get($type);
         if (!$connector) { Flight::redirect('/aibuilder'); return; }
+        if (($connector->meta()['auth_type'] ?? 'oauth') === 'api_key') {
+            // api_key connectors take a pasted key via POST /connections/connectkey,
+            // not the OAuth GET flow.
+            $this->flash('error', ucfirst($type) . ' connects with a pasted API key, not a sign-in redirect.');
+            Flight::redirect('/connections?id=' . (int)$this->getParam('id', 0)); return;
+        }
         if (!$connector->isConfigured()) {
             $this->flash('error', ucfirst($type) . ' is not configured on this server.');
             Flight::redirect('/aibuilder'); return;
@@ -509,7 +516,7 @@ class Connections extends Control {
      * (member, instance, connector, environment, store) so a builder can hold
      * distinct dev / staging / production stores side by side.
      */
-    private function upsertConnection(string $type, array $claims, array $payload): int {
+    private function upsertConnection(string $type, array $claims, array $payload, string $authType = 'oauth'): int {
         $memberId   = (int)$claims['member_id'];
         $instanceId = (int)$claims['instance_id'];
         $env        = $this->normalizeEnv($claims['environment'] ?? 'production');
@@ -525,7 +532,7 @@ class Connections extends Control {
         $conn->memberId       = $memberId;
         $conn->instanceId     = $instanceId;
         $conn->environment    = $env;
-        $conn->authType       = 'oauth';
+        $conn->authType       = $authType;
         $conn->accessToken    = EncryptionService::encrypt((string)$payload['access_token']);
         $conn->tokenType      = (string)($payload['token_type'] ?? 'Bearer');
         $conn->scopes         = (string)($payload['scopes'] ?? '');
@@ -544,6 +551,53 @@ class Connections extends Control {
         $conn->updatedAt      = $now;
         Bean::store($conn);
         return (int)$conn->id;
+    }
+
+    /**
+     * POST /connections/connectkey — connect an api_key-type registry connector
+     * (e.g. Stripe) from a pasted secret/restricted key. The key is validated
+     * against the provider BEFORE anything persists, then stored encrypted via
+     * upsertConnection (EncryptionService) exactly like an OAuth token. JSON,
+     * called via fetch like add()/disconnect().
+     */
+    public function connectkey($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { $this->jsonError('Only root can configure the tiknix-core connection.', 403); return; }
+
+        $type      = strtolower(trim((string)$this->getParam('type', '')));
+        $connector = ConnectorRegistry::get($type);
+        if (!$connector) { $this->jsonError('Unsupported connector', 400); return; }
+        if (($connector->meta()['auth_type'] ?? 'oauth') !== 'api_key') {
+            $this->jsonError(ucfirst($type) . ' does not connect with a pasted key.', 400); return;
+        }
+
+        $env = $this->normalizeEnv($this->getParam('env', 'production'));
+        $key = trim((string)$this->getParam('key', ''));
+        try {
+            $payload = $connector->validateApiKey($key);
+            $this->upsertConnection($type, [
+                'member_id'   => (int)$this->member->id,
+                'instance_id' => (int)$inst->id,
+                'environment' => $env,
+            ], $payload, 'api_key');
+        } catch (\Throwable $e) {
+            $this->jsonError($e->getMessage(), 400); return;
+        }
+        // Wire the instance so its app can reach this account immediately — no keys
+        // for the user to handle. Best-effort: never fail the connect over this.
+        try {
+            BrokerService::ensureInstanceConfig((int)$inst->id, (int)$this->member->id, $this->instanceDir($inst->slug));
+        } catch (\Throwable $e) {
+            error_log('[connections] store wiring failed for instance ' . (int)$inst->id . ': ' . $e->getMessage());
+        }
+        $this->jsonSuccess([
+            'type'        => $type,
+            'environment' => $env,
+            'account'     => (string)($payload['external_name'] ?? $payload['external_eid'] ?? ''),
+        ], ucfirst($type) . ' connected');
     }
 
     /** POST /connections/test — re-validate a stored connection. */

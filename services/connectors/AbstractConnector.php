@@ -27,6 +27,11 @@ abstract class AbstractConnector implements ConnectorInterface {
         return !empty($o['client_id']) && !empty($o['client_secret']);
     }
 
+    /** Connectors are OAuth-only by default; api_key connectors override this. */
+    public function validateApiKey(string $key): array {
+        throw new \Exception('Connector "' . $this->key() . '" does not support API-key auth.');
+    }
+
     /** Connectors expose no broker tools by default; override to add them. */
     public function brokerTools(): array {
         return [];

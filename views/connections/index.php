@@ -42,7 +42,29 @@ $envBadge = ['development' => 'secondary', 'production' => 'success'];
             <?php endif; ?>
           </div>
 
-          <?php if ($c['configured']): ?>
+          <?php if ($c['configured'] && ($meta['auth_type'] ?? 'oauth') === 'api_key'): ?>
+            <form data-connectkey action="/connections/connectkey" method="post" class="row g-2 align-items-end mt-2">
+              <?= csrf_field() ?>
+              <input type="hidden" name="id" value="<?= $iid ?>">
+              <input type="hidden" name="type" value="<?= htmlspecialchars($c['key']) ?>">
+              <div class="col-sm-5">
+                <label class="form-label small mb-1"><?= htmlspecialchars($meta['label'] ?? $c['key']) ?> secret key</label>
+                <input type="password" name="key" class="form-control form-control-sm" placeholder="sk_live_… or rk_live_…" autocomplete="off" required>
+              </div>
+              <div class="col-sm-4">
+                <label class="form-label small mb-1">Use for</label>
+                <select name="env" class="form-select form-select-sm">
+                  <?php foreach ($environments as $e): ?>
+                    <option value="<?= htmlspecialchars($e) ?>"<?= $e === 'development' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live site' : 'Development' ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div class="col-sm-3">
+                <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-key me-1"></i>Connect</button>
+              </div>
+            </form>
+            <div class="form-text mt-1">Create one in your Stripe Dashboard &rarr; Developers &rarr; API keys. A restricted key with write access to Checkout, Customers, Products, Prices and Subscriptions is recommended.</div>
+          <?php elseif ($c['configured']): ?>
             <form method="get" action="/connections/connect/<?= htmlspecialchars($c['key']) ?>" class="row g-2 align-items-end mt-2">
               <input type="hidden" name="id" value="<?= $iid ?>">
               <?php if ($c['key'] === 'shopify'): ?>
@@ -113,6 +135,21 @@ $envBadge = ['development' => 'secondary', 'production' => 'success'];
 <script>
 (function(){
   const csrf = <?= json_encode(csrf_token()) ?>;
+  document.querySelectorAll('form[data-connectkey]').forEach(function(form){
+    form.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      const btn = form.querySelector('button[type=submit]');
+      if (btn) btn.disabled = true;
+      fetch(form.action, {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+        body: new URLSearchParams(new FormData(form)).toString()
+      }).then(r=>r.json()).then(function(j){
+        if (j && j.success) { location.reload(); }
+        else { alert((j && j.message) || 'Could not connect'); if (btn) btn.disabled = false; }
+      }).catch(function(){ alert('Could not connect'); if (btn) btn.disabled = false; });
+    });
+  });
   document.querySelectorAll('[data-disconnect]').forEach(function(btn){
     btn.addEventListener('click', function(){
       if (!confirm('Disconnect this store? This app will no longer be able to read its data.')) return;

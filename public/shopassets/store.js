@@ -30,7 +30,7 @@
 
   function card(p) {
     return '<a class="card" href="' + productHref(p.sku) + '">' +
-      (p.image ? '<img src="' + DATA + esc(p.image) + '" alt="' + esc(p.title) + '" loading="lazy">' : '<div class="ph">◇</div>') +
+      (p.image ? '<img src="' + esc(p.image) + '" alt="' + esc(p.title) + '" loading="lazy">' : '<div class="ph">◇</div>') +
       '<div class="meta">' +
       (p.category ? '<div class="cat">' + esc(p.category) + '</div>' : '') +
       '<div class="name">' + esc(p.title) + '</div>' +
@@ -70,7 +70,7 @@
   }
 
   function renderPDP(p) {
-    var imgs = (p.images || []).map(function (i) { return DATA + i; });
+    var imgs = (p.images || []);
     var available = p.serialized ? (p.units || []).length : (p.stock || 0);
     var stock = p.serialized
       ? '<span class="badge">Unique item</span> ' + available + ' available · held ' + (p.holdMinutes || 0) + ' min in your cart'

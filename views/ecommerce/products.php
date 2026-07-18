@@ -4,7 +4,7 @@
  * Vars: $title, $products (array of product arrays)
  */
 $fmt = fn($p) => '$' . number_format((float)($p['price'] ?? 0), 2);
-$imgUrl = fn($rel) => '/shop/product/' . ltrim((string)$rel, '/');
+$imgUrl = fn($rel) => (string)$rel;
 ?>
 <div class="container py-4" style="max-width:960px">
 

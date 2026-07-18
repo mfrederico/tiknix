@@ -8,7 +8,7 @@
 $p = $product ?? [];
 $isEdit = !empty($p['sku']);
 $v = fn($k, $d = '') => htmlspecialchars((string)($p[$k] ?? $d));
-$imgUrl = fn($rel) => '/shop/product/' . ltrim((string)$rel, '/');
+$imgUrl = fn($rel) => (string)$rel;
 $serialized = !empty($p['serialized']);
 $units = '';
 foreach (($p['units'] ?? []) as $u) { $units .= ($u['serial'] ?? '') . "\n"; }

@@ -35,9 +35,9 @@ class Ecommerce extends Control {
         return true;
     }
 
-    /** The catalog for the tiknix.com store (this site's own public/ folder). */
+    /** The catalog for the tiknix.com store (reads shopdata/ under the app root). */
     private function catalog(): StoreCatalog {
-        return new StoreCatalog(dirname(__DIR__) . '/public');
+        return new StoreCatalog(dirname(__DIR__));
     }
 
     /** GET /ecommerce?id=<instance> — storefront tools hub (Payments tie is per-instance). */

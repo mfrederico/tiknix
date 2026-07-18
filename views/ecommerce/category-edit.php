@@ -8,7 +8,7 @@ $c = $category ?? [];
 $isEdit = !empty($c['slug']);
 $picked = array_flip($c['products'] ?? []);
 $v = fn($k, $d = '') => htmlspecialchars((string)($c[$k] ?? $d));
-$imgUrl = fn($rel) => '/shop/product/' . ltrim((string)$rel, '/');
+$imgUrl = fn($rel) => (string)$rel;
 ?>
 <div class="container py-4" style="max-width:760px">
 

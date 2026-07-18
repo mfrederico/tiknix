@@ -1,19 +1,17 @@
 <?php
 /**
- * StoreCatalog — the file-backed product catalog for the tiknix.com storefront.
+ * StoreCatalog — the file-backed product catalog behind the /shop front controller.
  *
- * The catalog is plain JSON under the site's public/products/ folder, committed to
- * the repo, so it publishes with the site and is rendered client-side by
- * public/products/store.js:
+ * The catalog is JSON, committed to the repo, but NOT under public/ page-route dirs
+ * (so Shop.php can own every /shop URL). Shop.php reads these and serves them with
+ * cache headers:
  *
- *   public/products/index.json         manifest (fast PLP bootstrap)
- *   public/products/<sku>.json         one file per product (PDP data)
- *   public/products/media/<sku>/…      product images
+ *   shopdata/product/<sku>.json     product data (PDP)
+ *   shopdata/catalog/<slug>.json    catalog data (a title + product-slug list)
+ *   public/shopmedia/product/<sku>/ product images (served statically)
  *
- * A product JSON holds the DEFINITION plus inventory intent: `serialized`,
- * `holdMinutes`, and either `stock` (fungible) or `units[]` (serial numbers). Image
- * paths are stored RELATIVE ("media/<sku>/…") so they resolve on whatever domain the
- * store is published to (the storefront sets <base href="/products/">).
+ * Manifests (index) are built on demand, not written to disk. Image paths are stored
+ * as absolute "/shopmedia/product/<sku>/<file>" so they resolve on any domain.
  */
 
 namespace app;
@@ -23,18 +21,19 @@ class StoreCatalog {
     /** Hard cap on a product image, independent of PHP's ini limits. */
     public const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
-    private string $dir;       // <public>/products
-    private string $mediaDir;  // <public>/products/media
-    private string $catDir;    // <public>/categories
+    private string $dir;       // <root>/shopdata/product
+    private string $catDir;    // <root>/shopdata/catalog
+    private string $mediaDir;  // <root>/public/shopmedia/product
 
-    /** @param string $publicDir absolute path to the site's public/ folder */
-    public function __construct(string $publicDir) {
-        $this->dir      = rtrim($publicDir, '/') . '/shop/product';
-        $this->mediaDir = $this->dir . '/media';
-        $this->catDir   = rtrim($publicDir, '/') . '/shop/catalog';
+    /** @param string $appRoot absolute path to the app root (the dir holding public/, controls/, …) */
+    public function __construct(string $appRoot) {
+        $root = rtrim($appRoot, '/');
+        $this->dir      = $root . '/shopdata/product';
+        $this->catDir   = $root . '/shopdata/catalog';
+        $this->mediaDir = $root . '/public/shopmedia/product';
     }
 
-    /** Normalize a SKU to a safe, lowercase file/url slug. '' if nothing usable. */
+    /** Normalize a SKU/slug to a safe, lowercase file/url token. '' if nothing usable. */
     public static function normalizeSku(string $sku): string {
         $sku = strtolower(trim($sku));
         $sku = preg_replace('~[^a-z0-9]+~', '-', $sku);
@@ -48,28 +47,24 @@ class StoreCatalog {
             if ($v === '') return PHP_INT_MAX;
             $n = (int)$v;
             return match (strtolower(substr($v, -1))) {
-                'g' => $n * 1073741824,
-                'm' => $n * 1048576,
-                'k' => $n * 1024,
-                default => (int)$v,
+                'g' => $n * 1073741824, 'm' => $n * 1048576, 'k' => $n * 1024, default => (int)$v,
             };
         };
         return (int)min(self::MAX_IMAGE_BYTES, $toBytes(ini_get('upload_max_filesize')), $toBytes(ini_get('post_max_size')));
     }
 
     public function ensureDirs(): void {
-        foreach ([$this->dir, $this->mediaDir] as $d) {
+        foreach ([$this->dir, $this->catDir, $this->mediaDir] as $d) {
             if (!is_dir($d)) @mkdir($d, 0775, true);
         }
     }
 
     // --- products -------------------------------------------------------------
 
-    /** All products, newest-updated first. (index.json manifest is skipped — no sku.) */
+    /** All products, newest-updated first. */
     public function listProducts(): array {
         $out = [];
         foreach (glob($this->dir . '/*.json') ?: [] as $f) {
-            if (basename($f) === 'index.json') continue;
             $p = json_decode((string)@file_get_contents($f), true);
             if (is_array($p) && !empty($p['sku'])) $out[] = $p;
         }
@@ -86,9 +81,27 @@ class StoreCatalog {
         return is_array($p) ? $p : null;
     }
 
+    /** Compact product manifest for the storefront PLP (built on demand). */
+    public function manifest(): array {
+        $products = [];
+        foreach ($this->listProducts() as $p) {
+            $products[] = [
+                'sku'        => $p['sku'],
+                'title'      => $p['title'],
+                'price'      => $p['price'] ?? 0,
+                'currency'   => $p['currency'] ?? 'usd',
+                'category'   => $p['category'] ?? '',
+                'image'      => $p['images'][0] ?? '',
+                'serialized' => !empty($p['serialized']),
+                'active'     => !empty($p['active']),
+            ];
+        }
+        return ['updatedAt' => date('Y-m-d H:i:s'), 'products' => $products];
+    }
+
     /**
-     * Validate + persist a product from raw input, merging over any existing file so
-     * images/units already stored are not lost. Returns the stored product array.
+     * Validate + persist a product, merging over any existing file so images/units
+     * already stored are not lost. Returns the stored product array.
      * @throws \Exception on invalid input
      */
     public function saveProduct(array $in): array {
@@ -100,11 +113,9 @@ class StoreCatalog {
 
         $existing = $this->getProduct($sku) ?? [];
         $now = date('Y-m-d H:i:s');
-
         $serialized  = !empty($in['serialized']);
         $holdMinutes = max(0, (int)($in['holdMinutes'] ?? ($existing['holdMinutes'] ?? 10)));
 
-        // Units: newline/comma-separated serials -> [{serial, status:'available'}].
         $units = $existing['units'] ?? [];
         if ($serialized && isset($in['units'])) {
             $units = [];
@@ -132,14 +143,10 @@ class StoreCatalog {
             'createdAt'     => $existing['createdAt'] ?? $now,
             'updatedAt'     => $now,
         ];
-
-        // Caller may replace the whole image list explicitly (e.g. after a delete).
         if (isset($in['images']) && is_array($in['images'])) {
             $product['images'] = array_values(array_filter(array_map('strval', $in['images'])));
         }
-
         $this->writeJson($this->dir . '/' . $sku . '.json', $product);
-        $this->writeManifest();
         return $product;
     }
 
@@ -150,17 +157,49 @@ class StoreCatalog {
         $ok = is_file($f) ? @unlink($f) : false;
         $imgDir = $this->mediaDir . '/' . $sku;
         if (is_dir($imgDir)) { foreach (glob($imgDir . '/*') ?: [] as $g) @unlink($g); @rmdir($imgDir); }
-        $this->writeManifest();
         return $ok;
+    }
+
+    // --- images ---------------------------------------------------------------
+
+    /**
+     * Store an uploaded image and append its absolute URL to the product. Returns the
+     * stored path (e.g. "/shopmedia/product/<sku>/x.jpg" — served statically).
+     * @throws \Exception on validation failure
+     */
+    public function addProductImage(string $sku, array $file): string {
+        $sku = self::normalizeSku($sku);
+        if ($sku === '' || !$this->getProduct($sku)) throw new \Exception('Unknown product.');
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
+            throw new \Exception('No file uploaded.');
+        }
+        $max = self::maxUploadBytes();
+        if ((int)($file['size'] ?? 0) > $max) throw new \Exception('Image too large (max ' . round($max / 1048576, 1) . 'MB).');
+        $ext = [
+            'image/png' => 'png', 'image/jpeg' => 'jpg', 'image/webp' => 'webp', 'image/gif' => 'gif',
+        ][(new \finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name'])] ?? null;
+        if ($ext === null) throw new \Exception('Only PNG, JPEG, WEBP, or GIF images are allowed.');
+
+        $dir = $this->mediaDir . '/' . $sku;
+        if (!is_dir($dir)) @mkdir($dir, 0775, true);
+        $name = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $name)) throw new \Exception('Could not save the image.');
+        @chmod($dir . '/' . $name, 0664);
+
+        $rel = '/shopmedia/product/' . $sku . '/' . $name;   // absolute, served statically
+        $product = $this->getProduct($sku);
+        $product['images'][] = $rel;
+        $product['images'] = array_values(array_unique($product['images']));
+        $product['updatedAt'] = date('Y-m-d H:i:s');
+        $this->writeJson($this->dir . '/' . $sku . '.json', $product);
+        return $rel;
     }
 
     // --- categories (catalogs) ------------------------------------------------
 
-    /** All categories, by title. Each is {slug, title, products:[sku,…]}. */
     public function listCategories(): array {
         $out = [];
         foreach (glob($this->catDir . '/*.json') ?: [] as $f) {
-            if (basename($f) === 'index.json') continue;
             $c = json_decode((string)@file_get_contents($f), true);
             if (is_array($c) && !empty($c['slug'])) $out[] = $c;
         }
@@ -177,9 +216,18 @@ class StoreCatalog {
         return is_array($c) ? $c : null;
     }
 
+    /** Compact catalog list for the storefront (built on demand). */
+    public function categoryManifest(): array {
+        $cats = [];
+        foreach ($this->listCategories() as $c) {
+            $cats[] = ['slug' => $c['slug'], 'title' => $c['title'] ?? $c['slug'], 'count' => count($c['products'] ?? [])];
+        }
+        return ['updatedAt' => date('Y-m-d H:i:s'), 'categories' => $cats];
+    }
+
     /**
-     * Persist a catalog (category): a title + an ordered list of product slugs. Only
-     * slugs that resolve to an existing product are kept. Returns the stored category.
+     * Persist a catalog: a title + an ordered list of product slugs (only slugs that
+     * resolve to an existing product are kept). Returns the stored category.
      * @throws \Exception on invalid input
      */
     public function saveCategory(array $in): array {
@@ -193,19 +241,14 @@ class StoreCatalog {
             $s = self::normalizeSku((string)$s);
             if ($s !== '' && !in_array($s, $valid, true) && $this->getProduct($s)) $valid[] = $s;
         }
-
         $existing = $this->getCategory($slug) ?? [];
         $now = date('Y-m-d H:i:s');
         $cat = [
-            'slug'      => $slug,
-            'title'     => $title,
-            'products'  => $valid,
-            'createdAt' => $existing['createdAt'] ?? $now,
-            'updatedAt' => $now,
+            'slug' => $slug, 'title' => $title, 'products' => $valid,
+            'createdAt' => $existing['createdAt'] ?? $now, 'updatedAt' => $now,
         ];
         if (!is_dir($this->catDir)) @mkdir($this->catDir, 0775, true);
         $this->writeJson($this->catDir . '/' . $slug . '.json', $cat);
-        $this->writeCategoryManifest();
         return $cat;
     }
 
@@ -213,81 +256,7 @@ class StoreCatalog {
         $slug = self::normalizeSku($slug);
         if ($slug === '') return false;
         $f = $this->catDir . '/' . $slug . '.json';
-        $ok = is_file($f) ? @unlink($f) : false;
-        $this->writeCategoryManifest();
-        return $ok;
-    }
-
-    /** Rewrite categories/index.json — a compact catalog list for the storefront. */
-    private function writeCategoryManifest(): void {
-        if (!is_dir($this->catDir)) return;
-        $cats = [];
-        foreach ($this->listCategories() as $c) {
-            $cats[] = ['slug' => $c['slug'], 'title' => $c['title'] ?? $c['slug'], 'count' => count($c['products'] ?? [])];
-        }
-        $this->writeJson($this->catDir . '/index.json', ['updatedAt' => date('Y-m-d H:i:s'), 'categories' => $cats]);
-    }
-
-    // --- images ---------------------------------------------------------------
-
-    /**
-     * Store an uploaded image under media/<sku>/ and append its RELATIVE path to the
-     * product. Returns the relative path (e.g. "media/<sku>/x.jpg").
-     * @param array $file a $_FILES entry
-     * @throws \Exception on validation failure
-     */
-    public function addProductImage(string $sku, array $file): string {
-        $sku = self::normalizeSku($sku);
-        if ($sku === '' || !$this->getProduct($sku)) throw new \Exception('Unknown product.');
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
-            throw new \Exception('No file uploaded.');
-        }
-        $max = self::maxUploadBytes();
-        if ((int)($file['size'] ?? 0) > $max) throw new \Exception('Image too large (max ' . round($max / 1048576, 1) . 'MB).');
-
-        $ext = [
-            'image/png' => 'png', 'image/jpeg' => 'jpg', 'image/webp' => 'webp', 'image/gif' => 'gif',
-        ][(new \finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name'])] ?? null;
-        if ($ext === null) throw new \Exception('Only PNG, JPEG, WEBP, or GIF images are allowed.');
-
-        $dir = $this->mediaDir . '/' . $sku;
-        if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        $name = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-        $dest = $dir . '/' . $name;
-        if (!move_uploaded_file($file['tmp_name'], $dest)) throw new \Exception('Could not save the image.');
-        @chmod($dest, 0664);
-
-        $rel = 'media/' . $sku . '/' . $name;   // RELATIVE — resolves under <base href="/products/">
-        $product = $this->getProduct($sku);
-        $product['images'][] = $rel;
-        $product['images'] = array_values(array_unique($product['images']));
-        $product['updatedAt'] = date('Y-m-d H:i:s');
-        $this->writeJson($this->dir . '/' . $sku . '.json', $product);
-        $this->writeManifest();
-        return $rel;
-    }
-
-    // --- manifest -------------------------------------------------------------
-
-    /** Rewrite index.json — a compact catalog for the storefront JS to bootstrap. */
-    private function writeManifest(): void {
-        $products = [];
-        foreach ($this->listProducts() as $p) {
-            $products[] = [
-                'sku'        => $p['sku'],
-                'title'      => $p['title'],
-                'price'      => $p['price'] ?? 0,
-                'currency'   => $p['currency'] ?? 'usd',
-                'category'   => $p['category'] ?? '',
-                'image'      => $p['images'][0] ?? '',
-                'serialized' => !empty($p['serialized']),
-                'active'     => !empty($p['active']),
-            ];
-        }
-        $this->writeJson($this->dir . '/index.json', [
-            'updatedAt' => date('Y-m-d H:i:s'),
-            'products'  => $products,
-        ]);
+        return is_file($f) ? @unlink($f) : false;
     }
 
     private function writeJson(string $path, array $data): void {

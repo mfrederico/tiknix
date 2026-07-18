@@ -330,10 +330,16 @@ class Connections extends Control {
 
     // --- Generic connector OAuth (registry-driven; e.g. Shopify) --------------
 
-    /** GET /connections — connections hub for an instance (?id=<instance>). */
+    /** GET /connections[?id=<instance>] — connections hub; defaults to the member's most-recent store. */
     public function index($params = []): void {
         if (!$this->requireLogin()) return;
+        // The member's instances (most-recent first) drive the store picker and the
+        // default when no ?id= is given, so /connections never dead-ends to /aibuilder.
+        $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
         $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) {
+            foreach ($instances as $cand) { if ($ok = $this->ownedInstance((int)$cand->id)) { $inst = $ok; break; } }
+        }
         if (!$inst) { Flight::redirect('/aibuilder'); return; }
 
         // A just-completed connect (a prior request) writes a connections row; bust
@@ -397,6 +403,7 @@ class Connections extends Control {
 
         $this->render('connections/index', [
             'instance'      => $inst,
+            'instances'     => $instances,
             'cards'         => $cards,
             'environments'  => ['development', 'production'],
             'categoryOrder' => ['Deploy', 'Payments', 'Stores', 'Other'],

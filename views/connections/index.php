@@ -41,6 +41,19 @@ $isConnected = function (array $card): bool {
     Keys never leave the platform, and you can disconnect any of them at any time.
   </div>
 
+  <?php if (!empty($instances) && count($instances) > 1): ?>
+    <div class="mb-4">
+      <div class="text-uppercase text-body-secondary small fw-semibold mb-2" style="letter-spacing:.06em">Store</div>
+      <div class="d-flex flex-wrap gap-2">
+        <?php foreach ($instances as $i): $active = (int)$i->id === $iid; ?>
+          <a href="/connections?id=<?= (int)$i->id ?>" class="btn btn-sm <?= $active ? 'btn-primary' : 'btn-outline-secondary' ?>">
+            <i class="bi bi-shop me-1"></i><?= htmlspecialchars($i->display_name ?: $i->slug) ?>
+          </a>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  <?php endif; ?>
+
   <?php foreach ($cats as $cat): ?>
     <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em"><?= htmlspecialchars($cat) ?></h2>
     <div class="row g-3">

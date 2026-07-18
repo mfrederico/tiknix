@@ -158,8 +158,8 @@ class ShopifyConnector extends AbstractConnector {
             case 'get_products':
                 return $this->adminGet($shop, $ver, $token, 'products.json?limit=' . $limit);
             case 'get_orders':
-                $status = in_array(($args['status'] ?? 'any'), ['any', 'open', 'closed', 'cancelled'], true)
-                    ? (string)$args['status'] : 'any';
+                $status = (string)($args['status'] ?? 'any');
+                if (!in_array($status, ['any', 'open', 'closed', 'cancelled'], true)) $status = 'any';
                 return $this->adminGet($shop, $ver, $token, 'orders.json?limit=' . $limit . '&status=' . $status);
             default:
                 throw new \Exception('Unknown Shopify broker tool: ' . $tool);

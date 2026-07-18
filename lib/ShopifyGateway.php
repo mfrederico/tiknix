@@ -89,8 +89,8 @@ class ShopifyGateway {
             throw new \Exception('SHOPIFY_SHOP / SHOPIFY_ACCESS_TOKEN not set for direct mode.');
         }
         $limit  = max(1, min(250, (int)($args['limit'] ?? 20)));
-        $status = in_array(($args['status'] ?? 'any'), ['any', 'open', 'closed', 'cancelled'], true)
-            ? (string)$args['status'] : 'any';
+        $status = (string)($args['status'] ?? 'any');
+        if (!in_array($status, ['any', 'open', 'closed', 'cancelled'], true)) $status = 'any';
         switch ($tool) {
             case 'get_shop':     $path = 'shop.json'; break;
             case 'get_products': $path = 'products.json?limit=' . $limit; break;

@@ -25,6 +25,10 @@ class StripeConnector extends AbstractConnector {
             'label'     => 'Stripe',
             'auth_type' => 'api_key',
             'blurb'     => 'Paste a Stripe secret or restricted key to take payments, manage customers, and sell subscriptions.',
+            'category'  => 'Payments',
+            'icon'      => 'credit-card',
+            'color'     => 'primary',
+            'features'  => ['Checkout', 'Subscriptions', 'Customers'],
         ];
     }
 

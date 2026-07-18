@@ -19,6 +19,10 @@ class ShopifyConnector extends AbstractConnector {
             'label'     => 'Shopify',
             'auth_type' => 'oauth',
             'blurb'     => 'Connect a Shopify store to sync products, orders, and customers.',
+            'category'  => 'Stores',
+            'icon'      => 'bag-check',
+            'color'     => 'success',
+            'features'  => ['Products', 'Orders', 'Customers'],
         ];
     }
 

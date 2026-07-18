@@ -1,18 +1,33 @@
 <?php
 /**
- * Connections hub for an instance — plain-language store connections.
- * Vars: $instance, $connections (array), $connectors (array), $environments (array)
+ * Connections hub for an instance — one place for every connection, grouped by
+ * category (Deploy / Payments / Stores / …). Each card shows connect-vs-connected
+ * state inline so nothing is hidden behind a separate screen.
  *
- * The wiring that lets the app reach a connected store is set up automatically on
- * connect; it is never surfaced to the user. Connect uses a GET form so the browser
- * navigates top-level into the store's sign-in. Disconnect posts via fetch with CSRF.
+ * Vars: $instance, $cards (array), $environments (array), $categoryOrder (array)
+ *   card: key, label, blurb, category, icon, color, auth_type, connect_kind
+ *         ('github'|'api_key'|'shopify'|'oauth'), configured, features[],
+ *         manage_url|null, connections[] (id, environment, name, eid, url, enabled, revoked, lastError)
  */
 $iid = (int)$instance->id;
 $envBadge = ['development' => 'secondary', 'production' => 'success'];
-?>
-<div class="container py-4" style="max-width:820px">
 
-  <div class="d-flex align-items-center gap-2 mb-4">
+// Group cards by category, honouring $categoryOrder then any leftovers.
+$byCat = [];
+foreach ($cards as $card) { $byCat[$card['category'] ?? 'Other'][] = $card; }
+$cats = [];
+foreach ($categoryOrder as $c) { if (!empty($byCat[$c])) $cats[] = $c; }
+foreach (array_keys($byCat) as $c) { if (!in_array($c, $cats, true)) $cats[] = $c; }
+
+/** A card is "connected" when it has at least one live (enabled, not revoked) connection. */
+$isConnected = function (array $card): bool {
+    foreach ($card['connections'] as $cn) { if (!empty($cn['enabled']) && empty($cn['revoked'])) return true; }
+    return false;
+};
+?>
+<div class="container py-4" style="max-width:960px">
+
+  <div class="d-flex align-items-center gap-2 mb-3">
     <i class="bi bi-plug fs-3"></i>
     <div>
       <h1 class="h4 fw-bold mb-0">Connections</h1>
@@ -22,114 +37,122 @@ $envBadge = ['development' => 'secondary', 'production' => 'success'];
 
   <div class="alert alert-light border py-2 small mb-4">
     <i class="bi bi-shield-check me-1"></i>
-    Connect a store once, and this app can read its products, orders, and customers on your
-    behalf — securely. There are no keys for you to copy or manage, and you can disconnect at any time.
+    One place to connect everything this instance uses — deploy targets, payments, and stores.
+    Keys never leave the platform, and you can disconnect any of them at any time.
   </div>
 
-  <!-- Available connections -->
-  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2" style="letter-spacing:.06em">Connect a store</h2>
-  <div class="d-flex flex-column gap-3 mb-5">
-    <?php foreach ($connectors as $c): $meta = $c['meta']; ?>
-      <div class="card border">
-        <div class="card-body">
-          <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
-            <div>
-              <div class="fw-semibold"><i class="bi bi-bag-check me-1"></i><?= htmlspecialchars($meta['label'] ?? $c['key']) ?></div>
-              <div class="text-body-secondary small"><?= htmlspecialchars($meta['blurb'] ?? '') ?></div>
-            </div>
-            <?php if (!$c['configured']): ?>
-              <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Unavailable right now</span>
-            <?php endif; ?>
-          </div>
-
-          <?php if ($c['configured'] && ($meta['auth_type'] ?? 'oauth') === 'api_key'): ?>
-            <form data-connectkey action="/connections/connectkey" method="post" class="row g-2 align-items-end mt-2">
-              <?= csrf_field() ?>
-              <input type="hidden" name="id" value="<?= $iid ?>">
-              <input type="hidden" name="type" value="<?= htmlspecialchars($c['key']) ?>">
-              <div class="col-sm-5">
-                <label class="form-label small mb-1"><?= htmlspecialchars($meta['label'] ?? $c['key']) ?> secret key</label>
-                <input type="password" name="key" class="form-control form-control-sm" placeholder="sk_live_… or rk_live_…" autocomplete="off" required>
-              </div>
-              <div class="col-sm-4">
-                <label class="form-label small mb-1">Use for</label>
-                <select name="env" class="form-select form-select-sm">
-                  <?php foreach ($environments as $e): ?>
-                    <option value="<?= htmlspecialchars($e) ?>"<?= $e === 'development' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live site' : 'Development' ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-              <div class="col-sm-3">
-                <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-key me-1"></i>Connect</button>
-              </div>
-            </form>
-            <div class="form-text mt-1">Create one in your Stripe Dashboard &rarr; Developers &rarr; API keys. A restricted key with write access to Checkout, Customers, Products, Prices and Subscriptions is recommended.</div>
-          <?php elseif ($c['configured']): ?>
-            <form method="get" action="/connections/connect/<?= htmlspecialchars($c['key']) ?>" class="row g-2 align-items-end mt-2">
-              <input type="hidden" name="id" value="<?= $iid ?>">
-              <?php if ($c['key'] === 'shopify'): ?>
-                <div class="col-sm-5">
-                  <label class="form-label small mb-1">Store address</label>
-                  <input type="text" name="shop" class="form-control form-control-sm" placeholder="your-store.myshopify.com" required>
+  <?php foreach ($cats as $cat): ?>
+    <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em"><?= htmlspecialchars($cat) ?></h2>
+    <div class="row g-3">
+      <?php foreach ($byCat[$cat] as $card): $meta = $card; $connected = $isConnected($card); ?>
+        <div class="col-md-6">
+          <div class="card h-100 <?= $connected ? 'border-success border-opacity-50' : ($card['configured'] ? '' : 'opacity-75') ?>">
+            <div class="card-body">
+              <div class="d-flex align-items-start gap-3">
+                <div class="rounded-circle bg-<?= htmlspecialchars($card['color']) ?>-subtle d-flex align-items-center justify-content-center flex-shrink-0" style="width:44px;height:44px">
+                  <i class="bi bi-<?= htmlspecialchars($card['icon']) ?> fs-5 text-<?= htmlspecialchars($card['color']) ?>"></i>
                 </div>
-              <?php endif; ?>
-              <div class="col-sm-4">
-                <label class="form-label small mb-1">Use for</label>
-                <select name="env" class="form-select form-select-sm">
-                  <?php foreach ($environments as $e): ?>
-                    <option value="<?= htmlspecialchars($e) ?>"<?= $e === 'development' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live site' : 'Development' ?></option>
-                  <?php endforeach; ?>
-                </select>
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div class="fw-semibold">
+                      <?= htmlspecialchars($card['label']) ?>
+                      <?php if ($connected): ?><i class="bi bi-check-circle-fill text-success ms-1 small"></i><?php endif; ?>
+                    </div>
+                    <?php if ($connected): ?>
+                      <span class="badge bg-success-subtle text-success-emphasis border">Connected</span>
+                    <?php elseif (!$card['configured']): ?>
+                      <span class="badge bg-warning-subtle text-warning-emphasis border">Unavailable</span>
+                    <?php endif; ?>
+                  </div>
+                  <div class="text-body-secondary small mt-1"><?= htmlspecialchars($card['blurb']) ?></div>
+                  <?php if (!empty($card['features'])): ?>
+                    <div class="mt-2 d-flex flex-wrap gap-1">
+                      <?php foreach (array_slice($card['features'], 0, 3) as $feat): ?>
+                        <span class="badge bg-body-secondary text-body-secondary border" style="font-size:.68rem"><?= htmlspecialchars($feat) ?></span>
+                      <?php endforeach; ?>
+                    </div>
+                  <?php endif; ?>
+                </div>
               </div>
-              <div class="col-sm-3">
-                <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-box-arrow-up-right me-1"></i>Connect</button>
-              </div>
-            </form>
-            <div class="form-text mt-1">Connect a separate store for development and for your live site if you like.</div>
-          <?php endif; ?>
-        </div>
-      </div>
-    <?php endforeach; ?>
-  </div>
 
-  <!-- Existing connections -->
-  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2" style="letter-spacing:.06em">Connected stores</h2>
-  <?php if (empty($connections)): ?>
-    <div class="text-body-secondary small">No stores connected yet.</div>
-  <?php else: ?>
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
-        <thead>
-          <tr class="small text-body-secondary">
-            <th>Service</th><th>Used for</th><th>Store</th><th>Status</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($connections as $row): $usedFor = $row['environment'] === 'production' ? 'Live site' : 'Development'; ?>
-            <tr>
-              <td class="fw-semibold text-capitalize"><?= htmlspecialchars($row['type']) ?></td>
-              <td><span class="badge bg-<?= $envBadge[$row['environment']] ?? 'secondary' ?>-subtle text-<?= $envBadge[$row['environment']] ?? 'secondary' ?>-emphasis border"><?= htmlspecialchars($usedFor) ?></span></td>
-              <td class="small"><?= htmlspecialchars($row['name']) ?><div class="text-body-secondary"><?= htmlspecialchars($row['eid']) ?></div></td>
-              <td>
-                <?php if ($row['revoked']): ?>
-                  <span class="badge bg-danger-subtle text-danger-emphasis border">Disconnected</span>
-                <?php elseif ($row['lastError']): ?>
-                  <span class="badge bg-warning-subtle text-warning-emphasis border" title="<?= htmlspecialchars($row['lastError']) ?>">Needs attention</span>
-                <?php elseif ($row['enabled']): ?>
-                  <span class="badge bg-success-subtle text-success-emphasis border">Connected</span>
-                <?php else: ?>
-                  <span class="badge bg-secondary-subtle text-secondary-emphasis border">Off</span>
-                <?php endif; ?>
-              </td>
-              <td class="text-end">
-                <button class="btn btn-sm btn-outline-danger" data-disconnect="<?= (int)$row['id'] ?>" title="Disconnect this store"><i class="bi bi-x-lg"></i></button>
-              </td>
-            </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
+              <?php // --- connected instances --- ?>
+              <?php if (!empty($card['connections'])): ?>
+                <ul class="list-unstyled mt-3 mb-0 border-top pt-2">
+                  <?php foreach ($card['connections'] as $cn): $env = $cn['environment']; ?>
+                    <li class="d-flex align-items-center justify-content-between gap-2 py-1">
+                      <div class="small">
+                        <span class="badge bg-<?= $envBadge[$env] ?? 'secondary' ?>-subtle text-<?= $envBadge[$env] ?? 'secondary' ?>-emphasis border me-1"><?= $env === 'production' ? 'Live site' : 'Development' ?></span>
+                        <?= htmlspecialchars($cn['name'] ?? $cn['eid'] ?? '') ?>
+                        <?php if (!empty($cn['revoked'])): ?>
+                          <span class="badge bg-danger-subtle text-danger-emphasis border ms-1">Disconnected</span>
+                        <?php elseif (!empty($cn['lastError'])): ?>
+                          <span class="badge bg-warning-subtle text-warning-emphasis border ms-1" title="<?= htmlspecialchars($cn['lastError']) ?>">Needs attention</span>
+                        <?php endif; ?>
+                      </div>
+                      <button class="btn btn-sm btn-outline-danger py-0 px-1" data-disconnect="<?= (int)$cn['id'] ?>" title="Disconnect"><i class="bi bi-x-lg"></i></button>
+                    </li>
+                  <?php endforeach; ?>
+                </ul>
+              <?php endif; ?>
+
+              <?php // --- connect action, per connect_kind --- ?>
+              <?php if ($card['connect_kind'] === 'github'): ?>
+                <a href="<?= htmlspecialchars($card['manage_url']) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-<?= htmlspecialchars($card['color']) ?> mt-3">
+                  <i class="bi bi-<?= $connected ? 'gear' : 'box-arrow-up-right' ?> me-1"></i><?= $connected ? 'Manage' : 'Set up' ?>
+                </a>
+
+              <?php elseif (!$card['configured']): ?>
+                <div class="form-text mt-2">Not available on this server yet.</div>
+
+              <?php elseif ($card['connect_kind'] === 'api_key'): ?>
+                <form data-connectkey action="/connections/connectkey" method="post" class="row g-2 align-items-end mt-3">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="id" value="<?= $iid ?>">
+                  <input type="hidden" name="type" value="<?= htmlspecialchars($card['key']) ?>">
+                  <div class="col-12">
+                    <label class="form-label small mb-1"><?= $connected ? 'Connect another' : 'Connect' ?> — <?= htmlspecialchars($card['label']) ?> secret key</label>
+                    <input type="password" name="key" class="form-control form-control-sm" placeholder="sk_live_… or rk_live_…" autocomplete="off" required>
+                  </div>
+                  <div class="col-7">
+                    <select name="env" class="form-select form-select-sm">
+                      <?php foreach ($environments as $e): ?>
+                        <option value="<?= htmlspecialchars($e) ?>"<?= $e === 'development' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live site' : 'Development' ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="col-5">
+                    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-key me-1"></i>Connect</button>
+                  </div>
+                  <div class="col-12"><div class="form-text">Stripe Dashboard → Developers → API keys. A restricted key with write access to Checkout, Customers, Products, Prices and Subscriptions is recommended.</div></div>
+                </form>
+
+              <?php else: // oauth / shopify ?>
+                <form method="get" action="/connections/connect/<?= htmlspecialchars($card['key']) ?>" class="row g-2 align-items-end mt-3">
+                  <input type="hidden" name="id" value="<?= $iid ?>">
+                  <?php if ($card['connect_kind'] === 'shopify'): ?>
+                    <div class="col-12">
+                      <label class="form-label small mb-1">Store address</label>
+                      <input type="text" name="shop" class="form-control form-control-sm" placeholder="your-store.myshopify.com" required>
+                    </div>
+                  <?php endif; ?>
+                  <div class="col-7">
+                    <select name="env" class="form-select form-select-sm">
+                      <?php foreach ($environments as $e): ?>
+                        <option value="<?= htmlspecialchars($e) ?>"<?= $e === 'development' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live site' : 'Development' ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="col-5">
+                    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-box-arrow-up-right me-1"></i><?= $connected ? 'Connect another' : 'Connect' ?></button>
+                  </div>
+                </form>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+      <?php endforeach; ?>
     </div>
-  <?php endif; ?>
+  <?php endforeach; ?>
 </div>
 
 <script>
@@ -152,7 +175,7 @@ $envBadge = ['development' => 'secondary', 'production' => 'success'];
   });
   document.querySelectorAll('[data-disconnect]').forEach(function(btn){
     btn.addEventListener('click', function(){
-      if (!confirm('Disconnect this store? This app will no longer be able to read its data.')) return;
+      if (!confirm('Disconnect this connection? This app will no longer be able to use it.')) return;
       fetch('/connections/disconnect', {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},

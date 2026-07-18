@@ -345,30 +345,61 @@ class Connections extends Control {
         $rows = Bean::find('connections',
             'member_id = ? AND instance_id = ? ORDER BY connector_type, environment',
             [(int)$this->member->id, (int)$inst->id]);
-        $connections = [];
+        $byType = [];
         foreach ($rows as $c) {
-            $connections[] = [
+            $byType[(string)$c->connectorType][] = [
                 'id'          => (int)$c->id,
-                'type'        => $c->connectorType,
                 'environment' => $c->environment ?: 'production',
                 'name'        => $c->externalName ?: $c->externalEid,
                 'eid'         => $c->externalEid,
-                'scopes'      => $c->scopes,
+                'url'         => $c->externalUrl,
                 'enabled'     => (int)$c->enabled === 1,
                 'revoked'     => !empty($c->revokedAt),
-                'lastUsed'    => $c->lastUsedAt,
                 'lastError'   => $c->lastError,
             ];
         }
-        $connectors = [];
+
+        // Unified connector cards: GitHub (deploy) first, then every registry
+        // connector. Each card carries its own existing connections so the hub
+        // shows connect-vs-connected state inline — one place, nothing hidden.
+        $cards = [[
+            'key'          => 'github',
+            'label'        => 'GitHub',
+            'blurb'        => 'Publish this instance to your own GitHub repo as a branch and pull request.',
+            'category'     => 'Deploy',
+            'icon'         => 'github',
+            'color'        => 'dark',
+            'auth_type'    => 'github',
+            'connect_kind' => 'github',
+            'configured'   => true,
+            'features'     => ['Publish', 'Pull requests', 'Your repo'],
+            'manage_url'   => '/connections/setup?id=' . (int)$inst->id,
+            'connections'  => $byType['github'] ?? [],
+        ]];
         foreach (ConnectorRegistry::all() as $conn) {
-            $connectors[] = ['key' => $conn->key(), 'meta' => $conn->meta(), 'configured' => $conn->isConfigured()];
+            $meta = $conn->meta();
+            $auth = $meta['auth_type'] ?? 'oauth';
+            $cards[] = [
+                'key'          => $conn->key(),
+                'label'        => $meta['label'] ?? $conn->key(),
+                'blurb'        => $meta['blurb'] ?? '',
+                'category'     => $meta['category'] ?? 'Other',
+                'icon'         => $meta['icon'] ?? 'plug',
+                'color'        => $meta['color'] ?? 'secondary',
+                'auth_type'    => $auth,
+                'connect_kind' => $auth === 'api_key' ? 'api_key' : ($conn->key() === 'shopify' ? 'shopify' : 'oauth'),
+                'configured'   => $conn->isConfigured(),
+                'features'     => $meta['features'] ?? [],
+                'manage_url'   => null,
+                'connections'  => $byType[$conn->key()] ?? [],
+            ];
         }
+
         $this->render('connections/index', [
-            'instance'     => $inst,
-            'connections'  => $connections,
-            'connectors'   => $connectors,
-            'environments' => ['development', 'production'],
+            'instance'      => $inst,
+            'cards'         => $cards,
+            'environments'  => ['development', 'production'],
+            'categoryOrder' => ['Deploy', 'Payments', 'Stores', 'Other'],
         ]);
     }
 

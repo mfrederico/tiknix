@@ -84,7 +84,9 @@ class StoreCatalog {
     /** Compact product manifest for the storefront PLP (built on demand). */
     public function manifest(): array {
         $products = [];
+        $updated = '';
         foreach ($this->listProducts() as $p) {
+            $updated = max($updated, (string)($p['updatedAt'] ?? ''));  // content-derived -> stable ETag
             $products[] = [
                 'sku'        => $p['sku'],
                 'title'      => $p['title'],
@@ -96,7 +98,7 @@ class StoreCatalog {
                 'active'     => !empty($p['active']),
             ];
         }
-        return ['updatedAt' => date('Y-m-d H:i:s'), 'products' => $products];
+        return ['updatedAt' => $updated, 'products' => $products];
     }
 
     /**
@@ -219,10 +221,12 @@ class StoreCatalog {
     /** Compact catalog list for the storefront (built on demand). */
     public function categoryManifest(): array {
         $cats = [];
+        $updated = '';
         foreach ($this->listCategories() as $c) {
+            $updated = max($updated, (string)($c['updatedAt'] ?? ''));  // content-derived -> stable ETag
             $cats[] = ['slug' => $c['slug'], 'title' => $c['title'] ?? $c['slug'], 'count' => count($c['products'] ?? [])];
         }
-        return ['updatedAt' => date('Y-m-d H:i:s'), 'categories' => $cats];
+        return ['updatedAt' => $updated, 'categories' => $cats];
     }
 
     /**

@@ -39,7 +39,8 @@ class Shop {
             header('Cache-Control: public, max-age=60');
             header('ETag: ' . $etag);
         }
-        if (($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) { http_response_code(304); return; }
+        // Flight sends its own 200 at shutdown, so end the request ourselves on a match.
+        if (($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) { \Flight::halt(304); }
         echo $body;
     }
 

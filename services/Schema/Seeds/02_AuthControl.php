@@ -83,6 +83,7 @@ $defaults = [
     ['mcpregistry', '*', 50, 'MCP Server Registry management'],
     // Matches the level of the other connections::* rows (e.g. connections::add = 50).
     ['connections', 'connectkey', 50, 'Connect an api_key connector from a validated pasted key'],
+    ['ecommerce', '*', 50, 'Ecommerce storefront tools (per-member feature-flagged)'],
 
     // Public webhook (101) — authenticates itself via Mailgun HMAC
     ['webhook', 'mailgun', 101, 'Mailgun inbound mail + delivery-event webhook'],

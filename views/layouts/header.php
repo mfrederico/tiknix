@@ -83,6 +83,11 @@ if ($__loggedIn) {
           <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> AI Builder</a>
         <?php endif; ?>
 
+        <?php if (class_exists('\\app\\Feature') && \app\Feature::isEnabled('ecommerce', (int)($member['id'] ?? 0), $__level)): ?>
+          <div class="ui-nav-heading">Ecommerce</div>
+          <a class="ui-nav-link<?= $__active('/ecommerce') ?>" href="/ecommerce"><i class="bi bi-bag"></i> Store</a>
+        <?php endif; ?>
+
         <?php if ($__isAdmin): ?>
           <div class="ui-nav-heading">Admin</div>
           <a class="ui-nav-link<?= $__active('/leads') ?>" href="/leads"><i class="bi bi-person-lines-fill"></i> Leads</a>

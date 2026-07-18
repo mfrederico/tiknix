@@ -121,6 +121,13 @@ class Admin extends Control {
                 $email = trim($request->data->email ?? '');
                 $level = intval($request->data->level ?? $member->level);
                 $status = $request->data->status ?? $member->status;
+                // System accounts (root admin / public user) must never have their
+                // level or status changed here — the disabled <select> posts a
+                // placeholder value, so keep whatever is stored.
+                if ($member->id == SYSTEM_ADMIN_ID || $member->id == PUBLIC_USER_ID) {
+                    $level  = (int) $member->level;
+                    $status = $member->status;
+                }
                 
                 if (empty($username)) {
                     $this->viewData['error'] = 'Username is required';
@@ -160,6 +167,13 @@ class Admin extends Control {
 
                             try {
                                 Bean::store($member);
+
+                                // Persist per-member feature flags eligible for this level.
+                                $submittedFeatures = (array)($request->data->features ?? []);
+                                foreach (\app\Feature::catalogForLevel((int)$member->level) as $fkey => $fmeta) {
+                                    \app\Feature::setEnabled($fkey, !empty($submittedFeatures[$fkey]), (int)$member->id);
+                                }
+
                                 $this->viewData['success'] = 'Member updated successfully';
                                 $this->logger->info('Member updated by admin', [
                                     'member_id' => $member->id,
@@ -180,6 +194,15 @@ class Admin extends Control {
         
         $this->viewData['title'] = 'Edit Member';
         $this->viewData['editMember'] = $member;
+        $this->viewData['featureFlags'] = [];
+        foreach (\app\Feature::catalogForLevel((int)$member->level) as $fkey => $fmeta) {
+            $this->viewData['featureFlags'][] = [
+                'key'     => $fkey,
+                'label'   => $fmeta['label'],
+                'blurb'   => $fmeta['blurb'],
+                'enabled' => \app\Feature::isEnabled($fkey, (int)$member->id, (int)$member->level),
+            ];
+        }
         
         $this->render('admin/edit_member', $this->viewData);
     }

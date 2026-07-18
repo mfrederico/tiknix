@@ -69,6 +69,27 @@
                             <?php endif; ?>
                         </div>
                         
+                        <?php if (!empty($featureFlags)): ?>
+                        <div class="mb-3">
+                            <label class="form-label">Features</label>
+                            <div class="border rounded p-2">
+                                <?php foreach ($featureFlags as $ff): ?>
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" role="switch"
+                                           id="feature_<?= htmlspecialchars(($ff['key']) ?? '') ?>"
+                                           name="features[<?= htmlspecialchars(($ff['key']) ?? '') ?>]" value="1"
+                                           <?= !empty($ff['enabled']) ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="feature_<?= htmlspecialchars(($ff['key']) ?? '') ?>">
+                                        <?= htmlspecialchars(($ff['label']) ?? '') ?>
+                                    </label>
+                                    <div class="form-text mt-0"><?= htmlspecialchars(($ff['blurb']) ?? '') ?></div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <small class="form-text text-muted">Only features available to this member's level are shown.</small>
+                        </div>
+                        <?php endif; ?>
+
                         <div class="mb-3">
                             <label class="form-label">Member Information</label>
                             <p class="form-control-plaintext">

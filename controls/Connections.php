@@ -362,6 +362,7 @@ class Connections extends Control {
                 'enabled'     => (int)$c->enabled === 1,
                 'revoked'     => !empty($c->revokedAt),
                 'lastError'   => $c->lastError,
+                'webhookSet'  => !empty($c->webhookSecret),
             ];
         }
 
@@ -665,6 +666,27 @@ class Connections extends Control {
         if (!$conn->id || (int)$conn->memberId !== (int)$this->member->id) { $this->jsonError('Connection not found', 404); return; }
         Bean::trash($conn);
         $this->jsonSuccess([], 'Disconnected');
+    }
+
+    /**
+     * POST /connections/webhooksecret — set (or clear) a connection's webhook
+     * verification secret, stored ENCRYPTED on the connection. Each payment connector
+     * interprets it its own way (Stripe whsec HMAC, Square signature key, PayPal id).
+     */
+    public function webhooksecret($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $conn = Bean::load('connections', (int)$this->getParam('cid', 0));
+        if (!$conn->id || (int)$conn->memberId !== (int)$this->member->id) { $this->jsonError('Connection not found', 404); return; }
+        $secret = trim((string)$this->getParam('secret', ''));
+        if ($secret !== '') {
+            $conn->webhookSecret = EncryptionService::encrypt($secret);
+        } elseif (filter_var($this->getParam('clear', false), FILTER_VALIDATE_BOOLEAN)) {
+            $conn->webhookSecret = '';
+        }
+        $conn->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($conn);
+        $this->jsonSuccess(['set' => !empty($conn->webhookSecret)], 'Webhook secret saved');
     }
 
     /**

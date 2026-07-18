@@ -112,10 +112,10 @@ class Shop {
         [$conn, $connector] = $this->resolvePayment();
         if (!$conn || !$connector || $connector->key() !== $provider) { $this->plain(200, 'ignored'); return; }
 
-        // Webhook signing secret (whsec_) for HMAC verification, stored encrypted.
-        $sys = defined('SYSTEM_ADMIN_ID') ? SYSTEM_ADMIN_ID : 1;
+        // Webhook verification secret lives ON the connection (encrypted); the connector
+        // interprets it per-provider (Stripe whsec HMAC, Square key, PayPal webhook id).
         $secret = '';
-        $enc = (string)\Flight::getSetting('shop.webhook_secret', $sys);
+        $enc = (string)($conn->webhookSecret ?? '');
         if ($enc !== '') { try { $secret = EncryptionService::decrypt($enc); } catch (\Throwable $e) { $secret = ''; } }
         $headers = function_exists('getallheaders') ? (getallheaders() ?: []) : [];
         // getallheaders() is unreliable/absent on nginx+fpm — read the signature from

@@ -92,17 +92,29 @@ $isConnected = function (array $card): bool {
               <?php if (!empty($card['connections'])): ?>
                 <ul class="list-unstyled mt-3 mb-0 border-top pt-2">
                   <?php foreach ($card['connections'] as $cn): $env = $cn['environment']; ?>
-                    <li class="d-flex align-items-center justify-content-between gap-2 py-1">
-                      <div class="small">
-                        <span class="badge bg-<?= $envBadge[$env] ?? 'secondary' ?>-subtle text-<?= $envBadge[$env] ?? 'secondary' ?>-emphasis border me-1"><?= $env === 'production' ? 'Live site' : 'Development' ?></span>
-                        <?= htmlspecialchars($cn['name'] ?? $cn['eid'] ?? '') ?>
-                        <?php if (!empty($cn['revoked'])): ?>
-                          <span class="badge bg-danger-subtle text-danger-emphasis border ms-1">Disconnected</span>
-                        <?php elseif (!empty($cn['lastError'])): ?>
-                          <span class="badge bg-warning-subtle text-warning-emphasis border ms-1" title="<?= htmlspecialchars($cn['lastError']) ?>">Needs attention</span>
-                        <?php endif; ?>
+                    <li class="py-1">
+                      <div class="d-flex align-items-center justify-content-between gap-2">
+                        <div class="small">
+                          <span class="badge bg-<?= $envBadge[$env] ?? 'secondary' ?>-subtle text-<?= $envBadge[$env] ?? 'secondary' ?>-emphasis border me-1"><?= $env === 'production' ? 'Live site' : 'Development' ?></span>
+                          <?= htmlspecialchars($cn['name'] ?? $cn['eid'] ?? '') ?>
+                          <?php if (!empty($cn['revoked'])): ?>
+                            <span class="badge bg-danger-subtle text-danger-emphasis border ms-1">Disconnected</span>
+                          <?php elseif (!empty($cn['lastError'])): ?>
+                            <span class="badge bg-warning-subtle text-warning-emphasis border ms-1" title="<?= htmlspecialchars($cn['lastError']) ?>">Needs attention</span>
+                          <?php endif; ?>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-1" data-disconnect="<?= (int)$cn['id'] ?>" title="Disconnect"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <button class="btn btn-sm btn-outline-danger py-0 px-1" data-disconnect="<?= (int)$cn['id'] ?>" title="Disconnect"><i class="bi bi-x-lg"></i></button>
+                      <?php if (($card['category'] ?? '') === 'Payments' && empty($cn['revoked'])): ?>
+                        <form data-whsec class="d-flex align-items-center gap-1 mt-1" style="max-width:480px">
+                          <?= csrf_field() ?>
+                          <input type="hidden" name="cid" value="<?= (int)$cn['id'] ?>">
+                          <input type="password" name="secret" class="form-control form-control-sm" placeholder="<?= !empty($cn['webhookSet']) ? 'Webhook secret set ✓ — paste to replace' : 'Webhook signing secret (whsec_…)' ?>" autocomplete="off">
+                          <button class="btn btn-sm btn-outline-secondary text-nowrap" type="submit">Save</button>
+                          <?php if (!empty($cn['webhookSet'])): ?><button class="btn btn-sm btn-outline-danger" type="button" data-whsec-clear="<?= (int)$cn['id'] ?>" title="Remove secret"><i class="bi bi-x-lg"></i></button><?php endif; ?>
+                        </form>
+                        <div class="form-text ms-1">Verifies incoming <?= $env === 'production' ? 'live' : 'test' ?> webhooks for this connection.</div>
+                      <?php endif; ?>
                     </li>
                   <?php endforeach; ?>
                 </ul>
@@ -197,6 +209,33 @@ $isConnected = function (array $card): bool {
         if (j && j.success) { location.reload(); }
         else { alert((j && j.message) || 'Could not disconnect'); }
       }).catch(function(){ alert('Could not disconnect'); });
+    });
+  });
+  document.querySelectorAll('form[data-whsec]').forEach(function(form){
+    form.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      fetch('/connections/webhooksecret', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+        body: new URLSearchParams(new FormData(form)).toString()
+      }).then(r=>r.json()).then(function(j){
+        if (j && j.success) { location.reload(); }
+        else { alert((j && j.message) || 'Could not save'); if (btn) btn.disabled = false; }
+      }).catch(function(){ alert('Could not save'); if (btn) btn.disabled = false; });
+    });
+  });
+  document.querySelectorAll('[data-whsec-clear]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      if (!confirm('Remove this webhook secret?')) return;
+      fetch('/connections/webhooksecret', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+        body: new URLSearchParams({csrf_token: csrf, cid: btn.getAttribute('data-whsec-clear'), clear: '1'}).toString()
+      }).then(r=>r.json()).then(function(j){
+        if (j && j.success) { location.reload(); }
+        else { alert((j && j.message) || 'Could not clear'); }
+      }).catch(function(){ alert('Could not clear'); });
     });
   });
 })();

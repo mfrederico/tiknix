@@ -83,6 +83,7 @@ $defaults = [
     ['mcpregistry', '*', 50, 'MCP Server Registry management'],
     // Matches the level of the other connections::* rows (e.g. connections::add = 50).
     ['connections', 'connectkey', 50, 'Connect an api_key connector from a validated pasted key'],
+    ['connections', 'webhooksecret', 50, 'Set/clear a connection webhook verification secret'],
     ['ecommerce', '*', 50, 'Ecommerce storefront tools (per-member feature-flagged)'],
 
     // Public storefront (101) — the /shop front controller (Shop.php) + legacy

@@ -97,6 +97,9 @@ $isConnected = function (array $card): bool {
                         <div class="small">
                           <span class="badge bg-<?= $envBadge[$env] ?? 'secondary' ?>-subtle text-<?= $envBadge[$env] ?? 'secondary' ?>-emphasis border me-1"><?= $env === 'production' ? 'Live site' : 'Development' ?></span>
                           <?= htmlspecialchars($cn['name'] ?? $cn['eid'] ?? '') ?>
+                          <?php if (!empty($cn['keyHint'])): ?>
+                            <span class="text-body-secondary">· key <code>…<?= htmlspecialchars($cn['keyHint']) ?></code></span>
+                          <?php endif; ?>
                           <?php if (!empty($cn['revoked'])): ?>
                             <span class="badge bg-danger-subtle text-danger-emphasis border ms-1">Disconnected</span>
                           <?php elseif (!empty($cn['lastError'])): ?>
@@ -113,11 +116,23 @@ $isConnected = function (array $card): bool {
                           <button class="btn btn-sm btn-outline-secondary text-nowrap" type="submit">Save</button>
                           <?php if (!empty($cn['webhookSet'])): ?><button class="btn btn-sm btn-outline-danger" type="button" data-whsec-clear="<?= (int)$cn['id'] ?>" title="Remove secret"><i class="bi bi-x-lg"></i></button><?php endif; ?>
                         </form>
+                        <?php
+                          $whHost = (string)($_SERVER['HTTP_HOST'] ?? 'tiknix.com');
+                          // Public webhook endpoints must be https for the provider to call them;
+                          // only a local host stays http.
+                          $whScheme = preg_match('/^(localhost|127\.0\.0\.1)(:|$)/', $whHost) ? 'http' : 'https';
+                          $whUrl  = $whScheme . '://' . $whHost . '/shop/webhook/' . rawurlencode((string)$card['key']);
+                        ?>
                         <div class="form-text ms-1">
                           <?php if (!empty($cn['webhookSet']) && !empty($cn['webhookHint'])): ?>
                             <span class="text-success-emphasis">Set ✓ ending <code>…<?= htmlspecialchars($cn['webhookHint']) ?></code>.</span>
                           <?php endif; ?>
                           Verifies incoming <?= $env === 'production' ? 'live' : 'test' ?> webhooks for this connection.
+                        </div>
+                        <div class="form-text ms-1 d-flex align-items-center gap-1">
+                          <span class="text-nowrap">Endpoint:</span>
+                          <code class="text-body-secondary text-truncate" style="max-width:340px"><?= htmlspecialchars($whUrl) ?></code>
+                          <button class="btn btn-sm btn-link p-0 text-decoration-none" type="button" data-copy="<?= htmlspecialchars($whUrl) ?>" title="Copy endpoint URL"><i class="bi bi-clipboard"></i></button>
                         </div>
                       <?php endif; ?>
                     </li>
@@ -228,6 +243,14 @@ $isConnected = function (array $card): bool {
         if (j && j.success) { location.reload(); }
         else { alert((j && j.message) || 'Could not save'); if (btn) btn.disabled = false; }
       }).catch(function(){ alert('Could not save'); if (btn) btn.disabled = false; });
+    });
+  });
+  document.querySelectorAll('[data-copy]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var txt = btn.getAttribute('data-copy') || '';
+      var done = function(){ var i = btn.querySelector('i'); if (i){ i.className = 'bi bi-check-lg'; setTimeout(function(){ i.className = 'bi bi-clipboard'; }, 1200); } };
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function(){ window.prompt('Copy endpoint URL:', txt); }); }
+      else { window.prompt('Copy endpoint URL:', txt); }
     });
   });
   document.querySelectorAll('[data-whsec-clear]').forEach(function(btn){

@@ -354,7 +354,7 @@ class Connections extends Control {
         $byType = [];
         foreach ($rows as $c) {
             // Decrypt just far enough to show the last 4 chars as a which-secret hint
-            // (never the whole value); the field itself stays write-only.
+            // (never the whole value); the fields themselves stay write-only.
             $whHint = '';
             $enc = (string)($c->webhookSecret ?? '');
             if ($enc !== '') {
@@ -362,6 +362,14 @@ class Connections extends Control {
                     $plain = (string)EncryptionService::decrypt($enc);
                     if ($plain !== '') $whHint = substr($plain, -4);
                 } catch (\Throwable $e) { $whHint = ''; }
+            }
+            $keyHint = '';
+            $encKey = (string)($c->accessToken ?? '');
+            if ($encKey !== '') {
+                try {
+                    $plainKey = (string)EncryptionService::decrypt($encKey);
+                    if ($plainKey !== '') $keyHint = substr($plainKey, -4);
+                } catch (\Throwable $e) { $keyHint = ''; }
             }
             $byType[(string)$c->connectorType][] = [
                 'id'          => (int)$c->id,
@@ -374,6 +382,7 @@ class Connections extends Control {
                 'lastError'   => $c->lastError,
                 'webhookSet'  => $enc !== '',
                 'webhookHint' => $whHint,
+                'keyHint'     => $keyHint,
             ];
         }
 

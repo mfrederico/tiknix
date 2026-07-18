@@ -113,7 +113,12 @@ $isConnected = function (array $card): bool {
                           <button class="btn btn-sm btn-outline-secondary text-nowrap" type="submit">Save</button>
                           <?php if (!empty($cn['webhookSet'])): ?><button class="btn btn-sm btn-outline-danger" type="button" data-whsec-clear="<?= (int)$cn['id'] ?>" title="Remove secret"><i class="bi bi-x-lg"></i></button><?php endif; ?>
                         </form>
-                        <div class="form-text ms-1">Verifies incoming <?= $env === 'production' ? 'live' : 'test' ?> webhooks for this connection.</div>
+                        <div class="form-text ms-1">
+                          <?php if (!empty($cn['webhookSet']) && !empty($cn['webhookHint'])): ?>
+                            <span class="text-success-emphasis">Set ✓ ending <code>…<?= htmlspecialchars($cn['webhookHint']) ?></code>.</span>
+                          <?php endif; ?>
+                          Verifies incoming <?= $env === 'production' ? 'live' : 'test' ?> webhooks for this connection.
+                        </div>
                       <?php endif; ?>
                     </li>
                   <?php endforeach; ?>

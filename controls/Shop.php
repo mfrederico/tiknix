@@ -156,10 +156,19 @@ class Shop {
         $o->currency     = (string)($order['currency'] ?? 'usd');
         $o->email        = (string)($order['email'] ?? '');
         $o->customerName = (string)($order['name'] ?? '');
-        $o->status       = 'paid';
         $o->memberId     = (int)($conn->memberId ?? 0);
         $o->instanceId   = (int)($conn->instanceId ?? 0);
         $o->createdAt    = date('Y-m-d H:i:s');
+
+        // Simplified fulfillment: allocate one paid unit (mark serialized unit sold
+        // / decrement simple stock). Safe to run unguarded here — recordOrder already
+        // returned early above if this session was seen, so it happens once per order.
+        $ful = $sku !== '' ? $this->store()->fulfill($sku) : ['unit' => null, 'stock' => 0, 'oversold' => false];
+        $o->unitSerial   = (string)($ful['unit'] ?? '');
+        $o->stockAfter   = (int)($ful['stock'] ?? 0);
+        // An oversell (paid with nothing left to allocate) is flagged, not blocked —
+        // the money is captured, so the order stands and a human reconciles it.
+        $o->status       = !empty($ful['oversold']) ? 'paid-oversold' : 'paid';
         Bean::store($o);
     }
 

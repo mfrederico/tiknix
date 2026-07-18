@@ -36,6 +36,7 @@ $money = fn($cents, $cur) => strtoupper((string)($cur ?: 'usd')) . ' ' . number_
               <td>
                 <div class="fw-semibold"><?= htmlspecialchars((string)($o->title ?: $o->sku)) ?></div>
                 <?php if ($o->sku): ?><div class="small text-body-secondary"><code><?= htmlspecialchars((string)$o->sku) ?></code></div><?php endif; ?>
+                <?php if ($o->unitSerial): ?><div class="small"><span class="badge bg-info-subtle text-info-emphasis border">unit <?= htmlspecialchars((string)$o->unitSerial) ?></span></div><?php endif; ?>
               </td>
               <td class="small">
                 <?= htmlspecialchars((string)($o->email ?: '—')) ?>
@@ -46,7 +47,10 @@ $money = fn($cents, $cur) => strtoupper((string)($cur ?: 'usd')) . ' ' . number_
                 <span class="text-capitalize"><?= htmlspecialchars((string)$o->provider) ?></span>
                 <span class="badge bg-<?= $o->environment === 'production' ? 'success' : 'secondary' ?>-subtle text-<?= $o->environment === 'production' ? 'success' : 'secondary' ?>-emphasis border"><?= $o->environment === 'production' ? 'Live' : 'Test' ?></span>
               </td>
-              <td><span class="badge bg-success-subtle text-success-emphasis border text-capitalize"><?= htmlspecialchars((string)$o->status) ?></span></td>
+              <td>
+                <?php $oversold = $o->status === 'paid-oversold'; ?>
+                <span class="badge bg-<?= $oversold ? 'warning' : 'success' ?>-subtle text-<?= $oversold ? 'warning' : 'success' ?>-emphasis border text-capitalize" <?= $oversold ? 'title="Paid but stock was already depleted — reconcile manually"' : '' ?>><?= htmlspecialchars((string)$o->status) ?></span>
+              </td>
             </tr>
           <?php endforeach; ?>
         </tbody>

@@ -52,8 +52,9 @@
                 <tbody>
                     <?php foreach ($tools as $tool):
                         $isSystem = in_array($tool['file'], ['BaseTool.php', 'ToolLoader.php']);
-                        $paramCount = count($tool['inputSchema']['properties'] ?? []);
-                        $requiredCount = count($tool['inputSchema']['required'] ?? []);
+                        // properties may be a stdClass ({} in JSON) for no-arg tools — cast before count().
+                        $paramCount = count((array)($tool['inputSchema']['properties'] ?? []));
+                        $requiredCount = count((array)($tool['inputSchema']['required'] ?? []));
                     ?>
                     <tr>
                         <td>

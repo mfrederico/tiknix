@@ -45,6 +45,10 @@ if ($__loggedIn) {
     ] as $__add) {
         if (!isset($__have[$__add['url']])) $__sections['Main'][] = $__add;
     }
+    // Leads is an admin-only capability but is grouped under Main per preference.
+    if ($__isAdmin && !isset($__have['/leads'])) {
+        $__sections['Main'][] = ['url' => '/leads', 'label' => 'Leads', 'icon' => 'person-lines-fill'];
+    }
 }
 ?>
 <div class="ui-shell">
@@ -90,7 +94,7 @@ if ($__loggedIn) {
 
         <?php if ($__isAdmin): ?>
           <div class="ui-nav-heading">Admin</div>
-          <a class="ui-nav-link<?= $__active('/leads') ?>" href="/leads"><i class="bi bi-person-lines-fill"></i> Leads</a>
+          <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
           <?php if (builder_tools_enabled()): ?>
             <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
           <?php endif; ?>

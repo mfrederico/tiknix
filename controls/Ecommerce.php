@@ -2,11 +2,15 @@
 /**
  * Ecommerce — the feature-flagged storefront toolset hub.
  *
- * Every route here is gated by the per-member `ecommerce` feature flag (see
- * app\Feature). The flag is toggled by an admin on the Edit Member page and is
- * only available to ADMIN/ROOT-level members; the left-nav "Ecommerce" tab is
- * shown by the same check. Product catalog / inventory / checkout tools land in
- * later phases — this hub is the landing surface and the guard they share.
+ * Gated by the per-member `ecommerce` feature flag (see app\Feature): the flag is
+ * toggled by an admin on the Edit Member page, available only to ADMIN/ROOT, and
+ * the left-nav "Ecommerce" tab is shown by the same check.
+ *
+ * The hub is INSTANCE-SCOPED — a member's stores are their AI Builder instances,
+ * and every ecommerce capability (payments, products, storefront) belongs to one
+ * instance. Each feature card surfaces the connection it depends on (Payments ->
+ * that instance's Stripe connection) and links into the /connections hub, so
+ * connections are always tied to the feature that uses them.
  */
 
 namespace app;
@@ -14,6 +18,8 @@ namespace app;
 use \Flight as Flight;
 use app\BaseControls\Control;
 use app\Feature;
+use app\Bean;
+use RedBeanPHP\R;
 
 class Ecommerce extends Control {
 
@@ -28,9 +34,45 @@ class Ecommerce extends Control {
         return true;
     }
 
-    /** GET /ecommerce — the storefront tools hub. */
+    /** GET /ecommerce?id=<instance> — the storefront tools hub for one store. */
     public function index($params = []): void {
         if (!$this->requireFeature()) return;
-        $this->render('ecommerce/index', ['title' => 'Ecommerce']);
+
+        $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
+
+        // Focus one store: ?id= when it is the member's, else the most recent.
+        $wantId   = (int)$this->getParam('id', 0);
+        $selected = null;
+        foreach ($instances as $i) {
+            if ($wantId && (int)$i->id === $wantId) { $selected = $i; break; }
+        }
+        if (!$selected && !$wantId && count($instances)) {
+            $selected = $instances[array_key_first($instances)];
+        }
+
+        // Live Stripe status for the selected store — this is the Payments tie.
+        $stripe = null;
+        if ($selected) {
+            $ad = Flight::get('cachedDatabaseAdapter');
+            if ($ad instanceof \app\CachedDatabaseAdapter) $ad->invalidateTable('connections');
+            $conns = [];
+            foreach (Bean::find('connections',
+                'member_id = ? AND instance_id = ? AND connector_type = ? AND enabled = 1',
+                [(int)$this->member->id, (int)$selected->id, 'stripe']) as $c) {
+                if (!empty($c->revokedAt)) continue;
+                $conns[] = [
+                    'environment' => $c->environment ?: 'production',
+                    'name'        => $c->externalName ?: $c->externalEid,
+                ];
+            }
+            $stripe = ['connected' => count($conns) > 0, 'connections' => $conns];
+        }
+
+        $this->render('ecommerce/index', [
+            'title'     => 'Ecommerce',
+            'instances' => $instances,
+            'selected'  => $selected,
+            'stripe'    => $stripe,
+        ]);
     }
 }

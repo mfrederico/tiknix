@@ -1,0 +1,16 @@
+{
+    "updatedAt": "2026-07-18 16:20:08",
+    "products": [
+        {
+            "sku": "watch",
+            "title": "Test watch",
+            "price": 20,
+            "currency": "usd",
+            "category": "watches",
+            "image": "media/watch/20260718_160601_82d9c610.png",
+            "serialized": false,
+            "active": true
+        }
+    ],
+    "collections": []
+}

@@ -91,6 +91,14 @@ Flight::map('defaultRoute', function($prefix = '') {
                         Flight::get('log')->error("Method not public: {$function}");
                         Flight::notFound();
                     }
+                } else if (method_exists($instance, '_fallback')) {
+                    // The controller opts into catching unknown sub-segments itself
+                    // (e.g. the storefront maps /products/<sku> to a product page).
+                    Flight::get('log')->info("Calling: {$classname}->_fallback({$function})");
+                    if (method_exists($instance, 'setRouteParams')) {
+                        $instance->setRouteParams($params);
+                    }
+                    $instance->_fallback($function, $params);
                 } else {
                     Flight::get('log')->error("Method not found: {$function}");
                     Flight::notFound();

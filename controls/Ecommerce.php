@@ -132,6 +132,40 @@ class Ecommerce extends Control {
         ]);
     }
 
+    /**
+     * GET /ecommerce/preview?id=<instance>[&sku=<sku>] — rendered storefront preview.
+     * With a sku, previews that product's PDP; without, previews the PLP (all active
+     * products). This is the control-plane preview; the real storefront ships on the
+     * instance in Phase 4.
+     */
+    public function preview($params = []): void {
+        if (!$this->requireFeature()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::redirect('/ecommerce'); return; }
+        $catalog = $this->catalog($inst);
+        $iu  = $this->instancePublicUrl($inst);
+        $sku = (string)$this->getParam('sku', '');
+
+        if ($sku !== '') {
+            $product = $catalog->getProduct($sku);
+            if (!$product) { Flight::redirect('/ecommerce/products?id=' . (int)$inst->id); return; }
+            $this->render('ecommerce/preview', [
+                'title'       => 'Preview — ' . ($product['title'] ?? ''),
+                'instance'    => $inst,
+                'instanceUrl' => $iu,
+                'product'     => $product,
+            ]);
+            return;
+        }
+        $products = array_values(array_filter($catalog->listProducts(), fn($p) => !empty($p['active'])));
+        $this->render('ecommerce/preview-list', [
+            'title'       => 'Storefront preview',
+            'instance'    => $inst,
+            'instanceUrl' => $iu,
+            'products'    => $products,
+        ]);
+    }
+
     /** POST /ecommerce/productsave — validate + write a product JSON. */
     public function productsave($params = []): void {
         if (!$this->requireFeature()) return;

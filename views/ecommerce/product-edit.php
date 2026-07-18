@@ -96,7 +96,10 @@ foreach (($p['units'] ?? []) as $u) { $units .= ($u['serial'] ?? '') . "\n"; }
     </div>
     <div class="card-footer d-flex justify-content-between">
       <a href="/ecommerce/products?id=<?= $iid ?>" class="btn btn-sm btn-outline-secondary">Cancel</a>
-      <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Save product</button>
+      <div class="d-flex gap-2">
+        <?php if ($isEdit): ?><a href="/ecommerce/preview?id=<?= $iid ?>&sku=<?= $v('sku') ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>Preview</a><?php endif; ?>
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Save product</button>
+      </div>
     </div>
   </form>
 

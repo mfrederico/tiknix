@@ -18,6 +18,7 @@ $fmt = fn($p) => '$' . number_format((float)($p['price'] ?? 0), 2);
     </div>
     <div class="d-flex gap-2">
       <a href="/ecommerce?id=<?= $iid ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Store</a>
+      <?php if (!empty($products)): ?><a href="/ecommerce/preview?id=<?= $iid ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>Preview storefront</a><?php endif; ?>
       <a href="/ecommerce/productedit?id=<?= $iid ?>" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add product</a>
     </div>
   </div>
@@ -67,6 +68,7 @@ $fmt = fn($p) => '$' . number_format((float)($p['price'] ?? 0), 2);
                 <?php endif; ?>
               </td>
               <td class="text-end text-nowrap">
+                <a href="/ecommerce/preview?id=<?= $iid ?>&sku=<?= urlencode($sku) ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Preview product page"><i class="bi bi-eye"></i></a>
                 <a href="/ecommerce/productedit?id=<?= $iid ?>&sku=<?= urlencode($sku) ?>" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
                 <button class="btn btn-sm btn-outline-danger" data-delete="<?= htmlspecialchars($sku) ?>" title="Delete"><i class="bi bi-trash"></i></button>
               </td>

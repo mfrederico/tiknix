@@ -298,6 +298,33 @@ class StripeConnector extends AbstractConnector {
     }
 
     /**
+     * Confirm a Stripe webhook order by RE-FETCHING the session (never trust the raw
+     * body): only a session Stripe itself reports as paid becomes an order. This is
+     * authoritative without a webhook signing secret — the fetch uses our own key, so
+     * a spoofed event can only reference a session that is (a) ours and (b) actually paid.
+     */
+    public function webhookOrder($conn, string $token, string $rawBody, array $headers): ?array {
+        $event = json_decode($rawBody, true);
+        if (!is_array($event)) return null;
+        $type = (string)($event['type'] ?? '');
+        if ($type !== 'checkout.session.completed' && $type !== 'checkout.session.async_payment_succeeded') return null;
+        $sessionId = (string)($event['data']['object']['id'] ?? '');
+        if (strncmp($sessionId, 'cs_', 3) !== 0) return null;
+        $s = $this->apiGet($token, 'checkout/sessions/' . rawurlencode($sessionId) . '?expand[]=customer_details');
+        if (($s['payment_status'] ?? '') !== 'paid') return null;
+        return [
+            'session_id'     => (string)($s['id'] ?? $sessionId),
+            'payment_intent' => (string)($s['payment_intent'] ?? ''),
+            'amount_total'   => (int)($s['amount_total'] ?? 0),
+            'currency'       => (string)($s['currency'] ?? 'usd'),
+            'email'          => (string)($s['customer_details']['email'] ?? $s['customer_email'] ?? ''),
+            'name'           => (string)($s['customer_details']['name'] ?? ''),
+            'reference'      => (string)($s['client_reference_id'] ?? ''),
+            'livemode'       => (bool)($s['livemode'] ?? false),
+        ];
+    }
+
+    /**
      * Validate + build fields for POST /v1/checkout/sessions. Nested arrays are
      * form-encoded by http_build_query into Stripe's bracket syntax, e.g.
      * line_items[0][price]=price_..&line_items[0][quantity]=1.

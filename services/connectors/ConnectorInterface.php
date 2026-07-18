@@ -87,4 +87,14 @@ interface ConnectorInterface {
      *                       'success_url','cancel_url','client_reference_id'?]
      */
     public function createCheckout($conn, string $token, array $order): array;
+
+    /**
+     * Given a raw provider webhook (body + headers), authoritatively confirm a
+     * completed order and return normalized order data, or null when the event isn't
+     * a confirmed payment. Implementations should RE-FETCH from the provider rather
+     * than trust the webhook body. Runs on the control plane with the decrypted token.
+     * Normalized shape: ['session_id','payment_intent','amount_total','currency',
+     * 'email','name','reference','livemode'].
+     */
+    public function webhookOrder($conn, string $token, string $rawBody, array $headers): ?array;
 }

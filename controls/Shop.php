@@ -101,6 +101,54 @@ class Shop {
         $this->shell(['view' => 'success']);
     }
 
+    /**
+     * POST /shop/webhook/<provider> — payment provider webhooks. Verifies the order by
+     * re-fetching it from the provider (via the connector), records it once, and always
+     * answers 200 so the provider stops retrying. Public (self-verifying).
+     */
+    public function webhook($params = []): void {
+        $provider = StoreCatalog::normalizeSku((string)($params['operation']->name ?? ''));
+        $raw = file_get_contents('php://input') ?: '';
+        [$conn, $connector] = $this->resolvePayment();
+        if ($conn && $connector && $connector->key() === $provider) {
+            $token = EncryptionService::decrypt($conn->accessToken);
+            try {
+                $order = $connector->webhookOrder($conn, $token, $raw,
+                    function_exists('getallheaders') ? (getallheaders() ?: []) : []);
+                if ($order && !empty($order['session_id'])) $this->recordOrder($provider, $conn, $order);
+            } catch (\Throwable $e) {
+                error_log('[shop] webhook error: ' . $e->getMessage());
+            } finally {
+                if (function_exists('sodium_memzero')) sodium_memzero($token);
+            }
+        }
+        if (!headers_sent()) { http_response_code(200); header('Content-Type: text/plain; charset=utf-8'); }
+        echo 'ok';
+    }
+
+    /** Record a confirmed order once (idempotent on the provider session id). */
+    private function recordOrder(string $provider, $conn, array $order): void {
+        if (Bean::findOne('shoporder', 'session_id = ?', [(string)$order['session_id']])) return;
+        $sku     = StoreCatalog::normalizeSku((string)($order['reference'] ?? ''));
+        $product = $sku !== '' ? $this->store()->getProduct($sku) : null;
+        $o = Bean::dispense('shoporder');
+        $o->provider     = $provider;
+        $o->environment  = (string)($conn->environment ?: 'production');
+        $o->sessionId    = (string)$order['session_id'];
+        $o->paymentId    = (string)($order['payment_intent'] ?? '');
+        $o->sku          = $sku;
+        $o->title        = (string)($product['title'] ?? $sku);
+        $o->amountTotal  = (int)($order['amount_total'] ?? 0);
+        $o->currency     = (string)($order['currency'] ?? 'usd');
+        $o->email        = (string)($order['email'] ?? '');
+        $o->customerName = (string)($order['name'] ?? '');
+        $o->status       = 'paid';
+        $o->memberId     = (int)($conn->memberId ?? 0);
+        $o->instanceId   = (int)($conn->instanceId ?? 0);
+        $o->createdAt    = date('Y-m-d H:i:s');
+        Bean::store($o);
+    }
+
     private function store(): StoreCatalog {
         return new StoreCatalog(dirname(__DIR__));
     }

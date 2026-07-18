@@ -100,6 +100,15 @@ class Ecommerce extends Control {
         $this->jsonSuccess(['instance' => $instId, 'env' => $env], 'Payment source saved');
     }
 
+    /** GET /ecommerce/orders — recorded (paid) orders from the storefront webhook. */
+    public function orders($params = []): void {
+        if (!$this->requireFeature()) return;
+        $this->render('ecommerce/orders', [
+            'title'  => 'Orders',
+            'orders' => Bean::find('shoporder', ' ORDER BY created_at DESC LIMIT 200'),
+        ]);
+    }
+
     /** GET /ecommerce/products — product list for the tiknix.com store. */
     public function products($params = []): void {
         if (!$this->requireFeature()) return;

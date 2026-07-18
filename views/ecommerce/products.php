@@ -19,6 +19,7 @@ $imgUrl = fn($rel) => (string)$rel;
     <div class="d-flex gap-2">
       <a href="/ecommerce" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Store</a>
       <a href="/ecommerce/categories" class="btn btn-sm btn-outline-secondary"><i class="bi bi-collection me-1"></i>Catalogs</a>
+      <a href="/ecommerce/orders" class="btn btn-sm btn-outline-secondary"><i class="bi bi-receipt me-1"></i>Orders</a>
       <?php if (!empty($products)): ?><a href="/shop/product/" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View storefront</a><?php endif; ?>
       <a href="/ecommerce/productedit" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg me-1"></i>Add product</a>
     </div>

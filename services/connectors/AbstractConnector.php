@@ -46,6 +46,11 @@ abstract class AbstractConnector implements ConnectorInterface {
         throw new \Exception('Connector "' . $this->key() . '" is not a payment provider.');
     }
 
+    /** Non-payment connectors have no webhook orders; payment providers override. */
+    public function webhookOrder($conn, string $token, string $rawBody, array $headers): ?array {
+        return null;
+    }
+
     /**
      * Minimal cURL request. Returns [httpStatus, body].
      * @param array $opts ['headers' => string[], 'body' => string]

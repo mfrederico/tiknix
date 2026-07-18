@@ -1,5 +1,5 @@
 {
-    "updatedAt": "2026-07-18 16:20:08",
+    "updatedAt": "2026-07-18 16:37:10",
     "products": [
         {
             "sku": "watch",
@@ -11,6 +11,5 @@
             "serialized": false,
             "active": true
         }
-    ],
-    "collections": []
+    ]
 }

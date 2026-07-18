@@ -1,39 +1,32 @@
 <?php
 /**
- * StoreCatalog — the file-backed product catalog for one store instance.
+ * StoreCatalog — the file-backed product catalog for the tiknix.com storefront.
  *
- * A store's catalog is plain JSON living under the INSTANCE's public folder, so it
- * deploys with the instance to GitHub and is rendered client-side (Phase 4):
+ * The catalog is plain JSON under the site's public/products/ folder, committed to
+ * the repo, so it publishes with the site and is rendered client-side by
+ * public/products/store.js:
  *
- *   <instance>/public/store/index.json           manifest (fast PLP bootstrap)
- *   <instance>/public/store/products/<sku>.json   one file per product (PDP)
- *   <instance>/public/store/collections/<slug>.json  ordered product list (PLP)
- *   <instance>/public/uploads/products/<sku>/…    product images
+ *   public/products/index.json         manifest (fast PLP bootstrap)
+ *   public/products/<sku>.json         one file per product (PDP data)
+ *   public/products/media/<sku>/…      product images
  *
- * The product JSON holds the DEFINITION plus inventory intent: `serialized`,
- * `holdMinutes`, and either `stock` (fungible) or `units[]` (serial numbers). Live
- * hold/sold state is tracked in the instance DB by the storefront runtime later —
- * this class only authors the catalog. Image paths are stored RELATIVE
- * ("uploads/products/…") so they resolve on whatever domain the store is published to.
+ * A product JSON holds the DEFINITION plus inventory intent: `serialized`,
+ * `holdMinutes`, and either `stock` (fungible) or `units[]` (serial numbers). Image
+ * paths are stored RELATIVE ("media/<sku>/…") so they resolve on whatever domain the
+ * store is published to (the storefront sets <base href="/products/">).
  */
 
 namespace app;
 
 class StoreCatalog {
 
-    private string $publicDir;
-    private string $storeDir;
-    private string $productsDir;
-    private string $collectionsDir;
-    private string $uploadsDir;
+    private string $dir;       // <public>/products
+    private string $mediaDir;  // <public>/products/media
 
-    /** @param string $instanceDir absolute path to the instance root (…/<slug>.tiknix) */
-    public function __construct(string $instanceDir) {
-        $this->publicDir      = rtrim($instanceDir, '/') . '/public';
-        $this->storeDir       = $this->publicDir . '/store';
-        $this->productsDir    = $this->storeDir . '/products';
-        $this->collectionsDir = $this->storeDir . '/collections';
-        $this->uploadsDir     = $this->publicDir . '/uploads/products';
+    /** @param string $publicDir absolute path to the site's public/ folder */
+    public function __construct(string $publicDir) {
+        $this->dir      = rtrim($publicDir, '/') . '/products';
+        $this->mediaDir = $this->dir . '/media';
     }
 
     /** Normalize a SKU to a safe, lowercase file/url slug. '' if nothing usable. */
@@ -44,17 +37,18 @@ class StoreCatalog {
     }
 
     public function ensureDirs(): void {
-        foreach ([$this->storeDir, $this->productsDir, $this->collectionsDir, $this->uploadsDir] as $d) {
+        foreach ([$this->dir, $this->mediaDir] as $d) {
             if (!is_dir($d)) @mkdir($d, 0775, true);
         }
     }
 
     // --- products -------------------------------------------------------------
 
-    /** All products, newest-updated first. Each is the decoded product array. */
+    /** All products, newest-updated first. (index.json manifest is skipped — no sku.) */
     public function listProducts(): array {
         $out = [];
-        foreach (glob($this->productsDir . '/*.json') ?: [] as $f) {
+        foreach (glob($this->dir . '/*.json') ?: [] as $f) {
+            if (basename($f) === 'index.json') continue;
             $p = json_decode((string)@file_get_contents($f), true);
             if (is_array($p) && !empty($p['sku'])) $out[] = $p;
         }
@@ -65,7 +59,7 @@ class StoreCatalog {
     public function getProduct(string $sku): ?array {
         $sku = self::normalizeSku($sku);
         if ($sku === '') return null;
-        $f = $this->productsDir . '/' . $sku . '.json';
+        $f = $this->dir . '/' . $sku . '.json';
         if (!is_file($f)) return null;
         $p = json_decode((string)@file_get_contents($f), true);
         return is_array($p) ? $p : null;
@@ -123,7 +117,7 @@ class StoreCatalog {
             $product['images'] = array_values(array_filter(array_map('strval', $in['images'])));
         }
 
-        $this->writeJson($this->productsDir . '/' . $sku . '.json', $product);
+        $this->writeJson($this->dir . '/' . $sku . '.json', $product);
         $this->writeManifest();
         return $product;
     }
@@ -131,10 +125,9 @@ class StoreCatalog {
     public function deleteProduct(string $sku): bool {
         $sku = self::normalizeSku($sku);
         if ($sku === '') return false;
-        $f = $this->productsDir . '/' . $sku . '.json';
+        $f = $this->dir . '/' . $sku . '.json';
         $ok = is_file($f) ? @unlink($f) : false;
-        // Best-effort: drop the product's image folder too.
-        $imgDir = $this->uploadsDir . '/' . $sku;
+        $imgDir = $this->mediaDir . '/' . $sku;
         if (is_dir($imgDir)) { foreach (glob($imgDir . '/*') ?: [] as $g) @unlink($g); @rmdir($imgDir); }
         $this->writeManifest();
         return $ok;
@@ -143,8 +136,8 @@ class StoreCatalog {
     // --- images ---------------------------------------------------------------
 
     /**
-     * Store an uploaded image under uploads/products/<sku>/ and append its RELATIVE
-     * path to the product. Returns the relative path (e.g. "uploads/products/sku/x.jpg").
+     * Store an uploaded image under media/<sku>/ and append its RELATIVE path to the
+     * product. Returns the relative path (e.g. "media/<sku>/x.jpg").
      * @param array $file a $_FILES entry
      * @throws \Exception on validation failure
      */
@@ -161,19 +154,19 @@ class StoreCatalog {
         ][(new \finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name'])] ?? null;
         if ($ext === null) throw new \Exception('Only PNG, JPEG, WEBP, or GIF images are allowed.');
 
-        $dir = $this->uploadsDir . '/' . $sku;
+        $dir = $this->mediaDir . '/' . $sku;
         if (!is_dir($dir)) @mkdir($dir, 0775, true);
         $name = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
         $dest = $dir . '/' . $name;
         if (!move_uploaded_file($file['tmp_name'], $dest)) throw new \Exception('Could not save the image.');
         @chmod($dest, 0664);
 
-        $rel = 'uploads/products/' . $sku . '/' . $name;   // RELATIVE — no host, no leading slash
+        $rel = 'media/' . $sku . '/' . $name;   // RELATIVE — resolves under <base href="/products/">
         $product = $this->getProduct($sku);
         $product['images'][] = $rel;
         $product['images'] = array_values(array_unique($product['images']));
         $product['updatedAt'] = date('Y-m-d H:i:s');
-        $this->writeJson($this->productsDir . '/' . $sku . '.json', $product);
+        $this->writeJson($this->dir . '/' . $sku . '.json', $product);
         $this->writeManifest();
         return $rel;
     }
@@ -195,17 +188,9 @@ class StoreCatalog {
                 'active'     => !empty($p['active']),
             ];
         }
-        $collections = [];
-        foreach (glob($this->collectionsDir . '/*.json') ?: [] as $f) {
-            $c = json_decode((string)@file_get_contents($f), true);
-            if (is_array($c) && !empty($c['slug'])) {
-                $collections[] = ['slug' => $c['slug'], 'title' => $c['title'] ?? $c['slug']];
-            }
-        }
-        $this->writeJson($this->storeDir . '/index.json', [
-            'updatedAt'   => date('Y-m-d H:i:s'),
-            'products'    => $products,
-            'collections' => $collections,
+        $this->writeJson($this->dir . '/index.json', [
+            'updatedAt' => date('Y-m-d H:i:s'),
+            'products'  => $products,
         ]);
     }
 

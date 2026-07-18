@@ -97,7 +97,7 @@ $sid = $selected ? (int)$selected->id : 0;
               </div>
             </div>
             <div class="mt-auto pt-3">
-              <a href="/ecommerce/products?id=<?= $sid ?>" class="btn btn-sm btn-primary"><i class="bi bi-box-seam me-1"></i>Manage products</a>
+              <a href="/ecommerce/products" class="btn btn-sm btn-primary"><i class="bi bi-box-seam me-1"></i>Manage products</a>
             </div>
           </div>
         </div>

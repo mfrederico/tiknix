@@ -91,13 +91,13 @@ $sid = $selected ? (int)$selected->id : 0;
               <div class="flex-grow-1">
                 <div class="d-flex justify-content-between align-items-start gap-2">
                   <div class="fw-semibold">Products &amp; Inventory</div>
-                  <span class="badge bg-secondary-subtle text-secondary-emphasis border">Coming soon</span>
+                  <span class="badge bg-info-subtle text-info-emphasis border"><?= (int)($productCount ?? 0) ?> product<?= (int)($productCount ?? 0) === 1 ? '' : 's' ?></span>
                 </div>
                 <div class="text-body-secondary small mt-1">Add products, set inventory, and configure serialized units with timed holds.</div>
               </div>
             </div>
             <div class="mt-auto pt-3">
-              <div class="form-text"><i class="bi bi-link-45deg me-1"></i>Prices sync from your connected Stripe account.</div>
+              <a href="/ecommerce/products?id=<?= $sid ?>" class="btn btn-sm btn-primary"><i class="bi bi-box-seam me-1"></i>Manage products</a>
             </div>
           </div>
         </div>

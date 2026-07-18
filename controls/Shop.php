@@ -110,20 +110,34 @@ class Shop {
         $provider = StoreCatalog::normalizeSku((string)($params['operation']->name ?? ''));
         $raw = file_get_contents('php://input') ?: '';
         [$conn, $connector] = $this->resolvePayment();
-        if ($conn && $connector && $connector->key() === $provider) {
-            $token = EncryptionService::decrypt($conn->accessToken);
-            try {
-                $order = $connector->webhookOrder($conn, $token, $raw,
-                    function_exists('getallheaders') ? (getallheaders() ?: []) : []);
-                if ($order && !empty($order['session_id'])) $this->recordOrder($provider, $conn, $order);
-            } catch (\Throwable $e) {
-                error_log('[shop] webhook error: ' . $e->getMessage());
-            } finally {
-                if (function_exists('sodium_memzero')) sodium_memzero($token);
-            }
+        if (!$conn || !$connector || $connector->key() !== $provider) { $this->plain(200, 'ignored'); return; }
+
+        // Webhook signing secret (whsec_) for HMAC verification, stored encrypted.
+        $sys = defined('SYSTEM_ADMIN_ID') ? SYSTEM_ADMIN_ID : 1;
+        $secret = '';
+        $enc = (string)\Flight::getSetting('shop.webhook_secret', $sys);
+        if ($enc !== '') { try { $secret = EncryptionService::decrypt($enc); } catch (\Throwable $e) { $secret = ''; } }
+        $headers = function_exists('getallheaders') ? (getallheaders() ?: []) : [];
+        // getallheaders() is unreliable/absent on nginx+fpm — read the signature from
+        // $_SERVER too so real (signed) webhooks are always verifiable.
+        if (empty($headers['Stripe-Signature']) && !empty($_SERVER['HTTP_STRIPE_SIGNATURE'])) {
+            $headers['Stripe-Signature'] = (string)$_SERVER['HTTP_STRIPE_SIGNATURE'];
         }
-        if (!headers_sent()) { http_response_code(200); header('Content-Type: text/plain; charset=utf-8'); }
-        echo 'ok';
+        $token = EncryptionService::decrypt($conn->accessToken);
+        try {
+            $order = $connector->webhookOrder($conn, $token, $raw, $headers, $secret);
+            if ($order && !empty($order['session_id'])) $this->recordOrder($provider, $conn, $order);
+        } catch (\Throwable $e) {
+            error_log('[shop] webhook rejected: ' . $e->getMessage());
+            if (function_exists('sodium_memzero')) { sodium_memzero($token); if ($secret !== '') sodium_memzero($secret); }
+            $this->plain(400, 'rejected'); return;   // signature / fetch failure — provider will show + retry
+        }
+        if (function_exists('sodium_memzero')) { sodium_memzero($token); if ($secret !== '') sodium_memzero($secret); }
+        $this->plain(200, 'ok');
+    }
+
+    private function plain(int $code, string $body): void {
+        \Flight::halt($code, $body);   // Flight emits its own 200 at request end; halt sets the real status.
     }
 
     /** Record a confirmed order once (idempotent on the provider session id). */

@@ -95,6 +95,10 @@ interface ConnectorInterface {
      * than trust the webhook body. Runs on the control plane with the decrypted token.
      * Normalized shape: ['session_id','payment_intent','amount_total','currency',
      * 'email','name','reference','livemode'].
+     *
+     * @param string $secret the provider's webhook signing secret; when non-empty the
+     *                        implementation MUST verify the request signature first and
+     *                        throw on failure (defense-in-depth on top of the re-fetch).
      */
-    public function webhookOrder($conn, string $token, string $rawBody, array $headers): ?array;
+    public function webhookOrder($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array;
 }

@@ -79,6 +79,7 @@ class Ecommerce extends Control {
                 'instance' => (int)\Flight::getSetting('shop.payment_instance', $sys),
                 'env'      => (string)(\Flight::getSetting('shop.payment_env', $sys) ?: 'production'),
             ],
+            'webhookSet'    => (string)\Flight::getSetting('shop.webhook_secret', $sys) !== '',
         ]);
     }
 
@@ -97,6 +98,14 @@ class Ecommerce extends Control {
         \Flight::setSetting('shop.payment_member', (int)$this->member->id, $sys);
         \Flight::setSetting('shop.payment_instance', $instId, $sys);
         \Flight::setSetting('shop.payment_env', $env, $sys);
+        // Optional webhook signing secret (whsec_) — stored encrypted; blank leaves it
+        // unchanged; the "remove" checkbox clears it (falls back to re-fetch-only).
+        $whsec = trim((string)$this->getParam('webhook_secret', ''));
+        if ($whsec !== '') {
+            \Flight::setSetting('shop.webhook_secret', \app\EncryptionService::encrypt($whsec), $sys);
+        } elseif (filter_var($this->getParam('clear_webhook', false), FILTER_VALIDATE_BOOLEAN)) {
+            \Flight::setSetting('shop.webhook_secret', '', $sys);
+        }
         $this->jsonSuccess(['instance' => $instId, 'env' => $env], 'Payment source saved');
     }
 

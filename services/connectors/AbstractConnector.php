@@ -47,7 +47,7 @@ abstract class AbstractConnector implements ConnectorInterface {
     }
 
     /** Non-payment connectors have no webhook orders; payment providers override. */
-    public function webhookOrder($conn, string $token, string $rawBody, array $headers): ?array {
+    public function webhookOrder($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array {
         return null;
     }
 

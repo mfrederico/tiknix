@@ -64,6 +64,13 @@ $sid = $selected ? (int)$selected->id : 0;
           <div class="col-sm-3">
             <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
           </div>
+          <div class="col-12">
+            <label class="form-label small mb-1">Stripe webhook signing secret <span class="text-body-secondary"><?= !empty($webhookSet) ? '— set ✓ (paste to replace)' : '(whsec_…, recommended)' ?></span></label>
+            <input type="password" name="webhook_secret" class="form-control form-control-sm" placeholder="whsec_…" autocomplete="off">
+            <div class="form-text">From Stripe → Developers → Webhooks → your endpoint. Verifies each webhook's signature.
+              <?php if (!empty($webhookSet)): ?><label class="ms-2"><input type="checkbox" name="clear_webhook" value="1"> remove</label><?php endif; ?>
+            </div>
+          </div>
           <div class="col-12"><div class="form-text">Connect a provider under <a href="/connections?id=<?= (int)($paymentSource['instance'] ?: $sid) ?>">Connections</a> for that store (must be an active secret/restricted key for the same environment).</div></div>
         </form>
       </div>

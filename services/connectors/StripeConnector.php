@@ -303,7 +303,16 @@ class StripeConnector extends AbstractConnector {
      * authoritative without a webhook signing secret — the fetch uses our own key, so
      * a spoofed event can only reference a session that is (a) ours and (b) actually paid.
      */
-    public function webhookOrder($conn, string $token, string $rawBody, array $headers): ?array {
+    public function webhookOrder($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array {
+        if ($secret !== '') {
+            $sig = '';
+            foreach ($headers as $k => $v) {
+                if (strcasecmp((string)$k, 'Stripe-Signature') === 0) { $sig = is_array($v) ? (string)($v[0] ?? '') : (string)$v; break; }
+            }
+            if (!self::verifyStripeSignature($rawBody, $sig, $secret)) {
+                throw new \Exception('Stripe webhook signature verification failed.');
+            }
+        }
         $event = json_decode($rawBody, true);
         if (!is_array($event)) return null;
         $type = (string)($event['type'] ?? '');
@@ -322,6 +331,27 @@ class StripeConnector extends AbstractConnector {
             'reference'      => (string)($s['client_reference_id'] ?? ''),
             'livemode'       => (bool)($s['livemode'] ?? false),
         ];
+    }
+
+    /**
+     * Verify Stripe's `Stripe-Signature` header: HMAC-SHA256 of "t.payload" with the
+     * webhook signing secret (whsec_), matched against a v1 signature, within a 5-minute
+     * timestamp tolerance (replay protection). Constant-time compare.
+     */
+    private static function verifyStripeSignature(string $payload, string $sigHeader, string $secret): bool {
+        if ($sigHeader === '' || $secret === '') return false;
+        $t = ''; $v1 = [];
+        foreach (explode(',', $sigHeader) as $kv) {
+            $p = explode('=', trim($kv), 2);
+            if (count($p) !== 2) continue;
+            if ($p[0] === 't') $t = $p[1];
+            elseif ($p[0] === 'v1') $v1[] = $p[1];
+        }
+        if ($t === '' || $v1 === [] || !ctype_digit($t)) return false;
+        if (abs(time() - (int)$t) > 300) return false;
+        $expected = hash_hmac('sha256', $t . '.' . $payload, $secret);
+        foreach ($v1 as $sig) { if (hash_equals($expected, $sig)) return true; }
+        return false;
     }
 
     /**

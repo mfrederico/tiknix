@@ -68,13 +68,36 @@ class Ecommerce extends Control {
             $stripe = ['connected' => count($conns) > 0, 'connections' => $conns];
         }
 
+        $sys = defined('SYSTEM_ADMIN_ID') ? SYSTEM_ADMIN_ID : 1;
         $this->render('ecommerce/index', [
-            'title'        => 'Ecommerce',
-            'instances'    => $instances,
-            'selected'     => $selected,
-            'stripe'       => $stripe,
-            'productCount' => count($this->catalog()->listProducts()),
+            'title'         => 'Ecommerce',
+            'instances'     => $instances,
+            'selected'      => $selected,
+            'stripe'        => $stripe,
+            'productCount'  => count($this->catalog()->listProducts()),
+            'paymentSource' => [
+                'instance' => (int)\Flight::getSetting('shop.payment_instance', $sys),
+                'env'      => (string)(\Flight::getSetting('shop.payment_env', $sys) ?: 'production'),
+            ],
         ]);
+    }
+
+    /** POST /ecommerce/paymentsource — set which instance+environment checkout draws payments from. */
+    public function paymentsource($params = []): void {
+        if (!$this->requireFeature()) return;
+        if (!$this->validateCSRF()) return;
+        $instId = (int)$this->getParam('instance', 0);
+        $env    = strtolower(trim((string)$this->getParam('env', 'production')));
+        if (!in_array($env, ['development', 'production'], true)) $env = 'production';
+        $inst = R::load('instance', $instId);
+        if (!$inst->id || (int)$inst->memberId !== (int)$this->member->id) {
+            $this->jsonError('Choose one of your stores', 400); return;
+        }
+        $sys = defined('SYSTEM_ADMIN_ID') ? SYSTEM_ADMIN_ID : 1;
+        \Flight::setSetting('shop.payment_member', (int)$this->member->id, $sys);
+        \Flight::setSetting('shop.payment_instance', $instId, $sys);
+        \Flight::setSetting('shop.payment_env', $env, $sys);
+        $this->jsonSuccess(['instance' => $instId, 'env' => $env], 'Payment source saved');
     }
 
     /** GET /ecommerce/products — product list for the tiknix.com store. */

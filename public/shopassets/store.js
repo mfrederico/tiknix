@@ -83,6 +83,11 @@
     var cat = p.category
       ? '<a class="cat" href="' + catalogHref(p.category) + '" style="text-decoration:none">' + esc(p.category) + '</a>'
       : '';
+    var buy = (S.checkout && available > 0)
+      ? '<form method="post" action="' + SHOP + 'checkout" style="margin:0">' +
+        '<input type="hidden" name="sku" value="' + esc(p.sku) + '">' +
+        '<button class="btn" type="submit">Buy now</button></form>'
+      : '<button class="btn" disabled title="' + (available > 0 ? 'Checkout not set up yet' : 'Out of stock') + '">Buy now</button>';
     app.innerHTML = '<div class="wrap">' + head('Shop', SHOP + 'product/', '← All products') +
       '<div class="pdp"><div class="gallery">' + gallery + '</div>' +
       '<div class="detail">' + cat +
@@ -90,7 +95,7 @@
       '<div class="price">' + money(p.price, p.currency) + '</div>' +
       (p.description ? '<div class="desc">' + esc(p.description) + '</div>' : '') +
       '<div class="stock">' + stock + '</div>' +
-      '<button class="btn" disabled title="Checkout arrives next">Add to cart</button>' +
+      buy +
       '<div class="sku">SKU ' + esc(p.sku) + '</div>' +
       '</div></div></div>';
     document.title = p.title + ' — Shop';
@@ -116,6 +121,11 @@
       .then(function (r) { renderCategory(r[0], r[1]); }).catch(function () { fail('Catalog not found.'); });
   } else if (S.view === 'catalogs') {
     getJSON(CATB + 'index.json').then(renderCatalogs).catch(function () { fail('No catalogs yet.'); });
+  } else if (S.view === 'success') {
+    app.innerHTML = '<div class="wrap">' +
+      '<div class="store-head"><h1>Thank you!</h1><a href="' + SHOP + 'product/">← Continue shopping</a></div>' +
+      '<p class="desc">Your order is complete — the payment provider has emailed your receipt.</p></div>';
+    document.title = 'Thank you — Shop';
   } else {
     getJSON(DATA + 'index.json').then(renderPLP).catch(function () { fail('Store is empty.'); });
   }

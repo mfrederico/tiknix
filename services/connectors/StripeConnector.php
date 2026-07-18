@@ -269,6 +269,35 @@ class StripeConnector extends AbstractConnector {
     }
 
     /**
+     * Create a hosted Checkout Session for an order (ad-hoc price_data, so products
+     * need no pre-created Stripe price) and return its redirect url. Control-plane
+     * only; the token is used for this call and never returned.
+     */
+    public function createCheckout($conn, string $token, array $order): array {
+        $items = [];
+        foreach (array_values($order['items'] ?? []) as $it) {
+            $cents = max(0, (int)($it['amount_cents'] ?? 0));
+            if ($cents <= 0) continue;
+            $items[] = [
+                'price_data' => [
+                    'currency'     => strtolower((string)($it['currency'] ?? 'usd')),
+                    'product_data' => ['name' => (string)($it['title'] ?? 'Item')],
+                    'unit_amount'  => $cents,
+                ],
+                'quantity' => max(1, (int)($it['quantity'] ?? 1)),
+            ];
+        }
+        if (empty($items)) throw new \Exception('Nothing to check out.');
+        $success = trim((string)($order['success_url'] ?? ''));
+        $cancel  = trim((string)($order['cancel_url'] ?? ''));
+        if ($success === '' || $cancel === '') throw new \Exception('Checkout needs success and cancel URLs.');
+        $fields = ['mode' => 'payment', 'success_url' => $success, 'cancel_url' => $cancel, 'line_items' => $items];
+        if (!empty($order['client_reference_id'])) $fields['client_reference_id'] = (string)$order['client_reference_id'];
+        $res = $this->apiPost($token, 'checkout/sessions', $fields);
+        return ['url' => (string)($res['url'] ?? ''), 'id' => (string)($res['id'] ?? '')];
+    }
+
+    /**
      * Validate + build fields for POST /v1/checkout/sessions. Nested arrays are
      * form-encoded by http_build_query into Stripe's bracket syntax, e.g.
      * line_items[0][price]=price_..&line_items[0][quantity]=1.

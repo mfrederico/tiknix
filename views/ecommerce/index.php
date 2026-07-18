@@ -36,6 +36,52 @@ $sid = $selected ? (int)$selected->id : 0;
       </div>
     </div>
 
+    <div class="card border mb-4">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-credit-card-2-front text-primary"></i>
+          <div class="fw-semibold">Checkout payment source</div>
+        </div>
+        <div class="text-body-secondary small mb-2">Which store's connected provider (Stripe, PayPal, …) the storefront uses at checkout.</div>
+        <form id="paySourceForm" class="row g-2 align-items-end">
+          <?= csrf_field() ?>
+          <div class="col-sm-5">
+            <label class="form-label small mb-1">Payments from</label>
+            <select name="instance" class="form-select form-select-sm">
+              <option value="0">— none —</option>
+              <?php foreach ($instances as $i): ?>
+                <option value="<?= (int)$i->id ?>"<?= (int)$i->id === (int)($paymentSource['instance'] ?? 0) ? ' selected' : '' ?>><?= htmlspecialchars($i->display_name ?: $i->slug) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label small mb-1">Environment</label>
+            <select name="env" class="form-select form-select-sm">
+              <option value="development"<?= ($paymentSource['env'] ?? '') === 'development' ? ' selected' : '' ?>>Development</option>
+              <option value="production"<?= ($paymentSource['env'] ?? 'production') === 'production' ? ' selected' : '' ?>>Live site</option>
+            </select>
+          </div>
+          <div class="col-sm-3">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+          </div>
+          <div class="col-12"><div class="form-text">Connect a provider under <a href="/connections?id=<?= (int)($paymentSource['instance'] ?: $sid) ?>">Connections</a> for that store (must be an active secret/restricted key for the same environment).</div></div>
+        </form>
+      </div>
+    </div>
+    <script>
+    (function(){
+      var f = document.getElementById('paySourceForm'); if (!f) return;
+      var csrf = <?= json_encode(csrf_token()) ?>;
+      f.addEventListener('submit', function(ev){
+        ev.preventDefault();
+        var b = f.querySelector('button[type=submit]'); if (b) b.disabled = true;
+        fetch('/ecommerce/paymentsource', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'}, body:new URLSearchParams(new FormData(f)).toString()})
+          .then(function(r){return r.json();}).then(function(j){ if(b)b.disabled=false; alert((j&&j.message)||'Saved'); })
+          .catch(function(){ if(b)b.disabled=false; alert('Could not save'); });
+      });
+    })();
+    </script>
+
     <?php $connUrl = '/connections?id=' . $sid; ?>
     <div class="row g-3">
 

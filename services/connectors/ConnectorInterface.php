@@ -75,4 +75,16 @@ interface ConnectorInterface {
      * @throws \Exception on unknown tool or API failure
      */
     public function callBrokerTool(string $tool, $conn, string $token, array $args): array;
+
+    /**
+     * Create a hosted checkout for an order and return ['url' => <redirect>, 'id' => ...].
+     * Payment-provider connectors (meta category 'Payments') implement this; others
+     * throw. Runs on the control plane with the already-decrypted token (never returned).
+     *
+     * @param object $conn  the connections bean
+     * @param string $token the decrypted access/secret key (in-process only)
+     * @param array  $order ['items' => [['title','amount_cents','currency','quantity'],…],
+     *                       'success_url','cancel_url','client_reference_id'?]
+     */
+    public function createCheckout($conn, string $token, array $order): array;
 }

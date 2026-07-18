@@ -24,8 +24,82 @@
 namespace app;
 
 use app\StoreCatalog;
+use app\Bean;
+use app\EncryptionService;
+use app\services\connectors\ConnectorRegistry;
 
 class Shop {
+
+    private function baseUrl(): string {
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'tiknix.com');
+    }
+
+    /** The store's configured payment connection + its connector, or [null,null]. */
+    private function resolvePayment(): array {
+        $sys      = defined('SYSTEM_ADMIN_ID') ? SYSTEM_ADMIN_ID : 1;
+        $memberId = (int)\Flight::getSetting('shop.payment_member', $sys);
+        $instId   = (int)\Flight::getSetting('shop.payment_instance', $sys);
+        $env      = (string)(\Flight::getSetting('shop.payment_env', $sys) ?: 'production');
+        if ($memberId <= 0 || $instId <= 0) return [null, null];
+        foreach (ConnectorRegistry::all() as $c) {
+            if (($c->meta()['category'] ?? '') !== 'Payments') continue;
+            $conn = Bean::findOne('connections',
+                'member_id = ? AND instance_id = ? AND environment = ? AND connector_type = ? AND enabled = 1',
+                [$memberId, $instId, $env, $c->key()]);
+            if ($conn && $conn->id && empty($conn->revokedAt)) return [$conn, $c];
+        }
+        return [null, null];
+    }
+
+    private function paymentConfigured(): bool {
+        [$conn] = $this->resolvePayment();
+        return (bool)$conn;
+    }
+
+    /**
+     * POST /shop/checkout — Buy Now for one product. Resolves the store's payment
+     * provider, creates a hosted checkout session server-side (price from the catalog,
+     * never the client), and redirects the buyer to it. Public.
+     */
+    public function checkout($params = []): void {
+        $sku = StoreCatalog::normalizeSku((string)($_POST['sku'] ?? $_GET['sku'] ?? ''));
+        $qty = max(1, min(99, (int)($_POST['qty'] ?? 1)));
+        $product = $sku !== '' ? $this->store()->getProduct($sku) : null;
+        if (!$product || empty($product['active'])) { \Flight::redirect('/shop/product/'); return; }
+
+        [$conn, $connector] = $this->resolvePayment();
+        if (!$conn || !$connector) { \Flight::redirect('/shop/product/' . rawurlencode($sku) . '/?err=nopay'); return; }
+
+        $base  = $this->baseUrl();
+        $token = EncryptionService::decrypt($conn->accessToken);
+        $url = '';
+        try {
+            $res = $connector->createCheckout($conn, $token, [
+                'items' => [[
+                    'title'        => (string)$product['title'],
+                    'amount_cents' => (int)round(((float)($product['price'] ?? 0)) * 100),
+                    'currency'     => (string)($product['currency'] ?? 'usd'),
+                    'quantity'     => $qty,
+                ]],
+                'success_url'         => $base . '/shop/success?sku=' . rawurlencode($sku),
+                'cancel_url'          => $base . '/shop/product/' . rawurlencode($sku) . '/',
+                'client_reference_id' => $sku,
+            ]);
+            $url = (string)($res['url'] ?? '');
+        } catch (\Throwable $e) {
+            error_log('[shop] checkout failed: ' . $e->getMessage());
+        } finally {
+            if (function_exists('sodium_memzero')) sodium_memzero($token);
+        }
+        \Flight::redirect($url !== '' ? $url : '/shop/product/' . rawurlencode($sku) . '/?err=checkout');
+    }
+
+    /** GET /shop/success — post-payment thank-you (buyer returns here). */
+    public function success($params = []): void {
+        $this->shell(['view' => 'success']);
+    }
 
     private function store(): StoreCatalog {
         return new StoreCatalog(dirname(__DIR__));
@@ -58,6 +132,8 @@ class Shop {
         $store = array_merge([
             'dataBase' => '/shop/product/', 'catBase' => '/shop/catalog/', 'shopBase' => '/shop/',
         ], $store);
+        // Only the product page needs to know whether checkout is live (one DB check).
+        if (($store['view'] ?? '') === 'pdp') $store['checkout'] = $this->paymentConfigured();
         $this->emit(
             '<!doctype html><html lang="en"><head>'
             . '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'

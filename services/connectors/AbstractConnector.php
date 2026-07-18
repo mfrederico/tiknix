@@ -41,6 +41,11 @@ abstract class AbstractConnector implements ConnectorInterface {
         throw new \Exception('Connector "' . $this->key() . '" exposes no broker tools.');
     }
 
+    /** Non-payment connectors don't support checkout; payment providers override. */
+    public function createCheckout($conn, string $token, array $order): array {
+        throw new \Exception('Connector "' . $this->key() . '" is not a payment provider.');
+    }
+
     /**
      * Minimal cURL request. Returns [httpStatus, body].
      * @param array $opts ['headers' => string[], 'body' => string]

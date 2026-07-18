@@ -29,9 +29,9 @@ class StoreCatalog {
 
     /** @param string $publicDir absolute path to the site's public/ folder */
     public function __construct(string $publicDir) {
-        $this->dir      = rtrim($publicDir, '/') . '/products';
+        $this->dir      = rtrim($publicDir, '/') . '/shop/product';
         $this->mediaDir = $this->dir . '/media';
-        $this->catDir   = rtrim($publicDir, '/') . '/categories';
+        $this->catDir   = rtrim($publicDir, '/') . '/shop/catalog';
     }
 
     /** Normalize a SKU to a safe, lowercase file/url slug. '' if nothing usable. */
@@ -205,6 +205,7 @@ class StoreCatalog {
         ];
         if (!is_dir($this->catDir)) @mkdir($this->catDir, 0775, true);
         $this->writeJson($this->catDir . '/' . $slug . '.json', $cat);
+        $this->writeCategoryManifest();
         return $cat;
     }
 
@@ -212,7 +213,19 @@ class StoreCatalog {
         $slug = self::normalizeSku($slug);
         if ($slug === '') return false;
         $f = $this->catDir . '/' . $slug . '.json';
-        return is_file($f) ? @unlink($f) : false;
+        $ok = is_file($f) ? @unlink($f) : false;
+        $this->writeCategoryManifest();
+        return $ok;
+    }
+
+    /** Rewrite categories/index.json — a compact catalog list for the storefront. */
+    private function writeCategoryManifest(): void {
+        if (!is_dir($this->catDir)) return;
+        $cats = [];
+        foreach ($this->listCategories() as $c) {
+            $cats[] = ['slug' => $c['slug'], 'title' => $c['title'] ?? $c['slug'], 'count' => count($c['products'] ?? [])];
+        }
+        $this->writeJson($this->catDir . '/index.json', ['updatedAt' => date('Y-m-d H:i:s'), 'categories' => $cats]);
     }
 
     // --- images ---------------------------------------------------------------

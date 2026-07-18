@@ -38,7 +38,7 @@
               </td>
               <td><?= (int)count($c['products'] ?? []) ?> product<?= count($c['products'] ?? []) === 1 ? '' : 's' ?></td>
               <td class="text-end text-nowrap">
-                <a href="/categories/<?= urlencode($slug) ?>/" target="_blank" class="btn btn-sm btn-outline-primary" title="View live page"><i class="bi bi-eye"></i></a>
+                <a href="/shop/catalog/<?= urlencode($slug) ?>/" target="_blank" class="btn btn-sm btn-outline-primary" title="View live page"><i class="bi bi-eye"></i></a>
                 <a href="/ecommerce/categoryedit?slug=<?= urlencode($slug) ?>" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
                 <button class="btn btn-sm btn-outline-danger" data-delete="<?= htmlspecialchars($slug) ?>" title="Delete"><i class="bi bi-trash"></i></button>
               </td>

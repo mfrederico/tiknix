@@ -8,7 +8,7 @@ $c = $category ?? [];
 $isEdit = !empty($c['slug']);
 $picked = array_flip($c['products'] ?? []);
 $v = fn($k, $d = '') => htmlspecialchars((string)($c[$k] ?? $d));
-$imgUrl = fn($rel) => '/products/' . ltrim((string)$rel, '/');
+$imgUrl = fn($rel) => '/shop/product/' . ltrim((string)$rel, '/');
 ?>
 <div class="container py-4" style="max-width:760px">
 
@@ -57,7 +57,7 @@ $imgUrl = fn($rel) => '/products/' . ltrim((string)$rel, '/');
     <div class="card-footer d-flex justify-content-between">
       <a href="/ecommerce/categories" class="btn btn-sm btn-outline-secondary">Cancel</a>
       <div class="d-flex gap-2">
-        <?php if ($isEdit): ?><a href="/categories/<?= urlencode($c['slug']) ?>/" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View live</a><?php endif; ?>
+        <?php if ($isEdit): ?><a href="/shop/catalog/<?= urlencode($c['slug']) ?>/" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View live</a><?php endif; ?>
         <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Save catalog</button>
       </div>
     </div>

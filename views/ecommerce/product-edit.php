@@ -8,7 +8,7 @@
 $p = $product ?? [];
 $isEdit = !empty($p['sku']);
 $v = fn($k, $d = '') => htmlspecialchars((string)($p[$k] ?? $d));
-$imgUrl = fn($rel) => '/products/' . ltrim((string)$rel, '/');
+$imgUrl = fn($rel) => '/shop/product/' . ltrim((string)$rel, '/');
 $serialized = !empty($p['serialized']);
 $units = '';
 foreach (($p['units'] ?? []) as $u) { $units .= ($u['serial'] ?? '') . "\n"; }
@@ -96,7 +96,7 @@ foreach (($p['units'] ?? []) as $u) { $units .= ($u['serial'] ?? '') . "\n"; }
     <div class="card-footer d-flex justify-content-between">
       <a href="/ecommerce/products" class="btn btn-sm btn-outline-secondary">Cancel</a>
       <div class="d-flex gap-2">
-        <?php if ($isEdit): ?><a href="/products/<?= urlencode($p['sku']) ?>/" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View live</a><?php endif; ?>
+        <?php if ($isEdit): ?><a href="/shop/product/<?= urlencode($p['sku']) ?>/" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>View live</a><?php endif; ?>
         <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg me-1"></i>Save product</button>
       </div>
     </div>

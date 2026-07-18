@@ -24,6 +24,7 @@
 namespace app;
 
 use app\StoreCatalog;
+use app\Inventory;
 use app\Bean;
 use app\EncryptionService;
 use app\services\connectors\ConnectorRegistry;
@@ -160,15 +161,18 @@ class Shop {
         $o->instanceId   = (int)($conn->instanceId ?? 0);
         $o->createdAt    = date('Y-m-d H:i:s');
 
-        // Simplified fulfillment: allocate one paid unit (mark serialized unit sold
-        // / decrement simple stock). Safe to run unguarded here — recordOrder already
-        // returned early above if this session was seen, so it happens once per order.
-        $ful = $sku !== '' ? $this->store()->fulfill($sku) : ['unit' => null, 'stock' => 0, 'oversold' => false];
-        $o->unitSerial   = (string)($ful['unit'] ?? '');
-        $o->stockAfter   = (int)($ful['stock'] ?? 0);
-        // An oversell (paid with nothing left to allocate) is flagged, not blocked —
-        // the money is captured, so the order stands and a human reconciles it.
-        $o->status       = !empty($ful['oversold']) ? 'paid-oversold' : 'paid';
+        // Fulfillment = recording this ledger row; availability is derived from it,
+        // the catalog JSON is never mutated. Allocate the next free serial (if any)
+        // and snapshot the resulting stock BEFORE storing (soldCount excludes this
+        // not-yet-stored order). recordOrder is session-deduped, so this is once/order.
+        $starting  = (int)($product['stock'] ?? 0);
+        $soldBefore= $sku !== '' ? Inventory::soldCount($sku) : 0;
+        $oversold  = $product ? (($soldBefore + 1) > $starting) : false;
+        $o->unitSerial = $product ? (string)(Inventory::nextSerial($product) ?? '') : '';
+        $o->stockAfter = max(0, $starting - ($soldBefore + 1));
+        // Oversell (paid with nothing left) is flagged, not blocked — the money is
+        // captured, so the order stands and a human reconciles it.
+        $o->status     = $oversold ? 'paid-oversold' : 'paid';
         Bean::store($o);
     }
 
@@ -232,9 +236,9 @@ class Shop {
         if ($seg === '') { $this->shell(['view' => 'plp']); return; }
         if (str_ends_with($seg, '.json')) {
             $name = substr($seg, 0, -5);
-            if ($name === 'index') { $this->json($this->store()->manifest()); return; }
+            if ($name === 'index') { $this->json(Inventory::decorateManifest($this->store()->manifest())); return; }
             $p = $this->store()->getProduct($name);
-            $p ? $this->json($p) : $this->notFound();
+            $p ? $this->json(Inventory::decorate($p)) : $this->notFound();
             return;
         }
         $this->shell(['view' => 'pdp', 'sku' => StoreCatalog::normalizeSku($seg)]);

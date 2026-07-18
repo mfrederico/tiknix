@@ -54,12 +54,13 @@ $imgUrl = fn($rel) => (string)$rel;
               </td>
               <td><?= $fmt($p) ?></td>
               <td class="small">
+                <?php $avail = (int)($p['available'] ?? ($p['stock'] ?? 0)); $start = (int)($p['stock'] ?? 0); ?>
                 <?php if (!empty($p['serialized'])): ?>
                   <span class="badge bg-info-subtle text-info-emphasis border">Serialized</span>
-                  <?= (int)count($p['units'] ?? []) ?> unit<?= count($p['units'] ?? []) === 1 ? '' : 's' ?>
+                  <?= $avail ?> of <?= (int)count($p['units'] ?? []) ?> available
                   <div class="text-body-secondary">Hold <?= (int)($p['holdMinutes'] ?? 0) ?> min</div>
                 <?php else: ?>
-                  <?= (int)($p['stock'] ?? 0) ?> in stock
+                  <?= $avail ?> available<?php if ($avail !== $start): ?> <span class="text-body-secondary">of <?= $start ?></span><?php endif; ?>
                 <?php endif; ?>
               </td>
               <td>

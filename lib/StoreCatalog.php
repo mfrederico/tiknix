@@ -95,6 +95,7 @@ class StoreCatalog {
                 'category'   => $p['category'] ?? '',
                 'image'      => $p['images'][0] ?? '',
                 'serialized' => !empty($p['serialized']),
+                'stock'      => (int)($p['stock'] ?? 0),   // starting stock; available derived by app\Inventory
                 'active'     => !empty($p['active']),
             ];
         }
@@ -150,51 +151,6 @@ class StoreCatalog {
         }
         $this->writeJson($this->dir . '/' . $sku . '.json', $product);
         return $product;
-    }
-
-    /**
-     * Fulfill one paid unit: mark the next available serialized unit sold, or
-     * decrement simple stock; floored at zero, then persisted. Idempotency is the
-     * CALLER's job — Shop::recordOrder dedups on the provider session id, so this
-     * runs exactly once per order. Deliberately simple (a direct JSON write, no DB
-     * inventory ledger): fine for the low order volumes this store targets.
-     * Returns ['sku','fulfilled','stock'(remaining),'unit'(serial|null),'oversold'].
-     */
-    public function fulfill(string $sku): array {
-        $sku = self::normalizeSku($sku);
-        $product = $sku !== '' ? $this->getProduct($sku) : null;
-        if (!$product) return ['sku' => $sku, 'fulfilled' => false, 'stock' => 0, 'unit' => null, 'oversold' => false];
-
-        $now = date('Y-m-d H:i:s');
-        $unit = null;
-        if (!empty($product['serialized'])) {
-            $units = is_array($product['units'] ?? null) ? $product['units'] : [];
-            foreach ($units as &$u) {
-                if (($u['status'] ?? '') === 'available') {
-                    $u['status'] = 'sold';
-                    $u['soldAt'] = $now;
-                    $unit = (string)($u['serial'] ?? '');
-                    break;
-                }
-            }
-            unset($u);
-            $product['units'] = $units;
-            $product['stock'] = count(array_filter($units, fn($x) => ($x['status'] ?? '') === 'available'));
-            $fulfilled = $unit !== null;   // no available unit -> paid but oversold
-        } else {
-            $have = max(0, (int)($product['stock'] ?? 0));
-            $fulfilled = $have > 0;
-            $product['stock'] = max(0, $have - 1);
-        }
-        $product['updatedAt'] = $now;
-        $this->writeJson($this->dir . '/' . $sku . '.json', $product);
-        return [
-            'sku'      => $sku,
-            'fulfilled'=> $fulfilled,
-            'stock'    => (int)$product['stock'],
-            'unit'     => $unit,
-            'oversold' => !$fulfilled,
-        ];
     }
 
     public function deleteProduct(string $sku): bool {

@@ -71,7 +71,11 @@
 
   function renderPDP(p) {
     var imgs = (p.images || []);
-    var available = p.serialized ? (p.units || []).length : (p.stock || 0);
+    // Server derives `available` from the ledger (starting stock − sold); fall back
+    // to the raw catalog fields only if an old cached payload lacks it.
+    var available = (typeof p.available === 'number')
+      ? p.available
+      : (p.serialized ? (p.units || []).length : (p.stock || 0));
     var stock = p.serialized
       ? '<span class="badge">Unique item</span> ' + available + ' available · held ' + (p.holdMinutes || 0) + ' min in your cart'
       : (available > 0 ? '<span class="badge">In stock</span> · ' + available + ' available' : '<span class="badge">Out of stock</span>');

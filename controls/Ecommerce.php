@@ -20,6 +20,7 @@ use app\BaseControls\Control;
 use app\Feature;
 use app\Bean;
 use app\StoreCatalog;
+use app\Inventory;
 use RedBeanPHP\R;
 
 class Ecommerce extends Control {
@@ -114,7 +115,7 @@ class Ecommerce extends Control {
         if (!$this->requireFeature()) return;
         $this->render('ecommerce/products', [
             'title'    => 'Products',
-            'products' => $this->catalog()->listProducts(),
+            'products' => array_map([Inventory::class, 'decorate'], $this->catalog()->listProducts()),
         ]);
     }
 

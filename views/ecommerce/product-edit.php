@@ -118,6 +118,7 @@ foreach (($p['units'] ?? []) as $u) { $units .= ($u['serial'] ?? '') . "\n"; }
           <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif" class="form-control form-control-sm" required>
           <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap"><i class="bi bi-upload me-1"></i>Upload</button>
         </form>
+        <div class="form-text mt-1">PNG, JPEG, WEBP or GIF · max <?= round(\app\StoreCatalog::maxUploadBytes() / 1048576, 1) ?>MB</div>
       </div>
     </div>
   <?php else: ?>

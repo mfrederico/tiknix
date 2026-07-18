@@ -1,43 +1,55 @@
 /**
  * store.js — client-side storefront reassembler.
  *
- * Renders the PLP (product grid) and PDP (product detail) purely from the JSON
- * files that live alongside this script under /products/. All asset/data paths are
- * relative to the document <base href="/products/">, so the same files work on any
- * domain (tiknix.com now, your own domain after you publish the repo).
+ * Renders three views purely from JSON, all paths relative to the document <base>:
+ *   /products/            PLP   -> index.json                 (window.__STORE__ = {})
+ *   /products/<sku>/      PDP   -> <sku>.json                 (window.__STORE__.sku)
+ *   /categories/<slug>/   CAT   -> <slug>.json + products     (window.__STORE__.category
+ *                                                              + productsBase="../products/")
  *
- *   /products/            -> PLP, reads index.json
- *   /products/<sku>/      -> PDP, reads <sku>.json   (window.__STORE__.sku)
+ * The same files work on any domain (tiknix.com now, your own domain on publish).
  */
 (function () {
   var app = document.getElementById('app');
-  var STORE = window.__STORE__ || { sku: null };
+  var STORE = window.__STORE__ || {};
+  var PBASE = STORE.productsBase || '';   // prefix to reach /products/ from the current page
   var money = function (p, c) { return (c || 'usd').toUpperCase() + ' ' + Number(p || 0).toFixed(2); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (m) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]; }); };
-  var el = function (html) { var d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild; };
 
   function head(title, backHref, backText) {
     return '<div class="store-head"><h1>' + esc(title) + '</h1>' +
       (backHref ? '<a href="' + backHref + '">' + esc(backText) + '</a>' : '') + '</div>';
   }
 
+  // One product card. pbase reaches /products/ from wherever this grid is rendered.
+  function card(p, pbase) {
+    return '<a class="card" href="' + pbase + esc(p.sku) + '/">' +
+      (p.image ? '<img src="' + pbase + esc(p.image) + '" alt="' + esc(p.title) + '" loading="lazy">' : '<div class="ph">◇</div>') +
+      '<div class="meta">' +
+      (p.category ? '<div class="cat">' + esc(p.category) + '</div>' : '') +
+      '<div class="name">' + esc(p.title) + '</div>' +
+      '<div class="price">' + money(p.price, p.currency) +
+      (p.serialized ? ' <span class="badge">Unique</span>' : '') + '</div>' +
+      '</div></a>';
+  }
+
+  function grid(title, backHref, backText, products, pbase) {
+    var html = '<div class="wrap">' + head(title, backHref, backText);
+    if (!products.length) { app.innerHTML = html + '<div class="empty">No products here yet.</div></div>'; return; }
+    app.innerHTML = html + '<div class="grid">' + products.map(function (p) { return card(p, pbase); }).join('') + '</div></div>';
+  }
+
   function renderPLP(data) {
-    var products = (data.products || []).filter(function (p) { return p.active !== false; });
-    var html = '<div class="wrap">' + head('Shop', null, null);
-    if (!products.length) { app.innerHTML = html + '<div class="empty">No products yet.</div></div>'; return; }
-    html += '<div class="grid">';
-    products.forEach(function (p) {
-      html += '<a class="card" href="' + esc(p.sku) + '/">' +
-        (p.image ? '<img src="' + esc(p.image) + '" alt="' + esc(p.title) + '" loading="lazy">' : '<div class="ph">◇</div>') +
-        '<div class="meta">' +
-        (p.category ? '<div class="cat">' + esc(p.category) + '</div>' : '') +
-        '<div class="name">' + esc(p.title) + '</div>' +
-        '<div class="price">' + money(p.price, p.currency) +
-        (p.serialized ? ' <span class="badge">Unique</span>' : '') + '</div>' +
-        '</div></a>';
-    });
-    app.innerHTML = html + '</div></div>';
+    grid('Shop', null, null, (data.products || []).filter(function (p) { return p.active !== false; }), '');
+  }
+
+  function renderCategory(cat, manifest) {
+    var bySku = {};
+    (manifest.products || []).forEach(function (p) { bySku[p.sku] = p; });
+    var products = (cat.products || []).map(function (s) { return bySku[s]; })
+      .filter(function (p) { return p && p.active !== false; });
+    grid(cat.title || 'Catalog', PBASE, '← All products', products, PBASE);
   }
 
   function renderPDP(p) {
@@ -66,14 +78,17 @@
   }
 
   function fail(msg) { app.innerHTML = '<div class="wrap"><div class="err">' + esc(msg) + '</div></div>'; }
-
   function getJSON(url) {
     return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
       if (!r.ok) throw new Error(r.status); return r.json();
     });
   }
 
-  if (STORE.sku) {
+  if (STORE.category) {
+    Promise.all([getJSON(STORE.category + '.json'), getJSON(PBASE + 'index.json')])
+      .then(function (res) { renderCategory(res[0], res[1]); document.title = (res[0].title || 'Catalog') + ' — Shop'; })
+      .catch(function () { fail('Catalog not found.'); });
+  } else if (STORE.sku) {
     getJSON(STORE.sku + '.json').then(renderPDP).catch(function () { fail('Product not found.'); });
   } else {
     getJSON('index.json').then(renderPLP).catch(function () { fail('Store is empty.'); });

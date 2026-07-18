@@ -1,6 +1,16 @@
 {
-    "updatedAt": "2026-07-18 16:37:10",
+    "updatedAt": "2026-07-18 16:39:25",
     "products": [
+        {
+            "sku": "watch-luxury",
+            "title": "Luxury watch!",
+            "price": 100,
+            "currency": "usd",
+            "category": "watches",
+            "image": "",
+            "serialized": true,
+            "active": true
+        },
         {
             "sku": "watch",
             "title": "Test watch",

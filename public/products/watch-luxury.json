@@ -1,0 +1,26 @@
+{
+    "sku": "watch-luxury",
+    "title": "Luxury watch!",
+    "description": "This is a luxury watch.",
+    "price": 100,
+    "currency": "usd",
+    "stripePriceId": "",
+    "category": "watches",
+    "images": [],
+    "serialized": true,
+    "holdMinutes": 10,
+    "stock": 2,
+    "units": [
+        {
+            "serial": "1234-LUXWATCH",
+            "status": "available"
+        },
+        {
+            "serial": "4321-LUXWATCH",
+            "status": "available"
+        }
+    ],
+    "active": true,
+    "createdAt": "2026-07-18 16:39:25",
+    "updatedAt": "2026-07-18 16:39:25"
+}

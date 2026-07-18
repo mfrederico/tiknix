@@ -20,13 +20,18 @@ namespace app;
 
 class StoreCatalog {
 
+    /** Hard cap on a product image, independent of PHP's ini limits. */
+    public const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
     private string $dir;       // <public>/products
     private string $mediaDir;  // <public>/products/media
+    private string $catDir;    // <public>/categories
 
     /** @param string $publicDir absolute path to the site's public/ folder */
     public function __construct(string $publicDir) {
         $this->dir      = rtrim($publicDir, '/') . '/products';
         $this->mediaDir = $this->dir . '/media';
+        $this->catDir   = rtrim($publicDir, '/') . '/categories';
     }
 
     /** Normalize a SKU to a safe, lowercase file/url slug. '' if nothing usable. */
@@ -34,6 +39,22 @@ class StoreCatalog {
         $sku = strtolower(trim($sku));
         $sku = preg_replace('~[^a-z0-9]+~', '-', $sku);
         return trim((string)$sku, '-');
+    }
+
+    /** Effective max upload size in bytes: the smaller of our cap and PHP's ini limits. */
+    public static function maxUploadBytes(): int {
+        $toBytes = function ($v): int {
+            $v = trim((string)$v);
+            if ($v === '') return PHP_INT_MAX;
+            $n = (int)$v;
+            return match (strtolower(substr($v, -1))) {
+                'g' => $n * 1073741824,
+                'm' => $n * 1048576,
+                'k' => $n * 1024,
+                default => (int)$v,
+            };
+        };
+        return (int)min(self::MAX_IMAGE_BYTES, $toBytes(ini_get('upload_max_filesize')), $toBytes(ini_get('post_max_size')));
     }
 
     public function ensureDirs(): void {
@@ -133,6 +154,67 @@ class StoreCatalog {
         return $ok;
     }
 
+    // --- categories (catalogs) ------------------------------------------------
+
+    /** All categories, by title. Each is {slug, title, products:[sku,…]}. */
+    public function listCategories(): array {
+        $out = [];
+        foreach (glob($this->catDir . '/*.json') ?: [] as $f) {
+            if (basename($f) === 'index.json') continue;
+            $c = json_decode((string)@file_get_contents($f), true);
+            if (is_array($c) && !empty($c['slug'])) $out[] = $c;
+        }
+        usort($out, fn($a, $b) => strcmp((string)($a['title'] ?? ''), (string)($b['title'] ?? '')));
+        return $out;
+    }
+
+    public function getCategory(string $slug): ?array {
+        $slug = self::normalizeSku($slug);
+        if ($slug === '') return null;
+        $f = $this->catDir . '/' . $slug . '.json';
+        if (!is_file($f)) return null;
+        $c = json_decode((string)@file_get_contents($f), true);
+        return is_array($c) ? $c : null;
+    }
+
+    /**
+     * Persist a catalog (category): a title + an ordered list of product slugs. Only
+     * slugs that resolve to an existing product are kept. Returns the stored category.
+     * @throws \Exception on invalid input
+     */
+    public function saveCategory(array $in): array {
+        $slug = self::normalizeSku((string)($in['slug'] ?? ''));
+        if ($slug === '') throw new \Exception('A catalog needs a slug (letters, numbers, dashes).');
+        $title = trim((string)($in['title'] ?? ''));
+        if ($title === '') $title = ucfirst(str_replace('-', ' ', $slug));
+
+        $valid = [];
+        foreach ((array)($in['products'] ?? []) as $s) {
+            $s = self::normalizeSku((string)$s);
+            if ($s !== '' && !in_array($s, $valid, true) && $this->getProduct($s)) $valid[] = $s;
+        }
+
+        $existing = $this->getCategory($slug) ?? [];
+        $now = date('Y-m-d H:i:s');
+        $cat = [
+            'slug'      => $slug,
+            'title'     => $title,
+            'products'  => $valid,
+            'createdAt' => $existing['createdAt'] ?? $now,
+            'updatedAt' => $now,
+        ];
+        if (!is_dir($this->catDir)) @mkdir($this->catDir, 0775, true);
+        $this->writeJson($this->catDir . '/' . $slug . '.json', $cat);
+        return $cat;
+    }
+
+    public function deleteCategory(string $slug): bool {
+        $slug = self::normalizeSku($slug);
+        if ($slug === '') return false;
+        $f = $this->catDir . '/' . $slug . '.json';
+        return is_file($f) ? @unlink($f) : false;
+    }
+
     // --- images ---------------------------------------------------------------
 
     /**
@@ -147,7 +229,8 @@ class StoreCatalog {
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
             throw new \Exception('No file uploaded.');
         }
-        if ((int)($file['size'] ?? 0) > 10 * 1024 * 1024) throw new \Exception('Image too large (max 10MB).');
+        $max = self::maxUploadBytes();
+        if ((int)($file['size'] ?? 0) > $max) throw new \Exception('Image too large (max ' . round($max / 1048576, 1) . 'MB).');
 
         $ext = [
             'image/png' => 'png', 'image/jpeg' => 'jpg', 'image/webp' => 'webp', 'image/gif' => 'gif',

@@ -1,0 +1,10 @@
+{
+    "slug": "watches",
+    "title": "Watches",
+    "products": [
+        "watch-luxury",
+        "watch"
+    ],
+    "createdAt": "2026-07-18 16:43:52",
+    "updatedAt": "2026-07-18 16:43:52"
+}

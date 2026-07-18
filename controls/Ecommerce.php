@@ -140,4 +140,52 @@ class Ecommerce extends Control {
         $ok = $this->catalog()->deleteProduct((string)$this->getParam('sku', ''));
         $this->jsonSuccess(['deleted' => $ok], 'Product removed');
     }
+
+    // --- catalogs (categories) ------------------------------------------------
+
+    /** GET /ecommerce/categories — catalog (category) list. */
+    public function categories($params = []): void {
+        if (!$this->requireFeature()) return;
+        $this->render('ecommerce/categories', [
+            'title'      => 'Catalogs',
+            'categories' => $this->catalog()->listCategories(),
+        ]);
+    }
+
+    /** GET /ecommerce/categoryedit?slug= — new/edit catalog (title + product picker). */
+    public function categoryedit($params = []): void {
+        if (!$this->requireFeature()) return;
+        $slug = (string)$this->getParam('slug', '');
+        $this->render('ecommerce/category-edit', [
+            'title'    => $slug !== '' ? 'Edit catalog' : 'New catalog',
+            'category' => $slug !== '' ? $this->catalog()->getCategory($slug) : null,
+            'products' => $this->catalog()->listProducts(),
+        ]);
+    }
+
+    /** POST /ecommerce/categorysave — write a catalog JSON from picked product slugs. */
+    public function categorysave($params = []): void {
+        if (!$this->requireFeature()) return;
+        if (!$this->validateCSRF()) return;
+        $products = $this->getParam('products', []);
+        if (!is_array($products)) $products = ($products === '' ? [] : [$products]);
+        try {
+            $cat = $this->catalog()->saveCategory([
+                'slug'     => $this->getParam('slug', ''),
+                'title'    => $this->getParam('title', ''),
+                'products' => $products,
+            ]);
+        } catch (\Throwable $e) {
+            $this->jsonError($e->getMessage(), 400); return;
+        }
+        $this->jsonSuccess(['slug' => $cat['slug'], 'category' => $cat], 'Catalog saved');
+    }
+
+    /** POST /ecommerce/categorydelete — remove a catalog JSON. */
+    public function categorydelete($params = []): void {
+        if (!$this->requireFeature()) return;
+        if (!$this->validateCSRF()) return;
+        $ok = $this->catalog()->deleteCategory((string)$this->getParam('slug', ''));
+        $this->jsonSuccess(['deleted' => $ok], 'Catalog removed');
+    }
 }

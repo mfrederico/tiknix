@@ -37,6 +37,16 @@
             background: currentColor;
             -webkit-mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
                     mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
+            animation: funnel-breathe 4.5s ease-in-out infinite;
+            will-change: transform, filter;
+        }
+        /* Subtle "ideas flowing" pulse — a slow breath with a soft glow. */
+        @keyframes funnel-breathe {
+            0%, 100% { transform: scale(1);     filter: drop-shadow(0 0 2px rgba(255,255,255,0.12)); }
+            50%      { transform: scale(1.045); filter: drop-shadow(0 0 10px rgba(255,255,255,0.42)); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .logo-mark { animation: none; }
         }
         .logo-word {
             font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;

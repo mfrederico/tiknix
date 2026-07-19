@@ -55,9 +55,8 @@ if ($__loggedIn) {
   <div class="ui-sidebar-backdrop" id="uiSidebarBackdrop" onclick="uiToggleSidebar(false)"></div>
 
   <aside class="ui-sidebar" id="uiSidebar">
-    <a class="ui-sidebar-brand" href="/">
-      <span class="ui-brand-mark"><i class="bi bi-hexagon-fill"></i></span>
-      <?= htmlspecialchars($site_name ?? 'Tiknix') ?>
+    <a class="ui-sidebar-brand" href="/" aria-label="<?= htmlspecialchars($site_name ?? 'Tiknix') ?>">
+      <img class="ui-brand-logo" src="/img/tiknix.svg" alt="<?= htmlspecialchars($site_name ?? 'Tiknix') ?>">
     </a>
 
     <nav class="ui-nav">

@@ -24,8 +24,8 @@
             margin-bottom: 2.25rem;
             color: #fff;          /* drives the wordmark via currentColor */
         }
-        .logo svg { height: 88px; width: auto; display: block; }
-        @media (max-width: 480px) { .logo svg { height: 68px; } }
+        .logo img { height: 88px; width: auto; display: block; }
+        @media (max-width: 480px) { .logo img { height: 68px; } }
         .badge {
             display: inline-block;
             padding: 0.4rem 1rem;
@@ -127,7 +127,7 @@
 </head>
 <body>
     <div class="wrap">
-        <div class="logo"><?= file_get_contents(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?></div>
+        <div class="logo"><img src="/img/tiknix.svg" alt="tiknix"></div>
         <div class="badge">Coming Soon</div>
         <h1>Build on our servers, deploy to yours.</h1>
         <p>Tinker safely with our AI agent harness &mdash; prebuilt primitives like a database, web server, and sandboxing, and much, much more.</p>

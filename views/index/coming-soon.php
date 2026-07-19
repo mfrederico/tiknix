@@ -5,6 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($title ?? 'Coming Soon') ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -36,8 +39,9 @@
                     mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
         }
         .logo-word {
-            font-family: Georgia, 'Times New Roman', Times, serif;
-            font-size: 3.5rem;
+            font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+            font-weight: 600;
+            font-size: 3.4rem;
             line-height: 1;
             letter-spacing: 0.005em;
         }
@@ -65,9 +69,10 @@
         p {
             font-size: clamp(1rem, 3vw, 1.25rem);
             line-height: 1.6;
-            opacity: 0.85;
+            color: rgba(255,255,255,0.85);
             margin-bottom: 2.5rem;
         }
+        p strong { color: #fff; font-weight: 600; }
         .chips {
             display: flex; flex-wrap: wrap; gap: 0.5rem;
             justify-content: center; margin-bottom: 2.5rem;
@@ -152,7 +157,7 @@
         </div>
         <div class="badge">Coming Soon</div>
         <h1>Build on our servers, deploy to yours.</h1>
-        <p>Tinker safely with our AI agent harness &mdash; prebuilt primitives like a database, web server, and sandboxing, and much, much more.</p>
+        <p>tiknix is <strong>an AI operating system</strong> &mdash; an agent harness with the primitives every project needs built right in: a database, a web server, sandboxing, and much, much more. Tinker safely, then take it with you.</p>
         <div class="chips">
             <span>Database</span>
             <span>Web server</span>

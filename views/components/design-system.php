@@ -21,7 +21,7 @@
 <!-- Fonts: Figtree (body) · Bricolage Grotesque (display) · Fraunces (headings) · DM Mono -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Figtree:ital,wght@0,300..900;1,300..900&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght,SOFT@0,9..144,100..900,0..100;1,9..144,100..900,0..100&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Figtree:ital,wght@0,300..900;1,300..900&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght,SOFT@0,9..144,100..900,0..100;1,9..144,100..900,0..100&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
 
 <style id="ui-design-system">
 :root, [data-bs-theme="light"] {
@@ -89,7 +89,7 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 .ui-brand-mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--ui-primary),#2f7bf6);display:grid;place-items:center;color:#fff;font-size:1rem;box-shadow:0 6px 16px -6px rgba(59,118,240,.7);}
 <?php $__logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1'; ?>
 .ui-brand-logo{width:32px;height:32px;flex:0 0 auto;background:currentColor;-webkit-mask:url(/img/tiknix.svg?v=<?= $__logoV ?>) center/contain no-repeat;mask:url(/img/tiknix.svg?v=<?= $__logoV ?>) center/contain no-repeat;}
-.ui-brand-word{font-family:Georgia,'Times New Roman',Times,serif;font-weight:400;font-size:1.5rem;letter-spacing:.005em;}
+.ui-brand-word{font-family:'Playfair Display',Georgia,'Times New Roman',serif;font-weight:600;font-size:1.45rem;letter-spacing:.005em;}
 .ui-nav{padding:.5rem .75rem;overflow-y:auto;flex:1;}
 .ui-nav-heading{font-family:var(--ui-ff-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--ui-sidebar-heading);padding:1rem .75rem .35rem;}
 .ui-nav-link{display:flex;align-items:center;gap:.7rem;padding:.55rem .75rem;margin-bottom:2px;border-radius:.55rem;color:var(--ui-sidebar-text);text-decoration:none;font-size:.92rem;transition:background .15s,color .15s;}

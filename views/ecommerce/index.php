@@ -173,5 +173,47 @@ $sid = $selected ? (int)$selected->id : 0;
       </div>
 
     </div>
+
+    <?php // --- Orders quick view (scoped to the selected store) --- ?>
+    <div class="card border mt-4">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-receipt text-primary"></i>
+            <div class="fw-semibold">Orders</div>
+            <span class="badge bg-primary-subtle text-primary-emphasis border"><?= (int)($orderCount ?? 0) ?></span>
+          </div>
+          <a href="/ecommerce/orders?instance=<?= $sid ?>" class="btn btn-sm btn-outline-secondary">Open full view</a>
+        </div>
+        <div class="text-body-secondary small mb-3">Confirmed payments for <strong><?= htmlspecialchars($selected ? ($selected->display_name ?: $selected->slug) : 'this store') ?></strong>, newest first. Sort any column.</div>
+
+        <?php if ((int)($orderCount ?? 0) === 0): ?>
+          <div class="alert alert-light border mb-0">
+            <i class="bi bi-info-circle me-1"></i>No orders yet for this store. They land here automatically once a buyer completes checkout and Stripe confirms the payment.
+          </div>
+        <?php else: ?>
+          <div class="table-responsive">
+            <table id="ecomOrdersTable" class="dt-server table table-hover align-middle mb-0"
+                   data-dt-url="/ecommerce/ordersdata?instance=<?= $sid ?>"
+                   data-dt-order="0:desc"
+                   data-dt-page-length="10"
+                   data-dt-search-placeholder="product, email, serial…"
+                   style="width:100%">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Product</th>
+                  <th>Customer</th>
+                  <th>Amount</th>
+                  <th data-dt-nosearch>Status</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        <?php endif; ?>
+      </div>
+    </div>
+
   <?php endif; ?>
 </div>

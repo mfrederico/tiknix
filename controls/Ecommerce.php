@@ -70,12 +70,18 @@ class Ecommerce extends Control {
         }
 
         $sys = defined('SYSTEM_ADMIN_ID') ? SYSTEM_ADMIN_ID : 1;
+        $mid = (int)$this->member->id;
+        $sid = $selected ? (int)$selected->id : 0;
+        // Orders are scoped to the instance they were paid through (recordOrder stamps
+        // instance_id from the resolved payment connection), so the hub shows THIS
+        // store's orders — switching stores switches the orders shown.
         $this->render('ecommerce/index', [
             'title'         => 'Ecommerce',
             'instances'     => $instances,
             'selected'      => $selected,
             'stripe'        => $stripe,
             'productCount'  => count($this->catalog()->listProducts()),
+            'orderCount'    => $sid ? Bean::count('shoporder', 'member_id = ? AND instance_id = ?', [$mid, $sid]) : 0,
             'paymentSource' => [
                 'instance' => (int)\Flight::getSetting('shop.payment_instance', $sys),
                 'env'      => (string)(\Flight::getSetting('shop.payment_env', $sys) ?: 'production'),
@@ -101,13 +107,62 @@ class Ecommerce extends Control {
         $this->jsonSuccess(['instance' => $instId, 'env' => $env], 'Payment source saved');
     }
 
-    /** GET /ecommerce/orders — recorded (paid) orders from the storefront webhook. */
+    /** GET /ecommerce/orders?instance=<id> — recorded (paid) orders for one store. */
     public function orders($params = []): void {
         if (!$this->requireFeature()) return;
+        $mid = (int)$this->member->id;
+        $sid = (int)$this->getParam('instance', 0);
+        $where = $sid ? 'member_id = ? AND instance_id = ? ORDER BY created_at DESC LIMIT 200'
+                      : 'member_id = ? ORDER BY created_at DESC LIMIT 200';
+        $args  = $sid ? [$mid, $sid] : [$mid];
         $this->render('ecommerce/orders', [
             'title'  => 'Orders',
-            'orders' => Bean::find('shoporder', ' ORDER BY created_at DESC LIMIT 200'),
+            'orders' => Bean::find('shoporder', $where, $args),
         ]);
+    }
+
+    /**
+     * AJAX feed for the hub orders DataTable (server-side protocol via
+     * DataTableResponse). Scoped to the member + the selected store's instance so
+     * one operator never sees another's orders. Columns MUST match the <thead> in
+     * views/ecommerce/index.php.
+     */
+    public function ordersdata($params = []): void {
+        if (!$this->requireFeature()) return;
+        $mid = (int)$this->member->id;
+        $sid = (int)$this->getParam('instance', 0);
+
+        $columns = [
+            ['db' => 'created_at',   'search' => null],     // 0  When
+            ['db' => 'sku',          'search' => 'like'],   // 1  Product
+            ['db' => 'email',        'search' => 'like'],   // 2  Customer
+            ['db' => 'amount_total', 'search' => null],     // 3  Amount
+            ['db' => 'status',       'search' => 'exact'],  // 4  Status
+        ];
+
+        $resp = DataTableResponse::build('shoporder', $columns, $this->getParams(), [
+            'baseWhere'  => 'member_id = ? AND instance_id = ?',
+            'baseParams' => [$mid, $sid],
+            'globalCols' => ['sku', 'title', 'email', 'unit_serial'],
+            'row' => function (array $r): array {
+                $money = strtoupper((string)($r['currency'] ?? 'usd')) . ' '
+                       . number_format(((int)($r['amount_total'] ?? 0)) / 100, 2);
+                $unit  = !empty($r['unit_serial'])
+                    ? ' <span class="badge bg-info-subtle text-info-emphasis border">' . h($r['unit_serial']) . '</span>' : '';
+                $oversold = ($r['status'] ?? '') === 'paid-oversold';
+                $tone = $oversold ? 'warning' : 'success';
+                return [
+                    '<span class="small text-body-secondary text-nowrap">' . h($r['created_at'] ?? '') . '</span>',
+                    '<div class="fw-semibold">' . h($r['title'] ?: $r['sku']) . '</div>'
+                        . '<div class="small text-body-secondary"><code>' . h($r['sku'] ?? '') . '</code>' . $unit . '</div>',
+                    h($r['email'] ?: '—'),
+                    '<span class="text-nowrap">' . h($money) . '</span>',
+                    '<span class="badge bg-' . $tone . '-subtle text-' . $tone . '-emphasis border text-capitalize" '
+                        . ($oversold ? 'title="Paid but stock was already depleted"' : '') . '>' . h($r['status'] ?? '') . '</span>',
+                ];
+            },
+        ]);
+        \Flight::json($resp);
     }
 
     /** GET /ecommerce/products — product list for the tiknix.com store. */

@@ -56,6 +56,11 @@ abstract class AbstractConnector implements ConnectorInterface {
         return null;
     }
 
+    /** Non-payment connectors have no billing portal; payment providers override. */
+    public function billingPortalUrl($conn, string $token, string $customerId, string $returnUrl): string {
+        throw new \Exception('Connector "' . $this->key() . '" has no billing portal.');
+    }
+
     /**
      * Minimal cURL request. Returns [httpStatus, body].
      * @param array $opts ['headers' => string[], 'body' => string]

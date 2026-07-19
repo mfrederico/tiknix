@@ -120,4 +120,12 @@ interface ConnectorInterface {
      * 'livemode']. Non-payment connectors return null.
      */
     public function subscriptionFromEvent($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array;
+
+    /**
+     * Return a hosted self-serve billing/management URL for a customer (update card,
+     * view invoices, cancel), redirecting back to $returnUrl. Payment providers with a
+     * customer portal implement this; others throw. The billing-integration primitive
+     * a builder wires into their own project for end-user self-serve.
+     */
+    public function billingPortalUrl($conn, string $token, string $customerId, string $returnUrl): string;
 }

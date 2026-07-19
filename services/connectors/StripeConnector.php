@@ -333,6 +333,35 @@ class StripeConnector extends AbstractConnector {
     }
 
     /**
+     * Mint a hosted Stripe Billing Portal session for a customer — self-serve to
+     * update card, view invoices, or cancel. Auto-provisions a default portal
+     * configuration on the account if none exists yet (so it works without the
+     * member first configuring the portal in their dashboard).
+     */
+    public function billingPortalUrl($conn, string $token, string $customerId, string $returnUrl): string {
+        if ($customerId === '') throw new \Exception('This subscription has no customer to manage.');
+        $body = ['customer' => $customerId, 'return_url' => $returnUrl];
+        try {
+            $s = $this->apiPost($token, 'billing_portal/sessions', $body);
+        } catch (\Throwable $e) {
+            // No portal configuration on the account yet — create a sane default and retry
+            // against it explicitly (a new config is not made the account default).
+            $cfg = $this->apiPost($token, 'billing_portal/configurations', [
+                'business_profile[headline]'                    => 'Manage your subscription',
+                'features[invoice_history][enabled]'            => 'true',
+                'features[payment_method_update][enabled]'      => 'true',
+                'features[customer_update][enabled]'            => 'true',
+                'features[customer_update][allowed_updates][0]' => 'email',
+                'features[customer_update][allowed_updates][1]' => 'address',
+                'features[subscription_cancel][enabled]'        => 'true',
+            ]);
+            $body['configuration'] = (string)($cfg['id'] ?? '');
+            $s = $this->apiPost($token, 'billing_portal/sessions', $body);
+        }
+        return (string)($s['url'] ?? '');
+    }
+
+    /**
      * Confirm a Stripe webhook order by RE-FETCHING the session (never trust the raw
      * body): only a session Stripe itself reports as paid becomes an order. This is
      * authoritative without a webhook signing secret — the fetch uses our own key, so

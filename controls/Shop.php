@@ -269,6 +269,7 @@ class Shop {
             $row->subscriptionId   = $subId;
             $row->memberId         = (int)($conn->memberId ?? 0);
             $row->instanceId       = (int)($conn->instanceId ?? 0);
+            $row->environment      = (string)($conn->environment ?: 'production');   // which key owns the customer
             $row->status           = 'active';
             $row->currentPeriodEnd = 0;
             $row->createdAt        = date('Y-m-d H:i:s');

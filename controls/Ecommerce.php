@@ -21,6 +21,8 @@ use app\Feature;
 use app\Bean;
 use app\StoreCatalog;
 use app\Inventory;
+use app\EncryptionService;
+use app\services\connectors\ConnectorRegistry;
 use RedBeanPHP\R;
 
 class Ecommerce extends Control {
@@ -250,6 +252,7 @@ class Ecommerce extends Control {
             ['db' => 'sku',                'search' => 'like'],   // 2  Product
             ['db' => 'status',             'search' => 'exact'],  // 3  Status
             ['db' => 'current_period_end', 'search' => null],     // 4  Renews
+            ['db' => null,                 'orderable' => false], // 5  Actions
         ];
         // How a subscription status maps to a badge tone.
         $tones = ['active' => 'success', 'trialing' => 'info', 'past_due' => 'warning',
@@ -278,10 +281,50 @@ class Ecommerce extends Control {
                         . '<div class="small text-body-secondary">' . h($amount) . $iv . '</div>',
                     '<span class="badge bg-' . $tone . '-subtle text-' . $tone . '-emphasis border text-capitalize">' . h($status ?: 'unknown') . '</span>' . $cancel,
                     '<span class="small text-body-secondary text-nowrap">' . $renews . '</span>',
+                    !empty($r['customer_id'])
+                        ? '<a class="btn btn-sm btn-outline-primary text-nowrap" href="/ecommerce/portal?sub=' . (int)($r['id'] ?? 0) . '" title="Open the Stripe billing portal for this subscriber"><i class="bi bi-gear me-1"></i>Manage</a>'
+                        : '<span class="text-body-secondary small">&mdash;</span>',
                 ];
             },
         ]);
         \Flight::json($resp);
+    }
+
+    /**
+     * GET /ecommerce/portal?sub=<id> — open the Stripe Billing Portal for a subscriber
+     * and redirect to it. Uses the connection matching the subscription's environment
+     * (that key owns the customer). This is the billing self-serve primitive.
+     */
+    public function portal($params = []): void {
+        if (!$this->requireFeature()) return;
+        $mid = (int)$this->member->id;
+        $sub = Bean::load('shopsubscription', (int)$this->getParam('sub', 0));
+        $back = '/ecommerce/subscribers?instance=' . (int)($sub->instanceId ?? 0);
+        if (!$sub->id || (int)$sub->memberId !== $mid) {
+            $this->flash('error', 'Subscription not found.'); Flight::redirect('/ecommerce'); return;
+        }
+        if ((string)$sub->customerId === '') {
+            $this->flash('error', 'This subscription has no customer yet — nothing to manage.'); Flight::redirect($back); return;
+        }
+        $env  = (string)($sub->environment ?: 'production');
+        $conn = Bean::findOne('connections',
+            'member_id = ? AND instance_id = ? AND environment = ? AND connector_type = ? AND enabled = 1',
+            [$mid, (int)$sub->instanceId, $env, 'stripe']);
+        if (!$conn || !$conn->id || !empty($conn->revokedAt)) {
+            $this->flash('error', 'No active Stripe connection for this subscription.'); Flight::redirect($back); return;
+        }
+        $connector = (new ConnectorRegistry())->get('stripe');
+        $token = EncryptionService::decrypt($conn->accessToken);
+        $ret = ((($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'https')
+             . '://' . ($_SERVER['HTTP_HOST'] ?? 'tiknix.com') . $back;
+        try {
+            $url = $connector->billingPortalUrl($conn, $token, (string)$sub->customerId, $ret);
+        } catch (\Throwable $e) {
+            if (function_exists('sodium_memzero')) sodium_memzero($token);
+            $this->flash('error', 'Could not open billing portal: ' . $e->getMessage()); Flight::redirect($back); return;
+        }
+        if (function_exists('sodium_memzero')) sodium_memzero($token);
+        Flight::redirect($url !== '' ? $url : $back);
     }
 
     /** GET /ecommerce/products — product list for the tiknix.com store. */

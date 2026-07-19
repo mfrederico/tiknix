@@ -41,6 +41,7 @@ $sid = (int)($instanceId ?? 0);
                 <th>Product</th>
                 <th data-dt-nosearch>Status</th>
                 <th>Renews</th>
+                <th data-dt-noorder data-dt-nosearch data-dt-class="text-end">Manage</th>
               </tr>
             </thead>
             <tbody></tbody>

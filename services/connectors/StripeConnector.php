@@ -339,15 +339,7 @@ class StripeConnector extends AbstractConnector {
      * a spoofed event can only reference a session that is (a) ours and (b) actually paid.
      */
     public function webhookOrder($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array {
-        if ($secret !== '') {
-            $sig = '';
-            foreach ($headers as $k => $v) {
-                if (strcasecmp((string)$k, 'Stripe-Signature') === 0) { $sig = is_array($v) ? (string)($v[0] ?? '') : (string)$v; break; }
-            }
-            if (!self::verifyStripeSignature($rawBody, $sig, $secret)) {
-                throw new \Exception('Stripe webhook signature verification failed.');
-            }
-        }
+        self::assertSignature($rawBody, $headers, $secret);
         $event = json_decode($rawBody, true);
         if (!is_array($event)) return null;
         $type = (string)($event['type'] ?? '');
@@ -379,6 +371,58 @@ class StripeConnector extends AbstractConnector {
             'reference'       => (string)($s['client_reference_id'] ?? ''),
             'livemode'        => (bool)($s['livemode'] ?? false),
         ];
+    }
+
+    /**
+     * Subscription lifecycle events (renewals / cancellations). Verifies the signature,
+     * then RE-FETCHES the subscription (authoritative) and returns its normalized current
+     * state, or null for events that aren't subscription lifecycle. Same trust model as
+     * webhookOrder — a spoofed event can only reference a subscription that is ours.
+     */
+    public function subscriptionFromEvent($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array {
+        self::assertSignature($rawBody, $headers, $secret);
+        $event = json_decode($rawBody, true);
+        if (!is_array($event)) return null;
+        $type = (string)($event['type'] ?? '');
+        $subEvents = ['invoice.paid', 'invoice.payment_failed', 'customer.subscription.created',
+                      'customer.subscription.updated', 'customer.subscription.deleted'];
+        if (!in_array($type, $subEvents, true)) return null;
+
+        $obj = is_array($event['data']['object'] ?? null) ? $event['data']['object'] : [];
+        // invoice.* carry the subscription id; customer.subscription.* ARE the subscription.
+        $subId = strncmp($type, 'invoice.', 8) === 0 ? (string)($obj['subscription'] ?? '') : (string)($obj['id'] ?? '');
+        if (strncmp($subId, 'sub_', 4) !== 0) return null;
+
+        $s = $this->apiGet($token, 'subscriptions/' . rawurlencode($subId) . '?expand[]=customer');
+        $item  = is_array($s['items']['data'][0] ?? null) ? $s['items']['data'][0] : [];
+        $price = is_array($item['price'] ?? null) ? $item['price'] : [];
+        $cust  = is_array($s['customer'] ?? null) ? $s['customer'] : [];
+        $custId = is_array($s['customer'] ?? null) ? (string)($cust['id'] ?? '') : (string)($s['customer'] ?? '');
+        return [
+            'subscription_id'      => (string)($s['id'] ?? $subId),
+            'status'               => (string)($s['status'] ?? ''),   // active|trialing|past_due|canceled|unpaid|incomplete
+            'current_period_end'   => (int)($s['current_period_end'] ?? 0),
+            'cancel_at_period_end' => (bool)($s['cancel_at_period_end'] ?? false),
+            'customer_id'          => $custId,
+            'email'                => (string)($cust['email'] ?? ''),
+            'name'                 => (string)($cust['name'] ?? ''),
+            'amount'               => (int)($price['unit_amount'] ?? 0),
+            'currency'             => (string)($price['currency'] ?? 'usd'),
+            'interval'             => (string)($price['recurring']['interval'] ?? ''),
+            'livemode'             => (bool)($s['livemode'] ?? false),
+        ];
+    }
+
+    /** Verify the Stripe-Signature header when a secret is set; throw on mismatch. */
+    private static function assertSignature(string $rawBody, array $headers, string $secret): void {
+        if ($secret === '') return;
+        $sig = '';
+        foreach ($headers as $k => $v) {
+            if (strcasecmp((string)$k, 'Stripe-Signature') === 0) { $sig = is_array($v) ? (string)($v[0] ?? '') : (string)$v; break; }
+        }
+        if (!self::verifyStripeSignature($rawBody, $sig, $secret)) {
+            throw new \Exception('Stripe webhook signature verification failed.');
+        }
     }
 
     /** Normalize a Stripe address dict into the provider-neutral shape stored on orders. */

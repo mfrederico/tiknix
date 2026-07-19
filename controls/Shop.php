@@ -158,8 +158,12 @@ class Shop {
         }
         $token = EncryptionService::decrypt($conn->accessToken);
         try {
+            // A given webhook is one event; each handler self-selects and returns null
+            // otherwise, so only the matching one does its authoritative re-fetch.
             $order = $connector->webhookOrder($conn, $token, $raw, $headers, $secret);
             if ($order && !empty($order['session_id'])) $this->recordOrder($provider, $conn, $order);
+            $sub = $connector->subscriptionFromEvent($conn, $token, $raw, $headers, $secret);
+            if ($sub && !empty($sub['subscription_id'])) $this->updateSubscription($conn, $sub);
         } catch (\Throwable $e) {
             error_log('[shop] webhook rejected: ' . $e->getMessage());
             if (function_exists('sodium_memzero')) { sodium_memzero($token); if ($secret !== '') sodium_memzero($secret); }
@@ -218,6 +222,66 @@ class Shop {
         // captured, so the order stands and a human reconciles it.
         $o->status     = $oversold ? 'paid-oversold' : 'paid';
         Bean::store($o);
+
+        // Subscription order → stand up (or refresh) its tracking row immediately with
+        // the sku/customer context the lifecycle events lack; renewals enrich it later.
+        if (($order['mode'] ?? '') === 'subscription' && !empty($order['subscription'])) {
+            $this->upsertSubscription($conn, (string)$order['subscription'], [
+                'sku'          => $sku,
+                'title'        => (string)$o->title,
+                'email'        => (string)$o->email,
+                'customerName' => (string)$o->customerName,
+                'interval'     => (string)($product['billingInterval'] ?? ''),
+                'amount'       => (int)($order['amount_total'] ?? 0),
+                'currency'     => (string)($order['currency'] ?? 'usd'),
+                'status'       => 'active',
+            ]);
+        }
+    }
+
+    /** Apply a subscription lifecycle event (re-fetched state) to the tracking row. */
+    private function updateSubscription($conn, array $sub): void {
+        $this->upsertSubscription($conn, (string)($sub['subscription_id'] ?? ''), [
+            'status'             => (string)($sub['status'] ?? ''),
+            'currentPeriodEnd'   => (int)($sub['current_period_end'] ?? 0),
+            'cancelAtPeriodEnd'  => !empty($sub['cancel_at_period_end']),
+            'customerId'         => (string)($sub['customer_id'] ?? ''),
+            'email'              => (string)($sub['email'] ?? ''),
+            'customerName'       => (string)($sub['name'] ?? ''),
+            'amount'             => (int)($sub['amount'] ?? 0),
+            'currency'           => (string)($sub['currency'] ?? ''),
+            'interval'           => (string)($sub['interval'] ?? ''),
+        ]);
+    }
+
+    /**
+     * Find-or-create the subscription tracking row (keyed by provider subscription id,
+     * instance-scoped) and apply the given fields. Current-state mirror, NOT a ledger:
+     * updated in place, and currentPeriodEnd only ever advances forward (out-of-order
+     * webhooks can't roll it back). Non-empty fields only, so a sparse event never wipes
+     * context set by the order.
+     */
+    private function upsertSubscription($conn, string $subId, array $f): void {
+        if ($subId === '') return;
+        $row = Bean::findOne('shopsubscription', 'subscription_id = ?', [$subId]);
+        if (!$row || !$row->id) {
+            $row = Bean::dispense('shopsubscription');
+            $row->subscriptionId   = $subId;
+            $row->memberId         = (int)($conn->memberId ?? 0);
+            $row->instanceId       = (int)($conn->instanceId ?? 0);
+            $row->status           = 'active';
+            $row->currentPeriodEnd = 0;
+            $row->createdAt        = date('Y-m-d H:i:s');
+        }
+        foreach (['sku', 'title', 'email', 'customerName', 'customerId', 'status', 'currency', 'interval'] as $k) {
+            if (array_key_exists($k, $f) && (string)$f[$k] !== '') $row->$k = (string)$f[$k];
+        }
+        if (!empty($f['amount'])) $row->amount = (int)$f['amount'];
+        if (array_key_exists('cancelAtPeriodEnd', $f)) $row->cancelAtPeriodEnd = $f['cancelAtPeriodEnd'] ? 1 : 0;
+        $pe = (int)($f['currentPeriodEnd'] ?? 0);
+        if ($pe > (int)$row->currentPeriodEnd) $row->currentPeriodEnd = $pe;
+        $row->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($row);
     }
 
     private function store(): StoreCatalog {

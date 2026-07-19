@@ -109,4 +109,15 @@ interface ConnectorInterface {
      *                        throw on failure (defense-in-depth on top of the re-fetch).
      */
     public function webhookOrder($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array;
+
+    /**
+     * Given a raw provider webhook, return the normalized CURRENT state of a subscription
+     * for lifecycle events (renewal / dunning / cancellation), or null when the event is
+     * not a subscription lifecycle event. Like webhookOrder, implementations MUST verify
+     * the signature (when $secret is set) and RE-FETCH from the provider.
+     * Normalized shape: ['subscription_id','status','current_period_end',
+     * 'cancel_at_period_end','customer_id','email','name','amount','currency','interval',
+     * 'livemode']. Non-payment connectors return null.
+     */
+    public function subscriptionFromEvent($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array;
 }

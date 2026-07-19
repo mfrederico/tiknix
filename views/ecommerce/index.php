@@ -195,6 +195,29 @@ $sid = $selected ? (int)$selected->id : 0;
         </div>
       </div>
 
+      <?php // --- Subscribers (recurring) --- ?>
+      <div class="col-md-6 col-lg-4">
+        <div class="card h-100">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex align-items-start gap-3">
+              <div class="rounded-circle bg-success-subtle d-flex align-items-center justify-content-center flex-shrink-0" style="width:44px;height:44px">
+                <i class="bi bi-arrow-repeat fs-5 text-success"></i>
+              </div>
+              <div class="flex-grow-1">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div class="fw-semibold">Subscribers</div>
+                  <span class="badge bg-success-subtle text-success-emphasis border"><?= (int)($subscriberCount ?? 0) ?> active</span>
+                </div>
+                <div class="text-body-secondary small mt-1">Recurring subscriptions, tracked live with your Stripe account as they renew and cancel.</div>
+              </div>
+            </div>
+            <div class="mt-auto pt-3">
+              <a href="/ecommerce/subscribers?instance=<?= $sid ?>" class="btn btn-sm btn-primary"><i class="bi bi-arrow-repeat me-1"></i>View subscribers</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <?php // --- Storefront --- ?>
       <div class="col-md-6 col-lg-4">
         <div class="card h-100">

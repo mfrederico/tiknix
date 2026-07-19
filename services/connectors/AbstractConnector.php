@@ -51,6 +51,11 @@ abstract class AbstractConnector implements ConnectorInterface {
         return null;
     }
 
+    /** Non-payment connectors have no subscriptions; payment providers override. */
+    public function subscriptionFromEvent($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array {
+        return null;
+    }
+
     /**
      * Minimal cURL request. Returns [httpStatus, body].
      * @param array $opts ['headers' => string[], 'body' => string]

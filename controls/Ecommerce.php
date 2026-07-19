@@ -82,6 +82,7 @@ class Ecommerce extends Control {
             'stripe'        => $stripe,
             'productCount'  => count($this->catalog()->listProducts()),
             'orderCount'    => $sid ? Bean::count('shoporder', 'member_id = ? AND instance_id = ?', [$mid, $sid]) : 0,
+            'subscriberCount' => $sid ? Bean::count('shopsubscription', "member_id = ? AND instance_id = ? AND status IN ('active','trialing')", [$mid, $sid]) : 0,
             'paymentSource' => [
                 'instance' => (int)\Flight::getSetting('shop.payment_instance', $sys),
                 'env'      => (string)(\Flight::getSetting('shop.payment_env', $sys) ?: 'production'),
@@ -211,6 +212,72 @@ class Ecommerce extends Control {
                     $amount,
                     '<span class="badge bg-' . $tone . '-subtle text-' . $tone . '-emphasis border text-capitalize" '
                         . ($oversold ? 'title="Paid but stock was already depleted"' : '') . '>' . h($r['status'] ?? '') . '</span>',
+                ];
+            },
+        ]);
+        \Flight::json($resp);
+    }
+
+    /** GET /ecommerce/subscribers?instance=<id> — recurring subscriptions for one store. */
+    public function subscribers($params = []): void {
+        if (!$this->requireFeature()) return;
+        $mid = (int)$this->member->id;
+        $sid = (int)$this->getParam('instance', 0);
+        $this->render('ecommerce/subscribers', [
+            'title'       => 'Subscribers',
+            'instanceId'  => $sid,
+            'activeCount' => $sid
+                ? Bean::count('shopsubscription', "member_id = ? AND instance_id = ? AND status IN ('active','trialing')", [$mid, $sid])
+                : Bean::count('shopsubscription', "member_id = ? AND status IN ('active','trialing')", [$mid]),
+            'total'       => $sid
+                ? Bean::count('shopsubscription', 'member_id = ? AND instance_id = ?', [$mid, $sid])
+                : Bean::count('shopsubscription', 'member_id = ?', [$mid]),
+        ]);
+    }
+
+    /**
+     * AJAX feed for the subscribers DataTable — the current-state subscription mirror,
+     * scoped to member + store instance. Columns MUST match views/ecommerce/subscribers.php.
+     */
+    public function subscribersdata($params = []): void {
+        if (!$this->requireFeature()) return;
+        $mid = (int)$this->member->id;
+        $sid = (int)$this->getParam('instance', 0);
+
+        $columns = [
+            ['db' => 'created_at',         'search' => null],     // 0  Started
+            ['db' => 'email',              'search' => 'like'],   // 1  Subscriber
+            ['db' => 'sku',                'search' => 'like'],   // 2  Product
+            ['db' => 'status',             'search' => 'exact'],  // 3  Status
+            ['db' => 'current_period_end', 'search' => null],     // 4  Renews
+        ];
+        // How a subscription status maps to a badge tone.
+        $tones = ['active' => 'success', 'trialing' => 'info', 'past_due' => 'warning',
+                  'unpaid' => 'warning', 'canceled' => 'secondary', 'incomplete' => 'secondary'];
+
+        $resp = DataTableResponse::build('shopsubscription', $columns, $this->getParams(), [
+            'baseWhere'  => 'member_id = ? AND instance_id = ?',
+            'baseParams' => [$mid, $sid],
+            'globalCols' => ['email', 'customer_name', 'sku', 'title', 'subscription_id'],
+            'row' => function (array $r) use ($tones): array {
+                $cur    = strtoupper((string)($r['currency'] ?? 'usd'));
+                $amount = $cur . ' ' . number_format(((int)($r['amount'] ?? 0)) / 100, 2);
+                $iv     = !empty($r['interval']) ? ' / ' . h((string)$r['interval']) : '';
+                $status = (string)($r['status'] ?? '');
+                $tone   = $tones[$status] ?? 'secondary';
+                $pe     = (int)($r['current_period_end'] ?? 0);
+                $renews = $pe > 0 ? date('Y-m-d', $pe) : '—';
+                $cancel = !empty($r['cancel_at_period_end'])
+                    ? ' <span class="badge bg-warning-subtle text-warning-emphasis border">ending</span>' : '';
+                $product = ((string)($r['title'] ?? '')) ?: ((string)($r['sku'] ?? '')) ?: '—';
+                return [
+                    '<span class="small text-body-secondary text-nowrap">' . h((string)($r['created_at'] ?? '')) . '</span>',
+                    '<div>' . h(((string)($r['email'] ?? '')) ?: '—') . '</div>'
+                        . (!empty($r['customer_name']) ? '<div class="small text-body-secondary">' . h((string)$r['customer_name']) . '</div>' : ''),
+                    '<div class="fw-semibold">' . h($product) . '</div>'
+                        . '<div class="small text-body-secondary">' . h($amount) . $iv . '</div>',
+                    '<span class="badge bg-' . $tone . '-subtle text-' . $tone . '-emphasis border text-capitalize">' . h($status ?: 'unknown') . '</span>' . $cancel,
+                    '<span class="small text-body-secondary text-nowrap">' . $renews . '</span>',
                 ];
             },
         ]);

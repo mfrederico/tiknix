@@ -18,6 +18,21 @@
             padding: 1.5rem;
         }
         .wrap { max-width: 640px; }
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.7rem;
+            margin-bottom: 2rem;
+        }
+        .logo svg { width: 54px; height: 54px; display: block; }
+        .logo-word {
+            font-family: 'Nimbus Roman', Georgia, 'Times New Roman', serif;
+            font-size: 2.1rem;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+            line-height: 1;
+        }
         .badge {
             display: inline-block;
             padding: 0.4rem 1rem;
@@ -119,6 +134,18 @@
 </head>
 <body>
     <div class="wrap">
+        <div class="logo">
+            <svg viewBox="0 0 64 64" role="img" aria-label="tiknix logo">
+                <rect x="1.5" y="1.5" width="61" height="61" rx="13"
+                      fill="#333333" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
+                <!-- }{ rotated 90deg: two braces pinching to a funnel of ideas -->
+                <text x="32" y="32" transform="rotate(90 32 32)" fill="#f9f9f9"
+                      font-family="'Droid Sans Fallback', ui-monospace, monospace"
+                      font-size="36" font-weight="700"
+                      text-anchor="middle" dominant-baseline="central">}{</text>
+            </svg>
+            <span class="logo-word">tiknix</span>
+        </div>
         <div class="badge">Coming Soon</div>
         <h1>Build on our servers, deploy to yours.</h1>
         <p>Tinker safely with our AI agent harness &mdash; prebuilt primitives like a database, web server, and sandboxing, and much, much more.</p>

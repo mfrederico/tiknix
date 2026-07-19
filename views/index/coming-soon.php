@@ -1,3 +1,4 @@
+<?php $logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,12 +21,30 @@
         .wrap { max-width: 640px; }
         .logo {
             display: flex;
+            align-items: center;
             justify-content: center;
+            gap: 0.85rem;
             margin-bottom: 2.25rem;
-            color: #fff;          /* drives the wordmark via currentColor */
+            color: #fff;          /* drives the mark (via mask) + wordmark */
         }
-        .logo img { height: 88px; width: auto; display: block; }
-        @media (max-width: 480px) { .logo img { height: 68px; } }
+        /* The mark is a monochrome SVG painted with currentColor via mask, so it
+           recolors to the theme (white here) while staying a single source file. */
+        .logo-mark {
+            width: 80px; height: 80px; flex: 0 0 auto;
+            background: currentColor;
+            -webkit-mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
+                    mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
+        }
+        .logo-word {
+            font-family: Georgia, 'Times New Roman', Times, serif;
+            font-size: 3.5rem;
+            line-height: 1;
+            letter-spacing: 0.005em;
+        }
+        @media (max-width: 480px) {
+            .logo-mark { width: 60px; height: 60px; }
+            .logo-word { font-size: 2.6rem; }
+        }
         .badge {
             display: inline-block;
             padding: 0.4rem 1rem;
@@ -127,7 +146,10 @@
 </head>
 <body>
     <div class="wrap">
-        <div class="logo"><img src="/img/tiknix.svg" alt="tiknix"></div>
+        <div class="logo" role="img" aria-label="tiknix">
+            <span class="logo-mark"></span>
+            <span class="logo-word">tiknix</span>
+        </div>
         <div class="badge">Coming Soon</div>
         <h1>Build on our servers, deploy to yours.</h1>
         <p>Tinker safely with our AI agent harness &mdash; prebuilt primitives like a database, web server, and sandboxing, and much, much more.</p>

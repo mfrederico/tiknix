@@ -56,7 +56,8 @@ if ($__loggedIn) {
 
   <aside class="ui-sidebar" id="uiSidebar">
     <a class="ui-sidebar-brand" href="/" aria-label="<?= htmlspecialchars($site_name ?? 'Tiknix') ?>">
-      <img class="ui-brand-logo" src="/img/tiknix.svg" alt="<?= htmlspecialchars($site_name ?? 'Tiknix') ?>">
+      <span class="ui-brand-logo"></span>
+      <span class="ui-brand-word">tiknix</span>
     </a>
 
     <nav class="ui-nav">

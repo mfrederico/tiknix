@@ -84,7 +84,13 @@ interface ConnectorInterface {
      * @param object $conn  the connections bean
      * @param string $token the decrypted access/secret key (in-process only)
      * @param array  $order ['items' => [['title','amount_cents','currency','quantity'],…],
-     *                       'success_url','cancel_url','client_reference_id'?]
+     *                       'success_url','cancel_url','client_reference_id'?,
+     *                       'collect'? => provider-neutral collection intent:
+     *                         ['billing'=>bool, 'phone'=>bool, 'shipping'=>bool,
+     *                          'countries'=>['US',…],
+     *                          'shipping_rate'=>['amount_cents','currency','label']|null]]
+     *   Each connector maps `collect` onto its own hosted checkout (Stripe address
+     *   collection + shipping_options; PayPal/Square equivalents).
      */
     public function createCheckout($conn, string $token, array $order): array;
 
@@ -93,8 +99,10 @@ interface ConnectorInterface {
      * completed order and return normalized order data, or null when the event isn't
      * a confirmed payment. Implementations should RE-FETCH from the provider rather
      * than trust the webhook body. Runs on the control plane with the decrypted token.
-     * Normalized shape: ['session_id','payment_intent','amount_total','currency',
-     * 'email','name','reference','livemode'].
+     * Normalized shape: ['session_id','payment_intent','amount_total','amount_shipping',
+     * 'currency','email','name','phone','reference','livemode',
+     *  'billing_address'=>['line1','line2','city','state','postal','country'],
+     *  'ship_name','shipping_address'=>[…same address keys…]].
      *
      * @param string $secret the provider's webhook signing secret; when non-empty the
      *                        implementation MUST verify the request signature first and

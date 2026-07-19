@@ -60,6 +60,30 @@ class Shop {
     }
 
     /**
+     * Provider-neutral collection intent for a product: always collect billing +
+     * phone; collect a shipping address (and charge the store's flat rate) only for
+     * physical products. Flat shipping is a store-wide setting (countries / cents /
+     * label) so the whole catalog ships the same simple way.
+     */
+    private function collectFor(array $product): array {
+        $sys      = defined('SYSTEM_ADMIN_ID') ? SYSTEM_ADMIN_ID : 1;
+        $ships    = !array_key_exists('requiresShipping', $product) || !empty($product['requiresShipping']);
+        $countries = array_values(array_filter(array_map('trim',
+            explode(',', (string)(\Flight::getSetting('shop.ship_countries', $sys) ?: 'US')))));
+        return [
+            'billing'  => true,
+            'phone'    => true,
+            'shipping' => $ships,
+            'countries'=> $countries ?: ['US'],
+            'shipping_rate' => $ships ? [
+                'amount_cents' => max(0, (int)\Flight::getSetting('shop.ship_flat_cents', $sys)),
+                'currency'     => (string)($product['currency'] ?? 'usd'),
+                'label'        => (string)(\Flight::getSetting('shop.ship_label', $sys) ?: 'Standard shipping'),
+            ] : null,
+        ];
+    }
+
+    /**
      * POST /shop/checkout — Buy Now for one product. Resolves the store's payment
      * provider, creates a hosted checkout session server-side (price from the catalog,
      * never the client), and redirects the buyer to it. Public.
@@ -87,6 +111,9 @@ class Shop {
                 'success_url'         => $base . '/shop/success?sku=' . rawurlencode($sku),
                 'cancel_url'          => $base . '/shop/product/' . rawurlencode($sku) . '/',
                 'client_reference_id' => $sku,
+                // Provider-neutral collection intent — every connector maps this to its
+                // own hosted checkout. Digital/membership products opt out of shipping.
+                'collect'             => $this->collectFor($product),
             ]);
             $url = (string)($res['url'] ?? '');
         } catch (\Throwable $e) {
@@ -160,6 +187,13 @@ class Shop {
         $o->memberId     = (int)($conn->memberId ?? 0);
         $o->instanceId   = (int)($conn->instanceId ?? 0);
         $o->createdAt    = date('Y-m-d H:i:s');
+        // Address / phone / shipping cost the provider collected (normalized shape,
+        // addresses stored as JSON so any connector's fields fit).
+        $o->phone          = (string)($order['phone'] ?? '');
+        $o->amountShipping = (int)($order['amount_shipping'] ?? 0);
+        $o->shipName       = (string)($order['ship_name'] ?? '');
+        $o->shipAddress    = !empty($order['shipping_address']) ? json_encode($order['shipping_address']) : '';
+        $o->billAddress    = !empty($order['billing_address']) ? json_encode($order['billing_address']) : '';
 
         // Fulfillment = recording this ledger row; availability is derived from it,
         // the catalog JSON is never mutated. Allocate the next free serial (if any)

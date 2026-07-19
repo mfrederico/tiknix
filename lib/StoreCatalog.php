@@ -139,6 +139,9 @@ class StoreCatalog {
             'category'      => trim((string)($in['category'] ?? ($existing['category'] ?? ''))),
             'images'        => array_values($existing['images'] ?? []),
             'serialized'    => $serialized,
+            'requiresShipping' => array_key_exists('requiresShipping', $in)
+                ? !empty($in['requiresShipping'])
+                : (bool)($existing['requiresShipping'] ?? true),   // physical by default
             'holdMinutes'   => $holdMinutes,
             'stock'         => $serialized ? count($units) : max(0, (int)($in['stock'] ?? ($existing['stock'] ?? 0))),
             'units'         => $serialized ? $units : [],

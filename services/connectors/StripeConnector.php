@@ -293,6 +293,35 @@ class StripeConnector extends AbstractConnector {
         if ($success === '' || $cancel === '') throw new \Exception('Checkout needs success and cancel URLs.');
         $fields = ['mode' => 'payment', 'success_url' => $success, 'cancel_url' => $cancel, 'line_items' => $items];
         if (!empty($order['client_reference_id'])) $fields['client_reference_id'] = (string)$order['client_reference_id'];
+
+        // Provider-neutral `collect` block (same shape every connector receives) →
+        // Stripe Checkout's native address/phone/shipping collection. We lean on
+        // Stripe to render + validate all of it; it comes back on the session.
+        $collect = is_array($order['collect'] ?? null) ? $order['collect'] : [];
+        $fields['billing_address_collection'] = !empty($collect['billing']) ? 'required' : 'auto';
+        if (!empty($collect['phone'])) $fields['phone_number_collection'] = ['enabled' => 'true'];
+        if (!empty($collect['shipping'])) {
+            $countries = array_values(array_filter(array_map(
+                fn($c) => strtoupper(substr(trim((string)$c), 0, 2)),
+                (array)($collect['countries'] ?? [])
+            )));
+            if ($countries) $fields['shipping_address_collection'] = ['allowed_countries' => $countries];
+            // A single flat shipping rate (amount 0 shows as "Free"); Stripe adds it to the total.
+            $rate = is_array($collect['shipping_rate'] ?? null) ? $collect['shipping_rate'] : null;
+            if ($rate !== null) {
+                $fields['shipping_options'] = [[
+                    'shipping_rate_data' => [
+                        'type'         => 'fixed_amount',
+                        'display_name' => (string)($rate['label'] ?? 'Shipping'),
+                        'fixed_amount' => [
+                            'amount'   => max(0, (int)($rate['amount_cents'] ?? 0)),
+                            'currency' => strtolower((string)($rate['currency'] ?? 'usd')),
+                        ],
+                    ],
+                ]];
+            }
+        }
+
         $res = $this->apiPost($token, 'checkout/sessions', $fields);
         return ['url' => (string)($res['url'] ?? ''), 'id' => (string)($res['id'] ?? '')];
     }
@@ -319,17 +348,41 @@ class StripeConnector extends AbstractConnector {
         if ($type !== 'checkout.session.completed' && $type !== 'checkout.session.async_payment_succeeded') return null;
         $sessionId = (string)($event['data']['object']['id'] ?? '');
         if (strncmp($sessionId, 'cs_', 3) !== 0) return null;
-        $s = $this->apiGet($token, 'checkout/sessions/' . rawurlencode($sessionId) . '?expand[]=customer_details');
+        $s = $this->apiGet($token, 'checkout/sessions/' . rawurlencode($sessionId)
+            . '?expand[]=customer_details&expand[]=total_details');
         if (($s['payment_status'] ?? '') !== 'paid') return null;
+        // Shipping address moved to collected_information on newer API versions; read
+        // either. Returns the SAME normalized keys every connector must fill.
+        $cust = is_array($s['customer_details'] ?? null) ? $s['customer_details'] : [];
+        $ship = $s['shipping_details'] ?? ($s['collected_information']['shipping_details'] ?? []);
+        $ship = is_array($ship) ? $ship : [];
         return [
-            'session_id'     => (string)($s['id'] ?? $sessionId),
-            'payment_intent' => (string)($s['payment_intent'] ?? ''),
-            'amount_total'   => (int)($s['amount_total'] ?? 0),
-            'currency'       => (string)($s['currency'] ?? 'usd'),
-            'email'          => (string)($s['customer_details']['email'] ?? $s['customer_email'] ?? ''),
-            'name'           => (string)($s['customer_details']['name'] ?? ''),
-            'reference'      => (string)($s['client_reference_id'] ?? ''),
-            'livemode'       => (bool)($s['livemode'] ?? false),
+            'session_id'      => (string)($s['id'] ?? $sessionId),
+            'payment_intent'  => (string)($s['payment_intent'] ?? ''),
+            'amount_total'    => (int)($s['amount_total'] ?? 0),
+            'amount_shipping' => (int)($s['total_details']['amount_shipping'] ?? 0),
+            'currency'        => (string)($s['currency'] ?? 'usd'),
+            'email'           => (string)($cust['email'] ?? $s['customer_email'] ?? ''),
+            'name'            => (string)($cust['name'] ?? ''),
+            'phone'           => (string)($cust['phone'] ?? ''),
+            'billing_address' => self::addr($cust['address'] ?? []),
+            'ship_name'       => (string)($ship['name'] ?? $cust['name'] ?? ''),
+            'shipping_address'=> self::addr($ship['address'] ?? []),
+            'reference'       => (string)($s['client_reference_id'] ?? ''),
+            'livemode'        => (bool)($s['livemode'] ?? false),
+        ];
+    }
+
+    /** Normalize a Stripe address dict into the provider-neutral shape stored on orders. */
+    private static function addr($a): array {
+        $a = is_array($a) ? $a : [];
+        return [
+            'line1'   => (string)($a['line1'] ?? ''),
+            'line2'   => (string)($a['line2'] ?? ''),
+            'city'    => (string)($a['city'] ?? ''),
+            'state'   => (string)($a['state'] ?? ''),
+            'postal'  => (string)($a['postal_code'] ?? ''),
+            'country' => (string)($a['country'] ?? ''),
         ];
     }
 

@@ -66,6 +66,12 @@ foreach (($p['units'] ?? []) as $u) { $units .= ($u['serial'] ?? '') . "\n"; }
         <label class="form-check-label" for="serialized">Serialized — each item is a unique unit (watches, handbags)</label>
       </div>
 
+      <?php $reqShip = !$isEdit || !array_key_exists('requiresShipping', $p) || !empty($p['requiresShipping']); ?>
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" role="switch" id="requires_shipping" name="requires_shipping" value="1" <?= $reqShip ? 'checked' : '' ?>>
+        <label class="form-check-label" for="requires_shipping">Ships physically — collect a shipping address &amp; charge shipping at checkout (off for digital / memberships)</label>
+      </div>
+
       <div id="stockRow" class="row g-3 <?= $serialized ? 'd-none' : '' ?>">
         <div class="col-sm-4">
           <label class="form-label small mb-1">Stock</label>

@@ -86,6 +86,11 @@ class Ecommerce extends Control {
                 'instance' => (int)\Flight::getSetting('shop.payment_instance', $sys),
                 'env'      => (string)(\Flight::getSetting('shop.payment_env', $sys) ?: 'production'),
             ],
+            'shipping' => [
+                'countries' => (string)(\Flight::getSetting('shop.ship_countries', $sys) ?: 'US'),
+                'flat'      => number_format(((int)\Flight::getSetting('shop.ship_flat_cents', $sys)) / 100, 2, '.', ''),
+                'label'     => (string)(\Flight::getSetting('shop.ship_label', $sys) ?: 'Standard shipping'),
+            ],
         ]);
     }
 
@@ -105,6 +110,24 @@ class Ecommerce extends Control {
         \Flight::setSetting('shop.payment_instance', $instId, $sys);
         \Flight::setSetting('shop.payment_env', $env, $sys);
         $this->jsonSuccess(['instance' => $instId, 'env' => $env], 'Payment source saved');
+    }
+
+    /** POST /ecommerce/shipping — store-wide flat shipping (countries / rate / label). */
+    public function shipping($params = []): void {
+        if (!$this->requireFeature()) return;
+        if (!$this->validateCSRF()) return;
+        $sys = defined('SYSTEM_ADMIN_ID') ? SYSTEM_ADMIN_ID : 1;
+        // Normalize allowed countries to a clean CSV of 2-letter ISO codes.
+        $countries = implode(',', array_values(array_filter(array_map(
+            fn($c) => strtoupper(substr(trim((string)$c), 0, 2)),
+            explode(',', (string)$this->getParam('countries', 'US'))
+        ))) ?: ['US']);
+        $cents = (int)round(((float)$this->getParam('flat', 0)) * 100);
+        $label = trim((string)$this->getParam('label', 'Standard shipping')) ?: 'Standard shipping';
+        \Flight::setSetting('shop.ship_countries', $countries, $sys);
+        \Flight::setSetting('shop.ship_flat_cents', max(0, $cents), $sys);
+        \Flight::setSetting('shop.ship_label', $label, $sys);
+        $this->jsonSuccess(['countries' => $countries, 'flat_cents' => max(0, $cents), 'label' => $label], 'Shipping saved');
     }
 
     /** GET /ecommerce/orders?instance=<id> — recorded (paid) orders for one store. */
@@ -198,6 +221,7 @@ class Ecommerce extends Control {
                 'stripePriceId' => $this->getParam('stripe_price_id', ''),
                 'category'      => $this->getParam('category', ''),
                 'serialized'    => filter_var($this->getParam('serialized', false), FILTER_VALIDATE_BOOLEAN),
+                'requiresShipping' => filter_var($this->getParam('requires_shipping', '0'), FILTER_VALIDATE_BOOLEAN),
                 'holdMinutes'   => $this->getParam('hold_minutes', 10),
                 'stock'         => $this->getParam('stock', 0),
                 'units'         => $this->getParam('units', ''),

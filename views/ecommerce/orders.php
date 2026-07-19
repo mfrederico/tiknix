@@ -4,6 +4,15 @@
  * Vars: $title, $orders (shoporder beans)
  */
 $money = fn($cents, $cur) => strtoupper((string)($cur ?: 'usd')) . ' ' . number_format(((int)$cents) / 100, 2);
+// Format a JSON-stored normalized address into a short, escaped multi-line block.
+$addr = function ($json): string {
+    $a = json_decode((string)$json, true);
+    if (!is_array($a)) return '';
+    $l1 = trim(($a['line1'] ?? '') . ' ' . ($a['line2'] ?? ''));
+    $l2 = trim(implode(' ', array_filter([$a['city'] ?? '', $a['state'] ?? '', $a['postal'] ?? ''])));
+    $l3 = strtoupper((string)($a['country'] ?? ''));
+    return implode('<br>', array_map('htmlspecialchars', array_filter([$l1, $l2, $l3])));
+};
 ?>
 <div class="container py-4" style="max-width:960px">
 
@@ -41,8 +50,17 @@ $money = fn($cents, $cur) => strtoupper((string)($cur ?: 'usd')) . ' ' . number_
               <td class="small">
                 <?= htmlspecialchars((string)($o->email ?: '—')) ?>
                 <?php if ($o->customerName): ?><div class="text-body-secondary"><?= htmlspecialchars((string)$o->customerName) ?></div><?php endif; ?>
+                <?php if ($o->phone): ?><div class="text-body-secondary"><?= htmlspecialchars((string)$o->phone) ?></div><?php endif; ?>
+                <?php $ship = $addr($o->shipAddress); if ($ship !== ''): ?>
+                  <div class="mt-1"><span class="badge bg-secondary-subtle text-secondary-emphasis border">Ship to</span>
+                    <div class="text-body-secondary mt-1"><?php if ($o->shipName): ?><?= htmlspecialchars((string)$o->shipName) ?><br><?php endif; ?><?= $ship ?></div>
+                  </div>
+                <?php endif; ?>
               </td>
-              <td class="text-nowrap"><?= htmlspecialchars($money($o->amountTotal, $o->currency)) ?></td>
+              <td class="text-nowrap">
+                <?= htmlspecialchars($money($o->amountTotal, $o->currency)) ?>
+                <?php if ((int)$o->amountShipping > 0): ?><div class="small text-body-secondary">incl. <?= htmlspecialchars($money($o->amountShipping, $o->currency)) ?> ship</div><?php endif; ?>
+              </td>
               <td class="small">
                 <span class="text-capitalize"><?= htmlspecialchars((string)$o->provider) ?></span>
                 <span class="badge bg-<?= $o->environment === 'production' ? 'success' : 'secondary' ?>-subtle text-<?= $o->environment === 'production' ? 'success' : 'secondary' ?>-emphasis border"><?= $o->environment === 'production' ? 'Live' : 'Test' ?></span>

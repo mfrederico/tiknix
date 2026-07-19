@@ -82,6 +82,52 @@ $sid = $selected ? (int)$selected->id : 0;
     })();
     </script>
 
+    <div class="card border mb-4">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-truck text-primary"></i>
+          <div class="fw-semibold">Shipping</div>
+        </div>
+        <div class="text-body-secondary small mb-2">One flat rate, collected by the payment provider at checkout. Applies to products marked as physical; digital items skip shipping.</div>
+        <form id="shipForm" class="row g-2 align-items-end">
+          <?= csrf_field() ?>
+          <div class="col-sm-3">
+            <label class="form-label small mb-1">Ship to (countries)</label>
+            <input type="text" name="countries" class="form-control form-control-sm" value="<?= htmlspecialchars($shipping['countries'] ?? 'US') ?>" placeholder="US, CA">
+            <div class="form-text">2-letter codes, comma-separated.</div>
+          </div>
+          <div class="col-sm-3">
+            <label class="form-label small mb-1">Flat rate</label>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">$</span>
+              <input type="number" step="0.01" min="0" name="flat" class="form-control" value="<?= htmlspecialchars($shipping['flat'] ?? '0.00') ?>">
+            </div>
+            <div class="form-text">0.00 = free shipping.</div>
+          </div>
+          <div class="col-sm-4">
+            <label class="form-label small mb-1">Method label</label>
+            <input type="text" name="label" class="form-control form-control-sm" value="<?= htmlspecialchars($shipping['label'] ?? 'Standard shipping') ?>">
+          </div>
+          <div class="col-sm-2">
+            <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+    (function(){
+      var f = document.getElementById('shipForm'); if (!f) return;
+      var csrf = <?= json_encode(csrf_token()) ?>;
+      f.addEventListener('submit', function(ev){
+        ev.preventDefault();
+        var b = f.querySelector('button[type=submit]'); if (b) b.disabled = true;
+        fetch('/ecommerce/shipping', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'}, body:new URLSearchParams(new FormData(f)).toString()})
+          .then(function(r){return r.json();}).then(function(j){ if(b)b.disabled=false; alert((j&&j.message)||'Saved'); })
+          .catch(function(){ if(b)b.disabled=false; alert('Could not save'); });
+      });
+    })();
+    </script>
+
     <?php $connUrl = '/connections?id=' . $sid; ?>
     <div class="row g-3">
 

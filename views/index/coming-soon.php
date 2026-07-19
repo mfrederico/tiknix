@@ -8,30 +8,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
-    <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('tk_theme') || 'admin');</script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        /* Palettes. Default (:root) matches the tiknix admin dark navy; the others
-           are futuristic alternatives you can preview via the top-right dropdown. */
-        :root, [data-theme="admin"] {
+        /* Palette — matched to the tiknix admin dark-navy theme. */
+        :root {
             --bg1:#0b1530; --bg2:#060d20; --glow:rgba(59,118,240,0.20);
             --text:#eaedf5; --text-soft:#9ba4bd; --accent:#3b76f0; --accent-ink:#ffffff;
-        }
-        [data-theme="deep-space"] {
-            --bg1:#0a0e1a; --bg2:#131a2e; --glow:rgba(91,124,250,0.22);
-            --text:#e9eef7; --text-soft:#98a3bd; --accent:#5b7cfa; --accent-ink:#ffffff;
-        }
-        [data-theme="twilight"] {
-            --bg1:#1a2140; --bg2:#2e2450; --glow:rgba(150,120,220,0.20);
-            --text:#e9e6f5; --text-soft:#b6afce; --accent:#8b7bd6; --accent-ink:#ffffff;
-        }
-        [data-theme="cyber"] {
-            --bg1:#0b1220; --bg2:#0e1b24; --glow:rgba(34,211,238,0.16);
-            --text:#e6f0f5; --text-soft:#93b0bd; --accent:#22d3ee; --accent-ink:#04222a;
-        }
-        [data-theme="graphite"] {
-            --bg1:#131417; --bg2:#1b1e26; --glow:rgba(124,140,248,0.15);
-            --text:#e8eaf0; --text-soft:#a0a6b5; --accent:#7c8cf8; --accent-ink:#0c0f1a;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -183,41 +165,10 @@
             border-radius: 16px;
             font-size: 1.1rem;
         }
-        .theme-picker { position: fixed; top: 1rem; right: 1rem; z-index: 20; }
-        .theme-picker select {
-            background: rgba(255,255,255,0.08);
-            color: var(--text);
-            border: 1px solid rgba(255,255,255,0.22);
-            border-radius: 8px;
-            padding: 0.4rem 0.6rem;
-            font-size: 0.78rem;
-            cursor: pointer;
-            backdrop-filter: blur(6px);
-        }
-        .theme-picker select option { color: #111; }
         @media (max-width: 480px) { .field-row { flex-direction: column; gap: 0.75rem; } }
     </style>
 </head>
 <body>
-    <div class="theme-picker">
-        <select id="themeSelect" aria-label="Preview color theme">
-            <option value="admin">Admin match</option>
-            <option value="deep-space">Deep space</option>
-            <option value="twilight">Muted twilight</option>
-            <option value="cyber">Cyber teal</option>
-            <option value="graphite">Graphite</option>
-        </select>
-    </div>
-    <script>
-        (function () {
-            var sel = document.getElementById('themeSelect');
-            sel.value = localStorage.getItem('tk_theme') || 'admin';
-            sel.addEventListener('change', function () {
-                document.documentElement.setAttribute('data-theme', sel.value);
-                localStorage.setItem('tk_theme', sel.value);
-            });
-        })();
-    </script>
     <div class="wrap">
         <div class="logo" role="img" aria-label="tiknix">
             <span class="logo-mark"></span>

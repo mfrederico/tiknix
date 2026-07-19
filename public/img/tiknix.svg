@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 292 88" role="img" aria-label="tiknix">
+  <!-- Icon tile. Border uses currentColor so it separates from any background. -->
+  <rect x="4" y="4" width="80" height="80" rx="16"
+        fill="#333333" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.5"/>
+  <!-- }{ rotated 90deg = two braces pinching into a funnel of ideas, centered in the tile -->
+  <text x="44" y="44" transform="rotate(90 44 44)" fill="#f9f9f9"
+        font-family="'Droid Sans Fallback', ui-monospace, 'SFMono-Regular', Menlo, monospace"
+        font-size="52" font-weight="700"
+        text-anchor="middle" dominant-baseline="central">}{</text>
+  <!-- Wordmark. currentColor so it adapts: white on dark, dark on light. -->
+  <text x="102" y="46" fill="currentColor"
+        font-family="'Nimbus Roman', Georgia, 'Times New Roman', serif"
+        font-size="48" text-anchor="start" dominant-baseline="central">tiknix</text>
+</svg>

@@ -157,7 +157,7 @@
         </div>
         <div class="badge">Coming Soon</div>
         <h1>Build on our servers, deploy to yours.</h1>
-        <p>tiknix is <strong>an AI operating system</strong> &mdash; an agent harness with the primitives every project needs built right in: a database, a web server, sandboxing, and much, much more. Tinker safely, then take it with you.</p>
+        <p>Tiknix is <strong>an AI operating system</strong> &mdash; an agent harness with the primitives every project needs built right in: a database, a web server, sandboxing, and much, much more. Tinker safely, then take it with you.</p>
         <div class="chips">
             <span>Database</span>
             <span>Web server</span>

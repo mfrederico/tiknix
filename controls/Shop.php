@@ -101,12 +101,17 @@ class Shop {
         $token = EncryptionService::decrypt($conn->accessToken);
         $url = '';
         try {
+            $subscription = ($product['billingType'] ?? 'one_time') === 'subscription';
+            $interval = (string)($product['billingInterval'] ?? 'month');
             $res = $connector->createCheckout($conn, $token, [
+                'mode'  => $subscription ? 'subscription' : 'payment',
                 'items' => [[
                     'title'        => (string)$product['title'],
                     'amount_cents' => (int)round(((float)($product['price'] ?? 0)) * 100),
                     'currency'     => (string)($product['currency'] ?? 'usd'),
                     'quantity'     => $qty,
+                    // Only meaningful in subscription mode; the connector adds recurring pricing.
+                    'interval'     => $interval,
                 ]],
                 'success_url'         => $base . '/shop/success?sku=' . rawurlencode($sku),
                 'cancel_url'          => $base . '/shop/product/' . rawurlencode($sku) . '/',
@@ -194,6 +199,11 @@ class Shop {
         $o->shipName       = (string)($order['ship_name'] ?? '');
         $o->shipAddress    = !empty($order['shipping_address']) ? json_encode($order['shipping_address']) : '';
         $o->billAddress    = !empty($order['billing_address']) ? json_encode($order['billing_address']) : '';
+        // Billing model (from the product) + the provider's subscription handle so
+        // recurring orders are identifiable and renewals can be tied back later.
+        $o->billingType     = (string)($product['billingType'] ?? 'one_time');
+        $o->billingInterval = (string)($product['billingInterval'] ?? '');
+        $o->subscriptionId  = (string)($order['subscription'] ?? '');
 
         // Fulfillment = recording this ledger row; availability is derived from it,
         // the catalog JSON is never mutated. Allocate the next free serial (if any)

@@ -95,6 +95,8 @@ class StoreCatalog {
                 'category'   => $p['category'] ?? '',
                 'image'      => $p['images'][0] ?? '',
                 'serialized' => !empty($p['serialized']),
+                'billingType'=> (string)($p['billingType'] ?? 'one_time'),
+                'billingInterval' => (string)($p['billingInterval'] ?? 'month'),
                 'stock'      => (int)($p['stock'] ?? 0),   // starting stock; available derived by app\Inventory
                 'active'     => !empty($p['active']),
             ];
@@ -119,6 +121,13 @@ class StoreCatalog {
         $serialized  = !empty($in['serialized']);
         $holdMinutes = max(0, (int)($in['holdMinutes'] ?? ($existing['holdMinutes'] ?? 10)));
 
+        // Billing model: one_time (default) or subscription (recurring). Interval only
+        // applies to subscriptions; clamp to what Stripe (and future connectors) accept.
+        $billingType = ($in['billingType'] ?? ($existing['billingType'] ?? 'one_time')) === 'subscription'
+            ? 'subscription' : 'one_time';
+        $interval = strtolower((string)($in['billingInterval'] ?? ($existing['billingInterval'] ?? 'month')));
+        if (!in_array($interval, ['day', 'week', 'month', 'year'], true)) $interval = 'month';
+
         $units = $existing['units'] ?? [];
         if ($serialized && isset($in['units'])) {
             $units = [];
@@ -139,6 +148,8 @@ class StoreCatalog {
             'category'      => trim((string)($in['category'] ?? ($existing['category'] ?? ''))),
             'images'        => array_values($existing['images'] ?? []),
             'serialized'    => $serialized,
+            'billingType'   => $billingType,
+            'billingInterval' => $interval,
             'requiresShipping' => array_key_exists('requiresShipping', $in)
                 ? !empty($in['requiresShipping'])
                 : (bool)($existing['requiresShipping'] ?? true),   // physical by default

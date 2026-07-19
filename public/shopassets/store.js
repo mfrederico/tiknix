@@ -87,16 +87,20 @@
     var cat = p.category
       ? '<a class="cat" href="' + catalogHref(p.category) + '" style="text-decoration:none">' + esc(p.category) + '</a>'
       : '';
+    // Recurring products read "$X / month" and their CTA says Subscribe.
+    var sub = (p.billingType === 'subscription');
+    var per = sub ? ' <span class="per">/ ' + esc(p.billingInterval || 'month') + '</span>' : '';
+    var cta = sub ? 'Subscribe' : 'Buy now';
     var buy = (S.checkout && available > 0)
       ? '<form method="post" action="' + SHOP + 'checkout" style="margin:0">' +
         '<input type="hidden" name="sku" value="' + esc(p.sku) + '">' +
-        '<button class="btn" type="submit">Buy now</button></form>'
-      : '<button class="btn" disabled title="' + (available > 0 ? 'Checkout not set up yet' : 'Out of stock') + '">Buy now</button>';
+        '<button class="btn" type="submit">' + cta + '</button></form>'
+      : '<button class="btn" disabled title="' + (available > 0 ? 'Checkout not set up yet' : 'Out of stock') + '">' + cta + '</button>';
     app.innerHTML = '<div class="wrap">' + head('Shop', SHOP + 'product/', '← All products') +
       '<div class="pdp"><div class="gallery">' + gallery + '</div>' +
       '<div class="detail">' + cat +
       '<h1>' + esc(p.title) + '</h1>' +
-      '<div class="price">' + money(p.price, p.currency) + '</div>' +
+      '<div class="price">' + money(p.price, p.currency) + per + '</div>' +
       (p.description ? '<div class="desc">' + esc(p.description) + '</div>' : '') +
       '<div class="stock">' + stock + '</div>' +
       buy +

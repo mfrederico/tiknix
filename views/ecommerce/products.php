@@ -51,6 +51,14 @@ $imgUrl = fn($rel) => (string)$rel;
               <td>
                 <div class="fw-semibold"><?= htmlspecialchars($p['title']) ?></div>
                 <div class="small text-body-secondary"><code><?= htmlspecialchars($sku) ?></code><?php if (!empty($p['category'])): ?> · <?= htmlspecialchars($p['category']) ?><?php endif; ?></div>
+                <div class="small mt-1">
+                  <?php if (($p['billingType'] ?? '') === 'subscription'): ?>
+                    <span class="badge bg-primary-subtle text-primary-emphasis border"><i class="bi bi-arrow-repeat me-1"></i>Per <?= htmlspecialchars((string)($p['billingInterval'] ?? 'month')) ?></span>
+                  <?php else: ?>
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis border">One-time</span>
+                  <?php endif; ?>
+                  <?php if (!empty($p['requiresShipping'])): ?><span class="badge bg-secondary-subtle text-secondary-emphasis border"><i class="bi bi-truck me-1"></i>Ships</span><?php endif; ?>
+                </div>
               </td>
               <td><?= $fmt($p) ?></td>
               <td class="small">

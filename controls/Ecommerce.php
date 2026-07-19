@@ -112,6 +112,16 @@ class Ecommerce extends Control {
         $this->jsonSuccess(['instance' => $instId, 'env' => $env], 'Payment source saved');
     }
 
+    /** Format a JSON-stored normalized address into a short, escaped multi-line block. */
+    private static function fmtAddress($json): string {
+        $a = json_decode((string)$json, true);
+        if (!is_array($a)) return '';
+        $l1 = trim(($a['line1'] ?? '') . ' ' . ($a['line2'] ?? ''));
+        $l2 = trim(implode(' ', array_filter([$a['city'] ?? '', $a['state'] ?? '', $a['postal'] ?? ''])));
+        $l3 = strtoupper((string)($a['country'] ?? ''));
+        return implode('<br>', array_map(fn($s) => htmlspecialchars((string)$s), array_filter([$l1, $l2, $l3])));
+    }
+
     /** POST /ecommerce/shipping — store-wide flat shipping (countries / rate / label). */
     public function shipping($params = []): void {
         if (!$this->requireFeature()) return;
@@ -135,12 +145,12 @@ class Ecommerce extends Control {
         if (!$this->requireFeature()) return;
         $mid = (int)$this->member->id;
         $sid = (int)$this->getParam('instance', 0);
-        $where = $sid ? 'member_id = ? AND instance_id = ? ORDER BY created_at DESC LIMIT 200'
-                      : 'member_id = ? ORDER BY created_at DESC LIMIT 200';
-        $args  = $sid ? [$mid, $sid] : [$mid];
         $this->render('ecommerce/orders', [
-            'title'  => 'Orders',
-            'orders' => Bean::find('shoporder', $where, $args),
+            'title'      => 'Orders',
+            'instanceId' => $sid,
+            'orderCount' => $sid
+                ? Bean::count('shoporder', 'member_id = ? AND instance_id = ?', [$mid, $sid])
+                : Bean::count('shoporder', 'member_id = ?', [$mid]),
         ]);
     }
 
@@ -152,8 +162,9 @@ class Ecommerce extends Control {
      */
     public function ordersdata($params = []): void {
         if (!$this->requireFeature()) return;
-        $mid = (int)$this->member->id;
-        $sid = (int)$this->getParam('instance', 0);
+        $mid  = (int)$this->member->id;
+        $sid  = (int)$this->getParam('instance', 0);
+        $full = filter_var($this->getParam('full', false), FILTER_VALIDATE_BOOLEAN);
 
         $columns = [
             ['db' => 'created_at',   'search' => null],     // 0  When
@@ -166,20 +177,38 @@ class Ecommerce extends Control {
         $resp = DataTableResponse::build('shoporder', $columns, $this->getParams(), [
             'baseWhere'  => 'member_id = ? AND instance_id = ?',
             'baseParams' => [$mid, $sid],
-            'globalCols' => ['sku', 'title', 'email', 'unit_serial'],
-            'row' => function (array $r): array {
-                $money = strtoupper((string)($r['currency'] ?? 'usd')) . ' '
-                       . number_format(((int)($r['amount_total'] ?? 0)) / 100, 2);
+            'globalCols' => ['sku', 'title', 'email', 'unit_serial', 'ship_name', 'phone'],
+            'row' => function (array $r) use ($full): array {
+                $cur   = strtoupper((string)($r['currency'] ?? 'usd'));
+                $money = $cur . ' ' . number_format(((int)($r['amount_total'] ?? 0)) / 100, 2);
                 $unit  = !empty($r['unit_serial'])
                     ? ' <span class="badge bg-info-subtle text-info-emphasis border">' . h($r['unit_serial']) . '</span>' : '';
+                $recurring = ($r['billing_type'] ?? '') === 'subscription'
+                    ? ' <span class="badge bg-primary-subtle text-primary-emphasis border">' . h($r['billing_interval'] ?: 'recurring') . '</span>' : '';
                 $oversold = ($r['status'] ?? '') === 'paid-oversold';
                 $tone = $oversold ? 'warning' : 'success';
+
+                // Customer cell: email always; name/phone/ship-to only on the full view.
+                $customer = h($r['email'] ?: '—');
+                if ($full) {
+                    if (!empty($r['customer_name'])) $customer .= '<div class="small text-body-secondary">' . h($r['customer_name']) . '</div>';
+                    if (!empty($r['phone']))         $customer .= '<div class="small text-body-secondary">' . h($r['phone']) . '</div>';
+                    $ship = self::fmtAddress($r['ship_address'] ?? '');
+                    if ($ship !== '') {
+                        $customer .= '<div class="small mt-1"><span class="badge bg-secondary-subtle text-secondary-emphasis border">Ship to</span>'
+                            . '<div class="text-body-secondary">' . (!empty($r['ship_name']) ? h($r['ship_name']) . '<br>' : '') . $ship . '</div></div>';
+                    }
+                }
+                $amount = '<span class="text-nowrap">' . h($money) . '</span>';
+                if ((int)($r['amount_shipping'] ?? 0) > 0) {
+                    $amount .= '<div class="small text-body-secondary">incl. ' . h($cur . ' ' . number_format(((int)$r['amount_shipping']) / 100, 2)) . ' ship</div>';
+                }
                 return [
                     '<span class="small text-body-secondary text-nowrap">' . h($r['created_at'] ?? '') . '</span>',
                     '<div class="fw-semibold">' . h($r['title'] ?: $r['sku']) . '</div>'
-                        . '<div class="small text-body-secondary"><code>' . h($r['sku'] ?? '') . '</code>' . $unit . '</div>',
-                    h($r['email'] ?: '—'),
-                    '<span class="text-nowrap">' . h($money) . '</span>',
+                        . '<div class="small text-body-secondary"><code>' . h($r['sku'] ?? '') . '</code>' . $unit . $recurring . '</div>',
+                    $customer,
+                    $amount,
                     '<span class="badge bg-' . $tone . '-subtle text-' . $tone . '-emphasis border text-capitalize" '
                         . ($oversold ? 'title="Paid but stock was already depleted"' : '') . '>' . h($r['status'] ?? '') . '</span>',
                 ];
@@ -221,6 +250,8 @@ class Ecommerce extends Control {
                 'stripePriceId' => $this->getParam('stripe_price_id', ''),
                 'category'      => $this->getParam('category', ''),
                 'serialized'    => filter_var($this->getParam('serialized', false), FILTER_VALIDATE_BOOLEAN),
+                'billingType'   => (string)$this->getParam('billing_type', 'one_time'),
+                'billingInterval' => (string)$this->getParam('billing_interval', 'month'),
                 'requiresShipping' => filter_var($this->getParam('requires_shipping', '0'), FILTER_VALIDATE_BOOLEAN),
                 'holdMinutes'   => $this->getParam('hold_minutes', 10),
                 'stock'         => $this->getParam('stock', 0),

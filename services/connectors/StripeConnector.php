@@ -274,24 +274,29 @@ class StripeConnector extends AbstractConnector {
      * only; the token is used for this call and never returned.
      */
     public function createCheckout($conn, string $token, array $order): array {
+        $mode = ($order['mode'] ?? 'payment') === 'subscription' ? 'subscription' : 'payment';
         $items = [];
         foreach (array_values($order['items'] ?? []) as $it) {
             $cents = max(0, (int)($it['amount_cents'] ?? 0));
             if ($cents <= 0) continue;
-            $items[] = [
-                'price_data' => [
-                    'currency'     => strtolower((string)($it['currency'] ?? 'usd')),
-                    'product_data' => ['name' => (string)($it['title'] ?? 'Item')],
-                    'unit_amount'  => $cents,
-                ],
-                'quantity' => max(1, (int)($it['quantity'] ?? 1)),
+            $priceData = [
+                'currency'     => strtolower((string)($it['currency'] ?? 'usd')),
+                'product_data' => ['name' => (string)($it['title'] ?? 'Item')],
+                'unit_amount'  => $cents,
             ];
+            // Subscription mode needs a recurring price; the interval drives the cycle.
+            if ($mode === 'subscription') {
+                $interval = strtolower((string)($it['interval'] ?? 'month'));
+                if (!in_array($interval, ['day', 'week', 'month', 'year'], true)) $interval = 'month';
+                $priceData['recurring'] = ['interval' => $interval];
+            }
+            $items[] = ['price_data' => $priceData, 'quantity' => max(1, (int)($it['quantity'] ?? 1))];
         }
         if (empty($items)) throw new \Exception('Nothing to check out.');
         $success = trim((string)($order['success_url'] ?? ''));
         $cancel  = trim((string)($order['cancel_url'] ?? ''));
         if ($success === '' || $cancel === '') throw new \Exception('Checkout needs success and cancel URLs.');
-        $fields = ['mode' => 'payment', 'success_url' => $success, 'cancel_url' => $cancel, 'line_items' => $items];
+        $fields = ['mode' => $mode, 'success_url' => $success, 'cancel_url' => $cancel, 'line_items' => $items];
         if (!empty($order['client_reference_id'])) $fields['client_reference_id'] = (string)$order['client_reference_id'];
 
         // Provider-neutral `collect` block (same shape every connector receives) →
@@ -306,9 +311,10 @@ class StripeConnector extends AbstractConnector {
                 (array)($collect['countries'] ?? [])
             )));
             if ($countries) $fields['shipping_address_collection'] = ['allowed_countries' => $countries];
-            // A single flat shipping rate (amount 0 shows as "Free"); Stripe adds it to the total.
+            // A single flat shipping rate (amount 0 shows as "Free"); Stripe adds it to the
+            // total. One-time payments only — recurring plans fold shipping into the price.
             $rate = is_array($collect['shipping_rate'] ?? null) ? $collect['shipping_rate'] : null;
-            if ($rate !== null) {
+            if ($rate !== null && $mode === 'payment') {
                 $fields['shipping_options'] = [[
                     'shipping_rate_data' => [
                         'type'         => 'fixed_amount',
@@ -359,6 +365,8 @@ class StripeConnector extends AbstractConnector {
         return [
             'session_id'      => (string)($s['id'] ?? $sessionId),
             'payment_intent'  => (string)($s['payment_intent'] ?? ''),
+            'mode'            => (string)($s['mode'] ?? 'payment'),
+            'subscription'    => (string)($s['subscription'] ?? ''),
             'amount_total'    => (int)($s['amount_total'] ?? 0),
             'amount_shipping' => (int)($s['total_details']['amount_shipping'] ?? 0),
             'currency'        => (string)($s['currency'] ?? 'usd'),

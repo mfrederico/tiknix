@@ -61,6 +61,26 @@ foreach (($p['units'] ?? []) as $u) { $units .= ($u['serial'] ?? '') . "\n"; }
 
       <hr class="my-3">
 
+      <?php
+        $isSub = ($p['billingType'] ?? 'one_time') === 'subscription';
+        $curInterval = (string)($p['billingInterval'] ?? 'month');
+      ?>
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" role="switch" id="billing_sub" name="billing_type" value="subscription" <?= $isSub ? 'checked' : '' ?>>
+        <label class="form-check-label" for="billing_sub">Recurring subscription — charge on an anniversary cycle (SaaS / memberships)</label>
+      </div>
+      <div id="intervalRow" class="row g-3 mb-2 <?= $isSub ? '' : 'd-none' ?>">
+        <div class="col-sm-4">
+          <label class="form-label small mb-1">Bill every</label>
+          <select name="billing_interval" class="form-select form-select-sm">
+            <?php foreach (['month' => 'Month', 'year' => 'Year', 'week' => 'Week', 'day' => 'Day'] as $iv => $lbl): ?>
+              <option value="<?= $iv ?>" <?= $curInterval === $iv ? 'selected' : '' ?>><?= $lbl ?></option>
+            <?php endforeach; ?>
+          </select>
+          <div class="form-text">The price above is charged once per interval.</div>
+        </div>
+      </div>
+
       <div class="form-check form-switch mb-2">
         <input class="form-check-input" type="checkbox" role="switch" id="serialized" name="serialized" value="1" <?= $serialized ? 'checked' : '' ?>>
         <label class="form-check-label" for="serialized">Serialized — each item is a unique unit (watches, handbags)</label>
@@ -141,6 +161,12 @@ foreach (($p['units'] ?? []) as $u) { $units .= ($u['serial'] ?? '') . "\n"; }
   ser.addEventListener('change', function(){
     stockRow.classList.toggle('d-none', ser.checked);
     serialRows.classList.toggle('d-none', !ser.checked);
+  });
+
+  const sub = document.getElementById('billing_sub');
+  const intervalRow = document.getElementById('intervalRow');
+  sub.addEventListener('change', function(){
+    intervalRow.classList.toggle('d-none', !sub.checked);
   });
 
   document.getElementById('productForm').addEventListener('submit', function(ev){

@@ -41,6 +41,19 @@
             opacity: 0.85;
             margin-bottom: 2.5rem;
         }
+        .chips {
+            display: flex; flex-wrap: wrap; gap: 0.5rem;
+            justify-content: center; margin-bottom: 2.5rem;
+        }
+        .chips span {
+            padding: 0.35rem 0.85rem;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 999px;
+            font-size: 0.85rem;
+            background: rgba(255,255,255,0.08);
+            opacity: 0.9;
+        }
+        p { margin-bottom: 1.5rem; }
         .dots { display: flex; gap: 0.5rem; justify-content: center; }
         .dots span {
             width: 10px; height: 10px;
@@ -107,8 +120,14 @@
 <body>
     <div class="wrap">
         <div class="badge">Coming Soon</div>
-        <h1>Something great is on the way.</h1>
-        <p>We're putting the finishing touches on our new site. Check back soon &mdash; we can't wait to show you what we've been building.</p>
+        <h1>Build on our servers, deploy to yours.</h1>
+        <p>Tinker safely with our AI agent harness &mdash; prebuilt primitives like a database, web server, and sandboxing, and much, much more.</p>
+        <div class="chips">
+            <span>Database</span>
+            <span>Web server</span>
+            <span>Sandboxing</span>
+            <span>&amp; much more</span>
+        </div>
         <div class="dots"><span></span><span></span><span></span></div>
 
         <?php if (!empty($subscribed)): ?>

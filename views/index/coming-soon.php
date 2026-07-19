@@ -8,18 +8,45 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+    <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('tk_theme') || 'admin');</script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* Palettes. Default (:root) matches the tiknix admin dark navy; the others
+           are futuristic alternatives you can preview via the top-right dropdown. */
+        :root, [data-theme="admin"] {
+            --bg1:#0b1530; --bg2:#060d20; --glow:rgba(59,118,240,0.20);
+            --text:#eaedf5; --text-soft:#9ba4bd; --accent:#3b76f0; --accent-ink:#ffffff;
+        }
+        [data-theme="deep-space"] {
+            --bg1:#0a0e1a; --bg2:#131a2e; --glow:rgba(91,124,250,0.22);
+            --text:#e9eef7; --text-soft:#98a3bd; --accent:#5b7cfa; --accent-ink:#ffffff;
+        }
+        [data-theme="twilight"] {
+            --bg1:#1a2140; --bg2:#2e2450; --glow:rgba(150,120,220,0.20);
+            --text:#e9e6f5; --text-soft:#b6afce; --accent:#8b7bd6; --accent-ink:#ffffff;
+        }
+        [data-theme="cyber"] {
+            --bg1:#0b1220; --bg2:#0e1b24; --glow:rgba(34,211,238,0.16);
+            --text:#e6f0f5; --text-soft:#93b0bd; --accent:#22d3ee; --accent-ink:#04222a;
+        }
+        [data-theme="graphite"] {
+            --bg1:#131417; --bg2:#1b1e26; --glow:rgba(124,140,248,0.15);
+            --text:#e8eaf0; --text-soft:#a0a6b5; --accent:#7c8cf8; --accent-ink:#0c0f1a;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(135deg, #1e3a8a 0%, #6d28d9 100%);
-            color: #fff;
+            background:
+                radial-gradient(1100px 520px at 50% -8%, var(--glow), transparent 62%),
+                linear-gradient(160deg, var(--bg1) 0%, var(--bg2) 100%);
+            background-attachment: fixed;
+            color: var(--text);
             text-align: center;
             padding: 1.5rem;
+            transition: color 0.25s ease;
         }
         .wrap { max-width: 640px; }
         .logo {
@@ -28,7 +55,7 @@
             justify-content: center;
             gap: 0.85rem;
             margin-bottom: 2.25rem;
-            color: #fff;          /* drives the mark (via mask) + wordmark */
+            color: var(--text);   /* drives the mark (via mask) + wordmark */
         }
         /* The mark is a monochrome SVG painted with currentColor via mask, so it
            recolors to the theme (white here) while staying a single source file. */
@@ -79,10 +106,10 @@
         p {
             font-size: clamp(1rem, 3vw, 1.25rem);
             line-height: 1.6;
-            color: rgba(255,255,255,0.85);
+            color: var(--text-soft);
             margin-bottom: 2.5rem;
         }
-        p strong { color: #fff; font-weight: 600; }
+        p strong { color: var(--text); font-weight: 600; }
         .chips {
             display: flex; flex-wrap: wrap; gap: 0.5rem;
             justify-content: center; margin-bottom: 2.5rem;
@@ -123,15 +150,15 @@
             font-size: 1rem;
         }
         input::placeholder { color: rgba(255,255,255,0.6); }
-        input:focus { outline: none; border-color: #fff; background: rgba(255,255,255,0.18); }
+        input:focus { outline: none; border-color: var(--accent); background: rgba(255,255,255,0.18); }
         button {
             width: 100%;
             margin-top: 0.5rem;
             padding: 0.9rem 1rem;
             border: none;
             border-radius: 10px;
-            background: #fff;
-            color: #1e3a8a;
+            background: var(--accent);
+            color: var(--accent-ink);
             font-size: 1rem;
             font-weight: 700;
             cursor: pointer;
@@ -156,25 +183,55 @@
             border-radius: 16px;
             font-size: 1.1rem;
         }
+        .theme-picker { position: fixed; top: 1rem; right: 1rem; z-index: 20; }
+        .theme-picker select {
+            background: rgba(255,255,255,0.08);
+            color: var(--text);
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 8px;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.78rem;
+            cursor: pointer;
+            backdrop-filter: blur(6px);
+        }
+        .theme-picker select option { color: #111; }
         @media (max-width: 480px) { .field-row { flex-direction: column; gap: 0.75rem; } }
     </style>
 </head>
 <body>
+    <div class="theme-picker">
+        <select id="themeSelect" aria-label="Preview color theme">
+            <option value="admin">Admin match</option>
+            <option value="deep-space">Deep space</option>
+            <option value="twilight">Muted twilight</option>
+            <option value="cyber">Cyber teal</option>
+            <option value="graphite">Graphite</option>
+        </select>
+    </div>
+    <script>
+        (function () {
+            var sel = document.getElementById('themeSelect');
+            sel.value = localStorage.getItem('tk_theme') || 'admin';
+            sel.addEventListener('change', function () {
+                document.documentElement.setAttribute('data-theme', sel.value);
+                localStorage.setItem('tk_theme', sel.value);
+            });
+        })();
+    </script>
     <div class="wrap">
         <div class="logo" role="img" aria-label="tiknix">
             <span class="logo-mark"></span>
             <span class="logo-word">tiknix</span>
         </div>
-        <div class="badge">Coming Soon</div>
         <h1>Tiknix is an AI operating system.</h1>
-        <p>An agent harness with the primitives every project needs built right in: a database, a web server, sandboxing, and much, much more. <strong>Build on our servers, deploy to yours.</strong></p>
+        <p>Build full working applications with the primitives you need for any project are built right in: a database, a web server, sandboxing, and much, much more. <br /><strong>Build with our system, deploy to yours.</strong></p>
         <div class="chips">
             <span>Database</span>
             <span>Web server</span>
             <span>Sandboxing</span>
             <span>&amp; much more</span>
         </div>
-        <div class="dots"><span></span><span></span><span></span></div>
+        <!-- <div class="dots"><span></span><span></span><span></span></div> -->
 
         <?php if (!empty($subscribed)): ?>
             <div class="thank-you">

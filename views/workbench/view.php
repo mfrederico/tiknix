@@ -1109,7 +1109,10 @@ function updateCommentsList(comments) {
                     </div>
                 </div>
             `;
-            list.insertAdjacentHTML('beforeend', html);
+            // Newest at the top — consistent with the initial render (array_reverse) and
+            // so a just-arrived reply surfaces above older messages. Iterating the ASC
+            // feed and prepending each leaves the newest of the batch at the very top.
+            list.insertAdjacentHTML('afterbegin', html);
         }
     });
 }
@@ -1314,7 +1317,7 @@ document.getElementById('commentForm').addEventListener('submit', async function
                     </div>
                 </div>
             `;
-            document.getElementById('commentsList').insertAdjacentHTML('beforeend', html);
+            document.getElementById('commentsList').insertAdjacentHTML('afterbegin', html);
             document.getElementById('commentContent').value = '';
             clearImagePreview();
         } else {
@@ -1375,7 +1378,7 @@ async function sendInlineComment() {
                     </div>
                 </div>
             `;
-            document.getElementById('commentsList').insertAdjacentHTML('beforeend', html);
+            document.getElementById('commentsList').insertAdjacentHTML('afterbegin', html);
 
             // If sent to session, status might change - reload after short delay
             if (data.sent_to_session) {

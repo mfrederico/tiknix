@@ -1164,6 +1164,15 @@ class Workbench extends Control {
         // Always create isolated workspace for tasks (safer for testing)
         $workspacePath = null;
 
+        // Self-heal: if the task has a branch but its workspace was deleted (e.g. cleaned
+        // up on a prior approve), the stored branch is stale and there is nothing to run
+        // against — a null path would fall through to the main app and be rejected. Drop
+        // the stale branch so a fresh workspace + branch get rebuilt from the instance.
+        if (!empty($task->branchName) && (empty($task->projectPath) || !is_dir($task->projectPath . '/.git'))) {
+            $this->logTaskEvent($taskId, 'info', 'system', 'Workspace was gone — rebuilding a fresh one from the instance.');
+            $task->branchName = null;
+        }
+
         if (empty($task->branchName)) {
             try {
                 // Determine clone source + base branch. An instance-tagged task
@@ -1400,6 +1409,19 @@ class Workbench extends Control {
 
         // Use existing workspace path if available
         $workspacePath = !empty($task->projectPath) ? $task->projectPath : null;
+
+        // If the workspace is gone (deleted on a prior approve/cleanup), we can't re-run
+        // against it — that path falls through to the main app and the agent guard rejects
+        // it. Rebuild a fresh instance workspace via run(), which self-heals the stale
+        // branch, re-clones from the instance, and spawns. Keeps the same task + history.
+        if (!$workspacePath || !is_dir($workspacePath . '/.git')) {
+            $task->status = 'pending';
+            $task->errorMessage = null;
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+            $this->logTaskEvent($taskId, 'info', 'system', 'Workspace was gone — re-running via a rebuilt instance workspace.');
+            return $this->run($params);
+        }
 
         // Kill any existing session for this task
         // Pass member level for security sandbox hook
@@ -1818,6 +1840,20 @@ class Workbench extends Control {
                 $this->logTaskEvent($taskId, $localMerged ? 'info' : 'warning', 'system', 'Local merge: ' . $lm['reason']);
             }
             $merged = $prMerged || $localMerged;
+
+            // SAFETY: if a merge was REQUESTED but did not land, do NOT tear anything
+            // down. Deleting the workspace here destroys the task branch + the agent's
+            // commits, making a failed merge unrecoverable (this is exactly how task 164
+            // lost its work). Keep the workspace + session so the merge can be fixed and
+            // retried — teardown only happens once the change is safely merged.
+            $mergeFailedButRequested = $mergePr && !$merged;
+            if ($mergeFailedButRequested) {
+                $stopSession = false;
+                $stopServer = false;
+                $deleteWorkspace = false;
+                $this->logTaskEvent($taskId, 'warning', 'system',
+                    'Merge did not complete — workspace kept for retry. Reason: ' . ($mergeReason ?: $mergeError ?: 'unknown'));
+            }
 
             // Stop tmux session if requested
             if ($stopSession && $task->tmuxSession) {
@@ -2867,8 +2903,18 @@ class Workbench extends Control {
         exec('git -C ' . escapeshellarg($dir) . ' status --porcelain 2>/dev/null', $out);
         $paths = [];
         foreach ($out as $line) {
-            $p = trim(substr($line, 3));
-            if ($p === '' || preg_match('/\.(db|sqlite)$/i', $p)) continue;
+            if ($line === '') continue;
+            $code = substr($line, 0, 2);   // XY porcelain status
+            $p    = trim(substr($line, 3));
+            if ($p === '') continue;
+            // Untracked files (incl. runtime user uploads on older instances whose
+            // .gitignore predates public/uploads/) are NEVER clobbered by a merge — git
+            // aborts the merge itself if an incoming file would overwrite one. Only
+            // *tracked* uncommitted edits can be silently lost, so only those should
+            // block. This makes the merge far less "issue prone".
+            if ($code === '??') continue;
+            // Runtime data, not code: databases and user uploads.
+            if (preg_match('#\.(db|sqlite)$|(^|/)public/uploads/#i', $p)) continue;
             $paths[] = $p;
         }
         return implode(', ', array_slice($paths, 0, 5)) . (count($paths) > 5 ? ' …' : '');
@@ -2941,8 +2987,13 @@ class Workbench extends Control {
             }
             $merge = $git($instDir, ['merge', '--no-ff', '-m', 'Merge ' . $br . ' (task #' . (int)$task->id . ')', 'FETCH_HEAD']);
             if (!$merge['ok']) {
+                // Capture the conflicting files BEFORE aborting, so the log says exactly what clashed.
+                $conf = $git($instDir, ['diff', '--name-only', '--diff-filter=U']);
+                $files = $conf['ok'] ? str_replace("\n", ', ', trim($conf['out'])) : '';
                 $git($instDir, ['merge', '--abort']);
-                return ['merged' => false, 'pushed' => false, 'reason' => 'merge conflict on the instance — needs manual resolution'];
+                return ['merged' => false, 'pushed' => false,
+                        'reason' => 'merge conflict on the instance — needs manual resolution'
+                                  . ($files !== '' ? ' — conflicting files: ' . $files : '')];
             }
             return ['merged' => true, 'pushed' => true,
                     'reason' => 'merged into ' . $base . ' on ' . ($task->instanceTag ?: 'the instance')];
@@ -2954,8 +3005,12 @@ class Workbench extends Control {
         }
         $merge = $git($ws, ['merge', '--no-ff', '-m', 'Merge ' . $br . ' (task #' . (int)$task->id . ')', $br]);
         if (!$merge['ok']) {
+            $conf = $git($ws, ['diff', '--name-only', '--diff-filter=U']);
+            $files = $conf['ok'] ? str_replace("\n", ', ', trim($conf['out'])) : '';
             $git($ws, ['merge', '--abort']);
-            return ['merged' => false, 'pushed' => false, 'reason' => 'merge conflict on ' . $base . ' — needs manual resolution'];
+            return ['merged' => false, 'pushed' => false,
+                    'reason' => 'merge conflict on ' . $base . ' — needs manual resolution'
+                              . ($files !== '' ? ' — conflicting files: ' . $files : '')];
         }
         // Push the merged base to origin (gh-free). If this fails, the merge lives
         // only in the soon-to-be-deleted clone, so it does NOT count as merged.

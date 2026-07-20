@@ -209,4 +209,16 @@ echo "  seeded Dockerfile + docker/entrypoint.sh + .dockerignore (Hyperlift-read
 echo '  ' . ($secCode === 0 ? (trim(implode(' ', $secOut)) ?: 'seeded security.db')
                             : 'warn: security seed failed — run scripts/seed-security.php later') . "\n";
 
+// --- 7) ensure runtime uploads are gitignored -------------------------------
+// public/uploads/ holds user-uploaded runtime files (images, etc.), NOT code.
+// Older instance clones predate this ignore, so their uploads show as "dirty" and
+// block task merge-backs. Guarantee it here so uploads never count as uncommitted
+// changes on any instance. Idempotent.
+$giPath = "$ROOT/.gitignore";
+$gi = is_file($giPath) ? (string)@file_get_contents($giPath) : '';
+if (!preg_match('#^\s*/?public/uploads/?\s*$#m', $gi)) {
+    @file_put_contents($giPath, rtrim($gi, "\n") . "\n\n# Runtime user uploads (not code)\npublic/uploads/\n", LOCK_EX);
+    echo "  ensured public/uploads/ is gitignored\n";
+}
+
 echo "aibuilder-provision: done ($dbRel ready)\n";

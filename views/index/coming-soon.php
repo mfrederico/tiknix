@@ -175,7 +175,7 @@
             <span class="logo-word">tiknix</span>
         </div>
         <h1>Tiknix is an AI operating system.</h1>
-        <p>Build full working applications with the primitives you need for any project are built right in: a database, a web server, sandboxing, and much, much more. <br /><strong>Build with our system, deploy to yours.</strong></p>
+        <p>Build full, working applications &mdash; the primitives every project needs are built right in: a database, a web server, sandboxing, and much, much more. <br /><strong>Build with our system, deploy to yours.</strong></p>
         <div class="chips">
             <span>Database</span>
             <span>Web server</span>

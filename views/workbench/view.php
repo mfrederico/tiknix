@@ -96,6 +96,12 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                             <button class="btn btn-outline-success" onclick="rerunTask(<?= $task->id ?>)">
                                 <i class="bi bi-arrow-repeat"></i> Re-run
                             </button>
+                            <?php if (!empty($task->branchName) && !empty($task->projectPath)): ?>
+                                <button class="btn btn-outline-warning" onclick="resolveConflict(<?= $task->id ?>)"
+                                        title="Update this task's branch from the current base and let the agent resolve any merge conflicts, keeping this task's work">
+                                    <i class="bi bi-sign-merge-left"></i> Resolve conflict
+                                </button>
+                            <?php endif; ?>
                         <?php endif; ?>
 
                         <?php if ($canRun && in_array($task->status, ['queued', 'running'])): ?>
@@ -918,6 +924,31 @@ async function forceResetTask(id) {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Force Reset';
     }
+}
+
+async function resolveConflict(id) {
+    if (!confirm("Update this task's branch from the current base and have the agent resolve any merge conflicts? This keeps the task's work.")) return;
+    const btn = event.target.closest('button');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Resolving...';
+    try {
+        const formData = new FormData();
+        formData.append('id', id);
+        formData.append('_csrf_token', csrfToken);
+        const response = await fetch('/workbench/resolveconflict', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (data.success) {
+            alert(data.message || (data.clean ? 'No conflict — ready to Approve & Merge.' : 'Agent is resolving the conflict.'));
+            location.reload();
+            return;
+        }
+        alert('Error: ' + (data.message || data.error || 'Could not resolve'));
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.innerHTML = orig;
 }
 
 async function rerunTask(id) {

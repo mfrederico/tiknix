@@ -1523,6 +1523,105 @@ class Workbench extends Control {
     }
 
     /**
+     * Resolve a merge conflict WITH the agent. Brings the instance's current base onto
+     * the task branch (in its existing workspace), leaving conflict markers, then spawns
+     * the agent with a resolution prompt so it fixes + commits. The task's own work is
+     * preserved; once the agent commits, Approve & Merge lands cleanly.
+     */
+    public function resolveconflict($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $request = Flight::request();
+        if ($request->method !== 'POST') { Flight::redirect('/workbench'); return; }
+        if (!SimpleCsrf::validate()) { Flight::jsonError('CSRF validation failed', 403); return; }
+
+        $taskId = (int)$this->getParam('id');
+        $task = Bean::load('workbenchtask', $taskId);
+        if (!$task->id) { Flight::jsonError('Task not found', 404); return; }
+        if (!$this->access->canRun($this->member->id, $task)) { Flight::jsonError('Access denied', 403); return; }
+
+        $ws = (string)($task->projectPath ?? '');
+        $br = (string)($task->branchName ?? '');
+        if ($ws === '' || !is_dir($ws . '/.git') || $br === '') {
+            Flight::jsonError('This task has no workspace/branch to resolve — use Re-run to rebuild it.', 409);
+            return;
+        }
+        $instDir = $this->instanceDirForTask($task);
+        if ($instDir === null) {
+            Flight::jsonError('Conflict resolution is only available for instance tasks.', 409);
+            return;
+        }
+
+        $git = function (string $dir, array $args): array {
+            $cmd = 'git -C ' . escapeshellarg($dir);
+            foreach ($args as $a) $cmd .= ' ' . escapeshellarg($a);
+            $out = []; $code = 0; exec($cmd . ' 2>&1', $out, $code);
+            return ['ok' => $code === 0, 'out' => trim(implode("\n", $out))];
+        };
+
+        // Bring the instance's CURRENT base onto the task branch, inside the workspace.
+        $instBase = trim((string)@shell_exec('git -C ' . escapeshellarg($instDir) . ' rev-parse --abbrev-ref HEAD 2>/dev/null'))
+                    ?: ($task->baseBranch ?: 'main');
+        $git($ws, ['checkout', $br]);          // ensure the task branch is checked out
+        $git($ws, ['merge', '--abort']);       // clear any half-finished prior merge (no-op if none)
+        $fetch = $git($ws, ['fetch', $instDir, $instBase]);
+        if (!$fetch['ok']) {
+            Flight::jsonError('Could not fetch the instance base into the workspace: ' . $fetch['out'], 500);
+            return;
+        }
+        $merge = $git($ws, ['merge', '--no-ff', '-m', 'Merge ' . $instBase . ' into ' . $br . ' (resolve for task #' . $taskId . ')', 'FETCH_HEAD']);
+        if ($merge['ok']) {
+            // Clean — the branch already contains the latest base, so Approve & Merge is ready.
+            $this->logTaskEvent($taskId, 'info', 'system', 'Updated the branch from base with no conflict — ready to Approve & Merge.');
+            Flight::json(['success' => true, 'clean' => true,
+                'message' => 'No conflict — the branch is now up to date with the base. Approve & Merge is ready.']);
+            return;
+        }
+
+        // Real conflict: leave the markers in place, collect the file list, hand to the agent.
+        $conf  = $git($ws, ['diff', '--name-only', '--diff-filter=U']);
+        $files = $conf['ok'] ? array_values(array_filter(explode("\n", trim($conf['out'])))) : [];
+        $this->logTaskEvent($taskId, 'warning', 'system',
+            'Merge conflict — handing ' . count($files) . ' file(s) to the agent: ' . implode(', ', $files));
+
+        try {
+            $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $ws, $this->member->level);
+            if ($runner->exists()) { $runner->kill(); usleep(400000); }
+            try {
+                $apiKey  = $this->getOrCreateWorkbenchApiKey($this->member->id);
+                $baseUrl = Flight::get('app.baseurl') ?? 'https://dev.tiknix.com';
+                $this->generateWorkspaceMcpConfig($ws, $apiKey, $baseUrl);
+            } catch (Exception $e) { /* non-fatal */ }
+
+            if (!$runner->spawn()) { Flight::jsonError('Failed to start the agent session', 500); return; }
+            $task->status = 'running';
+            $task->tmuxSession = $runner->getSessionName();
+            $task->currentRunId = bin2hex(random_bytes(16));
+            $task->lastRunnerMemberId = $this->member->id;
+            $task->startedAt = date('Y-m-d H:i:s');
+            $task->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($task);
+
+            usleep(2000000);   // let the agent initialise
+            $fileList = $files ? ('- ' . implode("\n- ", $files)) : '(run `git status` to see them)';
+            $prompt = "A git merge is IN PROGRESS on branch `{$br}` and has CONFLICTS. The instance's base branch "
+                . "(`{$instBase}`) was merged in and clashed with this task's changes.\n\n"
+                . "Resolve the conflict markers (<<<<<<< / ======= / >>>>>>>) in these files, keeping BOTH this task's "
+                . "intent AND the base's changes wherever both belong:\n{$fileList}\n\n"
+                . "Then stage everything and commit to complete the merge: `git add -A && git commit --no-edit`. "
+                . "Do NOT change unrelated code and do NOT push. When finished, say the conflict is resolved so it can be approved & merged.";
+            $runner->sendPrompt($prompt);
+
+            $this->logTaskEvent($taskId, 'info', 'review', 'Conflict resolution started by ' . ($this->member->displayName ?? $this->member->email));
+            Flight::json(['success' => true, 'clean' => false, 'files' => $files, 'session' => $runner->getSessionName(),
+                'message' => 'Agent is resolving ' . count($files) . ' conflicting file(s). Watch the conversation, then Approve & Merge.']);
+        } catch (Exception $e) {
+            $this->logger->error('Failed to start conflict resolution', ['error' => $e->getMessage()]);
+            Flight::jsonError('Failed to start conflict resolution: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
      * Force reset a stuck queued/running task
      */
     public function forcereset($params = []) {

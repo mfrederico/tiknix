@@ -267,6 +267,9 @@ class Workbench extends Control {
             $task->tags = json_encode(array_filter(array_map('trim', explode(',', $this->getParam('tags', '')))));
             $task->baseBranch = trim($this->getParam('base_branch', 'main'));
             $task->instanceId = (int)$instance->id;
+            // Test-DB source: 'live' (default) copies the instance's real data into the
+            // workspace for fidelity; 'fresh' starts from an empty schema (privacy).
+            $task->dbSource = ($this->getParam('db_source', 'live') === 'fresh') ? 'fresh' : 'live';
             $task->instanceTag = $instance->slug . '.' . ($instance->app ?: 'tiknix');
             $task->runCount = 0;
             $task->createdAt = date('Y-m-d H:i:s');
@@ -1252,9 +1255,21 @@ class Workbench extends Control {
         // Initialize workspace with isolated database, config, and vendor
         if ($workspacePath && is_dir($workspacePath)) {
             try {
+                // For an instance task set to use real data, seed the workspace DB from the
+                // INSTANCE's OWN live DB (<instanceDir>/database/<slug>.db) — NOT the
+                // control-plane tiknix.com DB — for higher-fidelity testing. The workspace
+                // DB is gitignored, so this copy never merges back.
+                $liveDbPath = null;
+                $instDir = $this->instanceDirForTask($task);
+                if ($instDir !== null && (string)($task->dbSource ?? 'live') !== 'fresh') {
+                    $inst = Bean::load('instance', (int)$task->instanceId);
+                    $cand = $instDir . '/database/' . $inst->slug . '.db';
+                    if (is_file($cand)) $liveDbPath = $cand;
+                }
                 $wsManager = new WorkspaceManager();
-                $wsInfo = $wsManager->initialize($workspacePath, $task->proxyHash);
-                $this->logTaskEvent($taskId, 'info', 'system', "Initialized workspace: {$wsInfo['baseurl']}");
+                $wsInfo = $wsManager->initialize($workspacePath, $task->proxyHash, false, $liveDbPath);
+                $this->logTaskEvent($taskId, 'info', 'system', "Initialized workspace: {$wsInfo['baseurl']}"
+                    . ($liveDbPath ? ' (seeded from the instance\'s live data)' : ' (fresh database)'));
             } catch (Exception $e) {
                 $this->logger->warning('Workspace initialization warning', ['error' => $e->getMessage()]);
                 // Continue - workspace may still work without full initialization

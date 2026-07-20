@@ -131,7 +131,7 @@ class WorkspaceManager
      * @param bool $copyFullVendor If true, copy entire vendor (for remote)
      * @return array Workspace info ['subdomain' => string, 'baseurl' => string]
      */
-    public function initialize(string $workspacePath, string $proxyHash, bool $copyFullVendor = false): array
+    public function initialize(string $workspacePath, string $proxyHash, bool $copyFullVendor = false, ?string $liveDbPath = null): array
     {
         if (!is_dir($workspacePath)) {
             throw new \RuntimeException("Workspace path does not exist: {$workspacePath}");
@@ -145,7 +145,14 @@ class WorkspaceManager
         // Setup the workspace
         $this->setupVendor($workspacePath, $copyFullVendor);
         $this->updateConfig($workspacePath, $subdomain);
-        $this->initDatabase($workspacePath);
+        // Seed the workspace DB from the instance's live DB (real data, higher-fidelity
+        // testing) when a source is given; otherwise a fresh empty schema DB. The
+        // workspace DB is gitignored, so this copy never merges back.
+        if ($liveDbPath !== null && is_file($liveDbPath)) {
+            $this->seedDatabaseFromLive($workspacePath, $liveDbPath);
+        } else {
+            $this->initDatabase($workspacePath);
+        }
         $this->createRequiredDirs($workspacePath);
 
         return [
@@ -389,6 +396,27 @@ INI;
         }
 
         // Set admin password to 'admin1234'
+        $this->setAdminPassword($dbPath, 'admin1234');
+    }
+
+    /**
+     * Seed the workspace DB by copying the instance's LIVE database (so tasks test
+     * against real content), then reset the admin login to the known test creds so the
+     * test server stays reachable. Falls back to a fresh DB if the copy fails.
+     */
+    public function seedDatabaseFromLive(string $workspacePath, string $liveDbPath): void
+    {
+        $dbPath = $workspacePath . '/database/tiknix.db';
+        $dbDir  = dirname($dbPath);
+        if (!is_dir($dbDir)) {
+            mkdir($dbDir, 0755, true);
+        }
+        if (!@copy($liveDbPath, $dbPath)) {
+            // Copy failed — don't leave the workspace without a DB.
+            $this->initDatabase($workspacePath);
+            return;
+        }
+        // Reset admin password to 'admin1234' so the tester can sign into the test server.
         $this->setAdminPassword($dbPath, 'admin1234');
     }
 

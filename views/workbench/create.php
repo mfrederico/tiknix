@@ -123,6 +123,16 @@
                                 <div class="form-text">Branch to create this task from. PR will merge back into this branch. Only pushed branches are shown.</div>
                             </div>
 
+                            <!-- Test-DB source -->
+                            <div class="col-md-6 mb-3">
+                                <label for="db_source" class="form-label">Test data</label>
+                                <select class="form-select" id="db_source" name="db_source">
+                                    <option value="live" selected>Copy the instance's real data (higher-fidelity testing)</option>
+                                    <option value="fresh">Fresh empty database (keeps customer data out of the agent)</option>
+                                </select>
+                                <div class="form-text">The test workspace's database. "Real data" copies the instance's live DB so the agent sees the actual site; it's a copy and never merges back. Choose "fresh" for privacy-sensitive instances.</div>
+                            </div>
+
                             <!-- Authcontrol Level -->
                             <div class="col-md-6 mb-3">
                                 <label for="authcontrol_level" class="form-label">Endpoint Access Level</label>

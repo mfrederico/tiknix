@@ -84,7 +84,7 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 
 /* app shell */
 .ui-shell{display:flex;min-height:100vh;}
-.ui-sidebar{width:var(--ui-sidebar-width);flex:0 0 var(--ui-sidebar-width);background:var(--ui-sidebar-bg);color:var(--ui-sidebar-text);display:flex;flex-direction:column;position:sticky;top:0;align-self:flex-start;height:100vh;}
+.ui-sidebar{width:var(--ui-sidebar-width);background:var(--ui-sidebar-bg);color:var(--ui-sidebar-text);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:30;}
 .ui-sidebar-brand{display:flex;align-items:center;gap:.6rem;padding:1.1rem 1.25rem;color:#fff;text-decoration:none;font-family:var(--ui-ff-brand);font-weight:700;font-size:1.35rem;font-variation-settings:'opsz' 72,'SOFT' 20;letter-spacing:-0.02em;}
 .ui-brand-mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--ui-primary),#2f7bf6);display:grid;place-items:center;color:#fff;font-size:1rem;box-shadow:0 6px 16px -6px rgba(59,118,240,.7);}
 <?php $__logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1'; ?>
@@ -101,7 +101,7 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 .ui-sidebar-foot{border-top:1px solid rgba(255,255,255,.07);padding:.75rem 1rem;}
 
 /* main + topbar */
-.ui-main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.ui-main{flex:1;min-width:0;display:flex;flex-direction:column;margin-left:var(--ui-sidebar-width);}
 .ui-topbar{height:var(--ui-topbar-height);position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bs-body-bg) 82%,transparent);backdrop-filter:saturate(150%) blur(10px);border-bottom:1px solid var(--bs-border-color);display:flex;align-items:center;gap:1rem;padding:0 1.5rem;}
 .ui-topbar-title{line-height:1.1;}
 .ui-topbar-title .ui-eyebrow{display:block;margin-bottom:1px;}
@@ -132,9 +132,10 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 /* responsive: collapse sidebar to an offcanvas-ish hidden state on small screens */
 .ui-sidebar-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1049;display:none;}
 @media (max-width: 991.98px){
-    .ui-sidebar{position:fixed;z-index:1050;transform:translateX(-100%);transition:transform .2s;box-shadow:var(--ui-shadow-lift);}
+    .ui-sidebar{z-index:1050;transform:translateX(-100%);transition:transform .2s;box-shadow:var(--ui-shadow-lift);}
     .ui-sidebar.show{transform:translateX(0);}
     .ui-sidebar-backdrop.show{display:block;}
+    .ui-main{margin-left:0;}   /* drawer overlays; don't offset content on mobile */
     .ui-content{padding:1.1rem;}
 }
 </style>

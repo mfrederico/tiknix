@@ -72,6 +72,21 @@ Flight::map('defaultRoute', function($prefix = '') {
                     return;
                 }
 
+                // Only dispatch to real controllers: the resolved class's source
+                // file must live under this project's controls/ directory. The
+                // `app\` namespace also maps to lib/, so without this an attacker
+                // could instantiate helper classes (Bean, PermissionCache, ...)
+                // straight from a URL. Directory-based (not a name list) so new
+                // controllers in any controls/ subdir work automatically.
+                $controlsDir = realpath(dirname(__DIR__) . '/controls');
+                $classFile = (new \ReflectionClass($classname))->getFileName();
+                if ($controlsDir === false || $classFile === false
+                    || strpos(realpath($classFile), $controlsDir . DIRECTORY_SEPARATOR) !== 0) {
+                    Flight::get('log')->error("Refused non-controller class: {$classname}");
+                    Flight::notFound();
+                    return;
+                }
+
                 $instance = new $classname;
 
                 // Check if method exists and is callable
@@ -261,9 +276,15 @@ Flight::map('loadMenu', function() {
  * Error handlers
  */
 Flight::map('notFound', function() {
+    // Send a real HTTP 404 (not a soft-404). A 200 status on the error page
+    // pollutes logs, gets soft-404s indexed, and destroys the status-code
+    // signal used to spot URL scanning. stop() also prevents execution from
+    // continuing past the render (which was emitting stray redirects).
+    Flight::response()->status(404);
     Flight::renderView('error/404', [
         'title' => '404 - Page Not Found'
     ]);
+    Flight::stop();
 });
 
 Flight::map('error', function($ex) {

@@ -23,6 +23,7 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
   /* Loud "which instance am I in" banner */
   .ab-working { border:2px solid var(--bs-primary); }
   .ab-working .lbl { font-size:.6rem; letter-spacing:.06em; }
+  .ab-working .ab-open:hover { text-decoration:underline !important; }
   /* Active instance in the left nav */
   .list-group-item.active .ab-caret { display:inline; }
   .ab-caret { display:none; }
@@ -60,7 +61,14 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
         <div class="lh-sm">
           <div class="lbl text-uppercase text-body-secondary fw-semibold">Working on</div>
           <div class="fw-bold">
-            <?= htmlspecialchars(($selected->slug) ?? '') ?>.tiknix
+            <?php $abName = htmlspecialchars(($selected->slug ?? '') . '.tiknix'); $abUrl = (string)($ab_url ?? ''); ?>
+            <?php if ($abUrl !== ''): ?>
+              <a href="<?= htmlspecialchars($abUrl) ?>" target="_blank" rel="noopener"
+                 class="ab-open link-body-emphasis text-decoration-none"
+                 title="Open live preview — <?= htmlspecialchars($abUrl) ?>"><?= $abName ?><i class="bi bi-box-arrow-up-right ms-1 small opacity-75"></i></a>
+            <?php else: ?>
+              <?= $abName ?>
+            <?php endif; ?>
             <?php if ($ab_isDefault): ?><span class="badge text-bg-warning">default · core</span><?php endif; ?>
             <span id="ab-status" class="fw-normal text-body-secondary small">· connecting…</span>
           </div>

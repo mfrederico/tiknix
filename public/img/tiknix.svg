@@ -1,14 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 292 88" role="img" aria-label="tiknix">
-  <!-- Icon tile. Border uses currentColor so it separates from any background. -->
-  <rect x="4" y="4" width="80" height="80" rx="16"
-        fill="#333333" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.5"/>
-  <!-- }{ rotated 90deg = two braces pinching into a funnel of ideas, centered in the tile -->
-  <text x="44" y="44" transform="rotate(90 44 44)" fill="#f9f9f9"
-        font-family="'Droid Sans Fallback', ui-monospace, 'SFMono-Regular', Menlo, monospace"
-        font-size="52" font-weight="700"
-        text-anchor="middle" dominant-baseline="central">}{</text>
-  <!-- Wordmark. currentColor so it adapts: white on dark, dark on light. -->
-  <text x="102" y="46" fill="currentColor"
-        font-family="'Nimbus Roman', Georgia, 'Times New Roman', serif"
-        font-size="48" text-anchor="start" dominant-baseline="central">tiknix</text>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="130.00392"
+   height="130.00392"
+   viewBox="0 0 34.39687 34.396872"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   sodipodi:docname="tiknix.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     inkscape:zoom="0.71535494"
+     inkscape:cx="76.185956"
+     inkscape:cy="144.68342"
+     inkscape:window-width="1853"
+     inkscape:window-height="1011"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-72.334669,-104.22259)">
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:30.0002px;font-family:'Standard Symbols PS';-inkscape-font-specification:'Standard Symbols PS, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke-width:2.50001"
+       x="49.66325"
+       y="114.28767"
+       id="text1"><tspan
+         sodipodi:role="line"
+         id="tspan1"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:30.0002px;font-family:'Standard Symbols PS';-inkscape-font-specification:'Standard Symbols PS, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;stroke-width:2.50001"
+         x="49.66325"
+         y="114.28767" /></text>
+    <path
+       id="rect5"
+       style="fill:#000000;stroke-width:0.264583"
+       d="m 72.334669,104.22259 v 34.39687 h 34.396871 v -34.39687 z m 1.899109,4.98729 h 2.526461 c 0.04679,1.21646 0.32767,2.1638 0.842326,2.84221 0.491261,0.7018 1.309904,1.05265 2.45618,1.05265 h 5.088062 c 2.40952,0 3.836401,1.27469 4.280876,3.82457 h 0.210839 c 0.444475,-2.54988 1.871356,-3.82457 4.280876,-3.82457 H 99.0426 c 1.14628,0 1.96492,-0.33911 2.45618,-1.01751 0.51466,-0.67841 0.78379,-1.63749 0.80719,-2.87735 h 2.52646 c -0.0234,2.1522 -0.49119,3.84822 -1.40353,5.08807 -0.91235,1.23985 -2.3045,1.85983 -4.175977,1.85983 h -5.123202 c -1.193063,0 -2.046946,0.3626 -2.561601,1.08779 -0.491261,0.74859 -0.736389,1.81288 -0.736389,3.19309 H 88.27013 c -0.02339,-1.38021 -0.280784,-2.4445 -0.772045,-3.19309 -0.491262,-0.72519 -1.321651,-1.08779 -2.491321,-1.08779 h -5.228622 c -1.848078,0 -3.228489,-0.64347 -4.140832,-1.93011 -0.935736,-1.28664 -1.403532,-2.95917 -1.403532,-5.01779 z m 14.036352,13.19351 h 2.561601 c 0.02339,1.38021 0.280268,2.43327 0.771529,3.15847 0.491262,0.74858 1.322168,1.12293 2.491838,1.12293 h 5.192965 c 1.871477,0 3.263627,0.64295 4.175977,1.92959 0.91234,1.28664 1.36839,2.95917 1.36839,5.01779 h -2.52646 c -0.0234,-1.21646 -0.29253,-2.17554 -0.80719,-2.87735 -0.51465,-0.6784 -1.34504,-1.01751 -2.49132,-1.01751 h -5.052922 c -2.40952,0 -3.836401,-1.27469 -4.280876,-3.82457 h -0.210839 c -0.444475,2.54988 -1.871356,3.82457 -4.280876,3.82457 h -5.158342 c -1.146276,0 -1.964919,0.33911 -2.45618,1.01751 -0.514656,0.67842 -0.783793,1.6375 -0.807186,2.87735 h -2.526461 c 0.02339,-2.1522 0.491189,-3.84822 1.403532,-5.08807 0.912343,-1.23985 2.3045,-1.85931 4.175972,-1.85931 h 5.158342 c 1.193064,0 2.035199,-0.37435 2.526461,-1.12293 0.514654,-0.7252 0.772045,-1.77826 0.772045,-3.15847 z" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:30.0003px;font-family:MathJax_Main;-inkscape-font-specification:'MathJax_Main, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke-width:0.264583"
+       x="46.972603"
+       y="174.94519"
+       id="text5"><tspan
+         sodipodi:role="line"
+         id="tspan5"
+         style="stroke-width:0.264583"
+         x="46.972603"
+         y="174.94519" /></text>
+  </g>
 </svg>

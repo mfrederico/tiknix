@@ -2,8 +2,10 @@
 /**
  * Communications — the in-app inbox for the threaded comms subsystem.
  *
- * Role-scoped: ADMIN (level ≤ 50) sees every thread; everyone else sees only
- * threads they own (emailthread.owner_member_id = me). Reading a thread zeroes
+ * Role-scoped: ROOT (level 1) sees every thread; everyone else — INCLUDING admins
+ * (level 50) — sees only threads they own (emailthread.owner_member_id = me).
+ * Communications are private per member; only ROOT has the cross-member view.
+ * Reading a thread zeroes
  * its unread badge; replying sends a threaded outbound via NotifyService so the
  * conversation continues by email (or in-app only, in demo/offline mode).
  *
@@ -32,7 +34,7 @@ class Communications extends BaseControls\Control {
             'threads'     => $this->fetchThreads($search),
             'search'      => $search,
             'activeId'    => 0,
-            'isAdmin'     => Flight::hasLevel(LEVELS['ADMIN']),
+            'isAdmin'     => Flight::hasLevel(LEVELS['ROOT']),   // "sees all" is ROOT-only
             'unreadTotal' => $this->unreadTotal(),
         ]);
     }
@@ -85,7 +87,7 @@ class Communications extends BaseControls\Control {
             'messages'    => $messages,
             'attachments' => $attachments,
             'related'     => $related,
-            'isAdmin'     => Flight::hasLevel(LEVELS['ADMIN']),
+            'isAdmin'     => Flight::hasLevel(LEVELS['ROOT']),   // "sees all" is ROOT-only
             'unreadTotal' => $this->unreadTotal(),
         ]);
     }
@@ -303,14 +305,15 @@ class Communications extends BaseControls\Control {
 
     /** WHERE fragment scoping threads to the viewer's role. */
     private function scopeClause(): array {
-        if (Flight::hasLevel(LEVELS['ADMIN'])) {
+        // Only ROOT sees every member's threads; admins are scoped to their own.
+        if (Flight::hasLevel(LEVELS['ROOT'])) {
             return ['1=1', []];
         }
         return ['owner_member_id = ?', [(int)$this->member->id]];
     }
 
     private function canView($thread): bool {
-        if (Flight::hasLevel(LEVELS['ADMIN'])) return true;
+        if (Flight::hasLevel(LEVELS['ROOT'])) return true;   // only ROOT sees others' threads
         return (int)$thread->ownerMemberId === (int)$this->member->id;
     }
 

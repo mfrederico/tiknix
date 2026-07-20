@@ -23,7 +23,7 @@
             </h1>
             <span class="text-muted small">
                 Email conversations
-                <?= !empty($isAdmin) ? '— admin view (all threads)' : '— your threads' ?>
+                <?= !empty($isAdmin) ? '— all conversations (root)' : '— your conversations' ?>
             </span>
         </div>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#comms-compose-modal">

@@ -47,7 +47,9 @@ if ($__loggedIn) {
     }
     // Leads is an admin-only capability but is grouped under Main per preference.
     if ($__isAdmin && !isset($__have['/leads'])) {
-        $__sections['Main'][] = ['url' => '/leads', 'label' => 'Leads', 'icon' => 'person-lines-fill'];
+        $__leadCount = 0;
+        try { $__leadCount = (int)\app\Bean::count('lead'); } catch (\Throwable $e) {}
+        $__sections['Main'][] = ['url' => '/leads', 'label' => 'Leads', 'icon' => 'person-lines-fill', 'badge' => $__leadCount];
     }
 }
 ?>
@@ -75,6 +77,7 @@ if ($__loggedIn) {
             <a class="ui-nav-link<?= $__active($__u) ?>" href="<?= htmlspecialchars($__u) ?>">
               <i class="bi bi-<?= htmlspecialchars($__icon($__it['icon'] ?? '')) ?>"></i>
               <?= htmlspecialchars($__it['label'] ?? '') ?>
+              <?php if (!empty($__it['badge'])): ?><span class="ui-nav-badge"><?= (int)$__it['badge'] ?></span><?php endif; ?>
             </a>
           <?php endif; ?>
         <?php endforeach; ?>

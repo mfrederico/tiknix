@@ -93,6 +93,7 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 .ui-nav{padding:.5rem .75rem;overflow-y:auto;flex:1;}
 .ui-nav-heading{font-family:var(--ui-ff-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--ui-sidebar-heading);padding:1rem .75rem .35rem;}
 .ui-nav-link{display:flex;align-items:center;gap:.7rem;padding:.55rem .75rem;margin-bottom:2px;border-radius:.55rem;color:var(--ui-sidebar-text);text-decoration:none;font-size:.92rem;transition:background .15s,color .15s;}
+.ui-nav-badge{margin-left:auto;background:var(--ui-primary);color:#fff;font-size:.7rem;font-weight:600;line-height:1;padding:.2rem .45rem;border-radius:999px;min-width:1.25rem;text-align:center;}
 .ui-nav-link i{font-size:1.05rem;width:1.2rem;text-align:center;opacity:.85;}
 .ui-nav-link:hover{background:var(--ui-sidebar-hover-bg);color:#fff;}
 .ui-nav-link.active{background:var(--ui-sidebar-active-bg);color:var(--ui-sidebar-active-text);box-shadow:0 8px 18px -10px rgba(59,118,240,.8);}

@@ -1,26 +1,7 @@
 <div class="container-fluid">
     <div class="row g-4">
-        <!-- Left sub-nav (admins) -->
-        <aside class="col-12 col-md-3 col-lg-2">
-            <div class="list-group shadow-sm">
-                <div class="list-group-item bg-body-tertiary text-uppercase small fw-bold text-secondary">
-                    Admin
-                </div>
-                <a href="/leads" class="list-group-item list-group-item-action active">
-                    <i class="bi bi-person-lines-fill"></i> Leads
-                    <span class="badge bg-light text-dark float-end"><?= (int)($total ?? 0) ?></span>
-                </a>
-                <a href="/admin" class="list-group-item list-group-item-action">
-                    <i class="bi bi-speedometer2"></i> Dashboard
-                </a>
-                <a href="/admin/members" class="list-group-item list-group-item-action">
-                    <i class="bi bi-people"></i> Members
-                </a>
-            </div>
-        </aside>
-
-        <!-- Main content -->
-        <main class="col-12 col-md-9 col-lg-10">
+        <!-- Main content (sub-nav removed — Leads lives in the main sidebar) -->
+        <main class="col-12">
             <div class="ui-page-header d-flex justify-content-between align-items-end flex-wrap gap-2">
                 <div>
                     <span class="ui-eyebrow">Admin</span>

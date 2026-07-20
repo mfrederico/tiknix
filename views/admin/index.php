@@ -145,19 +145,6 @@
                     <p class="mb-1">View and respond to contact form submissions</p>
                 </a>
 
-                <a href="/lead/admin" class="list-group-item list-group-item-action">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h5 class="mb-1">Leads</h5>
-                        <?php
-                        $leadCount = \app\Bean::count('lead');
-                        if ($leadCount > 0):
-                        ?>
-                        <span class="badge bg-info"><?= $leadCount ?> Total</span>
-                        <?php endif; ?>
-                    </div>
-                    <p class="mb-1">View landing-page signups captured from the home page form</p>
-                </a>
-
             </div>
         </div>
     </div>

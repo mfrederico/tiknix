@@ -1569,14 +1569,31 @@ class Workbench extends Control {
             Flight::jsonError('Could not fetch the instance base into the workspace: ' . $fetch['out'], 500);
             return;
         }
+        $restoreWsDb = $this->shieldRuntimeDb($ws);   // don't let a tracked runtime db block the merge
         $merge = $git($ws, ['merge', '--no-ff', '-m', 'Merge ' . $instBase . ' into ' . $br . ' (resolve for task #' . $taskId . ')', 'FETCH_HEAD']);
         if ($merge['ok']) {
-            // Clean — the branch already contains the latest base, so Approve & Merge is ready.
-            $this->logTaskEvent($taskId, 'info', 'system', 'Updated the branch from base with no conflict — ready to Approve & Merge.');
-            Flight::json(['success' => true, 'clean' => true,
-                'message' => 'No conflict — the branch is now up to date with the base. Approve & Merge is ready.']);
+            $restoreWsDb();
+            // No real conflict — the branch is up to date with the base. LAND it now so the
+            // change actually deploys (this is what "resolve" should visibly do), rather
+            // than leaving a separate Approve & Merge step the user might not realise is needed.
+            $lm = $this->localMergeBack($task);
+            $landed = $lm['merged'] && $lm['pushed'];
+            if ($landed) {
+                $task->status    = 'merged';
+                $task->mergedAt  = date('Y-m-d H:i:s');
+                $task->updatedAt = date('Y-m-d H:i:s');
+                Bean::store($task);
+                $this->resolveDetectedError($task);
+            }
+            $this->logTaskEvent($taskId, $landed ? 'info' : 'warning', 'system',
+                'Updated branch from base with no conflict — ' . $lm['reason']);
+            Flight::json(['success' => true, 'clean' => true, 'merged' => $landed,
+                'message' => $landed
+                    ? ('Resolved and merged — ' . $lm['reason'] . '. The change is live.')
+                    : ('Branch updated from base, but the merge did not land: ' . $lm['reason'])]);
             return;
         }
+        $restoreWsDb();
 
         // Real conflict: leave the markers in place, collect the file list, hand to the agent.
         $conf  = $git($ws, ['diff', '--name-only', '--diff-filter=U']);
@@ -3046,6 +3063,34 @@ class Workbench extends Control {
         }
     }
 
+    /**
+     * Neutralize tracked runtime databases before a merge into an instance. A tracked
+     * database/*.db is written at runtime, so git refuses to merge over its uncommitted
+     * changes ("commit your changes or stash them"). We back up the LIVE file, discard
+     * its working-tree delta so the merge can run, and return a closure that restores the
+     * live file afterwards (so runtime data is never lost). New instances gitignore the
+     * db and won't hit this; it's a safety net for legacy instances that still track it.
+     */
+    private function shieldRuntimeDb(string $instDir): callable {
+        $rels = [];
+        exec('git -C ' . escapeshellarg($instDir) . ' ls-files -- ' . escapeshellarg('database/*.db') . ' 2>/dev/null', $rels);
+        $saved = [];
+        foreach ($rels as $rel) {
+            $abs = $instDir . '/' . $rel;
+            if (!is_file($abs)) continue;
+            $tmp = $abs . '.live.' . getmypid();
+            if (@copy($abs, $tmp)) {
+                @exec('git -C ' . escapeshellarg($instDir) . ' checkout -- ' . escapeshellarg($rel) . ' 2>/dev/null');
+                $saved[$abs] = $tmp;
+            }
+        }
+        return function () use ($saved) {
+            foreach ($saved as $abs => $tmp) {
+                if (is_file($tmp)) { @copy($tmp, $abs); @unlink($tmp); }
+            }
+        };
+    }
+
     private function localMergeBack($task): array {
         $ws   = (string)($task->projectPath ?? '');
         $br   = (string)($task->branchName ?? '');
@@ -3084,16 +3129,21 @@ class Workbench extends Control {
             if (!$fetch['ok']) {
                 return ['merged' => false, 'pushed' => false, 'reason' => 'could not fetch the task branch into the instance (' . $fetch['out'] . ')'];
             }
+            // Shield the tracked runtime DB (its uncommitted writes would block the merge);
+            // restore the live DB regardless of outcome.
+            $restoreDb = $this->shieldRuntimeDb($instDir);
             $merge = $git($instDir, ['merge', '--no-ff', '-m', 'Merge ' . $br . ' (task #' . (int)$task->id . ')', 'FETCH_HEAD']);
             if (!$merge['ok']) {
                 // Capture the conflicting files BEFORE aborting, so the log says exactly what clashed.
                 $conf = $git($instDir, ['diff', '--name-only', '--diff-filter=U']);
                 $files = $conf['ok'] ? str_replace("\n", ', ', trim($conf['out'])) : '';
                 $git($instDir, ['merge', '--abort']);
+                $restoreDb();
                 return ['merged' => false, 'pushed' => false,
                         'reason' => 'merge conflict on the instance — needs manual resolution'
                                   . ($files !== '' ? ' — conflicting files: ' . $files : '')];
             }
+            $restoreDb();
             return ['merged' => true, 'pushed' => true,
                     'reason' => 'merged into ' . $base . ' on ' . ($task->instanceTag ?: 'the instance')];
         }

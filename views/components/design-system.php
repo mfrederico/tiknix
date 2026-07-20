@@ -84,7 +84,7 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 
 /* app shell */
 .ui-shell{display:flex;min-height:100vh;}
-.ui-sidebar{width:var(--ui-sidebar-width);flex:0 0 var(--ui-sidebar-width);background:var(--ui-sidebar-bg);color:var(--ui-sidebar-text);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;}
+.ui-sidebar{width:var(--ui-sidebar-width);flex:0 0 var(--ui-sidebar-width);background:var(--ui-sidebar-bg);color:var(--ui-sidebar-text);display:flex;flex-direction:column;position:sticky;top:0;align-self:flex-start;height:100vh;}
 .ui-sidebar-brand{display:flex;align-items:center;gap:.6rem;padding:1.1rem 1.25rem;color:#fff;text-decoration:none;font-family:var(--ui-ff-brand);font-weight:700;font-size:1.35rem;font-variation-settings:'opsz' 72,'SOFT' 20;letter-spacing:-0.02em;}
 .ui-brand-mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--ui-primary),#2f7bf6);display:grid;place-items:center;color:#fff;font-size:1rem;box-shadow:0 6px 16px -6px rgba(59,118,240,.7);}
 <?php $__logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1'; ?>

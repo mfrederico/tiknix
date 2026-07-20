@@ -61,6 +61,16 @@ abstract class AbstractConnector implements ConnectorInterface {
         throw new \Exception('Connector "' . $this->key() . '" has no billing portal.');
     }
 
+    /** Non-social connectors have no feed; Social-category connectors override. */
+    public function fetchFeed($conn, string $token, array $opts = []): array {
+        throw new \Exception('Connector "' . $this->key() . '" is not a social feed provider.');
+    }
+
+    /** Most tokens don't expire; connectors with expiring tokens (Meta) override. */
+    public function refreshToken($conn, string $token): ?array {
+        return null;
+    }
+
     /**
      * Minimal cURL request. Returns [httpStatus, body].
      * @param array $opts ['headers' => string[], 'body' => string]

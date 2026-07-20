@@ -128,4 +128,25 @@ interface ConnectorInterface {
      * a builder wires into their own project for end-user self-serve.
      */
     public function billingPortalUrl($conn, string $token, string $customerId, string $returnUrl): string;
+
+    /**
+     * Fetch a normalized social feed for a connection (Social-category connectors:
+     * Instagram, Facebook, …). Runs on the control plane with the decrypted token.
+     * Returns:
+     *   [ 'items' => [ ['id','kind'=>'photo|video|reel|carousel','media_url','thumbnail_url',
+     *                   'permalink','caption','timestamp','like_count','comments_count',
+     *                   'children'=>[…]], … ],
+     *     'cursor' => <next-page cursor|''> ]
+     * Non-social connectors throw.
+     *
+     * @param array $opts ['limit'=>int, 'cursor'=>string]
+     */
+    public function fetchFeed($conn, string $token, array $opts = []): array;
+
+    /**
+     * Refresh an expiring access token. Returns ['access_token','expires_at'(unix)] on
+     * success, or NULL when this connector's tokens don't expire (Shopify/Stripe/GitHub).
+     * The caller re-encrypts and stores the new token + expiry.
+     */
+    public function refreshToken($conn, string $token): ?array;
 }

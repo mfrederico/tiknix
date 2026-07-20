@@ -135,6 +135,18 @@ $isConnected = function (array $card): bool {
                           <button class="btn btn-sm btn-link p-0 text-decoration-none" type="button" data-copy="<?= htmlspecialchars($whUrl) ?>" title="Copy endpoint URL"><i class="bi bi-clipboard"></i></button>
                         </div>
                       <?php endif; ?>
+
+                      <?php if (($card['category'] ?? '') === 'Social' && empty($cn['revoked'])): ?>
+                        <form data-social-publish class="d-flex align-items-center gap-1 mt-1 flex-wrap" style="max-width:520px">
+                          <?= csrf_field() ?>
+                          <input type="hidden" name="cid" value="<?= (int)$cn['id'] ?>">
+                          <span class="input-group-text py-1 px-2 small">/social/</span>
+                          <input type="text" name="slug" class="form-control form-control-sm" style="max-width:170px" placeholder="page-name" autocomplete="off">
+                          <button class="btn btn-sm btn-outline-primary text-nowrap" type="submit"><i class="bi bi-globe2 me-1"></i>Publish showcase</button>
+                          <a class="small text-nowrap" data-social-url target="_blank" rel="noopener" style="display:none"></a>
+                        </form>
+                        <div class="form-text ms-1">Publish this account's reels &amp; photos to a public page.</div>
+                      <?php endif; ?>
                     </li>
                   <?php endforeach; ?>
                 </ul>
@@ -243,6 +255,24 @@ $isConnected = function (array $card): bool {
         if (j && j.success) { location.reload(); }
         else { alert((j && j.message) || 'Could not save'); if (btn) btn.disabled = false; }
       }).catch(function(){ alert('Could not save'); if (btn) btn.disabled = false; });
+    });
+  });
+  document.querySelectorAll('form[data-social-publish]').forEach(function(form){
+    form.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      fetch('/connections/publishfeed', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+        body: new URLSearchParams(new FormData(form)).toString()
+      }).then(r=>r.json()).then(function(j){
+        if (btn) btn.disabled = false;
+        if (j && j.success) {
+          var a = form.querySelector('[data-social-url]');
+          if (a && j.data && j.data.url) { a.href = j.data.url; a.textContent = j.data.url; a.style.display = ''; }
+          alert((j.message || 'Published') + (j.data && typeof j.data.items === 'number' ? ' — ' + j.data.items + ' item(s).' : ''));
+        } else { alert((j && j.message) || 'Could not publish'); }
+      }).catch(function(){ if (btn) btn.disabled = false; alert('Could not publish'); });
     });
   });
   document.querySelectorAll('[data-copy]').forEach(function(btn){

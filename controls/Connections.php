@@ -427,7 +427,7 @@ class Connections extends Control {
             'instances'     => $instances,
             'cards'         => $cards,
             'environments'  => ['development', 'production'],
-            'categoryOrder' => ['Deploy', 'Payments', 'Stores', 'Other'],
+            'categoryOrder' => ['Deploy', 'Payments', 'Stores', 'Social', 'Other'],
         ]);
     }
 
@@ -707,6 +707,67 @@ class Connections extends Control {
         $conn->updatedAt = date('Y-m-d H:i:s');
         Bean::store($conn);
         $this->jsonSuccess(['set' => !empty($conn->webhookSecret)], 'Webhook secret saved');
+    }
+
+    /**
+     * POST /connections/publishfeed — publish (or unpublish) a PUBLIC social showcase
+     * at /social/<slug> for a Social-category connection the member owns. Does a
+     * best-effort immediate fetch; scripts/sync-social-feeds.php keeps it fresh + mirrors
+     * media locally.
+     */
+    public function publishfeed($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $conn = Bean::load('connections', (int)$this->getParam('cid', 0));
+        if (!$conn->id || (int)$conn->memberId !== (int)$this->member->id) { $this->jsonError('Connection not found', 404); return; }
+
+        $connector = ConnectorRegistry::get((string)$conn->connectorType);
+        if (!$connector || (string)($connector->meta()['category'] ?? '') !== 'Social') {
+            $this->jsonError('This connection is not a social feed.', 409); return;
+        }
+        $meta = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
+
+        $slug = strtolower(trim((string)$this->getParam('slug', '')));
+        if ($slug === '') $slug = strtolower((string)($meta['username'] ?? ''));
+        $slug = preg_replace('/[^a-z0-9_.-]/', '', (string)$slug);
+        if ($slug === '' || !preg_match('/^[a-z0-9][a-z0-9_.-]{0,49}$/', $slug)) {
+            $this->jsonError('Choose a valid page name (letters, numbers, . _ -).', 400); return;
+        }
+        // The slug must be free, unless it already belongs to this member.
+        $taken = Bean::findOne('socialpage', 'slug = ? AND member_id != ?', [$slug, (int)$this->member->id]);
+        if ($taken && $taken->id) { $this->jsonError('That page name is taken — pick another.', 409); return; }
+
+        $page = Bean::findOne('socialpage', 'member_id = ? AND connection_id = ?', [(int)$this->member->id, (int)$conn->id]);
+        if (!$page || !$page->id) { $page = Bean::dispense('socialpage'); $page->createdAt = date('Y-m-d H:i:s'); $page->feedJson = '[]'; }
+        $page->memberId     = (int)$this->member->id;
+        $page->connectionId = (int)$conn->id;
+        $page->slug         = $slug;
+        $page->title        = trim((string)$this->getParam('title', '')) ?: ('@' . ltrim((string)($meta['username'] ?? $conn->externalName), '@'));
+        $page->handle       = (string)($meta['username'] ?? ltrim((string)$conn->externalName, '@'));
+        $page->externalUrl  = (string)$conn->externalUrl;
+        $page->maxItems     = max(1, min(60, (int)$this->getParam('max_items', 30)));
+        $page->published    = filter_var($this->getParam('published', '1'), FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+        $page->updatedAt    = date('Y-m-d H:i:s');
+        Bean::store($page);
+
+        // Best-effort immediate fetch so the page isn't empty (cron mirrors media later).
+        $count = 0;
+        try {
+            $token = EncryptionService::decrypt((string)$conn->accessToken);
+            $feed  = $connector->fetchFeed($conn, $token, ['limit' => (int)$page->maxItems]);
+            $page->feedJson = json_encode(array_values($feed['items'] ?? []), JSON_UNESCAPED_SLASHES);
+            $page->syncedAt = date('Y-m-d H:i:s');
+            Bean::store($page);
+            $count = count($feed['items'] ?? []);
+            if (function_exists('sodium_memzero')) sodium_memzero($token);
+        } catch (\Throwable $e) { /* leave empty; the cron / a reconnect will fill it */ }
+
+        $base = rtrim((string)(Flight::get('app.baseurl') ?: ('https://' . ($_SERVER['HTTP_HOST'] ?? 'tiknix.com'))), '/');
+        $this->jsonSuccess([
+            'published' => (bool)$page->published,
+            'url'       => $base . '/social/' . $slug,
+            'items'     => $count,
+        ], $page->published ? 'Showcase published' : 'Showcase updated');
     }
 
     /**

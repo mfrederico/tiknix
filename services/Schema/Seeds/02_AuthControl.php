@@ -84,11 +84,13 @@ $defaults = [
     // Matches the level of the other connections::* rows (e.g. connections::add = 50).
     ['connections', 'connectkey', 50, 'Connect an api_key connector from a validated pasted key'],
     ['connections', 'webhooksecret', 50, 'Set/clear a connection webhook verification secret'],
+    ['connections', 'publishfeed', 50, 'Publish a public social showcase page for a social connection'],
     ['ecommerce', '*', 50, 'Ecommerce storefront tools (per-member feature-flagged)'],
 
     // Public storefront (101) — the /shop front controller (Shop.php) + legacy
     // redirect/alias shims. Must be PUBLIC so guests can browse the store.
     ['shop', '*', 101, 'Public storefront front controller'],
+    ['social', '*', 101, 'Public social showcase front controller'],
     ['products', '*', 101, 'Storefront legacy redirect -> /shop/product'],
     ['categories', '*', 101, 'Storefront legacy redirect -> /shop/catalog'],
     ['store', '*', 101, 'Storefront alias -> /shop'],

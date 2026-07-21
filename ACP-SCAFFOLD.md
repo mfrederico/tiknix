@@ -44,9 +44,27 @@ Boots in isolation (`php -r 'require "bootstrap.php"; new app\Bootstrap("conf/co
 
 ## Phased plan
 
+- **Phase R — engine registry FIRST (before Phase A):** one `lib/EngineRegistry` +
+  `conf/aibuilder.ini [engine.*]` mapping each engine → launch command, transport
+  (pty | cli-headless | acp), auth, model tiers (planner|worker|auditor), capability
+  quirks. It is the **single resolution point** that BOTH the PTY path and the ACP
+  sidecar share, so kimi/gemini/qwen/goose/hermes are **first-class rows, not a
+  `claude` + `if qwen` branch**. The engine-name lists duplicated three ways today
+  (`aibuilder-terminal/server.js:45`, `controls/Aibuilder.php:311`,
+  `lib/PlanIngestor.php:85`) derive from it. This unblocks the dead per-task engine
+  field (below) and de-risks Phase 0 (record the capability matrix INTO registry rows).
+  See core `AGENT_ORCHESTRATION.md` §7 + its Status section.
+- **The per-task `engine` field is DEAD today** — it flows schema
+  (`SubmitPlanTool.php:33`) → ingest (`PlanIngestor.php:85`) → DB → UI, but
+  **`PlanExecutor.php:407-410` hardcodes the `claude` CLI** and `:178` only *logs* the
+  engine. Fix: resolve `$t->engine` through the registry with a **claude fallback +
+  warning** when an engine has no headless launcher (`PlanRunner.php:121-141` and
+  `AuditRunner.php:118-133` hardcode the same way). This is what "makes the per-task
+  engine field real" in Phase B — but the registry (Phase R) lands first.
 - **Phase A — engine dispatch (fast win, no ACP):** add kimi/gemini/goose to the
   terminal PTY dispatch (`aibuilder-terminal/server.js`, `jail-run.sh`,
-  `conf/aibuilder.ini [engine.*]`). Power-path users get engine choice immediately.
+  `conf/aibuilder.ini [engine.*]`) — now registry-driven. Power-path users get engine
+  choice immediately.
 - **Phase 0 — spike (days):** hand-run `kimi acp` and `npx @agentclientprotocol/claude-agent-acp`
   through the jail; script `initialize → session/new (tiknix mcpServers) → session/prompt`.
   Verify: MCP stdio + HTTP passthrough from inside bwrap (the known jail-hairpin gate),

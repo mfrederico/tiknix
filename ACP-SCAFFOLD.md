@@ -34,8 +34,16 @@ Boots in isolation (`php -r 'require "bootstrap.php"; new app\Bootstrap("conf/co
 - **Security:** rely on the **bwrap jail** as the boundary; drop the Claude-specific
   PreToolUse hooks. Standards enforcement moves to **pre-merge diff validation**
   (reuse `lib/PhpValidator.php` / `ValidationService`), kept as a Claude-only bonus.
-- **Engines:** **native ACP engines first** (kimi `kimi acp`, Gemini CLI, Qwen, Goose,
-  Hermes). Defer `pi` (only via the community `pi-acp` MVP adapter).
+- **Engines:** **native ACP engines first** (Gemini CLI, Goose, Hermes via ACP; kimi
+  also has `kimi acp`). Defer `pi` (only via the community `pi-acp` MVP adapter).
+  - **Update (2026-07):** **Kimi Code CLI** (`kimi`, MoonshotAI) ships real headless
+    `kimi -p "<prompt>"`, so kimi is a straightforward **cli-headless** engine — no ACP
+    sidecar needed for it. It's registered in core (`[engine.kimi]`, `cli_flavor = kimi`)
+    and **selectable in the create-instance dropdown now**, falling back to claude until
+    (a) `jail-run.sh` runs `kimi` in the bwrap jail with instance auth and (b)
+    `EngineRegistry::agentCommand` implements the `kimi` flavor (its flags differ from
+    Claude Code's — no `--permission-mode bypassPermissions`/`stream-json`). That's the
+    same Phase A gate as qwen; kimi is the strongest Phase A headless candidate.
 - **No native PHP ACP library.** Use a **Node sidecar reusing the official
   `@agentclientprotocol/sdk`** (tracks the spec, incl. v2; fits the existing Node-bridge
   pattern). It re-emits the current `{delta|tool|session|done}` frames to PHP.

@@ -36,8 +36,13 @@ instance clones until they sync from core).
   through the registry, falling back to claude + a warning when an engine has no proven
   headless launcher yet (see §7 and *Status* below).
 - Why: Cursor measured ~8× cost at equal quality between frontier-only and hybrid
-  plan/execute. tiknix tiers *models* per engine (planner/worker/auditor) AND honors
-  per-task *engine* choice — both levers, resolved in one place.
+  plan/execute. tiknix tiers *models* per engine (planner/worker/auditor/resolver) AND
+  honors per-task *engine* choice — both levers, resolved in one place.
+- **Members may override the model tiers** for the runs they trigger, from their settings
+  page (`lib/MemberEnginePrefs`, stored as `settings` rows `engine.<engine>.<tier>_model`).
+  An override only fills in over the registry default — it never beats a more explicit
+  choice (a planner-assigned per-task engine still wins). A member with no override
+  inherits the current system default, so nobody has to think about it per instance.
 - **Escalation rule:** a task that fails auto-retry on a cheap engine may be re-queued
   **once** on a higher tier (its engine's frontier model, or the frontier engine) before
   it is marked failed.

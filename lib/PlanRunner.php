@@ -130,7 +130,9 @@ class PlanRunner {
         // another engine declares its own. Dispatch stays on the claude launcher until a
         // non-claude engine's headless jail path is wired (Phase A) — the tier still applies.
         $engine = EngineRegistry::isValid($this->engine) ? $this->engine : EngineRegistry::defaultEngine();
-        $model  = EngineRegistry::model($engine, 'planner', 'opus');
+        // The member who triggered the decompose may override the planner (decomp) model
+        // in their settings; absent an override this is the engine's registry planner tier.
+        $model  = MemberEnginePrefs::model($this->memberId, $engine, 'planner', 'opus');
 
         $jail = $this->jailFor();
         if ($jail !== '') {

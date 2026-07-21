@@ -4,6 +4,8 @@ namespace app;
 use \Flight as Flight;
 use \app\Bean;
 use \app\TwoFactorAuth;
+use \app\EngineRegistry;
+use \app\MemberEnginePrefs;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -125,14 +127,35 @@ class Member extends Control {
     public function settings($params = []) {
         $request = Flight::request();
         if ($request->method === 'POST') {
-            // Save settings
-            foreach ($request->data as $key => $value) {
-                if ($key !== 'csrf_token' && $key !== 'csrf_token_name') {
+            if (!Flight::csrf()->validateRequest()) {
+                $this->viewData['error'] = 'Invalid CSRF token';
+            } else {
+                // AI engine/model tier preferences: enginepref[<engine>][<tier>] = <model>.
+                // Handled explicitly (validated + normalized) and skipped by the generic loop.
+                $prefs = $request->data->enginepref ?? null;
+                if (is_array($prefs)) {
+                    foreach ($prefs as $engine => $tiers) {
+                        if (!is_array($tiers)) continue;
+                        foreach ($tiers as $tier => $model) {
+                            MemberEnginePrefs::set((int)$this->member->id, (string)$engine, (string)$tier, (string)$model);
+                        }
+                    }
+                }
+                // Save remaining generic settings
+                foreach ($request->data as $key => $value) {
+                    if (in_array($key, ['csrf_token', 'csrf_token_name', 'enginepref'], true)) continue;
                     Flight::setSetting($key, $value, $this->member->id);
                 }
+                $this->viewData['success'] = 'Settings saved successfully';
             }
-            $this->viewData['success'] = 'Settings saved successfully';
         }
+
+        // Registered engines + each member's effective tier map, for the AI prefs section.
+        $engines = [];
+        foreach (EngineRegistry::names() as $eng) {
+            $engines[$eng] = MemberEnginePrefs::effective((int)$this->member->id, $eng);
+        }
+        $this->viewData['ai_engines'] = $engines;
 
         // Get user settings
         $this->viewData['settings'] = Bean::findAll('settings', 'member_id = ?', [$this->member->id]);

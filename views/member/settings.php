@@ -68,6 +68,50 @@
                             </div>
                         </div>
                         
+                        <?php if (!empty($ai_engines)): ?>
+                        <hr class="my-4">
+
+                        <h5 class="mb-3">AI Builder — Model Preferences</h5>
+                        <p class="text-muted small mb-3">
+                            Choose which model each stage uses for runs <em>you</em> trigger. Leave a field
+                            blank to inherit the system default (shown as the placeholder); type a model name
+                            (e.g. <code>opus</code>, <code>sonnet</code>, <code>haiku</code>) to override it.
+                        </p>
+                        <datalist id="ai-model-options">
+                            <option value="opus"></option>
+                            <option value="sonnet"></option>
+                            <option value="haiku"></option>
+                        </datalist>
+                        <?php
+                        $tierLabels = [
+                            'planner'  => ['Decompose / planning', 'Breaks a goal into a build plan.'],
+                            'worker'   => ['Build (workers)', 'Implements each subtask.'],
+                            'auditor'  => ['Audit (QA)', 'Runs the definition-of-done check.'],
+                            'resolver' => ['Conflict resolution', 'Resolves merge conflicts.'],
+                        ];
+                        foreach ($ai_engines as $engine => $tiers): ?>
+                        <div class="mb-3 border rounded p-3">
+                            <div class="fw-semibold mb-2"><i class="bi bi-cpu me-1"></i><?= htmlspecialchars($engine) ?></div>
+                            <div class="row g-2">
+                                <?php foreach ($tierLabels as $tier => $meta):
+                                    $info = $tiers[$tier] ?? ['default' => '', 'override' => ''];
+                                ?>
+                                <div class="col-md-6">
+                                    <label class="form-label small mb-1"><?= htmlspecialchars($meta[0]) ?></label>
+                                    <input type="text" class="form-control form-control-sm"
+                                           name="enginepref[<?= htmlspecialchars($engine) ?>][<?= htmlspecialchars($tier) ?>]"
+                                           value="<?= htmlspecialchars($info['override'] ?? '') ?>"
+                                           placeholder="<?= htmlspecialchars($info['default'] ?? '') ?> (default)"
+                                           list="ai-model-options" pattern="[A-Za-z0-9._:\-]{0,64}"
+                                           autocomplete="off" spellcheck="false">
+                                    <div class="form-text small"><?= htmlspecialchars($meta[1]) ?></div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                        <?php endif; ?>
+
                         <hr class="my-4">
 
                         <h5 class="mb-3">Two-Factor Authentication</h5>

@@ -23,6 +23,7 @@ use \Flight as Flight;
 use app\BaseControls\Control;
 use RedBeanPHP\R;
 use app\EngineRegistry;
+use app\MemberEnginePrefs;
 
 class Aibuilder extends Control {
 
@@ -897,11 +898,16 @@ class Aibuilder extends Control {
         if (TmuxManager::exists($session)) { Flight::jsonError('This plan is already running.', 409); return; }
 
         $dir = $this->instanceDir($inst->slug);
+        // Worker model for the orchestrator. The executor runs the claude CLI for every
+        // task today (native non-claude dispatch is Phase A), so this --model must be a
+        // claude-valid model — resolve the member's CLAUDE worker override, default sonnet.
+        // Per-task engine selection still happens inside PlanExecutor via the registry.
+        $workerModel = MemberEnginePrefs::model((int)$this->member->id, 'claude', 'worker', 'sonnet');
         $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
              . ' --plan=' . (int)$plan->id
              . ' --slug=' . escapeshellarg((string)$inst->slug)
              . ' --dir='  . escapeshellarg($dir)
-             . ' --model=sonnet'
+             . ' --model=' . escapeshellarg($workerModel)
              . ' --level=' . (int)$this->member->level;
         $ab = $dir . '/.aibuilder';
         @mkdir($ab, 0775, true);

@@ -122,9 +122,9 @@ class AuditRunner {
                      . 'You MUST finish by writing the manifest to .aibuilder/audit.json.';
         // Auditor model from the registry's auditor tier (§4 — ideally decorrelated
         // from the worker model). The auditor is instance-level (no per-task engine),
-        // so resolve the default engine's auditor tier. Default sonnet: the QA work is
-        // procedural browser driving, not deep reasoning.
-        $model = EngineRegistry::model(EngineRegistry::defaultEngine(), 'auditor', 'sonnet');
+        // so resolve the default engine's auditor tier, letting the member who owns the
+        // run override it. Default sonnet: the QA work is procedural browser driving.
+        $model = MemberEnginePrefs::model($this->memberId, EngineRegistry::defaultEngine(), 'auditor', 'sonnet');
 
         $jail = $this->jailFor();
         if ($jail !== '') {

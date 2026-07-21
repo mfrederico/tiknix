@@ -21,6 +21,7 @@ use \app\PlanRunner;
 use \app\PlanExecutor;
 use \app\WorkspaceManager;
 use \app\EngineRegistry;
+use \app\MemberEnginePrefs;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -1625,7 +1626,10 @@ class Workbench extends Control {
         // until then the model tier is the honest decorrelation lever.)
         $authorEngine  = EngineRegistry::isValid((string)$task->engine) ? (string)$task->engine : EngineRegistry::defaultEngine();
         $workerModel   = EngineRegistry::model($authorEngine, 'worker', 'sonnet');
-        $resolverModel = EngineRegistry::model($authorEngine, 'resolver', EngineRegistry::model($authorEngine, 'planner', 'opus'));
+        // The member resolving the conflict may override the resolver model in settings;
+        // absent that, the engine's resolver tier (defaults to its frontier/planner model).
+        $resolverModel = MemberEnginePrefs::model((int)$this->member->id, $authorEngine, 'resolver',
+                            EngineRegistry::model($authorEngine, 'planner', 'opus'));
 
         try {
             $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $ws, $this->member->level);

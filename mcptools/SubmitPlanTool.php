@@ -30,7 +30,7 @@ class SubmitPlanTool extends BaseTool {
                         'title'       => ['type' => 'string'],
                         'description' => ['type' => 'string', 'description' => 'What to build, in GitHub-flavored Markdown: a one-line summary, then `##` sub-headers, `-` bullet lists, and `inline code` for files/beans/routes — scannable header-first, then details.'],
                         'priority'    => ['type' => 'integer', 'description' => '1 (highest) .. 4 (lowest)'],
-                        'engine'      => ['type' => 'string', 'description' => 'claude or qwen — pick qwen for simple mechanical tasks'],
+                        'engine'      => ['type' => 'string', 'description' => 'Optional engine override for this task — omit to inherit the instance default. Assign a cheaper engine (e.g. qwen) for simple mechanical edits, the frontier engine (claude) for judgement work. Unregistered values fall back to the instance default.'],
                         'files'       => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'likely files to touch'],
                         'depends_on'  => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'ids of tasks that MUST finish before this one (empty = can start immediately / run in parallel)'],
                         'reuses'      => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'existing primitives this task builds on, as "kind/name" (e.g. "controller/Lead", "model/member", "lib/Mailer"). Empty ONLY for genuinely new ground.'],

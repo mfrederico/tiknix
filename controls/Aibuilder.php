@@ -22,6 +22,7 @@ namespace app;
 use \Flight as Flight;
 use app\BaseControls\Control;
 use RedBeanPHP\R;
+use app\EngineRegistry;
 
 class Aibuilder extends Control {
 
@@ -308,8 +309,7 @@ class Aibuilder extends Control {
 
         $slug   = strtolower(trim((string)$this->getParam('slug', '')));
         $name   = trim((string)$this->getParam('name', '')) ?: ucfirst($slug);
-        $engine = in_array($this->getParam('engine'), ['claude', 'qwen'], true)
-                    ? $this->getParam('engine') : 'claude';
+        $engine = EngineRegistry::coerce($this->getParam('engine'), EngineRegistry::defaultEngine());
 
         if (!preg_match(self::SLUG_RE, $slug)) {
             Flight::jsonError('Invalid name: use 2-50 lowercase letters/numbers, starting with a letter.', 400);

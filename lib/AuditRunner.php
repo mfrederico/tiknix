@@ -120,7 +120,11 @@ class AuditRunner {
         $log = $this->logFile();
         $shortPrompt = 'Read the file .aibuilder/audit-request.md and follow its instructions exactly. '
                      . 'You MUST finish by writing the manifest to .aibuilder/audit.json.';
-        $model = 'sonnet';
+        // Auditor model from the registry's auditor tier (§4 — ideally decorrelated
+        // from the worker model). The auditor is instance-level (no per-task engine),
+        // so resolve the default engine's auditor tier. Default sonnet: the QA work is
+        // procedural browser driving, not deep reasoning.
+        $model = EngineRegistry::model(EngineRegistry::defaultEngine(), 'auditor', 'sonnet');
 
         $jail = $this->jailFor();
         if ($jail !== '') {

@@ -24,15 +24,23 @@ instance clones until they sync from core).
   the worker.
 
 ## 2. Frontier plans, cheap executes — the cost lever
-- The planner runs the **frontier tier** (opus). Workers run **the cheapest engine that
-  can follow the spec**: claude/sonnet for judgement, `qwen` (or other registered
-  engines) for mechanical edits. The planner assigns this per task via the subtask
-  **`engine`** field; the executor **MUST honor it** (see §7 and *Status* below).
+- **Planning defaults to a frontier tier, but the planner engine is SELECTABLE**, not
+  hardcoded. Each engine declares its own `planner_model` tier in the registry
+  (`[engine.<name>]`), and `PlanRunner` resolves the planner model from the instance's
+  engine — claude's planner tier is `opus` (the sensible default), but an instance on a
+  different engine plans on *that* engine's declared planner tier. Policy lives in the
+  registry, not in code.
+- Workers run **the cheapest engine that can follow the spec**: claude/sonnet for
+  judgement, `qwen` (or other registered engines) for mechanical edits. The planner
+  assigns this per task via the subtask **`engine`** field; the executor **honors it**
+  through the registry, falling back to claude + a warning when an engine has no proven
+  headless launcher yet (see §7 and *Status* below).
 - Why: Cursor measured ~8× cost at equal quality between frontier-only and hybrid
-  plan/execute. tiknix already tiers *models* (opus planner / sonnet workers); the
-  remaining lever is honoring per-task *engine* choice.
+  plan/execute. tiknix tiers *models* per engine (planner/worker/auditor) AND honors
+  per-task *engine* choice — both levers, resolved in one place.
 - **Escalation rule:** a task that fails auto-retry on a cheap engine may be re-queued
-  **once** on the frontier engine before it is marked failed.
+  **once** on a higher tier (its engine's frontier model, or the frontier engine) before
+  it is marked failed.
 
 ## 3. Coordination beats throughput
 - `MAX_CONCURRENT` stays small (3). Fewer, better merges: the **orchestrator** commits
@@ -93,33 +101,39 @@ instance clones until they sync from core).
 
 ---
 
-## Status — the one real gap: per-task `engine` is not yet honored
+## Status — Phase R is built; per-task `engine` is now honored
 
-The `engine` field is currently **fiction on the execution path**. It flows
-schema (`mcptools/SubmitPlanTool.php:33`) → ingest (`lib/PlanIngestor.php:85`) → the
-`workbenchtask` bean → the UI, but **`lib/PlanExecutor.php:407-410` hardcodes the
-`claude` CLI**, and the "engine" mention at `PlanExecutor.php:178` is only a *log line*
-that reports the field while ignoring it. `PlanRunner` (`:121-141`) and `AuditRunner`
-(`:118-133`) are claude/model-hardcoded the same way.
+The `engine` field used to be **fiction on the execution path** — it flowed through
+schema → ingest → bean → UI but `PlanExecutor` hardcoded the `claude` CLI and only
+*logged* the field. **Phase R closed that.** The registry (`lib/EngineRegistry.php` +
+`conf/aibuilder.ini [engine.*]`) is now the single resolution point, and every spawn
+site resolves through it.
 
-**The change (sequenced, each independently landable):**
-1. This doc + a CLAUDE.md pointer + one-line pointers from the three brief builders. *(docs, zero risk)*
-2. `lib/EngineRegistry.php` + a `[engine.claude]` ini section; derive the validation
-   lists in `PlanIngestor.php:85` and `Aibuilder.php:311` from it.
-3. **`PlanExecutor.php:407-410`** — resolve `$t->engine` through the registry:
-   `EngineRegistry::headlessCmd($engine, $prompt, $model)` with a **safe interim** —
-   if the engine has no registered headless launcher, run claude + `$engineModel` and
-   log `warning: engine '<x>' has no headless launcher — ran on claude` (the honest
-   version of today's `:178` line). Nothing breaks; the field becomes best-effort real.
-4. `PlanRunner` / `AuditRunner` resolve model tiers via the registry; apply the §4
-   auditor-decorrelation rule.
+**Done (each landed independently):**
+1. ✅ This doc + CLAUDE.md pointer + brief-builder pointers. *(docs)*
+2. ✅ `lib/EngineRegistry.php` + `[engine.claude]` / `[engine.qwen]` ini sections with
+   per-tier models (`planner_model` / `worker_model` / `auditor_model`) and a
+   `headless_ready` flag. Validation in `PlanIngestor` (`EngineRegistry::coerce`) and
+   `Aibuilder::create` now derive from the registry — no more `['claude','qwen']`
+   literals.
+3. ✅ **`PlanExecutor::launchTask`** resolves `$t->engine` via
+   `EngineRegistry::agentCommand($engine, $prompt, $model, ['stream'=>true])`. Safe
+   interim in force: an engine with no proven headless launcher (`headless_ready`
+   unset, e.g. qwen today) falls back to claude + the worker model and logs
+   `warning: engine '<x>' has no headless launcher — ran on claude`. Nothing breaks;
+   the field is best-effort real, and the started-on log reports the engine actually used.
+4. ✅ **`PlanRunner`** resolves the planner model from the engine's `planner_model` tier
+   (planner is now *selectable*, not hardcoded opus — §2). **`AuditRunner`** resolves its
+   `auditor_model` tier the same way.
+
+**Remaining (owner / later phases):**
 5. `resolveconflict` gains a fresh-runner engine override (§5).
-6. *(with the owner, outside this repo)* confirm/extend `jail-run.sh` headless dispatch
-   for qwen/hermes so the fallback stops firing — then the ACP phases.
+6. *(with the owner, outside this repo)* wire `jail-run.sh` headless dispatch for
+   qwen/hermes and flip their `headless_ready = true` — the fallback stops firing and
+   non-claude workers run natively. Then the ACP phases.
 
-**This is the same work as the ACP branch** (`acp.tiknix/ACP-SCAFFOLD.md`): making the
-per-task engine real is ACP Phase B, and the registry is what both the interim
-headless path and the ACP sidecar resolve through — so the registry lands **first**.
-The point of ACP is precisely to get **other CLI systems** (kimi/gemini/qwen/goose)
-into play as first-class engines — do not implement the registry as claude-plus-an-
-afterthought.
+**This is the same registry the ACP branch resolves through** (`acp.tiknix/ACP-SCAFFOLD.md`):
+the interim headless path and the future ACP sidecar share one set of `[engine.*]` rows,
+so kimi/gemini/qwen/goose/hermes are **first-class rows, not a claude-plus-an-afterthought**.
+Flipping an engine from fallback to native is a config change (`headless_ready = true` +
+a launcher), not a code fork.

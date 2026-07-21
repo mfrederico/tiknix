@@ -3,6 +3,7 @@
 namespace app;
 
 use RedBeanPHP\R;
+use app\EngineRegistry;
 
 /**
  * PlanIngestor — turn a decomposed plan (from the planner's plan.json) into a
@@ -82,7 +83,7 @@ class PlanIngestor
             $t->parentTaskId = (int)$parent->id;
             $t->instanceId   = (int)$inst->id;
             $t->instanceTag  = $tag;
-            $t->engine       = in_array($st['engine'] ?? '', ['claude', 'qwen'], true) ? $st['engine'] : $inst->engine;
+            $t->engine       = EngineRegistry::coerce($st['engine'] ?? null, (string)$inst->engine);
             $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
             $t->reuses       = json_encode(is_array($st['reuses'] ?? null) ? array_values($st['reuses']) : []);
             $t->planRef      = $ref;

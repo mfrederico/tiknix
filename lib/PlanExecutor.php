@@ -21,6 +21,7 @@
 namespace app;
 
 use RedBeanPHP\R;
+use app\EngineRegistry;
 
 class PlanExecutor {
 
@@ -159,8 +160,24 @@ class PlanExecutor {
             @copy($this->instanceDir . '/.mcp.json', $wtAbs . '/.mcp.json');
         }
 
+        // Resolve the per-task engine through the registry (§7). If the requested
+        // engine has no proven headless launcher yet, we run claude with the worker
+        // model and log a warning — the honest version of the old always-claude path.
+        $reqEngine = (string)($t->engine ?: EngineRegistry::defaultEngine());
+        $prompt = 'Read .aibuilder/task.md and implement it fully in this working directory, following the codebase conventions. Do not touch files outside your task. When finished, stop.';
+        $inner  = EngineRegistry::agentCommand($reqEngine, $prompt, $this->engineModel, ['stream' => true]);
+        $ranOn  = $reqEngine;
+        if ($inner === null) {
+            $inner = EngineRegistry::agentCommand('claude', $prompt, $this->engineModel, ['stream' => true]);
+            $ranOn = 'claude';
+            if ($reqEngine !== 'claude') {
+                $this->logEvent($t, 'warning', "engine '{$reqEngine}' has no headless launcher — ran on claude ({$this->engineModel})");
+            }
+        }
+        $inner = 'cd ' . $wtRel . ' && ' . $inner;
+
         $session = 'tiknix-plan' . $this->planId . '-task' . (int)$t->id;
-        $script  = $this->buildRunnerScript($wtRel, $wtAbs, $session);
+        $script  = $this->buildRunnerScript($inner, $wtAbs, $session);
         $scriptFile = $wtAbs . '/.aibuilder/run-agent.sh';
         file_put_contents($scriptFile, $script);
         @chmod($scriptFile, 0755);
@@ -175,7 +192,7 @@ class PlanExecutor {
         $t->agentSession   = $session;      // fluid
         $t->startedAt      = date('Y-m-d H:i:s');
         R::store($t);
-        $this->logEvent($t, 'info', 'Build agent started on ' . $branch . ' (engine ' . ($t->engine ?: 'claude') . ')');
+        $this->logEvent($t, 'info', 'Build agent started on ' . $branch . ' (engine ' . $ranOn . ')');
         return true;
     }
 
@@ -392,22 +409,19 @@ class PlanExecutor {
 
     // ---- agent invocation --------------------------------------------------
 
-    /** The jailed agent runner script (detached in tmux). */
-    protected function buildRunnerScript(string $wtRel, string $wtAbs, string $session): string {
+    /**
+     * The jailed agent runner script (detached in tmux). $inner is the engine
+     * command already resolved through EngineRegistry (incl. `cd <wtRel> &&`) —
+     * see launchTask. The command uses stream-json (+ required --verbose) so each
+     * tool use / message is emitted as its own JSON line to agent.log as work
+     * happens; reapTask never parses this log (it merges on git diff), so that is
+     * display-only. bypassPermissions is explicit because JAIL_CMD replaces
+     * jail-run.sh's own permission wrapper.
+     */
+    protected function buildRunnerScript(string $inner, string $wtAbs, string $session): string {
         $mainProjectRoot = dirname(__DIR__);
         $log = $wtAbs . '/.aibuilder/agent.log';
         $jail = $this->jailFor();
-        // bypassPermissions must be explicit here: JAIL_CMD replaces jail-run.sh's
-        // own `claude --permission-mode bypassPermissions` wrapper.
-        // stream-json (+ required --verbose) so each tool use / message is emitted
-        // as its own JSON line to agent.log as work happens — otherwise plain `-p`
-        // buffers and the log stays empty until the agent exits, leaving the UI
-        // unable to show what the agent is CURRENTLY doing. reapTask never parses
-        // this log (it merges on git diff), so the format change is display-only.
-        $inner = 'cd ' . $wtRel . ' && claude --permission-mode bypassPermissions -p '
-               . escapeshellarg('Read .aibuilder/task.md and implement it fully in this working directory, following the codebase conventions. Do not touch files outside your task. When finished, stop.')
-               . ' --model ' . escapeshellarg($this->engineModel)
-               . ' --output-format stream-json --verbose';
 
         if ($jail !== '') {
             $run = 'JAIL_CMD=' . escapeshellarg($inner) . ' ' . escapeshellarg($jail) . ' ' . escapeshellarg($this->instanceDir);

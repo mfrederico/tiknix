@@ -2123,12 +2123,19 @@ class Mcp extends BaseControls\Control {
             ];
         }
 
-        // Always ensure mantic is configured (for PHP 8.3 AST analysis)
+        // Always ensure mantic is configured (for PHP 8.3 AST analysis), IF the host
+        // has it. The server path is per-host — read it from conf/aibuilder.ini
+        // [tools] mantic_server and skip wiring when unset/missing (breaks nothing
+        // on hosts without Mantic.sh; no more hardcoded /home/<user>/… path).
         if (!isset($config['mcpServers']['mantic'])) {
-            $config['mcpServers']['mantic'] = [
-                'command' => 'node',
-                'args' => ['/home/mfrederico/development/Mantic.sh/dist/mcp-server.js']
-            ];
+            $aib = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
+            $manticServer = trim((string)($aib['tools']['mantic_server'] ?? ''));
+            if ($manticServer !== '' && is_file($manticServer)) {
+                $config['mcpServers']['mantic'] = [
+                    'command' => 'node',
+                    'args' => [$manticServer]
+                ];
+            }
         }
 
         // Add/update tiknix server if API key provided

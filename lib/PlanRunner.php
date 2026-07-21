@@ -125,7 +125,12 @@ class PlanRunner {
         // Kept minimal + quote-safe: the real instructions live in plan-request.md,
         // which the planner reads with its own Read tool inside the workspace.
         $shortPrompt = 'Read the file .aibuilder/plan-request.md and follow its instructions exactly. You MUST finish by calling the submit_plan tool.';
-        $model = 'opus';
+        // Planner is SELECTABLE: the model comes from the engine's planner tier in the
+        // registry (§7), not a hardcoded opus. claude's planner tier is opus (unchanged);
+        // another engine declares its own. Dispatch stays on the claude launcher until a
+        // non-claude engine's headless jail path is wired (Phase A) — the tier still applies.
+        $engine = EngineRegistry::isValid($this->engine) ? $this->engine : EngineRegistry::defaultEngine();
+        $model  = EngineRegistry::model($engine, 'planner', 'opus');
 
         $jail = $this->jailFor();
         if ($jail !== '') {

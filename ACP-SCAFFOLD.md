@@ -44,23 +44,27 @@ Boots in isolation (`php -r 'require "bootstrap.php"; new app\Bootstrap("conf/co
 
 ## Phased plan
 
-- **Phase R — engine registry FIRST (before Phase A):** one `lib/EngineRegistry` +
-  `conf/aibuilder.ini [engine.*]` mapping each engine → launch command, transport
-  (pty | cli-headless | acp), auth, model tiers (planner|worker|auditor), capability
-  quirks. It is the **single resolution point** that BOTH the PTY path and the ACP
-  sidecar share, so kimi/gemini/qwen/goose/hermes are **first-class rows, not a
-  `claude` + `if qwen` branch**. The engine-name lists duplicated three ways today
-  (`aibuilder-terminal/server.js:45`, `controls/Aibuilder.php:311`,
-  `lib/PlanIngestor.php:85`) derive from it. This unblocks the dead per-task engine
-  field (below) and de-risks Phase 0 (record the capability matrix INTO registry rows).
-  See core `AGENT_ORCHESTRATION.md` §7 + its Status section.
-- **The per-task `engine` field is DEAD today** — it flows schema
-  (`SubmitPlanTool.php:33`) → ingest (`PlanIngestor.php:85`) → DB → UI, but
-  **`PlanExecutor.php:407-410` hardcodes the `claude` CLI** and `:178` only *logs* the
-  engine. Fix: resolve `$t->engine` through the registry with a **claude fallback +
-  warning** when an engine has no headless launcher (`PlanRunner.php:121-141` and
-  `AuditRunner.php:118-133` hardcode the same way). This is what "makes the per-task
-  engine field real" in Phase B — but the registry (Phase R) lands first.
+- **Phase R — engine registry — ✅ BUILT ON `main`** (merge in when this branch lands):
+  `lib/EngineRegistry.php` + `conf/aibuilder.ini [engine.*]` rows map each engine →
+  `command`, `transport` (pty | cli-headless | acp), `cli_flavor`, `headless_ready`, and
+  model tiers (`planner_model`/`worker_model`/`auditor_model`). It is the **single
+  resolution point** BOTH the PTY path and the ACP sidecar share, so
+  kimi/gemini/qwen/goose/hermes are **first-class rows, not a `claude` + `if qwen`
+  branch**. The engine-name lists that were duplicated three ways now derive from it
+  (`controls/Aibuilder.php`, `lib/PlanIngestor.php` via `EngineRegistry::coerce`;
+  `aibuilder-terminal/server.js` still to migrate in Phase A). Phase 0 records the
+  capability matrix INTO registry rows. See core `AGENT_ORCHESTRATION.md` §7 + Status.
+  - ACP intersection: an ACP engine is a registry row with `transport = acp`. The
+    sidecar (Phase B) reads the same row for launch/auth; `agentCommand()` returns null
+    for non-`cli-headless` transports, so today they cleanly fall back until the sidecar
+    exists — no special-casing.
+- **The per-task `engine` field — ✅ NOW HONORED (was dead):** `PlanExecutor::launchTask`
+  resolves `$t->engine` via `EngineRegistry::agentCommand(...)` with a **claude fallback +
+  warning** when an engine has no `headless_ready` launcher (qwen today). `PlanRunner`
+  (planner tier, now *selectable*) and `AuditRunner` (auditor tier) resolve their models
+  from the registry too. What remains for **Phase A/B** is flipping `headless_ready = true`
+  once `jail-run.sh` dispatches the non-claude CLIs headless — then the fallback stops
+  firing and the ACP sidecar takes over the structured surfaces.
 - **Phase A — engine dispatch (fast win, no ACP):** add kimi/gemini/goose to the
   terminal PTY dispatch (`aibuilder-terminal/server.js`, `jail-run.sh`,
   `conf/aibuilder.ini [engine.*]`) — now registry-driven. Power-path users get engine

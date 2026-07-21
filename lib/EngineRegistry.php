@@ -32,6 +32,7 @@ class EngineRegistry {
      */
     private const BUILTIN = [
         'claude' => [
+            'label'          => 'Claude Code',
             'transport'      => 'cli-headless',
             'command'        => 'claude',
             'cli_flavor'     => 'claude',
@@ -77,6 +78,19 @@ class EngineRegistry {
 
     /** Registered engine names — the source of truth for validation + UI menus. */
     public static function names(): array { return array_keys(self::all()); }
+
+    /** Human-friendly label for an engine (falls back to the name itself). */
+    public static function label(string $engine): string {
+        $l = (string)(self::all()[$engine]['label'] ?? '');
+        return $l !== '' ? $l : $engine;
+    }
+
+    /** [name => label] for building UI menus (e.g. the create-instance dropdown). */
+    public static function menu(): array {
+        $out = [];
+        foreach (self::all() as $name => $_) $out[$name] = self::label($name);
+        return $out;
+    }
 
     /** True when $name is a registered engine. */
     public static function isValid(?string $name): bool {

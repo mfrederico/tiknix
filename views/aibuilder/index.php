@@ -134,8 +134,9 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
               <div class="mb-2">
                 <label class="form-label small mb-1">Engine</label>
                 <select name="engine" class="form-select form-select-sm">
-                  <option value="claude">Claude Code</option>
-                  <option value="qwen">qwen-code</option>
+                  <?php foreach (\app\EngineRegistry::menu() as $engName => $engLabel): ?>
+                  <option value="<?= htmlspecialchars($engName) ?>"><?= htmlspecialchars($engLabel) ?></option>
+                  <?php endforeach; ?>
                 </select>
               </div>
               <button type="submit" class="btn btn-success btn-sm w-100"><i class="bi bi-hammer me-1"></i>Create instance</button>

@@ -65,10 +65,14 @@ instance clones until they sync from core).
 ## 5. Neutral third-party conflict resolution
 - A merge conflict is resolved by a **fresh agent that authored neither side**: new
   session, resolution-only brief, keeps **both** intents, commits the merge, changes
-  nothing else — ideally a different engine/model than the task's author.
-- Mechanism: `Workbench::resolveconflict`. Today it reuses the author's `ClaudeRunner`
-  (fresh session, but same engine + task identity); this rule licenses making the
-  resolver a genuinely different runner.
+  nothing else — on a **different tier than the task's author**.
+- Mechanism: `Workbench::resolveconflict`. It spawns a fresh `ClaudeRunner` session and
+  now runs it on the author engine's **`resolver_model` tier** (defaults to the
+  frontier/planner model, e.g. `opus`) via `ClaudeRunner::setModelOverride` — a
+  genuinely different model from the worker that built the branch, resolved through the
+  registry (§7). A different *engine* awaits non-claude interactive dispatch (Phase A);
+  until then the model tier is the honest decorrelation lever, and the resolver note is
+  written to the task log.
 
 ## 6. The field guide travels with every agent
 - Every run gets: **CLAUDE.md** conventions, the tiknix **MCP reuse tools**
@@ -127,7 +131,9 @@ site resolves through it.
    `auditor_model` tier the same way.
 
 **Remaining (owner / later phases):**
-5. `resolveconflict` gains a fresh-runner engine override (§5).
+5. ✅ `resolveconflict` runs the resolver on the `resolver_model` tier
+   (`ClaudeRunner::setModelOverride`), decorrelated from the worker (§5). A different
+   *engine* (not just model) awaits non-claude interactive dispatch (Phase A).
 6. *(with the owner, outside this repo)* wire `jail-run.sh` headless dispatch for
    qwen/hermes and flip their `headless_ready = true` — the fallback stops firing and
    non-claude workers run natively. Then the ACP phases.

@@ -25,6 +25,8 @@ class ClaudeRunner {
     private string $sessionName;
     private string $workDir;
     private ?string $projectPath = null;
+    /** Optional model override (e.g. a decorrelated resolver tier for conflict resolution, §5). */
+    private ?string $modelOverride = null;
 
     /**
      * Create a new ClaudeRunner instance
@@ -58,6 +60,15 @@ class ClaudeRunner {
      */
     public function getProjectPath(): string {
         return $this->projectPath ?? dirname(__DIR__);
+    }
+
+    /**
+     * Override the model this session runs on (claude `--model <X>`). Used by conflict
+     * resolution to run a decorrelated tier — a resolver that differs from the worker
+     * that authored the branch (AGENT_ORCHESTRATION.md §5). Null = claude default.
+     */
+    public function setModelOverride(?string $model): void {
+        $this->modelOverride = ($model !== null && $model !== '') ? $model : null;
     }
 
     /**
@@ -129,6 +140,9 @@ class ClaudeRunner {
         if ($skipPermissions) {
             $claudeCmd .= ' --dangerously-skip-permissions';
         }
+        if ($this->modelOverride) {
+            $claudeCmd .= ' --model ' . escapeshellarg($this->modelOverride);
+        }
 
         // Build a wrapper script that shows invocation info then runs Claude
         $invocationScript = $this->buildInvocationScript($claudeCmd, $workspaceRoot, $jail);
@@ -188,9 +202,13 @@ class ClaudeRunner {
         $hookUrl = $this->getHookUrl($mainProjectRoot);
 
         // Run jailed (bwrap) on an instance; else direct (an isolated clone, hook-sandboxed).
+        // In the jail path the `-- <args>` are appended to jail-run.sh's own
+        // `claude --permission-mode bypassPermissions` wrapper, so pass --model through here.
         if ($jail !== '') {
+            $jailArgs = '--debug';
+            if ($this->modelOverride) $jailArgs .= ' --model ' . escapeshellarg($this->modelOverride);
             $runBlock = "echo \"  [jailed: " . addslashes($jail) . "]\"\n"
-                      . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . " -- --debug\nEXIT_CODE=\$?";
+                      . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . ' -- ' . $jailArgs . "\nEXIT_CODE=\$?";
         } else {
             $runBlock = 'cd ' . escapeshellarg($workspaceRoot) . "\n{$claudeCmd}\nEXIT_CODE=\$?";
         }

@@ -20,6 +20,7 @@ use \app\TmuxManager;
 use \app\PlanRunner;
 use \app\PlanExecutor;
 use \app\WorkspaceManager;
+use \app\EngineRegistry;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
@@ -1616,8 +1617,21 @@ class Workbench extends Control {
         $this->logTaskEvent($taskId, 'warning', 'system',
             'Merge conflict — handing ' . count($files) . ' file(s) to the agent: ' . implode(', ', $files));
 
+        // §5 decorrelation: the resolver must differ from the agent that authored the
+        // branch. A conflict is merge-reasoning that benefits from a higher tier anyway,
+        // so run the resolver on the author engine's RESOLVER tier (defaults to the
+        // frontier/planner model) — a genuinely different model from the worker that
+        // built the branch. (A different engine awaits non-claude interactive dispatch;
+        // until then the model tier is the honest decorrelation lever.)
+        $authorEngine  = EngineRegistry::isValid((string)$task->engine) ? (string)$task->engine : EngineRegistry::defaultEngine();
+        $workerModel   = EngineRegistry::model($authorEngine, 'worker', 'sonnet');
+        $resolverModel = EngineRegistry::model($authorEngine, 'resolver', EngineRegistry::model($authorEngine, 'planner', 'opus'));
+
         try {
             $runner = new ClaudeRunner($taskId, $this->member->id, $task->teamId, $ws, $this->member->level);
+            if ($resolverModel !== '' && $resolverModel !== $workerModel) {
+                $runner->setModelOverride($resolverModel);
+            }
             if ($runner->exists()) { $runner->kill(); usleep(400000); }
             try {
                 $apiKey  = $this->getOrCreateWorkbenchApiKey($this->member->id);
@@ -1644,7 +1658,11 @@ class Workbench extends Control {
                 . "Do NOT change unrelated code and do NOT push. When finished, say the conflict is resolved so it can be approved & merged.";
             $runner->sendPrompt($prompt);
 
-            $this->logTaskEvent($taskId, 'info', 'review', 'Conflict resolution started by ' . ($this->member->displayName ?? $this->member->email));
+            $resolverNote = ($resolverModel !== '' && $resolverModel !== $workerModel)
+                ? (' — resolver on ' . $resolverModel . ' (decorrelated from worker ' . $workerModel . ')')
+                : '';
+            $this->logTaskEvent($taskId, 'info', 'review',
+                'Conflict resolution started by ' . ($this->member->displayName ?? $this->member->email) . $resolverNote);
             Flight::json(['success' => true, 'clean' => false, 'files' => $files, 'session' => $runner->getSessionName(),
                 'message' => 'Agent is resolving ' . count($files) . ' conflicting file(s). Watch the conversation, then Approve & Merge.']);
         } catch (Exception $e) {

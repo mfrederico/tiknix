@@ -15,7 +15,8 @@
  *   command        the CLI binary (e.g. "claude", "qwen")
  *   cli_flavor     "claude" (Claude Code flag set) | other (awaits its own launcher)
  *   headless_ready true once the engine's jailed `-p` dispatch is proven
- *   planner_model / worker_model / auditor_model   per-tier model names
+ *   planner_model / worker_model / auditor_model / resolver_model   per-tier models
+ *                  (resolver = merge-conflict resolution, decorrelated from worker, §5)
  *
  * See AGENT_ORCHESTRATION.md §7 and its Status section.
  */
@@ -38,6 +39,7 @@ class EngineRegistry {
             'planner_model'  => 'opus',
             'worker_model'   => 'sonnet',
             'auditor_model'  => 'sonnet',
+            'resolver_model' => 'opus',
         ],
     ];
 

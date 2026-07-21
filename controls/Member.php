@@ -150,9 +150,10 @@ class Member extends Control {
             }
         }
 
-        // Registered engines + each member's effective tier map, for the AI prefs section.
+        // Selectable engines + each member's effective tier map, for the AI prefs section.
+        // Uses menu() (available engines) so a closed-beta engine we can't use is hidden.
         $engines = [];
-        foreach (EngineRegistry::names() as $eng) {
+        foreach (array_keys(EngineRegistry::menu()) as $eng) {
             $engines[$eng] = MemberEnginePrefs::effective((int)$this->member->id, $eng);
         }
         $this->viewData['ai_engines'] = $engines;

@@ -85,10 +85,24 @@ class EngineRegistry {
         return $l !== '' ? $l : $engine;
     }
 
-    /** [name => label] for building UI menus (e.g. the create-instance dropdown). */
+    /**
+     * Whether an engine should be OFFERED to users (create dropdown, member prefs).
+     * Registered-but-unavailable engines (e.g. a closed beta we lack access to) stay
+     * valid for isValid/coerce so any stored value resolves, but are hidden from menus.
+     * Available unless the row sets `available = false`.
+     */
+    public static function available(string $engine): bool {
+        $e = self::all()[$engine] ?? null;
+        if ($e === null) return false;
+        return !array_key_exists('available', $e) || self::truthy($e['available']);
+    }
+
+    /** [name => label] of user-selectable engines (available only), for building UI menus. */
     public static function menu(): array {
         $out = [];
-        foreach (self::all() as $name => $_) $out[$name] = self::label($name);
+        foreach (self::all() as $name => $_) {
+            if (self::available($name)) $out[$name] = self::label($name);
+        }
         return $out;
     }
 

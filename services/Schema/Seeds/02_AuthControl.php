@@ -56,6 +56,11 @@ $defaults = [
     ['contact', 'submit', 101, 'Submit contact form'],
     ['terms', 'index', 101, 'Terms of service'],
     ['privacy', 'index', 101, 'Privacy policy'],
+    // Marketing pricing page. Public so guests can view it; the controller itself
+    // gates it to the flagship site (redirects to / on a provisioned instance), so
+    // this row is harmless on instances. Explicit row avoids a build_mode deploy
+    // auto-creating it at a restrictive default level.
+    ['pricing', '*', 101, 'Public marketing pricing page (flagship-gated in-controller)'],
 
     // Member (100)
     ['auth', 'logout', 100, 'Logout'],

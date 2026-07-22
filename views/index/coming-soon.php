@@ -290,7 +290,9 @@
                 </form>
             </div>
         <?php endif; ?>
-        <div class="mini-links"><a href="/index/pricing">See pricing &rarr;</a></div>
+        <?php if (!empty($flagship)): ?>
+        <div class="mini-links"><a href="/pricing">See pricing &rarr;</a></div>
+        <?php endif; ?>
     </div>
 
     <script>

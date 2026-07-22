@@ -22,11 +22,29 @@ class Index extends BaseControls\Control {
         // Rendered without the Tiknix header/footer layout so visitors see a
         // clean, standalone page. To restore the original homepage, revert this
         // method to render 'index/index' with the layout (see git history).
+        // The showcase + pricing are marketing surfaces for the PRIMARY tiknix.com
+        // site only. Provisioned instances are clones of this app, so gate those
+        // surfaces off on any non-flagship host — an instance shows just the plain
+        // "coming soon" page, with no confusion about which is the real Tiknix.
+        $flagship = self::isFlagship();
         $this->render('index/coming-soon', [
             'title' => 'Coming Soon',
             'subscribed' => (bool)$this->getParam('subscribed'),
-            'showcase' => $this->showcaseItems(),
+            'flagship' => $flagship,
+            'showcase' => $flagship ? $this->showcaseItems() : [],
         ], false);
+    }
+
+    /**
+     * Whether THIS deploy is the primary marketing site (the root control plane),
+     * as opposed to a provisioned instance clone. Marketing surfaces (showcase +
+     * pricing) show only here. Reuses the established host-based detection
+     * (lib/functions.php is_control_plane — keys off baseurl host vs the apex, so
+     * an instance served at <slug>.tiknix.com self-identifies as a sandbox and
+     * nothing has to change in provisioning). Same signal that gates builder tools.
+     */
+    public static function isFlagship(): bool {
+        return !function_exists('is_control_plane') || is_control_plane();
     }
 
     /**
@@ -43,10 +61,13 @@ class Index extends BaseControls\Control {
     }
 
     /**
-     * Public pricing page. Gated pre-launch: shows the plan but the CTA is the
-     * same lead-capture as the landing hero (no sign-ups / checkout yet).
+     * Public pricing page — PRIMARY site only. On a provisioned instance this
+     * redirects to the plain landing page so instance visitors never see it.
+     * Pre-launch gate: the CTA is the same lead-capture as the landing hero
+     * (no sign-ups / checkout yet).
      */
-    public function pricing() {
+    public function pricing($params = []) {
+        if (!self::isFlagship()) { Flight::redirect('/'); return; }
         $this->render('index/pricing', [
             'title' => 'Pricing — Tiknix',
             'subscribed' => (bool)$this->getParam('subscribed'),

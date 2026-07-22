@@ -50,7 +50,7 @@ class Token {
         if (!is_array($claims)) return null;
         if (empty($claims['exp']) || time() > (int) $claims['exp']) return null;
         if (($claims['aud'] ?? null) !== $expectedAud) return null;
-        if (empty($claims['nonce']) || empty($claims['member_id'])) return null;
+        if (empty($claims['nonce'])) return null;   // replay protection; caller checks member_id etc.
         return $claims;
     }
 

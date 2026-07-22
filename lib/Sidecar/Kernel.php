@@ -162,14 +162,24 @@ class Kernel {
     private function registerRoutes(): void {
         $map = $this->routeMap;
         Flight::route('/(@class(/@method(/@op(/@opid(/.*?)))))',
-            function ($class = null, $method = null) use ($map) {
+            function ($class = null, $method = null, $op = null, $opid = null, $route = null) use ($map) {
                 $class  = strtolower($class ?: 'index');
-                $method = preg_replace('/[^a-z0-9]/i', '', (string) ($method ?: 'index')) ?: 'index';
+                $raw    = (string) ($method ?: 'index');
+                $method = preg_replace('/[^a-z0-9]/i', '', $raw) ?: 'index';
                 $c = $map[$class] ?? null;
                 if (!$c) { Flight::notFound(); return; }
                 $fq = 'app\\' . $c;
-                if (!class_exists($fq) || !method_exists($fq, $method)) { Flight::notFound(); return; }
-                (new $fq())->$method([]);
+                if (!class_exists($fq)) { Flight::notFound(); return; }
+                $inst   = new $fq();
+                $params = ['operation' => (object) ['name' => $op, 'type' => $opid], 'route' => $route];
+                if (method_exists($inst, 'setRouteParams')) $inst->setRouteParams($params);
+                // Public method wins; else a controller may opt into catching unknown
+                // sub-segments with _fallback (public storefront /shop/<slug>, etc.).
+                if (method_exists($inst, $method) && (new \ReflectionMethod($inst, $method))->isPublic()) {
+                    $inst->$method($params); return;
+                }
+                if (method_exists($inst, '_fallback')) { $inst->_fallback($raw, $params); return; }
+                Flight::notFound();
             });
     }
 }

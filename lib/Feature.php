@@ -32,6 +32,11 @@ class Feature {
             'blurb'     => 'Visual data-model + call-graph explorer for your instances (heavy; runs as a sidecar). Members can reach it; each grant is per-member.',
             'min_level' => 100, // MEMBER and above — they own the instances it explores
         ],
+        'shop' => [
+            'label'     => 'Store',
+            'blurb'     => 'A per-instance storefront + admin, with checkout via that instance\'s own Stripe. Runs as the shop.tiknix sidecar.',
+            'min_level' => 100, // MEMBER and above — they own the instances that get a store
+        ],
     ];
 
     private static function settingKey(string $flag): string {

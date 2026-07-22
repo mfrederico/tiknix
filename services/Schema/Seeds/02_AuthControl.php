@@ -72,6 +72,9 @@ $defaults = [
     // Generic sidecar-plugin launcher: /sidecar/launch/<name> (Explorer, Store, …).
     // MEMBER-eligible; each plugin's own Feature grant gates it (Sidecar::launch enforces).
     ['sidecar', '*', 100, 'Sidecar plugin launcher (per-plugin feature-gated)'],
+    // Store checkout broker for the shop.tiknix sidecar. PUBLIC — it authenticates
+    // itself via an HMAC signature ([sidecar.shop] secret); no session.
+    ['storebroker', '*', 101, 'Shop sidecar checkout broker (HMAC-signed)'],
     ['teams', '*', 100, 'Teams management'],
     ['communications', '*', 100, 'Threaded email inbox'],
 

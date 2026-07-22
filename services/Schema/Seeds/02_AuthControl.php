@@ -75,6 +75,12 @@ $defaults = [
     // Store checkout broker for the shop.tiknix sidecar. PUBLIC — it authenticates
     // itself via an HMAC signature ([sidecar.shop] secret); no session.
     ['storebroker', '*', 101, 'Shop sidecar checkout broker (HMAC-signed)'],
+    // Pipeline run surfaces. api/trigger/status are PUBLIC — self-authenticating via
+    // a per-member pk_ key or the [pipeline] trigger_secret. keys is ADMIN (mint UI).
+    ['pipeline', 'api', 101, 'Pipeline REST API (per-member pk_ key)'],
+    ['pipeline', 'trigger', 101, 'Pipeline cron/webhook trigger (trigger_secret)'],
+    ['pipeline', 'status', 101, 'Pipeline run status (per-member pk_ key)'],
+    ['pipeline', 'keys', 50, 'Pipeline API key management (ADMIN)'],
     ['teams', '*', 100, 'Teams management'],
     ['communications', '*', 100, 'Threaded email inbox'],
 

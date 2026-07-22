@@ -18,10 +18,11 @@ class ConnectionStep implements StepInterface {
         return [
             'summary' => 'Call this instance\'s own connection (Stripe/Shopify/…) via the broker.',
             'config'  => [
-                'connector' => 'string — the connector key (e.g. stripe, shopify)',
-                'tool'      => 'string — the broker tool (e.g. list_products, create_checkout_session)',
-                'arguments' => 'object (optional) — tool arguments',
-                'timeout'   => 'int (optional) — seconds, default 30',
+                'connector'   => 'string — the connector key (e.g. stripe, shopify)',
+                'tool'        => 'string — the broker tool (e.g. list_products, create_checkout_session)',
+                'arguments'   => 'object (optional) — tool arguments',
+                'environment' => 'string (optional) — production | development (default production)',
+                'timeout'     => 'int (optional) — seconds, default 30',
             ],
         ];
     }
@@ -37,9 +38,14 @@ class ConnectionStep implements StepInterface {
         $key      = (string) ($ini['broker']['key'] ?? '');
         if ($endpoint === '' || $key === '') return $this->err('broker not configured (conf/broker.ini)');
 
+        // The broker resolves the connection by the key's instance_id + connector +
+        // environment (read from the arguments; default production). A store connected
+        // in development must be reached with environment:"development".
+        $brokerArgs = (array) ($config['arguments'] ?? []);
+        if (!empty($config['environment'])) $brokerArgs['environment'] = (string) $config['environment'];
         $payload = json_encode([
             'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
-            'params'  => ['name' => $connector . ':' . $tool, 'arguments' => (object) ((array) ($config['arguments'] ?? []))],
+            'params'  => ['name' => $connector . ':' . $tool, 'arguments' => (object) $brokerArgs],
         ]);
         $timeout = max(1, min(120, (int) ($config['timeout'] ?? 30)));
 

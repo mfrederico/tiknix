@@ -67,10 +67,19 @@ $ini = preg_replace('/^\s*path\s*=.*$/m',    "path = $dbRel", $ini, 1);
 $ini = preg_replace('/^\s*baseurl\s*=.*$/m', "baseurl = \"$baseUrl\"", $ini, 1);
 $ini = preg_replace('/^\s*name\s*=\s*".*?"/m', 'name = "' . addslashes($name) . '"', $ini, 1);
 
+// Force a UNIQUE [pipeline] trigger_secret. The template is the cloned source-app
+// config, so an inherited value would be shared across every instance — a pipeline
+// on one instance could then fire triggers on another. Overwrite it (or append the
+// section if the template lacks it) so each instance's /pipeline/trigger + fake-cron
+// authenticate against a secret only this instance knows.
+$trigger = bin2hex(random_bytes(32));
+$ini = preg_replace('/^\s*trigger_secret\s*=.*$/m', "trigger_secret = \"$trigger\"", $ini, 1, $n);
+if (!$n) $ini = rtrim($ini) . "\n\n[pipeline]\ntrigger_secret = \"$trigger\"\n";
+
 $cfgRel = "conf/config.$sub.ini";
 file_put_contents("$ROOT/$cfgRel", $ini);   // tracked by provision-instance.sh for rollback
 file_put_contents("$ROOT/conf/config.ini", $ini); // what the instance app actually boots on
-echo "  wrote $cfgRel + conf/config.ini (db: $dbRel)\n";
+echo "  wrote $cfgRel + conf/config.ini (db: $dbRel, minted [pipeline] trigger_secret)\n";
 
 // --- 1c) runtime dirs -------------------------------------------------------
 // Create the dirs the app writes to at runtime, upfront and owned by whoever

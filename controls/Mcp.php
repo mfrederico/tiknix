@@ -807,6 +807,11 @@ class Mcp extends BaseControls\Control {
             ];
         }
 
+        // Pipelines flagged expose_as_tool become callable tools on THIS instance's
+        // MCP (name tiknix:pipe_<slug>), input = their context_schema. Executed via
+        // handleToolsCall's pipe_ branch. (Pipelines are part of the instance's code.)
+        foreach ($this->exposedPipelineTools() as $pt) $toolList[] = $pt;
+
         // Get tools from all proxy-enabled backend servers the user has access to
         $servers = $this->getAllowedServers();
         foreach ($servers as $server) {
@@ -845,6 +850,39 @@ class Mcp extends BaseControls\Control {
         $toolList = array_map([$this, 'fixToolSchema'], $toolList);
 
         $this->sendResult($id, ['tools' => $toolList]);
+    }
+
+    /**
+     * tools/list entries for this instance's expose_as_tool pipelines. Their
+     * context_schema ({name => {type,required}}) becomes a JSON-Schema inputSchema.
+     */
+    private function exposedPipelineTools(): array {
+        if (!class_exists('\\app\\Pipeline\\Runner')) return [];
+        $out = [];
+        foreach (\app\Pipeline\Runner::list() as $slug => $def) {
+            if (empty($def['expose_as_tool'])) continue;
+            $props = []; $required = [];
+            foreach ((array)($def['context_schema'] ?? []) as $k => $spec) {
+                $props[$k] = ['type' => (string)($spec['type'] ?? 'string')];
+                if (!empty($spec['required'])) $required[] = $k;
+            }
+            $out[] = [
+                'name' => 'tiknix:pipe_' . $slug,
+                'description' => '[Pipeline] ' . (string)($def['description'] ?: ($def['name'] ?? $slug)),
+                'inputSchema' => ['type' => 'object', 'properties' => $props ?: (object)[], 'required' => $required],
+            ];
+        }
+        return $out;
+    }
+
+    /** Run an expose_as_tool pipeline by slug; returns its JSON result. */
+    private function runExposedPipeline(string $slug, array $arguments): string {
+        $def = \app\Pipeline\Runner::get($slug);
+        if (!$def || empty($def['expose_as_tool'])) {
+            throw new \Exception("Unknown Tiknix tool: pipe_{$slug}");
+        }
+        $r = \app\Pipeline\Runner::run($slug, $arguments, 'mcp');
+        return json_encode($r, JSON_UNESCAPED_SLASHES);
     }
 
     /**
@@ -1073,12 +1111,16 @@ class Mcp extends BaseControls\Control {
                 $this->toolLoader->setAuth($this->authMember, $this->authApiKey);
 
                 $tools = $this->localMcpServer()->getTools();
-                if (!isset($tools[$toolName])) {
+                if (isset($tools[$toolName])) {
+                    $toolResult = $tools[$toolName]->execute($arguments);
+                    $result = $toolResult->content[0]->text ?? '';
+                    $isError = $toolResult->isError;
+                } elseif (strncmp($toolName, 'pipe_', 5) === 0) {
+                    // An expose_as_tool pipeline (tiknix:pipe_<slug>) — run it.
+                    $result = $this->runExposedPipeline(substr($toolName, 5), $arguments);
+                } else {
                     throw new \Exception("Unknown Tiknix tool: {$toolName}");
                 }
-                $toolResult = $tools[$toolName]->execute($arguments);
-                $result = $toolResult->content[0]->text ?? '';
-                $isError = $toolResult->isError;
             } else if (ConnectorRegistry::has($serverSlug)) {
                 // Broker: reach one of the instance's connected third-party stores.
                 $result = $this->brokerToolCall($serverSlug, $toolName, $arguments);

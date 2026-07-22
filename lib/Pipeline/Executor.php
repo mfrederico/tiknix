@@ -1,19 +1,22 @@
 <?php
 /**
- * Pipeline\Executor — run a pipeline definition against a context, persisting a
- * `piperun` + one `pipesteprun` per step ACTUALLY run (lazy — myctobot pre-created
- * them and orphaned 58%). Walks steps in order, honoring each step's
- * on_success / on_fail ∈ { next | goto:<name> | exit }. Consecutive `parallel`
- * steps are grouped; Phase 1 runs a group in-process (results identical) — true
- * concurrency via background workers is a later phase.
+ * Pipeline\Executor — run a pipeline against a context, persisting a `piperun` + one
+ * `pipesteprun` per step ACTUALLY run (lazy). Walks steps honoring on_success /
+ * on_fail ∈ { next | goto:<name> | exit }. Three entry points:
+ *   run($def,$ctx,$src)   — sync, creates the run (in-app calls; short pipelines)
+ *   resume($runId)        — a Dispatcher-created queued run; execute in the background
+ *   continueRun($id,$in)  — resume a paused await_input run, injecting the input
  *
- * The variable bag accumulates: context, run built-ins, {time.*}, and each finished
- * step's { output, stdout, stderr, exit } under its name, plus {prev.*}.
+ * A step may return ['await'=>true, 'prompt'=>, 'token'=>] (the wait/await_input
+ * step) — the run persists its bag+next-index to stateJson, goes 'paused', and stops
+ * until continueRun. The variable bag accumulates context, run built-ins, {time.*},
+ * and each finished step's { output, stdout, stderr, exit } under its name + {prev.*}.
  */
 
 namespace app\Pipeline;
 
 use app\Bean;
+use RedBeanPHP\R;
 
 class Executor {
 
@@ -25,61 +28,75 @@ class Executor {
         $this->root = rtrim($root, '/');
     }
 
-    /**
-     * @return array run summary: ['run_id','run_uid','status','steps','output'?]
-     */
+    /** Sync run: create the piperun, execute from the start. */
     public function run(array $def, array $context = [], string $source = 'manual'): array {
-        $slug = (string) ($def['slug'] ?? 'pipeline');
+        $run = $this->newRun($def, $context, $source, 'running');
+        $bag = $this->freshBag($def, $context, $run);
+        return $this->execute($def, $run, 0, $bag);
+    }
+
+    /** Background: execute a Dispatcher-created 'queued' run to completion. */
+    public function resume(int $runId): array {
+        $run = R::load('piperun', $runId);
+        if (!$run->id) throw new \RuntimeException("run $runId not found");
+        $def = (new Loader($this->root))->get((string) $run->slug);
+        if (!$def) { $run->status = 'failed'; $run->error = 'definition missing'; Bean::store($run); throw new \RuntimeException('definition missing'); }
+        $run->status = 'running'; $run->startedAt = $run->startedAt ?: date('Y-m-d H:i:s'); Bean::store($run);
+        $context = json_decode((string) $run->contextJson, true) ?: [];
+        $bag = $this->freshBag($def, $context, $run);
+        return $this->execute($def, $run, 0, $bag);
+    }
+
+    /** Resume a paused await_input run, injecting the supplied input under {input.*}. */
+    public function continueRun(int $runId, array $input): array {
+        $run = R::load('piperun', $runId);
+        if (!$run->id) throw new \RuntimeException("run $runId not found");
+        if ($run->status !== 'paused') throw new \RuntimeException("run $runId is not awaiting input (status={$run->status})");
+        $def = (new Loader($this->root))->get((string) $run->slug);
+        if (!$def) throw new \RuntimeException('definition missing');
+        $state = json_decode((string) $run->stateJson, true) ?: [];
+        $bag = $state['bag'] ?? $this->freshBag($def, [], $run);
+        $bag['input'] = $input;                          // the awaited input
+        $bag[(string) $run->awaitStep]['output'] = $input;  // and as the await step's output
+        $run->status = 'running'; Bean::store($run);
+        return $this->execute($def, $run, (int) ($state['next'] ?? 0), $bag);
+    }
+
+    // ---- core loop ---------------------------------------------------------
+
+    private function execute(array $def, $run, int $i, array $bag): array {
         $steps = array_values($def['steps'] ?? []);
         $byName = [];
-        foreach ($steps as $i => $s) $byName[(string) $s['name']] = $i;
+        foreach ($steps as $k => $s) $byName[(string) $s['name']] = $k;
+        $runMeta = ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid,
+                    'run_directory' => (string) $run->runDir, 'root' => $this->root];
 
-        $runUid = self::uid();
-        $runDir = sys_get_temp_dir() . '/tiknix-pipe/' . $slug . '/' . $runUid;
-        @mkdir($runDir, 0775, true);
-
-        $run = Bean::dispense('piperun');
-        $run->slug        = $slug;
-        $run->runUid      = $runUid;
-        $run->status      = 'running';
-        $run->source      = $source;
-        $run->contextJson = json_encode($context, JSON_UNESCAPED_SLASHES);
-        $run->stepsTotal  = count($steps);
-        $run->stepsDone   = 0;
-        $run->runDir      = $runDir;
-        $run->startedAt   = date('Y-m-d H:i:s');
-        $runId = (int) Bean::store($run);
-
-        // The variable bag.
-        $bag = [
-            'context'       => $context,
-            'time'          => Vars::timeBag(),
-            'run_id'        => $runId,
-            'run_uid'       => $runUid,
-            'run_directory' => $runDir,
-            'pipeline_slug' => $slug,
-        ];
-        $runMeta = ['run_id' => $runId, 'run_uid' => $runUid, 'run_directory' => $runDir, 'root' => $this->root];
-
-        $status = 'completed';
-        $error  = '';
-        $done   = 0;
-        $i = 0; $guard = 0;
+        $status = 'completed'; $error = ''; $done = (int) $run->stepsDone; $guard = 0; $lastName = '';
 
         while ($i < count($steps)) {
             if (++$guard > self::MAX_STEPS) { $status = 'failed'; $error = 'step budget exceeded (goto cycle?)'; break; }
             $step = $steps[$i];
             $name = (string) $step['name'];
+            $lastName = $name;
 
-            $res = $this->runStep($step, $bag, $runMeta, $runId);
+            $res = $this->runStep($step, $bag, $runMeta, (int) $run->id);
 
-            // Accumulate into the bag (structured output + streams) + {prev.*}.
+            // await_input: persist state, pause, stop.
+            if (!empty($res['await'])) {
+                $run->status    = 'paused';
+                $run->awaitStep = $name;
+                $run->awaitPrompt = (string) ($res['prompt'] ?? '');
+                $run->stateJson = json_encode(['bag' => $bag, 'next' => $i + 1], JSON_UNESCAPED_SLASHES);
+                Bean::store($run);
+                return ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid, 'status' => 'paused',
+                        'steps_done' => $done, 'awaiting' => $name, 'prompt' => $run->awaitPrompt];
+            }
+
             $bag[$name] = ['output' => $res['output'], 'stdout' => $res['stdout'], 'stderr' => $res['stderr'], 'exit' => $res['exit']];
             $bag['prev'] = is_array($res['output']) ? $res['output'] : ['value' => $res['output']];
             $done++;
             $run->stepsDone = $done; Bean::store($run);
 
-            // Flow: which step next?
             $flow = (string) ($step[$res['ok'] ? 'on_success' : 'on_fail'] ?? ($res['ok'] ? 'next' : 'exit'));
             if ($flow === 'exit' || $flow === '') {
                 if (!$res['ok']) { $status = 'failed'; $error = $res['stderr'] ?: "step '$name' failed"; }
@@ -88,22 +105,17 @@ class Executor {
             if (strncmp($flow, 'goto:', 5) === 0) {
                 $target = substr($flow, 5);
                 if (!isset($byName[$target])) { $status = 'failed'; $error = "goto:$target — no such step"; break; }
-                $i = $byName[$target];
-                continue;
+                $i = $byName[$target]; continue;
             }
-            // 'next'
             $i++;
         }
 
         $run->status     = $status;
         $run->error      = $error;
         $run->finishedAt = date('Y-m-d H:i:s');
-        // The last step's output is the pipeline's output (for tool/API callers).
-        $lastName = $steps ? (string) $steps[min($i, count($steps) - 1)]['name'] : '';
         $run->outputJson = json_encode($bag[$lastName]['output'] ?? null, JSON_UNESCAPED_SLASHES);
         Bean::store($run);
-
-        return ['run_id' => $runId, 'run_uid' => $runUid, 'status' => $status,
+        return ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid, 'status' => $status,
                 'steps_done' => $done, 'error' => $error, 'output' => $bag[$lastName]['output'] ?? null];
     }
 
@@ -114,11 +126,8 @@ class Executor {
         $handler = StepRegistry::get($type);
 
         $sr = Bean::dispense('pipesteprun');
-        $sr->runId    = $runId;
-        $sr->stepName = $name;
-        $sr->stepType = $type;
-        $sr->status   = 'running';
-        $sr->startedAt = date('Y-m-d H:i:s');
+        $sr->runId = $runId; $sr->stepName = $name; $sr->stepType = $type;
+        $sr->status = 'running'; $sr->startedAt = date('Y-m-d H:i:s');
         Bean::store($sr);
 
         $t0 = microtime(true);
@@ -127,16 +136,12 @@ class Executor {
         } else {
             $config = Vars::resolve((array) ($step['config'] ?? []), $bag);
             $sr->inputJson = json_encode($config, JSON_UNESCAPED_SLASHES);
-            try {
-                $res = $handler->run($config, $runMeta);
-            } catch (\Throwable $e) {
-                $res = ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $e->getMessage(), 'exit' => 1];
-            }
+            try { $res = $handler->run($config, $runMeta); }
+            catch (\Throwable $e) { $res = ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $e->getMessage(), 'exit' => 1]; }
         }
-        // Normalize.
-        $res += ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => '', 'exit' => 1];
+        $res += ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => '', 'exit' => 1, 'await' => false];
 
-        $sr->status     = $res['ok'] ? 'completed' : 'failed';
+        $sr->status     = !empty($res['await']) ? 'awaiting' : ($res['ok'] ? 'completed' : 'failed');
         $sr->outputJson = json_encode($res['output'], JSON_UNESCAPED_SLASHES);
         $sr->stdout     = mb_substr((string) $res['stdout'], 0, 65535);
         $sr->stderr     = mb_substr((string) $res['stderr'], 0, 65535);
@@ -144,11 +149,35 @@ class Executor {
         $sr->durationMs = (int) round((microtime(true) - $t0) * 1000);
         $sr->finishedAt = date('Y-m-d H:i:s');
         Bean::store($sr);
-
         return $res;
     }
 
-    private static function uid(): string {
-        return bin2hex(random_bytes(12));
+    // ---- run + bag setup ---------------------------------------------------
+
+    /** Create a new piperun bean (status set by caller: 'running' sync, 'queued' dispatched). */
+    public function newRun(array $def, array $context, string $source, string $status): object {
+        $slug = (string) ($def['slug'] ?? 'pipeline');
+        $uid  = bin2hex(random_bytes(12));
+        $dir  = sys_get_temp_dir() . '/tiknix-pipe/' . $slug . '/' . $uid;
+        @mkdir($dir, 0775, true);
+        $run = Bean::dispense('piperun');
+        $run->slug = $slug; $run->runUid = $uid; $run->status = $status; $run->source = $source;
+        $run->contextJson = json_encode($context, JSON_UNESCAPED_SLASHES);
+        $run->stepsTotal = count($def['steps'] ?? []); $run->stepsDone = 0;
+        $run->runDir = $dir; $run->createdAt = date('Y-m-d H:i:s');
+        if ($status === 'running') $run->startedAt = date('Y-m-d H:i:s');
+        Bean::store($run);
+        return $run;
+    }
+
+    private function freshBag(array $def, array $context, $run): array {
+        return [
+            'context'       => $context,
+            'time'          => Vars::timeBag(),
+            'run_id'        => (int) $run->id,
+            'run_uid'       => (string) $run->runUid,
+            'run_directory' => (string) $run->runDir,
+            'pipeline_slug' => (string) $run->slug,
+        ];
     }
 }

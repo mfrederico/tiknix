@@ -37,16 +37,35 @@ class Runner {
     }
 
     /**
-     * Run a pipeline by slug. Returns the run summary
+     * Run a pipeline by slug SYNCHRONOUSLY (in-process). Best for short pipelines /
+     * in-app callers that want the result inline. Returns the run summary
      * (['run_id','run_uid','status','steps_done','error','output']).
-     * Throws if the pipeline file is missing or invalid.
      */
     public static function run(string $slug, array $context = [], string $source = 'code'): array {
+        return (new Executor(self::root()))->run(self::def($slug), $context, $source);
+    }
+
+    /**
+     * Run a pipeline in the BACKGROUND (jailed on capricorn instances). Returns
+     * immediately with { run_id, status:'queued' }; poll get_run. Use for anything
+     * long-running (agent steps) and for triggers/REST/editor.
+     */
+    public static function dispatch(string $slug, array $context = [], string $source = 'trigger'): array {
+        return (new Dispatcher(self::root()))->dispatch(self::def($slug), $context, $source);
+    }
+
+    /** Resume a paused await_input run, injecting the supplied input. */
+    public static function continueRun(int $runId, array $input): array {
+        return (new Executor(self::root()))->continueRun($runId, $input);
+    }
+
+    /** Load + validate a definition, or throw. */
+    private static function def(string $slug): array {
         $def = self::get($slug);
         if (!$def) throw new \RuntimeException("pipeline '$slug' not found");
         $errors = Loader::validate($def);
         if ($errors) throw new \RuntimeException("pipeline '$slug' invalid: " . implode('; ', $errors));
-        return (new Executor(self::root()))->run($def, $context, $source);
+        return $def;
     }
 
     /** Validate a definition without running it (dry_run). */

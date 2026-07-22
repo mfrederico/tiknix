@@ -12,12 +12,13 @@ use app\Pipeline\Runner;
 class PipelineRunTool extends BaseTool {
 
     public static string $name = 'pipeline_run';
-    public static string $description = 'Run a pipeline by slug with a context object. Returns { run_id, status, steps_done, output }. Use pipeline_run_get for per-step detail.';
+    public static string $description = 'Run a pipeline by slug with a context object. Runs in the BACKGROUND by default (returns { run_id, status:"queued" } — poll pipeline_run_get); pass wait:true to run synchronously and get the output inline (only for short pipelines).';
     public static array $inputSchema = [
         'type' => 'object',
         'properties' => [
             'slug'    => ['type' => 'string'],
             'context' => ['type' => 'object', 'description' => 'input params referenced as {context.x}'],
+            'wait'    => ['type' => 'boolean', 'description' => 'run synchronously and return the output (default false = background)'],
         ],
         'required' => ['slug'],
     ];
@@ -26,7 +27,7 @@ class PipelineRunTool extends BaseTool {
         $slug = (string) ($args['slug'] ?? '');
         $ctx  = (array) ($args['context'] ?? []);
         try {
-            $r = Runner::run($slug, $ctx, 'mcp');
+            $r = !empty($args['wait']) ? Runner::run($slug, $ctx, 'mcp') : Runner::dispatch($slug, $ctx, 'mcp');
         } catch (\Throwable $e) {
             throw new \Exception($e->getMessage());
         }

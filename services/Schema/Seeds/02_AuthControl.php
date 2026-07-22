@@ -80,6 +80,8 @@ $defaults = [
     ['pipeline', 'api', 101, 'Pipeline REST API (per-member pk_ key)'],
     ['pipeline', 'trigger', 101, 'Pipeline cron/webhook trigger (trigger_secret)'],
     ['pipeline', 'status', 101, 'Pipeline run status (per-member pk_ key)'],
+    ['pipeline', 'debug', 101, 'Pipeline step-trace debug start (trigger_secret)'],
+    ['pipeline', 'debugstep', 101, 'Pipeline step-trace advance (trigger_secret)'],
     ['pipeline', 'keys', 50, 'Pipeline API key management (ADMIN)'],
     ['teams', '*', 100, 'Teams management'],
     ['communications', '*', 100, 'Threaded email inbox'],

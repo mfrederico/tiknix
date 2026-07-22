@@ -73,6 +73,33 @@ class Pipeline extends Control {
             'error' => (string) $run->error, 'output' => json_decode((string) $run->outputJson, true)]);
     }
 
+    /** POST /pipeline/debug/<slug> — start a step-trace debug run (bearer = trigger_secret). */
+    public function debug($params = []) {
+        if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
+        $slug = $this->slugArg();
+        if (!Runner::get($slug)) { Flight::jsonError('No such pipeline.', 404); return; }
+        try {
+            $r = Runner::debugRun($slug, $this->jsonBody());
+            Flight::json($this->breakpoint((int) $r['run_id'], $r));
+        } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
+    }
+
+    /** POST /pipeline/debugstep/<run_id> — advance/finish/abort a debug run (bearer = trigger_secret).
+     *  Body: { action: "step"|"end"|"abort", patch: {..} } — patch is deep-merged into the bag. */
+    public function debugstep($params = []) {
+        if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
+        $runId  = (int) $this->slugArg();
+        $body   = $this->jsonBody();
+        $action = (string) ($body['action'] ?? 'step');
+        $patch  = is_array($body['patch'] ?? null) ? $body['patch'] : [];
+        try {
+            if ($action === 'abort')    { $r = Runner::debugAbort($runId); }
+            elseif ($action === 'end')  { $r = Runner::debugContinueToEnd($runId, $patch); }
+            else                        { $r = Runner::debugStep($runId, $patch); }
+            Flight::json($this->breakpoint($runId, $r));
+        } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
+    }
+
     /** GET|POST /pipeline/keys — ADMIN mint/revoke per-member REST keys. */
     public function keys($params = []) {
         if (!$this->requireLogin()) return;
@@ -102,6 +129,42 @@ class Pipeline extends Control {
     }
 
     // ---- helpers -----------------------------------------------------------
+
+    /** True if the request carries the instance's [pipeline] trigger_secret. */
+    private function trustedTrigger(): bool {
+        $secret = (string) (Flight::get('pipeline.trigger_secret') ?? '');
+        return $secret !== '' && hash_equals($secret, $this->bearer());
+    }
+
+    /**
+     * Assemble a debugger breakpoint payload: run status, each step-run (with its
+     * RESOLVED input + output/stdout/stderr), the live variable bag (so the UI can
+     * show + inject data), and which step ran last / runs next.
+     */
+    private function breakpoint(int $runId, array $r): array {
+        $run = R::load('piperun', $runId);
+        $steps = [];
+        foreach (R::find('pipesteprun', 'run_id = ? ORDER BY id', [$runId]) as $s) {
+            $steps[] = ['step' => $s->stepName, 'type' => $s->stepType, 'status' => $s->status,
+                'input' => json_decode((string) $s->inputJson, true), 'output' => json_decode((string) $s->outputJson, true),
+                'stdout' => (string) $s->stdout, 'stderr' => (string) $s->stderr,
+                'exit' => (int) $s->exitCode, 'duration_ms' => (int) $s->durationMs];
+        }
+        $state = json_decode((string) $run->stateJson, true) ?: [];
+        return [
+            'run_id'      => $runId,
+            'status'      => (string) $run->status,
+            'debug'       => ($state['kind'] ?? '') === 'debug' && $run->status === 'paused',
+            'steps_total' => (int) $run->stepsTotal,
+            'steps_done'  => (int) $run->stepsDone,
+            'error'       => (string) $run->error,
+            'output'      => json_decode((string) $run->outputJson, true),
+            'last_step'   => $r['last_step'] ?? ($state['last'] ?? null),
+            'next_step'   => $r['next_step'] ?? null,
+            'bag'         => $run->status === 'paused' ? ($state['bag'] ?? null) : null,
+            'steps'       => $steps,
+        ];
+    }
 
     /** The trailing URL segment (slug or run id) via the auto-router op param. */
     private function slugArg(): string {

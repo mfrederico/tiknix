@@ -59,6 +59,28 @@ class Runner {
         return (new Executor(self::root()))->continueRun($runId, $input);
     }
 
+    // ---- debug / step-trace (the editor's debugger) ------------------------
+
+    /** Start a step-trace debug run: runs the first step, then pauses at a breakpoint. */
+    public static function debugRun(string $slug, array $context = []): array {
+        return (new Executor(self::root()))->debugRun(self::def($slug), $context, 'debug');
+    }
+
+    /** Advance a paused debug run one step, first merging $patch into the bag. */
+    public static function debugStep(int $runId, array $patch = []): array {
+        return (new Executor(self::root()))->debugStep($runId, $patch);
+    }
+
+    /** Let a paused debug run finish (merging $patch first). */
+    public static function debugContinueToEnd(int $runId, array $patch = []): array {
+        return (new Executor(self::root()))->debugContinueToEnd($runId, $patch);
+    }
+
+    /** Abort a paused debug run. */
+    public static function debugAbort(int $runId): array {
+        return (new Executor(self::root()))->debugAbort($runId);
+    }
+
     /** Load + validate a definition, or throw. */
     private static function def(string $slug): array {
         $def = self::get($slug);

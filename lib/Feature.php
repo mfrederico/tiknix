@@ -22,11 +22,9 @@ class Feature {
 
     /** Flag catalog: key => ['label', 'blurb', 'min_level']. */
     public const CATALOG = [
-        'ecommerce' => [
-            'label'     => 'Ecommerce',
-            'blurb'     => 'Product catalog, inventory (including serialized units), and Stripe checkout tools.',
-            'min_level' => 50, // ADMIN and above (ROOT)
-        ],
+        // NOTE: the in-core 'ecommerce' flag was removed — the store is now the
+        // shop.tiknix sidecar, gated by the 'shop' flag below (per-instance storefront
+        // + admin, checkout via each instance's own Stripe via controls/Storebroker).
         'explorer' => [
             'label'     => 'Architecture Explorer',
             'blurb'     => 'Visual data-model + call-graph explorer for your instances (heavy; runs as a sidecar). Members can reach it; each grant is per-member.',

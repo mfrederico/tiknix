@@ -90,11 +90,7 @@ if ($__loggedIn) {
           <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> AI Builder</a>
         <?php endif; ?>
 
-        <?php if (class_exists('\\app\\Feature') && \app\Feature::isEnabled('ecommerce', (int)($member['id'] ?? 0), $__level)): ?>
-          <div class="ui-nav-heading">Ecommerce</div>
-          <a class="ui-nav-link<?= $__active('/ecommerce') ?>" href="/ecommerce"><i class="bi bi-bag"></i> Store</a>
-        <?php endif; ?>
-
+        <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>
         <?php if (class_exists('\\app\\Sidecar\\Registry')): ?>
           <?php $__plugins = \app\Sidecar\Registry::launchable(); $__pfirst = true; ?>
           <?php foreach ($__plugins as $__pname => $__p): ?>

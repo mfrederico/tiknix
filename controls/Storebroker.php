@@ -85,6 +85,61 @@ class Storebroker extends Control {
         Flight::json(['url' => $url]);
     }
 
+    /**
+     * POST /storebroker/webhook — verify a Stripe webhook the shop sidecar forwarded.
+     *
+     * The webhook lands on the STORE's own domain (the sidecar); only core can verify
+     * it, because the per-instance webhook secret (whsec) is encrypted with core's
+     * app_key. The sidecar signs the forward with the shop secret + names the instance
+     * (from its storefront URL); core resolves that instance's connection, decrypts the
+     * whsec + token, has the connector verify Stripe's signature + re-fetch the session,
+     * and returns the paid order reference. Signature failure → 400 so Stripe retries.
+     *
+     * Request: { token: <signed {instance_id} aud 'shop-webhook'>, payload: <raw>,
+     *            sig: <Stripe-Signature header> }
+     * Reply:   { paid: true, order_id, session_id } | { paid: false } | error
+     */
+    public function webhook($params = []) {
+        $secret = (string) (Flight::get('sidecar.shop.sso_secret') ?? '');
+        if ($secret === '') { Flight::jsonError('Not configured.', 503); return; }
+
+        $claims = Token::verify((string) ($this->getParam('token') ?: ''), $secret, 'shop-webhook');
+        if (!$claims) { Flight::jsonError('Invalid webhook request.', 403); return; }
+        $instanceId = (int) ($claims['instance_id'] ?? 0);
+        $raw = (string) ($this->getParam('payload') ?: '');
+        $sig = (string) ($this->getParam('sig') ?: '');
+        if ($instanceId <= 0 || $raw === '') { Flight::jsonError('Malformed.', 400); return; }
+
+        $inst = R::load('instance', $instanceId);
+        if (!$inst->id) { Flight::jsonError('Store not found.', 404); return; }
+        [$conn, $connector] = $this->resolveInstancePayment((int) $inst->memberId, $instanceId);
+        if (!$conn || !$connector) { Flight::json(['paid' => false, 'reason' => 'no-connection']); return; }
+
+        $token  = EncryptionService::decrypt($conn->accessToken);
+        $whsec  = '';
+        $encW = (string) ($conn->webhookSecret ?? '');
+        if ($encW !== '') { try { $whsec = EncryptionService::decrypt($encW); } catch (\Throwable $e) { $whsec = ''; } }
+        $status = 502; $out = ['paid' => false];
+        try {
+            $order = $connector->webhookOrder($conn, $token, $raw, ['Stripe-Signature' => $sig], $whsec);
+            if ($order && !empty($order['session_id'])) {
+                // reference = "shop:<instanceId>:<orderId>" — trust only a matching instance.
+                $ref = explode(':', (string) ($order['reference'] ?? ''));
+                if (($ref[0] ?? '') === 'shop' && (int) ($ref[1] ?? 0) === $instanceId && (int) ($ref[2] ?? 0) > 0) {
+                    $out = ['paid' => true, 'order_id' => (int) $ref[2], 'session_id' => (string) $order['session_id']];
+                }
+            }
+            $status = 200;
+        } catch (\Throwable $e) {
+            error_log('[storebroker] webhook verify failed: ' . $e->getMessage());
+            $status = 400;   // signature / fetch failure — Stripe will retry
+        } finally {
+            if (function_exists('sodium_memzero')) { sodium_memzero($token); if ($whsec !== '') sodium_memzero($whsec); }
+        }
+        if ($status !== 200) { Flight::jsonError('Webhook verification failed.', $status); return; }
+        Flight::json($out);
+    }
+
     /** An instance's own enabled Payments connection + its connector, or [null,null]. */
     private function resolveInstancePayment(int $memberId, int $instanceId): array {
         if ($memberId <= 0 || $instanceId <= 0) return [null, null];

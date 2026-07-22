@@ -96,17 +96,12 @@ $defaults = [
     ['connections', 'connectkey', 50, 'Connect an api_key connector from a validated pasted key'],
     ['connections', 'webhooksecret', 50, 'Set/clear a connection webhook verification secret'],
     ['connections', 'publishfeed', 50, 'Publish a public social showcase page for a social connection'],
-    ['ecommerce', '*', 50, 'Ecommerce storefront tools (per-member feature-flagged)'],
 
-    // Public storefront (101) — the /shop front controller (Shop.php) + legacy
-    // redirect/alias shims. Must be PUBLIC so guests can browse the store.
-    ['shop', '*', 101, 'Public storefront front controller'],
+    // NOTE: the platform storefront (shop/ecommerce/store/products/catalog/category)
+    // was removed — the store is now the shop.tiknix sidecar (per-instance). The
+    // Stripe connector + connections custody stay; checkout is brokered via
+    // storebroker::* (below). See explorer.tiknix/PROVISION + memory sidecar-plugins.
     ['social', '*', 101, 'Public social showcase front controller'],
-    ['products', '*', 101, 'Storefront legacy redirect -> /shop/product'],
-    ['categories', '*', 101, 'Storefront legacy redirect -> /shop/catalog'],
-    ['store', '*', 101, 'Storefront alias -> /shop'],
-    ['catalog', '*', 101, 'Storefront alias -> /shop/catalog'],
-    ['category', '*', 101, 'Storefront alias -> /shop/catalog'],
 
     // Public webhook (101) — authenticates itself via Mailgun HMAC
     ['webhook', 'mailgun', 101, 'Mailgun inbound mail + delivery-event webhook'],

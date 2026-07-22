@@ -35,6 +35,11 @@ class Feature {
             'blurb'     => 'A per-instance storefront + admin, with checkout via that instance\'s own Stripe. Runs as the shop.tiknix sidecar.',
             'min_level' => 100, // MEMBER and above — they own the instances that get a store
         ],
+        'pipelines' => [
+            'label'     => 'Pipeline Editor',
+            'blurb'     => 'Build, edit, run + schedule deterministic pipelines in your instances. Runs as the pipelines.tiknix sidecar.',
+            'min_level' => 100, // MEMBER and above — they own the instances whose pipelines they edit
+        ],
     ];
 
     private static function settingKey(string $flag): string {

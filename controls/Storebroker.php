@@ -156,11 +156,12 @@ class Storebroker extends Control {
         return [null, null];
     }
 
-    /** Only allow success/cancel URLs back to the store sidecar host. */
+    /** Allow success/cancel URLs only on the store sidecar host OR a store subdomain of it. */
     private function safeUrl(string $url): ?string {
         if (!preg_match('#^https?://#i', $url)) return null;
         $host = strtolower((string) parse_url($url, PHP_URL_HOST));
         $shopHost = strtolower((string) parse_url((string) (Flight::get('sidecar.shop.url') ?? ''), PHP_URL_HOST));
-        return ($shopHost !== '' && $host === $shopHost) ? $url : null;
+        if ($shopHost === '' || $host === '') return null;
+        return ($host === $shopHost || str_ends_with($host, '.' . $shopHost)) ? $url : null;   // <slug>.shop.tiknix.com
     }
 }

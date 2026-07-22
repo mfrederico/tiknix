@@ -138,6 +138,21 @@ class Kernel {
     private function startSession(): void {
         if (session_status() === PHP_SESSION_NONE) {
             session_name((string) ($this->config['app']['session_name'] ?? 'SIDECAR_SESSION'));
+            // A plugin that spans subdomains (e.g. <store>.shop.tiknix.com) sets
+            // [app] cookie_domain = .shop.tiknix.com so ONE SSO session covers them
+            // all. Only apply it when the REQUEST host actually belongs to that domain
+            // — otherwise (localhost/dev, an unrelated host) fall back to a host-only
+            // cookie so sessions still work.
+            $cookieDomain = (string) ($this->config['app']['cookie_domain'] ?? '');
+            $host = strtolower(preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? '')));
+            $bare = ltrim($cookieDomain, '.');
+            if ($cookieDomain !== '' && $host !== '' && ($host === $bare || str_ends_with($host, '.' . $bare))) {
+                $secure = !str_starts_with((string) ($this->config['app']['baseurl'] ?? ''), 'http://');
+                session_set_cookie_params([
+                    'domain' => $cookieDomain, 'path' => '/', 'secure' => $secure,
+                    'httponly' => true, 'samesite' => 'Lax',
+                ]);
+            }
             session_start();
         }
     }

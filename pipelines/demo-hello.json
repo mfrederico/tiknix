@@ -1,0 +1,23 @@
+{
+  "slug": "demo-hello",
+  "name": "Demo — hello",
+  "description": "A Phase-1 smoke pipeline: shell -> transform -> branch -> notify.",
+  "context_schema": { "who": { "type": "string", "required": true } },
+  "steps": [
+    { "name": "greet",   "type": "shell",
+      "config": { "command": "echo '{\"greeting\":\"hello {context.who}\",\"n\":42}'" },
+      "on_success": "next", "on_fail": "exit" },
+    { "name": "extract", "type": "transform",
+      "config": { "mode": "jsonpath", "input": "{greet.output}", "path": "greeting" },
+      "on_success": "next" },
+    { "name": "checkn",  "type": "branch",
+      "config": { "left": "{greet.output.n}", "op": "gte", "right": "40" },
+      "on_success": "goto:big", "on_fail": "goto:small" },
+    { "name": "small",   "type": "transform",
+      "config": { "mode": "template", "input": "n is small: {greet.output.n}" },
+      "on_success": "exit" },
+    { "name": "big",     "type": "transform",
+      "config": { "mode": "template", "input": "{extract.output} (n={greet.output.n} is big) at {time.date}" },
+      "on_success": "exit" }
+  ]
+}

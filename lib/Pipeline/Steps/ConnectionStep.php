@@ -17,12 +17,12 @@ class ConnectionStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Call this instance\'s own connection (Stripe/Shopify/…) via the broker.',
-            'config'  => [
-                'connector'   => 'string — the connector key (e.g. stripe, shopify)',
-                'tool'        => 'string — the broker tool (e.g. list_products, create_checkout_session)',
-                'arguments'   => 'object (optional) — tool arguments',
-                'environment' => 'string (optional) — production | development (default production)',
-                'timeout'     => 'int (optional) — seconds, default 30',
+            'fields'  => [
+                ['name' => 'connector',   'label' => 'Connector', 'type' => 'text', 'required' => true, 'help' => 'The connector key, e.g. stripe, shopify.'],
+                ['name' => 'tool',        'label' => 'Tool',      'type' => 'text', 'required' => true, 'help' => 'The broker tool, e.g. list_products, create_checkout_session.'],
+                ['name' => 'arguments',   'label' => 'Arguments', 'type' => 'keyval', 'help' => 'Optional — tool arguments.'],
+                ['name' => 'environment', 'label' => 'Environment', 'type' => 'select', 'options' => ['production', 'development'], 'help' => 'Which connection environment; default production.'],
+                ['name' => 'timeout',     'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — seconds; default 30.'],
             ],
         ];
     }

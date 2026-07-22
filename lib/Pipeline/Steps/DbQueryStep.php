@@ -17,10 +17,10 @@ class DbQueryStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Run a parameterized SQL query on the instance DB (read: rows; write: affected).',
-            'config'  => [
-                'sql'    => 'string — SQL with ? placeholders',
-                'params' => 'array (optional) — bound parameters',
-                'write'  => 'boolean (optional) — true for INSERT/UPDATE/DELETE (default false = SELECT)',
+            'fields'  => [
+                ['name' => 'sql',    'label' => 'SQL',    'type' => 'textarea', 'required' => true, 'help' => 'SQL with ? placeholders.'],
+                ['name' => 'params', 'label' => 'Params', 'type' => 'list',     'help' => 'Optional — bound parameters, in order.'],
+                ['name' => 'write',  'label' => 'Write query', 'type' => 'bool', 'help' => 'On for INSERT/UPDATE/DELETE (returns affected rows); off = SELECT.'],
             ],
         ];
     }

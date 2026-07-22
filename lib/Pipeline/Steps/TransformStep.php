@@ -18,12 +18,12 @@ class TransformStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Reshape data: template | jsonpath | regex.',
-            'config'  => [
-                'mode'    => 'string — template | jsonpath | regex',
-                'input'   => 'string|object — the value to transform (usually a {step.output})',
-                'path'    => 'string — jsonpath: dot-path to extract',
-                'pattern' => 'string — regex: the pattern',
-                'replace' => 'string (optional) — regex: replacement (omit to extract instead)',
+            'fields'  => [
+                ['name' => 'mode',    'label' => 'Mode',    'type' => 'select', 'options' => ['template', 'jsonpath', 'regex'], 'required' => true, 'help' => 'How to reshape the input.'],
+                ['name' => 'input',   'label' => 'Input',   'type' => 'textarea', 'required' => true, 'help' => 'The value to transform — usually a {step.output}.'],
+                ['name' => 'path',    'label' => 'Path',    'type' => 'text', 'help' => 'jsonpath mode — dot-path to extract.'],
+                ['name' => 'pattern', 'label' => 'Pattern', 'type' => 'text', 'help' => 'regex mode — the pattern.'],
+                ['name' => 'replace', 'label' => 'Replace', 'type' => 'text', 'help' => 'regex mode — replacement (omit to extract instead).'],
             ],
         ];
     }

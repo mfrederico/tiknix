@@ -14,12 +14,12 @@ class McpCallStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Call an MCP tool at an endpoint via JSON-RPC tools/call.',
-            'config'  => [
-                'endpoint'  => 'string — the MCP /message URL',
-                'token'     => 'string (optional) — bearer token',
-                'tool'      => 'string — the tool name (e.g. server:tool)',
-                'arguments' => 'object (optional) — tool arguments',
-                'timeout'   => 'int (optional) — seconds, default 60',
+            'fields'  => [
+                ['name' => 'endpoint',  'label' => 'Endpoint',  'type' => 'text', 'required' => true, 'help' => 'The MCP /message URL.'],
+                ['name' => 'token',     'label' => 'Token',     'type' => 'text', 'help' => 'Optional — bearer token.'],
+                ['name' => 'tool',      'label' => 'Tool',      'type' => 'text', 'required' => true, 'help' => 'The tool name, e.g. server:tool.'],
+                ['name' => 'arguments', 'label' => 'Arguments', 'type' => 'keyval', 'help' => 'Optional — tool arguments.'],
+                ['name' => 'timeout',   'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — seconds; default 60.'],
             ],
         ];
     }

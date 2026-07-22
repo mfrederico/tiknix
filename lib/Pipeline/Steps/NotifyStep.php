@@ -16,11 +16,11 @@ class NotifyStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Send an email (via the configured Mailer).',
-            'config'  => [
-                'to'      => 'string — recipient email',
-                'subject' => 'string — subject',
-                'body'    => 'string — HTML or text body',
-                'name'    => 'string (optional) — recipient name',
+            'fields'  => [
+                ['name' => 'to',      'label' => 'To',      'type' => 'text',     'required' => true, 'help' => 'Recipient email.'],
+                ['name' => 'subject', 'label' => 'Subject', 'type' => 'text',     'required' => true, 'help' => 'Subject line.'],
+                ['name' => 'body',    'label' => 'Body',    'type' => 'textarea', 'required' => true, 'help' => 'HTML or text body.'],
+                ['name' => 'name',    'label' => 'Recipient name', 'type' => 'text', 'help' => 'Optional — recipient display name.'],
             ],
         ];
     }

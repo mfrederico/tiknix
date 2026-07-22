@@ -15,12 +15,12 @@ class HttpStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Call an HTTP endpoint and capture the response.',
-            'config'  => [
-                'method'  => 'string — GET|POST|PUT|PATCH|DELETE (default GET)',
-                'url'     => 'string — the URL',
-                'headers' => 'object (optional) — header name => value',
-                'body'    => 'string|object (optional) — request body; objects are JSON-encoded',
-                'timeout' => 'int (optional) — seconds, default 30',
+            'fields'  => [
+                ['name' => 'method',  'label' => 'Method', 'type' => 'select', 'options' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], 'help' => 'HTTP method; default GET.'],
+                ['name' => 'url',     'label' => 'URL',     'type' => 'text',     'required' => true, 'help' => 'The request URL.'],
+                ['name' => 'headers', 'label' => 'Headers', 'type' => 'keyval',   'help' => 'Optional — header name → value.'],
+                ['name' => 'body',    'label' => 'Body',    'type' => 'textarea', 'help' => 'Optional — request body; a JSON object is sent as JSON.'],
+                ['name' => 'timeout', 'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — seconds; default 30.'],
             ],
         ];
     }

@@ -18,11 +18,11 @@ class AgentStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Run an AI agent with a prompt; returns its text output.',
-            'config'  => [
-                'prompt'  => 'string — the task/prompt (variables already resolved)',
-                'engine'  => 'string (optional) — an EngineRegistry engine; default = instance default',
-                'model'   => 'string (optional) — model tier override; default the engine worker tier',
-                'timeout' => 'int (optional) — seconds, default 600',
+            'fields'  => [
+                ['name' => 'prompt',  'label' => 'Prompt',  'type' => 'textarea', 'required' => true, 'help' => 'The task/prompt for the agent. Use {context.x} / {step.output} variables.'],
+                ['name' => 'engine',  'label' => 'Engine',  'type' => 'text',     'help' => 'Optional — an EngineRegistry engine; default = the instance default.'],
+                ['name' => 'model',   'label' => 'Model',   'type' => 'text',     'help' => 'Optional — model tier override; default the engine worker tier.'],
+                ['name' => 'timeout', 'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — seconds; default 600.'],
             ],
         ];
     }

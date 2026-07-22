@@ -15,10 +15,12 @@ class BranchStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Evaluate left <op> right; ok=result. Route via on_success/on_fail (goto:*).',
-            'config'  => [
-                'left'  => 'string|number — left operand (usually a {variable})',
-                'op'    => 'string — eq | ne | gt | gte | lt | lte | contains | matches | exists | truthy',
-                'right' => 'string|number (optional) — right operand',
+            'fields'  => [
+                ['name' => 'left',  'label' => 'Left operand',  'type' => 'text', 'required' => true, 'help' => 'Left operand — usually a {variable}.'],
+                ['name' => 'op',    'label' => 'Operator',      'type' => 'select', 'required' => true,
+                    'options' => ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'contains', 'matches', 'exists', 'truthy'],
+                    'help' => 'Comparison operator.'],
+                ['name' => 'right', 'label' => 'Right operand', 'type' => 'text', 'help' => 'Right operand (omit for exists / truthy).'],
             ],
         ];
     }

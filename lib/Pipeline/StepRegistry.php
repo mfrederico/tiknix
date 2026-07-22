@@ -38,10 +38,26 @@ class StepRegistry {
         return array_keys(self::all());
     }
 
-    /** [type => schema] — the "what can I build with" surface for agents/editor. */
+    /**
+     * [type => schema] — the "what can I build with" surface for agents/editor.
+     * A step declares rich `fields` (type/options/required/help) as its single
+     * source of truth; we DERIVE the legacy `config` string-map (the agent-facing
+     * surface consumed by pipeline_components) from those fields, so there is no
+     * drift and no duplication. The editor reads `fields`; agents read `config`.
+     */
     public static function components(): array {
         $out = [];
-        foreach (self::all() as $type => $step) $out[$type] = $step::schema();
+        foreach (self::all() as $type => $step) {
+            $schema = $step::schema();
+            if (!isset($schema['config']) && !empty($schema['fields'])) {
+                $cfg = [];
+                foreach ($schema['fields'] as $f) {
+                    $cfg[$f['name']] = $f['help'] ?? ($f['label'] ?? $f['name']);
+                }
+                $schema['config'] = $cfg;
+            }
+            $out[$type] = $schema;
+        }
         return $out;
     }
 }

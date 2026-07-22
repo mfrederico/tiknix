@@ -17,10 +17,10 @@ class WaitStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Delay N seconds, or pause for external input (await_input → pipeline_continue).',
-            'config'  => [
-                'mode'    => 'string — delay | await_input',
-                'seconds' => 'int — delay mode: how long (max 300)',
-                'prompt'  => 'string — await_input mode: what you\'re waiting for',
+            'fields'  => [
+                ['name' => 'mode',    'label' => 'Mode',    'type' => 'select', 'options' => ['delay', 'await_input'], 'required' => true, 'help' => 'delay = sleep; await_input = pause for input.'],
+                ['name' => 'seconds', 'label' => 'Seconds', 'type' => 'number', 'help' => 'delay mode — how long (max 300).'],
+                ['name' => 'prompt',  'label' => 'Prompt',  'type' => 'text',   'help' => 'await_input mode — what you\'re waiting for.'],
             ],
         ];
     }

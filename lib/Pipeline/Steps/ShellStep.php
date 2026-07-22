@@ -14,10 +14,10 @@ class ShellStep implements StepInterface {
     public static function schema(): array {
         return [
             'summary' => 'Run a shell command in the run directory.',
-            'config'  => [
-                'command' => 'string — the command to run (variables already resolved)',
-                'cwd'     => 'string (optional) — working directory; defaults to the run directory',
-                'timeout' => 'int (optional) — seconds, default 120',
+            'fields'  => [
+                ['name' => 'command', 'label' => 'Command', 'type' => 'textarea', 'required' => true, 'help' => 'The command to run. Use {variables} freely.'],
+                ['name' => 'cwd',     'label' => 'Working dir', 'type' => 'text', 'help' => 'Optional — working directory; defaults to the run directory.'],
+                ['name' => 'timeout', 'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — seconds; default 120.'],
             ],
         ];
     }

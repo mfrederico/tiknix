@@ -69,6 +69,9 @@ $defaults = [
     ['apikeys', '*', 100, 'API key management'],
     ['grocery', '*', 100, 'Grocery list management'],
     ['workbench', '*', 100, 'Workbench access'],
+    // Architecture Explorer launch (core side). MEMBER-eligible; the `explorer`
+    // feature grant + sidecar ownership scoping decide actual access.
+    ['explorer', '*', 100, 'Architecture Explorer launch (sidecar SSO)'],
     ['teams', '*', 100, 'Teams management'],
     ['communications', '*', 100, 'Threaded email inbox'],
 

@@ -27,6 +27,11 @@ class Feature {
             'blurb'     => 'Product catalog, inventory (including serialized units), and Stripe checkout tools.',
             'min_level' => 50, // ADMIN and above (ROOT)
         ],
+        'explorer' => [
+            'label'     => 'Architecture Explorer',
+            'blurb'     => 'Visual data-model + call-graph explorer for your instances (heavy; runs as a sidecar). Members can reach it; each grant is per-member.',
+            'min_level' => 100, // MEMBER and above — they own the instances it explores
+        ],
     ];
 
     private static function settingKey(string $flag): string {

@@ -208,6 +208,91 @@ class Introspector {
         return implode("\n", $out);
     }
 
+    // === public accessors for the Architecture Explorer ======================
+
+    /** All authcontrol rows (control, method, level) — the Explorer's top ribbon. */
+    public function authcontrol(): array {
+        return $this->authcontrolRows();
+    }
+
+    /** App table names (excludes SQLite internals), for the `select *` drill picker. */
+    public function tables(): array {
+        return array_values(array_filter($this->tableNames(), fn($t) => strncmp($t, 'sqlite_', 7) !== 0));
+    }
+
+    /** Column metadata for a table (name+type), read-only. */
+    public function tableColumns(string $table): array {
+        return $this->columns($table);
+    }
+
+    /**
+     * Read up to $limit rows from $table (read-only, LIMIT-capped, identifier-guarded).
+     * Returns ['columns'=>[...], 'rows'=>[[...]], 'total'=>int]. The table MUST be a
+     * real table name (validated) — never interpolate untrusted input here.
+     */
+    public function rows(string $table, int $limit = 50, int $offset = 0): array {
+        $empty = ['columns' => [], 'rows' => [], 'total' => 0];
+        if (!$this->db) return $empty;
+        if (!preg_match('/^[a-z0-9_]+$/i', $table)) return $empty;
+        if (!in_array($table, $this->tableNames(), true)) return $empty;   // allowlist to real tables
+        $limit  = max(1, min(500, $limit));
+        $offset = max(0, $offset);
+        $cols = array_column($this->columns($table), 'name');
+        $out  = $empty;
+        $out['columns'] = $cols;
+        try {
+            $total = $this->db->query("SELECT COUNT(*) FROM " . $table);
+            $out['total'] = $total ? (int) $total->fetchColumn() : 0;
+            $stmt = $this->db->query("SELECT * FROM " . $table . " LIMIT " . $limit . " OFFSET " . $offset);
+            foreach ($stmt ?: [] as $r) {
+                $row = [];
+                foreach ($cols as $c) $row[$c] = $r[$c] ?? null;
+                $out['rows'][] = $row;
+            }
+        } catch (\Throwable $e) {}
+        return $out;
+    }
+
+    /**
+     * Literal custom routes from routes/*.php — but ONLY from files bootstrap.php
+     * actually require()s (per CALLGRAPH-DESIGN §3.5: unloaded routes files, e.g.
+     * routes/api.php here, are DEAD and their literals are not live routes). Each:
+     * ['pattern','verbs','file','line','live'=>bool].
+     */
+    public function routeLiterals(): array {
+        $loaded = $this->loadedRoutesFiles();
+        $out = [];
+        foreach (glob("{$this->root}/routes/*.php") ?: [] as $file) {
+            $base = basename($file);
+            $src  = @file_get_contents($file);
+            if ($src === false) continue;
+            $live = in_array($base, $loaded, true);
+            foreach (explode("\n", $src) as $i => $ln) {
+                if (preg_match("/Flight::route\\(\\s*'(?:([A-Z|]+)\\s+)?(\\/[^']*)'/", $ln, $m)) {
+                    $out[] = [
+                        'pattern' => $m[2],
+                        'verbs'   => $m[1] ?: 'ANY',
+                        'file'    => "routes/{$base}",
+                        'line'    => $i + 1,
+                        'live'    => $live,
+                    ];
+                }
+            }
+        }
+        return $out;
+    }
+
+    /** routes/*.php basenames that bootstrap.php require()s (defaultRoute is implicit). */
+    private function loadedRoutesFiles(): array {
+        $boot = @file_get_contents("{$this->root}/bootstrap.php");
+        if ($boot === false) return [];
+        $loaded = [];
+        if (preg_match_all("#require(?:_once)?\\s+__DIR__\\s*\\.\\s*'/routes/([a-z0-9_]+\\.php)'#i", $boot, $m)) {
+            $loaded = $m[1];
+        }
+        return $loaded;
+    }
+
     // === scanners ============================================================
 
     private array $_ctrl;

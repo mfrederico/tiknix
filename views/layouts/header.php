@@ -95,6 +95,11 @@ if ($__loggedIn) {
           <a class="ui-nav-link<?= $__active('/ecommerce') ?>" href="/ecommerce"><i class="bi bi-bag"></i> Store</a>
         <?php endif; ?>
 
+        <?php if (class_exists('\\app\\Feature') && \app\Feature::isEnabled('explorer', (int)($member['id'] ?? 0), $__level)): ?>
+          <div class="ui-nav-heading">Explorer</div>
+          <a class="ui-nav-link" href="/explorer/launch"><i class="bi bi-diagram-3"></i> Architecture Explorer</a>
+        <?php endif; ?>
+
         <?php if ($__isAdmin): ?>
           <div class="ui-nav-heading">Admin</div>
           <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>

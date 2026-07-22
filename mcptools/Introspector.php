@@ -254,6 +254,50 @@ class Introspector {
     }
 
     /**
+     * Controller inventory for CallGraph: name(lower) => {name, path, methods:[m=>line],
+     * hasFallback}. Reuses the scanner controllers() (public methods + line numbers).
+     */
+    public function controllerList(): array {
+        $out = [];
+        foreach ($this->controllers() as $c) {
+            $methods = [];
+            foreach ($c['methods'] as $m) $methods[$m['name']] = $m['line'];
+            $out[strtolower($c['name'])] = [
+                'name'        => $c['name'],
+                'path'        => $c['path'],
+                'methods'     => $methods,
+                'hasFallback' => isset($methods['_fallback']),
+            ];
+        }
+        return $out;
+    }
+
+    /** Lib inventory for CallGraph: ClassName => {path, methods:[names]}. */
+    public function libList(): array {
+        $out = [];
+        foreach ($this->libs() as $l) {
+            $out[$l['name']] = ['path' => $l['path'], 'methods' => $l['methods']];
+        }
+        return $out;
+    }
+
+    /** Root path this introspector is scanning (CallGraph reads bodies under it). */
+    public function rootPath(): string {
+        return $this->root;
+    }
+
+    /** Bean→bean FK edges (belongsTo via *_id), for the data-model graph. */
+    public function relationEdges(): array {
+        $out = [];
+        foreach ($this->tables() as $t) {
+            foreach ($this->relations($t) as $r) {
+                $out[] = ['from' => $t, 'to' => $r['belongsTo'], 'via' => $r['via']];
+            }
+        }
+        return $out;
+    }
+
+    /**
      * Literal custom routes from routes/*.php — but ONLY from files bootstrap.php
      * actually require()s (per CALLGRAPH-DESIGN §3.5: unloaded routes files, e.g.
      * routes/api.php here, are DEAD and their literals are not live routes). Each:

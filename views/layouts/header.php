@@ -95,9 +95,14 @@ if ($__loggedIn) {
           <a class="ui-nav-link<?= $__active('/ecommerce') ?>" href="/ecommerce"><i class="bi bi-bag"></i> Store</a>
         <?php endif; ?>
 
-        <?php if (class_exists('\\app\\Feature') && \app\Feature::isEnabled('explorer', (int)($member['id'] ?? 0), $__level)): ?>
-          <div class="ui-nav-heading">Explorer</div>
-          <a class="ui-nav-link" href="/explorer/launch"><i class="bi bi-diagram-3"></i> Architecture Explorer</a>
+        <?php if (class_exists('\\app\\Sidecar\\Registry')): ?>
+          <?php $__plugins = \app\Sidecar\Registry::launchable(); $__pfirst = true; ?>
+          <?php foreach ($__plugins as $__pname => $__p): ?>
+            <?php if (\app\Feature::isEnabled($__p['feature'], (int)($member['id'] ?? 0), $__level)): ?>
+              <?php if ($__pfirst): ?><div class="ui-nav-heading">Plugins</div><?php $__pfirst = false; endif; ?>
+              <a class="ui-nav-link" href="/sidecar/launch/<?= htmlspecialchars($__pname) ?>"><i class="bi <?= htmlspecialchars($__p['icon']) ?>"></i> <?= htmlspecialchars($__p['label']) ?></a>
+            <?php endif; ?>
+          <?php endforeach; ?>
         <?php endif; ?>
 
         <?php if ($__isAdmin): ?>

@@ -24,7 +24,32 @@ class Index extends BaseControls\Control {
         // method to render 'index/index' with the layout (see git history).
         $this->render('index/coming-soon', [
             'title' => 'Coming Soon',
-            'subscribed' => (bool)$this->getParam('subscribed')
+            'subscribed' => (bool)$this->getParam('subscribed'),
+            'showcase' => $this->showcaseItems(),
+        ], false);
+    }
+
+    /**
+     * Curated "built with Tiknix" showcase entries for the landing rail.
+     * Enabled entries, ordered; seeded by scripts/seed-showcase.php and
+     * screenshotted by scripts/capture-showcase.php.
+     */
+    private function showcaseItems(): array {
+        try {
+            return Bean::find('showcase', 'enabled = 1 ORDER BY sort_order ASC, id ASC');
+        } catch (\Throwable $e) {
+            return [];   // table not seeded yet — landing still renders
+        }
+    }
+
+    /**
+     * Public pricing page. Gated pre-launch: shows the plan but the CTA is the
+     * same lead-capture as the landing hero (no sign-ups / checkout yet).
+     */
+    public function pricing() {
+        $this->render('index/pricing', [
+            'title' => 'Pricing — Tiknix',
+            'subscribed' => (bool)$this->getParam('subscribed'),
         ], false);
     }
 

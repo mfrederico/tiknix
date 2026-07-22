@@ -217,6 +217,12 @@
             transition: transform 0.15s ease, background 0.15s ease;
         }
         .rail-dots button.active { background: var(--accent); transform: scale(1.35); }
+        /* Desktop: fit all cards across (no scroll / no dots); mobile keeps the swipe rail. */
+        @media (min-width: 760px) {
+            .rail { overflow-x: visible; justify-content: center; }
+            .scard { flex: 1 1 0; min-width: 0; }
+            .rail-dots { display: none; }
+        }
         .mini-links { margin-top: 1.25rem; font-size: 0.9rem; }
         .mini-links a { color: var(--text-soft); text-decoration: none; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 1px; }
         .mini-links a:hover { color: var(--text); }
@@ -293,7 +299,9 @@
         var dotsWrap = document.getElementById('railDots');
         if (!rail || !dotsWrap) return;
         var cards = Array.prototype.slice.call(rail.querySelectorAll('.scard'));
-        if (cards.length <= 1) { dotsWrap.style.display = 'none'; return; }
+        // Only run the carousel when the rail actually overflows (mobile). On desktop all
+        // cards fit, so there's nothing to scroll — hide the dots and skip auto-advance.
+        if (cards.length <= 1 || (rail.scrollWidth - rail.clientWidth) < 8) { dotsWrap.style.display = 'none'; return; }
 
         var idx = 0, timer = null, paused = false;
         cards.forEach(function (_, k) {

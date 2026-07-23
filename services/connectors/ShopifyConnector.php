@@ -146,6 +146,15 @@ class ShopifyConnector extends AbstractConnector {
                     'environment' => ['type' => 'string', 'description' => 'Which connection: development|staging|production (default production).'],
                 ]],
             ],
+            [
+                'name'        => 'graphql',
+                'description' => 'Run any GraphQL query or mutation against the connected Shopify Admin API. The shop domain, API version, and auth are injected server-side.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'query'       => ['type' => 'string', 'description' => 'The GraphQL query or mutation.'],
+                    'variables'   => ['type' => 'object', 'description' => 'GraphQL variables (values may reference pipeline {context.x}).'],
+                    'environment' => ['type' => 'string', 'description' => 'Which connection: development|staging|production (default production).'],
+                ], 'required' => ['query']],
+            ],
         ];
     }
 
@@ -165,9 +174,31 @@ class ShopifyConnector extends AbstractConnector {
                 $status = (string)($args['status'] ?? 'any');
                 if (!in_array($status, ['any', 'open', 'closed', 'cancelled'], true)) $status = 'any';
                 return $this->adminGet($shop, $ver, $token, 'orders.json?limit=' . $limit . '&status=' . $status);
+            case 'graphql':
+                return $this->adminGraphql($shop, $ver, $token, (string)($args['query'] ?? ''), $args['variables'] ?? null);
             default:
                 throw new \Exception('Unknown Shopify broker tool: ' . $tool);
         }
+    }
+
+    /** POST a GraphQL query to the Shopify Admin GraphQL API with the store token. */
+    private function adminGraphql(string $shop, string $ver, string $token, string $query, $variables): array {
+        if (trim($query) === '') throw new \Exception('graphql: a query is required.');
+        $payload = json_encode([
+            'query'     => $query,
+            'variables' => (is_array($variables) || is_object($variables)) ? $variables : new \stdClass(),
+        ], JSON_UNESCAPED_SLASHES);
+        [$status, $body] = $this->http('POST',
+            'https://' . $shop . '/admin/api/' . $ver . '/graphql.json',
+            ['headers' => ['X-Shopify-Access-Token: ' . $token, 'Content-Type: application/json', 'Accept: application/json'],
+             'body' => $payload]);
+        if ($status === 401 || $status === 403) {
+            throw new \Exception('Shopify rejected the token (HTTP ' . $status . ') — reconnect the store.');
+        }
+        $j = json_decode($body, true);
+        // GraphQL returns 200 even for query errors (in the `errors` array) — surface the body either way.
+        if ($status < 200 || $status >= 300) throw new \Exception('Shopify GraphQL error (HTTP ' . $status . ').');
+        return is_array($j) ? $j : ['raw' => $body];
     }
 
     /** GET the Shopify Admin REST API with the store token; decode to an array. */

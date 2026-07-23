@@ -76,15 +76,16 @@ abstract class AbstractConnector implements ConnectorInterface {
      * @param array $opts ['headers' => string[], 'body' => string]
      */
     protected function http(string $method, string $url, array $opts = []): array {
+        $method = strtoupper($method);
         $ch = curl_init($url);
         $co = [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 20,
+            CURLOPT_TIMEOUT        => (int) ($opts['timeout'] ?? 20),
             CURLOPT_HTTPHEADER     => $opts['headers'] ?? [],
+            CURLOPT_CUSTOMREQUEST  => $method,   // supports GET/POST/PUT/PATCH/DELETE
         ];
-        if (strtoupper($method) === 'POST') {
-            $co[CURLOPT_POST]       = true;
-            $co[CURLOPT_POSTFIELDS] = $opts['body'] ?? '';
+        if ($method !== 'GET' && $method !== 'HEAD' && isset($opts['body'])) {
+            $co[CURLOPT_POSTFIELDS] = $opts['body'];
         }
         curl_setopt_array($ch, $co);
         $body   = curl_exec($ch);

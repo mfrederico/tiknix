@@ -227,6 +227,16 @@ class StripeConnector extends AbstractConnector {
                     'environment' => $envProp,
                 ]],
             ],
+            [
+                'name'        => 'request',
+                'description' => 'Make any authenticated request to the Stripe API. The secret key is injected server-side. Body is form-encoded for writes / query-string for GET.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'method'      => ['type' => 'string', 'description' => 'GET|POST|DELETE (default GET).'],
+                    'path'        => ['type' => 'string', 'description' => 'API path, e.g. /v1/charges, /v1/refunds, /v1/customers/{id}.'],
+                    'body'        => ['type' => 'object', 'description' => 'Params (values may reference pipeline {context.x}); form-encoded for writes, query for GET.'],
+                    'environment' => $envProp,
+                ], 'required' => ['path']],
+            ],
         ];
     }
 
@@ -252,9 +262,35 @@ class StripeConnector extends AbstractConnector {
                 $q = ['limit' => $limit, 'status' => $this->normalizeSubscriptionStatus($args['status'] ?? 'all')];
                 if (!empty($args['customer'])) $q['customer'] = (string)$args['customer'];
                 return $this->apiGet($token, 'subscriptions?' . http_build_query($q));
+            case 'request':
+                return $this->apiRequest($token, $args);
             default:
                 throw new \Exception('Unknown Stripe broker tool: ' . $tool);
         }
+    }
+
+    /** Generic authenticated Stripe request: method + path + body (form-encoded for writes). */
+    private function apiRequest(string $token, array $args): array {
+        $method = strtoupper((string)($args['method'] ?? 'GET')) ?: 'GET';
+        $path   = ltrim((string)($args['path'] ?? ''), '/');
+        if ($path === '') throw new \Exception('request: a path is required (e.g. /v1/charges).');
+        if (strncmp($path, 'v1/', 3) !== 0) $path = 'v1/' . $path;
+        $url  = 'https://api.stripe.com/' . $path;
+        $body = $args['body'] ?? [];
+        if (!is_array($body)) $body = [];
+
+        $headers = ['Authorization: Bearer ' . $token, 'Accept: application/json'];
+        $opts    = ['headers' => $headers];
+        if ($method === 'GET') {
+            if ($body) $url .= (strpos($url, '?') === false ? '?' : '&') . http_build_query($body);
+        } else {
+            $headers[] = 'Content-Type: application/x-www-form-urlencoded';
+            $headers[] = 'Idempotency-Key: ' . bin2hex(random_bytes(16));
+            $opts['headers'] = $headers;
+            $opts['body']    = http_build_query($body);
+        }
+        [$status, $resp] = $this->http($method, $url, $opts);
+        return $this->decodeOrThrow($status, $resp);
     }
 
     /** Fields for POST /v1/customers. */

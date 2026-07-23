@@ -16,11 +16,11 @@ class ConnectionStep implements StepInterface {
 
     public static function schema(): array {
         return [
-            'summary' => 'Call this instance\'s own connection (Stripe/Shopify/…) via the broker.',
+            'summary' => 'Call this instance\'s own connection (Stripe/Shopify/…) via the broker — auth injected server-side.',
             'fields'  => [
                 ['name' => 'connector',   'label' => 'Connector', 'type' => 'text', 'required' => true, 'help' => 'The connector key, e.g. stripe, shopify.'],
-                ['name' => 'tool',        'label' => 'Tool',      'type' => 'text', 'required' => true, 'help' => 'The broker tool, e.g. list_products, create_checkout_session.'],
-                ['name' => 'arguments',   'label' => 'Arguments', 'type' => 'keyval', 'help' => 'Optional — tool arguments.'],
+                ['name' => 'tool',        'label' => 'Tool',      'type' => 'text', 'required' => true, 'help' => 'The request tool: "request" (Stripe/REST — args method,path,body) or "graphql" (Shopify — args query,variables). Named tools (list_products…) still work.'],
+                ['name' => 'arguments',   'label' => 'Arguments', 'type' => 'keyval', 'help' => 'REST: {method, path, body}. GraphQL: {query, variables}. Values may reference {context.x}.'],
                 ['name' => 'environment', 'label' => 'Environment', 'type' => 'select', 'options' => ['production', 'development'], 'help' => 'Which connection environment; default production.'],
                 ['name' => 'timeout',     'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — seconds; default 30.'],
             ],

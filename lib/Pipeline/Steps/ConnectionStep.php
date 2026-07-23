@@ -57,7 +57,6 @@ class ConnectionStep implements StepInterface {
         $resp = curl_exec($ch);
         $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $cerr = curl_error($ch);
-        curl_close($ch);
         if ($resp === false) return $this->err($cerr ?: 'broker request failed');
 
         $rpc = json_decode((string) $resp, true);

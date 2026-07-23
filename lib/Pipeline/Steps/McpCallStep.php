@@ -43,7 +43,6 @@ class McpCallStep implements StepInterface {
             CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_HTTPHEADER => $headers]);
         $resp = curl_exec($ch);
         $cerr = curl_error($ch);
-        curl_close($ch);
         if ($resp === false) return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $cerr ?: 'request failed', 'exit' => 1];
 
         $rpc = json_decode((string) $resp, true);

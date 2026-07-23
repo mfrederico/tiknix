@@ -453,7 +453,16 @@ class TaskAccessControl {
                 $n = $hasIid ? (int)\RedBeanPHP\R::getCell(
                     "SELECT COUNT(*) FROM workbenchtask WHERE instance_id = ? AND parent_task_id IS NULL",
                     [(int)$inst->id]) : 0;
-                $out[$tag] = ['tag' => $tag, 'n' => $n];
+                $out[$tag] = [
+                    'tag'        => $tag,
+                    'n'          => $n,
+                    'id'         => (int)$inst->id,
+                    'slug'       => (string)$inst->slug,
+                    'name'       => (string)($inst->displayName ?: $inst->slug),
+                    'engine'     => (string)($inst->engine ?? ''),
+                    'is_default' => (bool)$inst->isDefault,
+                    'owned'      => (int)$inst->memberId === $memberId,
+                ];
             }
             return array_values($out);
         } catch (\Throwable $e) {

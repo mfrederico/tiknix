@@ -103,6 +103,10 @@ class Workbench extends Control {
         $this->viewData['taskTypes'] = $this->getTaskTypes();
         $this->viewData['priorities'] = $this->getPriorities();
         $this->viewData['instanceTags'] = $this->access->getInstanceTags($this->member->id);
+        // Provisioning a new instance is ADMIN-only (mirrors Aibuilder::create); the
+        // left-nav shows the inline create form only to those who can use it.
+        $this->viewData['canCreate'] = Flight::hasLevel(LEVELS['ADMIN']);
+        $this->viewData['engines']   = \app\EngineRegistry::menu();
         $this->viewData['planMeta'] = $planMeta;
         $this->viewData['parentIdsWithChildren'] = array_keys($childParentIds);
         $this->viewData['decomposingInstance'] = (int)$this->getParam('decomposing', 0);

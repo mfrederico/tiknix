@@ -36,65 +36,122 @@
         </div>
     <?php endforeach; ?>
 
+    <?php
+    // Preserve the "other" active filter when building links, so switching instance
+    // keeps the status filter and switching status keeps the instance.
+    $statusQ = !empty($filters['status']) ? (string)$filters['status'] : '';
+    $tagQ    = !empty($filters['instance_tag']) ? (string)$filters['instance_tag'] : '';
+    $tagLink = function (string $tag) use ($statusQ) {
+        $qs = [];
+        if ($tag !== '')     $qs['instance_tag'] = $tag;
+        if ($statusQ !== '') $qs['status'] = $statusQ;
+        return '/workbench' . ($qs ? '?' . http_build_query($qs) : '');
+    };
+    $statusLink = function (string $status) use ($tagQ) {
+        $qs = [];
+        if ($status !== '') $qs['status'] = $status;
+        if ($tagQ !== '')   $qs['instance_tag'] = $tagQ;
+        return '/workbench' . ($qs ? '?' . http_build_query($qs) : '');
+    };
+    $statusTabs = [
+        ''          => ['All',       'grid-1x2',     'secondary', (int)($counts['total'] ?? 0)],
+        'pending'   => ['Pending',   'circle',       'secondary', (int)($counts['pending'] ?? 0)],
+        'running'   => ['Running',   'play-circle',  'primary',   (int)(($counts['running'] ?? 0) + ($counts['queued'] ?? 0))],
+        'completed' => ['Completed', 'check-circle', 'success',   (int)($counts['completed'] ?? 0)],
+        'failed'    => ['Failed',    'x-circle',     'danger',    (int)($counts['failed'] ?? 0)],
+    ];
+    ?>
     <div class="row">
-        <!-- Sidebar Filters -->
+        <!-- Left nav: instance picker (mirrors /aibuilder) -->
         <div class="col-lg-3 col-md-4 mb-4">
-            <h6 class="text-muted text-uppercase mb-3"><i class="bi bi-funnel"></i> Filters</h6>
-
-            <!-- Instance filter now lives in the top tabs (All Tasks / per-instance). -->
-
-            <!-- Status Counts -->
-            <div class="card mb-3">
-                <div class="card-header">
-                    <h6 class="mb-0">Status</h6>
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Your Instances</span>
+                    <?php if (!empty($canCreate)): ?><button class="btn btn-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#wb-new-form" title="New instance"><i class="bi bi-plus-lg"></i></button><?php endif; ?>
                 </div>
+                <?php if (!empty($canCreate)): ?>
+                <div class="collapse <?= empty($instanceTags) ? 'show' : '' ?>" id="wb-new-form">
+                    <div class="card-body border-bottom">
+                        <form id="wb-create-form">
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Name (slug)</label>
+                                <input name="slug" class="form-control form-control-sm" placeholder="myapp" pattern="[a-z][a-z0-9]{1,49}" required>
+                                <div class="form-text">Becomes <code>&lt;slug&gt;.tiknix</code>.</div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Engine</label>
+                                <select name="engine" class="form-select form-select-sm">
+                                    <?php foreach (($engines ?? []) as $engName => $engLabel): ?>
+                                    <option value="<?= htmlspecialchars($engName) ?>"><?= htmlspecialchars($engLabel) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-success btn-sm w-100"><i class="bi bi-hammer me-1"></i>Create instance</button>
+                            <div id="wb-create-msg" class="form-text"></div>
+                        </form>
+                    </div>
+                </div>
+                <?php endif; ?>
                 <div class="list-group list-group-flush">
-                    <a href="/workbench" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center <?= empty($filters['status']) ? 'active' : '' ?>">
-                        All Tasks
-                        <span class="badge bg-secondary rounded-pill"><?= $counts['total'] ?></span>
+                    <a href="<?= htmlspecialchars($tagLink('')) ?>" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center <?= $tagQ === '' ? 'active' : '' ?>">
+                        <span><i class="bi bi-grid-1x2 me-1"></i>All Tasks</span>
+                        <span class="badge bg-secondary rounded-pill"><?= (int)($counts['total'] ?? 0) ?></span>
                     </a>
-                    <a href="/workbench?status=pending" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center <?= $filters['status'] === 'pending' ? 'active' : '' ?>">
-                        <span><i class="bi bi-circle text-secondary"></i> Pending</span>
-                        <span class="badge bg-secondary rounded-pill"><?= $counts['pending'] ?></span>
-                    </a>
-                    <a href="/workbench?status=running" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center <?= $filters['status'] === 'running' ? 'active' : '' ?>">
-                        <span><i class="bi bi-play-circle text-primary"></i> Running</span>
-                        <span class="badge bg-primary rounded-pill"><?= $counts['running'] + $counts['queued'] ?></span>
-                    </a>
-                    <a href="/workbench?status=completed" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center <?= $filters['status'] === 'completed' ? 'active' : '' ?>">
-                        <span><i class="bi bi-check-circle text-success"></i> Completed</span>
-                        <span class="badge bg-success rounded-pill"><?= $counts['completed'] ?></span>
-                    </a>
-                    <a href="/workbench?status=failed" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center <?= $filters['status'] === 'failed' ? 'active' : '' ?>">
-                        <span><i class="bi bi-x-circle text-danger"></i> Failed</span>
-                        <span class="badge bg-danger rounded-pill"><?= $counts['failed'] ?></span>
-                    </a>
+                    <?php if (empty($instanceTags)): ?>
+                        <div class="list-group-item text-body-secondary small"><?= !empty($canCreate) ? 'No instances yet. Create one above.' : 'No instances shared with you yet.' ?></div>
+                    <?php else: foreach ($instanceTags as $it): $isSel = ($tagQ === $it['tag']); ?>
+                        <a href="<?= htmlspecialchars($tagLink($it['tag'])) ?>" class="list-group-item list-group-item-action <?= $isSel ? 'active' : '' ?>">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-semibold text-truncate"><i class="bi bi-hdd-network me-1"></i><?= htmlspecialchars($it['name'] ?? $it['slug'] ?? $it['tag']) ?></span>
+                                <span class="badge bg-info rounded-pill ms-1"><?= (int)$it['n'] ?></span>
+                            </div>
+                            <small class="<?= $isSel ? '' : 'text-body-secondary' ?>">
+                                <?= htmlspecialchars($it['tag']) ?>
+                                <?php if (!empty($it['is_default'])): ?><span class="badge text-bg-warning ms-1">default</span><?php endif; ?>
+                                <?php if (isset($it['owned']) && !$it['owned']): ?><span class="badge text-bg-info ms-1" title="Shared with your team"><i class="bi bi-people-fill"></i></span><?php endif; ?>
+                            </small>
+                        </a>
+                    <?php endforeach; endif; ?>
                 </div>
             </div>
         </div>
 
         <!-- Task List -->
         <div class="col-lg-9 col-md-8">
-            <!-- Instance Tabs — All Tasks + one tab per AI Builder instance (tenant tag) -->
-            <?php $statusQ = !empty($filters['status']) ? $filters['status'] : ''; ?>
-            <ul class="nav nav-tabs mb-3">
+            <!-- Status filter — moved above the task list -->
+            <ul class="nav nav-pills mb-3 gap-1 flex-wrap">
+                <?php foreach ($statusTabs as $sKey => $sInfo): [$sLabel, $sIcon, $sColor, $sCount] = $sInfo; $sActive = ((string)($filters['status'] ?? '')) === $sKey; ?>
                 <li class="nav-item">
-                    <a class="nav-link <?= empty($filters['instance_tag']) ? 'active' : '' ?>" href="/workbench<?= $statusQ !== '' ? '?status=' . urlencode($statusQ) : '' ?>">
-                        <i class="bi bi-grid-1x2"></i> All Tasks
-                        <span class="badge bg-secondary rounded-pill ms-1"><?= (int)($counts['total'] ?? 0) ?></span>
-                    </a>
-                </li>
-                <?php foreach ($instanceTags ?? [] as $it): ?>
-                <li class="nav-item">
-                    <a class="nav-link <?= ($filters['instance_tag'] ?? '') === $it['tag'] ? 'active' : '' ?>" href="/workbench?instance_tag=<?= urlencode($it['tag']) ?><?= $statusQ !== '' ? '&status=' . urlencode($statusQ) : '' ?>">
-                        <i class="bi bi-hdd-network"></i> <?= htmlspecialchars(($it['tag']) ?? '') ?>
-                        <span class="badge bg-info rounded-pill ms-1"><?= (int)$it['n'] ?></span>
+                    <a class="nav-link <?= $sActive ? 'active' : '' ?>" href="<?= htmlspecialchars($statusLink($sKey)) ?>">
+                        <i class="bi bi-<?= $sIcon ?>"></i> <?= $sLabel ?>
+                        <span class="badge bg-<?= $sActive ? 'light text-dark' : $sColor ?> rounded-pill ms-1"><?= $sCount ?></span>
                     </a>
                 </li>
                 <?php endforeach; ?>
             </ul>
 
             <script>window.WB_CSRF = <?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>;</script>
+            <script>
+            // New-instance provisioning (mirrors /aibuilder): create, then jump into
+            // the new instance's builder to start working.
+            (function(){
+                var form = document.getElementById('wb-create-form');
+                if (!form) return;
+                form.addEventListener('submit', function(e){
+                    e.preventDefault();
+                    var btn = form.querySelector('button[type=submit]'), msg = document.getElementById('wb-create-msg');
+                    btn.disabled = true; msg.textContent = 'Provisioning… this can take a minute.';
+                    fetch('/aibuilder/create', {
+                        method: 'POST',
+                        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':window.WB_CSRF||'','X-Requested-With':'XMLHttpRequest'},
+                        body: new URLSearchParams({slug: form.slug.value.trim(), engine: form.engine.value, csrf_token: window.WB_CSRF||''}).toString()
+                    }).then(function(r){ return r.json(); }).then(function(j){
+                        if (j && j.success && j.data && j.data.id) { window.location = '/aibuilder/open/' + j.data.id; }
+                        else { msg.textContent = (j && j.message) || 'Failed.'; btn.disabled = false; }
+                    }).catch(function(){ msg.textContent = 'Network error.'; btn.disabled = false; });
+                });
+            })();
+            </script>
 
             <?php
             // Show a decomposing banner for every instance with a live planner

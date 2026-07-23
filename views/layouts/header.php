@@ -24,8 +24,10 @@ $__iconMap = [
 ];
 $__icon = fn($i) => $__iconMap[$i] ?? ($i ?: 'dot');
 
-// These live elsewhere (Admin section / sidebar foot) — don't repeat them in Main.
-$__skip = ['/auth/logout' => 1, '/admin' => 1];
+// These live elsewhere — don't repeat them in the sidebar. Home (/) points at the
+// marketing site (irrelevant once you're inside; still reachable via the brand logo),
+// and Profile moves to the avatar dropdown with the other account items. Dashboard stays.
+$__skip = ['/auth/logout' => 1, '/admin' => 1, '/' => 1, '/member/profile' => 1];
 
 // Group the dynamic menu by its optional 'section' (default "Main").
 $__sections = [];
@@ -149,6 +151,7 @@ if ($__loggedIn) {
             </a>
             <ul class="dropdown-menu dropdown-menu-end shadow">
               <li><a class="dropdown-item" href="/dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
+              <li><a class="dropdown-item" href="/member/profile"><i class="bi bi-person me-2"></i>Profile</a></li>
               <li><a class="dropdown-item" href="/member/settings"><i class="bi bi-gear me-2"></i>Settings</a></li>
               <li><a class="dropdown-item" href="/apikeys"><i class="bi bi-key me-2"></i>API Keys</a></li>
               <li><a class="dropdown-item" href="/teams"><i class="bi bi-people me-2"></i>Teams</a></li>

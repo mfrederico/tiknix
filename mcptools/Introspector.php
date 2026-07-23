@@ -205,6 +205,28 @@ class Introspector {
         $out[] = '- Plan seeds — idempotent PHP in `database/seeds/*.php`, applied ONCE post-merge via the `\\app\\Bean` wrapper (findOne/dispense/store): ' . ($plan ? implode(', ', $plan) : '(none yet)');
         $out[] = '- A new route\'s permission == a seed here that upserts an `authcontrol` row (control, method, level). RedBean auto-creates a model\'s table on first store — no CREATE TABLE.';
 
+        // --- Automations (pipelines / durable objects / connectors) ----------
+        // First-class building blocks — prefer these over bespoke controllers for
+        // scheduled jobs, webhooks, agent tools, and stateful/long-lived logic.
+        $out[] = '';
+        $out[] = '### Automations — pipelines, durable objects & connectors (BUILDING BLOCKS; prefer over bespoke controllers)';
+        $stepTypes = array_keys(\app\Pipeline\StepRegistry::components());
+        $out[] = '- **Pipeline steps** to compose (files at `pipelines/<slug>.json`; build via the `pipeline_components` + `pipeline_set` MCP tools): ' . implode(', ', $stepTypes);
+        $pipes = [];
+        try {
+            foreach ((new \app\Pipeline\Loader($this->root))->all() as $slug => $def) {
+                $tag = !empty($def['stateful']) ? ' (durable object)'
+                     : (!empty($def['trigger']['cron']) ? ' (cron ' . $def['trigger']['cron'] . ')' : '');
+                $pipes[] = $slug . $tag;
+            }
+        } catch (\Throwable $e) {}
+        $out[] = '- **Existing pipelines** (reuse/extend before adding): ' . ($pipes ? implode(', ', $pipes) : '(none yet)');
+        $out[] = '- A pipeline can set `expose_as_tool` (→ an MCP tool), `expose_as_api` (→ a per-member REST endpoint), or `trigger.cron` (scheduled) — reach for these instead of a hand-written controller for scheduled jobs, webhooks, or agent tools.';
+        $out[] = '- **Durable object** = a pipeline with `stateful:true` — an addressable (id-keyed) actor with persisted `{state.*}`, incoming `{message.*}`, and alarms (a `__alarm` output key re-schedules it). Use for chat/session/agent state, counters, anything long-lived; delivered via `POST /pipeline/object/<slug>?key=<id>`.';
+        if (is_file($this->root . '/conf/broker.ini')) {
+            $out[] = '- **Connectors**: this instance has a broker configured — add a `connection` step to call its connected accounts (Stripe/Shopify/…) with the key injected server-side. Accounts are wired at the platform Integrations page.';
+        }
+
         return implode("\n", $out);
     }
 

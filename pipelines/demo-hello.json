@@ -2,6 +2,7 @@
   "slug": "demo-hello",
   "name": "Demo — hello",
   "description": "A Phase-1 smoke pipeline: shell -> transform -> branch -> notify.",
+  "expose_as_api": true,
   "context_schema": { "who": { "type": "string", "required": true } },
   "steps": [
     { "name": "greet",   "type": "shell",

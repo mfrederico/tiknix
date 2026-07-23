@@ -65,6 +65,7 @@ $badge = ['production' => 'success', 'staging' => 'warning', 'development' => 's
           $toolName = 'tiknix:pipe_' . $p['slug'];
           $mcpUrl   = ($base !== '' ? $base : '') . '/mcp/message';
           $apiUrl   = ($base !== '' ? $base : '') . '/pipeline/api/' . $p['slug'];
+          $objUrl   = ($base !== '' ? $base : '') . '/pipeline/object/' . $p['slug'];
         ?>
         <div class="col-md-6">
           <div class="card h-100"><div class="card-body">
@@ -77,8 +78,18 @@ $badge = ['production' => 'success', 'staging' => 'warning', 'development' => 's
             <div class="text-body-secondary small"><code><?= htmlspecialchars($p['slug']) ?></code> · <?= (int)$p['steps'] ?> step<?= (int)$p['steps'] === 1 ? '' : 's' ?></div>
             <?php if ($p['description'] !== ''): ?><div class="text-body-secondary small mt-1"><?= htmlspecialchars($p['description']) ?></div><?php endif; ?>
 
-            <?php if (!empty($p['expose_tool']) || !empty($p['expose_api'])): ?>
+            <?php if (!empty($p['expose_tool']) || !empty($p['expose_api']) || !empty($p['stateful'])): ?>
               <div class="mt-2 border-top pt-2 d-flex flex-column gap-2">
+                <?php if (!empty($p['stateful'])): ?>
+                  <div>
+                    <div class="d-flex align-items-center gap-1">
+                      <span class="badge text-bg-secondary flex-shrink-0"><i class="bi bi-box"></i> object</span>
+                      <code class="small text-truncate flex-grow-1" title="POST <?= htmlspecialchars($objUrl) ?>?key=&lt;id&gt;"><span class="text-body-secondary">POST</span> <?= htmlspecialchars($objUrl) ?>?key=&lt;id&gt;</code>
+                      <button class="btn btn-sm btn-link p-0 text-decoration-none flex-shrink-0" type="button" data-copy="<?= htmlspecialchars($objUrl) ?>?key=" title="Copy delivery URL"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                    <div class="form-text mt-0">Server-side (<code>Authorization: Bearer &lt;trigger_secret&gt;</code>) · <code>?key=</code> addresses one object · <code>&amp;trigger=alarm</code> to fire its alarm · body is the message JSON.</div>
+                  </div>
+                <?php endif; ?>
                 <?php if (!empty($p['expose_tool'])): ?>
                   <div>
                     <div class="d-flex align-items-center gap-1">

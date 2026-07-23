@@ -333,6 +333,9 @@ class Connections extends Control {
     /** GET /connections[?id=<instance>] — connections hub; defaults to the member's most-recent store. */
     public function index($params = []): void {
         if (!$this->requireLogin()) return;
+        // Inside an instance there is no owner/instance picker — show the read-only
+        // list of what this app is connected to (metadata via the broker).
+        if (!builder_tools_enabled()) { $this->instanceConnections(); return; }
         // The member's instances (most-recent first) drive the store picker and the
         // default when no ?id= is given, so /connections never dead-ends to /aibuilder.
         $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
@@ -422,20 +425,28 @@ class Connections extends Control {
             ];
         }
 
-        // The instance's automations — pipelines (files) + live durable objects (read-only).
-        $dir = $this->instanceDir($inst->slug);
-        $pipelines      = \app\InstanceAutomations::pipelines($dir);
-        $durableObjects = \app\InstanceAutomations::durableObjects($dir);
-
         $this->render('connections/index', [
-            'title'          => 'Integrations',
+            'title'          => 'Connections',
             'instance'       => $inst,
             'instances'      => $instances,
             'cards'          => $cards,
-            'pipelines'      => $pipelines,
-            'durableObjects' => $durableObjects,
+            // Only for the GitHub deploy-webhook hint ("a push fires N pipelines");
+            // the pipelines themselves are shown on /integrations, not here.
+            'pipelines'      => \app\InstanceAutomations::pipelines($this->instanceDir($inst->slug)),
             'environments'   => ['development', 'production'],
             'categoryOrder'  => ['Deploy', 'Payments', 'Stores', 'Social', 'Other'],
+        ]);
+    }
+
+    /** Inside an instance: read-only list of what this app is connected to (broker). */
+    private function instanceConnections(): void {
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/dashboard'); return; }
+        $broker = \app\InstanceAutomations::brokerConnections(dirname(__DIR__));
+        $this->render('connections/instance', [
+            'title'       => 'Connections',
+            'connections' => $broker['connections'] ?? [],
+            'brokerError' => $broker['error'] ?? '',
+            'appName'     => basename(dirname(__DIR__)),
         ]);
     }
 

@@ -1,153 +1,32 @@
 <?php
 /**
- * Instance-side Integrations (read-only). Shows what THIS instance is wired to:
- * connections fetched from the control plane via the broker (metadata only), plus
- * the pipelines and durable objects that live here locally.
+ * Instance-side Integrations (read-only). What THIS instance EXPOSES: its pipelines
+ * and their MCP tool / REST API / durable-object endpoints, plus live durable objects.
+ * Credentials it connects TO live on the sibling /connections page.
  *
- * Vars: $connections[], $brokerError, $pipelines[], $durableObjects[], $appName
+ * Vars: $pipelines[], $durableObjects[], $appName, $baseUrl
  */
-$badge = ['production' => 'success', 'staging' => 'warning', 'development' => 'secondary'];
 ?>
 <div class="container py-4" style="max-width:960px">
 
   <div class="d-flex align-items-center gap-2 mb-3">
-    <i class="bi bi-plug fs-3"></i>
+    <i class="bi bi-diagram-3 fs-3"></i>
     <div>
       <h1 class="h4 fw-bold mb-0">Integrations</h1>
-      <div class="text-body-secondary small">what <code><?= htmlspecialchars($appName) ?></code> is wired to</div>
+      <div class="text-body-secondary small">what <code><?= htmlspecialchars($appName) ?></code> exposes — pipelines, tools &amp; APIs</div>
     </div>
   </div>
 
   <div class="alert alert-light border py-2 small mb-4">
-    <i class="bi bi-shield-check me-1"></i>
-    Credentials and connections can be managed in your main
+    <i class="bi bi-info-circle me-1"></i>
+    These are the automations this instance offers. External accounts it connects to are on the
+    <a href="/connections" style="text-decoration:underline">Connections</a> page; manage credentials in your main
     <a href="https://tiknix.com/auth/login/" style="text-decoration:underline">tiknix workspace</a>.
   </div>
 
-  <!-- ============ Connections (via the broker) ============ -->
-  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2" style="letter-spacing:.06em">Connections</h2>
-  <?php if ($brokerError !== ''): ?>
-    <div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($brokerError) ?></div>
-  <?php elseif (empty($connections)): ?>
-    <div class="alert alert-light border py-2 small">No connections yet. Connect a store or payment account to this instance from the control plane.</div>
-  <?php else: ?>
-    <div class="row g-3">
-      <?php foreach ($connections as $c): $live = !empty($c['enabled']) && empty($c['revoked']); ?>
-        <div class="col-md-6">
-          <div class="card h-100 <?= $live ? 'border-success border-opacity-50' : 'opacity-75' ?>">
-            <div class="card-body">
-              <div class="d-flex align-items-center justify-content-between">
-                <div class="fw-semibold text-capitalize"><?= htmlspecialchars($c['connector']) ?></div>
-                <span class="badge text-bg-<?= htmlspecialchars($badge[$c['environment']] ?? 'secondary') ?>"><?= htmlspecialchars($c['environment']) ?></span>
-              </div>
-              <div class="text-body-secondary small mt-1"><?= htmlspecialchars($c['name'] ?: '—') ?></div>
-              <div class="mt-2">
-                <?php if (!empty($c['revoked'])): ?><span class="badge text-bg-danger">revoked</span>
-                <?php elseif ($live): ?><span class="badge text-bg-success"><i class="bi bi-check-lg"></i> connected</span>
-                <?php else: ?><span class="badge text-bg-secondary">disabled</span><?php endif; ?>
-              </div>
-            </div>
-          </div>
-        </div>
-      <?php endforeach; ?>
-    </div>
-  <?php endif; ?>
-
-  <!-- ============ Pipelines (local) ============ -->
-  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-5" style="letter-spacing:.06em">Pipelines &amp; automations</h2>
-  <?php if (empty($pipelines)): ?>
-    <div class="alert alert-light border py-2 small">No pipelines in this instance yet.</div>
-  <?php else: ?>
-    <div class="row g-3">
-      <?php $base = rtrim((string)($baseUrl ?? ''), '/'); ?>
-      <?php foreach ($pipelines as $p): ?>
-        <?php
-          $toolName = 'tiknix:pipe_' . $p['slug'];
-          $mcpUrl   = ($base !== '' ? $base : '') . '/mcp/message';
-          $apiUrl   = ($base !== '' ? $base : '') . '/pipeline/api/' . $p['slug'];
-          $objUrl   = ($base !== '' ? $base : '') . '/pipeline/object/' . $p['slug'];
-        ?>
-        <div class="col-md-6">
-          <div class="card h-100"><div class="card-body">
-            <div class="fw-semibold"><?= htmlspecialchars($p['name']) ?>
-              <?php if ($p['stateful']): ?><span class="badge text-bg-secondary ms-1">object</span><?php endif; ?>
-              <?php if ($p['expose_tool']): ?><span class="badge text-bg-info ms-1">tool</span><?php endif; ?>
-              <?php if ($p['expose_api']): ?><span class="badge text-bg-info ms-1">api</span><?php endif; ?>
-              <?php if ($p['cron'] !== ''): ?><span class="badge text-bg-light ms-1" title="<?= htmlspecialchars($p['cron']) ?>"><i class="bi bi-clock"></i></span><?php endif; ?>
-            </div>
-            <div class="text-body-secondary small"><code><?= htmlspecialchars($p['slug']) ?></code> · <?= (int)$p['steps'] ?> step<?= (int)$p['steps'] === 1 ? '' : 's' ?></div>
-            <?php if ($p['description'] !== ''): ?><div class="text-body-secondary small mt-1"><?= htmlspecialchars($p['description']) ?></div><?php endif; ?>
-
-            <?php if (!empty($p['expose_tool']) || !empty($p['expose_api']) || !empty($p['stateful'])): ?>
-              <div class="mt-2 border-top pt-2 d-flex flex-column gap-2">
-                <?php if (!empty($p['stateful'])): ?>
-                  <div>
-                    <div class="d-flex align-items-center gap-1">
-                      <span class="badge text-bg-secondary flex-shrink-0"><i class="bi bi-box"></i> object</span>
-                      <code class="small text-truncate flex-grow-1" title="POST <?= htmlspecialchars($objUrl) ?>?key=&lt;id&gt;"><span class="text-body-secondary">POST</span> <?= htmlspecialchars($objUrl) ?>?key=&lt;id&gt;</code>
-                      <button class="btn btn-sm btn-link p-0 text-decoration-none flex-shrink-0" type="button" data-copy="<?= htmlspecialchars($objUrl) ?>?key=" title="Copy delivery URL"><i class="bi bi-clipboard"></i></button>
-                    </div>
-                    <div class="form-text mt-0">Server-side (<code>Authorization: Bearer &lt;trigger_secret&gt;</code>) · <code>?key=</code> addresses one object · <code>&amp;trigger=alarm</code> to fire its alarm · body is the message JSON.</div>
-                  </div>
-                <?php endif; ?>
-                <?php if (!empty($p['expose_tool'])): ?>
-                  <div>
-                    <div class="d-flex align-items-center gap-1">
-                      <span class="badge text-bg-info flex-shrink-0">MCP tool</span>
-                      <code class="small text-truncate flex-grow-1" title="<?= htmlspecialchars($toolName) ?>"><?= htmlspecialchars($toolName) ?></code>
-                      <button class="btn btn-sm btn-link p-0 text-decoration-none flex-shrink-0" type="button" data-copy="<?= htmlspecialchars($toolName) ?>" title="Copy tool name"><i class="bi bi-clipboard"></i></button>
-                    </div>
-                    <div class="form-text mt-0">Auto-listed on <code><?= htmlspecialchars($mcpUrl) ?></code> via <code>tools/list</code>; called with <code>tools/call</code>.</div>
-                  </div>
-                <?php endif; ?>
-                <?php if (!empty($p['expose_api'])): ?>
-                  <div>
-                    <div class="d-flex align-items-center gap-1">
-                      <span class="badge text-bg-info flex-shrink-0">REST</span>
-                      <code class="small text-truncate flex-grow-1" title="POST <?= htmlspecialchars($apiUrl) ?>"><span class="text-body-secondary">POST</span> <?= htmlspecialchars($apiUrl) ?></code>
-                      <button class="btn btn-sm btn-link p-0 text-decoration-none flex-shrink-0" type="button" data-copy="<?= htmlspecialchars($apiUrl) ?>" title="Copy endpoint URL"><i class="bi bi-clipboard"></i></button>
-                    </div>
-                    <div class="form-text mt-0"><code>Authorization: Bearer pk_…</code> · body is the context JSON · <code>?async=1</code> for a poll-able run.</div>
-                  </div>
-                <?php endif; ?>
-              </div>
-            <?php endif; ?>
-          </div></div>
-        </div>
-      <?php endforeach; ?>
-    </div>
-  <?php endif; ?>
-
-  <!-- ============ Durable objects (local) ============ -->
-  <?php if (!empty($durableObjects)): ?>
-    <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-5" style="letter-spacing:.06em">Durable objects <span class="badge text-bg-secondary ms-1"><?= count($durableObjects) ?></span></h2>
-    <div class="row g-3">
-      <?php foreach ($durableObjects as $o): ?>
-        <div class="col-md-6">
-          <div class="card h-100"><div class="card-body">
-            <div class="d-flex align-items-center justify-content-between">
-              <div class="fw-semibold text-truncate"><code><?= htmlspecialchars($o['type']) ?></code> : <code><?= htmlspecialchars($o['key']) ?></code></div>
-              <?php if ($o['wake_at'] > 0): ?><span class="badge text-bg-light flex-shrink-0" title="next alarm"><i class="bi bi-alarm"></i> <?= htmlspecialchars(date('H:i', $o['wake_at'])) ?></span><?php endif; ?>
-            </div>
-            <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-1" style="max-height:8rem;overflow:auto"><?= htmlspecialchars(json_encode($o['state'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) ?></pre>
-            <div class="text-body-secondary small">updated <?= htmlspecialchars(date('Y-m-d H:i', $o['updated_at'])) ?></div>
-          </div></div>
-        </div>
-      <?php endforeach; ?>
-    </div>
-  <?php endif; ?>
-
+  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-2" style="letter-spacing:.06em">Pipelines &amp; automations</h2>
+  <?php
+    $canRun = false;
+    include __DIR__ . '/../partials/pipeline-automations.php';
+  ?>
 </div>
-
-<script>
-(function(){
-  document.querySelectorAll('[data-copy]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var txt = btn.getAttribute('data-copy') || '';
-      var done = function(){ var i = btn.querySelector('i'); if (i){ i.className = 'bi bi-check-lg'; setTimeout(function(){ i.className = 'bi bi-clipboard'; }, 1200); } };
-      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function(){ window.prompt('Copy:', txt); }); }
-      else { window.prompt('Copy:', txt); }
-    });
-  });
-})();
-</script>

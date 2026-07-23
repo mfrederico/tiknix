@@ -19,22 +19,49 @@
 namespace app;
 
 use \Flight as Flight;
+use \RedBeanPHP\R;
 use app\BaseControls\Control;
 
 class Integrations extends Control {
 
-    /** GET /integrations — read-only view of this instance's connections + automations. */
+    /**
+     * GET /integrations — the automations page.
+     *  • Control plane: owner-scoped, instance-selectable hub of the chosen instance's
+     *    pipelines + their MCP/REST/object endpoints (credentials live on /connections).
+     *  • Inside an instance: read-only "what does this app expose" for admins.
+     */
     public function index($params = []) {
         if (!$this->requireLogin()) return;
+        if (builder_tools_enabled()) { $this->controlPlane(); return; }
+        $this->instanceView();
+    }
+
+    /** Control-plane hub — pick one of the member's instances, show its automations. */
+    private function controlPlane(): void {
+        $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) {
+            foreach ($instances as $cand) { if ($ok = $this->ownedInstance((int)$cand->id)) { $inst = $ok; break; } }
+        }
+        if (!$inst) { Flight::redirect('/aibuilder'); return; }
+
+        $dir = $this->instanceDir($inst->slug);
+        $this->render('integrations/hub', [
+            'title'          => 'Integrations',
+            'instance'       => $inst,
+            'instances'      => $instances,
+            'pipelines'      => InstanceAutomations::pipelines($dir),
+            'durableObjects' => InstanceAutomations::durableObjects($dir),
+            'baseUrl'        => $this->instanceBaseUrl($dir),
+        ]);
+    }
+
+    /** Inside-an-instance read-only view (admins only). */
+    private function instanceView(): void {
         if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/dashboard'); return; }
-
         $root = dirname(__DIR__);                       // the app root this code runs in
-        $broker = InstanceAutomations::brokerConnections($root);
-
         $this->render('integrations/index', [
             'title'          => 'Integrations',
-            'connections'    => $broker['connections'] ?? [],
-            'brokerError'    => $broker['error'] ?? '',
             'pipelines'      => InstanceAutomations::pipelines($root),
             'durableObjects' => InstanceAutomations::durableObjects($root),
             'appName'        => basename($root),
@@ -42,5 +69,25 @@ class Integrations extends Control {
             // MCP tool + REST API paths on the exposed pipeline cards.
             'baseUrl'        => rtrim((string) (Flight::get('app.baseurl') ?: ''), '/'),
         ]);
+    }
+
+    private function instanceDir(string $slug): string {
+        return '/var/www/html/default/' . $slug . '.tiknix';
+    }
+
+    /** Load an instance the current member owns and that exists on disk. */
+    private function ownedInstance($id) {
+        $id = (int)$id;
+        if (!$id) return null;
+        $inst = R::load('instance', $id);
+        if (!$inst->id || (int)$inst->memberId !== (int)$this->member->id) return null;
+        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        return $inst;
+    }
+
+    /** The instance's own public base URL (from its config.ini). */
+    private function instanceBaseUrl(string $dir): string {
+        $ini = @parse_ini_file($dir . '/conf/config.ini', true) ?: [];
+        return rtrim((string) ($ini['app']['baseurl'] ?? ''), '/');
     }
 }

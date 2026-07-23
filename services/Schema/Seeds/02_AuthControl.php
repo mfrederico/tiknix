@@ -107,7 +107,7 @@ $defaults = [
     // An instance asks core "what am I connected to?" with its own broker key (metadata only).
     ['brokerinfo', 'connections', 101, 'Instance connection lookup (self-authenticating broker key)'],
     // The instance-side read-only Integrations view (runs IN the instance).
-    ['integrations', 'index', 50, 'Instance-side integrations view (ADMIN)'],
+    ['integrations', 'index', 100, 'Integrations/automations view (owner on control plane; ADMIN enforced in-controller inside an instance)'],
     ['connections', 'index', 100, 'Integrations hub (owner-scoped)'],
     ['connections', 'pipelinerun', 100, 'Trigger one of the instance pipelines (owner)'],
     ['connections', 'githubwebhook', 100, 'Provision the GitHub deploy webhook (owner)'],

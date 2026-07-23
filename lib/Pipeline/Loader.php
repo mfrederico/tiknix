@@ -81,7 +81,42 @@ class Loader {
                 }
             }
         }
+        // Validate the schedule if present (empty = no schedule, fine).
+        $cron = trim((string) ($def['trigger']['cron'] ?? ''));
+        if ($cron !== '' && !self::validCron($cron)) {
+            $errors[] = "invalid trigger.cron '$cron' (need 5 fields: minute hour day month weekday)";
+        }
         return $errors;
+    }
+
+    /** True if $expr is a well-formed 5-field cron expression (min hour dom mon dow). */
+    public static function validCron(string $expr): bool {
+        $f = preg_split('/\s+/', trim($expr));
+        if (count($f) !== 5) return false;
+        $ranges = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];   // dow: 0 and 7 both = Sunday
+        foreach ($f as $i => $spec) {
+            if (!self::validCronField($spec, $ranges[$i][0], $ranges[$i][1])) return false;
+        }
+        return true;
+    }
+
+    private static function validCronField(string $spec, int $lo, int $hi): bool {
+        if ($spec === '') return false;
+        foreach (explode(',', $spec) as $part) {
+            if ($part === '') return false;
+            if (strpos($part, '/') !== false) {
+                [$part, $s] = explode('/', $part, 2);
+                if (!ctype_digit($s) || (int) $s < 1) return false;
+            }
+            if ($part === '*') continue;
+            if (strpos($part, '-') !== false) {
+                [$a, $b] = explode('-', $part, 2);
+                if (!ctype_digit($a) || !ctype_digit($b) || (int) $a < $lo || (int) $b > $hi || (int) $a > (int) $b) return false;
+            } elseif (!ctype_digit($part) || (int) $part < $lo || (int) $part > $hi) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private function read(string $file): ?array {

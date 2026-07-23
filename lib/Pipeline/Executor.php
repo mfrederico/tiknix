@@ -28,10 +28,14 @@ class Executor {
         $this->root = rtrim($root, '/');
     }
 
-    /** Sync run: create the piperun, execute from the start. */
-    public function run(array $def, array $context = [], string $source = 'manual'): array {
+    /**
+     * Sync run: create the piperun, execute from the start. $extra is merged into the
+     * variable bag (durable objects inject state/message/trigger; normal runs pass []).
+     */
+    public function run(array $def, array $context = [], string $source = 'manual', array $extra = []): array {
         $run = $this->newRun($def, $context, $source, 'running');
         $bag = $this->freshBag($def, $context, $run);
+        if ($extra) $bag = array_merge($bag, $extra);
         return $this->execute($def, $run, 0, $bag);
     }
 

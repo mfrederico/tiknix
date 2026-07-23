@@ -82,6 +82,8 @@ $defaults = [
     ['pipeline', 'status', 101, 'Pipeline run status (per-member pk_ key)'],
     ['pipeline', 'debug', 101, 'Pipeline step-trace debug start (trigger_secret)'],
     ['pipeline', 'debugstep', 101, 'Pipeline step-trace advance (trigger_secret)'],
+    ['pipeline', 'object', 101, 'Durable object onMessage (trigger_secret)'],
+    ['pipeline', 'objecttick', 101, 'Durable object alarm tick (trigger_secret)'],
     ['pipeline', 'keys', 50, 'Pipeline API key management (ADMIN)'],
     ['teams', '*', 100, 'Teams management'],
     ['communications', '*', 100, 'Threaded email inbox'],

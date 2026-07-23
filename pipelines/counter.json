@@ -1,0 +1,18 @@
+{
+  "slug": "counter",
+  "name": "Counter (durable object)",
+  "description": "A durable object demo: onMessage increments its persisted count and arms a short alarm; onAlarm resets to 0. Proves keyed state + single-writer lock + alarms.",
+  "stateful": true,
+  "context_schema": {},
+  "steps": [
+    { "name": "route", "type": "branch",
+      "config": { "left": "{trigger}", "op": "eq", "right": "alarm" },
+      "on_success": "goto:reset", "on_fail": "goto:bump" },
+    { "name": "bump", "type": "shell",
+      "config": { "command": "php -r 'echo json_encode([\"count\"=>((int)($argv[1]?:0))+1,\"__alarm\"=>\"+2 seconds\"]);' '{state.count}'" },
+      "on_success": "exit", "on_fail": "exit" },
+    { "name": "reset", "type": "transform",
+      "config": { "mode": "template", "input": "{\"count\":0,\"reset_at\":\"{time.now}\"}" },
+      "on_success": "exit", "on_fail": "exit" }
+  ]
+}

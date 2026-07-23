@@ -100,6 +100,25 @@ class Pipeline extends Control {
         } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
     }
 
+    /** POST /pipeline/object/<slug>?key=<key> — deliver a message to a durable object (bearer = trigger_secret). */
+    public function object($params = []) {
+        if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
+        $slug = $this->slugArg();
+        $key  = (string) (Flight::request()->query->key ?? $this->getParam('key') ?? '');
+        if ($slug === '' || $key === '') { Flight::jsonError('slug and key are required.', 400); return; }
+        if (!Runner::get($slug)) { Flight::jsonError('No such pipeline.', 404); return; }
+        try {
+            Flight::json(Runner::deliver($slug, $key, $this->jsonBody(), 'message'));
+        } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
+    }
+
+    /** POST /pipeline/objecttick — fire onAlarm for every due durable object (bearer = trigger_secret). */
+    public function objecttick($params = []) {
+        if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
+        try { Flight::json(Runner::objectTick()); }
+        catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
+    }
+
     /** GET|POST /pipeline/keys — ADMIN mint/revoke per-member REST keys. */
     public function keys($params = []) {
         if (!$this->requireLogin()) return;

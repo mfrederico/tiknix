@@ -59,6 +59,18 @@ class Runner {
         return (new Executor(self::root()))->continueRun($runId, $input);
     }
 
+    // ---- durable objects (onMessage / onAlarm) -----------------------------
+
+    /** Deliver a message to a durable object (its handler pipeline runs with persisted state). */
+    public static function deliver(string $slug, string $key, array $message = [], string $trigger = 'message'): array {
+        return (new ObjectRunner(self::root()))->deliver($slug, $key, $message, $trigger);
+    }
+
+    /** Fire onAlarm for every durable object whose alarm is due (the cron tick). */
+    public static function objectTick(): array {
+        return (new ObjectRunner(self::root()))->tick();
+    }
+
     // ---- debug / step-trace (the editor's debugger) ------------------------
 
     /** Start a step-trace debug run: runs the first step, then pauses at a breakpoint. */

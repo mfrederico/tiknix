@@ -120,6 +120,19 @@ class Pipeline extends Control {
         catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
     }
 
+    /**
+     * POST /pipeline/mykey — self-service: mint a REST key for the CURRENT member on
+     * THIS app, revealed once. Lets an owner grab a `pk_…` to test their expose_as_api
+     * pipelines without the ADMIN keys screen. The key is scoped to this workspace.
+     */
+    public function mykey($params = []) {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $label = trim((string) $this->getParam('label')) ?: 'test key';
+        $res = ApiKey::mint((int) $this->member->id, $label, (int) $this->member->id);
+        Flight::jsonSuccess(['key' => $res['raw'], 'prefix' => $res['prefix']], 'Key created — copy it now; it is shown only once.');
+    }
+
     /** GET|POST /pipeline/keys — ADMIN mint/revoke per-member REST keys. */
     public function keys($params = []) {
         if (!$this->requireLogin()) return;

@@ -85,6 +85,7 @@ $defaults = [
     ['pipeline', 'object', 101, 'Durable object onMessage (trigger_secret)'],
     ['pipeline', 'objecttick', 101, 'Durable object alarm tick (trigger_secret)'],
     ['pipeline', 'keys', 50, 'Pipeline API key management (ADMIN)'],
+    ['pipeline', 'mykey', 100, 'Self-service: mint a REST test key for the current member'],
     ['teams', '*', 100, 'Teams management'],
     ['communications', '*', 100, 'Threaded email inbox'],
 

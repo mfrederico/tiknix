@@ -27,6 +27,7 @@ class InstanceAutomations {
                 'expose_tool' => (bool) ($def['expose_as_tool'] ?? false),
                 'expose_api'  => (bool) ($def['expose_as_api'] ?? false),
                 'cron'        => (string) ($def['trigger']['cron'] ?? ''),
+                'github'      => $def['trigger']['github'] ?? null,
             ];
         }
         usort($out, fn($a, $b) => strcmp($a['slug'], $b['slug']));
@@ -66,7 +67,6 @@ class InstanceAutomations {
         ]);
         $resp = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         $d = is_string($resp) ? json_decode($resp, true) : null;
         if ($code === 200 && !empty($d['run_id'])) return ['run_id' => (int) $d['run_id']];
         return ['error' => $d['message'] ?? "trigger failed (HTTP $code)"];
@@ -97,11 +97,26 @@ class InstanceAutomations {
         $resp = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $cerr = curl_error($ch);
-        curl_close($ch);
         if ($resp === false) return ['error' => $cerr ?: 'Could not reach the control plane.'];
         $d = is_string($resp) ? json_decode($resp, true) : null;
         if ($code === 200 && isset($d['connections'])) return ['connections' => $d['connections']];
         return ['error' => $d['message'] ?? "Connection lookup failed (HTTP $code)."];
+    }
+
+    /** Fire every pipeline whose trigger.github matches this GitHub event + branch. */
+    public static function fireGithub(string $dir, string $event, string $branch, array $context): array {
+        $fired = [];
+        foreach ((new Loader($dir))->all() as $slug => $def) {
+            $gh = $def['trigger']['github'] ?? null;
+            if (!is_array($gh)) continue;
+            $events   = is_array($gh['events'] ?? null)   ? $gh['events']   : ['push'];
+            $branches = is_array($gh['branches'] ?? null) ? $gh['branches'] : [];
+            if (!in_array($event, $events, true)) continue;
+            if ($branches && $branch !== '' && !in_array($branch, $branches, true)) continue;
+            $r = self::trigger($dir, (string) $slug, $context);
+            $fired[] = ['slug' => (string) $slug, 'run_id' => $r['run_id'] ?? null, 'error' => $r['error'] ?? null];
+        }
+        return $fired;
     }
 
     private static function config(string $dir): array {

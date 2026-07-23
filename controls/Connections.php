@@ -453,6 +453,47 @@ class Connections extends Control {
     }
 
     /**
+     * POST /connections/githubwebhook — provision the repo's push→deploy webhook so a
+     * push to GitHub fires this instance's trigger.github pipelines. Mints a secret,
+     * (re)creates the hook via the GitHub API pointing at /webhook/github, and stores
+     * the secret encrypted on the connection. Owner-scoped.
+     */
+    public function githubwebhook($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('Instance not found.', 404); return; }
+
+        $conn = Bean::findOne('connections',
+            "member_id = ? AND instance_id = ? AND connector_type = 'github' AND enabled = 1",
+            [(int) $this->member->id, (int) $inst->id]);
+        if (!$conn || !$conn->id) { Flight::jsonError('Connect a GitHub repo to this instance first.', 400); return; }
+
+        $meta  = json_decode((string) ($conn->metadataJson ?: '{}'), true) ?: [];
+        $owner = (string) ($meta['owner'] ?? ''); $repo = (string) ($meta['repo'] ?? '');
+        if ($owner === '' || $repo === '') { Flight::jsonError('This GitHub connection has no owner/repo.', 400); return; }
+
+        $callback = rtrim((string) (Flight::get('app.baseurl') ?: 'https://tiknix.com'), '/') . '/webhook/github';
+        try {
+            $pat = (string) EncryptionService::decrypt((string) $conn->accessToken);
+            $gh  = new GitHubService($pat, $owner, $repo);
+            $secret   = bin2hex(random_bytes(20));
+            $existing = $gh->findWebhook($callback);
+            if ($existing) { $gh->updateWebhook((int) $existing['id'], $callback, $secret); }
+            else           { $gh->createWebhook($callback, $secret, ['push']); }
+            $conn->webhookSecret = EncryptionService::encrypt($secret);
+            $conn->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($conn);
+            Flight::jsonSuccess(['callback' => $callback, 'updated' => (bool) $existing],
+                $existing ? 'Deploy webhook updated.' : 'Deploy webhook created.');
+        } catch (\Throwable $e) {
+            Flight::jsonError('Could not set up the webhook (' . $e->getMessage()
+                . '). Your GitHub token may lack admin:repo_hook — add it manually in GitHub: Settings → Webhooks → '
+                . $callback . ', content-type application/json, event: push.', 400);
+        }
+    }
+
+    /**
      * POST /connections/broker — mint/rotate this instance's broker key, revealed
      * ONCE. Owner-only. The instance presents this as a Bearer token to the MCP
      * gateway to reach its own connected stores; it decrypts nothing and can be

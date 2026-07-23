@@ -86,6 +86,15 @@ class Loader {
         if ($cron !== '' && !self::validCron($cron)) {
             $errors[] = "invalid trigger.cron '$cron' (need 5 fields: minute hour day month weekday)";
         }
+        // GitHub push trigger (fired by the /webhook/github keystone): { events[], branches[] }.
+        $gh = $def['trigger']['github'] ?? null;
+        if ($gh !== null) {
+            if (!is_array($gh)) $errors[] = 'trigger.github must be an object';
+            else {
+                if (isset($gh['events']) && !is_array($gh['events'])) $errors[] = 'trigger.github.events must be an array';
+                if (isset($gh['branches']) && !is_array($gh['branches'])) $errors[] = 'trigger.github.branches must be an array';
+            }
+        }
         return $errors;
     }
 

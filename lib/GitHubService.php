@@ -253,6 +253,34 @@ class GitHubService {
      * @return array Response data
      * @throws \Exception on error
      */
+    /** Create a repo push webhook pointing at $callbackUrl, HMAC-signed with $secret. */
+    public function createWebhook(string $callbackUrl, string $secret, array $events = ['push']): array {
+        return $this->request('POST', "/repos/{$this->owner}/{$this->repo}/hooks", [
+            'name'   => 'web',
+            'active' => true,
+            'events' => $events,
+            'config' => ['url' => $callbackUrl, 'content_type' => 'json', 'secret' => $secret, 'insecure_ssl' => '0'],
+        ]);
+    }
+
+    /** Re-point an existing hook's config (used to (re)set its secret + callback). */
+    public function updateWebhook(int $hookId, string $callbackUrl, string $secret, array $events = ['push']): array {
+        return $this->request('PATCH', "/repos/{$this->owner}/{$this->repo}/hooks/{$hookId}", [
+            'active' => true,
+            'events' => $events,
+            'config' => ['url' => $callbackUrl, 'content_type' => 'json', 'secret' => $secret, 'insecure_ssl' => '0'],
+        ]);
+    }
+
+    /** The existing hook whose config.url === $callbackUrl, or null (to avoid duplicates). */
+    public function findWebhook(string $callbackUrl): ?array {
+        $hooks = $this->request('GET', "/repos/{$this->owner}/{$this->repo}/hooks");
+        foreach ((is_array($hooks) ? $hooks : []) as $h) {
+            if (($h['config']['url'] ?? '') === $callbackUrl) return $h;
+        }
+        return null;
+    }
+
     private function request(string $method, string $endpoint, ?array $data = null, array $query = []): array {
         $url = self::API_BASE . $endpoint;
 

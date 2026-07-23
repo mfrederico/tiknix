@@ -110,6 +110,7 @@ $defaults = [
     ['integrations', 'index', 50, 'Instance-side integrations view (ADMIN)'],
     ['connections', 'index', 100, 'Integrations hub (owner-scoped)'],
     ['connections', 'pipelinerun', 100, 'Trigger one of the instance pipelines (owner)'],
+    ['connections', 'githubwebhook', 100, 'Provision the GitHub deploy webhook (owner)'],
     ['connections', 'connectkey', 100, 'Connect an api_key connector from a validated pasted key'],
     ['connections', 'webhooksecret', 100, 'Set/clear a connection webhook verification secret'],
     ['connections', 'publishfeed', 100, 'Publish a public social showcase page for a social connection'],
@@ -122,6 +123,7 @@ $defaults = [
 
     // Public webhook (101) — authenticates itself via Mailgun HMAC
     ['webhook', 'mailgun', 101, 'Mailgun inbound mail + delivery-event webhook'],
+    ['webhook', 'github', 101, 'GitHub push webhook → deploy pipelines (self-auth via HMAC)'],
 
     // Public MCP endpoints (101) — auth handled by the controller
     ['mcp', '*', 101, 'MCP server endpoints'],

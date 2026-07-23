@@ -169,6 +169,93 @@ class Webhook extends Control {
     }
 
     /**
+     * GitHub push/PR webhook → fire the instance's matching deploy pipelines.
+     *
+     * Self-authenticating (PUBLIC route, HMAC only): verifies X-Hub-Signature-256
+     * against the per-connection webhook secret, maps repository.full_name → the
+     * GitHub connection (metadataJson.owner/repo) → its instance, then fires every
+     * pipeline whose trigger.github matches the event+branch. Dedupes on the delivery
+     * id and applies a short per-instance cooldown so a push flood can't fork-bomb.
+     * Route: webhook::github = 101.
+     */
+    public function github(): void {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { \Flight::json(['error' => 'POST only'], 405); return; }
+
+        $raw      = file_get_contents('php://input') ?: '';
+        $event    = strtolower((string) ($_SERVER['HTTP_X_GITHUB_EVENT'] ?? ''));
+        $sig      = (string) ($_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '');
+        $delivery = (string) ($_SERVER['HTTP_X_GITHUB_DELIVERY'] ?? '');
+
+        if ($event === 'ping') { \Flight::json(['accepted' => true, 'pong' => true], 200); return; }
+
+        $payload = json_decode($raw, true) ?: [];
+        $repo    = (string) ($payload['repository']['full_name'] ?? '');   // "owner/repo"
+        if ($repo === '' || strpos($repo, '/') === false) { \Flight::json(['accepted' => false, 'reason' => 'no repository'], 200); return; }
+        [$owner, $name] = explode('/', $repo, 2);
+
+        // Map repo → the GitHub connection (its instance is the boundary).
+        $conn = null;
+        foreach (Bean::find('connections', "connector_type = 'github' AND enabled = 1") as $c) {
+            $meta = json_decode((string) ($c->metadataJson ?: '{}'), true) ?: [];
+            if (strcasecmp((string) ($meta['owner'] ?? ''), $owner) === 0
+                && strcasecmp((string) ($meta['repo'] ?? ''), $name) === 0) { $conn = $c; break; }
+        }
+        if (!$conn) { \Flight::json(['accepted' => false, 'reason' => 'no instance connected to this repo'], 200); return; }
+
+        // HMAC verify — MANDATORY (public endpoint, no dev bypass).
+        $secret = '';
+        try { $secret = (string) \app\EncryptionService::decrypt((string) ($conn->webhookSecret ?? '')); } catch (\Throwable $e) {}
+        if ($secret === '') { \Flight::json(['error' => 'no webhook secret set for this connection'], 403); return; }
+        $expected = 'sha256=' . hash_hmac('sha256', $raw, $secret);
+        if ($sig === '' || !hash_equals($expected, $sig)) {
+            $this->logger?->warning('Webhook/github: HMAC mismatch', ['repo' => $repo]);
+            \Flight::json(['error' => 'invalid signature'], 403);
+            return;
+        }
+
+        // Dedupe redeliveries; cooldown floods (risk #1).
+        if ($this->seenDelivery($delivery)) { \Flight::json(['accepted' => true, 'duplicate' => true], 200); return; }
+        if ($this->webhookCooldown((int) $conn->instanceId)) { \Flight::json(['accepted' => true, 'throttled' => true], 200); return; }
+
+        $inst = \RedBeanPHP\R::load('instance', (int) $conn->instanceId);
+        if (!$inst->id) { \Flight::json(['accepted' => false, 'reason' => 'instance gone'], 200); return; }
+        $dir    = '/var/www/html/default/' . $inst->slug . '.tiknix';
+        $branch = (string) preg_replace('#^refs/heads/#', '', (string) ($payload['ref'] ?? ''));
+        $sha    = (string) ($payload['after'] ?? ($payload['head_commit']['id'] ?? ($payload['pull_request']['head']['sha'] ?? '')));
+        $context = [
+            'event'  => $event,
+            'branch' => $branch,
+            'ref'    => (string) ($payload['ref'] ?? ''),
+            'sha'    => $sha,
+            'repo'   => $repo,
+            'pusher' => (string) ($payload['pusher']['name'] ?? ($payload['sender']['login'] ?? '')),
+        ];
+        $fired = \app\InstanceAutomations::fireGithub($dir, $event, $branch, $context);
+        $this->logger?->info('Webhook/github fired', ['repo' => $repo, 'event' => $event, 'branch' => $branch, 'fired' => count($fired)]);
+        \Flight::json(['accepted' => true, 'fired' => $fired], 200);
+    }
+
+    /** True if this delivery id was already processed (idempotency); records it otherwise. */
+    private function seenDelivery(string $delivery): bool {
+        if ($delivery === '') return false;
+        if (($ex = Bean::findOne('webhookdelivery', 'delivery = ?', [$delivery])) && $ex->id) return true;
+        $d = Bean::dispense('webhookdelivery'); $d->delivery = $delivery; $d->createdAt = date('Y-m-d H:i:s'); Bean::store($d);
+        try { \RedBeanPHP\R::exec('DELETE FROM webhookdelivery WHERE created_at < ?', [date('Y-m-d H:i:s', time() - 86400)]); } catch (\Throwable $e) {}
+        return false;
+    }
+
+    /** True if this instance fired a webhook within the cooldown window (blunts push floods). */
+    private function webhookCooldown(int $instanceId, int $seconds = 5): bool {
+        $key  = 'gh-' . $instanceId;
+        $rate = Bean::findOne('webhookrate', 'rkey = ?', [$key]);
+        $now  = time();
+        if ($rate && $rate->id && ($now - (int) $rate->lastAt) < $seconds) return true;
+        if (!$rate || !$rate->id) { $rate = Bean::dispense('webhookrate'); $rate->rkey = $key; }
+        $rate->lastAt = $now; Bean::store($rate);
+        return false;
+    }
+
+    /**
      * Mailgun event webhook (JSON): delivered / failed / permanent_fail /
      * bounced. On a hard failure, mark the matching outbound notify 'failed'
      * and drop a system note so the thread owner sees the dead address.

@@ -105,10 +105,11 @@ class Pipeline extends Control {
         if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
         $slug = $this->slugArg();
         $key  = (string) (Flight::request()->query->key ?? $this->getParam('key') ?? '');
+        $trigger = ((string) (Flight::request()->query->trigger ?? 'message')) === 'alarm' ? 'alarm' : 'message';
         if ($slug === '' || $key === '') { Flight::jsonError('slug and key are required.', 400); return; }
         if (!Runner::get($slug)) { Flight::jsonError('No such pipeline.', 404); return; }
         try {
-            Flight::json(Runner::deliver($slug, $key, $this->jsonBody(), 'message'));
+            Flight::json(Runner::deliver($slug, $key, $this->jsonBody(), $trigger));
         } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
     }
 

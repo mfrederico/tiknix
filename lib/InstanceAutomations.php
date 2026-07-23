@@ -72,6 +72,38 @@ class InstanceAutomations {
         return ['error' => $d['message'] ?? "trigger failed (HTTP $code)"];
     }
 
+    /**
+     * Ask CORE (via this instance's own broker key) what this instance is connected to.
+     * Metadata only — connector/environment/account/status, never a credential. This is
+     * how an instance can SEE its connections: core and instances are separate apps with
+     * separate databases, so the rows live in core and are reached through the broker.
+     * Returns ['connections' => [...]] or ['error' => string].
+     */
+    public static function brokerConnections(string $dir): array {
+        $ini = @parse_ini_file($dir . '/conf/broker.ini', true) ?: [];
+        $endpoint = (string) ($ini['broker']['endpoint'] ?? '');
+        $key      = (string) ($ini['broker']['key'] ?? '');
+        if ($endpoint === '' || $key === '') return ['error' => 'This instance has no broker key (conf/broker.ini) — connect it from the control plane.'];
+        $p = parse_url($endpoint);
+        if (empty($p['host'])) return ['error' => 'The broker endpoint in conf/broker.ini is malformed.'];
+        $base = ($p['scheme'] ?? 'https') . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '');
+
+        $ch = curl_init($base . '/brokerinfo/connections');
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true, CURLOPT_POSTFIELDS => '{}',
+            CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $key],
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $cerr = curl_error($ch);
+        curl_close($ch);
+        if ($resp === false) return ['error' => $cerr ?: 'Could not reach the control plane.'];
+        $d = is_string($resp) ? json_decode($resp, true) : null;
+        if ($code === 200 && isset($d['connections'])) return ['connections' => $d['connections']];
+        return ['error' => $d['message'] ?? "Connection lookup failed (HTTP $code)."];
+    }
+
     private static function config(string $dir): array {
         $ini = @parse_ini_file($dir . '/conf/config.ini', true) ?: [];
         return ['baseurl' => rtrim((string) ($ini['app']['baseurl'] ?? ''), '/'),

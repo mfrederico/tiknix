@@ -108,6 +108,8 @@ if ($__loggedIn) {
           <div class="ui-nav-heading">Admin</div>
           <?php if (builder_tools_enabled()): ?>
             <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
+          <?php else: /* inside an instance: the read-only "what am I wired to" view */ ?>
+            <a class="ui-nav-link<?= $__active('/integrations') ?>" href="/integrations"><i class="bi bi-plug"></i> Integrations</a>
           <?php endif; ?>
           <a class="ui-nav-link<?= $__active('/admin') ?>" href="/admin"><i class="bi bi-shield-lock"></i> Admin</a>
           <a class="ui-nav-link<?= $__active('/security') ?>" href="/security"><i class="bi bi-shield-check"></i> Security</a>

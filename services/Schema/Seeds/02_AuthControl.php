@@ -104,6 +104,10 @@ $defaults = [
     ['mcpregistry', '*', 50, 'MCP Server Registry management'],
     // The Integrations hub is MEMBER (100) — instance owners manage their OWN instance's
     // connectors + pipelines + durable objects (Connections::index is ownedInstance-scoped).
+    // An instance asks core "what am I connected to?" with its own broker key (metadata only).
+    ['brokerinfo', 'connections', 101, 'Instance connection lookup (self-authenticating broker key)'],
+    // The instance-side read-only Integrations view (runs IN the instance).
+    ['integrations', 'index', 50, 'Instance-side integrations view (ADMIN)'],
     ['connections', 'index', 100, 'Integrations hub (owner-scoped)'],
     ['connections', 'pipelinerun', 100, 'Trigger one of the instance pipelines (owner)'],
     ['connections', 'connectkey', 100, 'Connect an api_key connector from a validated pasted key'],

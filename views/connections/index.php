@@ -43,7 +43,7 @@ $isConnected = function (array $card): bool {
 
   <?php if (!empty($instances) && count($instances) > 1): ?>
     <div class="mb-4">
-      <div class="text-uppercase text-body-secondary small fw-semibold mb-2" style="letter-spacing:.06em">Store</div>
+      <div class="text-uppercase text-body-secondary small fw-semibold mb-2" style="letter-spacing:.06em">Instance</div>
       <div class="d-flex flex-wrap gap-2">
         <?php foreach ($instances as $i): $active = (int)$i->id === $iid; ?>
           <a href="/connections?id=<?= (int)$i->id ?>" class="btn btn-sm <?= $active ? 'btn-primary' : 'btn-outline-secondary' ?>">

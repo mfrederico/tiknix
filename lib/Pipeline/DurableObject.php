@@ -38,7 +38,7 @@ class DurableObject {
         if (!$b || !$b->id) {
             $b = Bean::dispense('dobject');
             $b->type = $type; $b->objKey = $key; $b->slug = $slug;
-            $b->stateJson = '{}'; $b->wakeAt = 0; $b->lockedAt = 0; $b->lockToken = '';
+            $b->stateJson = '{}'; $b->wakeAt = 0; $b->lockedAt = 0; $b->lockToken = ''; $b->expiresAt = 0;
             $b->createdAt = time(); $b->updatedAt = time();
             Bean::store($b);
         } elseif ($slug !== '' && (string) $b->slug !== $slug) {
@@ -94,6 +94,32 @@ class DurableObject {
         $this->bean->wakeAt = ($ts > 0) ? $ts : 0;
     }
     public function clearAlarm(): void { $this->bean->wakeAt = 0; }
+
+    /** Opt into a TTL — the object is GC'd once expired. $seconds<=0 clears it (lives forever). */
+    public function setTtl(int $seconds): void {
+        $this->bean->expiresAt = $seconds > 0 ? time() + $seconds : 0;
+    }
+
+    /** GC: delete objects whose TTL has expired (only ones that opted into a TTL). Returns count. */
+    public static function sweepExpired(int $limit = 500): int {
+        $expired = Bean::find('dobject', 'expires_at > 0 AND expires_at <= ? ORDER BY expires_at LIMIT ' . (int) $limit, [time()]);
+        $n = 0;
+        foreach ($expired as $o) { Bean::trash($o); $n++; }
+        return $n;
+    }
+
+    /** GC: prune finished pipeline runs (+ their step-runs) older than $days. Returns runs removed. */
+    public static function prunePipeRuns(int $days = 30, int $limit = 500): int {
+        if ($days < 1) return 0;
+        $cutoff = date('Y-m-d H:i:s', time() - $days * 86400);
+        $runs = Bean::find('piperun', "status IN ('completed','failed') AND finished_at != '' AND finished_at < ? ORDER BY id LIMIT " . (int) $limit, [$cutoff]);
+        $n = 0;
+        foreach ($runs as $r) {
+            foreach (Bean::find('pipesteprun', 'run_id = ?', [(int) $r->id]) as $s) Bean::trash($s);
+            Bean::trash($r); $n++;
+        }
+        return $n;
+    }
 
     public function save(): void {
         $this->bean->stateJson = json_encode($this->state, JSON_UNESCAPED_SLASHES);

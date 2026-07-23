@@ -60,6 +60,7 @@ class ObjectRunner {
 
     /** Fire onAlarm for every due object in this instance. */
     public function tick(): array {
+        $this->ensureHousekeeping();          // core dogfoods the runtime: a self-perpetuating GC object
         $fired = [];
         foreach (DurableObject::due() as $b) {
             $slug = (string) $b->slug; $key = (string) $b->objKey;
@@ -87,7 +88,20 @@ class ObjectRunner {
             unset($out['__destroy']);
         }
         if (array_key_exists('__alarm', $out)) { $obj->setAlarm($out['__alarm']); unset($out['__alarm']); }
+        if (array_key_exists('__ttl', $out))   { $obj->setTtl((int) $out['__ttl']); unset($out['__ttl']); }
         if ($out) $obj->mergeState($out);
         return false;
+    }
+
+    /**
+     * If this app owns a `housekeeping` pipeline and its object isn't running yet,
+     * kick it off once. The object's handler re-arms its own alarm, so from then on
+     * the normal tick keeps it going — core using the primitive for its own upkeep.
+     */
+    private function ensureHousekeeping(): void {
+        if (!(new Loader($this->root))->get('housekeeping')) return;
+        $existing = \app\Bean::findOne('dobject', 'type = ?', ['pipe:housekeeping']);
+        if ($existing && $existing->id) return;
+        try { $this->deliver('housekeeping', 'main', [], 'alarm'); } catch (\Throwable $e) {}
     }
 }

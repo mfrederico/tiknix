@@ -59,7 +59,13 @@ $badge = ['production' => 'success', 'staging' => 'warning', 'development' => 's
     <div class="alert alert-light border py-2 small">No pipelines in this instance yet.</div>
   <?php else: ?>
     <div class="row g-3">
+      <?php $base = rtrim((string)($baseUrl ?? ''), '/'); ?>
       <?php foreach ($pipelines as $p): ?>
+        <?php
+          $toolName = 'tiknix:pipe_' . $p['slug'];
+          $mcpUrl   = ($base !== '' ? $base : '') . '/mcp/message';
+          $apiUrl   = ($base !== '' ? $base : '') . '/pipeline/api/' . $p['slug'];
+        ?>
         <div class="col-md-6">
           <div class="card h-100"><div class="card-body">
             <div class="fw-semibold"><?= htmlspecialchars($p['name']) ?>
@@ -70,6 +76,31 @@ $badge = ['production' => 'success', 'staging' => 'warning', 'development' => 's
             </div>
             <div class="text-body-secondary small"><code><?= htmlspecialchars($p['slug']) ?></code> · <?= (int)$p['steps'] ?> step<?= (int)$p['steps'] === 1 ? '' : 's' ?></div>
             <?php if ($p['description'] !== ''): ?><div class="text-body-secondary small mt-1"><?= htmlspecialchars($p['description']) ?></div><?php endif; ?>
+
+            <?php if (!empty($p['expose_tool']) || !empty($p['expose_api'])): ?>
+              <div class="mt-2 border-top pt-2 d-flex flex-column gap-2">
+                <?php if (!empty($p['expose_tool'])): ?>
+                  <div>
+                    <div class="d-flex align-items-center gap-1">
+                      <span class="badge text-bg-info flex-shrink-0">MCP tool</span>
+                      <code class="small text-truncate flex-grow-1" title="<?= htmlspecialchars($toolName) ?>"><?= htmlspecialchars($toolName) ?></code>
+                      <button class="btn btn-sm btn-link p-0 text-decoration-none flex-shrink-0" type="button" data-copy="<?= htmlspecialchars($toolName) ?>" title="Copy tool name"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                    <div class="form-text mt-0">Auto-listed on <code><?= htmlspecialchars($mcpUrl) ?></code> via <code>tools/list</code>; called with <code>tools/call</code>.</div>
+                  </div>
+                <?php endif; ?>
+                <?php if (!empty($p['expose_api'])): ?>
+                  <div>
+                    <div class="d-flex align-items-center gap-1">
+                      <span class="badge text-bg-info flex-shrink-0">REST</span>
+                      <code class="small text-truncate flex-grow-1" title="POST <?= htmlspecialchars($apiUrl) ?>"><span class="text-body-secondary">POST</span> <?= htmlspecialchars($apiUrl) ?></code>
+                      <button class="btn btn-sm btn-link p-0 text-decoration-none flex-shrink-0" type="button" data-copy="<?= htmlspecialchars($apiUrl) ?>" title="Copy endpoint URL"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                    <div class="form-text mt-0"><code>Authorization: Bearer pk_…</code> · body is the context JSON · <code>?async=1</code> for a poll-able run.</div>
+                  </div>
+                <?php endif; ?>
+              </div>
+            <?php endif; ?>
           </div></div>
         </div>
       <?php endforeach; ?>
@@ -96,3 +127,16 @@ $badge = ['production' => 'success', 'staging' => 'warning', 'development' => 's
   <?php endif; ?>
 
 </div>
+
+<script>
+(function(){
+  document.querySelectorAll('[data-copy]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var txt = btn.getAttribute('data-copy') || '';
+      var done = function(){ var i = btn.querySelector('i'); if (i){ i.className = 'bi bi-check-lg'; setTimeout(function(){ i.className = 'bi bi-clipboard'; }, 1200); } };
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function(){ window.prompt('Copy:', txt); }); }
+      else { window.prompt('Copy:', txt); }
+    });
+  });
+})();
+</script>

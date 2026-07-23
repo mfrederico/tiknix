@@ -38,6 +38,9 @@ class Integrations extends Control {
             'pipelines'      => InstanceAutomations::pipelines($root),
             'durableObjects' => InstanceAutomations::durableObjects($root),
             'appName'        => basename($root),
+            // This instance's own public base URL — used to show the concrete
+            // MCP tool + REST API paths on the exposed pipeline cards.
+            'baseUrl'        => rtrim((string) (Flight::get('app.baseurl') ?: ''), '/'),
         ]);
     }
 }

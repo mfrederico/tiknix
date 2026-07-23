@@ -102,10 +102,13 @@ $defaults = [
     ['leads', 'data', 50, 'Leads DataTable AJAX feed'],
     ['leads', 'delete', 50, 'Delete a lead / purge bot-flagged leads'],
     ['mcpregistry', '*', 50, 'MCP Server Registry management'],
-    // Matches the level of the other connections::* rows (e.g. connections::add = 50).
-    ['connections', 'connectkey', 50, 'Connect an api_key connector from a validated pasted key'],
-    ['connections', 'webhooksecret', 50, 'Set/clear a connection webhook verification secret'],
-    ['connections', 'publishfeed', 50, 'Publish a public social showcase page for a social connection'],
+    // The Integrations hub is MEMBER (100) — instance owners manage their OWN instance's
+    // connectors + pipelines + durable objects (Connections::index is ownedInstance-scoped).
+    ['connections', 'index', 100, 'Integrations hub (owner-scoped)'],
+    ['connections', 'pipelinerun', 100, 'Trigger one of the instance pipelines (owner)'],
+    ['connections', 'connectkey', 100, 'Connect an api_key connector from a validated pasted key'],
+    ['connections', 'webhooksecret', 100, 'Set/clear a connection webhook verification secret'],
+    ['connections', 'publishfeed', 100, 'Publish a public social showcase page for a social connection'],
 
     // NOTE: the platform storefront (shop/ecommerce/store/products/catalog/category)
     // was removed — the store is now the shop.tiknix sidecar (per-instance). The

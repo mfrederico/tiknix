@@ -90,6 +90,7 @@ if ($__loggedIn) {
           <div class="ui-nav-heading">Workspace</div>
           <a class="ui-nav-link<?= $__active('/workbench') ?>" href="/workbench"><i class="bi bi-hammer"></i> AI Projects</a>
           <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> Advanced Builder</a>
+          <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Integrations</a>
         <?php endif; ?>
 
         <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>
@@ -105,7 +106,6 @@ if ($__loggedIn) {
 
         <?php if ($__isAdmin): ?>
           <div class="ui-nav-heading">Admin</div>
-          <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
           <?php if (builder_tools_enabled()): ?>
             <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
           <?php endif; ?>

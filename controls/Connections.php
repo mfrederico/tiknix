@@ -422,13 +422,34 @@ class Connections extends Control {
             ];
         }
 
+        // The instance's automations — pipelines (files) + live durable objects (read-only).
+        $dir = $this->instanceDir($inst->slug);
+        $pipelines      = \app\InstanceAutomations::pipelines($dir);
+        $durableObjects = \app\InstanceAutomations::durableObjects($dir);
+
         $this->render('connections/index', [
-            'instance'      => $inst,
-            'instances'     => $instances,
-            'cards'         => $cards,
-            'environments'  => ['development', 'production'],
-            'categoryOrder' => ['Deploy', 'Payments', 'Stores', 'Social', 'Other'],
+            'title'          => 'Integrations',
+            'instance'       => $inst,
+            'instances'      => $instances,
+            'cards'          => $cards,
+            'pipelines'      => $pipelines,
+            'durableObjects' => $durableObjects,
+            'environments'   => ['development', 'production'],
+            'categoryOrder'  => ['Deploy', 'Payments', 'Stores', 'Social', 'Other'],
         ]);
+    }
+
+    /** POST /connections/pipelinerun — trigger one of the instance's pipelines (owner-scoped). */
+    public function pipelinerun($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { Flight::jsonError('Instance not found.', 404); return; }
+        $slug = (string) $this->getParam('slug');
+        if ($slug === '') { Flight::jsonError('slug is required.', 400); return; }
+        $res = \app\InstanceAutomations::trigger($this->instanceDir($inst->slug), $slug);
+        if (!empty($res['error'])) { Flight::jsonError($res['error'], 400); return; }
+        Flight::jsonSuccess(['run_id' => $res['run_id']], 'Pipeline triggered.');
     }
 
     /**

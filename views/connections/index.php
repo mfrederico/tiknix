@@ -30,14 +30,14 @@ $isConnected = function (array $card): bool {
   <div class="d-flex align-items-center gap-2 mb-3">
     <i class="bi bi-plug fs-3"></i>
     <div>
-      <h1 class="h4 fw-bold mb-0">Connections</h1>
+      <h1 class="h4 fw-bold mb-0">Integrations</h1>
       <div class="text-body-secondary small">for <code><?= htmlspecialchars(($instance->slug) ?? '') ?>.tiknix</code></div>
     </div>
   </div>
 
   <div class="alert alert-light border py-2 small mb-4">
     <i class="bi bi-shield-check me-1"></i>
-    One place to connect everything this instance uses — deploy targets, payments, and stores.
+    One place for everything this instance is wired to — connectors, pipelines, and durable objects.
     Keys never leave the platform, and you can disconnect any of them at any time.
   </div>
 
@@ -210,7 +210,87 @@ $isConnected = function (array $card): bool {
       <?php endforeach; ?>
     </div>
   <?php endforeach; ?>
+
+  <!-- ===================== Pipelines ===================== -->
+  <div class="d-flex align-items-center justify-content-between mt-5 mb-2">
+    <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-0" style="letter-spacing:.06em">Pipelines &amp; automations</h2>
+    <a href="/sidecar/launch/pipelines" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener"><i class="bi bi-pencil-square me-1"></i>Open editor</a>
+  </div>
+  <?php if (empty($pipelines)): ?>
+    <div class="alert alert-light border py-2 small">No pipelines yet. Build one — a scheduled job, a REST endpoint, or a stateful <em>durable object</em> — in the editor.</div>
+  <?php else: ?>
+    <div class="row g-3">
+      <?php foreach ($pipelines as $p): ?>
+        <div class="col-md-6">
+          <div class="card h-100"><div class="card-body">
+            <div class="d-flex align-items-start gap-3">
+              <div class="rounded-circle bg-primary-subtle d-flex align-items-center justify-content-center flex-shrink-0" style="width:44px;height:44px">
+                <i class="bi bi-<?= $p['stateful'] ? 'box' : 'diagram-2' ?> fs-5 text-primary"></i>
+              </div>
+              <div class="flex-grow-1 min-w-0">
+                <div class="fw-semibold"><?= htmlspecialchars($p['name']) ?>
+                  <?php if ($p['stateful']): ?><span class="badge text-bg-secondary ms-1">object</span><?php endif; ?>
+                  <?php if ($p['expose_tool']): ?><span class="badge text-bg-info ms-1">tool</span><?php endif; ?>
+                  <?php if ($p['expose_api']): ?><span class="badge text-bg-info ms-1">api</span><?php endif; ?>
+                  <?php if ($p['cron'] !== ''): ?><span class="badge text-bg-light ms-1" title="<?= htmlspecialchars($p['cron']) ?>"><i class="bi bi-clock"></i></span><?php endif; ?>
+                </div>
+                <div class="text-body-secondary small"><code><?= htmlspecialchars($p['slug']) ?></code> · <?= (int)$p['steps'] ?> step<?= (int)$p['steps'] === 1 ? '' : 's' ?><?php if ($p['description'] !== ''): ?> · <?= htmlspecialchars($p['description']) ?><?php endif; ?></div>
+                <div class="mt-2 d-flex gap-2">
+                  <?php if (!$p['stateful']): ?>
+                    <button class="btn btn-sm btn-outline-success" data-run-pipe="<?= htmlspecialchars($p['slug']) ?>"><i class="bi bi-play-fill"></i> Run</button>
+                  <?php else: ?>
+                    <span class="text-body-secondary small align-self-center"><i class="bi bi-box"></i> durable object — send messages in the editor</span>
+                  <?php endif; ?>
+                </div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
+
+  <!-- ===================== Durable objects ===================== -->
+  <?php if (!empty($durableObjects)): ?>
+    <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-5" style="letter-spacing:.06em">Durable objects <span class="badge text-bg-secondary ms-1"><?= count($durableObjects) ?></span></h2>
+    <div class="row g-3">
+      <?php foreach ($durableObjects as $o): ?>
+        <div class="col-md-6">
+          <div class="card h-100"><div class="card-body">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="fw-semibold text-truncate"><code><?= htmlspecialchars($o['type']) ?></code> : <code><?= htmlspecialchars($o['key']) ?></code></div>
+              <?php if ($o['wake_at'] > 0): ?><span class="badge text-bg-light flex-shrink-0" title="next alarm"><i class="bi bi-alarm"></i> <?= htmlspecialchars(date('H:i', $o['wake_at'])) ?></span><?php endif; ?>
+            </div>
+            <pre class="small bg-body-tertiary rounded p-2 mt-2 mb-1" style="max-height:8rem;overflow:auto"><?= htmlspecialchars(json_encode($o['state'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) ?></pre>
+            <div class="text-body-secondary small">updated <?= htmlspecialchars(date('Y-m-d H:i', $o['updated_at'])) ?></div>
+          </div></div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
 </div>
+
+<script>
+(function(){
+  var csrf = '<?= function_exists("csrf_token") ? csrf_token() : "" ?>';
+  var iid  = <?= (int)($instance->id ?? 0) ?>;
+  document.querySelectorAll('[data-run-pipe]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var slug = btn.getAttribute('data-run-pipe');
+      btn.disabled = true;
+      fetch('/connections/pipelinerun', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+        body: new URLSearchParams({csrf_token: csrf, id: iid, slug: slug}).toString()
+      }).then(function(r){ return r.json(); }).then(function(j){
+        btn.disabled = false;
+        if (j && j.success) { btn.className = 'btn btn-sm btn-success'; btn.innerHTML = '<i class="bi bi-check-lg"></i> Queued #' + (j.data && j.data.run_id ? j.data.run_id : ''); }
+        else { alert((j && j.message) || 'Run failed'); }
+      }).catch(function(){ btn.disabled = false; alert('Run failed'); });
+    });
+  });
+})();
+</script>
 
 <script>
 (function(){

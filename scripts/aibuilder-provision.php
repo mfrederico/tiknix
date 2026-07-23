@@ -81,6 +81,26 @@ file_put_contents("$ROOT/$cfgRel", $ini);   // tracked by provision-instance.sh 
 file_put_contents("$ROOT/conf/config.ini", $ini); // what the instance app actually boots on
 echo "  wrote $cfgRel + conf/config.ini (db: $dbRel, minted [pipeline] trigger_secret)\n";
 
+// Scrub EVERY inherited secret conf/*.ini. The clone carries the source app's
+// untracked conf/*.ini (broker capability key, connector OAuth app secrets for
+// github/shopify/stripe, mailer key, aibuilder config) — none belong to a fresh
+// instance, and inheriting them leaks the SOURCE's credentials cross-tenant (the
+// broker key is the worst: it would let this instance call the MCP broker AS the
+// source instance and use ITS stores). Reset each from its tracked *.example.ini
+// (empty/placeholder). config.ini is handled above (instance-specific templating),
+// so config.* is skipped. Per-instance secrets are then (re)written on demand — e.g.
+// the broker key on first connect via BrokerService::ensureInstanceConfig.
+// mailgun is intentionally NOT reset: instances currently send transactional email
+// (password resets, pipeline `notify` steps) through the shared platform mailer, so
+// wiping it would break email. Revisit if mail moves behind the broker like stores.
+$keepShared = ['config', 'mailgun'];
+foreach (glob("$ROOT/conf/*.example.ini") ?: [] as $tpl) {
+    $name = basename($tpl, '.example.ini');            // e.g. broker, github, shopify, config
+    if (in_array($name, $keepShared, true) || strncmp($name, 'config.', 7) === 0) continue;
+    @copy($tpl, "$ROOT/conf/$name.ini");
+    echo "  reset conf/$name.ini from template\n";
+}
+
 // --- 1c) runtime dirs -------------------------------------------------------
 // Create the dirs the app writes to at runtime, upfront and owned by whoever
 // runs this provisioner (the instance owner). bootstrap.php auto-creates the log

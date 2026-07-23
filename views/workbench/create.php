@@ -3,7 +3,7 @@
         <div class="col-lg-8">
             <div class="mb-4">
                 <a href="/workbench" class="text-decoration-none">
-                    <i class="bi bi-arrow-left"></i> Back to Workbench
+                    <i class="bi bi-arrow-left"></i> Back to AI Projects
                 </a>
             </div>
 
@@ -37,9 +37,9 @@
                                 <?php endforeach; ?>
                             </select>
                             <?php if (empty($instances)): ?>
-                                <div class="form-text text-warning"><i class="bi bi-exclamation-triangle"></i> You have no instances yet — provision one in the <a href="/aibuilder">AI Builder</a> first.</div>
+                                <div class="form-text text-warning"><i class="bi bi-exclamation-triangle"></i> You have no instances yet — provision one in the <a href="/aibuilder">Advanced Builder</a> first.</div>
                             <?php else: ?>
-                                <div class="form-text">Which AI Builder instance this task targets.</div>
+                                <div class="form-text">Which Advanced Builder instance this task targets.</div>
                             <?php endif; ?>
                         </div>
 
@@ -183,7 +183,7 @@
                         </div>
                         <div class="form-text mt-2">
                             <strong>Create Task</strong> saves a single task. <strong>Decompose into plan</strong>
-                            feeds the Description (e.g. your uploaded <code>.md</code> goal document) to the AI Builder
+                            feeds the Description (e.g. your uploaded <code>.md</code> goal document) to the Advanced Builder
                             planner, which breaks it into a multi-agent plan for the chosen instance to review, approve, and build.
                         </div>
                     </form>

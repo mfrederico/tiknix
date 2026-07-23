@@ -4,7 +4,7 @@
         <h1>Welcome back, <?= htmlspecialchars($member['username'] ?? 'User') ?></h1>
         <div class="ui-sub">Your central hub for every feature and tool available to you.</div>
     </div>
-    <a href="/workbench" class="btn btn-primary"><i class="bi bi-rocket-takeoff"></i> Open Workbench</a>
+    <a href="/workbench" class="btn btn-primary"><i class="bi bi-rocket-takeoff"></i> Open AI Projects</a>
 </div>
 
 <!-- Workbench feature panel -->
@@ -14,7 +14,7 @@
             <div class="col-md-8">
                 <h3 class="text-primary mb-2"><i class="bi bi-hammer me-2"></i>Build Apps with Claude</h3>
                 <p class="text-secondary mb-3">
-                    Use the Workbench to create, manage, and deploy applications powered by Claude AI.
+                    Use AI Projects to create, manage, and deploy applications powered by Claude AI.
                     Define tasks, let Claude write the code, and watch your ideas come to life.
                 </p>
                 <ul class="list-unstyled mb-3 small">
@@ -22,7 +22,7 @@
                     <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Claude writes code following your project conventions</li>
                     <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Collaborate with your team on shared tasks</li>
                 </ul>
-                <a href="/workbench" class="btn btn-primary"><i class="bi bi-rocket-takeoff"></i> Open Workbench</a>
+                <a href="/workbench" class="btn btn-primary"><i class="bi bi-rocket-takeoff"></i> Open AI Projects</a>
                 <a href="/teams" class="btn btn-outline-primary ms-2"><i class="bi bi-people"></i> Manage Teams</a>
             </div>
             <div class="col-md-4 text-center d-none d-md-block">
@@ -58,7 +58,7 @@
             <div class="ui-panel-header"><h3><i class="bi bi-lightning-charge-fill text-warning me-2"></i>Quick Actions</h3></div>
             <div class="ui-panel-body">
                 <div class="d-grid gap-2">
-                    <a href="/workbench" class="btn btn-primary"><i class="bi bi-hammer"></i> Workbench</a>
+                    <a href="/workbench" class="btn btn-primary"><i class="bi bi-hammer"></i> AI Projects</a>
                     <a href="/teams" class="btn btn-outline-primary"><i class="bi bi-people"></i> My Teams</a>
                     <a href="/member/profile" class="btn btn-outline-secondary"><i class="bi bi-person"></i> My Profile</a>
                     <a href="/member/settings" class="btn btn-outline-secondary"><i class="bi bi-gear"></i> Settings</a>
@@ -97,7 +97,7 @@
         <p class="text-secondary">This is your main dashboard where you can access all the features available to you based on your permissions.</p>
         <h6 class="mt-3">Available features</h6>
         <ul class="text-secondary">
-            <li><strong class="text-body">Workbench</strong> — create and manage tasks for Claude to build your apps</li>
+            <li><strong class="text-body">AI Projects</strong> — create and manage tasks for Claude to build your apps</li>
             <li><strong class="text-body">Teams</strong> — collaborate with others on shared projects</li>
             <li><strong class="text-body">Profile Management</strong> — view and edit your personal information</li>
             <li><strong class="text-body">Settings</strong> — customize your preferences and account settings</li>

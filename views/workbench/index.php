@@ -1,6 +1,6 @@
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2">Workbench</h1>
+        <h1 class="h2">AI Projects</h1>
         <div>
             <a href="/firehose" class="btn btn-outline-danger me-2" title="Errors captured live from your instances">
                 <i class="bi bi-fire"></i> Firehose

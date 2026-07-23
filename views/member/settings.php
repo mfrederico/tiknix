@@ -71,7 +71,7 @@
                         <?php if (!empty($ai_engines)): ?>
                         <hr class="my-4">
 
-                        <h5 class="mb-3">AI Builder — Model Preferences</h5>
+                        <h5 class="mb-3">Advanced Builder — Model Preferences</h5>
                         <p class="text-muted small mb-3">
                             Choose which model each stage uses for runs <em>you</em> trigger. Leave a field
                             blank to inherit the system default (shown as the placeholder); type a model name

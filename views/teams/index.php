@@ -3,7 +3,7 @@
         <h1 class="h2">My Teams</h1>
         <div>
             <a href="/workbench" class="btn btn-outline-secondary me-2">
-                <i class="bi bi-kanban"></i> Workbench
+                <i class="bi bi-kanban"></i> AI Projects
             </a>
             <a href="/teams/create" class="btn btn-primary">
                 <i class="bi bi-plus-lg"></i> Create Team

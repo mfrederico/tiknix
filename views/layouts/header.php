@@ -88,8 +88,8 @@ if ($__loggedIn) {
       <?php if ($__loggedIn): ?>
         <?php if (builder_tools_enabled()): ?>
           <div class="ui-nav-heading">Workspace</div>
-          <a class="ui-nav-link<?= $__active('/workbench') ?>" href="/workbench"><i class="bi bi-hammer"></i> Workbench</a>
-          <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> AI Builder</a>
+          <a class="ui-nav-link<?= $__active('/workbench') ?>" href="/workbench"><i class="bi bi-hammer"></i> AI Projects</a>
+          <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> Advanced Builder</a>
         <?php endif; ?>
 
         <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>

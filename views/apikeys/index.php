@@ -178,7 +178,7 @@
                     <ul class="small text-muted mb-2">
                         <li><code>tiknix:list_users</code> - List users</li>
                         <li><code>tiknix:list_mcp_servers</code> - List servers</li>
-                        <li><code>tiknix:list_tasks</code> - Workbench tasks</li>
+                        <li><code>tiknix:list_tasks</code> - AI Projects tasks</li>
                         <li><code>tiknix:get_task</code> - Task details</li>
                         <li><code>tiknix:update_task</code> - Update task</li>
                     </ul>

@@ -77,11 +77,11 @@ class Docs extends BaseControls\Control {
             $markdown = file_get_contents($workbenchPath);
             $content = MarkdownParser::parse($markdown);
         } else {
-            $content = '<div class="alert alert-warning">Workbench documentation not found.</div>';
+            $content = '<div class="alert alert-warning">AI Projects documentation not found.</div>';
         }
 
         $this->render('docs/workbench', [
-            'title' => 'Workbench Documentation',
+            'title' => 'AI Projects Documentation',
             'content' => $content
         ]);
     }

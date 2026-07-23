@@ -52,7 +52,7 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
 <div class="container-fluid py-4">
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
     <div>
-      <h1 class="h3 fw-bold mb-0"><i class="bi bi-robot me-2"></i>AI Builder</h1>
+      <h1 class="h3 fw-bold mb-0"><i class="bi bi-robot me-2"></i>Advanced Builder</h1>
       <p class="text-body-secondary mb-0">Build software with AI. Every instance is sandboxed — checkpoint and roll back any change.</p>
     </div>
     <?php if ($ab_hasInstance): ?>
@@ -105,7 +105,7 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
                 </li>
               <?php endforeach; endif; ?>
               <li><hr class="dropdown-divider"></li>
-              <li><span class="dropdown-item-text small text-body-secondary">Members of any checked team get full use (build, run, checkpoint) and see its Workbench tasks. Only you can share, unshare, or delete.</span></li>
+              <li><span class="dropdown-item-text small text-body-secondary">Members of any checked team get full use (build, run, checkpoint) and see its AI Projects tasks. Only you can share, unshare, or delete.</span></li>
             </ul>
           </div>
           <span id="ab-share-msg" class="small"></span>
@@ -273,12 +273,12 @@ foreach ($instances as $__i) { if (!empty($__i->isDefault)) { $hasDefault = true
         <div class="card shadow-sm mt-3">
           <div class="card-header fw-semibold"><i class="bi bi-diagram-3 me-1"></i>Plan &amp; build</div>
           <div class="card-body">
-            <p class="text-body-secondary small mb-2">Decompose a goal into a multi-agent plan for this instance — grounded on its reuse inventory so tasks build on what already exists. Planning, review, approve &amp; build all live in the Workbench.</p>
+            <p class="text-body-secondary small mb-2">Decompose a goal into a multi-agent plan for this instance — grounded on its reuse inventory so tasks build on what already exists. Planning, review, approve &amp; build all live in AI Projects.</p>
             <div class="d-flex gap-2">
-              <a href="/workbench/create?instance_id=<?= (int)$selId ?>" class="btn btn-info btn-sm flex-fill"><i class="bi bi-diagram-3 me-1"></i>Plan &amp; build in the Workbench</a>
+              <a href="/workbench/create?instance_id=<?= (int)$selId ?>" class="btn btn-info btn-sm flex-fill"><i class="bi bi-diagram-3 me-1"></i>Plan &amp; build in AI Projects</a>
               <button id="ab-reuse-digest" class="btn btn-outline-secondary btn-sm text-nowrap" type="button" title="Preview the reuse inventory the planner is grounded on for this instance"><i class="bi bi-recycle me-1"></i>Reuse digest</button>
             </div>
-            <div class="text-body-secondary mt-2" style="font-size:.72rem">Preview this instance's <a href="#" id="ab-reuse-digest-link">reuse inventory</a>, or review generated plans in the <a href="/workbench" target="_blank">Workbench</a>, tagged to this instance.</div>
+            <div class="text-body-secondary mt-2" style="font-size:.72rem">Preview this instance's <a href="#" id="ab-reuse-digest-link">reuse inventory</a>, or review generated plans in <a href="/workbench" target="_blank">AI Projects</a>, tagged to this instance.</div>
           </div>
         </div>
       </div>

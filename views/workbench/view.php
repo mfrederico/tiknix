@@ -15,7 +15,7 @@ $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
                     <i class="bi bi-arrow-left"></i>
                     <?= !empty($task->instanceTag)
                         ? 'Back to ' . htmlspecialchars($task->instanceTag)
-                        : 'Back to Workbench' ?>
+                        : 'Back to AI Projects' ?>
                 </a>
             </div>
 

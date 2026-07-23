@@ -281,7 +281,7 @@ class Aibuilder extends Control {
 
         $cfg = $this->cfg();
         $this->render('aibuilder/index', [
-            'title'            => 'AI Builder',
+            'title'            => 'Advanced Builder',
             'instances'        => array_values($instances),
             'shareTeams'       => array_values($shareTeams),
             'ab_memberId'      => $mid,

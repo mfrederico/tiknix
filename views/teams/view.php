@@ -55,7 +55,7 @@
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-hdd-network me-1"></i>Instances</h5>
-                    <a href="/aibuilder" class="btn btn-sm btn-link">AI Builder</a>
+                    <a href="/aibuilder" class="btn btn-sm btn-link">Advanced Builder</a>
                 </div>
                 <div class="card-body">
                     <?php $teamInstances = $teamInstances ?? []; $myInstances = $myInstances ?? []; $sharedHereIds = array_map('intval', $sharedHereIds ?? []); $memberId = (int)($memberId ?? 0); ?>

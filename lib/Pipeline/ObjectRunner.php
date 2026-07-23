@@ -101,7 +101,10 @@ class ObjectRunner {
     private function ensureHousekeeping(): void {
         if (!(new Loader($this->root))->get('housekeeping')) return;
         $existing = \app\Bean::findOne('dobject', 'type = ?', ['pipe:housekeeping']);
-        if ($existing && $existing->id) return;
+        // Re-arm when the object exists but has NO alarm: if a bootstrap ever fails
+        // mid-run the object is left unarmed, and an exists-only check would never
+        // wake it again — the GC would silently die. This makes the loop self-healing.
+        if ($existing && $existing->id && (int) $existing->wakeAt > 0) return;
         try { $this->deliver('housekeeping', 'main', [], 'alarm'); } catch (\Throwable $e) {}
     }
 }

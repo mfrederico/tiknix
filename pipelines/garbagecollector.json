@@ -1,0 +1,10 @@
+{
+  "slug": "garbagecollector",
+  "name": "Garbage collector",
+  "description": "The instance's housekeeping durable object — ships on every instance and runs every gc_interval to sweep expired durable objects and prune old pipeline runs. EXTEND IT: open it in the editor and append your own cleanup steps (e.g. a shell step that deletes stale files in the run sandbox: `find {run_directory}/.. -type f -mmin +1440 -delete`). Scheduling is managed for you, so any steps you add just run on the same cadence.",
+  "stateful": true,
+  "gc_interval": "+1 hour",
+  "steps": [
+    { "name": "sweep", "type": "housekeep", "config": { "prune_days": 30 }, "on_success": "exit", "on_fail": "exit" }
+  ]
+}

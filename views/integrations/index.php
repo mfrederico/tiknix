@@ -20,8 +20,8 @@ $badge = ['production' => 'success', 'staging' => 'warning', 'development' => 's
 
   <div class="alert alert-light border py-2 small mb-4">
     <i class="bi bi-shield-check me-1"></i>
-    Read-only. Credentials never leave the control plane — this instance reaches them through the
-    broker and only ever receives data. Connect or change them from the control plane.
+    Credentials and connections can be managed in your main
+    <a href="https://tiknix.com/auth/login/" style="text-decoration:underline">tiknix workspace</a>.
   </div>
 
   <!-- ============ Connections (via the broker) ============ -->

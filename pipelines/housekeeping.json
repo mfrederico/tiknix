@@ -1,9 +1,0 @@
-{
-  "slug": "housekeeping",
-  "name": "Housekeeping (core)",
-  "description": "A self-perpetuating durable object: sweeps expired durable objects and prunes old pipeline runs, then re-arms its own alarm. Demonstrates core using the pipeline/durable-object runtime for its own upkeep.",
-  "stateful": true,
-  "steps": [
-    { "name": "sweep", "type": "housekeep", "config": { "prune_days": 30, "reschedule": "+1 hour" }, "on_success": "exit", "on_fail": "exit" }
-  ]
-}

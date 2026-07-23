@@ -210,7 +210,8 @@ class Introspector {
         // scheduled jobs, webhooks, agent tools, and stateful/long-lived logic.
         $out[] = '';
         $out[] = '### Automations — pipelines, durable objects & connectors (BUILDING BLOCKS; prefer over bespoke controllers)';
-        $stepTypes = array_keys(\app\Pipeline\StepRegistry::components());
+        $stepTypes = [];
+        foreach (\app\Pipeline\StepRegistry::components() as $t => $c) { if (empty($c['internal'])) $stepTypes[] = $t; }
         $out[] = '- **Pipeline steps** to compose (files at `pipelines/<slug>.json`; build via the `pipeline_components` + `pipeline_set` MCP tools): ' . implode(', ', $stepTypes);
         $pipes = [];
         try {

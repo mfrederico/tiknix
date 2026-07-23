@@ -15,10 +15,10 @@ class HousekeepStep implements StepInterface {
 
     public static function schema(): array {
         return [
-            'summary' => 'Sweep expired durable objects + prune old pipeline runs (core housekeeping).',
-            'fields'  => [
+            'summary'  => 'Sweep expired durable objects + prune old pipeline runs (the garbage collector\'s baseline sweep).',
+            'internal' => true,   // runtime plumbing — not offered as a general build block
+            'fields'   => [
                 ['name' => 'prune_days', 'label' => 'Prune runs older than (days)', 'type' => 'number', 'help' => 'Delete completed/failed runs older than this. Default 30.'],
-                ['name' => 'reschedule', 'label' => 'Re-arm alarm', 'type' => 'text', 'help' => 'When to run next, e.g. "+1 hour" — emitted as __alarm so the object self-perpetuates.'],
             ],
         ];
     }
@@ -27,9 +27,9 @@ class HousekeepStep implements StepInterface {
         $days   = max(1, (int) ($config['prune_days'] ?? 30));
         $swept  = DurableObject::sweepExpired();
         $pruned = DurableObject::prunePipeRuns($days);
+        // Scheduling is owned by the runtime (ObjectRunner::ensureGarbageCollector), so
+        // this step never re-arms — appended cleanup steps can't accidentally break the cadence.
         $out = ['swept_objects' => $swept, 'pruned_runs' => $pruned, 'at' => date('Y-m-d H:i:s')];
-        $reschedule = trim((string) ($config['reschedule'] ?? ''));
-        if ($reschedule !== '') $out['__alarm'] = $reschedule;
         return ['ok' => true, 'output' => $out, 'stdout' => json_encode($out, JSON_UNESCAPED_SLASHES), 'stderr' => '', 'exit' => 0];
     }
 }

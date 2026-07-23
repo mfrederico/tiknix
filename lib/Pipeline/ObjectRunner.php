@@ -60,11 +60,13 @@ class ObjectRunner {
 
     /** Fire onAlarm for every due object in this instance. */
     public function tick(): array {
-        $this->ensureHousekeeping();          // core dogfoods the runtime: a self-perpetuating GC object
+        $this->ensureGarbageCollector();      // core dogfoods the runtime: a scheduled GC object
         $fired = [];
+        $loader = new Loader($this->root);
         foreach (DurableObject::due() as $b) {
             $slug = (string) $b->slug; $key = (string) $b->objKey;
             if ($slug === '') continue;
+            if (!$loader->get($slug)) { \app\Bean::trash($b); continue; }   // orphaned (handler pipeline gone) → GC it
             try { $r = $this->deliver($slug, $key, [], 'alarm'); $fired[] = ['type' => $b->type, 'key' => $key, 'ok' => $r['ok'] ?? false]; }
             catch (\Throwable $e) { $fired[] = ['type' => $b->type, 'key' => $key, 'error' => $e->getMessage()]; }
         }
@@ -94,17 +96,18 @@ class ObjectRunner {
     }
 
     /**
-     * If this app owns a `housekeeping` pipeline and its object isn't running yet,
-     * kick it off once. The object's handler re-arms its own alarm, so from then on
-     * the normal tick keeps it going — core using the primitive for its own upkeep.
+     * Keep the instance's `garbagecollector` object scheduled. The runtime owns the
+     * cadence (not the handler's output), so it survives any cleanup steps a user
+     * appends: whenever the object is missing or unarmed, we arm it for the next
+     * `gc_interval`. The tick then fires it when due; after it runs (unarmed again),
+     * the next tick re-arms it. Self-healing, and immune to step-order changes.
      */
-    private function ensureHousekeeping(): void {
-        if (!(new Loader($this->root))->get('housekeeping')) return;
-        $existing = \app\Bean::findOne('dobject', 'type = ?', ['pipe:housekeeping']);
-        // Re-arm when the object exists but has NO alarm: if a bootstrap ever fails
-        // mid-run the object is left unarmed, and an exists-only check would never
-        // wake it again — the GC would silently die. This makes the loop self-healing.
-        if ($existing && $existing->id && (int) $existing->wakeAt > 0) return;
-        try { $this->deliver('housekeeping', 'main', [], 'alarm'); } catch (\Throwable $e) {}
+    private function ensureGarbageCollector(): void {
+        $def = (new Loader($this->root))->get('garbagecollector');
+        if (!$def) return;
+        $obj = \app\Bean::findOne('dobject', 'type = ?', ['pipe:garbagecollector']);
+        if ($obj && $obj->id && (int) $obj->wakeAt > 0) return;   // already scheduled
+        $interval = trim((string) ($def['gc_interval'] ?? '')) ?: '+1 hour';
+        DurableObject::arm('pipe:garbagecollector', 'main', 'garbagecollector', $interval);
     }
 }

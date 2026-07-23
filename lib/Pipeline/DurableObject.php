@@ -129,6 +129,23 @@ class DurableObject {
 
     public function destroy(): void { Bean::trash($this->bean); }
 
+    /**
+     * Ensure (type,key) exists and is scheduled: if it's currently UNARMED, set its
+     * alarm to $when. Used to keep a recurring object (the garbage collector) on a
+     * fixed cadence independent of what its handler outputs — so appended steps can't
+     * break the schedule. No-op if the object is busy (a run/tick will re-schedule).
+     */
+    public static function arm(string $type, string $key, string $slug, $when): void {
+        $o = self::open($type, $key, $slug);
+        if (!$o->acquire()) return;
+        try {
+            $o->reload();
+            if ($o->wakeAt() <= 0) { $o->setAlarm($when); $o->save(); }
+        } finally {
+            $o->release();
+        }
+    }
+
     /** Objects whose alarm is due (for the tick). */
     public static function due(?int $now = null): array {
         $now = $now ?? time();

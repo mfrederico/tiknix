@@ -24,6 +24,11 @@ $isConnected = function (array $card): bool {
     foreach ($card['connections'] as $cn) { if (!empty($cn['enabled']) && empty($cn['revoked'])) return true; }
     return false;
 };
+
+// Pipelines that a GitHub push would fire (trigger.github) — surfaced on the GitHub
+// deploy card so setting up the webhook has a visible payoff, and badged in the list.
+$ghPipes = [];
+foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
 ?>
 <div class="container py-4" style="max-width:960px">
 
@@ -147,6 +152,30 @@ $isConnected = function (array $card): bool {
                         </form>
                         <div class="form-text ms-1">Publish this account's reels &amp; photos to a public page.</div>
                       <?php endif; ?>
+
+                      <?php // --- GitHub push→deploy webhook --- ?>
+                      <?php if (($card['key'] ?? '') === 'github' && empty($cn['revoked'])): ?>
+                        <div class="mt-2 pt-2 border-top" style="max-width:520px">
+                          <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <button class="btn btn-sm btn-outline-<?= !empty($cn['webhookSet']) ? 'secondary' : 'dark' ?>" data-github-webhook>
+                              <i class="bi bi-<?= !empty($cn['webhookSet']) ? 'arrow-repeat' : 'broadcast-pin' ?> me-1"></i><?= !empty($cn['webhookSet']) ? 'Re-provision deploy webhook' : 'Set up deploy webhook' ?>
+                            </button>
+                            <?php if (!empty($cn['webhookSet'])): ?>
+                              <span class="badge bg-success-subtle text-success-emphasis border">Active<?php if (!empty($cn['webhookHint'])): ?> · ending <code>…<?= htmlspecialchars($cn['webhookHint']) ?></code><?php endif; ?></span>
+                            <?php endif; ?>
+                          </div>
+                          <div class="form-text ms-1">
+                            <?php if (empty($ghPipes)): ?>
+                              A push to this repo will call <code>/webhook/github</code> — but no pipeline listens for it yet. Add a <code>trigger.github</code> to a pipeline in the editor to deploy on push.
+                            <?php else: ?>
+                              A push fires <?= count($ghPipes) ?> pipeline<?= count($ghPipes) === 1 ? '' : 's' ?>:
+                              <?php $ghSlugs = array_map(fn($gp) => '<code>' . htmlspecialchars($gp['slug']) . '</code>', $ghPipes); ?>
+                              <?= implode(', ', $ghSlugs) ?>.
+                              Needs a GitHub token with <code>admin:repo_hook</code>.
+                            <?php endif; ?>
+                          </div>
+                        </div>
+                      <?php endif; ?>
                     </li>
                   <?php endforeach; ?>
                 </ul>
@@ -233,6 +262,7 @@ $isConnected = function (array $card): bool {
                   <?php if ($p['expose_tool']): ?><span class="badge text-bg-info ms-1">tool</span><?php endif; ?>
                   <?php if ($p['expose_api']): ?><span class="badge text-bg-info ms-1">api</span><?php endif; ?>
                   <?php if ($p['cron'] !== ''): ?><span class="badge text-bg-light ms-1" title="<?= htmlspecialchars($p['cron']) ?>"><i class="bi bi-clock"></i></span><?php endif; ?>
+                  <?php if (!empty($p['github'])): $ghb = $p['github']; $ghBr = is_array($ghb['branches'] ?? null) ? implode(', ', $ghb['branches']) : 'any branch'; ?><span class="badge text-bg-dark ms-1" title="Fires on GitHub push (<?= htmlspecialchars($ghBr) ?>)"><i class="bi bi-github"></i> push</span><?php endif; ?>
                 </div>
                 <div class="text-body-secondary small"><code><?= htmlspecialchars($p['slug']) ?></code> · <?= (int)$p['steps'] ?> step<?= (int)$p['steps'] === 1 ? '' : 's' ?><?php if ($p['description'] !== ''): ?> · <?= htmlspecialchars($p['description']) ?><?php endif; ?></div>
                 <div class="mt-2 d-flex gap-2">
@@ -353,6 +383,21 @@ $isConnected = function (array $card): bool {
           alert((j.message || 'Published') + (j.data && typeof j.data.items === 'number' ? ' — ' + j.data.items + ' item(s).' : ''));
         } else { alert((j && j.message) || 'Could not publish'); }
       }).catch(function(){ if (btn) btn.disabled = false; alert('Could not publish'); });
+    });
+  });
+  document.querySelectorAll('[data-github-webhook]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var iid = <?= (int)($instance->id ?? 0) ?>;
+      var orig = btn.innerHTML;
+      btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Provisioning…';
+      fetch('/connections/githubwebhook', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+        body: new URLSearchParams({csrf_token: csrf, id: iid}).toString()
+      }).then(r=>r.json()).then(function(j){
+        if (j && j.success) { location.reload(); }
+        else { alert((j && j.message) || 'Could not set up the webhook'); btn.disabled = false; btn.innerHTML = orig; }
+      }).catch(function(){ alert('Could not set up the webhook'); btn.disabled = false; btn.innerHTML = orig; });
     });
   });
   document.querySelectorAll('[data-copy]').forEach(function(btn){

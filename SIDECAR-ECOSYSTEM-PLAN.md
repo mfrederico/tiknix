@@ -194,3 +194,26 @@ start.
 `lib/Sidecar/*` (now `tiknix/sidecar-kit`), `views/sidecar/app.php`; memories
 `connector-integrations-architecture` (Tier-3 custody/broker), `core-primitive-and-nav-rename`,
 `sidecar-plugins`, `sidecar-ecosystem-plan`.
+
+---
+
+## Appendix — Workspace sidecar data model (LOCKED 2026-07-24)
+
+**Per-instance, sidecar-owned, RedBean DB selector.** Each instance has its own
+`{instance}/data/workspace.db` (gitignored — task text/agent logs never hit the customer's
+repo). The **workspace sidecar is the exclusive reader/writer**; nothing else touches it.
+Same primitive as the pipeline editor (sidecar = tooling; data = per-instance).
+
+Implementation — **no rewrite of Workbench's `R::`/`Bean::` code**, just point the connection:
+```php
+$key = 'ws:' . $slug;
+if (!R::hasDatabase($key)) R::addDatabase($key, 'sqlite:' . $instanceDir . '/data/workspace.db');
+R::selectDatabase($key);   // every subsequent R::/Bean:: hits THIS instance's workspace.db
+```
+Fluid mode auto-creates the tables on first `store()` — no migration DDL. Cross-instance
+board = loop accessible instances → `selectDatabase` each → merge. The **one** spot to thread
+through: spawned orchestration (`PlanRunner`/tmux) must `selectDatabase()` the same per-instance
+DB on bootstrap. Existing tasks migrate by splitting core's `workbenchtask` by `instance_id`.
+
+Eject: the instance carries its `workspace.db`; a self-hoster runs their own workspace sidecar
+against it.

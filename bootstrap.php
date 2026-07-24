@@ -26,6 +26,14 @@ class Bootstrap {
         } elseif ($configFile[0] !== '/') {
             $configFile = __DIR__ . '/' . $configFile;
         }
+        // PHP 8.5 turned many "null passed to a string parameter" calls into E_DEPRECATED
+        // notices. Flight's error handler throws an ErrorException on anything still in
+        // error_reporting(), so a single unguarded substr($bean->field) / strtotime(...) /
+        // ucfirst(...) on a null fluid column would take down the whole request as a 404.
+        // Drop deprecations from the throwing set — they are still logged, but never crash
+        // a page. Real warnings and errors continue to throw and be handled as before.
+        error_reporting(error_reporting() & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+
         // Initialize autoloader first - this must come before any framework usage
         $this->initAutoloader();
         

@@ -490,7 +490,7 @@ BASH;
             '/Bash\s+tool|Running\s+command/i' => 'Running command',
             '/npm test|pytest|phpunit/i' => 'Running tests',
             '/TodoWrite/i' => 'Planning tasks',
-            '/Task\s+tool|Agent/i' => 'Running sub-agent',
+            '/⏺\s*Task\(|Task\s+tool\b/' => 'Running sub-agent',   // NOT bare "Agent": it matched the "← for agents" footer chrome → permanent false positive
         ];
 
         // Search from bottom up (most recent first), only last 20 lines

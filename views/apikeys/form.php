@@ -127,8 +127,24 @@
                             <div class="row mb-3">
                                 <div class="col-sm-4"><strong>Token:</strong></div>
                                 <div class="col-sm-8">
-                                    <code><?= htmlspecialchars(substr((string)($key->token ?? $key->prefix ?? ''), 0, 12)) ?>...</code>
-                                    <small class="text-muted">(hidden for security)</small>
+                                    <code><?= htmlspecialchars(substr((string)($key->token ?? $key->prefix ?? ''), 0, 12)) ?>…</code>
+                                    <?php if (!empty($key->token)): ?>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 ms-1" id="copyFullKey" data-key="<?= htmlspecialchars((string)$key->token, ENT_QUOTES) ?>" title="Copy the full key to your clipboard">
+                                            <i class="bi bi-clipboard"></i> Copy
+                                        </button>
+                                    <?php endif; ?>
+                                    <small class="text-muted">(hidden on screen — use Copy to put the full key on your clipboard)</small>
+                                    <script>
+                                    (function(){
+                                        var b = document.getElementById('copyFullKey'); if (!b) return;
+                                        b.addEventListener('click', function(){
+                                            var k = b.getAttribute('data-key') || '';
+                                            var done = function(){ b.innerHTML = '<i class="bi bi-check-lg"></i> Copied'; setTimeout(function(){ b.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 1400); };
+                                            if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(k).then(done).catch(function(){ window.prompt('Copy your key:', k); }); }
+                                            else { window.prompt('Copy your key:', k); }
+                                        });
+                                    })();
+                                    </script>
                                 </div>
                             </div>
                             <div class="row mb-3">

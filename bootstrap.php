@@ -271,6 +271,20 @@ class Bootstrap {
                 $this->logger->info('CachedDatabaseAdapter initialized');
             }
 
+
+            // Sidecar workspace override: the AI Projects (workspace) sidecar owns task
+            // data in a per-instance workspace.db. Set ONLY by workspace-sidecar-spawned
+            // CLI children via the TIKNIX_WORKSPACE_DB env — INERT for core + normal
+            // instances (env unset), so it never touches the default connection. Fluid so
+            // the task tables (workbenchtask/tasklog/…) auto-create on first write.
+            $wsDb = getenv("TIKNIX_WORKSPACE_DB");
+            if ($wsDb !== false && trim($wsDb) !== "") {
+                $wsDb = trim($wsDb);
+                if (!R::hasDatabase("ws")) R::addDatabase("ws", "sqlite:" . $wsDb);
+                R::selectDatabase("ws");
+                R::freeze(false);
+                $this->logger->info("Workspace DB selected: " . $wsDb);
+            }
             $this->logger->info('Database connected');
             
         } catch (\Exception $e) {

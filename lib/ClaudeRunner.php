@@ -213,6 +213,13 @@ class ClaudeRunner {
             $runBlock = 'cd ' . escapeshellarg($workspaceRoot) . "\n{$claudeCmd}\nEXIT_CODE=\$?";
         }
 
+        // Sidecar workspace DB: propagate the per-instance workspace.db path (set by the AI
+        // Projects sidecar via putenv) so the child's bootstrap writes task state THERE, not
+        // core's db. INERT for core's own /workbench — the env is unset there. See bootstrap.php.
+        $wsDbEnv  = getenv('TIKNIX_WORKSPACE_DB');
+        $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
+            ? 'export TIKNIX_WORKSPACE_DB=' . escapeshellarg($wsDbEnv) . "\n" : '';
+
         return <<<BASH
 #!/bin/bash
 #
@@ -227,7 +234,7 @@ export TIKNIX_SESSION_NAME="{$sessionName}"
 export TIKNIX_PROJECT_ROOT="{$mainProjectRoot}"
 export TIKNIX_WORKSPACE="{$workspaceRoot}"
 export TIKNIX_HOOK_URL="{$hookUrl}"
-
+{$wsExport}
 # Allow larger Claude outputs (default is 32000, set to ~250k tokens = ~1MB text)
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=250000
 

@@ -31,8 +31,12 @@ class Apikeys extends Control {
     public function index($params = []) {
         $this->viewData['title'] = 'API Keys';
 
-        // Get API keys via association with ordering
-        $keys = $this->member->with(' ORDER BY created_at DESC ')->ownApikeyList;
+        // Get the member's MCP API keys, newest first. Exclude internal `broker` keys
+        // (per-instance connector capability keys minted automatically) — they aren't
+        // user-managed here and store only a hash (no raw token to show).
+        $keys = $this->member
+            ->withCondition(" (key_class IS NULL OR key_class != 'broker') ORDER BY created_at DESC ")
+            ->ownApikeyList;
 
         $this->viewData['keys'] = $keys;
         $this->viewData['mcpServers'] = $this->getActiveMcpServers();

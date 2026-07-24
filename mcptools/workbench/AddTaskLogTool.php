@@ -39,6 +39,7 @@ class AddTaskLogTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
+        $this->selectWorkspaceDb();   // instance: write task data to the sidecar's workspace.db
         if (!$this->member) {
             throw new \Exception("Authentication required");
         }

@@ -90,6 +90,17 @@ class ClaudeRunner {
      * Checks .mcp_url file (written by serve.sh) or defaults to localhost:8080
      */
     private function getHookUrl(string $projectRoot): string {
+        // Sidecar regime: the AI Projects sidecar set TIKNIX_WORKSPACE_DB, so this task's
+        // data lives in the INSTANCE's workspace.db — point progress hooks at the INSTANCE's
+        // OWN /mcp/message (its baseurl + its .mcp_token, both already in the workspace) so
+        // add_task_log writes to that workspace.db. This also drops the localhost:8080 core
+        // coupling entirely (good for eject/de-co-location). INERT for core (env unset).
+        if (getenv('TIKNIX_WORKSPACE_DB')) {
+            $cfg  = @parse_ini_file($this->getProjectPath() . '/conf/config.ini', true) ?: [];
+            $base = rtrim((string) ($cfg['app']['baseurl'] ?? ''), '/');
+            if ($base !== '') return $base . '/mcp/message';
+        }
+
         // Check if serve.sh wrote a .mcp_url file
         $mcpUrlFile = $projectRoot . '/.mcp_url';
         if (file_exists($mcpUrlFile)) {

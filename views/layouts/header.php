@@ -88,7 +88,7 @@ if ($__loggedIn) {
       <?php if ($__loggedIn): ?>
         <?php if (builder_tools_enabled()): ?>
           <div class="ui-nav-heading">Workspace</div>
-          <a class="ui-nav-link<?= $__active('/workbench') ?>" href="/workbench"><i class="bi bi-hammer"></i> AI Projects</a>
+          <?php /* AI Projects moved to the workbench.tiknix sidecar — listed under Plugins below (Feature-gated). */ ?>
           <a class="ui-nav-link<?= $__active('/aibuilder') ?>" href="/aibuilder"><i class="bi bi-robot"></i> Advanced Builder</a>
           <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
           <a class="ui-nav-link<?= $__active('/integrations') ?>" href="/integrations"><i class="bi bi-diagram-3"></i> Integrations</a>

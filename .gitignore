@@ -33,6 +33,9 @@ log/*.log
 # Workbench project workspaces (cloned repos)
 projects/
 
+# AI Projects (workspace) sidecar: per-instance task data, owned by the sidecar, never tracked
+data/workspace.db
+
 # IDE
 .idea/
 .vscode/

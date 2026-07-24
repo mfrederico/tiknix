@@ -133,6 +133,23 @@ class Pipeline extends Control {
         Flight::jsonSuccess(['key' => $res['raw'], 'prefix' => $res['prefix']], 'Key created — copy it now; it is shown only once.');
     }
 
+    /**
+     * POST /pipeline/mintkey — mint a pk_ REST test key, authed by THIS instance's
+     * [pipeline] trigger_secret (server-to-server). This is for the pipeline editor
+     * sidecar, which reaches an instance over the trigger_secret (like Run/Debug) and
+     * has no member session here — so it can hand the user a runnable key for the
+     * instance it's editing. Body: {label, member_id} (member_id is attribution only).
+     * NOT related to broker.ini — that key is for reaching connected stores.
+     */
+    public function mintkey($params = []) {
+        if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
+        $body  = $this->jsonBody();
+        $label = trim((string) ($body['label'] ?? '')) ?: 'editor test key';
+        $mid   = (int) ($body['member_id'] ?? 0); if ($mid <= 0) $mid = 1;
+        $res   = ApiKey::mint($mid, $label, $mid);
+        Flight::json(['key' => $res['raw'], 'prefix' => $res['prefix']]);
+    }
+
     /** GET|POST /pipeline/keys — ADMIN mint/revoke per-member REST keys. */
     public function keys($params = []) {
         if (!$this->requireLogin()) return;

@@ -441,13 +441,78 @@ class Connections extends Control {
     /** Inside an instance: read-only list of what this app is connected to (broker). */
     private function instanceConnections(): void {
         if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/dashboard'); return; }
-        $broker = \app\InstanceAutomations::brokerConnections(dirname(__DIR__));
+        $root = dirname(__DIR__);
+        $broker     = \app\InstanceAutomations::brokerConnections($root);
+        $connectors = \app\InstanceAutomations::connectors($root);
         $this->render('connections/instance', [
-            'title'       => 'Connections',
-            'connections' => $broker['connections'] ?? [],
-            'brokerError' => $broker['error'] ?? '',
-            'appName'     => basename(dirname(__DIR__)),
+            'title'           => 'Connections',
+            'connections'     => $broker['connections'] ?? [],
+            'brokerError'     => $broker['error'] ?? '',
+            'connectors'      => $connectors['connectors'] ?? [],
+            'connectorsError' => $connectors['error'] ?? '',
+            'appName'         => basename($root),
+            'environments'    => ['development', 'production'],
         ]);
+    }
+
+    /**
+     * POST /connections/instanceconnect — instance-driven OAuth connect (owner/admin).
+     * Asks core (via broker) for a signed handoff URL and redirects the browser to it;
+     * core runs the OAuth and returns to this instance's /connections.
+     */
+    public function instanceconnect($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->instanceManageGuard(false)) return;
+        if (!$this->validateCSRF()) return;
+        $root = dirname(__DIR__);
+        $type = strtolower(trim((string)$this->getParam('type', '')));
+        $env  = $this->normalizeEnv($this->getParam('env', 'production'));
+        $shop = trim((string)$this->getParam('shop', ''));
+        $returnUrl = rtrim((string)(Flight::get('app.baseurl') ?: ''), '/') . '/connections';
+        $r = \app\InstanceAutomations::connectIntent($root, $type, $env, $shop, $returnUrl);
+        if (!empty($r['error'])) { $this->flash('error', $r['error']); Flight::redirect('/connections'); return; }
+        Flight::redirect($r['url']);
+    }
+
+    /** POST /connections/instanceconnectkey — instance-driven api_key connect (owner/admin). JSON. */
+    public function instanceconnectkey($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->instanceManageGuard(true)) return;
+        if (!$this->validateCSRF()) return;
+        $type = strtolower(trim((string)$this->getParam('type', '')));
+        $env  = $this->normalizeEnv($this->getParam('env', 'production'));
+        $key  = trim((string)$this->getParam('key', ''));
+        if ($type === '' || $key === '') { $this->jsonError('Connector and key are required.', 400); return; }
+        $r = \app\InstanceAutomations::connectKey(dirname(__DIR__), $type, $env, $key);
+        if (!empty($r['error'])) { $this->jsonError($r['error'], 400); return; }
+        $this->jsonSuccess($r['data'] ?? [], ucfirst($type) . ' connected.');
+    }
+
+    /** POST /connections/instancedisconnect — instance-driven disconnect (owner/admin). JSON. */
+    public function instancedisconnect($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->instanceManageGuard(true)) return;
+        if (!$this->validateCSRF()) return;
+        $cid = (int)$this->getParam('cid', 0);
+        if ($cid <= 0) { $this->jsonError('connection id required.', 400); return; }
+        $r = \app\InstanceAutomations::disconnectConnection(dirname(__DIR__), $cid);
+        if (!empty($r['error'])) { $this->jsonError($r['error'], 400); return; }
+        $this->jsonSuccess([], 'Disconnected.');
+    }
+
+    /** Guard for the instance-side manage actions: instance context (not control plane) + ADMIN. */
+    private function instanceManageGuard(bool $json): bool {
+        if (builder_tools_enabled()) {   // on the control plane, use the owner-scoped flow instead
+            if ($json) $this->jsonError('Manage connections from the control-plane Connections page.', 400);
+            else Flight::redirect('/connections');
+            return false;
+        }
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) {
+            if ($json) $this->jsonError('Admins only.', 403);
+            else Flight::redirect('/integrations');
+            return false;
+        }
+        return true;
     }
 
     /** POST /connections/pipelinerun — trigger one of the instance's pipelines (owner-scoped). */
@@ -590,11 +655,62 @@ class Connections extends Control {
         Flight::redirect($url);
     }
 
+    /**
+     * GET /connections/handoff/<type>?intent=… — instance-driven OAuth entry point.
+     * Consumes the broker-minted signed intent (identity = the instance + its owner),
+     * re-asserts ownership, sets the double-submit hash in a core session, and redirects
+     * into the connector's OAuth. Public route (self-authenticates via the signed intent).
+     */
+    public function handoff($params = []): void {
+        $type = strtolower((string)($params['operation']->name ?? ''));
+        $connector = ConnectorRegistry::get($type);
+        if (!$connector || !$connector->isConfigured()) { $this->handoffError('That connector is unavailable.'); return; }
+
+        $intent = (string)$this->getParam('intent', '');
+        $claims = $intent !== '' ? OAuthStateService::verify($intent) : null;
+        if (!$claims || (string)($claims['purpose'] ?? '') !== 'connect_handoff' || (string)($claims['provider'] ?? '') !== $type) {
+            $this->handoffError('This connect link has expired or is invalid — start again from your instance.'); return;
+        }
+        $iid = (int)($claims['instance_id'] ?? 0);
+        $mid = (int)($claims['member_id'] ?? 0);
+        $inst = R::load('instance', $iid);
+        if (!$inst->id || (int)$inst->memberId !== $mid) { $this->handoffError('That instance was not found.'); return; }
+
+        // Re-sign as the OAuth state, carrying the handoff marker + return_url so the
+        // callback knows to authenticate by the signed state (no core login) and return
+        // to the instance. The double-submit hash lands in THIS browser's core session.
+        $state = OAuthStateService::issue([
+            'provider'    => $type,
+            'member_id'   => $mid,
+            'instance_id' => $iid,
+            'environment' => $this->normalizeEnv($claims['environment'] ?? 'production'),
+            'shop'        => (string)($claims['shop'] ?? ''),
+            'handoff'     => true,
+            'return_url'  => (string)($claims['return_url'] ?? ''),
+        ]);
+        $_SESSION['oauth_state_hash'] = hash('sha256', $state);
+        try {
+            $url = $connector->authorizeUrl([
+                'state'        => $state,
+                'redirect_uri' => $this->connectorRedirectUri($type),
+                'shop'         => (string)($claims['shop'] ?? ''),
+            ]);
+        } catch (\Throwable $e) { $this->handoffError($e->getMessage()); return; }
+        Flight::redirect($url);
+    }
+
+    private function handoffError(string $msg): void {
+        http_response_code(400);
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+           . '<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#1b1f24">'
+           . '<h3>Connection could not start</h3><p style="color:#5b6470">' . htmlspecialchars($msg) . '</p></body>';
+    }
+
     /** GET /connections/callback/<type> — registry connector OAuth redirect target. */
     private function connectorCallback(string $type): void {
         $connector = ConnectorRegistry::get($type);
         if (!$connector) { Flight::redirect('/aibuilder'); return; }
-        if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
 
         $state    = (string)$this->getParam('state', '');
         $claims   = $state !== '' ? OAuthStateService::verify($state) : null;
@@ -607,17 +723,32 @@ class Connections extends Control {
             $this->flash('error', 'Authorization expired or invalid — please reconnect.');
             Flight::redirect('/aibuilder'); return;
         }
-        // Identity comes from the signed state, never from the query string.
-        if ((int)($claims['member_id'] ?? 0) !== (int)$this->member->id) {
-            $this->flash('error', 'This authorization was started by a different account.');
-            Flight::redirect('/aibuilder'); return;
-        }
-        $iid = (int)($claims['instance_id'] ?? 0);
-        // Re-assert ownership at callback time (a connection cannot outlive its owner's grant).
-        $inst = $this->ownedInstance($iid);
-        if (!$inst) {
-            $this->flash('error', 'You no longer own that instance.');
-            Flight::redirect('/aibuilder'); return;
+
+        $iid     = (int)($claims['instance_id'] ?? 0);
+        $mid     = (int)($claims['member_id'] ?? 0);
+        $handoff = !empty($claims['handoff']);
+
+        // Identity ALWAYS comes from the signed state. Handoff mode authenticates by
+        // that state + the instance's broker-minted intent (no core login); the
+        // control-plane mode additionally binds to the logged-in owner's session.
+        if ($handoff) {
+            $inst = R::load('instance', $iid);
+            if (!$inst->id || (int)$inst->memberId !== $mid) {
+                $this->handoffError('You no longer own that instance.'); return;
+            }
+            $returnUrl = (string)($claims['return_url'] ?? '');
+        } else {
+            if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
+            if ($mid !== (int)$this->member->id) {
+                $this->flash('error', 'This authorization was started by a different account.');
+                Flight::redirect('/aibuilder'); return;
+            }
+            $inst = $this->ownedInstance($iid);
+            if (!$inst) {
+                $this->flash('error', 'You no longer own that instance.');
+                Flight::redirect('/aibuilder'); return;
+            }
+            $returnUrl = '/connections?id=' . $iid;
         }
 
         try {
@@ -629,18 +760,29 @@ class Connections extends Control {
             $this->upsertConnection($type, $claims, $payload);
         } catch (\Throwable $e) {
             error_log('[connections] ' . $type . ' callback failed: ' . $e->getMessage());
+            if ($handoff) { $this->redirectBack($returnUrl, ['connect_error' => $type]); return; }
             $this->flash('error', ucfirst($type) . ' connection failed: ' . $e->getMessage());
             Flight::redirect('/connections?id=' . $iid); return;
         }
         // Wire the instance so its app can reach this store immediately — no keys
         // for the user to handle. Best-effort: never fail the connect over this.
         try {
-            BrokerService::ensureInstanceConfig($iid, (int)$this->member->id, $this->instanceDir($inst->slug));
+            BrokerService::ensureInstanceConfig($iid, $mid, $this->instanceDir($inst->slug));
         } catch (\Throwable $e) {
             error_log('[connections] store wiring failed for instance ' . $iid . ': ' . $e->getMessage());
         }
+        if ($handoff) { $this->redirectBack($returnUrl, ['connected' => $type]); return; }
         $this->flash('success', ucfirst($type) . ' store connected.');
         Flight::redirect('/connections?id=' . $iid);
+    }
+
+    /** Redirect to a handoff return_url with a status query param (or core as a fallback). */
+    private function redirectBack(string $returnUrl, array $params): void {
+        if ($returnUrl === '' || !preg_match('#^https://#i', $returnUrl)) {
+            Flight::redirect('/aibuilder'); return;
+        }
+        $sep = strpos($returnUrl, '?') !== false ? '&' : '?';
+        Flight::redirect($returnUrl . $sep . http_build_query($params));
     }
 
     /**
@@ -649,40 +791,14 @@ class Connections extends Control {
      * distinct dev / staging / production stores side by side.
      */
     private function upsertConnection(string $type, array $claims, array $payload, string $authType = 'oauth'): int {
-        $memberId   = (int)$claims['member_id'];
-        $instanceId = (int)$claims['instance_id'];
-        $env        = $this->normalizeEnv($claims['environment'] ?? 'production');
-        $eid        = (string)($payload['external_eid'] ?? '');
-
-        $conn = Bean::findOne('connections',
-            'member_id = ? AND instance_id = ? AND connector_type = ? AND environment = ? AND external_eid = ?',
-            [$memberId, $instanceId, $type, $env, $eid]);
-        if (!$conn || !$conn->id) $conn = Bean::dispense('connections');
-
-        $now = date('Y-m-d H:i:s');
-        $conn->connectorType  = $type;
-        $conn->memberId       = $memberId;
-        $conn->instanceId     = $instanceId;
-        $conn->environment    = $env;
-        $conn->authType       = $authType;
-        $conn->accessToken    = EncryptionService::encrypt((string)$payload['access_token']);
-        $conn->tokenType      = (string)($payload['token_type'] ?? 'Bearer');
-        $conn->scopes         = (string)($payload['scopes'] ?? '');
-        $conn->externalEid    = $eid;
-        $conn->externalName   = (string)($payload['external_name'] ?? $eid);
-        $conn->externalUrl    = (string)($payload['external_url'] ?? '');
-        $conn->connectionName = (string)($payload['external_name'] ?? $eid) . ' (' . $env . ')';
-        $conn->metadataJson   = json_encode($payload['metadata'] ?? []);
-        $conn->enabled        = 1;
-        $conn->shared         = 0;
-        $conn->revokedAt      = null;
-        $conn->exportedAt     = $conn->exportedAt ?? null;
-        $conn->lastError      = null;
-        $conn->lastUsedAt     = $now;
-        if (!$conn->id) $conn->createdAt = $now;
-        $conn->updatedAt      = $now;
-        Bean::store($conn);
-        return (int)$conn->id;
+        return \app\ConnectionStore::upsert(
+            $type,
+            (int)$claims['member_id'],
+            (int)$claims['instance_id'],
+            $this->normalizeEnv($claims['environment'] ?? 'production'),
+            $payload,
+            $authType
+        );
     }
 
     /**

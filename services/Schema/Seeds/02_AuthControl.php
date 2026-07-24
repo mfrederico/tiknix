@@ -107,11 +107,19 @@ $defaults = [
     // connectors + pipelines + durable objects (Connections::index is ownedInstance-scoped).
     // An instance asks core "what am I connected to?" with its own broker key (metadata only).
     ['brokerinfo', 'connections', 101, 'Instance connection lookup (self-authenticating broker key)'],
+    ['brokerinfo', 'connectors', 101, 'Available connectors for the instance connect flow (broker key)'],
+    ['brokerinfo', 'connectkey', 101, 'Instance-driven api_key connect (broker key)'],
+    ['brokerinfo', 'disconnect', 101, 'Instance-driven disconnect (broker key)'],
+    ['brokerinfo', 'connectintent', 101, 'Instance-driven OAuth connect handoff (broker key)'],
     // The instance-side read-only Integrations view (runs IN the instance).
     ['integrations', 'index', 100, 'Integrations/automations view (owner on control plane; ADMIN enforced in-controller inside an instance)'],
     ['connections', 'index', 100, 'Integrations hub (owner-scoped)'],
     ['connections', 'pipelinerun', 100, 'Trigger one of the instance pipelines (owner)'],
     ['connections', 'githubwebhook', 100, 'Provision the GitHub deploy webhook (owner)'],
+    ['connections', 'handoff', 101, 'Instance-driven OAuth connect handoff (self-auth via signed intent)'],
+    ['connections', 'instanceconnect', 100, 'Instance-side: start an OAuth connect (owner/admin)'],
+    ['connections', 'instanceconnectkey', 100, 'Instance-side: connect an api_key connector (owner/admin)'],
+    ['connections', 'instancedisconnect', 100, 'Instance-side: disconnect (owner/admin)'],
     ['connections', 'connectkey', 100, 'Connect an api_key connector from a validated pasted key'],
     ['connections', 'webhooksecret', 100, 'Set/clear a connection webhook verification secret'],
     ['connections', 'publishfeed', 100, 'Publish a public social showcase page for a social connection'],

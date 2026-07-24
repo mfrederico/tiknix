@@ -80,27 +80,73 @@ class InstanceAutomations {
      * Returns ['connections' => [...]] or ['error' => string].
      */
     public static function brokerConnections(string $dir): array {
+        $r = self::brokerPost($dir, '/brokerinfo/connections');
+        if (!$r['ok']) return ['error' => $r['error']];
+        return ['connections' => $r['body']['connections'] ?? []];
+    }
+
+    /** Connectors CORE offers (metadata only) so the instance can render Connect buttons. */
+    public static function connectors(string $dir): array {
+        $r = self::brokerPost($dir, '/brokerinfo/connectors');
+        if (!$r['ok']) return ['error' => $r['error']];
+        return ['connectors' => $r['body']['connectors'] ?? []];
+    }
+
+    /** Begin an OAuth connect: returns ['url' => <handoff URL to redirect to>] or ['error']. */
+    public static function connectIntent(string $dir, string $connector, string $env, string $shop, string $returnUrl): array {
+        $r = self::brokerPost($dir, '/brokerinfo/connectintent',
+            ['connector' => $connector, 'environment' => $env, 'shop' => $shop, 'return_url' => $returnUrl]);
+        if (!$r['ok']) return ['error' => $r['error']];
+        $url = (string) ($r['body']['data']['url'] ?? '');
+        return $url !== '' ? ['url' => $url] : ['error' => 'The control plane did not return a connect URL.'];
+    }
+
+    /** Connect an api_key connector with a pasted key. Returns ['data'=>...] or ['error']. */
+    public static function connectKey(string $dir, string $connector, string $env, string $key): array {
+        $r = self::brokerPost($dir, '/brokerinfo/connectkey',
+            ['connector' => $connector, 'environment' => $env, 'key' => $key]);
+        return $r['ok'] ? ['data' => $r['body']['data'] ?? []] : ['error' => $r['error']];
+    }
+
+    /** Disconnect one of this instance's connections by id. Returns ['ok'=>true] or ['error']. */
+    public static function disconnectConnection(string $dir, int $connectionId): array {
+        $r = self::brokerPost($dir, '/brokerinfo/disconnect', ['connection_id' => $connectionId]);
+        return $r['ok'] ? ['ok' => true] : ['error' => $r['error']];
+    }
+
+    /** [base, key, error] from the instance's conf/broker.ini (base=null on error). */
+    private static function brokerBase(string $dir): array {
         $ini = @parse_ini_file($dir . '/conf/broker.ini', true) ?: [];
         $endpoint = (string) ($ini['broker']['endpoint'] ?? '');
         $key      = (string) ($ini['broker']['key'] ?? '');
-        if ($endpoint === '' || $key === '') return ['error' => 'This instance has no broker key (conf/broker.ini) — connect it from the control plane.'];
+        if ($endpoint === '' || $key === '') return [null, null, 'This instance has no broker key (conf/broker.ini) — connect it from the control plane.'];
         $p = parse_url($endpoint);
-        if (empty($p['host'])) return ['error' => 'The broker endpoint in conf/broker.ini is malformed.'];
-        $base = ($p['scheme'] ?? 'https') . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '');
+        if (empty($p['host'])) return [null, null, 'The broker endpoint in conf/broker.ini is malformed.'];
+        return [($p['scheme'] ?? 'https') . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : ''), $key, ''];
+    }
 
-        $ch = curl_init($base . '/brokerinfo/connections');
+    /**
+     * POST to a core /brokerinfo/* endpoint with this instance's broker key. Returns
+     * ['ok'=>bool, 'code'=>int, 'body'=>array, 'error'=>string]. The instance_id is
+     * derived server-side from the key — the caller never supplies it.
+     */
+    public static function brokerPost(string $dir, string $path, array $body = []): array {
+        [$base, $key, $err] = self::brokerBase($dir);
+        if ($base === null) return ['ok' => false, 'error' => $err];
+        $ch = curl_init($base . $path);
         curl_setopt_array($ch, [
-            CURLOPT_POST => true, CURLOPT_POSTFIELDS => '{}',
-            CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15,
+            CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($body) ?: '{}',
+            CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json', 'Authorization: Bearer ' . $key],
         ]);
         $resp = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $cerr = curl_error($ch);
-        if ($resp === false) return ['error' => $cerr ?: 'Could not reach the control plane.'];
+        if ($resp === false) return ['ok' => false, 'error' => $cerr ?: 'Could not reach the control plane.'];
         $d = is_string($resp) ? json_decode($resp, true) : null;
-        if ($code === 200 && isset($d['connections'])) return ['connections' => $d['connections']];
-        return ['error' => $d['message'] ?? "Connection lookup failed (HTTP $code)."];
+        if (!is_array($d)) return ['ok' => false, 'error' => "Unexpected response (HTTP $code)."];
+        $ok = $code < 400 && (($d['success'] ?? true) !== false);
+        return ['ok' => $ok, 'code' => $code, 'body' => $d, 'error' => $ok ? '' : (string) ($d['message'] ?? "Request failed (HTTP $code).")];
     }
 
     /** Fire every pipeline whose trigger.github matches this GitHub event + branch. */

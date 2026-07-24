@@ -24,6 +24,7 @@ use app\BaseControls\Control;
 use RedBeanPHP\R;
 use app\EngineRegistry;
 use app\MemberEnginePrefs;
+use app\BrokerService;
 
 class Aibuilder extends Control {
 
@@ -353,6 +354,16 @@ class Aibuilder extends Control {
         $inst->createdAt   = date('Y-m-d H:i:s');
         $member->ownInstanceList[] = $inst;
         R::store($member);
+
+        // Give the instance its OWN broker-key identity, bound to THIS instance's id,
+        // so it can reach its (future) connections and drive the connect flow from its
+        // own /connections page. Safe — its own key, written to its own broker.ini
+        // (provisioning already reset any inherited one to the empty template).
+        try {
+            BrokerService::ensureInstanceConfig((int)$inst->id, (int)$this->member->id, $this->instanceDir($slug));
+        } catch (\Throwable $e) {
+            $this->logger->warning('aibuilder broker-key mint failed', ['slug' => $slug, 'err' => $e->getMessage()]);
+        }
 
         $this->logger->info('aibuilder instance created', ['slug' => $slug, 'by' => $this->member->id]);
         Flight::jsonSuccess(['id' => $inst->id, 'slug' => $slug], 'Instance created');

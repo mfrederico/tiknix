@@ -67,7 +67,7 @@
                                         <br><small class="text-muted">Created <?= date('M j, Y', strtotime($key->createdAt)) ?></small>
                                     </td>
                                     <td>
-                                        <code class="text-muted"><?= substr($key->token, 0, 12) ?>...</code>
+                                        <code class="text-muted"><?= htmlspecialchars(substr((string)($key->token ?? $key->prefix ?? ''), 0, 12)) ?>...</code>
                                         <button class="btn btn-sm btn-link p-0 ms-1" onclick="regenerateToken(<?= $key->id ?>, '<?= htmlspecialchars(($key->name) ?? '', ENT_QUOTES) ?>')" title="Regenerate token">
                                             <i class="bi bi-arrow-clockwise"></i>
                                         </button>

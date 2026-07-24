@@ -36,9 +36,31 @@ $DROP = [
     'controls/Mcptools.php',                            // MCP registry admin
     'controls/Agentsetup.php',  'views/agentsetup',     // agent config (control-plane)
 ];
-// Candidates to REVIEW before adding (flagged, not dropped): controls/Teams.php,
-// controls/Firehose.php, controls/Leads.php, controls/Security.php — some may be wanted
-// per-instance. Left in until confirmed.
+// Owner-confirmed KEEP (never drop): Teams, Firehose, Leads, Security — wanted per-instance.
+
+// PROTECTED — the jailed build agent's SCOPE + the base runtime. The trim REFUSES to remove
+// anything under these, even if a DROP entry is mis-edited to overlap. `.mcp.json` +
+// `mcptools/` are how the bwrap agent runs the tiknix MCP (introspection/scaffolding);
+// lib/Pipeline + controls/Pipeline + controls/Mcp are the execution runtime; broker.ini is
+// the store handle; .aibuilder holds the engine config. Removing any of these would kneecap
+// the instance or the agent building it — structurally disallowed here.
+$PROTECTED = [
+    '.mcp.json', 'mcptools', 'lib/Pipeline', 'controls/Pipeline.php', 'controls/Mcp.php',
+    'conf/broker.ini', '.aibuilder',
+];
+$isProtected = function (string $rel) use ($PROTECTED): bool {
+    foreach ($PROTECTED as $p) {
+        if ($rel === $p || strncmp($rel, rtrim($p, '/') . '/', strlen($p) + 1) === 0) return true;
+    }
+    return false;
+};
+// Fail fast if the DROP list ever overlaps PROTECTED (guards against future edits).
+foreach ($DROP as $rel) {
+    if ($isProtected($rel)) {
+        fwrite(STDERR, "REFUSING: drop path '$rel' is PROTECTED (base runtime / bwrap agent scope). Fix the DROP list.\n");
+        exit(2);
+    }
+}
 
 function dirSize(string $p): array {
     if (is_file($p)) return [filesize($p) ?: 0, 1];

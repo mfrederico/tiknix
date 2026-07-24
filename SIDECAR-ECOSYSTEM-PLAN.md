@@ -1,276 +1,196 @@
-# Sidecar Ecosystem & Thin-Instance Architecture
+# Tiknix Architecture — the Recursive "Instance + Sidecars" Model
 
-Status: **spec** (2026-07-24). Supersedes nothing; extends the Sidecar Kit
-(`lib/Sidecar/*`), the connector custody model ([Tier-3 broker](#6-connector-custody--the-eject-path)),
-and the provisioning secret-scrub in `scripts/aibuilder-provision.php`.
-
----
-
-## 0. The shift in one paragraph
-
-Today a customer instance is a **clone of core**, so every published repo ships all of
-tiknix's tooling — AI Builder, Workspace, MCP admin, the connectors UI — even though
-most of it only ever *runs* on the control plane. We move that tooling **out of the
-clone** and behind the **sidecar + broker** boundary: authoring/orchestration tooling
-becomes independently-repo'd, independently-deployed **sidecars** reached over SSO; only
-the thin **execution runtime** stays in the instance. The result: a customer's repo is
-*just their app*, tiknix tooling stays proprietary and updatable outside the "tiknix PHP"
-runtime, and — via an **audited eject** — a customer can take their credentials and
-self-host with zero tiknix dependency.
-
-Three moves, in dependency order:
-
-1. **Formalize the sidecar contract** (repo-per-sidecar, deploy, SSO handshake) — §4.
-2. **Provisioning trim** — stop cloning control-plane-only code into instances — §5.
-3. **Eject / dual-driver** — the walk-away path — §6.
+Status: **north-star spec** (2026-07-24). This is the destination the sidecar work walks
+toward. It supersedes the earlier "trim the monolith" framing: we don't subtract from a
+monolith, we **compose up from a clean base**.
 
 ---
 
-## 1. Principles
+## 0. The whole thing in one paragraph
 
-- **P1 — Custody lives in core.** A connector token NEVER lives in an instance while
-  on-platform. The instance runtime is the adversary (its `app_key` is in its own
-  config, and its repo is published to GitHub). The instance reaches stores through the
-  **broker**, hard-scoped to its `instance_id` at `Mcp::brokerToolCall`. *(Built.)*
-- **P2 — Authoring is a sidecar; execution is a thin lib.** Anything that *edits/plans/
-  orchestrates* (AI Builder, Workspace, the pipeline editor) is a sidecar on core.
-  Anything that *executes against the instance's own data* (the pipeline runtime, the
-  connection step) is a minimal lib shipped in the instance.
-- **P3 — A sidecar is a separate product.** Its own repo, its own deploy, its own
-  release cadence, reached only through the stable **Sidecar Kit** contract (SSO + iframe
-  embed + feature flag). It may be written in anything; it is not "tiknix PHP".
-- **P4 — Nothing tiknix-proprietary lands in a customer repo.** The provisioning trim is
-  the enforcement point, the same way the secret-scrub enforces P1.
-- **P5 — The customer is never a hostage.** Eject turns "you depend on tiknix" into "you
-  *choose* to, until you don't."
-
----
-
-## 2. The three layers
+There is exactly **one artifact — a tiknix instance** — and every capability is a
+**sidecar** composed onto it via a **feature flag**. A customer is `base + their sidecars`.
+**Core is the same base instance + the control-plane sidecar + every feature sidecar.**
+The control plane is not special code; it is the **root sidecar** — the one everything
+else depends on — hosted co-located on the base instance that we call "core," reachable at
+`control.tiknix.com` (and regional nodes as load demands). Because it's a sidecar, a
+customer can **run their own** — which *is* self-hosting/eject, custody and all. No
+keep-list, no trim, no protect-list as ongoing machinery: they collapse into "**what the
+base is**" + "**which sidecars are flagged on**."
 
 ```
-┌─────────────────────────── CORE (tiknix.com) ───────────────────────────┐
-│  Custody + control plane                                                  │
-│   • connections table (encrypted tokens)  • MCP broker (/mcp/message)     │
-│   • OAuth client secrets (github/shopify/stripe.ini)                       │
-│   • Sidecar Kit: registry, SSO mint (/sidecar/launch, /sidecar/app)       │
-│   • Provisioning (capricorn + aibuilder-provision.php)                    │
-└───────────────┬───────────────────────────────────────┬──────────────────┘
-                │ SSO (Sidecar Kit)                       │ broker (brk_ key)
-   ┌────────────▼─────────────┐               ┌───────────▼──────────────────┐
-   │  SIDECARS (own repos)     │               │  INSTANCE (customer's repo)   │
-   │   • ai-builder.tiknix     │  edits/plans  │   • THEIR app (controls/views │
-   │   • workspace.tiknix      │  ───────────► │     /models)                  │
-   │   • pipelines.tiknix (ed.)│               │   • lib/Pipeline/* runtime    │
-   │   • explorer.tiknix       │               │   • broker client (brk_)      │
-   │   • shop.tiknix           │               │   • conf/*.ini (own secrets)  │
-   └───────────────────────────┘               └───────────────────────────────┘
+core.tiknix   =  BASE  +  [control-plane root sidecar]  +  [ALL feature sidecars]
+customer      =  BASE  +  [their flagged feature sidecars]     (broker → a control plane)
+self-hoster   =  BASE  +  [their sidecars]  +  [their OWN control-plane root sidecar]   ← eject
 ```
 
-- **Core** = custody + the SSO/broker gateways + provisioning. Never shipped to a customer.
-- **Sidecars** = the build ecosystem, each a standalone app SSO'd into the shell.
-- **Instance** = the customer's app + the thin runtime it actually executes.
-
 ---
 
-## 3. What moves where (the boundary)
+## 1. The three roles
 
-The rule: **authoring → sidecar; execution → thin lib in the instance.**
-
-| Capability | Today (in every clone) | Target | Why |
+| Role | What it is | Where it lives | Billing |
 |---|---|---|---|
-| **AI Builder** (`controls/Aibuilder.php`, jailed terminal, plan pipeline) | in clone, control-plane-only | **sidecar** `ai-builder.tiknix` | pure control-plane; never runs on the instance |
-| **Workspace / AI Projects** (`controls/Workbench.php`, task board) | in clone, control-plane-only | **sidecar** `workspace.tiknix` | pure control-plane |
-| **Pipeline editor** | already sidecar | **sidecar** `pipelines.tiknix` | ✅ already done |
-| **Architecture Explorer** | already sidecar | **sidecar** `explorer.tiknix` | ✅ |
-| **Store** | already sidecar | **sidecar** `shop.tiknix` | ✅ |
-| **MCP admin / registry** (`controls/Mcpconfig.php`, `Mcptools.php`) | in clone | **sidecar** (or core-only) | management UI, not runtime |
-| **Connections UI** (`controls/Connections.php` control-plane branch) | in clone | **core-only** (already gated) | management UI |
-| **Pipeline runtime** (`lib/Pipeline/{Loader,Executor,Runner,Steps,DurableObject}`) | in clone | **STAYS (thin lib)** | executes against the instance's own DB/data |
-| **Connection step** (`lib/Pipeline/Steps/ConnectionStep.php`) | in clone | **STAYS (thin)** | runs in-instance, but holds nothing — only calls the broker |
-| **Broker client** (reads `conf/broker.ini`, calls `/mcp/message`) | in clone | **STAYS (thin)** | the instance's handle to its own stores |
-| **`/pipeline/*` endpoints** (`controls/Pipeline.php`) | in clone | **STAYS** | the instance serves its own pipeline API/triggers |
-| **The customer's app** | in clone | **STAYS** | it's theirs |
+| **BASE** (clean-room instance) | the customer's app + the **thin runtime** (`lib/Pipeline/*`, `controls/Pipeline`, `controls/Mcp` + `mcptools/`, the broker *client*, `.mcp.json`, framework/auth) | **in** the instance repo | the product |
+| **FEATURE SIDECAR** | authoring/orchestration UI — AI Builder, Workspace, Pipeline editor, Explorer, Store | own repo, own vhost, SSO'd in, **flag-gated** | **per-sidecar SKU** |
+| **CONTROL-PLANE ROOT SIDECAR** | custody vault, broker (`/mcp/message`), SSO mint (`/sidecar/launch`), provisioning, instance registry | own repo/deploy; **co-hosted** on core; other instances **call it over HTTP** | platform / tiered |
 
-Net: a trimmed instance keeps `lib/Pipeline/*` + `controls/Pipeline.php` + the broker
-client + its own app. Everything in the "sidecar" rows leaves the clone.
+The base is the same everywhere. Feature sidecars are à la carte. The control-plane is the
+one sidecar that boots co-located (it's the root), and "running your own" = self-hosting.
 
 ---
 
-## 4. Sidecar-per-repo contract
+## 2. The irreducible root of trust
 
-Each sidecar becomes a first-class product with its **own GitHub repo** (the current
-`pipelines.tiknix` / `shop.tiknix` / `explorer.tiknix` trees are local-only, no remote —
-that changes here).
+Even as a sidecar, the control plane contains a root that **cannot bootstrap itself via the
+sidecar system it provides** (you can't SSO into the thing that mints SSO). Name it precisely:
 
-### 4.1 Repos to create
+- **identity / auth** (the member authority)
+- the **custody sealing key** (what encrypts connector tokens)
+- the **SSO secret** (what every sidecar trusts)
+- the **instance registry** (who owns what)
 
-| Sidecar | Repo | Vhost | Feature flag |
-|---|---|---|---|
-| Pipeline editor | `tiknix-sidecar-pipelines` | `pipelines.tiknix.com` | `pipelines` |
-| Architecture Explorer | `tiknix-sidecar-explorer` | `explorer.tiknix.com` | `explorer` |
-| Store | `tiknix-sidecar-shop` | `shop.tiknix.com` | `shop` |
-| **AI Builder** (new) | `tiknix-sidecar-aibuilder` | `builder.tiknix.com` | `aibuilder` |
-| **Workspace** (new) | `tiknix-sidecar-workspace` | `workspace.tiknix.com` | `workspace` |
+Everything else the control plane does today — provisioning UI, connections management, the
+broker's decrypt-proxy *logic*, AI Builder orchestration — is a **feature on top of that
+root** and can be its own sidecar/service. Pin the root; the rest composes.
 
-(Plus a shared `tiknix-sidecar-kit` package — the SSO consume + shell chrome — so a new
-sidecar starts from a template instead of copy-paste.)
-
-### 4.2 The stable contract (already built — `lib/Sidecar/*`)
-
-A sidecar only has to honor:
-1. **Registration** — one `[sidecar.<name>]` in core's `config.ini`
-   (`url`, `sso_secret`, `feature`, `label`, `icon`). `Registry::all()` discovers it.
-2. **SSO consume** — accept the token minted at `/sidecar/launch/<name>` and start a
-   session (`Sso::session()` on the sidecar side). Same-site `*.tiknix.com` so the
-   `SameSite=Lax` cookie survives the iframe.
-3. **Embed** — render inside the shell iframe at `/sidecar/app/<name>` (no
-   `X-Frame-Options`; may `postMessage({tiknixHeight})`).
-4. **Instance access** — reach an instance ONLY via the documented server-to-server
-   paths: `trigger_secret` for the instance's own `/pipeline/*`, `brk_` for the broker.
-   A sidecar has no filesystem access to instance repos unless it is co-located (today
-   they are; long-term they talk over HTTP).
-
-Anything satisfying that is a sidecar — **in any language**. That's P3.
-
-### 4.3 Deploy
-
-Per-repo CI → its vhost. Version independently. The Sidecar Kit contract is the ABI, so
-a sidecar can ship on its own cadence without a core release. Core only needs the
-`[sidecar.<name>]` row + the feature flag.
-
-### 4.4 The co-location seam (important)
-
-Today sidecars share the box and read instance dirs on the local filesystem
-(`PipeFiles::instanceDir`). That's fine for now but it's the one thing that keeps them
-from being *truly* separate deploys. The long-term target: sidecars reach instances only
-over HTTP (`trigger_secret`/`brk_`), so a sidecar can run anywhere. Track this as the
-"de-co-locate" milestone; it's what unlocks non-PHP sidecars and independent hosting.
+**Consequence for eject:** when a customer runs their own control-plane sidecar, **they
+become their own root** (their key, their vault, their SSO secret). The "catch" (there's
+always a root) and the "feature" (self-host = own the root) are the same thing.
 
 ---
 
-## 5. Provisioning trim (the code scrub)
+## 3. Composition & billing = feature flags
 
-The enforcement point for P4, mirroring the secret-scrub already in
-`scripts/aibuilder-provision.php`.
+Sidecars are already flag-gated (`Registry` reads `[sidecar.<name>].feature`;
+`Feature::isEnabled` gates launchability; the shell shows `/sidecar/app/<name>`). So:
 
-### 5.1 Mechanism
+- **Add a capability** = flip a flag → nav link + SSO access appear. The code was never in
+  the instance.
+- **Bill per capability** = the flag is the SKU. Upkeep cost (a sidecar we maintain) ↔ price,
+  1:1. Tiers (bronze/enterprise control-plane) are just flag bundles.
 
-A **keep-manifest** (allow-list, not a drop-list — new core files default to *not*
-shipped): `scripts/instance-manifest.php` lists exactly what a customer instance keeps:
-
-- their app (`controls/*` minus the control-plane set, `views/*`, `models/*`, `routes/*`)
-- `lib/Pipeline/*` + `controls/Pipeline.php` (runtime)
-- broker client + `lib/ConnectionStore`? **no** — that's core-side; the instance only
-  needs the broker *caller* (`ConnectionStep` + `conf/broker.ini`)
-- framework (`vendor/`, `bootstrap.php`, `conf/*.example.ini`, `lib/functions.php`, the
-  base `Control`, auth, sessions)
-
-After capricorn clones + `aibuilder-provision.php` seeds, a new **trim step** removes
-everything not in the keep-manifest: `controls/Aibuilder.php`, `Workbench.php`,
-`Mcpconfig.php`, `Mcptools.php`, their views, and the control-plane-only libs.
-
-### 5.2 Guardrails
-
-- **Reversible & idempotent** (like the secret-scrub) — trims a working copy, never the
-  source.
-- **CI check**: a test asserts a trimmed instance still boots, serves its app, runs a
-  pipeline, and reaches the broker — so the keep-manifest can't drift into removing
-  something the runtime needs.
-- **Existing instances**: the trim is forward-only (new provisions). Existing instances
-  keep their bloat until they re-provision or opt into a `scripts/trim-instance.php`
-  one-shot (with the same backup discipline as the upgrade process).
-
-### 5.3 Payoff, measured
-
-Before/after `git ls-files | wc -l` on a fresh clone, and a diff of `controls/` — the
-customer's repo should shrink to *their* files + the runtime, and contain **zero**
-AI-Builder/Workspace/MCP-admin code.
+This is why the trim/keep/protect machinery **evaporates**: there's nothing to remove from a
+minimal base, and capabilities are additions, not subtractions.
 
 ---
 
-## 6. Connector custody & the eject path
+## 4. Deployment topology — `control.tiknix.com` and regional shards
 
-### 6.1 On-platform (built)
+**The routing primitive already exists.** Each instance's `broker.ini` has
+`endpoint = https://<host>/mcp/message`, and `BrokerService::endpoint()` reads
+`app.control_plane_host`. "Which control plane does this instance use" is **already a
+per-instance config value** — no new plumbing.
 
-Token encrypted in core's `connections` table; instance reaches it via the broker
-(`brk_` key), scoped at `brokerToolCall`. This is **P1** and it's live.
+Two shapes, both served by that one knob:
 
-### 6.2 Eject / dual-driver (designed; `exportedAt` is the seed)
+1. **Stateless LB** — `control.tiknix.com` → LB → N interchangeable app nodes, shared/
+   replicated custody DB. Scales the app tier. Start here.
+2. **Regional shards** — `control-<dc>-<region>-<nn>.tiknix.com` (e.g.
+   `control-dnvr-uswest-01`) is a control-plane deploy with its **own custody DB**; a
+   customer-instance's `broker.ini` points at **its assigned shard**. The clean property:
+   **an instance only ever calls its own control node** → **no cross-shard coordination on
+   the hot path** (1:1, not a mesh). Great for residency (EU → `control-fra-eu-01`) + latency.
 
-A connector gains **two drivers**:
+Run both: a stable `control.tiknix.com` (anycast/LB) + concrete regional nodes, `broker.ini`
+pinned to a node for residency or to the LB name otherwise.
 
-- **broker driver** (default, on-platform): token in core, reached via `/mcp/message`.
-- **direct driver** (post-eject, off-platform): token in the **instance's own encrypted
-  keystore** (`conf/keystore.db` or `secure/keystore.db`, sealed with the *instance's*
-  own key — NOT core's `app_key`), connector calls the store's API directly.
+**The one decision sharding forces — where the root lives:**
+- **Global identity + regional custody** (recommended): one identity/registry authority; custody+broker sharded regionally. Residency + latency without fragmenting identity.
+- **Fully independent regional roots**: max isolation, region-of-one — which is exactly the **white-label / self-host** shape.
 
-**Eject** is a deliberate, audited, one-time action on the control plane:
-
-1. Owner clicks "Export & self-host" for a connection.
-2. Core decrypts the token **once**, writes it into the instance's keystore, flips that
-   connection's driver to `direct`, stamps `connections.exported_at`, and logs an audit
-   event.
-3. From then on the instance's `ConnectionStep` uses the direct driver — **no broker, no
-   core dependency.** The instance is now self-hostable: point DNS elsewhere, `git push`
-   the repo to any host, done.
-
-**The tradeoff is the feature, not a bug:** eject **moves custody to the customer**.
-Pre-eject the token isn't on their box (safe to publish to GitHub); post-eject it is
-(their responsibility, sealed with their key). That's what "walk away" means.
-
-### 6.3 Uptime framing (for docs)
-
-While on-platform, core is a dependency **only for store calls** (broker = decrypt +
-proxy), not for the instance's own pages/pipelines/forms. It's one hop, HA-able, and
-never a lock-in because of §6.2.
+Custody is **state**: sharding is a data-partition decision; moving a customer between regions
+is a custody migration (decrypt → re-encrypt under the new shard → repoint `broker.ini`) — an
+occasional batch job, not a runtime concern (because the hot path is 1:1).
 
 ---
 
-## 7. Rollout (phased, each shippable)
+## 5. The clean-room base — the positive manifest
 
-- **Phase A — Sidecar contract hardening.** Extract `tiknix-sidecar-kit` (SSO consume +
-  shell); create the 3 existing sidecars' GitHub repos + CI/deploy; document the ABI.
-  *No instance change.* Low risk.
-- **Phase B — Provisioning trim.** `instance-manifest.php` (keep-list) + trim step in
-  provisioning + the CI boot/run/broker smoke test. Ship on new provisions; add the
-  opt-in `trim-instance.php` for existing ones. *This is the immediately-visible win.*
-- **Phase C — AI Builder + Workspace sidecars.** Stand up `builder.tiknix` /
-  `workspace.tiknix` from the extracted controllers; register `[sidecar.*]`; nav links to
-  `/sidecar/app/*`; remove the controllers from the keep-manifest. *Biggest structural
-  change; do after B proves the trim.*
-- **Phase D — De-co-locate.** Move sidecar→instance access fully onto HTTP
-  (`trigger_secret`/`brk_`), dropping the shared-filesystem assumption. Unlocks non-PHP
-  sidecars + independent hosting.
-- **Phase E — Eject / dual-driver.** Direct driver + instance keystore + the audited
-  export action. The trust capstone.
+The old "keep-list" doesn't disappear; it **becomes the base repo's contents**, stated
+positively. Classification (the audit that defines the base):
+
+| Surface | Role | In base? |
+|---|---|---|
+| the customer's app (`controls/*`, `views/*`, `models/*`, `routes/*`) | BASE | ✅ |
+| `lib/Pipeline/*` (Loader/Executor/Runner/Steps/DurableObject) | BASE runtime | ✅ |
+| `controls/Pipeline.php` (the instance's own `/pipeline/*` API) | BASE runtime | ✅ |
+| `controls/Mcp.php` + `mcptools/*` + `.mcp.json` | BASE runtime (**the jailed agent's scope — never remove**) | ✅ |
+| broker **client** (`ConnectionStep` + `conf/broker.ini`) | BASE runtime (holds nothing) | ✅ |
+| framework/auth/session/`lib/functions.php` + `conf/*.example.ini` | BASE | ✅ |
+| `controls/Teams,Firehose,Leads,Security` | BASE (owner-confirmed: keep per-instance) | ✅ |
+| `controls/Aibuilder` + `views/aibuilder` | FEATURE SIDECAR (`aibuilder.tiknix`) | ❌ |
+| `controls/Workbench` + `views/workbench` | FEATURE SIDECAR (`workspace.tiknix`) | ❌ |
+| `controls/Mcpconfig`, `controls/Mcptools` | admin UI (control-plane / sidecar) | ❌ |
+| pipeline editor, explorer, store | FEATURE SIDECARS (already extracted) | ❌ |
+| broker/custody/SSO-mint/provisioning/registry | CONTROL-PLANE ROOT SIDECAR | ❌ (core-only) |
+
+**The PROTECTED invariant** (from the bwrap-scope question): the base composition must
+*never* omit `.mcp.json`, `mcptools/`, `lib/Pipeline/`, `controls/Mcp.php`, `conf/broker.ini`,
+`.aibuilder/` engine config — those *are* the jailed build agent's hands. Encoded as a
+refusal in the tooling.
+
+---
+
+## 6. Custody & eject
+
+- **On-platform**: token encrypted in the control plane's `connections` vault; instance
+  reaches it via the broker, scoped at `brokerToolCall`. (Built.)
+- **Eject (the recursive way)**: instead of a bespoke token export, a customer **stands up
+  their own control-plane root sidecar** — their vault, their broker, their SSO. Point their
+  `broker.ini` at `control.<their-domain>` and they're fully self-hosting, custody included.
+  The `exported_at`/dual-driver hook remains as the *lightweight* path (one connector, direct
+  token) for customers who don't want to run a whole control plane.
 
 ---
 
-## 8. Open questions / risks
+## 7. Rollout (revised for the recursive destination)
 
-1. **Runtime updates after trim.** If the pipeline runtime stays in the instance, how do
-   runtime *bug fixes* reach trimmed instances? (Today: `git merge origin/main`.) Option:
-   keep `lib/Pipeline/*` on the core-managed upgrade path even in trimmed repos, or
-   package the runtime as a `composer` dependency the instance pins. **Decide in Phase B.**
-2. **Sidecar ↔ instance auth at a distance.** Once de-co-located, the sidecar needs the
-   instance's `trigger_secret`/`brk_` without filesystem access — where do those live?
-   (A control-plane lookup keyed by the SSO'd member + selected instance.)
-3. **Instance keystore sealing key.** For eject, the instance's own key must NOT be
-   derivable from the published repo (else GitHub leaks it). Likely an env var /
-   host-provided secret the customer sets at self-host time — document clearly.
-4. **Feature-flag sprawl.** Five+ sidecars × per-member feature flags. Consider a
-   "builder bundle" flag.
-5. **Non-PHP sidecars vs the shared Sidecar Kit.** The kit is PHP today; a Node/Go
-   sidecar needs the SSO-consume spec as a language-agnostic doc, not a PHP lib.
+- **A — Sidecar contract + repos.** ✅ mostly done: Sidecar Kit is its own repo
+  (`sidecar-kit.tiknix`, core consumes it via composer); `pipelines`/`store`/`explorer` repos
+  pushed. *Remaining:* extract `tiknix-sidecar-kit` template polish; de-co-locate seam (Phase E).
+- **B — Define + carve the clean-room base.** The §5 classification becomes a manifest; the
+  base runtime (`lib/Pipeline/*` at least) ships as a **composer-pinned package** so runtime
+  bugfixes reach instances via `composer update`, not per-instance `git merge`. (`trim-instance.php`
+  demotes to a **one-time migration** for the legacy full-clone instances.)
+- **C — Extract feature sidecars.** AI Builder → `aibuilder.tiknix`, Workspace →
+  `workspace.tiknix` (+ MCP admin). Same move as the kit. Nav → `/sidecar/app/*`; flags gate + bill.
+- **D — Extract the control-plane as the root sidecar.** broker/custody/SSO-mint/provisioning
+  become their own deploy at `control.tiknix.com`; core = base + that + all flags.
+- **E — De-co-locate + shards.** Sidecar↔instance over HTTP only (`trigger_secret`/`brk_`),
+  no shared filesystem → non-PHP sidecars + `control-<region>-<nn>` nodes.
+- **F — Self-host eject.** A customer runs their own control-plane root sidecar.
+
+Order is forced: you can't fresh-repo the base until the feature + control-plane sidecars are
+out (B/C/D); the clean-room base repo + monolith archive is the **payoff at the end**, not the
+start.
 
 ---
+
+## 8. Open decisions
+
+1. **Base as a composer package** (the runtime especially) — so upgrades flow via `composer
+   update`, not per-instance merges. Lean: yes. Settle in Phase B.
+2. **Root-of-trust boundary** (§2) — exact contents; global-identity-vs-regional-root (§4).
+3. **Custody partitioning** for shards + the cross-region migration job.
+4. **Sidecar↔instance auth at a distance** (post de-co-locate) — where `trigger_secret`/`brk_`
+   are looked up when the sidecar has no filesystem access (a control-plane lookup keyed by
+   SSO'd member + selected instance).
+5. **Existing full-clone instances** — migrate via `trim-instance.php` (one-time) or
+   re-provision from the base.
+
+---
+
+## Status / progress (2026-07-24)
+
+- Sidecar repos pushed (SSH, secret-audited): `pipelines.tiknix`, `store.tiknix` (dir
+  `shop.tiknix`), `explorer.tiknix`, `sidecar-kit.tiknix` (tagged `v0.1.0`).
+- **Kit flip done** (core `8da1857`): core consumes `tiknix/sidecar-kit ^0.1.0` (composer VCS),
+  `core/lib/Sidecar` deleted; sidecar front-controllers boot from `vendor/autoload`. Live-verified.
+- **`scripts/trim-instance.php`** (`53caea3`) — migration tool; dry-run on bidsurge = 489K/14
+  files. To harden with the §5 PROTECTED invariant + owner's keep-calls.
+- Empty until Phase C: `aibuilder.tiknix` (extract AI Builder). Same for a `workspace.tiknix`.
 
 ## See also
-
-- `lib/Sidecar/*` (the Kit), `views/sidecar/app.php` (embed) — the built contract.
-- `core-primitive-and-nav-rename` / `sidecar-plugins` memories — the plugin model + the
-  three existing sidecars + the "core rip-out" note this plan formalizes.
-- `connector-integrations-architecture` memory — Tier-3 custody + the broker.
-- `scripts/aibuilder-provision.php` — where the secret-scrub lives; where the code-trim
-  goes.
+`lib/Sidecar/*` (now `tiknix/sidecar-kit`), `views/sidecar/app.php`; memories
+`connector-integrations-architecture` (Tier-3 custody/broker), `core-primitive-and-nav-rename`,
+`sidecar-plugins`, `sidecar-ecosystem-plan`.

@@ -127,7 +127,7 @@
                             <div class="row mb-3">
                                 <div class="col-sm-4"><strong>Token:</strong></div>
                                 <div class="col-sm-8">
-                                    <code><?= substr($key->token, 0, 12) ?>...</code>
+                                    <code><?= htmlspecialchars(substr((string)($key->token ?? $key->prefix ?? ''), 0, 12)) ?>...</code>
                                     <small class="text-muted">(hidden for security)</small>
                                 </div>
                             </div>

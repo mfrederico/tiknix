@@ -154,20 +154,49 @@ $canMintKey = $base === '' || ($epHost !== '' && strcasecmp($epHost, $curHost) =
       if (d('has-api') === '1'){
         html += urlRow('REST API', 'text-bg-info', 'POST', d('api'), d('api'),
           '<code>Authorization: Bearer pk_…</code> · body is the context JSON · <code>?async=1</code> returns a <code>run_id</code> you poll at <code>GET /pipeline/status/&lt;run_id&gt;</code>.');
+        // Ready-to-run curl; the key is filled in client-side by generate/paste below.
+        html += '<div class="mb-2"><div class="d-flex align-items-center gap-2 mb-1"><span class="small fw-semibold">Try it</span>'
+          + '<button type="button" class="btn btn-sm btn-outline-secondary ms-auto" id="ep-curlcopy"><i class="bi bi-clipboard"></i> Copy curl</button></div>'
+          + '<pre class="small bg-body-tertiary rounded p-2 mb-0" id="ep-curl" style="white-space:pre-wrap;word-break:break-all"></pre></div>';
         html += '<div class="border-top pt-3">'
           + '<div class="fw-semibold small mb-1"><i class="bi bi-key me-1"></i>Test key</div>';
         if (CAN_MINT){
-          html += '<button type="button" class="btn btn-sm btn-outline-success" id="ep-genkey"><i class="bi bi-key me-1"></i>Generate a test key</button>'
+          html += '<div class="d-flex flex-wrap align-items-center gap-2">'
+            + '<button type="button" class="btn btn-sm btn-outline-success" id="ep-genkey"><i class="bi bi-key me-1"></i>Generate a test key</button>'
+            + '<span class="text-body-secondary small">or paste one you have:</span>'
+            + '<div class="input-group input-group-sm" style="max-width:300px"><input type="password" class="form-control font-monospace" id="ep-pastekey" placeholder="pk_…" autocomplete="off"><button type="button" class="btn btn-outline-secondary" id="ep-pasteuse">Use</button></div>'
+            + '</div>'
             + '<div id="ep-keyout" class="mt-2" style="display:none"><div class="input-group input-group-sm">'
             + '<input type="text" class="form-control font-monospace" id="ep-keyval" readonly>'
-            + '<button type="button" class="btn btn-outline-secondary" id="ep-keycopy"><i class="bi bi-clipboard"></i></button></div>'
-            + '<div class="form-text text-warning-emphasis">Shown once — copy it now. It authenticates as you on this workspace.</div></div>';
+            + '<button type="button" class="btn btn-outline-secondary" id="ep-keycopy"><i class="bi bi-clipboard"></i></button></div></div>'
+            + '<div class="form-text">The key fills the curl above (client-side, never sent back to us). It is a secret — don\'t share the command.</div>';
         } else {
           html += '<div class="form-text mb-0">Mint a <code>pk_</code> key from this instance\'s own <code>/integrations</code> page (keys live in each app\'s database).</div>';
         }
         html += '</div>';
       }
       body.innerHTML = html;
+
+      // --- REST "try it" curl: fill the key client-side from generate OR paste ---
+      var curlKey = 'pk_YOUR_KEY';
+      function renderCurl(){
+        var el = document.getElementById('ep-curl'); if (!el) return;
+        el.textContent = 'curl -X POST ' + d('api') + ' \\\n'
+          + '  -H "Authorization: Bearer ' + curlKey + '" \\\n'
+          + '  -H "Content-Type: application/json" \\\n'
+          + "  -d '{}'";
+      }
+      function setCurlKey(k){ curlKey = (k && k.trim()) ? k.trim() : 'pk_YOUR_KEY'; renderCurl(); }
+      renderCurl();
+      var curlCopy = document.getElementById('ep-curlcopy');
+      if (curlCopy) curlCopy.addEventListener('click', function(){
+        var t = (document.getElementById('ep-curl') || {}).textContent || '';
+        var done = function(){ var i = curlCopy.querySelector('i'); i.className = 'bi bi-check-lg'; setTimeout(function(){ i.className = 'bi bi-clipboard'; }, 1200); };
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done).catch(function(){ window.prompt('Copy:', t); }); }
+        else { window.prompt('Copy:', t); }
+      });
+      var pasteUse = document.getElementById('ep-pasteuse');
+      if (pasteUse) pasteUse.addEventListener('click', function(){ setCurlKey(document.getElementById('ep-pastekey').value); });
 
       var gen = document.getElementById('ep-genkey');
       if (gen){
@@ -182,6 +211,7 @@ $canMintKey = $base === '' || ($epHost !== '' && strcasecmp($epHost, $curHost) =
               document.getElementById('ep-keyval').value = j.data.key;
               document.getElementById('ep-keyout').style.display = '';
               gen.style.display = 'none';
+              setCurlKey(j.data.key);   // drop the real key into the curl above
               var kc = document.getElementById('ep-keycopy');
               kc.addEventListener('click', function(){ var v = document.getElementById('ep-keyval'); v.select(); if (navigator.clipboard){ navigator.clipboard.writeText(v.value); } var i = kc.querySelector('i'); i.className='bi bi-check-lg'; setTimeout(function(){ i.className='bi bi-clipboard'; },1200); });
             } else { gen.disabled = false; gen.innerHTML = '<i class="bi bi-key me-1"></i>Generate a test key'; alert((j && j.message) || 'Could not mint a key'); }

@@ -39,6 +39,9 @@ $iid = (int)$instance->id;
     </div>
   <?php endif; ?>
 
+  <?php include __DIR__ . '/../partials/connected-services.php'; ?>
+
+  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em">Pipelines &amp; automations</h2>
   <?php
     $canRun = true;
     $runId  = $iid;

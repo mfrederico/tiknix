@@ -46,6 +46,14 @@ class Integrations extends Control {
         if (!$inst) { Flight::redirect('/aibuilder'); return; }
 
         $dir = $this->instanceDir($inst->slug);
+        // Connected services for the selected instance, service+status only (the owner
+        // sees full detail on /connections; this catalog never carries identifiers).
+        $services = [];
+        foreach (Bean::find('connections', 'instance_id = ? AND enabled = 1', [(int)$inst->id]) as $c) {
+            $svc = (string)$c->connectorType; if ($svc === '') continue;
+            if (!isset($services[$svc])) $services[$svc] = ['connector' => $svc, 'connected' => false, 'revoked' => false];
+            if (empty($c->revokedAt)) $services[$svc]['connected'] = true; else $services[$svc]['revoked'] = true;
+        }
         $this->render('integrations/hub', [
             'title'          => 'Integrations',
             'instance'       => $inst,
@@ -53,12 +61,18 @@ class Integrations extends Control {
             'pipelines'      => InstanceAutomations::pipelines($dir),
             'durableObjects' => InstanceAutomations::durableObjects($dir),
             'baseUrl'        => $this->instanceBaseUrl($dir),
+            'services'       => array_values($services),
+            'brokerError'    => '',
         ]);
     }
 
-    /** Inside-an-instance read-only view (admins only). */
+    /**
+     * Inside-an-instance read-only catalog. Open to ALL members (non-admin included) —
+     * the point is that builders can discover what's available to integrate with.
+     * Connections show as SERVICE + STATUS only (never account identifiers); managing
+     * them stays admin-only on /connections.
+     */
     private function instanceView(): void {
-        if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/dashboard'); return; }
         $root = dirname(__DIR__);                       // the app root this code runs in
         $this->render('integrations/index', [
             'title'          => 'Integrations',
@@ -68,7 +82,27 @@ class Integrations extends Control {
             // This instance's own public base URL — used to show the concrete
             // MCP tool + REST API paths on the exposed pipeline cards.
             'baseUrl'        => rtrim((string) (Flight::get('app.baseurl') ?: ''), '/'),
-        ]);
+        ] + $this->connectedServices($root));
+    }
+
+    /**
+     * Service+status-only connected-services list for the instance catalog. Uses the
+     * instance's own broker key (read-only metadata, scoped by that key's instance_id)
+     * and strips everything except connector + connected/revoked status. The "no broker
+     * key" state (nothing wired yet) is surfaced as an empty list, not a warning.
+     */
+    private function connectedServices(string $root): array {
+        $broker = InstanceAutomations::brokerConnections($root);
+        $services = [];
+        foreach ($broker['connections'] ?? [] as $c) {
+            $svc = (string)($c['connector'] ?? ''); if ($svc === '') continue;
+            if (!isset($services[$svc])) $services[$svc] = ['connector' => $svc, 'connected' => false, 'revoked' => false];
+            if (!empty($c['enabled']) && empty($c['revoked'])) $services[$svc]['connected'] = true;
+            if (!empty($c['revoked'])) $services[$svc]['revoked'] = true;
+        }
+        $err = (string)($broker['error'] ?? '');
+        if (stripos($err, 'no broker key') !== false) $err = '';   // not-yet-wired = empty state, not an error
+        return ['services' => array_values($services), 'brokerError' => $err];
     }
 
     private function instanceDir(string $slug): string {

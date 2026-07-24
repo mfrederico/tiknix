@@ -40,6 +40,11 @@ class Feature {
             'blurb'     => 'Build, edit, run + schedule deterministic pipelines in your instances. Runs as the pipelines.tiknix sidecar.',
             'min_level' => 100, // MEMBER and above — they own the instances whose pipelines they edit
         ],
+        'workbench' => [
+            'label'     => 'AI Projects',
+            'blurb'     => 'Plan, build + track AI-assisted development tasks per instance. Runs as the workspace.tiknix sidecar; each instance\'s task data lives in its own workspace.db.',
+            'min_level' => 100, // MEMBER and above — they own the instances they build in
+        ],
     ];
 
     private static function settingKey(string $flag): string {

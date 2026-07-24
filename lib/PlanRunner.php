@@ -156,12 +156,12 @@ class PlanRunner {
         $supersedeArg = $this->supersedeIds
             ? ' --supersede=' . escapeshellarg(implode(',', $this->supersedeIds))
             : '';
-        // Sidecar workspace DB: propagate the per-instance workspace.db path (set by the AI
+        // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so plan-ingest.php's bootstrap writes the decomposed
         // plan to THAT db, not core's. INERT for core's own /workbench (env unset).
-        $wsDbEnv  = getenv('TIKNIX_WORKSPACE_DB');
+        $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
-            ? "export TIKNIX_WORKSPACE_DB=" . escapeshellarg($wsDbEnv) . "\n" : '';
+            ? "export TIKNIX_WORKBENCH_DB=" . escapeshellarg($wsDbEnv) . "\n" : '';
         return <<<BASH
 #!/bin/bash
 # Tiknix headless planner (claude -p) — instance {$this->slug}

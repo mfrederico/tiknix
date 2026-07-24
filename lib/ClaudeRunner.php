@@ -90,12 +90,12 @@ class ClaudeRunner {
      * Checks .mcp_url file (written by serve.sh) or defaults to localhost:8080
      */
     private function getHookUrl(string $projectRoot): string {
-        // Sidecar regime: the AI Projects sidecar set TIKNIX_WORKSPACE_DB, so this task's
-        // data lives in the INSTANCE's workspace.db — point progress hooks at the INSTANCE's
+        // Sidecar regime: the AI Projects sidecar set TIKNIX_WORKBENCH_DB, so this task's
+        // data lives in the INSTANCE's workbench.db — point progress hooks at the INSTANCE's
         // OWN /mcp/message (its baseurl + its .mcp_token, both already in the workspace) so
-        // add_task_log writes to that workspace.db. This also drops the localhost:8080 core
+        // add_task_log writes to that workbench.db. This also drops the localhost:8080 core
         // coupling entirely (good for eject/de-co-location). INERT for core (env unset).
-        if (getenv('TIKNIX_WORKSPACE_DB')) {
+        if (getenv('TIKNIX_WORKBENCH_DB')) {
             $cfg  = @parse_ini_file($this->getProjectPath() . '/conf/config.ini', true) ?: [];
             $base = rtrim((string) ($cfg['app']['baseurl'] ?? ''), '/');
             if ($base !== '') return $base . '/mcp/message';
@@ -224,12 +224,12 @@ class ClaudeRunner {
             $runBlock = 'cd ' . escapeshellarg($workspaceRoot) . "\n{$claudeCmd}\nEXIT_CODE=\$?";
         }
 
-        // Sidecar workspace DB: propagate the per-instance workspace.db path (set by the AI
+        // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so the child's bootstrap writes task state THERE, not
         // core's db. INERT for core's own /workbench — the env is unset there. See bootstrap.php.
-        $wsDbEnv  = getenv('TIKNIX_WORKSPACE_DB');
+        $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
-            ? 'export TIKNIX_WORKSPACE_DB=' . escapeshellarg($wsDbEnv) . "\n" : '';
+            ? 'export TIKNIX_WORKBENCH_DB=' . escapeshellarg($wsDbEnv) . "\n" : '';
 
         return <<<BASH
 #!/bin/bash

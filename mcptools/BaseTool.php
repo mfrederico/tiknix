@@ -70,17 +70,17 @@ abstract class BaseTool {
     }
 
     /**
-     * Point RedBean at this instance's per-instance workspace.db before touching workbench
+     * Point RedBean at this instance's per-instance workbench.db before touching workbench
      * task beans. Task data is owned by the AI Projects sidecar and lives in the instance's
-     * data/workspace.db, so when a build agent reports progress to THIS instance's own MCP
+     * data/workbench.db, so when a build agent reports progress to THIS instance's own MCP
      * the write must land there — not the instance's app db.
      *
      * INERT on the control plane (core keeps its tasks in the ambient core db) and when no
-     * workspace.db exists yet. Call at the TOP of execute() in any workbench task tool.
+     * workbench.db exists yet. Call at the TOP of execute() in any workbench task tool.
      */
-    protected function selectWorkspaceDb(): void {
+    protected function selectWorkbenchDb(): void {
         if (\is_control_plane()) return;                       // core: ambient core db (unchanged)
-        $db = dirname(__DIR__) . '/data/workspace.db';         // {instanceRoot}/data/workspace.db
+        $db = dirname(__DIR__) . '/data/workbench.db';         // {instanceRoot}/data/workbench.db
         if (!is_file($db)) return;                             // no sidecar-owned tasks here
         if (!\RedBeanPHP\R::hasDatabase('ws')) \RedBeanPHP\R::addDatabase('ws', 'sqlite:' . $db);
         \RedBeanPHP\R::selectDatabase('ws');

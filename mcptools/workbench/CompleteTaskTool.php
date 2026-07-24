@@ -35,7 +35,7 @@ class CompleteTaskTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
-        $this->selectWorkspaceDb();   // instance: write task data to the sidecar's workspace.db
+        $this->selectWorkbenchDb();   // instance: write task data to the sidecar's workbench.db
         if (!$this->member) {
             throw new \Exception("Authentication required");
         }

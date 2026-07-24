@@ -34,7 +34,7 @@ log/*.log
 projects/
 
 # AI Projects (workspace) sidecar: per-instance task data, owned by the sidecar, never tracked
-data/workspace.db
+data/workbench.db
 
 # IDE
 .idea/

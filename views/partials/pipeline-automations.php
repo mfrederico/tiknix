@@ -48,7 +48,8 @@ $canMintKey = $base === '' || ($epHost !== '' && strcasecmp($epHost, $curHost) =
                 <?php if ($p['cron'] !== ''): ?><span class="badge text-bg-light ms-1" title="<?= htmlspecialchars($p['cron']) ?>"><i class="bi bi-clock"></i></span><?php endif; ?>
                 <?php if (!empty($p['github'])): $ghb = $p['github']; $ghBr = is_array($ghb['branches'] ?? null) ? implode(', ', $ghb['branches']) : 'any branch'; ?><span class="badge text-bg-dark ms-1" title="Fires on GitHub push (<?= htmlspecialchars($ghBr) ?>)"><i class="bi bi-github"></i> push</span><?php endif; ?>
               </div>
-              <div class="text-body-secondary small text-truncate"><code><?= htmlspecialchars($p['slug']) ?></code> · <?= (int)$p['steps'] ?> step<?= (int)$p['steps'] === 1 ? '' : 's' ?><?php if ($p['description'] !== ''): ?> · <?= htmlspecialchars($p['description']) ?><?php endif; ?></div>
+              <div class="text-body-secondary small text-truncate"><code><?= htmlspecialchars($p['slug']) ?></code> · <?= (int)$p['steps'] ?> step<?= (int)$p['steps'] === 1 ? '' : 's' ?></div>
+              <?php if ($p['description'] !== ''): ?><div class="text-body-secondary small mt-1" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word"><?= htmlspecialchars($p['description']) ?></div><?php endif; ?>
 
               <div class="mt-2 d-flex flex-wrap gap-2">
                 <?php if ($exposes): ?>

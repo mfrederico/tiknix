@@ -65,6 +65,7 @@ class Bootstrap {
         }
         
         $this->config = parse_ini_file($configFile, true);
+        \Flight::set("core.config_file", $configFile);   // let the sidecar-kit Registry find core config from vendor/
 
         // Set timezone from config (defaults to UTC)
         $timezone = $this->config['app']['timezone'] ?? 'UTC';

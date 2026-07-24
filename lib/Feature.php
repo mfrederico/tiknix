@@ -42,7 +42,7 @@ class Feature {
         ],
         'workbench' => [
             'label'     => 'AI Projects',
-            'blurb'     => 'Plan, build + track AI-assisted development tasks per instance. Runs as the workspace.tiknix sidecar; each instance\'s task data lives in its own workspace.db.',
+            'blurb'     => 'Plan, build + track AI-assisted development tasks per instance. Runs as the workbench.tiknix sidecar; each instance\'s task data lives in its own workbench.db.',
             'min_level' => 100, // MEMBER and above — they own the instances they build in
         ],
     ];

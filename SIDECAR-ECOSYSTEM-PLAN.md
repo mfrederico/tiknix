@@ -119,7 +119,7 @@ positively. Classification (the audit that defines the base):
 | framework/auth/session/`lib/functions.php` + `conf/*.example.ini` | BASE | ✅ |
 | `controls/Teams,Firehose,Leads,Security` | BASE (owner-confirmed: keep per-instance) | ✅ |
 | `controls/Aibuilder` + `views/aibuilder` | FEATURE SIDECAR (`aibuilder.tiknix`) | ❌ |
-| `controls/Workbench` + `views/workbench` | FEATURE SIDECAR (`workspace.tiknix`) | ❌ |
+| `controls/Workbench` + `views/workbench` | FEATURE SIDECAR (`workbench.tiknix`) | ❌ |
 | `controls/Mcpconfig`, `controls/Mcptools` | admin UI (control-plane / sidecar) | ❌ |
 | pipeline editor, explorer, store | FEATURE SIDECARS (already extracted) | ❌ |
 | broker/custody/SSO-mint/provisioning/registry | CONTROL-PLANE ROOT SIDECAR | ❌ (core-only) |
@@ -153,7 +153,7 @@ refusal in the tooling.
   bugfixes reach instances via `composer update`, not per-instance `git merge`. (`trim-instance.php`
   demotes to a **one-time migration** for the legacy full-clone instances.)
 - **C — Extract feature sidecars.** AI Builder → `aibuilder.tiknix`, Workspace →
-  `workspace.tiknix` (+ MCP admin). Same move as the kit. Nav → `/sidecar/app/*`; flags gate + bill.
+  `workbench.tiknix` (+ MCP admin). Same move as the kit. Nav → `/sidecar/app/*`; flags gate + bill.
 - **D — Extract the control-plane as the root sidecar.** broker/custody/SSO-mint/provisioning
   become their own deploy at `control.tiknix.com`; core = base + that + all flags.
 - **E — De-co-locate + shards.** Sidecar↔instance over HTTP only (`trigger_secret`/`brk_`),
@@ -188,7 +188,7 @@ start.
   `core/lib/Sidecar` deleted; sidecar front-controllers boot from `vendor/autoload`. Live-verified.
 - **`scripts/trim-instance.php`** (`53caea3`) — migration tool; dry-run on bidsurge = 489K/14
   files. To harden with the §5 PROTECTED invariant + owner's keep-calls.
-- Empty until Phase C: `aibuilder.tiknix` (extract AI Builder). Same for a `workspace.tiknix`.
+- Empty until Phase C: `aibuilder.tiknix` (extract AI Builder). Same for a `workbench.tiknix`.
 
 ## See also
 `lib/Sidecar/*` (now `tiknix/sidecar-kit`), `views/sidecar/app.php`; memories

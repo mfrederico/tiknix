@@ -200,8 +200,10 @@ class Security extends Control {
             return;
         }
 
-        // Validate regex if it looks like one
-        if (preg_match('#^[/#~@].*[/#~@]$#', $pattern)) {
+        // Validate regex if it looks like one. NOTE: use {} delimiters here — the char class
+        // [/#~@] contains '#', so a '#'-delimited pattern self-closes early → "Unknown modifier"
+        // and (under the strict error handler) kills every save.
+        if (preg_match('{^[/#~@].*[/#~@]$}', $pattern)) {
             if (@preg_match($pattern, '') === false) {
                 $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid regex pattern'];
                 Flight::redirect($id ? "/security/edit?id=$id" : '/security/create');

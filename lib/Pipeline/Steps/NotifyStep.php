@@ -30,7 +30,11 @@ class NotifyStep implements StepInterface {
         $subject = (string) ($config['subject'] ?? '(no subject)');
         $body    = (string) ($config['body'] ?? '');
         if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
-            return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => 'invalid recipient', 'exit' => 1];
+            // Echo the resolved value — an unresolved {token} stays literal, so this instantly
+            // shows WHY (e.g. "{context.mailto} - 2026-…" means mailto wasn't in the context).
+            return ['ok' => false, 'output' => null, 'stdout' => '',
+                    'stderr' => 'invalid recipient: "' . mb_substr($to, 0, 120) . '" — the "to" field must resolve to a bare email address',
+                    'exit' => 1];
         }
         if (!class_exists('\\app\\Mailer') || !Mailer::isConfigured()) {
             return ['ok' => true, 'output' => ['sent' => false, 'reason' => 'mailer-not-configured', 'to' => $to, 'subject' => $subject],

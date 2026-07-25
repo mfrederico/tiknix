@@ -34,6 +34,37 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
       <span><i class="bi bi-check-circle me-1"></i>Connected to <strong><?= htmlspecialchars(($connection['repo']) ?? '') ?></strong></span>
       <button id="gh-disconnect" class="btn btn-sm btn-outline-danger" data-cid="<?= (int)$connection['id'] ?>">Disconnect</button>
     </div>
+
+    <!-- Custom domains: map repo branches to your own domains (like multiple stores) -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-globe2"></i><span class="fw-semibold">Custom domains</span>
+        <span class="text-body-secondary small ms-auto">branch &rarr; your domain</span>
+      </div>
+      <div class="card-body">
+        <p class="small text-body-secondary mb-2">
+          Map a branch of <code><?= htmlspecialchars(($connection['repo']) ?? '') ?></code> to your own domain.
+          At your DNS, add a <strong>CNAME</strong> from the domain to
+          <code><?= htmlspecialchars(($instance->slug) ?? '') ?>.tiknix.com</code>, then <strong>Verify</strong>.
+          <span class="text-body-secondary">Going live (HTTPS + serving) is provisioned by us for now.</span>
+        </p>
+        <div id="rt-list" class="mb-2 small text-body-secondary">Loading…</div>
+        <form id="rt-form" class="row g-2 align-items-end">
+          <div class="col-12 col-sm-5">
+            <label class="form-label small mb-0">Domain</label>
+            <input id="rt-domain" class="form-control form-control-sm" placeholder="app.example.com" autocomplete="off" spellcheck="false" required>
+          </div>
+          <div class="col-8 col-sm-4">
+            <label class="form-label small mb-0">Branch</label>
+            <select id="rt-branch" class="form-select form-select-sm"><option value="">Loading…</option></select>
+          </div>
+          <div class="col-4 col-sm-3">
+            <button class="btn btn-primary btn-sm w-100" type="submit"><i class="bi bi-plus-lg"></i> Add</button>
+          </div>
+        </form>
+        <div id="rt-msg" class="form-text mt-1"></div>
+      </div>
+    </div>
   <?php endif; ?>
 
   <div class="card shadow-sm">
@@ -152,5 +183,61 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
     if(!confirm('Disconnect this GitHub repo?')) return;
     post('/connections/disconnect', {cid:this.dataset.cid}).then(()=>location.reload());
   });
+
+  // Custom domains ("resolves to") — branch → your domain, DNS-verified
+  const rtForm = document.getElementById('rt-form');
+  if (rtForm) {
+    const RT_TARGET = <?= json_encode((($instance->slug) ?? '') . '.tiknix.com') ?>;
+    let RT = <?= json_encode(array_values($connection['resolvesTo'] ?? [])) ?>;
+    const list = document.getElementById('rt-list');
+    const rtMsg = document.getElementById('rt-msg');
+    const brSel = document.getElementById('rt-branch');
+    const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    const setMsg = (t, cls) => { rtMsg.className='form-text mt-1 '+(cls||''); rtMsg.textContent=t||''; };
+
+    function renderRT(){
+      if(!RT.length){ list.innerHTML='<span class="text-body-secondary">No domains yet — add one below.</span>'; return; }
+      list.innerHTML = RT.map(r=>{
+        const v = r.verified ? '<span class="badge text-bg-success"><i class="bi bi-check-lg"></i> DNS verified</span>'
+                             : '<span class="badge text-bg-secondary">unverified</span>';
+        return '<div class="d-flex align-items-center gap-2 py-1 border-bottom">'
+          + '<code class="text-body">'+esc(r.domain)+'</code>'
+          + '<span class="text-body-secondary small">&larr; '+esc(r.branch)+'</span>'
+          + '<span class="ms-auto d-flex gap-1 align-items-center">'+v
+          + ' <button class="btn btn-outline-secondary btn-sm rt-verify" data-d="'+esc(r.domain)+'">Verify DNS</button>'
+          + ' <button class="btn btn-outline-danger btn-sm rt-del" data-d="'+esc(r.domain)+'" title="Remove"><i class="bi bi-x"></i></button>'
+          + '</span></div>';
+      }).join('');
+    }
+    renderRT();
+
+    fetch('/connections/branches?id='+iid,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(j=>{
+      const bs=(j.data&&j.data.branches)||[]; const def=(j.data&&j.data.default)||'main';
+      brSel.innerHTML = bs.length ? bs.map(b=>'<option'+(b===def?' selected':'')+'>'+esc(b)+'</option>').join('') : '<option value="">No branches</option>';
+    }).catch(()=>{ brSel.innerHTML='<option value="">Failed to load branches</option>'; });
+
+    rtForm.addEventListener('submit', function(e){
+      e.preventDefault();
+      const domain=document.getElementById('rt-domain').value.trim().toLowerCase(), branch=brSel.value;
+      if(!domain||!branch){ setMsg('Enter a domain and pick a branch.','text-danger'); return; }
+      setMsg('Adding…','text-body-secondary');
+      post('/connections/resolveadd',{id:iid,domain:domain,branch:branch}).then(j=>{
+        if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); document.getElementById('rt-domain').value='';
+          setMsg('Added. Add a CNAME: '+domain+' → '+RT_TARGET+', then Verify DNS.','text-success'); }
+        else setMsg(j.message||'Failed.','text-danger');
+      }).catch(()=>setMsg('Network error.','text-danger'));
+    });
+
+    list.addEventListener('click', function(e){
+      const vb=e.target.closest('.rt-verify'), db=e.target.closest('.rt-del');
+      if(vb){ const d=vb.dataset.d; vb.disabled=true; setMsg('Checking DNS for '+d+'…','text-body-secondary');
+        post('/connections/resolveverify',{id:iid,domain:d}).then(j=>{ vb.disabled=false;
+          if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); setMsg(j.message||'Verified.','text-success'); }
+          else setMsg(j.message||'Not verified yet.','text-danger');
+        }).catch(()=>{ vb.disabled=false; setMsg('Network error.','text-danger'); }); }
+      if(db){ const d=db.dataset.d; if(!confirm('Remove '+d+'?')) return;
+        post('/connections/resolveremove',{id:iid,domain:d}).then(j=>{ if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); setMsg('Removed.','text-body-secondary'); } }); }
+    });
+  }
 })();
 </script>

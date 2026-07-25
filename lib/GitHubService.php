@@ -186,6 +186,17 @@ class GitHubService {
         }
     }
 
+    /** All branch names on the repo (paged, capped) — for the deploy branch picker. */
+    public function listBranches(): array {
+        $out = []; $page = 1;
+        do {
+            $rows = $this->request('GET', "/repos/{$this->owner}/{$this->repo}/branches", null, ['per_page' => 100, 'page' => $page]);
+            foreach ((array) $rows as $b) { if (!empty($b['name'])) $out[] = (string) $b['name']; }
+            $page++;
+        } while (is_array($rows) && count($rows) === 100 && $page <= 5);
+        return $out;
+    }
+
     /**
      * Get repository info
      *

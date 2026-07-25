@@ -75,6 +75,7 @@ class Connections extends Control {
             'repo'        => ($meta['owner'] ?? '') . '/' . ($meta['repo'] ?? ''),
             'defaultBranch' => $meta['defaultBranch'] ?? 'main',
             'autoPublish' => !empty($meta['autoPublish']),
+            'resolvesTo'  => array_values($meta['resolvesTo'] ?? []),   // [{domain,branch,verified,verifiedAt,live}]
             'enabled'     => (int)$conn->enabled === 1,
             'lastUsed'    => $conn->lastUsedAt,
             'lastError'   => $conn->lastError,
@@ -195,7 +196,9 @@ class Connections extends Control {
         $conn->externalName   = $fullName;
         $conn->externalUrl    = 'https://github.com/' . $owner . '/' . $repo;
         $conn->connectionName = $fullName;
-        $conn->metadataJson   = json_encode(['owner' => $owner, 'repo' => $repo, 'defaultBranch' => $defaultBranch, 'autoPublish' => $auto]);
+        $prevMeta = json_decode((string) ($conn->metadataJson ?: '{}'), true) ?: [];
+        $conn->metadataJson   = json_encode(['owner' => $owner, 'repo' => $repo, 'defaultBranch' => $defaultBranch,
+            'autoPublish' => $auto, 'resolvesTo' => array_values($prevMeta['resolvesTo'] ?? [])]);
         $conn->enabled        = 1;
         $conn->shared         = 0;
         $conn->lastError      = null;
@@ -326,6 +329,106 @@ class Connections extends Control {
         $sess = $_SESSION['gh_oauth'] ?? null;
         if (!$sess || empty($sess['token'])) { $this->jsonError('No pending GitHub authorization', 400); return; }
         $this->jsonSuccess(['repos' => $this->githubUserRepos((string)$sess['token'])]);
+    }
+
+    // --- Custom-domain deploy targets ("resolves to", on the GitHub connection) ---
+    // A list of {domain, branch} mappings (like Shopify's multiple stores). Phase 1:
+    // register + DNS-verify. The publish/deploy into /hosted/<domain> is Phase 2.
+
+    /** GET /connections/branches?id=<inst> — the connected repo's real branches. JSON. */
+    public function branches($params = []): void {
+        if (!$this->requireLogin()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        $conn = $this->githubConn((int)$inst->id);
+        if (!$conn || !$conn->id) { $this->jsonError('Connect a GitHub repo first.', 400); return; }
+        $meta = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
+        try {
+            $gh = new GitHubService(EncryptionService::decrypt($conn->accessToken), (string)($meta['owner'] ?? ''), (string)($meta['repo'] ?? ''));
+            $this->jsonSuccess(['branches' => $gh->listBranches(), 'default' => $meta['defaultBranch'] ?? 'main']);
+        } catch (\Throwable $e) { $this->jsonError('Could not list branches: ' . $e->getMessage(), 400); }
+    }
+
+    /** POST /connections/resolveadd — map {domain, branch}. */
+    public function resolveadd($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        $conn = $this->githubConn((int)$inst->id);
+        if (!$conn || !$conn->id) { $this->jsonError('Connect a GitHub repo first.', 400); return; }
+        $domain = strtolower(trim((string)$this->getParam('domain', '')));
+        $branch = trim((string)$this->getParam('branch', ''));
+        if (!$this->validHost($domain)) { $this->jsonError('Enter a valid domain (e.g. app.example.com).', 400); return; }
+        if ($branch === '' || !preg_match('#^[A-Za-z0-9._/-]+$#', $branch)) { $this->jsonError('Pick a branch.', 400); return; }
+        $meta = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
+        $rt = array_values($meta['resolvesTo'] ?? []);
+        foreach ($rt as $r) if (($r['domain'] ?? '') === $domain) { $this->jsonError('That domain is already mapped.', 409); return; }
+        $rt[] = ['domain' => $domain, 'branch' => $branch, 'verified' => false, 'verifiedAt' => null, 'live' => false];
+        $meta['resolvesTo'] = $rt;
+        $conn->metadataJson = json_encode($meta);
+        Bean::store($conn);
+        $this->jsonSuccess(['resolvesTo' => $rt, 'cnameTarget' => $this->stagingHost($inst)], 'Domain added');
+    }
+
+    /** POST /connections/resolveverify — confirm the domain's CNAME points at the staging host. */
+    public function resolveverify($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        $conn = $this->githubConn((int)$inst->id);
+        if (!$conn || !$conn->id) { $this->jsonError('No connection', 400); return; }
+        $domain = strtolower(trim((string)$this->getParam('domain', '')));
+        $target = $this->stagingHost($inst);
+        $ok = false;
+        foreach ((array) @dns_get_record($domain, DNS_CNAME) as $r) {
+            if (rtrim(strtolower((string)($r['target'] ?? '')), '.') === strtolower($target)) { $ok = true; break; }
+        }
+        if (!$ok) {   // fallback: same resolved IP (CNAME flattened by the DNS provider)
+            $dIp = @gethostbyname($domain); $tIp = @gethostbyname($target);
+            if ($dIp && $dIp !== $domain && $dIp === $tIp) $ok = true;
+        }
+        $meta = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
+        $rt = array_values($meta['resolvesTo'] ?? []); $found = false;
+        foreach ($rt as &$r) { if (($r['domain'] ?? '') === $domain) { $r['verified'] = $ok; $r['verifiedAt'] = $ok ? date('Y-m-d H:i:s') : null; $found = true; } }
+        unset($r);
+        if (!$found) { $this->jsonError('Domain not found in this connection.', 404); return; }
+        $meta['resolvesTo'] = $rt; $conn->metadataJson = json_encode($meta); Bean::store($conn);
+        if ($ok) { $this->jsonSuccess(['resolvesTo' => $rt], 'DNS verified — points at ' . $target); }
+        else { $this->jsonError('Not pointing at ' . $target . ' yet. Add a CNAME: ' . $domain . ' → ' . $target . ' (DNS can take a few minutes).', 422); }
+    }
+
+    /** POST /connections/resolveremove — drop a {domain,branch} mapping. */
+    public function resolveremove($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        $conn = $this->githubConn((int)$inst->id);
+        if (!$conn || !$conn->id) { $this->jsonError('No connection', 400); return; }
+        $domain = strtolower(trim((string)$this->getParam('domain', '')));
+        $meta = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
+        $meta['resolvesTo'] = array_values(array_filter($meta['resolvesTo'] ?? [], fn($r) => ($r['domain'] ?? '') !== $domain));
+        $conn->metadataJson = json_encode($meta); Bean::store($conn);
+        $this->jsonSuccess(['resolvesTo' => $meta['resolvesTo']], 'Domain removed');
+    }
+
+    /** The CNAME target customers point their domain at = this instance's staging host. */
+    private function stagingHost($inst): string {
+        $ini  = @parse_ini_file($this->instanceDir($inst->slug) . '/conf/config.ini', true) ?: [];
+        $host = parse_url((string)($ini['app']['baseurl'] ?? ''), PHP_URL_HOST);
+        return $host ?: ($inst->slug . '.tiknix.com');
+    }
+
+    /** Strict host allowlist (mirrors capricorn's valid_host): DNS chars, no traversal. */
+    private function validHost(string $h): bool {
+        $h = strtolower(trim($h));
+        if ($h === '' || strlen($h) > 253) return false;
+        if (strpos($h, '..') !== false) return false;
+        if (!preg_match('/^[a-z0-9.-]+$/', $h)) return false;
+        if (in_array($h[0], ['.', '-'], true) || in_array(substr($h, -1), ['.', '-'], true)) return false;
+        return strpos($h, '.') !== false;
     }
 
     // --- Generic connector OAuth (registry-driven; e.g. Shopify) --------------

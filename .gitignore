@@ -1,12 +1,7 @@
-# Configuration (contains credentials)
-conf/config.ini
-conf/mailgun.ini
-conf/aibuilder.ini
-conf/github.ini
-conf/shopify.ini
-conf/stripe.ini
-conf/broker.ini
-conf/config.*.ini
+# Configuration (contains credentials). Broad by default — every connector secret
+# (proxmox/shopify/stripe/broker/…) stays out of the repo without needing a new line
+# here each time. Only the committed *.example.ini templates are tracked.
+conf/*.ini
 !conf/*.example.ini
 
 # Python cache

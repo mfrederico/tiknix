@@ -16,7 +16,15 @@ use RedBeanPHP\R;
 class ProvisionService {
 
     private const APP = 'tiknix';
-    private const SLUG_RE = '/^[a-z][a-z0-9]{1,49}$/';
+    // Validates a STORED slug, which is the immutable {base}-{hash} identity
+    // (e.g. "towels-a1b2c3"). Path-safe: lowercase, starts with a letter, internal
+    // single hyphens only — no dots/slashes/uppercase (these slugs become dir names).
+    private const SLUG_RE = '/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/';
+    // Validates the user-chosen BASE name before the hash is appended. The base is
+    // NOT unique — two tenants may both pick "towels" — and may itself contain hyphens
+    // ("mighty-mouse"); the minted hash is always appended as the FINAL segment, so the
+    // stored slug reads "mighty-mouse-a1b2c3" and the hash sits right before ".tiknix.com".
+    private const BASE_RE = '/^(?=.{2,40}$)[a-z][a-z0-9]*(-[a-z0-9]+)*$/';
 
     private function cfg(): array {
         return @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
@@ -31,6 +39,21 @@ class ProvisionService {
 
     private function instanceDir(string $slug): string {
         return '/var/www/html/default/' . $slug . '.' . $this->appNamespace();
+    }
+
+    /**
+     * Mint the immutable {base}-{hash} slug — the frozen identity that anchors the
+     * dir, the staging host, and any bespoke-domain CNAME. The base repeats across
+     * tenants; the 6-char hash makes the full slug unique in the registry and on disk.
+     * Returns '' if a free slug can't be allocated (astronomically unlikely).
+     */
+    private function mintSlug(string $base): string {
+        for ($i = 0; $i < 8; $i++) {
+            $hash = substr(bin2hex(random_bytes(4)), 0, 6);   // 6 hex chars: [0-9a-f], DNS/path safe
+            $slug = $base . '-' . $hash;
+            if (R::count('instance', 'slug = ?', [$slug]) === 0 && !is_dir($this->instanceDir($slug))) return $slug;
+        }
+        return '';
     }
 
     /** Run a capricorn instance script (args already validated). Returns ok/out/code. */
@@ -65,15 +88,23 @@ class ProvisionService {
 
     /** Provision a NEW isolated instance owned by $memberId. */
     public function create(int $memberId, array $p): array {
-        $slug   = strtolower(trim((string) ($p['slug'] ?? '')));
-        $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($slug);
+        $base   = strtolower(trim((string) ($p['slug'] ?? '')));
+        $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
         $engine = (string) ($p['engine'] ?? 'claude');
         // Only root may flag the "(default)" core sandbox; the caller passes is_root.
         $isDefault = !empty($p['is_default']) && !empty($p['is_root']);
 
-        if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'error' => 'Invalid name (a-z, then a-z0-9, 2-50 chars).', 'code' => 400];
-        if (R::count('instance', 'slug = ?', [$slug]) > 0 || is_dir($this->instanceDir($slug)))
-            return ['ok' => false, 'error' => 'That name is already taken.', 'code' => 409];
+        if (!preg_match(self::BASE_RE, $base)) return ['ok' => false, 'error' => 'Invalid name (a-z, then a-z0-9, 2-40 chars).', 'code' => 400];
+        // The base repeats across tenants; mint a unique {base}-{hash} slug. The lone
+        // exception is the root-flagged "(default)" core sandbox, which keeps its bare slug.
+        if ($isDefault) {
+            $slug = $base;
+            if (R::count('instance', 'slug = ?', [$slug]) > 0 || is_dir($this->instanceDir($slug)))
+                return ['ok' => false, 'error' => 'That name is already taken.', 'code' => 409];
+        } else {
+            $slug = $this->mintSlug($base);
+            if ($slug === '') return ['ok' => false, 'error' => 'Could not allocate a unique instance id.', 'code' => 500];
+        }
 
         $member = R::load('member', $memberId);
         if (!$member->id) return ['ok' => false, 'error' => 'Unknown member.', 'code' => 403];
@@ -148,17 +179,17 @@ class ProvisionService {
     public function fork(int $memberId, array $p): array {
         $srcId  = (int) ($p['id'] ?? 0);
         $ckpt   = (string) ($p['checkpoint'] ?? 'checkpoint-baseline');
-        $slug   = strtolower(trim((string) ($p['slug'] ?? '')));
-        $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($slug);
+        $base   = strtolower(trim((string) ($p['slug'] ?? '')));
+        $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
         if (!$this->canAccessInstance($memberId, $srcId)) return ['ok' => false, 'error' => 'No such source instance', 'code' => 404];
         $srcSlug = (string) R::getCell('SELECT slug FROM instance WHERE id = ?', [$srcId]);
         $engine  = (string) (R::getCell('SELECT engine FROM instance WHERE id = ?', [$srcId]) ?: 'claude');
         if (!preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $ckpt)) return ['ok' => false, 'error' => 'Invalid checkpoint name', 'code' => 400];
         if (trim($this->gitInstance($srcSlug, ['tag', '-l', $ckpt])['out']) !== $ckpt)
             return ['ok' => false, 'error' => 'Checkpoint not found in source instance', 'code' => 404];
-        if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'error' => 'Invalid name.', 'code' => 400];
-        if (R::count('instance', 'slug = ?', [$slug]) > 0 || is_dir($this->instanceDir($slug)))
-            return ['ok' => false, 'error' => 'That name is already taken.', 'code' => 409];
+        if (!preg_match(self::BASE_RE, $base)) return ['ok' => false, 'error' => 'Invalid name.', 'code' => 400];
+        $slug = $this->mintSlug($base);   // fresh {base}-{hash}; the base may repeat across tenants
+        if ($slug === '') return ['ok' => false, 'error' => 'Could not allocate a unique instance id.', 'code' => 500];
 
         $member = R::load('member', $memberId);
         $srcDir = $this->instanceDir($srcSlug);

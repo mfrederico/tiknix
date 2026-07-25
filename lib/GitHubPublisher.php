@@ -17,7 +17,9 @@ class GitHubPublisher {
 
     public const BRANCH = 'aibuilder-publish';
     private const APP    = 'tiknix';
-    private const SLUG_RE = '/^[a-z][a-z0-9]{1,49}$/';
+    // Stored slug is the immutable {base}-{hash} identity (e.g. "towels-a1b2c3"):
+    // lowercase, starts with a letter, internal single hyphens only — path-safe.
+    private const SLUG_RE = '/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/';
 
     private static function instanceDir(string $slug): string {
         return '/var/www/html/default/' . $slug . '.' . self::APP;

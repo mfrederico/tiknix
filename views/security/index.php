@@ -99,6 +99,7 @@
             <table class="table table-hover mb-0">
                 <thead class="table-light">
                     <tr>
+                        <th style="width: 60px">ID</th>
                         <th style="width: 50px">Active</th>
                         <th style="width: 80px">Priority</th>
                         <th>Name</th>
@@ -110,10 +111,11 @@
                 </thead>
                 <tbody>
                     <?php if (empty($pathRules)): ?>
-                        <tr><td colspan="7" class="text-center text-muted py-3">No path rules found</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted py-3">No path rules found</td></tr>
                     <?php else: ?>
                         <?php foreach ($pathRules as $rule): ?>
                             <tr class="<?= !$rule->isActive ? 'table-secondary text-muted' : '' ?>">
+                                <td><span class="badge bg-secondary-subtle text-body-secondary font-monospace">#<?= (int)$rule->id ?></span></td>
                                 <td>
                                     <div class="form-check form-switch">
                                         <input class="form-check-input toggle-active" type="checkbox"
@@ -180,6 +182,7 @@
             <table class="table table-hover mb-0">
                 <thead class="table-light">
                     <tr>
+                        <th style="width: 60px">ID</th>
                         <th style="width: 50px">Active</th>
                         <th style="width: 80px">Priority</th>
                         <th>Name</th>
@@ -191,10 +194,11 @@
                 </thead>
                 <tbody>
                     <?php if (empty($commandRules)): ?>
-                        <tr><td colspan="7" class="text-center text-muted py-3">No command rules found</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted py-3">No command rules found</td></tr>
                     <?php else: ?>
                         <?php foreach ($commandRules as $rule): ?>
                             <tr class="<?= !$rule->isActive ? 'table-secondary text-muted' : '' ?>">
+                                <td><span class="badge bg-secondary-subtle text-body-secondary font-monospace">#<?= (int)$rule->id ?></span></td>
                                 <td>
                                     <div class="form-check form-switch">
                                         <input class="form-check-input toggle-active" type="checkbox"

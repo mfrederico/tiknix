@@ -35,7 +35,11 @@ $sub  = strtolower(trim($opts['tenant'] ?? ''));
 $admin = trim($opts['admin'] ?? '');
 $name  = trim($opts['name'] ?? '');
 
-if ($sub === '' || !preg_match('/^[a-z][a-z0-9]{1,49}$/', $sub)) {
+// Accepts the immutable {base}-{hash} identity ("test2-62f15f") as well as a bare slug —
+// lowercase, starts with a letter, internal single hyphens only (path-safe). Must match the
+// SLUG_RE loosening in lib/ProvisionService + capricorn validate_slug, or provisioning of a
+// hashed instance aborts here and leaves a half-built clone (no .aibuilder, core config.ini).
+if ($sub === '' || !preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $sub)) {
     fwrite(STDERR, "aibuilder-provision: invalid or missing --tenant slug\n");
     exit(1);
 }

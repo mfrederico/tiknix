@@ -55,7 +55,7 @@
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-hdd-network me-1"></i>Instances</h5>
-                    <a href="/aibuilder" class="btn btn-sm btn-link">Advanced Builder</a>
+                    <a href="/sidecar/app/workbench" class="btn btn-sm btn-link">Advanced Builder</a>
                 </div>
                 <div class="card-body">
                     <?php $teamInstances = $teamInstances ?? []; $myInstances = $myInstances ?? []; $sharedHereIds = array_map('intval', $sharedHereIds ?? []); $memberId = (int)($memberId ?? 0); ?>
@@ -66,7 +66,7 @@
                     <?php else: ?>
                         <div class="list-group list-group-flush mb-3">
                             <?php foreach ($teamInstances as $inst): ?>
-                                <a href="/aibuilder/open/<?= (int)$inst->id ?>" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-0">
+                                <a href="/sidecar/app/workbench" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-0">
                                     <span>
                                         <i class="bi bi-box-seam me-1"></i>
                                         <span class="fw-medium"><?= htmlspecialchars(($inst->displayName ?: $inst->slug) ?? '') ?></span>

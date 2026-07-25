@@ -43,7 +43,7 @@ class Integrations extends Control {
         if (!$inst) {
             foreach ($instances as $cand) { if ($ok = $this->ownedInstance((int)$cand->id)) { $inst = $ok; break; } }
         }
-        if (!$inst) { Flight::redirect('/aibuilder'); return; }
+        if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
 
         $dir = $this->instanceDir($inst->slug);
         // Connected services for the selected instance, service+status only (the owner

@@ -87,10 +87,10 @@ class Connections extends Control {
     public function setup($params = []): void {
         if (!$this->requireLogin()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
-        if (!$inst) { Flight::redirect('/aibuilder'); return; }
+        if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
         // Default (tiknix-core) instances publish back to main — root only.
         $isDefault = (bool)$inst->isDefault;
-        if ($isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/aibuilder'); return; }
+        if ($isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/sidecar/app/workbench'); return; }
         $conn  = $this->githubConn((int)$inst->id);
         $oauth = (string)$this->getParam('oauth', '');
         $pendingOauth = $oauth === '1'
@@ -282,10 +282,10 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         $type = strtolower((string)($params['operation']->name ?? 'github'));
         if ($type !== 'github') { $this->connectorConnect($type); return; }
-        if (!$this->oauthEnabled()) { Flight::redirect('/aibuilder'); return; }
+        if (!$this->oauthEnabled()) { Flight::redirect('/sidecar/app/workbench'); return; }
         $inst = $this->ownedInstance($this->getParam('id', 0));
-        if (!$inst) { Flight::redirect('/aibuilder'); return; }
-        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/aibuilder'); return; }
+        if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
+        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/sidecar/app/workbench'); return; }
 
         $state = bin2hex(random_bytes(16));
         $_SESSION['gh_oauth'] = ['state' => $state, 'instance_id' => (int)$inst->id, 'ts' => time()];
@@ -307,7 +307,7 @@ class Connections extends Control {
         $state = (string)$this->getParam('state', '');
         $code  = (string)$this->getParam('code', '');
         if ($type !== 'github' || !$sess || $state === '' || !hash_equals((string)($sess['state'] ?? ''), $state) || $code === '') {
-            unset($_SESSION['gh_oauth']); Flight::redirect('/aibuilder'); return;
+            unset($_SESSION['gh_oauth']); Flight::redirect('/sidecar/app/workbench'); return;
         }
         if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
 
@@ -337,13 +337,13 @@ class Connections extends Control {
         // list of what this app is connected to (metadata via the broker).
         if (!builder_tools_enabled()) { $this->instanceConnections(); return; }
         // The member's instances (most-recent first) drive the store picker and the
-        // default when no ?id= is given, so /connections never dead-ends to /aibuilder.
+        // default when no ?id= is given, so /connections never dead-ends to the builder.
         $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) {
             foreach ($instances as $cand) { if ($ok = $this->ownedInstance((int)$cand->id)) { $inst = $ok; break; } }
         }
-        if (!$inst) { Flight::redirect('/aibuilder'); return; }
+        if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
 
         // A just-completed connect (a prior request) writes a connections row; bust
         // the cache before reading so a newly-connected store shows on the FIRST view
@@ -613,7 +613,7 @@ class Connections extends Control {
     /** GET /connections/connect/<type>?id=&env=&shop= — start a registry connector's OAuth. */
     private function connectorConnect(string $type): void {
         $connector = ConnectorRegistry::get($type);
-        if (!$connector) { Flight::redirect('/aibuilder'); return; }
+        if (!$connector) { Flight::redirect('/sidecar/app/workbench'); return; }
         if (($connector->meta()['auth_type'] ?? 'oauth') === 'api_key') {
             // api_key connectors take a pasted key via POST /connections/connectkey,
             // not the OAuth GET flow.
@@ -622,11 +622,11 @@ class Connections extends Control {
         }
         if (!$connector->isConfigured()) {
             $this->flash('error', ucfirst($type) . ' is not configured on this server.');
-            Flight::redirect('/aibuilder'); return;
+            Flight::redirect('/sidecar/app/workbench'); return;
         }
         $inst = $this->ownedInstance($this->getParam('id', 0));
-        if (!$inst) { Flight::redirect('/aibuilder'); return; }
-        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/aibuilder'); return; }
+        if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
+        if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/sidecar/app/workbench'); return; }
 
         $env  = $this->normalizeEnv($this->getParam('env', 'production'));
         $shop = trim((string)$this->getParam('shop', ''));
@@ -710,7 +710,7 @@ class Connections extends Control {
     /** GET /connections/callback/<type> — registry connector OAuth redirect target. */
     private function connectorCallback(string $type): void {
         $connector = ConnectorRegistry::get($type);
-        if (!$connector) { Flight::redirect('/aibuilder'); return; }
+        if (!$connector) { Flight::redirect('/sidecar/app/workbench'); return; }
 
         $state    = (string)$this->getParam('state', '');
         $claims   = $state !== '' ? OAuthStateService::verify($state) : null;
@@ -721,7 +721,7 @@ class Connections extends Control {
             || $sessHash === '' || !hash_equals($sessHash, hash('sha256', $state))
             || (string)($claims['provider'] ?? '') !== $type) {
             $this->flash('error', 'Authorization expired or invalid — please reconnect.');
-            Flight::redirect('/aibuilder'); return;
+            Flight::redirect('/sidecar/app/workbench'); return;
         }
 
         $iid     = (int)($claims['instance_id'] ?? 0);
@@ -741,12 +741,12 @@ class Connections extends Control {
             if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
             if ($mid !== (int)$this->member->id) {
                 $this->flash('error', 'This authorization was started by a different account.');
-                Flight::redirect('/aibuilder'); return;
+                Flight::redirect('/sidecar/app/workbench'); return;
             }
             $inst = $this->ownedInstance($iid);
             if (!$inst) {
                 $this->flash('error', 'You no longer own that instance.');
-                Flight::redirect('/aibuilder'); return;
+                Flight::redirect('/sidecar/app/workbench'); return;
             }
             $returnUrl = '/connections?id=' . $iid;
         }
@@ -779,7 +779,7 @@ class Connections extends Control {
     /** Redirect to a handoff return_url with a status query param (or core as a fallback). */
     private function redirectBack(string $returnUrl, array $params): void {
         if ($returnUrl === '' || !preg_match('#^https://#i', $returnUrl)) {
-            Flight::redirect('/aibuilder'); return;
+            Flight::redirect('/sidecar/app/workbench'); return;
         }
         $sep = strpos($returnUrl, '?') !== false ? '&' : '?';
         Flight::redirect($returnUrl . $sep . http_build_query($params));

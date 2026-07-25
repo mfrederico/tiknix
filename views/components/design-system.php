@@ -75,6 +75,16 @@ body {
     font-feature-settings:'ss01','ss03'; -webkit-font-smoothing:antialiased;
 }
 
+/* Native <select> option popups are painted by the OS and don't inherit the theme bg, so
+   in dark mode they render the theme's light text on a white OS popup (light-grey on white,
+   unreadable). Pin option/optgroup to the theme surface + text for correct contrast in both
+   themes. Applies to every <select> app-wide (core + sidecars that include this design system). */
+select option, select optgroup,
+.form-select option, .form-select optgroup {
+    background-color:var(--bs-body-bg);
+    color:var(--bs-body-color);
+}
+
 /* typography */
 .ui-display{font-family:var(--ui-ff-display);letter-spacing:-0.025em;}
 .ui-mono{font-family:var(--ui-ff-mono);font-feature-settings:'tnum';}

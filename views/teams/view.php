@@ -41,10 +41,10 @@
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="d-flex gap-2">
-                        <a href="/workbench/create?team_id=<?= $team->id ?>" class="btn btn-primary">
+                        <a href="/sidecar/app/workbench" class="btn btn-primary">
                             <i class="bi bi-plus-lg"></i> New Task
                         </a>
-                        <a href="/workbench?team_id=<?= $team->id ?>" class="btn btn-outline-primary">
+                        <a href="/sidecar/app/workbench" class="btn btn-outline-primary">
                             <i class="bi bi-kanban"></i> View All Tasks
                         </a>
                     </div>
@@ -95,7 +95,7 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">Recent Tasks</h5>
-                    <a href="/workbench?team_id=<?= $team->id ?>" class="btn btn-sm btn-link">View All</a>
+                    <a href="/sidecar/app/workbench" class="btn btn-sm btn-link">View All</a>
                 </div>
                 <div class="card-body p-0">
                     <?php if (empty($tasks)): ?>
@@ -107,7 +107,7 @@
                         <div class="list-group list-group-flush">
                             <?php foreach ($tasks as $task): ?>
                                 <?php $creator = $task->member; ?>
-                                <a href="/workbench/view?id=<?= $task->id ?>" class="list-group-item list-group-item-action">
+                                <a href="/sidecar/app/workbench" class="list-group-item list-group-item-action">
                                     <div class="d-flex justify-content-between align-items-start">
                                         <div>
                                             <h6 class="mb-1"><?= htmlspecialchars(($task->title) ?? '') ?></h6>

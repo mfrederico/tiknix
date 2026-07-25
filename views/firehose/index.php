@@ -60,7 +60,7 @@ $badge = function (string $s): string {
                                 <td class="small text-nowrap"><?= htmlspecialchars((string)$e->lastSeenAt) ?></td>
                                 <td>
                                     <?php if ($t): ?>
-                                        <a href="/workbench/view?id=<?= (int)$t->id ?>" class="text-decoration-none">
+                                        <a href="/sidecar/app/workbench" class="text-decoration-none">
                                             <i class="bi bi-wrench-adjustable"></i> task #<?= (int)$t->id ?>
                                             <span class="badge bg-<?= in_array($t->status, ['merged','completed','done']) ? 'success' : 'secondary' ?> ms-1"><?= htmlspecialchars((string)$t->status) ?></span>
                                         </a>

@@ -217,3 +217,58 @@ DB on bootstrap. Existing tasks migrate by splitting core's `workbenchtask` by `
 
 Eject: the instance carries its `workspace.db`; a self-hoster runs their own workspace sidecar
 against it.
+
+---
+
+## Appendix — Custom domains + immutable instance identity (LOCKED 2026-07-25)
+
+Let members attach a **bespoke domain** (`hairsalon.com`) to a finalized instance. Three parts;
+only TLS + a router lookup are new — the rest reuses what exists.
+
+### The immutable identity (`{slug}-{hash}`) — SET IN STONE
+Every NEW instance gets a `{slug}-{hash}` identity minted **once** at provisioning and **never
+regenerated** — it's the DNS anchor a customer's CNAME pins, the custom-domain binding, and the
+durable eject id. BOTH parts are frozen (owner decision "A"):
+- `slug` (`hairsalon`) — frozen at create; the mutable **display name** is a separate field.
+- `hash` — a random guid, minted once (`ProvisionService::registerInstanceBean`), guarded so no
+  code path ever refreshes it. Distinct from the *ephemeral* test-preview hash (`proxyHash`).
+- Staging URL / dir = `hairsalon-{hash}.tiknix.com` → `/default/hairsalon-{hash}.tiknix/`.
+  Capricorn already routes hyphenated `{sub}.tiknix` dirs (proven), so the staging subdomain needs
+  NO router change — only the custom domain does.
+- Derivation rule (single source of truth, applied in every `instanceDir` helper + `Sidecar\Access`):
+  `sub = hash ? "{slug}-{hash}" : slug` (grandfathered instances have `hash=NULL` → old `{slug}.{app}`).
+- **OPEN (owner owns capricorn):** does `provision-instance.sh` accept a hyphenated sub? If yes, flip
+  the ~4 `instanceDir` helpers + `Access` to the rule and provision the dir with the hash. If its
+  SLUG_RE rejects `-`, that regex is the one capricorn change needed.
+
+### Publish → deploy (staging vs production)
+- **Stage** = live edits at `hairsalon-{hash}.tiknix.com` (the working instance).
+- **Deploy** = deliberate: finalize → secret-scrub (conf/*.ini→.example.ini, drop *.db) → `git push`
+  to the member's GitHub repo (reuse `GitHubPublisher`), then `git pull`/snapshot into the production
+  folder. Production only changes on deploy — never live edits.
+
+### Serving a bespoke domain
+- **Folder = the FULL domain incl. TLD**, under a dedicated root: `/hosted/hairsalon.com/public/index.php`.
+  The folder name = the `Host` header verbatim → distinguishes `hairsalon.com` vs `hairsalon.net` with
+  zero parsing (fixes the known capricorn TLD-collision gap). Flat for MVP; shard by first-char
+  (`/hosted/h/hairsalon.com/`) only if a dir ever gets huge — NOT by TLD (skewed to .com).
+- **Router (nginx/capricorn — owner):** specific→general. (1) verbatim `/hosted/<Host>/public/index.php`
+  → serve (custom domains); (2) else today's `{sub}.{app}` under `/default/` (tiknix instances, unchanged).
+- **DNS (member, one record):** `hairsalon.com` CNAME → `hairsalon-{hash}.tiknix.com`. Because tiknix owns
+  that A record, the domain follows the instance across servers — customer never re-touches DNS. (Fleet
+  routing for free; the future external **sites server** is just a repoint of that A record.)
+- **TLS:** issue Let's Encrypt (lego/certbot) at deploy, once DNS resolves to us. Deploy already knows
+  the domain, so no on-demand needed.
+- **Config/db** in the production folder are gitignored + provisioned locally → survive every pull.
+
+### Credential (for the pull, esp. once on the external sites box)
+Serving box generates a per-site keypair → returns the PUBLIC key → control-plane adds it as a
+**read-only deploy key** on the member's repo (using their token, once). Private key never leaves the
+serving box; the member's broad token never leaves the control-plane.
+
+### Build phases
+1. **Immutable identity** — mint+store+guard `hash` (DONE, data foundation); flip the ~4 `instanceDir`
+   helpers + `Access` to the derivation rule once capricorn's provision SLUG_RE is confirmed.
+2. **Publish/deploy** — finalize+scrub+push (GitHubPublisher) → clone/pull into `/hosted/<domain>/`.
+3. **Custom domain attach** — CNAME instructions + resolve-poll → lego cert → router map entry.
+4. **Sites server** (later) — same publish/deploy targeting the external box; repoint the `{hash}` A record.

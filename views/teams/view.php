@@ -78,20 +78,14 @@
                         </div>
                     <?php endif; ?>
 
-                    <!-- Share your own instances with this team (owner-only toggles) -->
+                    <!-- Sharing an instance with a team lives in the AI Builder (workbench sidecar) -->
                     <?php if (!empty($myInstances)): ?>
                         <div class="border-top pt-3">
-                            <div class="small text-uppercase text-muted fw-semibold mb-2">Share your instances</div>
-                            <?php foreach ($myInstances as $inst): if (!empty($inst->isDefault)) continue; $on = in_array((int)$inst->id, $sharedHereIds, true); ?>
-                                <div class="form-check">
-                                    <input class="form-check-input team-share-instance" type="checkbox" value="<?= (int)$inst->id ?>" id="ti<?= (int)$inst->id ?>" <?= $on ? 'checked' : '' ?>>
-                                    <label class="form-check-label" for="ti<?= (int)$inst->id ?>">
-                                        <?= htmlspecialchars(($inst->displayName ?: $inst->slug) ?? '') ?>
-                                        <small class="text-muted"><?= htmlspecialchars(($inst->slug) ?? '') ?>.tiknix</small>
-                                    </label>
-                                </div>
-                            <?php endforeach; ?>
-                            <div id="teamShareMsg" class="form-text"></div>
+                            <p class="small text-muted mb-0">
+                                To share one of your instances with this team, open it in the
+                                <a href="/sidecar/app/workbench">AI&nbsp;Builder</a> and use
+                                <strong>Share&nbsp;with&nbsp;teams</strong>.
+                            </p>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -257,25 +251,11 @@
     </div>
 </div>
 
-<!-- Share instances with this team (owner-only toggles; reuses /aibuilder/share) -->
+<!-- Team member management (instance sharing lives in the AI Builder sidecar) -->
 <script>
 (function(){
   const TOKEN = <?= json_encode(csrf_token()) ?>;
   const TEAM  = <?= (int)$team->id ?>;
-  document.querySelectorAll('.team-share-instance').forEach(cb => cb.addEventListener('change', function(){
-    const msg = document.getElementById('teamShareMsg');
-    this.disabled = true; if (msg) msg.textContent = 'saving…';
-    fetch('/aibuilder/share', {
-      method: 'POST',
-      headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':TOKEN,'X-Requested-With':'XMLHttpRequest'},
-      body: new URLSearchParams({csrf_token:TOKEN, id:this.value, team_id:TEAM, shared:this.checked?1:0}).toString()
-    }).then(r => r.json()).then(j => {
-      this.disabled = false;
-      if (j && j.success) { if (msg) { msg.textContent = j.message || ''; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2500); } }
-      else { this.checked = !this.checked; if (msg) msg.textContent = (j && j.message) || 'Failed'; }
-    }).catch(() => { this.disabled = false; this.checked = !this.checked; if (msg) msg.textContent = 'Failed'; });
-  }));
-
   const post = (url, body) => fetch(url, {
     method: 'POST',
     headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':TOKEN,'X-Requested-With':'XMLHttpRequest'},

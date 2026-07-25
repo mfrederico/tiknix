@@ -146,8 +146,16 @@ class Executor {
                         'steps_done' => $done, 'awaiting' => $name, 'prompt' => $run->awaitPrompt];
             }
 
-            $bag[$name] = ['output' => $res['output'], 'stdout' => $res['stdout'], 'stderr' => $res['stderr'], 'exit' => $res['exit']];
-            $bag['prev'] = is_array($res['output']) ? $res['output'] : ['value' => $res['output']];
+            // A step's output is flattened to the top of its own namespace so a named
+            // step reads exactly like {prev.*}: {greet.data.shop.name} == {prev.data.shop.name}.
+            // The reserved keys (output/stdout/stderr/exit/input) are overlaid and always win,
+            // so {greet.output.a}, {greet.stdout}, {greet.input.x} keep working (back-compat).
+            $flat = is_array($res['output']) ? $res['output'] : ['value' => $res['output']];
+            $bag[$name] = array_merge($flat, [
+                'output' => $res['output'], 'stdout' => $res['stdout'],
+                'stderr' => $res['stderr'], 'exit' => $res['exit'], 'input' => $res['input'],
+            ]);
+            $bag['prev'] = $flat;
             $done++;
             $run->stepsDone = $done; Bean::store($run);
 
@@ -200,6 +208,7 @@ class Executor {
         Bean::store($sr);
 
         $t0 = microtime(true);
+        $config = [];
         if (!$handler) {
             $res = ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => "unknown step type '$type'", 'exit' => 1];
         } else {
@@ -209,6 +218,7 @@ class Executor {
             catch (\Throwable $e) { $res = ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $e->getMessage(), 'exit' => 1]; }
         }
         $res += ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => '', 'exit' => 1, 'await' => false];
+        $res['input'] = $config;   // the resolved config/args that ran → {<step>.input.*}
 
         $sr->status     = !empty($res['await']) ? 'awaiting' : ($res['ok'] ? 'completed' : 'failed');
         $sr->outputJson = json_encode($res['output'], JSON_UNESCAPED_SLASHES);

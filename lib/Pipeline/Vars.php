@@ -4,11 +4,16 @@
  *
  * Resolves `{path}` tokens against a bag built by the Executor:
  *   {context.x}            input params passed to the run
- *   {<step>.output.a.b}    a prior step's structured output (dot-path)
+ *   {<step>.a.b}           a prior step's output, flattened (same shape as {prev.*})
+ *   {<step>.output.a.b}    the same output via its explicit namespace (back-compat)
  *   {<step>.stdout}        a prior step's stdout / stderr / exit
+ *   {<step>.input.x}       the resolved config/args that step ran with
  *   {prev.x}               the previous step's output (dot-path)
  *   {time.now|date|ts}     wall-clock built-ins
  *   {run_id} {run_uid} {run_directory} {pipeline_slug}   run built-ins
+ *
+ * Reserved step keys (output/stdout/stderr/exit/input) win over same-named output
+ * keys; reach a shadowed output key via its explicit {<step>.output.<key>} path.
  *
  * Scalars interpolate in place; a token that resolves to an array/object is
  * JSON-encoded (so it can flow into a shell arg or an http body). An unknown token

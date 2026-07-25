@@ -100,6 +100,50 @@ class Pipeline extends Control {
         } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
     }
 
+    /**
+     * POST /pipeline/varshapes/<slug> — the SHAPE (keys/types only, never raw
+     * values) of the latest run's per-step outputs, so the editor's variable autocomplete can
+     * offer real fields like {greet.data.shop.name} for ANY team member without re-running and
+     * without broadcasting response PII. bearer = trigger_secret. Empty when the pipeline has
+     * never run (the editor then falls back to static per-step-type hints). */
+    public function varshapes($params = []) {
+        if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
+        $slug = $this->slugArg();
+        $run  = R::findOne('piperun', 'slug = ? ORDER BY id DESC', [$slug]);
+        $shapes = [];
+        if ($run && $run->id) {
+            foreach (R::find('pipesteprun', 'run_id = ? ORDER BY id', [(int) $run->id]) as $s) {
+                $name = (string) $s->stepName;
+                if ($name === '') continue;
+                $shapes[$name] = $this->shapeOf(json_decode((string) $s->outputJson, true), 0);
+            }
+        }
+        Flight::json(['ok' => true, 'run_id' => $run && $run->id ? (int) $run->id : 0, 'shapes' => $shapes]);
+    }
+
+    /**
+     * Reduce a value to a walkable, PII-safe shape: objects keep their keys, lists expose their
+     * element shape, scalars become just a type (no value). Depth/breadth capped — PII never crosses the wire.
+     */
+    private function shapeOf($v, int $depth) {
+        if ($depth > 6) return ['t' => 'deep'];
+        if (is_array($v)) {
+            if ($v !== [] && array_keys($v) === range(0, count($v) - 1)) {
+                return ['t' => 'array', 'n' => count($v), 'of' => $this->shapeOf($v[0], $depth + 1)];
+            }
+            $keys = []; $i = 0;
+            foreach ($v as $k => $vv) {
+                if (++$i > 60) { $keys['…'] = ['t' => 'more']; break; }
+                $keys[(string) $k] = $this->shapeOf($vv, $depth + 1);
+            }
+            return ['t' => 'object', 'keys' => $keys];
+        }
+        // Type only — NO value crosses this team-shared boundary. A short sample would still
+        // leak short PII (emails, names), so the autocomplete gets structure, never data. The
+        // current user still sees real values in their own live debug trace.
+        return ['t' => is_bool($v) ? 'bool' : (is_int($v) ? 'int' : (is_float($v) ? 'float' : (is_null($v) ? 'null' : 'string')))];
+    }
+
     /** POST /pipeline/object/<slug>?key=<key> — deliver a message to a durable object (bearer = trigger_secret). */
     public function object($params = []) {
         if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }

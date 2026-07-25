@@ -437,6 +437,34 @@ class Connections extends Control {
         $this->jsonSuccess(['resolvesTo' => $meta['resolvesTo']], 'Domain removed');
     }
 
+    /** POST /connections/deploy — clone/update the mapping's branch into /hosted/<domain>. */
+    public function deploy($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        $conn = $this->githubConn((int)$inst->id);
+        if (!$conn || !$conn->id) { $this->jsonError('Connect a GitHub repo first.', 400); return; }
+        $domain = strtolower(trim((string)$this->getParam('domain', '')));
+        $meta = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
+        $rt   = array_values($meta['resolvesTo'] ?? []);
+        $map  = null; foreach ($rt as $r) if (($r['domain'] ?? '') === $domain) { $map = $r; break; }
+        if (!$map) { $this->jsonError('That domain is not mapped.', 404); return; }
+        if (empty($map['verified'])) { $this->jsonError('Verify DNS for ' . $domain . ' before deploying.', 400); return; }
+        $repoFull = (string)($meta['owner'] ?? '') . '/' . (string)($meta['repo'] ?? '');
+        try { $token = EncryptionService::decrypt((string)$conn->accessToken); }
+        catch (\Throwable $e) { $this->jsonError('Connection token unreadable — reconnect GitHub.', 400); return; }
+
+        $res = \app\HostedDeploy::deploy($domain, $repoFull, (string)($map['branch'] ?? 'main'), $token, $this->instanceDir($inst->slug));
+        if (empty($res['ok'])) { $this->jsonError('Deploy failed: ' . ($res['error'] ?? 'unknown'), 500); return; }
+
+        foreach ($rt as &$r) if (($r['domain'] ?? '') === $domain) { $r['live'] = true; $r['deployedAt'] = date('Y-m-d H:i:s'); }
+        unset($r);
+        $meta['resolvesTo'] = $rt; $conn->metadataJson = json_encode($meta); Bean::store($conn);
+        $this->jsonSuccess(['resolvesTo' => $rt, 'steps' => $res['steps'] ?? []],
+            'Deployed to /hosted/' . $domain . ' — provision TLS + nginx to finish going live.');
+    }
+
     /** The CNAME target customers point their domain at = this instance's staging host. */
     private function stagingHost($inst): string {
         $ini  = @parse_ini_file($this->instanceDir($inst->slug) . '/conf/config.ini', true) ?: [];

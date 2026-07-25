@@ -236,11 +236,14 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
       list.innerHTML = RT.map(r=>{
         const v = r.verified ? '<span class="badge text-bg-success"><i class="bi bi-check-lg"></i> DNS verified</span>'
                              : '<span class="badge text-bg-secondary">unverified</span>';
-        return '<div class="d-flex align-items-center gap-2 py-1 border-bottom">'
+        const live = r.live ? ' <span class="badge text-bg-primary" title="Deployed '+esc(r.deployedAt||'')+'"><i class="bi bi-broadcast"></i> deployed</span>' : '';
+        const deploy = r.verified ? ' <button class="btn btn-success btn-sm rt-deploy" data-d="'+esc(r.domain)+'">'+(r.live?'Redeploy':'Deploy')+'</button>' : '';
+        return '<div class="d-flex align-items-center gap-2 py-1 border-bottom flex-wrap">'
           + '<code class="text-body">'+esc(r.domain)+'</code>'
           + '<span class="text-body-secondary small">&larr; '+esc(r.branch)+'</span>'
-          + '<span class="ms-auto d-flex gap-1 align-items-center">'+v
+          + '<span class="ms-auto d-flex gap-1 align-items-center">'+v+live
           + ' <button class="btn btn-outline-secondary btn-sm rt-verify" data-d="'+esc(r.domain)+'">Verify DNS</button>'
+          + deploy
           + ' <button class="btn btn-outline-danger btn-sm rt-del" data-d="'+esc(r.domain)+'" title="Remove"><i class="bi bi-x"></i></button>'
           + '</span></div>';
       }).join('');
@@ -265,12 +268,19 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
     });
 
     list.addEventListener('click', function(e){
-      const vb=e.target.closest('.rt-verify'), db=e.target.closest('.rt-del');
+      const vb=e.target.closest('.rt-verify'), db=e.target.closest('.rt-del'), pb=e.target.closest('.rt-deploy');
       if(vb){ const d=vb.dataset.d; vb.disabled=true; setMsg('Checking DNS for '+d+'…','text-body-secondary');
         post('/connections/resolveverify',{id:iid,domain:d}).then(j=>{ vb.disabled=false;
           if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); setMsg(j.message||'Verified.','text-success'); }
           else setMsg(j.message||'Not verified yet.','text-danger');
         }).catch(()=>{ vb.disabled=false; setMsg('Network error.','text-danger'); }); }
+      if(pb){ const d=pb.dataset.d;
+        if(!confirm('Deploy '+d+' now? Clones/updates its branch into /hosted/'+d+' (your DB is preserved).')) return;
+        pb.disabled=true; setMsg('Deploying '+d+'… (clone/reset + seeders)','text-body-secondary');
+        post('/connections/deploy',{id:iid,domain:d}).then(j=>{ pb.disabled=false;
+          if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); setMsg((j.message||'Deployed.')+' '+((j.data.steps||[]).join(' · ')),'text-success'); }
+          else setMsg(j.message||'Deploy failed.','text-danger');
+        }).catch(()=>{ pb.disabled=false; setMsg('Network error.','text-danger'); }); }
       if(db){ const d=db.dataset.d; if(!confirm('Remove '+d+'?')) return;
         post('/connections/resolveremove',{id:iid,domain:d}).then(j=>{ if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); setMsg('Removed.','text-body-secondary'); } }); }
     });

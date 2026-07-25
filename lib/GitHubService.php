@@ -186,6 +186,16 @@ class GitHubService {
         }
     }
 
+    /** Create a new repo under the authenticated user (auto-init so it has a default branch). */
+    public function createRepo(string $name, bool $private = true, string $description = ''): array {
+        return $this->request('POST', '/user/repos', [
+            'name'        => $name,
+            'private'     => $private,
+            'description' => $description,
+            'auto_init'   => true,
+        ]);
+    }
+
     /** All branch names on the repo (paged, capped) — for the deploy branch picker. */
     public function listBranches(): array {
         $out = []; $page = 1;

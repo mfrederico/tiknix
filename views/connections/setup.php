@@ -86,6 +86,22 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
           <div id="gh-msg" class="form-text mt-2"></div>
         </form>
 
+        <div class="text-center text-body-secondary small my-3">— or create a new repository —</div>
+        <form id="gh-create-form" class="row g-2 align-items-end">
+          <div class="col-8">
+            <label class="form-label small mb-0">New repository name</label>
+            <input id="gh-new-name" class="form-control form-control-sm" placeholder="my-app" autocomplete="off" spellcheck="false" required>
+          </div>
+          <div class="col-4">
+            <button class="btn btn-outline-dark btn-sm w-100" type="submit"><i class="bi bi-plus-lg"></i> Create &amp; connect</button>
+          </div>
+          <div class="col-12 form-check ms-1">
+            <input class="form-check-input" type="checkbox" id="gh-new-private" checked>
+            <label class="form-check-label small" for="gh-new-private">Private repository</label>
+          </div>
+          <div class="col-12"><div id="gh-create-msg" class="form-text"></div></div>
+        </form>
+
       <?php else: ?>
         <?php if (!empty($oauthEnabled)): ?>
           <a href="/connections/connect/github?id=<?= $iid ?>" class="btn btn-dark w-100 mb-3">
@@ -157,6 +173,26 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
         if(j.success) done(msg, j.data);
         else { msg.className='form-text mt-2 text-danger'; msg.textContent=j.message||'Failed.'; }
       }).catch(()=>{ msg.className='form-text mt-2 text-danger'; msg.textContent='Network error.'; }).finally(()=>btn.disabled=false);
+    });
+
+    // Create a new repo, then connect to it (reuses the OAuth token + the save path)
+    const createForm = document.getElementById('gh-create-form');
+    if (createForm) createForm.addEventListener('submit', function(e){
+      e.preventDefault();
+      const name = document.getElementById('gh-new-name').value.trim();
+      const priv = document.getElementById('gh-new-private').checked;
+      if(!name) return;
+      const btn=this.querySelector('button[type=submit]'); btn.disabled=true;
+      const cmsg=document.getElementById('gh-create-msg'); cmsg.className='form-text text-body-secondary'; cmsg.textContent='Creating '+name+' on GitHub…';
+      post('/connections/createrepo', {id:iid, name:name, private:priv?'1':'0'}).then(j=>{
+        if(!j.success){ cmsg.className='form-text text-danger'; cmsg.textContent=j.message||'Failed.'; btn.disabled=false; return; }
+        cmsg.textContent='Created '+j.data.full_name+' — connecting…';
+        const msg=document.getElementById('gh-msg');
+        return post('/connections/add', {id:iid, type:'github', use_oauth:'1', owner:j.data.owner, repo:j.data.repo, auto_publish:document.getElementById('gh-auto').checked?'1':'0'}).then(a=>{
+          if(a.success) done(msg, a.data);
+          else { cmsg.className='form-text text-danger'; cmsg.textContent=a.message||'Connect failed.'; btn.disabled=false; }
+        });
+      }).catch(()=>{ cmsg.className='form-text text-danger'; cmsg.textContent='Network error.'; btn.disabled=false; });
     });
   }
 

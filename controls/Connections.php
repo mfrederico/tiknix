@@ -331,6 +331,29 @@ class Connections extends Control {
         $this->jsonSuccess(['repos' => $this->githubUserRepos((string)$sess['token'])]);
     }
 
+    /** POST /connections/createrepo — create a NEW repo under the OAuth'd user, then the client
+     *  connects to it via /connections/add. Uses the pending OAuth token (repo scope). JSON. */
+    public function createrepo($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        $sess = $_SESSION['gh_oauth'] ?? null;
+        if (!$sess || empty($sess['token']) || (int)($sess['instance_id'] ?? 0) !== (int)$inst->id) {
+            $this->jsonError('GitHub authorization expired — reconnect.', 400); return;
+        }
+        $name = trim((string)$this->getParam('name', ''));
+        if (!preg_match('/^[A-Za-z0-9._-]{1,100}$/', $name)) { $this->jsonError('Repo name: letters, numbers, . _ - (max 100).', 400); return; }
+        $private = filter_var($this->getParam('private', true), FILTER_VALIDATE_BOOLEAN);
+        try {
+            $gh = new GitHubService((string)$sess['token'], '', '');
+            $r  = $gh->createRepo($name, $private, 'Created by tiknix AI Builder for ' . $inst->slug);
+        } catch (\Throwable $e) { $this->jsonError('GitHub could not create it: ' . $e->getMessage(), 400); return; }
+        $full = (string)($r['full_name'] ?? '');
+        [$owner, $repo] = array_pad(explode('/', $full, 2), 2, '');
+        $this->jsonSuccess(['owner' => $owner, 'repo' => $repo, 'full_name' => $full], 'Repository created');
+    }
+
     // --- Custom-domain deploy targets ("resolves to", on the GitHub connection) ---
     // A list of {domain, branch} mappings (like Shopify's multiple stores). Phase 1:
     // register + DNS-verify. The publish/deploy into /hosted/<domain> is Phase 2.

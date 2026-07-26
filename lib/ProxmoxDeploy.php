@@ -126,6 +126,20 @@ class ProxmoxDeploy {
         $vmid = (int) ($opts['vmid'] ?? $inst->ctVmid ?? 0);
         if ($vmid > 0 && $pve->ctExists($node, $vmid)) {
             if (empty($opts['recreate'])) return ['ok' => false, 'error' => 'CT ' . $vmid . ' already exists for ' . $slug . ' (pass recreate to replace it)'];
+
+            // Recreate DESTROYS the data volumes (purge), so refuse once a tenant has
+            // real data. Code changes never need this — the in-container puller applies
+            // them within a minute — so recreate is only for changing the image or the
+            // container's shape, and by then the tenant may own something worth keeping.
+            if (empty($opts['force'])) {
+                $state = self::dataState($pve, $node, $vmid);
+                if ($state['hasData']) {
+                    return ['ok' => false, 'error' => 'refusing to recreate CT ' . $vmid . ': ' . $state['why']
+                        . '. Recreate purges the database and uploads volumes. Push to '
+                        . $branch . ' for code changes; pass force to destroy it anyway.'];
+                }
+                $steps[] = 'recreate allowed (' . $state['why'] . ')';
+            }
             // PVE refuses to destroy a running container, so stop it first and give the
             // stop time to land before the destroy is attempted.
             $pve->stopCt($node, $vmid);
@@ -415,6 +429,38 @@ class ProxmoxDeploy {
             return ['ok' => false, 'error' => $file . ' is not writable by the web user'];
         }
         return ['ok' => true, 'step' => 'wrote ' . basename($file) . ' -> ' . $ip . ':' . self::PROXY_PORT];
+    }
+
+    /**
+     * Does this container hold tenant data worth protecting?
+     *
+     * The volumes cannot be inspected from outside — there is no exec API and bind
+     * mounts are root-only — so ask the APP instead: tiknix redirects to /install until
+     * setup is complete, which is exactly the "nothing here yet" signal. Anything else
+     * means someone has an account and therefore data.
+     *
+     * FAILS CLOSED. An unreachable container is reported as having data, because the
+     * cost of being wrong is asymmetric: refusing a recreate wastes a minute, while
+     * wrongly allowing one destroys a tenant's database.
+     *
+     * @return array{hasData:bool, why:string}
+     */
+    private static function dataState(ProxmoxService $pve, string $node, int $vmid): array {
+        $ip = '';
+        foreach (explode(',', (string) ($pve->ctConfig($node, $vmid)['net0'] ?? '')) as $part) {
+            if (str_starts_with(trim($part), 'ip=')) { $ip = explode('/', substr(trim($part), 3))[0]; break; }
+        }
+        if ($ip === '' || $ip === 'dhcp') return ['hasData' => true, 'why' => 'cannot determine the container address'];
+
+        $ch = curl_init('http://' . $ip . '/');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 6, CURLOPT_FOLLOWLOCATION => false]);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $to   = (string) curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+
+        if ($body === false || $code === 0) return ['hasData' => true, 'why' => 'container did not respond, so its state is unknown'];
+        if (str_contains($to, '/install'))  return ['hasData' => false, 'why' => 'still on first-run setup, no account created yet'];
+        return ['hasData' => true, 'why' => 'the app is past first-run setup (HTTP ' . $code . ')'];
     }
 
     /**

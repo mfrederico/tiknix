@@ -43,7 +43,7 @@ require_once __DIR__ . '/../bootstrap.php';
 
 new app\Bootstrap('conf/config.ini');
 
-$opt  = getopt('', ['slug:', 'domain::', 'vmid::', 'ip::', 'gw::', 'bridge::', 'ignore-platform-reqs', 'cert', 'recreate']);
+$opt  = getopt('', ['slug:', 'domain::', 'vmid::', 'ip::', 'gw::', 'bridge::', 'ignore-platform-reqs', 'cert', 'recreate', 'force']);
 $slug = (string) ($opt['slug'] ?? '');
 if ($slug === '') exit("usage: php scripts/proxmox-deploy.php --slug=<instance> [--domain=D] [--vmid=N] [--ip=CIDR] [--recreate]\n");
 
@@ -55,6 +55,7 @@ if (isset($opt['bridge'])) $params['bridge'] = (string) $opt['bridge'];
 if (isset($opt['ignore-platform-reqs'])) $params['ignorePlatformReqs'] = true;
 if (isset($opt['cert'])) $params['cert'] = true;
 if (isset($opt['recreate'])) $params['recreate'] = true;
+if (isset($opt['force']))    $params['force']    = true;
 
 echo "deploying {$slug}…\n";
 $r = app\ProxmoxDeploy::deploy($slug, (string) ($opt['domain'] ?? ''), $params);

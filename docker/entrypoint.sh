@@ -44,6 +44,24 @@ for pair in "two_factor_enabled:${TWO_FACTOR_ENABLED:-}" "two_factor_enforce:${T
   echo "entrypoint: ${key} = ${val}"
 done
 
+# 1d) Broker credentials, so this instance can reach its connected stores.
+# On a normal instance the control plane writes conf/broker.ini directly into the
+# instance directory. A container has its own conf/ on its own rootfs which core cannot
+# write to, and conf/ is gitignored so it cannot arrive via git either — so the key is
+# passed in and written here. Rewritten on every boot: the deploy is the source of truth.
+if [ -n "${BROKER_KEY:-}" ]; then
+  cat > conf/broker.ini <<BROKERINI
+; Auto-managed by tiknix — do not edit or commit. Written at boot from the deploy.
+; Lets this instance read its connected stores through the control-plane MCP gateway.
+
+[broker]
+endpoint = "${BROKER_ENDPOINT:-}"
+key = "${BROKER_KEY}"
+BROKERINI
+  chmod 640 conf/broker.ini
+  echo "entrypoint: broker.ini written (endpoint=${BROKER_ENDPOINT:-unset})"
+fi
+
 # 2) Ensure EncryptionService has a key ([security] app_key, 64 hex chars).
 # Priority: APP_KEY env  ->  key already in config  ->  generate ephemeral.
 # SET APP_KEY IN THE HYPERLIFT ENV: a generated key changes every boot, so anything

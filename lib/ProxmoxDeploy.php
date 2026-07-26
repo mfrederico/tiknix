@@ -462,6 +462,7 @@ class ProxmoxDeploy {
     private static function bootVars(object $inst, string $slug, string $domain, array $opts): array {
         $remote = self::remoteUrl($slug);
         $host   = (string) (parse_url($remote, PHP_URL_HOST) ?: '');
+        $broker = self::brokerConfig($inst);
 
         return [
             // Without HOME git cannot find its config and rejects the working copy
@@ -491,6 +492,10 @@ class ProxmoxDeploy {
             // example makes 2FA mandatory for a brand-new tenant.
             'TWO_FACTOR_ENABLED'   => (string) ($opts['twoFactorEnabled'] ?? 'true'),
             'TWO_FACTOR_ENFORCE'   => (string) ($opts['twoFactorEnforce'] ?? 'false'),
+            // Broker credentials, so the tenant can reach its connected stores. Core
+            // cannot write into the container's conf/, so they arrive here instead.
+            'BROKER_ENDPOINT'      => $broker['endpoint'],
+            'BROKER_KEY'           => $broker['key'],
             // Escape hatch for bring-up ONLY, off by default. A missing PHP extension is
             // an image defect; ignoring the requirement defers the failure to runtime.
             'COMPOSER_FLAGS'       => empty($opts['ignorePlatformReqs']) ? '' : '--ignore-platform-reqs',
@@ -604,6 +609,43 @@ class ProxmoxDeploy {
             return ['ok' => false, 'step' => 'certificate issuance failed: ' . trim(implode(' ', array_slice($out, -3)))];
         }
         return ['ok' => true, 'step' => 'issued certificate for ' . $domain . ' (' . $reason . ')'];
+    }
+
+    /**
+     * The instance's broker credentials, for reaching its connected stores.
+     *
+     * BrokerService::ensureInstanceConfig writes conf/broker.ini into the instance
+     * directory ON CORE, which a container never reads — it has its own conf/ on its own
+     * rootfs, and conf/ is gitignored so it cannot travel through the puller either.
+     * Without this a containerized tenant reports "no broker key" forever.
+     *
+     * The raw token is persisted (encrypted) on the instance row because mint() ROTATES
+     * the key in place: minting per deploy would invalidate the previous key on every
+     * restart, breaking any request in flight. Mint once, reuse, and re-mint only if the
+     * stored key no longer matches a live one.
+     *
+     * @return array{endpoint:string, key:string}
+     */
+    private static function brokerConfig(object $inst): array {
+        $endpoint = BrokerService::endpoint();
+
+        if (!empty($inst->brokerKey)) {
+            try {
+                $raw = EncryptionService::decrypt((string) $inst->brokerKey);
+                $row = BrokerService::forInstance((int) $inst->id);
+                if ($raw !== '' && $row && $row->id && (int) $row->isActive === 1
+                    && hash_equals((string) $row->tokenHash, EncryptionService::hashHex($raw))) {
+                    return ['endpoint' => $endpoint, 'key' => $raw];
+                }
+            } catch (\Throwable $e) {
+                // Unreadable stored key — fall through and mint a fresh one.
+            }
+        }
+
+        $res = BrokerService::mint((int) $inst->id, (int) $inst->memberId, []);
+        $inst->brokerKey = EncryptionService::encrypt($res['token']);
+        R::store($inst);
+        return ['endpoint' => $endpoint, 'key' => (string) $res['token']];
     }
 
     /** Stable per-instance app key so encrypted data survives a container recreate. */

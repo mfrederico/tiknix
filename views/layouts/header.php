@@ -171,21 +171,32 @@ if ($__loggedIn) {
           $__proj = \app\ProjectContext::current((int) (\Flight::getMember()->id ?? 0));
           if ($__proj):
       ?>
-        <a href="/projects" class="ui-project-chip d-flex align-items-center gap-2 px-3 py-1 rounded-3 bg-primary-subtle text-decoration-none ms-3"
-           title="Working on this project everywhere — click to change">
+        <?php
+        /* The AI Builder grew this chip because it was the only surface that knew which
+           instance you were in. Now the shell knows, so it lives here — one chip, always
+           in the same place, instead of one per plugin that can disagree with the others.
+           The live URL prefers a tenant's own domain and falls back to the staging host. */
+        $__pdomain = trim((string) ($__proj->ctDomain ?? ''));
+        if ($__pdomain === '') {
+            $__phost   = strtolower((string) (parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST) ?: 'tiknix.com'));
+            $__pdomain = $__proj->slug . '.' . $__phost;
+        }
+        ?>
+        <div class="ui-project-chip d-flex align-items-center gap-2 px-3 py-1 rounded-3 bg-primary-subtle ms-3 flex-wrap">
           <i class="bi bi-hdd-network-fill text-primary"></i>
           <span class="lh-sm">
             <span class="d-block text-uppercase text-body-secondary fw-semibold" style="font-size:.6rem;letter-spacing:.06em">Working on</span>
-            <span class="d-block fw-bold text-body-emphasis" style="font-size:.85rem">
-              <?= htmlspecialchars($__proj->displayName ?: $__proj->slug) ?>
+            <span class="d-block fw-bold" style="font-size:.85rem">
+              <a href="https://<?= htmlspecialchars($__pdomain) ?>" target="_blank" rel="noopener"
+                 class="link-body-emphasis text-decoration-none"
+                 title="Open live — <?= htmlspecialchars($__pdomain) ?>"><?= htmlspecialchars($__proj->displayName ?: $__proj->slug) ?><i class="bi bi-box-arrow-up-right ms-1 small opacity-75"></i></a>
+              <?php if (!empty($__proj->isDefault)): ?><span class="badge text-bg-warning" style="font-size:.62rem">default · core</span><?php endif; ?>
             </span>
           </span>
-          <?php /* Say what clicking does. The chip alone reads as a status badge, and a
-                   plugin embedded below has no business owning this control — the shell
-                   does, because the shell is what survives navigating between them. */ ?>
-          <span class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle ms-1"
-                style="font-size:.62rem"><i class="bi bi-grid-3x3-gap me-1"></i>Change</span>
-        </a>
+          <?php /* Say what it does — the chip alone reads as a status badge. */ ?>
+          <a href="/projects" class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle text-decoration-none"
+             style="font-size:.62rem" title="Change project"><i class="bi bi-grid-3x3-gap me-1"></i>Change</a>
+        </div>
       <?php endif; endif; ?>
 
       <ul class="navbar-nav flex-row align-items-center gap-2 ms-auto mb-0">

@@ -29,10 +29,26 @@ $__icon = fn($i) => $__iconMap[$i] ?? ($i ?: 'dot');
 // and Profile moves to the avatar dropdown with the other account items. Dashboard stays.
 $__skip = ['/auth/logout' => 1, '/admin' => 1, '/' => 1, '/member/profile' => 1];
 
+// Every sidecar plugin operates ON a project — the AI Builder edits one, the Pipeline
+// Editor edits its pipelines, the Store and Explorer read one. With no project selected
+// they have nothing to act on, so offering them invites the exact confusion this is
+// meant to remove: you click in, get asked to pick a project, and now two places own
+// that choice. Hide them until a project is chosen; /projects is the way in.
+$__hasProject = false;
+if (!empty($__loggedIn) && class_exists('\app\ProjectContext')) {
+    $__memberId   = (int) (\Flight::getMember()->id ?? 0);
+    $__hasProject = $__memberId > 0 && \app\ProjectContext::current($__memberId) !== null;
+}
+
 // Group the dynamic menu by its optional 'section' (default "Main").
 $__sections = [];
 foreach (($menu ?? []) as $__it) {
     if (isset($__it['url']) && isset($__skip[$__it['url']])) continue;
+    // A future plugin that genuinely does not need a project can opt out with
+    // 'requires_project' => false in its menu entry.
+    if (!$__hasProject
+        && isset($__it['url']) && str_starts_with((string) $__it['url'], '/sidecar/app/')
+        && ($__it['requires_project'] ?? true)) continue;
     $__sections[$__it['section'] ?? 'Main'][] = $__it;
 }
 // Surface Teams + Communications in the "Main" group for logged-in users. Teams was
@@ -98,7 +114,10 @@ if ($__loggedIn) {
         <?php endif; ?>
 
         <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>
-        <?php if (class_exists('\\app\\Sidecar\\Registry')): ?>
+        <?php /* Plugins act ON the selected project, so they are hidden until one is
+                 chosen — otherwise you click in, get asked to pick a project, and two
+                 places own that choice. /projects is the way in. */ ?>
+        <?php if ($__hasProject && class_exists('\\app\\Sidecar\\Registry')): ?>
           <?php $__plugins = \app\Sidecar\Registry::launchable(); $__pfirst = true; ?>
           <?php foreach ($__plugins as $__pname => $__p): ?>
             <?php if (\app\Feature::isEnabled($__p['feature'], (int)($member['id'] ?? 0), $__level)): ?>

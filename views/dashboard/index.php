@@ -5,7 +5,7 @@
         <div class="ui-sub">Your central hub for every feature and tool available to you.</div>
     </div>
     <div class="d-flex flex-wrap gap-2">
-        <a href="/sidecar/app/workbench" class="btn btn-primary"><i class="bi bi-rocket-takeoff"></i> Projects</a>
+        <a href="/projects" class="btn btn-primary"><i class="bi bi-grid-3x3-gap"></i> Projects</a>
         <a href="https://docs.tiknix.com" target="_blank" rel="noopener" class="btn btn-outline-primary"><i class="bi bi-book"></i> Read Tiknix docs</a>
     </div>
 </div>
@@ -25,7 +25,7 @@
                     <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Claude writes code following your project conventions</li>
                     <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Collaborate with your team on shared tasks</li>
                 </ul>
-                <a href="/sidecar/app/workbench" class="btn btn-primary"><i class="bi bi-rocket-takeoff"></i> Projects</a>
+                <a href="/projects" class="btn btn-primary"><i class="bi bi-grid-3x3-gap"></i> Projects</a>
                 <a href="/teams" class="btn btn-outline-primary ms-2"><i class="bi bi-people"></i> Manage Teams</a>
             </div>
             <div class="col-md-4 text-center d-none d-md-block">
@@ -61,7 +61,7 @@
             <div class="ui-panel-header"><h3><i class="bi bi-lightning-charge-fill text-warning me-2"></i>Quick Actions</h3></div>
             <div class="ui-panel-body">
                 <div class="d-grid gap-2">
-                    <a href="/sidecar/app/workbench" class="btn btn-primary"><i class="bi bi-hammer"></i> Projects</a>
+                    <a href="/projects" class="btn btn-primary"><i class="bi bi-grid-3x3-gap"></i> Projects</a>
                     <a href="/teams" class="btn btn-outline-primary"><i class="bi bi-people"></i> My Teams</a>
                     <a href="/member/profile" class="btn btn-outline-secondary"><i class="bi bi-person"></i> My Profile</a>
                     <a href="/member/settings" class="btn btn-outline-secondary"><i class="bi bi-gear"></i> Settings</a>

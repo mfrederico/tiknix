@@ -61,16 +61,43 @@ class Pipeline extends Control {
         }
     }
 
-    /** GET /pipeline/status/<run_id> — poll a run (per-member key). */
+    /**
+     * GET /pipeline/status/<run_id> — poll a run.
+     *
+     * Accepts a per-member pk_ key OR the instance's own trigger_secret. Both are already
+     * credentials for THIS instance, and whatever triggered a run needs to be able to
+     * watch it — the Publisher fires a publish with the trigger secret and would otherwise
+     * have no way to report anything but a run number.
+     *
+     * Per-step detail is included because "what is it doing" is the actual question. A
+     * publish is several steps and knowing only that the whole thing failed tells you
+     * nothing about which target rejected you.
+     */
     public function status($params = []) {
-        if (ApiKey::verify($this->bearer() ?: (string) $this->headerVal('X-Pipeline-Key')) <= 0) {
+        if (!$this->trustedTrigger()
+            && ApiKey::verify($this->bearer() ?: (string) $this->headerVal('X-Pipeline-Key')) <= 0) {
             Flight::jsonError('Invalid or missing API key.', 401); return;
         }
         $run = R::load('piperun', (int) $this->slugArg());
         if (!$run->id) { Flight::jsonError('No such run.', 404); return; }
+
+        $steps = [];
+        foreach (R::find('pipesteprun', 'run_id = ? ORDER BY id', [(int) $run->id]) as $s) {
+            $steps[] = [
+                'name'     => (string) $s->stepName,
+                'type'     => (string) $s->stepType,
+                'status'   => (string) $s->status,
+                'stdout'   => (string) $s->stdout,
+                'stderr'   => (string) $s->stderr,
+                'exit'     => (int) $s->exitCode,
+                'duration' => (int) $s->durationMs,
+            ];
+        }
+
         Flight::json(['run_id' => (int) $run->id, 'slug' => $run->slug, 'status' => $run->status,
             'steps_total' => (int) $run->stepsTotal, 'steps_done' => (int) $run->stepsDone,
-            'error' => (string) $run->error, 'output' => json_decode((string) $run->outputJson, true)]);
+            'error' => (string) $run->error, 'output' => json_decode((string) $run->outputJson, true),
+            'steps' => $steps]);
     }
 
     /** POST /pipeline/debug/<slug> — start a step-trace debug run (bearer = trigger_secret). */

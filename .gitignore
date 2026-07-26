@@ -25,8 +25,10 @@ log/*.log
 # top-level uploads/ dir — an unanchored "uploads/" would also swallow */uploads.
 /uploads/
 
-# Workbench project workspaces (cloned repos)
-projects/
+# Workbench project workspaces (cloned repos). Anchored (/projects/) for exactly the
+# reason noted above: unanchored, it also swallowed views/projects/, so the Projects
+# picker silently failed to commit.
+/projects/
 
 # AI Projects (workspace) sidecar: per-instance task data, owned by the sidecar, never tracked
 data/workbench.db

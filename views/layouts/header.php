@@ -175,12 +175,15 @@ if ($__loggedIn) {
         /* The AI Builder grew this chip because it was the only surface that knew which
            instance you were in. Now the shell knows, so it lives here — one chip, always
            in the same place, instead of one per plugin that can disagree with the others.
-           The live URL prefers a tenant's own domain and falls back to the staging host. */
-        $__pdomain = trim((string) ($__proj->ctDomain ?? ''));
-        if ($__pdomain === '') {
-            $__phost   = strtolower((string) (parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST) ?: 'tiknix.com'));
-            $__pdomain = $__proj->slug . '.' . $__phost;
-        }
+
+           This links to the WORKING instance — the thing you are building, always at
+           <slug>.<host> — never to wherever it is published. A published URL is a
+           property of a publish target, not of the project: it can differ per target,
+           change when a target is reconfigured, or not exist yet. Sending you there from
+           the chip would mean the one control that says "you are working on X" points
+           somewhere X is not being edited. */
+        $__phost   = strtolower((string) (parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST) ?: 'tiknix.com'));
+        $__pdomain = $__proj->slug . '.' . $__phost;
         ?>
         <div class="ui-project-chip d-flex align-items-center gap-2 px-3 py-1 rounded-3 bg-primary-subtle ms-3 flex-wrap">
           <i class="bi bi-hdd-network-fill text-primary"></i>
@@ -189,7 +192,7 @@ if ($__loggedIn) {
             <span class="d-block fw-bold" style="font-size:.85rem">
               <a href="https://<?= htmlspecialchars($__pdomain) ?>" target="_blank" rel="noopener"
                  class="link-body-emphasis text-decoration-none"
-                 title="Open live — <?= htmlspecialchars($__pdomain) ?>"><?= htmlspecialchars($__proj->displayName ?: $__proj->slug) ?><i class="bi bi-box-arrow-up-right ms-1 small opacity-75"></i></a>
+                 title="Open the working instance — <?= htmlspecialchars($__pdomain) ?>"><?= htmlspecialchars($__proj->displayName ?: $__proj->slug) ?><i class="bi bi-box-arrow-up-right ms-1 small opacity-75"></i></a>
               <?php if (!empty($__proj->isDefault)): ?><span class="badge text-bg-warning" style="font-size:.62rem">default · core</span><?php endif; ?>
             </span>
           </span>

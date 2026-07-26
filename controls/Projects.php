@@ -1,0 +1,110 @@
+<?php
+/**
+ * Projects — the interstitial picker, and the only place a project is chosen.
+ *
+ * Selecting here sets ProjectContext for the member, and every other surface (core, the
+ * workbench sidecar, the pipeline editor, the store) then works on THAT project until
+ * the member comes back here. No other page should offer an instance switcher: the
+ * duplicated pickers are what produced the flip/flop, where moving between AI Projects
+ * and AI Builder silently changed which instance you were editing.
+ */
+namespace app;
+
+use \Flight as Flight;
+use RedBeanPHP\R;
+
+class Projects extends BaseControls\Control {
+
+    /** The picker. Search and sort are client-side; the list is small by nature. */
+    public function index($params = []): void {
+        if (!$this->requireLogin()) return;
+
+        $memberId = (int) $this->member->id;
+        $projects = [];
+        foreach (ProjectContext::accessible($memberId) as $inst) {
+            $projects[] = $this->card($inst, $memberId);
+        }
+        // Alphabetical by display name — the picker is for recognition, not recency.
+        usort($projects, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+
+        $current = ProjectContext::current($memberId);
+        $this->render('projects/index', [
+            'title'     => 'Projects',
+            'projects'  => $projects,
+            'currentId' => $current ? (int) $current->id : 0,
+        ]);
+    }
+
+    /** Choose the project to work on. Everything else follows from this. */
+    public function select($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+
+        $id = (int) $this->getParam('id', 0);
+        if (!ProjectContext::set((int) $this->member->id, $id)) {
+            $this->jsonError('That project is not available to you.', 403);
+            return;
+        }
+        $inst = ProjectContext::current((int) $this->member->id);
+        $this->jsonSuccess(['id' => (int) $inst->id, 'slug' => (string) $inst->slug],
+            'Now working on ' . ($inst->displayName ?: $inst->slug) . '.');
+    }
+
+    /**
+     * One card's worth of data.
+     *
+     * Sourced from where the truth actually lives rather than from columns that would
+     * have to be kept in sync: the working copy for authorship, the registry for
+     * hosting, the team tables for people. Everything is best-effort — a project whose
+     * directory has gone missing must still render, because that is precisely when you
+     * need to see it.
+     */
+    private function card(object $inst, int $memberId): array {
+        $dir  = '/var/www/html/default/' . $inst->slug . '.tiknix';
+        $last = $this->lastCommit($dir);
+
+        return [
+            'id'           => (int) $inst->id,
+            'slug'         => (string) $inst->slug,
+            'name'         => (string) ($inst->displayName ?: $inst->slug),
+            'owned'        => (int) $inst->memberId === $memberId,
+            'status'       => (string) $inst->status,
+            'created'      => (string) $inst->createdAt,
+            // Hosting: a container is the strongest signal of "published"; fall back to
+            // nothing rather than inventing a date we cannot substantiate.
+            'hostedDomain' => (string) ($inst->ctDomain ?: ''),
+            'published'    => $inst->ctVmid ? 'container ' . (int) $inst->ctVmid : '',
+            'lastUpdate'   => $last['when'],
+            'lastBy'       => $last['who'],
+            'lastSubject'  => $last['subject'],
+            'teams'        => $this->teams($inst),
+        ];
+    }
+
+    /** Authorship from the instance's working copy — the AI Builder commits here. */
+    private function lastCommit(string $dir): array {
+        $out = ['when' => '', 'who' => '', 'subject' => ''];
+        if (!is_dir($dir . '/.git')) return $out;
+        $raw = [];
+        exec('git -C ' . escapeshellarg($dir) . ' log -1 --format=%aI%x1f%an%x1f%s 2>/dev/null', $raw);
+        if (empty($raw[0])) return $out;
+        $parts = explode("\x1f", $raw[0]);
+        return ['when' => $parts[0] ?? '', 'who' => $parts[1] ?? '', 'subject' => $parts[2] ?? ''];
+    }
+
+    /** Teams this project is shared with, for the "who else is on this" link. */
+    private function teams(object $inst): array {
+        $out  = [];
+        $rows = R::find('instance_team', 'instance_id = ?', [(int) $inst->id]);
+        foreach ($rows as $row) {
+            $team = R::load('team', (int) $row->teamId);
+            if (!$team->id) continue;
+            $out[] = [
+                'id'      => (int) $team->id,
+                'name'    => (string) ($team->name ?: 'Team ' . $team->id),
+                'members' => (int) R::count('teammember', 'team_id = ?', [(int) $team->id]),
+            ];
+        }
+        return $out;
+    }
+}

@@ -23,7 +23,7 @@
                 <ol class="breadcrumb bg-light px-3 py-2 rounded shadow-sm">
                     <li class="breadcrumb-item"><a href="/">Home</a></li>
                     <li class="breadcrumb-item"><a href="/docs">Documentation</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">AI Projects</li>
+                    <li class="breadcrumb-item active" aria-current="page">Projects</li>
                 </ol>
             </nav>
 

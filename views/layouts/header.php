@@ -207,11 +207,17 @@ if ($__loggedIn) {
              deploy from a dropdown. */
           ?>
           <span class="vr mx-1 d-none d-sm-block"></span>
-          <?php /* Not feature-gated: Feature caches grants in the SESSION, so gating it
-                   meant an existing session kept hiding Publish after the grant — the
-                   control appeared missing rather than disabled. */ ?>
-          <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm py-0 px-2" style="font-size:.72rem"
-             title="Where and how this project goes live"><i class="bi bi-cloud-upload me-1"></i>Publish</a>
+          <?php
+          /* Feature-gated like every other sidecar: offering Publish to someone without
+             the flag would land them on a plugin they cannot launch.
+
+             If it is missing after granting the flag, the grant is real but the SESSION
+             cache is stale — Feature::stored() caches per member for the session, and
+             only Feature::setEnabled() busts it. Re-save the member (or re-login). */
+          if (\app\Feature::isEnabled('publisher', (int) (\Flight::getMember()->id ?? 0), $__level)): ?>
+            <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm py-0 px-2" style="font-size:.72rem"
+               title="Where and how this project goes live"><i class="bi bi-cloud-upload me-1"></i>Publish</a>
+          <?php endif; ?>
           <a href="/connections" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.72rem"
              title="Store &amp; service connections for this project"><i class="bi bi-plug me-1"></i>Connections</a>
           <a href="/teams" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.72rem"

@@ -27,6 +27,23 @@ if [ -n "${BASE_URL:-}" ]; then
   echo "entrypoint: baseurl = ${BASE_URL}"
 fi
 
+# 1c) Two-factor policy, stamped on EVERY boot from the environment.
+# BOTH policy keys default to TRUE when absent (TwoFactorAuth::policyEnabled/Enforced),
+# so a config seeded from an example that predates them silently makes 2FA REQUIRED —
+# a new tenant owner is then locked into an authenticator app before first look. Seeding
+# from the example only happens once, so this cannot live there: it has to be re-applied
+# on each boot for the deploy to actually control the policy.
+for pair in "two_factor_enabled:${TWO_FACTOR_ENABLED:-}" "two_factor_enforce:${TWO_FACTOR_ENFORCE:-}"; do
+  key="${pair%%:*}"; val="${pair#*:}"
+  [ -z "$val" ] && continue
+  if grep -qE "^${key}[[:space:]]*=" conf/config.ini; then
+    sed -ri "s|^${key}[[:space:]]*=.*|${key} = ${val}|" conf/config.ini
+  else
+    sed -ri "s|^\[security\]|[security]\n${key} = ${val}|" conf/config.ini
+  fi
+  echo "entrypoint: ${key} = ${val}"
+done
+
 # 2) Ensure EncryptionService has a key ([security] app_key, 64 hex chars).
 # Priority: APP_KEY env  ->  key already in config  ->  generate ephemeral.
 # SET APP_KEY IN THE HYPERLIFT ENV: a generated key changes every boot, so anything

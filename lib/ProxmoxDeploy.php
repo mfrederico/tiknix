@@ -232,6 +232,11 @@ class ProxmoxDeploy {
             // take effect on the next restart and silently move the container off the
             // port capricorn proxies to. Pin it to the port we actually serve.
             'APPLICATION_PORT'     => (string) self::PROXY_PORT,
+            // 2FA policy is a DEPLOY decision, stamped into config.ini on every boot by
+            // docker/entrypoint.sh. Both keys default to true when absent, so leaving
+            // this to the seeded example makes 2FA mandatory for a brand-new tenant.
+            'TWO_FACTOR_ENABLED'   => (string) ($opts['twoFactorEnabled'] ?? 'true'),
+            'TWO_FACTOR_ENFORCE'   => (string) ($opts['twoFactorEnforce'] ?? 'false'),
             // Escape hatch for bring-up ONLY, and off by default. A missing PHP extension
             // is an image defect: ignoring the platform requirement installs the package
             // anyway and defers the failure to runtime, where it is far harder to read.

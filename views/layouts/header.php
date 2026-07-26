@@ -42,6 +42,10 @@ if ($__loggedIn) {
     $__have = [];
     foreach ($__sections as $__grp) foreach ($__grp as $__i) { if (isset($__i['url'])) $__have[$__i['url']] = 1; }
     foreach ([
+        // Projects is the ONLY place a project is chosen; everything else — core pages
+        // and every sidecar — follows that selection. It leads the Main group because
+        // it is the question all the others assume you have already answered.
+        ['url' => '/projects',       'label' => 'Projects',       'icon' => 'grid-3x3-gap'],
         ['url' => '/teams',          'label' => 'Teams',          'icon' => 'people'],
         ['url' => '/communications', 'label' => 'Communications', 'icon' => 'chat-left-dots'],
     ] as $__add) {

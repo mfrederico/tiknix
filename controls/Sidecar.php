@@ -33,7 +33,20 @@ class Sidecar extends Control {
             return;
         }
 
-        $url = Registry::launchUrl($name, ['id' => $memberId, 'level' => $level, 'email' => (string) ($this->member->email ?? '')]);
+        // Carry the member's selected project into the plugin. Sidecars are separate
+        // apps with their own sessions, so without this each one has to ask again which
+        // instance you meant — which is why every sidecar grew its own project picker,
+        // and why crossing between them could silently change what you were editing.
+        // The claim is authoritative: core has already checked access in ProjectContext.
+        $project = ProjectContext::current($memberId);
+
+        $url = Registry::launchUrl($name, [
+            'id'    => $memberId,
+            'level' => $level,
+            'email' => (string) ($this->member->email ?? ''),
+            'instance' => $project ? (int) $project->id : 0,
+            'slug'     => $project ? (string) $project->slug : '',
+        ]);
         if (!$url) { $this->flash('error', $plugin['label'] . ' is not configured on this server yet.'); Flight::redirect('/dashboard'); return; }
 
         Flight::redirect($url);

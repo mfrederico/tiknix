@@ -56,6 +56,19 @@ class PublishRegistry {
         return array_values(array_filter(self::all(), fn($d) => empty($d['capabilities']['code'])));
     }
 
+    /**
+     * Repository targets — the ones that answer "how does a change reach my code".
+     *
+     * The two kinds are ORTHOGONAL, not alternatives: a project can perfectly well open a
+     * pull request on its repo AND run in a container, because those answer different
+     * questions. Anything presenting targets as one-of-N is conflating them.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public static function repository(): array {
+        return array_values(array_filter(self::all(), fn($d) => !empty($d['capabilities']['code'])));
+    }
+
     /** @return PublishDriver|null */
     public static function driver(string $key): ?PublishDriver {
         $class = self::DRIVERS[$key] ?? null;

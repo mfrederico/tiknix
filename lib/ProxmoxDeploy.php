@@ -84,6 +84,16 @@ class ProxmoxDeploy {
     const PROXY_DIR = '/var/www/html';
 
     /**
+     * TLS. capricorn resolves certificates per-SNI in dynamic_ssl.lua, so a newly issued
+     * cert is served on the next handshake — no nginx reload, nothing to restart.
+     * Issuance is lego DNS-01 via the Spaceship API.
+     */
+    const CERT_SCRIPT = '/home/ubuntu/capricorn/scripts/runcertbot.sh';
+    const CERT_DIR    = '/etc/letsencrypt/lego/certificates';
+    /** Reissue only inside this window, so a redeploy never burns rate limit. */
+    const CERT_RENEW_DAYS = 30;
+
+    /**
      * Provision (or re-provision) a tenant container for an instance slug.
      * @return array{ok:bool, vmid?:int, ip?:string, domain?:string, steps?:string[], error?:string}
      */
@@ -230,6 +240,13 @@ class ProxmoxDeploy {
         $proxy = self::writeProxy($domain, $addr);
         if (!$proxy['ok']) return ['ok' => false, 'vmid' => $vmid, 'ip' => $addr, 'error' => $proxy['error'], 'steps' => $steps];
         $steps[] = $proxy['step'];
+
+        // TLS last: the container is already serving, so a certificate problem should not
+        // fail the deploy — it just means the tenant is reachable but not yet trusted.
+        if (!empty($opts['cert'])) {
+            $cert = self::ensureCert($domain);
+            $steps[] = $cert['step'];
+        }
 
         $inst->ctVmid   = $vmid;
         $inst->ctIp     = $addr;
@@ -398,6 +415,44 @@ class ProxmoxDeploy {
             return ['ok' => false, 'error' => $file . ' is not writable by the web user'];
         }
         return ['ok' => true, 'step' => 'wrote ' . basename($file) . ' -> ' . $ip . ':' . self::PROXY_PORT];
+    }
+
+    /**
+     * Issue a TLS certificate for the tenant's hostname, if one is needed.
+     *
+     * OPT-IN, and a no-op when a usable cert already exists. Let's Encrypt allows only
+     * 5 duplicate certificates per week: issuing on every deploy would exhaust that in
+     * an afternoon of redeploys and then fail for a real tenant. So this checks the
+     * existing cert's expiry first and only calls out when there is genuinely nothing
+     * to serve, or the cert is within CERT_RENEW_DAYS of expiring.
+     *
+     * Requires write access to the lego folder — fine from the CLI (ubuntu), but a
+     * web-triggered deploy runs as www-data and will not have it.
+     *
+     * @return array{ok:bool, step:string}
+     */
+    private static function ensureCert(string $domain): array {
+        $crt = self::CERT_DIR . '/' . $domain . '.crt';
+
+        if (is_file($crt)) {
+            // -checkend is exactly this question: still valid N seconds from now?
+            $seconds = self::CERT_RENEW_DAYS * 86400;
+            exec('openssl x509 -checkend ' . $seconds . ' -noout -in ' . escapeshellarg($crt) . ' 2>&1', $o, $code);
+            if ($code === 0) return ['ok' => true, 'step' => 'certificate present and valid'];
+            $reason = 'expiring within ' . self::CERT_RENEW_DAYS . ' days';
+        } else {
+            $reason = 'no certificate on disk';
+        }
+
+        if (!is_file(self::CERT_SCRIPT)) {
+            return ['ok' => false, 'step' => 'certificate needed (' . $reason . ') but ' . self::CERT_SCRIPT . ' is missing'];
+        }
+
+        exec(escapeshellcmd(self::CERT_SCRIPT) . ' ' . escapeshellarg($domain) . ' 2>&1', $out, $code);
+        if ($code !== 0 || !is_file($crt)) {
+            return ['ok' => false, 'step' => 'certificate issuance failed: ' . trim(implode(' ', array_slice($out, -3)))];
+        }
+        return ['ok' => true, 'step' => 'issued certificate for ' . $domain . ' (' . $reason . ')'];
     }
 
     /** Stable per-instance app key so encrypted data survives a container recreate. */

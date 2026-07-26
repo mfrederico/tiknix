@@ -27,17 +27,10 @@ $iid = (int)$instance->id;
   </div>
 
   <?php
-  /* NO INSTANCE SWITCHER — this page shows the automations of the project selected in
-     /projects. A second switcher here is how Run could fire a pipeline in an instance
-     you were not working on, so name the project and point at the one place to change it. */
+  /* NO INSTANCE SWITCHER, and no project name repeated here — the shell's topbar chip
+     names it on every page. A second switcher is how Run could fire a pipeline in an
+     instance you were not working on; a second label is how the two come to disagree. */
   ?>
-  <div class="d-flex align-items-center gap-2 mb-4 small">
-    <span class="text-body-secondary">Automations for</span>
-    <span class="badge bg-primary-subtle text-primary-emphasis">
-      <?= htmlspecialchars($instance->display_name ?: $instance->slug) ?>
-    </span>
-    <a href="/projects" class="text-decoration-none">Change project</a>
-  </div>
 
   <?php include __DIR__ . '/../partials/connected-services.php'; ?>
 

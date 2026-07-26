@@ -49,19 +49,11 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
   </div>
 
   <?php
-  /* NO INSTANCE SWITCHER. This page shows the connections of the project you selected in
-     /projects. A second switcher here is how the page could show — and connect a store
-     to — an instance you were not working on. Name the project instead, and point at the
-     one place it can be changed: connecting a store to the wrong project is expensive to
-     undo, so it must be unambiguous which one you are on. */
+  /* NO INSTANCE SWITCHER, and no project name repeated here either. This page shows the
+     connections of the project selected in /projects, and the shell's topbar chip names
+     that project on every page — saying it twice invites the two from drifting, which is
+     the failure this whole mechanism exists to prevent. */
   ?>
-  <div class="d-flex align-items-center gap-2 mb-4 small">
-    <span class="text-body-secondary">Connections for</span>
-    <span class="badge bg-primary-subtle text-primary-emphasis">
-      <?= htmlspecialchars($instance->display_name ?: $instance->slug) ?>
-    </span>
-    <a href="/projects" class="text-decoration-none">Change project</a>
-  </div>
 
   <?php if (!empty($publishDrivers)): ?>
     <!--

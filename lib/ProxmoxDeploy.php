@@ -203,50 +203,7 @@ class ProxmoxDeploy {
         if (!$create['ok']) return ['ok' => false, 'error' => 'create failed: ' . $create['exit'] . ($create['log'] ? "\n" . $create['log'] : '')];
         $steps[] = 'created CT ' . $vmid . ' from ' . $img['volid'];
 
-        // Everything the container needs at boot. These are exported by the boot command
-        // itself rather than set via the `env` config key: that key is accepted by the
-        // API and reads back correctly, but is never applied to init on PVE 9.2.5. HOME
-        // is included deliberately — without it git cannot find /root/.gitconfig and
-        // rejects the working copy with "dubious ownership".
-        $home = '/' . 'root';
-        $vars = [
-            'HOME'                 => $home,
-            'PATH'                 => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-            // Referenced by the vhost as ${APACHE_DOCUMENT_ROOT}; if unset, apache
-            // resolves it literally and 403s every path.
-            'APACHE_DOCUMENT_ROOT' => '/var/www/html/public',
-            'DNS_SERVER'           => (string) ($opts['nameserver'] ?? self::DNS),
-            // Core's address on the bridge, so the container can always reach the git
-            // endpoint directly. Defaults to whatever this host resolves its own
-            // baseurl to, which is correct whenever core serves the endpoint itself.
-            'CORE_IP'              => (string) ($opts['coreIp'] ?? (gethostbyname($host) ?: '')),
-            'GIT_REMOTE'           => $remote,
-            'GIT_HOST'             => $host,
-            // Consumed once at boot to write a credential file, keeping the token out of
-            // the remote URL and therefore out of git's output and the served boot log.
-            'GIT_TOKEN'            => $token,
-            'GIT_BRANCH'           => $branch,
-            'BASE_URL'             => 'https://' . $domain,
-            // docker/entrypoint.sh rewrites apache's listen port to this. Apache is
-            // already running by the time it does so, but the rewritten ports.conf would
-            // take effect on the next restart and silently move the container off the
-            // port capricorn proxies to. Pin it to the port we actually serve.
-            'APPLICATION_PORT'     => (string) self::PROXY_PORT,
-            // 2FA policy is a DEPLOY decision, stamped into config.ini on every boot by
-            // docker/entrypoint.sh. Both keys default to true when absent, so leaving
-            // this to the seeded example makes 2FA mandatory for a brand-new tenant.
-            'TWO_FACTOR_ENABLED'   => (string) ($opts['twoFactorEnabled'] ?? 'true'),
-            'TWO_FACTOR_ENFORCE'   => (string) ($opts['twoFactorEnforce'] ?? 'false'),
-            // Escape hatch for bring-up ONLY, and off by default. A missing PHP extension
-            // is an image defect: ignoring the platform requirement installs the package
-            // anyway and defers the failure to runtime, where it is far harder to read.
-            // Fix the base image instead; this exists so a known-good image rebuild is
-            // not a prerequisite for testing everything downstream of it.
-            'COMPOSER_FLAGS'       => empty($opts['ignorePlatformReqs']) ? '' : '--ignore-platform-reqs',
-            // Pinned so 2FA secrets and stored tokens survive a container recreate —
-            // conf/ is not a volume, so config.ini is regenerated every boot.
-            'APP_KEY'              => self::appKey($inst),
-        ];
+        $vars = self::bootVars($inst, $slug, $domain, $opts);
 
         $ep = $pve->setCtConfig($node, $vmid, ['entrypoint' => self::bootCommand($vars)]);
         if ($ep['error'] !== '') return ['ok' => false, 'error' => 'could not set entrypoint: ' . $ep['error']];
@@ -449,6 +406,91 @@ class ProxmoxDeploy {
             return ['ok' => false, 'error' => $file . ' is not writable by the web user'];
         }
         return ['ok' => true, 'step' => 'wrote ' . basename($file) . ' -> ' . $ip . ':' . self::PROXY_PORT];
+    }
+
+    /**
+     * Everything the container needs at boot, exported by the boot command itself rather
+     * than set via the `env` config key — that key is accepted by the API and reads back
+     * correctly, but is never applied to init on PVE 9.2.5.
+     *
+     * Shared by deploy() and refreshBoot() deliberately: these values are the container's
+     * entire contract with the outside world, and two copies would drift.
+     */
+    private static function bootVars(object $inst, string $slug, string $domain, array $opts): array {
+        $remote = self::remoteUrl($slug);
+        $host   = (string) (parse_url($remote, PHP_URL_HOST) ?: '');
+
+        return [
+            // Without HOME git cannot find its config and rejects the working copy
+            // with "dubious ownership".
+            'HOME'                 => '/' . 'root',
+            'PATH'                 => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+            // Referenced by the vhost as ${APACHE_DOCUMENT_ROOT}; if unset, apache
+            // resolves it literally and 403s every path.
+            'APACHE_DOCUMENT_ROOT' => '/var/www/html/public',
+            'DNS_SERVER'           => (string) ($opts['nameserver'] ?? self::DNS),
+            // Core's address on the bridge, so the container can always reach the git
+            // endpoint even when its outbound path is broken.
+            'CORE_IP'              => (string) ($opts['coreIp'] ?? (gethostbyname($host) ?: '')),
+            'GIT_REMOTE'           => $remote,
+            'GIT_HOST'             => $host,
+            // Consumed once at boot to write a credential file, keeping the token out of
+            // the remote URL and therefore out of git's output and the served boot log.
+            'GIT_TOKEN'            => GitHttp::deployToken($inst),
+            'GIT_BRANCH'           => 'instance/' . $slug,
+            'BASE_URL'             => 'https://' . $domain,
+            // docker/entrypoint.sh rewrites apache's listen port to this. Pin it to the
+            // port we actually serve, or a later restart moves the container off the
+            // port capricorn proxies to.
+            'APPLICATION_PORT'     => (string) self::PROXY_PORT,
+            // 2FA policy is a DEPLOY decision, stamped into config.ini on every boot.
+            // Both keys default to true when absent, so leaving this to the seeded
+            // example makes 2FA mandatory for a brand-new tenant.
+            'TWO_FACTOR_ENABLED'   => (string) ($opts['twoFactorEnabled'] ?? 'true'),
+            'TWO_FACTOR_ENFORCE'   => (string) ($opts['twoFactorEnforce'] ?? 'false'),
+            // Escape hatch for bring-up ONLY, off by default. A missing PHP extension is
+            // an image defect; ignoring the requirement defers the failure to runtime.
+            'COMPOSER_FLAGS'       => empty($opts['ignorePlatformReqs']) ? '' : '--ignore-platform-reqs',
+            // Pinned so 2FA secrets and stored tokens survive a container recreate —
+            // conf/ is not a volume, so config.ini is regenerated every boot.
+            'APP_KEY'              => self::appKey($inst),
+        ];
+    }
+
+    /**
+     * Re-apply the boot command to an EXISTING container and restart it.
+     *
+     * The entrypoint is baked in at create time, so anything it carries — env, policy,
+     * the resolver, the puller itself — is frozen until it is rewritten. Recreating to
+     * pick up a change is not an option once a tenant has data (dataState refuses it),
+     * so this is the supported way to roll a deploy-level change out to a live tenant:
+     * rewrite the entrypoint, restart, keep the volumes.
+     *
+     * @return array{ok:bool, steps?:string[], error?:string}
+     */
+    public static function refreshBoot(string $slug, string $domain = '', array $opts = []): array {
+        $pve = ProxmoxService::fromConfig();
+        if (!$pve) return ['ok' => false, 'error' => 'conf/proxmox.ini is missing or incomplete'];
+        $node = $pve->node();
+
+        $r = GitHttp::resolve($slug);
+        if (!$r['ok']) return ['ok' => false, 'error' => (string) $r['error']];
+        $inst = $r['bean'];
+
+        $vmid = (int) ($opts['vmid'] ?? $inst->ctVmid ?? 0);
+        if ($vmid <= 0 || !$pve->ctExists($node, $vmid)) return ['ok' => false, 'error' => 'no container recorded for ' . $slug];
+
+        $domain = $domain !== '' ? strtolower(trim($domain)) : (string) ($inst->ctDomain ?: self::defaultDomain($slug));
+        $vars   = self::bootVars($inst, $slug, $domain, $opts);
+
+        $ep = $pve->setCtConfig($node, $vmid, ['entrypoint' => self::bootCommand($vars)]);
+        if ($ep['error'] !== '') return ['ok' => false, 'error' => 'could not set entrypoint: ' . $ep['error']];
+
+        $pve->stopCt($node, $vmid);
+        for ($i = 0; $i < 10 && (string) ($pve->ctStatus($node, $vmid)['status'] ?? '') !== 'stopped'; $i++) sleep(2);
+        $pve->startCt($node, $vmid);
+
+        return ['ok' => true, 'steps' => ['rewrote boot command for CT ' . $vmid, 'restarted (volumes preserved)']];
     }
 
     /**

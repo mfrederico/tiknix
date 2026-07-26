@@ -51,10 +51,25 @@ class ProxmoxDeploy {
         return trim((string) ($cfg['image'] ?? '')) ?: self::IMAGE;
     }
 
-    const ROOTFS_GB    = 8;
+    /**
+     * Storage is thin-provisioned, so this is a CEILING, not a reservation — a serving
+     * tenant writes ~600 MB of it, and shrinking the number reclaims nothing. Its real
+     * job is stopping one tenant from filling the shared pool. Headroom covers 30 days
+     * of rotated logs, composer's cache, and a larger base image; going much below this
+     * risks a tenant wedging mid-deploy, which is far more expensive than unused quota.
+     */
+    const ROOTFS_GB    = 4;
     const DATA_GB      = 2;
     const CORES        = 2;
-    const MEMORY_MB    = 1024;
+    /**
+     * A serving container idles around 24 MB, so this is sized for the ONE thing that
+     * spikes: `composer install` on first boot, which resolves dependencies in-container
+     * and can want several hundred MB. The swap is a cushion for exactly that — with
+     * swap=0 an overshoot is a hard OOM kill, and the tenant then comes up with no
+     * vendor/ and no obvious reason why. Swap costs disk, not reserved memory.
+     */
+    const MEMORY_MB    = 512;
+    const SWAP_MB      = 512;
     /** capricorn proxies here. Port 80 — the container serves apache directly; the
      *  8080 rewrite only happens inside docker/entrypoint.sh, which no longer runs
      *  as the container's init. */
@@ -167,7 +182,7 @@ class ProxmoxDeploy {
             'hostname'     => self::hostname($slug),
             'cores'        => (int) ($opts['cores']  ?? self::CORES),
             'memory'       => (int) ($opts['memory'] ?? self::MEMORY_MB),
-            'swap'         => 0,
+            'swap'         => (int) ($opts['swap'] ?? self::SWAP_MB),
             'rootfs'       => $img['rootfs'] . ':' . (int) ($opts['rootfsGb'] ?? self::ROOTFS_GB),
             // DATA only. conf/ is intentionally absent — see the class comment.
             'mp0'          => $img['rootfs'] . ':' . self::DATA_GB . ',mp=/var/www/html/database',
@@ -294,7 +309,7 @@ class ProxmoxDeploy {
               . ' git remote set-url origin $GIT_REMOTE'
               . ' && timeout 180 git fetch --depth 1 origin $GIT_BRANCH'
               . ' && git checkout -q -f FETCH_HEAD'
-              . ' && { [ -f vendor/autoload.php ] || composer install --no-dev --no-interaction --optimize-autoloader --no-progress $COMPOSER_FLAGS; };'
+              . ' && { [ -f vendor/autoload.php ] || { composer install --no-dev --no-interaction --optimize-autoloader --no-progress $COMPOSER_FLAGS && composer clear-cache -q; }; };'
               . ' };';
 
         // The container's environment is set HERE, by the boot command itself, not via

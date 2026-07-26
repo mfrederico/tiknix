@@ -36,14 +36,20 @@ class Integrations extends Control {
         $this->instanceView();
     }
 
-    /** Control-plane hub — pick one of the member's instances, show its automations. */
+    /** Control-plane hub — the selected project's automations. */
     private function controlPlane(): void {
         $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
+
+        // An explicit ?id= wins (deep links), then the project the member selected. NOT
+        // "most recently created" — that guess showed one project's automations while
+        // you believed you were in another, and Run would fire the wrong instance's
+        // pipeline.
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) {
-            foreach ($instances as $cand) { if ($ok = $this->ownedInstance((int)$cand->id)) { $inst = $ok; break; } }
+            $project = \app\ProjectContext::current((int)$this->member->id);
+            if ($project) $inst = $this->ownedInstance((int)$project->id);
         }
-        if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
+        if (!$inst) { Flight::redirect('/projects'); return; }
 
         $dir = $this->instanceDir($inst->slug);
         // Connected services for the selected instance, service+status only (the owner

@@ -549,14 +549,19 @@ class Connections extends Control {
         // Inside an instance there is no owner/instance picker — show the read-only
         // list of what this app is connected to (metadata via the broker).
         if (!builder_tools_enabled()) { $this->instanceConnections(); return; }
-        // The member's instances (most-recent first) drive the store picker and the
-        // default when no ?id= is given, so /connections never dead-ends to the builder.
         $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
+
+        // An explicit ?id= wins (deep links from the builder), then the project the
+        // member selected. NOT "most recently created" — that guess meant Connections
+        // showed a different project's stores than the one you were working on, and
+        // connecting from here could bind a store to the wrong instance entirely.
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) {
-            foreach ($instances as $cand) { if ($ok = $this->ownedInstance((int)$cand->id)) { $inst = $ok; break; } }
+            $project = ProjectContext::current((int)$this->member->id);
+            if ($project) $inst = $this->ownedInstance((int)$project->id);
         }
-        if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
+        // No project chosen → choose one; do not silently fall back to some instance.
+        if (!$inst) { Flight::redirect('/projects'); return; }
 
         // A just-completed connect (a prior request) writes a connections row; bust
         // the cache before reading so a newly-connected store shows on the FIRST view

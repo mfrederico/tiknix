@@ -26,18 +26,18 @@ $iid = (int)$instance->id;
     Connect external accounts (GitHub, Stripe, …) on the <a href="/connections?id=<?= $iid ?>" class="text-decoration-underline">Connections</a> page.
   </div>
 
-  <?php if (!empty($instances) && count($instances) > 1): ?>
-    <div class="mb-4">
-      <div class="text-uppercase text-body-secondary small fw-semibold mb-2" style="letter-spacing:.06em">Instance</div>
-      <div class="d-flex flex-wrap gap-2">
-        <?php foreach ($instances as $i): $active = (int)$i->id === $iid; ?>
-          <a href="/integrations?id=<?= (int)$i->id ?>" class="btn btn-sm <?= $active ? 'btn-primary' : 'btn-outline-secondary' ?>">
-            <i class="bi bi-shop me-1"></i><?= htmlspecialchars($i->display_name ?: $i->slug) ?>
-          </a>
-        <?php endforeach; ?>
-      </div>
-    </div>
-  <?php endif; ?>
+  <?php
+  /* NO INSTANCE SWITCHER — this page shows the automations of the project selected in
+     /projects. A second switcher here is how Run could fire a pipeline in an instance
+     you were not working on, so name the project and point at the one place to change it. */
+  ?>
+  <div class="d-flex align-items-center gap-2 mb-4 small">
+    <span class="text-body-secondary">Automations for</span>
+    <span class="badge bg-primary-subtle text-primary-emphasis">
+      <?= htmlspecialchars($instance->display_name ?: $instance->slug) ?>
+    </span>
+    <a href="/projects" class="text-decoration-none">Change project</a>
+  </div>
 
   <?php include __DIR__ . '/../partials/connected-services.php'; ?>
 

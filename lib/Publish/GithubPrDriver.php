@@ -51,6 +51,15 @@ class GithubPrDriver implements PublishDriver {
         return LEVELS['MEMBER'];
     }
 
+    /**
+     * Nothing to configure here. The repo, the branch and the token all come from the
+     * GitHub connection, which is set up on the Connections page — asking for them again
+     * would be a second place to get them wrong.
+     */
+    public static function fields(): array {
+        return [];
+    }
+
     /** Push the snapshot and open/reuse the PR. */
     public function deploy(object $inst, array $config, array $opts = []): array {
         $conn = self::connection($inst);

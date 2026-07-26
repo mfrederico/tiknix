@@ -40,6 +40,13 @@ class TiknixHostedDriver implements PublishDriver {
         return $op === 'status' ? LEVELS['MEMBER'] : LEVELS['ADMIN'];
     }
 
+    public static function fields(): array {
+        return [
+            ['name' => 'domain', 'label' => 'Domain', 'type' => 'host', 'placeholder' => 'app.example.com',
+             'help' => 'Point a CNAME at this control plane first — the certificate is issued for this domain.'],
+        ];
+    }
+
     /**
      * Stand the container up, or bring an existing one in line — one meaning of "publish".
      *

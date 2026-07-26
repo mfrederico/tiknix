@@ -65,6 +65,19 @@ interface PublishDriver {
     public static function minLevel(string $op): int;
 
     /**
+     * The settings this target needs, so the UI can render them without knowing anything
+     * about the driver. Each entry: name, label, type (text|textarea|number|host),
+     * required?, placeholder?, help?.
+     *
+     * These are NOT credentials — a host, a user, a path, a domain. They are saved into
+     * the project's publish pipeline where they are reviewable in the repo. Anything
+     * secret (a PAT, a private key) stays on the control plane and never appears here.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public static function fields(): array;
+
+    /**
      * Create or reshape the target.
      * @param object $inst   instance registry row
      * @param array  $config connection metadata (domain, host, path, …)

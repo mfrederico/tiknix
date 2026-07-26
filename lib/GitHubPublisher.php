@@ -67,28 +67,13 @@ class GitHubPublisher {
         if (!$head['ok']) return $fail('This instance has no commits to publish yet.');
         $shortSha = substr(trim($head['out']), 0, 7);
 
-        // Build a CLEAN SNAPSHOT as one commit. Snapshot the CURRENT WORKING TREE (not just
-        // committed HEAD) so Publish always reflects the customer's latest edits even if they
-        // haven't checkpointed. A fresh temp index + `add -A` respects .gitignore, so the
-        // SQLite db, vendor/, real conf/*.ini, .aibuilder creds, caches and logs are excluded.
-        $tmpIndex = self::instanceDir($slug) . '/.git/aibuilder-publish.index';
-        @unlink($tmpIndex);
-        $ienv = ['GIT_INDEX_FILE' => $tmpIndex];
-        self::gitEnv($slug, $ienv, ['add', '-A']);
-        // Belt-and-suspenders: drop any secret config that slipped past .gitignore (keep examples).
-        self::gitEnv($slug, $ienv, ['rm', '--cached', '-r', '--ignore-unmatch', '--quiet',
-            'conf/*.ini', ':(exclude)conf/*.example.ini', '.aibuilder']);
-        // Core's CI is OURS, not the customer's app. Every instance is a clone of core, so
-        // .github/workflows rides along into a repo whose owner never asked for it — and
-        // GitHub refuses the push outright ("refusing to allow an OAuth App to create or
-        // update workflow ... without `workflow` scope"), which would otherwise force us to
-        // request that scope from every customer to ship a file they don't want. The
-        // tiknix-core instance publishes back to tiknix main and DOES own its workflows.
-        if (empty($inst->isDefault)) {
-            self::gitEnv($slug, $ienv, ['rm', '--cached', '-r', '--ignore-unmatch', '--quiet', '.github/workflows']);
-        }
-        $tree = trim(self::gitEnv($slug, $ienv, ['write-tree'])['out']);
-        @unlink($tmpIndex);
+        // Snapshot the CURRENT WORKING TREE (not just committed HEAD) so Publish always
+        // reflects the customer's latest edits even if they haven't checkpointed. What is
+        // and isn't publishable is Snapshot's single definition, shared with rsync — two
+        // mechanisms with two exclude lists eventually disagree, and the failure mode is
+        // shipping a database or a decrypted config.
+        $tree = \app\Publish\Snapshot::withIndex(self::instanceDir($slug), !empty($inst->isDefault),
+            fn(string $index) => trim(self::gitEnv($slug, ['GIT_INDEX_FILE' => $index], ['write-tree'])['out']));
         if ($tree === '') return $fail('could not build a clean snapshot tree');
         $url = 'https://x-access-token:' . $pat . '@github.com/' . $owner . '/' . $repo . '.git';
         $redact = fn($s) => $pat !== '' ? str_replace($pat, '***', $s) : $s;

@@ -19,6 +19,8 @@ class PublishRegistry {
     private const DRIVERS = [
         'tiknix-hosted' => TiknixHostedDriver::class,
         'github-pr'     => GithubPrDriver::class,
+        'rsync'         => RsyncDriver::class,
+        'ssh'           => SshDriver::class,
     ];
 
     /**
@@ -37,6 +39,7 @@ class PublishRegistry {
                 'label'        => $class::label(),
                 'blurb'        => $class::blurb(),
                 'capabilities' => $class::capabilities(),
+                'fields'       => $class::fields(),
                 'available'    => $available,
                 'reason'       => $reason,
             ];

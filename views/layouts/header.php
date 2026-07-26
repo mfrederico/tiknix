@@ -196,7 +196,23 @@ if ($__loggedIn) {
               <?php if (!empty($__proj->isDefault)): ?><span class="badge text-bg-warning" style="font-size:.62rem">default · core</span><?php endif; ?>
             </span>
           </span>
-          <?php /* Say what it does — the chip alone reads as a status badge. */ ?>
+          <?php
+          /* The actions that belong to the PROJECT, not to any one page. They lived on
+             the AI Builder because that was the only surface that knew which instance you
+             were in — so publishing meant navigating to a build tool first. In the shell
+             they follow you everywhere, which is the point of the chip.
+
+             Publish is a destination now, not an inline action: the Publisher sidecar owns
+             where and how a project goes live, so this links there rather than firing a
+             deploy from a dropdown. */
+          ?>
+          <span class="vr mx-1 d-none d-sm-block"></span>
+          <?php if (\app\Feature::isEnabled('publisher', (int) (\Flight::getMember()->id ?? 0), $__level)): ?>
+            <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm py-0 px-2" style="font-size:.72rem"
+               title="Where and how this project goes live"><i class="bi bi-cloud-upload me-1"></i>Publish</a>
+          <?php endif; ?>
+          <a href="/connections" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.72rem"
+             title="Store &amp; service connections for this project"><i class="bi bi-plug me-1"></i>Connections</a>
           <a href="/projects" class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle text-decoration-none"
              style="font-size:.62rem" title="Change project"><i class="bi bi-grid-3x3-gap me-1"></i>Change</a>
         </div>

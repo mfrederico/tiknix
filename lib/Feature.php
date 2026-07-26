@@ -40,6 +40,11 @@ class Feature {
             'blurb'     => 'Build, edit, run + schedule deterministic pipelines in your instances. Runs as the pipelines.tiknix sidecar.',
             'min_level' => 100, // MEMBER and above — they own the instances whose pipelines they edit
         ],
+        'publisher' => [
+            'label'     => 'Publisher',
+            'blurb'     => 'Decide where and how a project goes live. Publishing runs as a pipeline in the project itself, so it schedules and debugs like any other. Runs as the publisher.tiknix sidecar — deliberately outside the app, since a finished application should not ship its deployment tooling.',
+            'min_level' => 100, // MEMBER and above — they own the projects they publish
+        ],
         'workbench' => [
             'label'     => 'AI Projects',
             'blurb'     => 'Plan, build + track AI-assisted development tasks per instance. Runs as the workbench.tiknix sidecar; each instance\'s task data lives in its own workbench.db.',

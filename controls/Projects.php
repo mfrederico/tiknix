@@ -35,6 +35,38 @@ class Projects extends BaseControls\Control {
         ]);
     }
 
+    /**
+     * Create a project, then immediately select it.
+     *
+     * Creation belongs here rather than in a sidecar: the sidecars now work on whatever
+     * project is selected, so a "new instance" button inside one would create something
+     * you were not yet working on. Create-and-select keeps the loop closed — you leave
+     * this page already inside the thing you just made.
+     */
+    public function create($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+
+        $memberId = (int) $this->member->id;
+        $res = (new ProvisionService())->create($memberId, [
+            'slug'    => (string) $this->getParam('slug', ''),
+            'name'    => (string) $this->getParam('name', ''),
+            'engine'  => (string) $this->getParam('engine', 'claude'),
+            'is_root' => (int) $this->member->level === LEVELS['ROOT'],
+        ]);
+        if (empty($res['ok'])) {
+            $this->jsonError((string) ($res['error'] ?? 'Could not create the project.'), (int) ($res['code'] ?? 400));
+            return;
+        }
+
+        // Select it straight away — the point of creating one is to work on it.
+        $id = (int) ($res['id'] ?? 0);
+        if ($id > 0) ProjectContext::set($memberId, $id);
+
+        $this->jsonSuccess(['id' => $id, 'slug' => (string) ($res['slug'] ?? '')],
+            'Created and selected. Provisioning can take a minute.');
+    }
+
     /** Choose the project to work on. Everything else follows from this. */
     public function select($params = []): void {
         if (!$this->requireLogin()) return;

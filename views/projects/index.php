@@ -28,9 +28,46 @@ $fmt = function (string $iso): string {
         Pick one to work on — it stays selected everywhere until you come back here.
       </div>
     </div>
-    <div class="ms-auto" style="min-width:16rem">
-      <input id="proj-search" class="form-control" type="search" autocomplete="off"
-             placeholder="Search projects…" aria-label="Search projects">
+    <div class="d-flex gap-2 ms-auto align-items-start">
+      <div style="min-width:16rem">
+        <input id="proj-search" class="form-control" type="search" autocomplete="off"
+               placeholder="Search projects…" aria-label="Search projects">
+      </div>
+      <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#proj-new">
+        <i class="bi bi-plus-lg"></i>
+      </button>
+    </div>
+  </div>
+
+  <?php
+  /* Creation lives here, not in a sidecar. The sidecars work on whatever project is
+     selected, so a "new instance" button inside one would create something you were not
+     yet working on. Creating here selects it too, closing the loop. */
+  ?>
+  <div class="collapse mb-3" id="proj-new">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <form id="proj-new-form" class="row g-2 align-items-end">
+          <div class="col-12 col-sm-5">
+            <label class="form-label small mb-0">Project name</label>
+            <input id="proj-new-slug" class="form-control form-control-sm" placeholder="my-app"
+                   autocomplete="off" spellcheck="false" required>
+            <div class="form-text">Lowercase letters, then letters/numbers or hyphens.</div>
+          </div>
+          <div class="col-8 col-sm-4">
+            <label class="form-label small mb-0">Engine</label>
+            <select id="proj-new-engine" class="form-select form-select-sm">
+              <?php foreach (\app\EngineRegistry::menu() as $engName => $engLabel): ?>
+                <option value="<?= htmlspecialchars($engName) ?>"><?= htmlspecialchars($engLabel) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="col-4 col-sm-3">
+            <button class="btn btn-primary btn-sm w-100" type="submit">Create &amp; work on it</button>
+          </div>
+          <div class="col-12"><div id="proj-new-msg" class="form-text"></div></div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -131,6 +168,36 @@ $fmt = function (string $iso): string {
         if (hit) shown++;
       });
       if (empty) empty.hidden = shown !== 0;
+    });
+  }
+
+  const newForm = document.getElementById('proj-new-form');
+  if (newForm) {
+    newForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      const slug = document.getElementById('proj-new-slug').value.trim().toLowerCase(),
+            eng  = document.getElementById('proj-new-engine').value,
+            msg  = document.getElementById('proj-new-msg'),
+            btn  = newForm.querySelector('button[type=submit]');
+      if (!slug) return;
+      btn.disabled = true;
+      msg.className = 'form-text text-body-secondary';
+      msg.textContent = 'Provisioning… this can take a minute.';
+      fetch('/projects/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'},
+        body: new URLSearchParams({csrf_token: csrf, slug: slug, engine: eng}).toString()
+      }).then(r => r.json()).then(function (j) {
+        // Created AND selected, so go straight to work rather than back to a list.
+        if (j && j.success) { window.location.href = '/dashboard'; return; }
+        btn.disabled = false;
+        msg.className = 'form-text text-danger';
+        msg.textContent = (j && j.message) || 'Could not create the project.';
+      }).catch(function () {
+        btn.disabled = false;
+        msg.className = 'form-text text-danger';
+        msg.textContent = 'Network error.';
+      });
     });
   }
 

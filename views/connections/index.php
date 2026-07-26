@@ -61,6 +61,49 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
     </div>
   <?php endif; ?>
 
+  <?php if (!empty($publishDrivers)): ?>
+    <!--
+      Hosting. First on the hub because it answers the question everything else assumes:
+      where does this instance actually run. Previously this lived on the GitHub
+      connector's page, which meant binding a domain required connecting a repo first.
+    -->
+    <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em">Hosting</h2>
+    <div class="card shadow-sm mb-2" id="lxc-card">
+      <div class="card-body">
+        <div class="d-flex align-items-start gap-3">
+          <div class="rounded-circle bg-primary-subtle d-flex align-items-center justify-content-center flex-shrink-0" style="width:44px;height:44px">
+            <i class="bi bi-box fs-5 text-primary"></i>
+          </div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold"><?= htmlspecialchars($publishDrivers[0]['label']) ?></div>
+            <div class="text-body-secondary small mt-1"><?= htmlspecialchars($publishDrivers[0]['blurb']) ?></div>
+
+            <?php if (empty($publishDrivers[0]['available'])): ?>
+              <div class="alert alert-warning py-2 px-3 small mt-2 mb-0"><?= htmlspecialchars($publishDrivers[0]['reason']) ?></div>
+            <?php else: ?>
+              <div id="lxc-state" class="small text-body-secondary mt-2 mb-2">Loading…</div>
+              <div class="d-flex flex-wrap gap-2 align-items-center">
+                <input id="lxc-domain" class="form-control form-control-sm" style="max-width:16rem"
+                       placeholder="app.example.com" autocomplete="off" spellcheck="false">
+                <button id="lxc-deploy" class="btn btn-primary btn-sm" type="button">
+                  <i class="bi bi-rocket-takeoff me-1"></i>Deploy
+                </button>
+                <button id="lxc-refresh" class="btn btn-outline-secondary btn-sm" type="button" hidden>
+                  <i class="bi bi-arrow-clockwise me-1"></i>Re-apply settings
+                </button>
+              </div>
+              <div class="form-text mt-1">
+                Point a <strong>CNAME</strong> at this control plane first, then deploy —
+                the certificate is issued for the domain you enter.
+              </div>
+              <div id="lxc-msg" class="form-text mt-1"></div>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+    </div>
+  <?php endif; ?>
+
   <?php foreach ($cats as $cat): ?>
     <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em"><?= htmlspecialchars($cat) ?></h2>
     <div class="row g-3">
@@ -246,6 +289,79 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
 <script>
 (function(){
   const csrf = <?= json_encode(csrf_token()) ?>;
+
+  // ---- Hosting card -------------------------------------------------------
+  const lxcCard = document.getElementById('lxc-card');
+  if (lxcCard && document.getElementById('lxc-state')) {
+    const iid   = <?= (int) ($instance->id ?? 0) ?>;
+    const state = document.getElementById('lxc-state'),
+          dep   = document.getElementById('lxc-deploy'),
+          ref   = document.getElementById('lxc-refresh'),
+          dom   = document.getElementById('lxc-domain'),
+          msg   = document.getElementById('lxc-msg');
+
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const say = (t, c) => { msg.className = 'form-text mt-1 ' + (c || 'text-body-secondary'); msg.textContent = t; };
+    const post = (url, data) => fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+      body: new URLSearchParams(Object.assign({csrf_token: csrf}, data)).toString()
+    }).then(r => r.json());
+
+    function render(s) {
+      if (!s.configured) { state.textContent = 'Hosting is not configured on this control plane.'; dep.disabled = true; return; }
+      if (!s.deployed)   { state.textContent = 'Not deployed yet.'; ref.hidden = true;
+                           dep.innerHTML = '<i class="bi bi-rocket-takeoff me-1"></i>Deploy'; return; }
+      const up = s.status === 'running';
+      // Surface the things you only think to check once they have gone wrong.
+      state.innerHTML =
+        '<span class="badge bg-' + (up ? 'success' : 'secondary') + '-subtle text-' + (up ? 'success' : 'secondary') + ' me-2">'
+        + (up ? 'running' : esc(s.status || 'stopped')) + '</span><code>' + esc(s.domain) + '</code> '
+        + '<span class="text-body-secondary">container ' + s.vmid + ' · ' + esc(s.ip) + ' · '
+        + s.memMb + ' MB RAM · ' + s.diskMb + ' MB disk'
+        + (s.certExpires ? ' · cert to ' + esc(s.certExpires) : ' · <span class="text-warning">no certificate</span>')
+        + '</span>';
+      if (s.domain && !dom.value) dom.value = s.domain;
+      ref.hidden = false;
+      dep.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Redeploy';
+    }
+
+    const load = () => post('/connections/lxcstatus', {id: iid})
+      .then(j => { if (j.success) render(j.data); else state.textContent = j.message || 'Unavailable.'; })
+      .catch(() => { state.textContent = 'Could not read hosting state.'; });
+    load();
+
+    dep.addEventListener('click', function(){
+      const redeploy = dep.textContent.indexOf('Redeploy') !== -1;
+      let recreate = false;
+      if (redeploy) {
+        // Recreate purges the data volumes, so it is opt-in and spelled out; cancelling
+        // falls through to the safe path rather than doing nothing. The server refuses
+        // it anyway once the tenant is past first-run setup.
+        recreate = confirm('Rebuild the container from scratch?\n\nOK = rebuild (DESTROYS its database and uploads).\nCancel = re-apply settings and restart, keeping data.');
+        if (!recreate) { ref.click(); return; }
+      }
+      dep.disabled = true;
+      say('Deploying… first boot clones the code and installs dependencies, so this takes a minute.');
+      post('/connections/lxcdeploy', {id: iid, domain: dom.value.trim().toLowerCase(), recreate: recreate ? 1 : 0})
+        .then(j => { dep.disabled = false;
+          if (j.success) { render(j.data); say((j.message || 'Deployed.') + ' ' + ((j.data.steps || []).join(' · ')), 'text-success'); }
+          else say(j.message || 'Deploy failed.', 'text-danger'); })
+        .catch(() => { dep.disabled = false; say('Network error.', 'text-danger'); });
+    });
+
+    ref.addEventListener('click', function(){
+      ref.disabled = true;
+      say('Re-applying settings and restarting… data is preserved.');
+      post('/connections/lxcrefresh', {id: iid})
+        .then(j => { ref.disabled = false;
+          say(j.success ? (j.message || 'Re-applied.') : (j.message || 'Failed.'), j.success ? 'text-success' : 'text-danger');
+          if (j.success) setTimeout(load, 8000); })
+        .catch(() => { ref.disabled = false; say('Network error.', 'text-danger'); });
+    });
+  }
+
   document.querySelectorAll('form[data-connectkey]').forEach(function(form){
     form.addEventListener('submit', function(ev){
       ev.preventDefault();

@@ -643,6 +643,9 @@ class Connections extends Control {
             'instance'       => $inst,
             'instances'      => $instances,
             'cards'          => $cards,
+            // Where this instance runs. Belongs on the hub, not on the GitHub connector's
+            // page: binding a domain should not require connecting a repo first.
+            'publishDrivers' => \app\Publish\PublishRegistry::all(),
             // Only for the GitHub deploy-webhook hint ("a push fires N pipelines");
             // the pipelines themselves are shown on /integrations, not here.
             'pipelines'      => \app\InstanceAutomations::pipelines($this->instanceDir($inst->slug)),

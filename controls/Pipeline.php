@@ -78,6 +78,16 @@ class Pipeline extends Control {
             && ApiKey::verify($this->bearer() ?: (string) $this->headerVal('X-Pipeline-Key')) <= 0) {
             Flight::jsonError('Invalid or missing API key.', 401); return;
         }
+        // A run is written by a DETACHED worker process, so this request's query cache
+        // never sees those writes invalidated — poll twice and you get the first answer
+        // forever. That turned a live progress view into a display frozen at whatever the
+        // run happened to be doing when it was first asked.
+        $ad = Flight::get('cachedDatabaseAdapter');
+        if ($ad instanceof \app\CachedDatabaseAdapter) {
+            $ad->invalidateTable('piperun');
+            $ad->invalidateTable('pipesteprun');
+        }
+
         $run = R::load('piperun', (int) $this->slugArg());
         if (!$run->id) { Flight::jsonError('No such run.', 404); return; }
 

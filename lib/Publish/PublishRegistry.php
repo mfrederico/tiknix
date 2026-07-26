@@ -18,6 +18,7 @@ class PublishRegistry {
     /** driver key => class. Order is the order shown in the UI. */
     private const DRIVERS = [
         'tiknix-hosted' => TiknixHostedDriver::class,
+        'github-pr'     => GithubPrDriver::class,
     ];
 
     /**
@@ -41,6 +42,18 @@ class PublishRegistry {
             ];
         }
         return $out;
+    }
+
+    /**
+     * Hosting targets only — the ones that answer "where does this instance run", and so
+     * the only ones the Connections hub's Hosting section should offer. A repository
+     * target (github-pr) belongs to the Publisher, not to the hosting card; listing it
+     * here would read as "your project runs on a pull request".
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public static function hosting(): array {
+        return array_values(array_filter(self::all(), fn($d) => empty($d['capabilities']['code'])));
     }
 
     /** @return PublishDriver|null */

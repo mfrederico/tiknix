@@ -16,9 +16,18 @@
  *   status()   what is there right now (for the card)
  *   refresh()  re-apply settings to a live target without destroying data
  *
- * A driver NEVER routine-deploys code. Code reaches a target by its own mechanism —
- * the container's puller, a git push, an rsync run — so deploy() is for creating or
- * reshaping a target, not for shipping a commit.
+ * There are two kinds of target, and capabilities()['code'] is what tells them apart:
+ *
+ *   HOSTING targets (code => false) answer "where does this instance run". They never
+ *   ship a commit — code reaches them by their own mechanism (the container's puller,
+ *   a webhook) — so deploy() creates or reshapes the target, nothing more.
+ *
+ *   REPOSITORY targets (code => true) answer "how does a change reach my code". For
+ *   them shipping the commit IS the deploy: GithubPrDriver pushes a snapshot and opens
+ *   a pull request, and there is nothing else for it to stand up.
+ *
+ * A caller that shows hosting UI (domain, TLS, container state) must filter on that
+ * flag — PublishRegistry::hosting() does it — rather than assume every driver hosts.
  */
 namespace app\Publish;
 

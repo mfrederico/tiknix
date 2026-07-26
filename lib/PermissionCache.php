@@ -414,6 +414,10 @@ class PermissionCache {
         // Same contract, documented at length in controls/Mcp.php: PUBLIC means
         // reachable, not unprotected.
         if ($c === 'mcp' && in_array($m, ['message', 'health', 'registry'], true)) return LEVELS['PUBLIC'];
+        // publish::run is the control plane's publish door — a project's pipeline calls
+        // it with that instance's own broker key and the instance is resolved from the
+        // key. Same self-authenticating contract; see controls/Publish.php.
+        if ($c === 'publish' && $m === 'run') return LEVELS['PUBLIC'];
         // Pre-auth auth routes only (NOT logout/account management).
         if ($c === 'auth') {
             $publicAuth = [

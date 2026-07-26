@@ -78,6 +78,15 @@ class GitHubPublisher {
         // Belt-and-suspenders: drop any secret config that slipped past .gitignore (keep examples).
         self::gitEnv($slug, $ienv, ['rm', '--cached', '-r', '--ignore-unmatch', '--quiet',
             'conf/*.ini', ':(exclude)conf/*.example.ini', '.aibuilder']);
+        // Core's CI is OURS, not the customer's app. Every instance is a clone of core, so
+        // .github/workflows rides along into a repo whose owner never asked for it — and
+        // GitHub refuses the push outright ("refusing to allow an OAuth App to create or
+        // update workflow ... without `workflow` scope"), which would otherwise force us to
+        // request that scope from every customer to ship a file they don't want. The
+        // tiknix-core instance publishes back to tiknix main and DOES own its workflows.
+        if (empty($inst->isDefault)) {
+            self::gitEnv($slug, $ienv, ['rm', '--cached', '-r', '--ignore-unmatch', '--quiet', '.github/workflows']);
+        }
         $tree = trim(self::gitEnv($slug, $ienv, ['write-tree'])['out']);
         @unlink($tmpIndex);
         if ($tree === '') return $fail('could not build a clean snapshot tree');
@@ -116,7 +125,7 @@ class GitHubPublisher {
         if (!$baseExists) {
             $push = self::git($slug, ['push', '--force', $url, $commit . ':refs/heads/' . $base]);
             if (!$push['ok']) return $fail('git push failed: ' . $redact($push['out']));
-            return ['ok' => true, 'pushed' => true, 'pr' => null,
+            return ['ok' => true, 'pushed' => true, 'pr' => null, 'branch' => $base,
                 'message' => 'Published to ' . $owner . '/' . $repo . ' (initialized ' . $base . ')', 'error' => null];
         }
 
@@ -137,11 +146,11 @@ class GitHubPublisher {
                        . '- HEAD: `' . $shortSha . "`\n";
                 $pr = $gh->createPullRequest($title, $body, self::BRANCH, $base, false);
             }
-            return ['ok' => true, 'pushed' => true,
+            return ['ok' => true, 'pushed' => true, 'branch' => self::BRANCH,
                 'pr' => ['number' => $pr['number'] ?? null, 'url' => $pr['html_url'] ?? null],
                 'message' => 'Published to ' . $owner . '/' . $repo . ($reused ? ' (updated existing PR)' : ''), 'error' => null];
         } catch (\Throwable $e) {
-            return ['ok' => true, 'pushed' => true, 'pr' => null,
+            return ['ok' => true, 'pushed' => true, 'pr' => null, 'branch' => self::BRANCH,
                 'message' => 'Pushed to ' . $owner . '/' . $repo, 'error' => null,
                 'note' => 'PR could not be created: ' . $e->getMessage()];
         }

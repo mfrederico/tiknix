@@ -162,6 +162,27 @@ if ($__loggedIn) {
         <strong><?= htmlspecialchars($title ?? 'App') ?></strong>
       </div>
 
+      <?php
+      /* WHICH PROJECT AM I IN. Present on every page, because the answer used to be
+         inferable only from whichever tool you happened to be looking at — and when a
+         surface guessed differently from the one before it, you had no way to notice.
+         Clicking it goes to the picker, the single place the choice is made. */
+      if ($__hasProject):
+          $__proj = \app\ProjectContext::current((int) (\Flight::getMember()->id ?? 0));
+          if ($__proj):
+      ?>
+        <a href="/projects" class="ui-project-chip d-flex align-items-center gap-2 px-3 py-1 rounded-3 bg-primary-subtle text-decoration-none ms-3"
+           title="Working on this project everywhere — click to change">
+          <i class="bi bi-hdd-network-fill text-primary"></i>
+          <span class="lh-sm">
+            <span class="d-block text-uppercase text-body-secondary fw-semibold" style="font-size:.6rem;letter-spacing:.06em">Working on</span>
+            <span class="d-block fw-bold text-body-emphasis" style="font-size:.85rem">
+              <?= htmlspecialchars($__proj->displayName ?: $__proj->slug) ?>
+            </span>
+          </span>
+        </a>
+      <?php endif; endif; ?>
+
       <ul class="navbar-nav flex-row align-items-center gap-2 ms-auto mb-0">
         <li class="nav-item">
           <button class="ui-btn-icon" id="uiThemeToggle" type="button" aria-label="Toggle theme"><i class="bi bi-moon-stars"></i></button>

@@ -635,6 +635,7 @@ class ProxmoxDeploy {
                 $row = BrokerService::forInstance((int) $inst->id);
                 if ($raw !== '' && $row && $row->id && (int) $row->isActive === 1
                     && hash_equals((string) $row->tokenHash, EncryptionService::hashHex($raw))) {
+                    self::syncCloneBroker($inst, $raw);
                     return ['endpoint' => $endpoint, 'key' => $raw];
                 }
             } catch (\Throwable $e) {
@@ -645,7 +646,29 @@ class ProxmoxDeploy {
         $res = BrokerService::mint((int) $inst->id, (int) $inst->memberId, []);
         $inst->brokerKey = EncryptionService::encrypt($res['token']);
         R::store($inst);
+        self::syncCloneBroker($inst, (string) $res['token']);
         return ['endpoint' => $endpoint, 'key' => (string) $res['token']];
+    }
+
+    /**
+     * Keep the WORKING clone's conf/broker.ini on the same key as the container.
+     *
+     * mint() rotates the instance's single broker key in place, so handing a fresh one to
+     * a container silently invalidated the copy in core's clone of the same instance —
+     * and that clone is where the builder edits, where its pipelines run when it is
+     * triggered by hostname, and what publishes. The symptom was a 401 from anything
+     * broker-backed (a store call, a publish) with nothing obviously wrong.
+     *
+     * Both copies are the same instance and the key is instance-scoped, so both hold it.
+     */
+    private static function syncCloneBroker(object $inst, string $rawKey): void {
+        if ($rawKey === '') return;
+        // The clone sits beside core, named <slug>.<app> — the same layout Connections
+        // and GitHubPublisher use.
+        $dir = dirname(dirname(__DIR__)) . '/' . (string) $inst->slug . '.tiknix';
+        if (!is_dir($dir)) return;
+        try { BrokerService::writeInstanceConfig($dir, $rawKey); }
+        catch (\Throwable $e) { /* the deploy still succeeds; the clone just stays stale */ }
     }
 
     /** Stable per-instance app key so encrypted data survives a container recreate. */

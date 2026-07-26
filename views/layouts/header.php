@@ -180,6 +180,11 @@ if ($__loggedIn) {
               <?= htmlspecialchars($__proj->displayName ?: $__proj->slug) ?>
             </span>
           </span>
+          <?php /* Say what clicking does. The chip alone reads as a status badge, and a
+                   plugin embedded below has no business owning this control — the shell
+                   does, because the shell is what survives navigating between them. */ ?>
+          <span class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle ms-1"
+                style="font-size:.62rem"><i class="bi bi-grid-3x3-gap me-1"></i>Change</span>
         </a>
       <?php endif; endif; ?>
 

@@ -60,6 +60,7 @@ class ProxmoxService {
             'tokenid' => (string) ($flat['tokenid'] ?? (getenv('PVE_TOKENID') ?: '')),
             'secret'  => (string) ($flat['secret']  ?? (getenv('PVE_SECRET')  ?: '')),
             'node'    => (string) ($flat['node']    ?? (getenv('PVE_NODE')    ?: '')),
+            'image'   => (string) ($flat['image']   ?? (getenv('PVE_IMAGE')   ?: '')),
         ];
     }
 

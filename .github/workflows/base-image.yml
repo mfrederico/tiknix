@@ -1,13 +1,22 @@
 name: base-image
 
-# Builds the tiknix-base image (PHP 8.3 + extensions precompiled) and pushes it to
-# GHCR. App deploys do `FROM ghcr.io/<owner>/tiknix-base:8.3`, so they never compile
+# Builds the tiknix-base image (PHP + extensions precompiled) and pushes it to GHCR.
+# App deploys do `FROM ghcr.io/<owner>/tiknix-base:<tag>`, so they never compile
 # extensions. Run manually from the Actions tab, or it runs when the base Dockerfile
 # changes. NOTE: after the first push, make the GHCR package PUBLIC (package settings
 # -> Change visibility) so Spaceship Hyperlift can pull it without credentials.
+#
+# The tag is an INPUT and must change whenever the image changes: Proxmox refuses to
+# overwrite an existing template, so a tenant deploy can never pick up a re-pushed tag.
+# Bump it here, then point [proxmox] image= at the new tag.
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (must be new — PVE cannot overwrite an existing template)'
+        required: true
+        default: '8.5'
   push:
     branches: [main]
     paths:
@@ -32,4 +41,4 @@ jobs:
           context: .
           file: docker/base/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/tiknix-base:8.3
+          tags: ghcr.io/${{ github.repository_owner }}/tiknix-base:${{ inputs.tag || '8.5' }}

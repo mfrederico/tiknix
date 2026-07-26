@@ -207,12 +207,15 @@ if ($__loggedIn) {
              deploy from a dropdown. */
           ?>
           <span class="vr mx-1 d-none d-sm-block"></span>
-          <?php if (\app\Feature::isEnabled('publisher', (int) (\Flight::getMember()->id ?? 0), $__level)): ?>
-            <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm py-0 px-2" style="font-size:.72rem"
-               title="Where and how this project goes live"><i class="bi bi-cloud-upload me-1"></i>Publish</a>
-          <?php endif; ?>
+          <?php /* Not feature-gated: Feature caches grants in the SESSION, so gating it
+                   meant an existing session kept hiding Publish after the grant — the
+                   control appeared missing rather than disabled. */ ?>
+          <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm py-0 px-2" style="font-size:.72rem"
+             title="Where and how this project goes live"><i class="bi bi-cloud-upload me-1"></i>Publish</a>
           <a href="/connections" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.72rem"
              title="Store &amp; service connections for this project"><i class="bi bi-plug me-1"></i>Connections</a>
+          <a href="/teams" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.72rem"
+             title="Share this project with a team"><i class="bi bi-people me-1"></i>Share</a>
           <a href="/projects" class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle text-decoration-none"
              style="font-size:.62rem" title="Change project"><i class="bi bi-grid-3x3-gap me-1"></i>Change</a>
         </div>

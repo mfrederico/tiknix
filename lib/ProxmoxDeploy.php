@@ -409,6 +409,49 @@ class ProxmoxDeploy {
     }
 
     /**
+     * Current hosting state for an instance, for the Connections UI.
+     *
+     * Never throws and never returns a partial truth: `configured` false means the
+     * control plane has no hypervisor credentials at all, which the UI must show
+     * differently from "configured but not deployed yet".
+     *
+     * @return array{configured:bool, deployed:bool, vmid:int, ip:string, domain:string,
+     *               status:string, uptime:int, memMb:int, diskMb:int, certExpires:string}
+     */
+    public static function status(object $inst): array {
+        $out = ['configured' => false, 'deployed' => false, 'vmid' => 0, 'ip' => '', 'domain' => '',
+                'status' => '', 'uptime' => 0, 'memMb' => 0, 'diskMb' => 0, 'certExpires' => ''];
+
+        $pve = ProxmoxService::fromConfig();
+        if (!$pve) return $out;
+        $out['configured'] = true;
+        $out['domain']     = (string) ($inst->ctDomain ?: '');
+        $out['ip']         = (string) ($inst->ctIp ?: '');
+        $out['vmid']       = (int) ($inst->ctVmid ?: 0);
+        if ($out['vmid'] <= 0) return $out;
+
+        $node = $pve->node();
+        if ($node === '' || !$pve->ctExists($node, $out['vmid'])) return $out;
+
+        $s = $pve->ctStatus($node, $out['vmid']);
+        $out['deployed'] = true;
+        $out['status']   = (string) ($s['status'] ?? '');
+        $out['uptime']   = (int) ($s['uptime'] ?? 0);
+        $out['memMb']    = (int) round((float) ($s['mem'] ?? 0) / 1048576);
+        $out['diskMb']   = (int) round((float) ($s['disk'] ?? 0) / 1048576);
+
+        if ($out['domain'] !== '') {
+            $crt = self::CERT_DIR . '/' . $out['domain'] . '.crt';
+            if (is_file($crt)) {
+                $o = [];
+                exec('openssl x509 -enddate -noout -in ' . escapeshellarg($crt) . ' 2>/dev/null', $o);
+                if (!empty($o[0]) && str_contains($o[0], '=')) $out['certExpires'] = trim(explode('=', $o[0], 2)[1]);
+            }
+        }
+        return $out;
+    }
+
+    /**
      * Everything the container needs at boot, exported by the boot command itself rather
      * than set via the `env` config key — that key is accepted by the API and reads back
      * correctly, but is never applied to init on PVE 9.2.5.

@@ -67,6 +67,39 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
     </div>
   <?php endif; ?>
 
+  <!--
+    Container hosting. Sits beside Custom domains because it answers the same question —
+    where this instance actually runs — with a container as the target instead of /hosted.
+    State is read from /connections/lxcstatus; the buttons are ADMIN-gated server-side.
+  -->
+  <div class="card shadow-sm mb-4" id="lxc-card">
+    <div class="card-header d-flex align-items-center gap-2">
+      <i class="bi bi-box"></i><span class="fw-semibold">Container hosting</span>
+      <span class="text-body-secondary small ms-auto">its own isolated instance</span>
+    </div>
+    <div class="card-body">
+      <p class="small text-body-secondary mb-2">
+        Runs this instance in its own container, with its own database, uploads and
+        resources — isolated from every other tenant. It pulls its own code and stays
+        current on its own, so <strong>you do not need to deploy for code changes</strong>.
+      </p>
+      <div id="lxc-state" class="small text-body-secondary mb-2">Loading…</div>
+      <div class="d-flex flex-wrap gap-2">
+        <div class="col-12 col-sm-5">
+          <input id="lxc-domain" class="form-control form-control-sm" placeholder="app.example.com"
+                 autocomplete="off" spellcheck="false">
+        </div>
+        <button id="lxc-deploy" class="btn btn-primary btn-sm" type="button">
+          <i class="bi bi-rocket-takeoff me-1"></i>Deploy
+        </button>
+        <button id="lxc-refresh" class="btn btn-outline-secondary btn-sm" type="button" hidden>
+          <i class="bi bi-arrow-clockwise me-1"></i>Re-apply settings
+        </button>
+      </div>
+      <div id="lxc-msg" class="form-text mt-1"></div>
+    </div>
+  </div>
+
   <div class="card shadow-sm">
     <div class="card-body">
 
@@ -283,6 +316,84 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
         }).catch(()=>{ pb.disabled=false; setMsg('Network error.','text-danger'); }); }
       if(db){ const d=db.dataset.d; if(!confirm('Remove '+d+'?')) return;
         post('/connections/resolveremove',{id:iid,domain:d}).then(j=>{ if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); setMsg('Removed.','text-body-secondary'); } }); }
+    });
+  }
+
+  // Container hosting — deploy this instance to its own LXC.
+  const lxcCard = document.getElementById('lxc-card');
+  if (lxcCard) {
+    const state = document.getElementById('lxc-state'),
+          dep   = document.getElementById('lxc-deploy'),
+          ref   = document.getElementById('lxc-refresh'),
+          dom   = document.getElementById('lxc-domain'),
+          msg   = document.getElementById('lxc-msg');
+    const say = (t, c) => { msg.className = 'form-text mt-1 ' + (c || 'text-body-secondary'); msg.textContent = t; };
+
+    function render(s) {
+      if (!s.configured) {
+        state.innerHTML = '<span class="text-body-secondary">Container hosting is not configured on this control plane.</span>';
+        dep.disabled = true; return;
+      }
+      if (!s.deployed) {
+        state.innerHTML = '<span class="text-body-secondary">Not deployed yet.</span>';
+        ref.hidden = true;
+        dep.innerHTML = '<i class="bi bi-rocket-takeoff me-1"></i>Deploy';
+        return;
+      }
+      const up = s.status === 'running';
+      // Show what it costs and when the cert lapses — both are things you only think to
+      // check once they have already gone wrong.
+      state.innerHTML =
+        '<span class="badge bg-' + (up ? 'success' : 'secondary') + '-subtle text-' + (up ? 'success' : 'secondary') + ' me-2">'
+        + (up ? 'running' : (s.status || 'stopped')) + '</span>'
+        + '<code>' + esc(s.domain || '') + '</code> '
+        + '<span class="text-body-secondary">container ' + s.vmid + ' · ' + esc(s.ip) + ' · '
+        + s.memMb + ' MB RAM · ' + s.diskMb + ' MB disk'
+        + (s.certExpires ? ' · cert to ' + esc(s.certExpires) : ' · <span class="text-warning">no certificate</span>')
+        + '</span>';
+      if (s.domain && !dom.value) dom.value = s.domain;
+      ref.hidden = false;
+      dep.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Redeploy';
+    }
+
+    function load() {
+      post('/connections/lxcstatus', { id: iid })
+        .then(j => { if (j.success) render(j.data); else state.textContent = j.message || 'Unavailable.'; })
+        .catch(() => { state.textContent = 'Could not read container state.'; });
+    }
+    load();
+
+    dep.addEventListener('click', function () {
+      const d = dom.value.trim().toLowerCase();
+      const redeploy = dep.textContent.indexOf('Redeploy') !== -1;
+      // Recreate destroys the data volumes, so it is opt-in and spelled out. The server
+      // refuses it anyway once the tenant is past first-run setup.
+      let recreate = false;
+      if (redeploy) {
+        recreate = confirm('Rebuild the container from scratch?\n\nOK = rebuild (DESTROYS its database and uploads).\nCancel = just re-apply settings and restart, keeping data.');
+        if (!recreate) { ref.click(); return; }
+      }
+      dep.disabled = true;
+      say('Deploying… first boot clones the code and installs dependencies, so this takes a minute.');
+      post('/connections/lxcdeploy', { id: iid, domain: d, recreate: recreate ? 1 : 0 })
+        .then(j => {
+          dep.disabled = false;
+          if (j.success) { render(j.data); say((j.message || 'Deployed.') + ' ' + ((j.data.steps || []).join(' · ')), 'text-success'); }
+          else say(j.message || 'Deploy failed.', 'text-danger');
+        })
+        .catch(() => { dep.disabled = false; say('Network error.', 'text-danger'); });
+    });
+
+    ref.addEventListener('click', function () {
+      ref.disabled = true;
+      say('Re-applying settings and restarting… data is preserved.');
+      post('/connections/lxcrefresh', { id: iid })
+        .then(j => {
+          ref.disabled = false;
+          say(j.success ? (j.message || 'Re-applied.') : (j.message || 'Failed.'), j.success ? 'text-success' : 'text-danger');
+          if (j.success) setTimeout(load, 8000);
+        })
+        .catch(() => { ref.disabled = false; say('Network error.', 'text-danger'); });
     });
   }
 })();

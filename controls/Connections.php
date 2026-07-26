@@ -465,6 +465,65 @@ class Connections extends Control {
             'Deployed to /hosted/' . $domain . ' — provision TLS + nginx to finish going live.');
     }
 
+    // ---------------------------------------------------------------- LXC hosting
+    //
+    // Deploying an instance to its own container is a CORE action, not a builder-sidecar
+    // one: it mutates the instance registry, mints a deploy token, and drives the
+    // hypervisor. It lives beside the GitHub deploy targets because it answers the same
+    // question — "where does this instance actually run" — just with a container as the
+    // target instead of /hosted.
+
+    /** Current container state for the instance card. Read-only, safe to poll. */
+    public function lxcstatus($params = []): void {
+        if (!$this->requireLogin()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        $this->jsonSuccess(\app\ProxmoxDeploy::status($inst));
+    }
+
+    /**
+     * Create (or replace) this instance's container.
+     *
+     * `recreate` is passed through but NOT forced: ProxmoxDeploy refuses it once the
+     * tenant is past first-run setup, because recreate purges the data volumes. Code
+     * changes never need a deploy at all — the in-container puller applies them within
+     * a minute — so this button is for standing an instance up or changing its shape.
+     */
+    public function lxcdeploy($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+
+        $domain = strtolower(trim((string) $this->getParam('domain', '')));
+        if ($domain !== '' && !$this->validHost($domain)) { $this->jsonError('Invalid domain.', 400); return; }
+
+        $res = \app\ProxmoxDeploy::deploy((string) $inst->slug, $domain, [
+            'recreate' => (bool) $this->getParam('recreate', false),
+            'cert'     => (bool) $this->getParam('cert', true),
+        ]);
+        if (empty($res['ok'])) { $this->jsonError((string) ($res['error'] ?? 'Deploy failed'), 400); return; }
+
+        $this->jsonSuccess(['steps' => $res['steps'] ?? []] + \app\ProxmoxDeploy::status($inst),
+            'Container ' . $res['vmid'] . ' is up at ' . $res['domain'] . '. First boot clones and installs, so give it a minute.');
+    }
+
+    /**
+     * Re-apply the boot command to a running container and restart it, volumes intact.
+     * The entrypoint is frozen at create time, so this is how a deploy-level change
+     * (policy, resolver, puller) reaches a tenant that already has data.
+     */
+    public function lxcrefresh($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+
+        $res = \app\ProxmoxDeploy::refreshBoot((string) $inst->slug);
+        if (empty($res['ok'])) { $this->jsonError((string) ($res['error'] ?? 'Refresh failed'), 400); return; }
+        $this->jsonSuccess(['steps' => $res['steps'] ?? []], 'Settings re-applied and the container restarted.');
+    }
+
     /** The CNAME target customers point their domain at = this instance's staging host. */
     private function stagingHost($inst): string {
         $ini  = @parse_ini_file($this->instanceDir($inst->slug) . '/conf/config.ini', true) ?: [];

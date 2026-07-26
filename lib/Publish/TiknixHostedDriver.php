@@ -31,7 +31,30 @@ class TiknixHostedDriver implements PublishDriver {
         ];
     }
 
+    /**
+     * Mirrors the Connections hub exactly: connections::lxcstatus is MEMBER, lxcdeploy
+     * and lxcrefresh are ADMIN. Standing up or reshaping a container spends hypervisor
+     * capacity, so the door must not be a cheaper route to it than the button.
+     */
+    public static function minLevel(string $op): int {
+        return $op === 'status' ? LEVELS['MEMBER'] : LEVELS['ADMIN'];
+    }
+
+    /**
+     * Stand the container up, or bring an existing one in line — one meaning of "publish".
+     *
+     * ProxmoxDeploy::deploy refuses outright when the container already exists, because
+     * replacing it purges the data volumes. That refusal is a guard, not an answer: a
+     * pipeline that says "publish" a second time wants the live target to match the
+     * settings, which is precisely refresh. So do that, and leave `recreate` as the only
+     * way to ask for the destructive path.
+     */
     public function deploy(object $inst, array $config, array $opts = []): array {
+        if (empty($opts['recreate'])) {
+            $state = ProxmoxDeploy::status($inst);
+            if (!empty($state['deployed'])) return $this->refresh($inst, $config, $opts);
+        }
+
         $r = ProxmoxDeploy::deploy((string) $inst->slug, (string) ($config['domain'] ?? ''), [
             'recreate' => !empty($opts['recreate']),
             'force'    => !empty($opts['force']),

@@ -46,6 +46,21 @@ class Publish extends Control {
         $driver = PublishRegistry::driver($target);
         if (!$driver) { Flight::jsonError('Unknown publish target: ' . $target, 400); return; }
 
+        // Targets are not equally cheap, and this door has no logged-in person to ask —
+        // the pipeline runs unattended. So authorize the INSTANCE OWNER at the level the
+        // driver demands. Without this, one door would let any member provision a
+        // container just by naming a different target, bypassing the ADMIN gate the
+        // Connections hub has always had on exactly that action.
+        $owner = R::load('member', (int) $inst->memberId);
+        $level = (int) ($owner->level ?? LEVELS['PUBLIC']);
+        $need  = $driver::minLevel($op);
+        if (!$owner->id || $level > $need) {
+            $this->logger->warning('publish denied', ['target' => $target, 'op' => $op,
+                'instance' => $instanceId, 'owner_level' => $level, 'needs' => $need]);
+            Flight::jsonError('This project\'s owner is not permitted to ' . $op . ' the ' . $target . ' target.', 403);
+            return;
+        }
+
         // Target config lives with the target. The pipeline may pass per-run overrides
         // (a domain, sizing), but never credentials — those are resolved here by driver.
         $config = (array) ($body['config'] ?? []);

@@ -42,6 +42,15 @@ class GithubPrDriver implements PublishDriver {
         ];
     }
 
+    /**
+     * Any member may publish to a repo they own — it is their credential, their repo, and
+     * it costs this control plane nothing. The connection row is the real gate: without
+     * one there is nowhere to push.
+     */
+    public static function minLevel(string $op): int {
+        return LEVELS['MEMBER'];
+    }
+
     /** Push the snapshot and open/reuse the PR. */
     public function deploy(object $inst, array $config, array $opts = []): array {
         $conn = self::connection($inst);

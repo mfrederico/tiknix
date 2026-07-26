@@ -44,10 +44,25 @@ interface PublishDriver {
 
     /**
      * What this driver supports, so the UI does not offer what it cannot do.
-     * Recognised flags: domain, tls, refresh, recreate, logs, sshKey.
+     * Recognised flags: code, domain, tls, refresh, recreate, logs, sshKey.
      * @return array<string,bool>
      */
     public static function capabilities(): array;
+
+    /**
+     * The privilege level required to run $op ('deploy' | 'refresh' | 'status'), checked
+     * against the INSTANCE OWNER — a publish runs unattended from a pipeline, so there is
+     * no logged-in person to ask.
+     *
+     * This exists because targets are not equally cheap. Pushing to a customer's own repo
+     * costs us nothing and any member may do it; standing up a container spends real
+     * hypervisor capacity, and the UI has always gated that at ADMIN. Without a level
+     * here, routing both through one door would have handed every member the ability to
+     * provision infrastructure just by naming a different target.
+     *
+     * Lower number = higher privilege, per LEVELS.
+     */
+    public static function minLevel(string $op): int;
 
     /**
      * Create or reshape the target.

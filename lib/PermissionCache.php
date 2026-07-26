@@ -394,6 +394,26 @@ class PermissionCache {
         // Firehose ingest is reachable but self-authed by API key (like mcp::message).
         // The feed (firehose::index) stays ADMIN via the default below.
         if ($c === 'firehose' && $m === 'report') return LEVELS['PUBLIC'];
+
+        // SELF-AUTHENTICATING ENDPOINTS. These carry their own credential — the
+        // instance's [pipeline] trigger_secret, a pk_ REST key, or an MCP API key — and
+        // verify it in the controller. They must be REACHABLE for that check to run, so
+        // the ADMIN default below is not a safe fallback for them: it redirects the
+        // caller to /auth/login, which a bearer-token client cannot satisfy, and the
+        // failure looks like a broken endpoint rather than a permission.
+        //
+        // This matters because rows are auto-generated on FIRST REQUEST: a freshly
+        // provisioned instance silently pins these to ADMIN the first time anything
+        // touches them, so the editor's Run/Debug and any REST call 303 to a login page.
+        // Routes NOT listed here (pipeline::keys, ::varshapes, ::mykey) are UI surfaces
+        // and keep the ADMIN/MEMBER default.
+        if ($c === 'pipeline') {
+            $selfAuthed = ['trigger', 'api', 'status', 'debug', 'debugstep', 'object', 'objecttick', 'mintkey'];
+            if (in_array($m, $selfAuthed, true)) return LEVELS['PUBLIC'];
+        }
+        // Same contract, documented at length in controls/Mcp.php: PUBLIC means
+        // reachable, not unprotected.
+        if ($c === 'mcp' && in_array($m, ['message', 'health', 'registry'], true)) return LEVELS['PUBLIC'];
         // Pre-auth auth routes only (NOT logout/account management).
         if ($c === 'auth') {
             $publicAuth = [

@@ -26,6 +26,13 @@ class ProvisionService {
     // stored slug reads "mighty-mouse-a1b2c3" and the hash sits right before ".tiknix.com".
     private const BASE_RE = '/^(?=.{2,40}$)[a-z][a-z0-9]*(-[a-z0-9]+)*$/';
 
+    /**
+     * Set when a project was created but something about it is not right — today, a
+     * broker key that could not be written. Carried back to the caller so the person who
+     * just clicked Create is told, rather than finding out at their first publish.
+     */
+    private string $lastWarning = '';
+
     private function cfg(): array {
         return @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
     }
@@ -81,8 +88,24 @@ class ProvisionService {
         $inst->createdAt   = date('Y-m-d H:i:s');
         $member->ownInstanceList[] = $inst;   // sets member_id via the association
         R::store($member);
-        try { BrokerService::ensureInstanceConfig((int) $inst->id, $memberId, $this->instanceDir($slug)); }
-        catch (\Throwable $e) { /* the instance can mint its broker key later */ }
+        // The broker key is what lets this project talk to the control plane at all —
+        // publish, connected stores, the lot. Failing to write it used to be swallowed on
+        // the theory that it could be minted later, which produced a project that looked
+        // finished and could not ship, with nothing in the log to say why. It is LOUD now:
+        // the error is recorded, and the caller is told so it can reach the person who
+        // just made the project. Provisioning still succeeds — the working copy exists and
+        // the Connections page can mint the key — but nobody is left guessing.
+        try {
+            BrokerService::ensureInstanceConfig((int) $inst->id, $memberId, $this->instanceDir($slug));
+        } catch (\Throwable $e) {
+            Flight::get('log')->error('broker key not written at provision', [
+                'instance' => (int) $inst->id, 'slug' => $slug, 'err' => $e->getMessage(),
+            ]);
+            // Deliberately NOT stored on the bean: a property set here would have RedBean
+            // grow an instance column the schema never asked for.
+            $this->lastWarning = 'This project was created, but its broker key could not be '
+                . 'written (' . $e->getMessage() . '). Open Connections to mint it before publishing.';
+        }
         return $inst;
     }
 
@@ -117,7 +140,9 @@ class ProvisionService {
 
         @file_put_contents($this->instanceDir($slug) . '/.aibuilder/engine', $engine . "\n");
         $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, $isDefault);
-        return ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
+        $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
+        if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
+        return $out;
     }
 
     // ---- authorization (core is the authority; the caller passes ids, we re-check) ----
@@ -228,7 +253,9 @@ class ProvisionService {
             'Fork from ' . $srcSlug . '@' . $ckpt . ($carried ? ' (code+data)' : ' (code only)')]);
 
         $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, false);
-        return ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'data_carried' => $carried];
+        $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'data_carried' => $carried];
+        if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
+        return $out;
     }
 
     // ---- delete: confirm-gated teardown (kill jail, unlink connectors, archive, trash) ----

@@ -63,8 +63,14 @@ class Projects extends BaseControls\Control {
         $id = (int) ($res['id'] ?? 0);
         if ($id > 0) ProjectContext::set($memberId, $id);
 
-        $this->jsonSuccess(['id' => $id, 'slug' => (string) ($res['slug'] ?? '')],
-            'Created and selected. Provisioning can take a minute.');
+        // A project can come out usable-but-incomplete — a broker key that could not be
+        // written leaves it unable to publish. Say so here, plainly, rather than letting
+        // it be discovered later at the first publish.
+        $warning = (string) ($res['warning'] ?? '');
+        if ($warning !== '') $this->logger->warning('project created with a warning', ['id' => $id, 'warning' => $warning]);
+
+        $this->jsonSuccess(['id' => $id, 'slug' => (string) ($res['slug'] ?? ''), 'warning' => $warning],
+            $warning !== '' ? $warning : 'Created and selected. Provisioning can take a minute.');
     }
 
     /**

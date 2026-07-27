@@ -158,25 +158,25 @@ test('the publisher offers this project a way to ship, and the handshake reports
   const json = await res.json().catch(() => null);
   expect(json, 'the handshake returned something that is not JSON').not.toBeNull();
 
-  // Whatever the answer, the person who clicked must be told something.
+  // A VERDICT is required. This used to also accept "this project has no broker key yet",
+  // on the assumption that a new project would not have one — it does: provisioning mints
+  // it before anyone sees the project. Accepting that answer meant the day provisioning
+  // stopped writing conf/broker.ini, this test would have shrugged and passed.
+  expect(res.status(),
+    `the handshake did not return a verdict: ${json && json.message}`).toBe(200);
+
+  // Refused is the expected verdict — no server has been told to trust this project's key
+  // yet. But a refusal has to be USABLE: say why, and hand over the key to authorise.
+  const verdict = json.data || {};
   const shown = (await frame.locator('#verify-rsync').innerText()).trim();
   expect(shown, 'the handshake said nothing back to the person who clicked it').not.toBe('');
 
-  if (res.status() === 200) {
-    // A verdict. Refused is the expected one for a key no server has authorised yet,
-    // but a refusal has to be USABLE: it must say why, and hand over the key to trust.
-    const verdict = json.data || {};
-    if (!verdict.ok) {
-      expect(`${json.message || ''} ${shown}`, 'a refused handshake did not explain itself')
-        .toMatch(/key|permission|denied|refus|connect|host|authoriz|authoris/i);
-    }
-  } else {
-    // A project that has never published has no broker key yet, so there is nothing to
-    // hand a handshake. That is a legitimate state — what is NOT acceptable is a bare
-    // failure, so the refusal has to name the thing that is missing and where to get it.
-    expect(res.status(), 'the handshake failed as a server error').toBeLessThan(500);
-    expect(`${json.message || ''} ${shown}`, 'the handshake was refused without saying what to do')
-      .toMatch(/broker key|publish once|connections/i);
+  if (!verdict.ok) {
+    const said = `${json.message || ''} ${shown}`;
+    expect(said, 'a refused handshake did not explain itself')
+      .toMatch(/key|permission|denied|refus|connect|host|authoriz|authoris/i);
+    expect(json.message || '', 'a refused handshake did not hand over the public key to trust')
+      .toMatch(/ssh-(ed25519|rsa)/);
   }
 
   // The console/network watcher would otherwise call the refusal a defect.

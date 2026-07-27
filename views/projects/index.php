@@ -238,7 +238,16 @@ $fmt = function (string $iso): string {
         headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'},
         body: new URLSearchParams({csrf_token: csrf, slug: slug, engine: eng}).toString()
       }).then(r => r.json()).then(function (j) {
-        // Created AND selected, so go straight to work rather than back to a list.
+        // Created AND selected, so go straight to work rather than back to a list —
+        // unless it came out incomplete, in which case stop and say what is wrong. Being
+        // whisked to the dashboard is how a half-made project goes unnoticed until the
+        // first publish fails.
+        if (j && j.success && j.data && j.data.warning) {
+          btn.disabled = false;
+          msg.className = 'form-text text-danger';
+          msg.textContent = j.data.warning;
+          return;
+        }
         if (j && j.success) { window.location.href = '/dashboard'; return; }
         btn.disabled = false;
         msg.className = 'form-text text-danger';

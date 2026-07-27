@@ -78,6 +78,22 @@ interface PublishDriver {
     public static function fields(): array;
 
     /**
+     * Handshake: prove the connection works, WITHOUT publishing anything.
+     *
+     * For ssh and rsync the driver deliberately owns only the connection — the recipe for
+     * what to do once you are there belongs to the customer's pipeline. That makes a
+     * handshake the driver's real deliverable: without one, the only way to discover that
+     * a key was never authorised is to fire a real publish and read the wreckage.
+     *
+     * Must be SAFE to run repeatedly and must change nothing on the far end.
+     *
+     * @param array $config the settings as currently entered — a handshake is most useful
+     *                      BEFORE anything is saved
+     * @return array{ok:bool, message:string, detail?:string[]}
+     */
+    public function verify(object $inst, array $config): array;
+
+    /**
      * Create or reshape the target.
      * @param object $inst   instance registry row
      * @param array  $config connection metadata (domain, host, path, …)

@@ -41,7 +41,7 @@ class Publish extends Control {
         $body   = $this->jsonBody();
         $target = (string) ($body['target'] ?? '');
         $op     = strtolower((string) ($body['op'] ?? 'deploy'));
-        if (!in_array($op, ['deploy', 'refresh', 'status'], true)) { Flight::jsonError('Unknown op.', 400); return; }
+        if (!in_array($op, ['deploy', 'refresh', 'status', 'verify'], true)) { Flight::jsonError('Unknown op.', 400); return; }
 
         $driver = PublishRegistry::driver($target);
         if (!$driver) { Flight::jsonError('Unknown publish target: ' . $target, 400); return; }
@@ -68,6 +68,14 @@ class Publish extends Control {
 
         try {
             if ($op === 'status') { Flight::jsonSuccess($driver->status($inst, $config)); return; }
+            if ($op === 'verify') {
+                // A handshake reports its own verdict; a failed one is a usable ANSWER
+                // ("the key was never authorised"), not a server error, so it comes back
+                // 200 with ok=false rather than as a 502 the caller has to unwrap.
+                $v = $driver->verify($inst, $config);
+                Flight::jsonSuccess($v, (string) ($v['message'] ?? ''));
+                return;
+            }
             $res = $op === 'refresh' ? $driver->refresh($inst, $config, $opts)
                                      : $driver->deploy($inst, $config, $opts);
         } catch (\Throwable $e) {

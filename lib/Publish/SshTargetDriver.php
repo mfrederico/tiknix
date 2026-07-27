@@ -41,6 +41,7 @@ abstract class SshTargetDriver implements PublishDriver {
         return LEVELS['MEMBER'];
     }
 
+
     public static function capabilities(): array {
         return [
             'code'     => true,    // shipping the change IS the deploy for these
@@ -85,6 +86,63 @@ abstract class SshTargetDriver implements PublishDriver {
 
     public function refresh(object $inst, array $config, array $opts = []): array {
         return $this->deploy($inst, $config, $opts);
+    }
+
+    /**
+     * Handshake: connect, prove who we land as, and report what we found — no transfer,
+     * no command of the customer's, nothing written.
+     *
+     * Generating the keypair here rather than on first publish is the point: you cannot
+     * authorise a key you have not been given, so the handshake's job on a fresh target is
+     * to fail usefully and hand over the public half.
+     */
+    public function verify(object $inst, array $config): array {
+        $c = self::connection($config);
+        if (empty($c['ok'])) return ['ok' => false, 'message' => (string) $c['error']];
+
+        $conn = self::keyConnection($inst, static::key());
+        if (!$conn) return ['ok' => false, 'message' => 'Could not generate an SSH key for this target.'];
+
+        // `id` on every unix, and the remote path check is a read. Both are printed as
+        // one line each so a chatty login shell (motd, banners) cannot be mistaken for
+        // the answer.
+        $path  = trim((string) ($config['path'] ?? ''));
+        $probe = 'echo TIKNIX_USER=$(id -un); echo TIKNIX_HOST=$(hostname)';
+        if ($path !== '') {
+            $p = self::remotePath($config);
+            if (empty($p['ok'])) return ['ok' => false, 'message' => (string) $p['error']];
+            $q = escapeshellarg($p['path']);
+            $probe .= '; if [ -d ' . $q .' ]; then if [ -w ' . $q . ' ]; then echo TIKNIX_PATH=writable;'
+                    . ' else echo TIKNIX_PATH=not-writable; fi; else echo TIKNIX_PATH=missing; fi';
+        }
+
+        try {
+            $res = SshKey::withKeyFile((string) $conn->accessToken, function (string $keyFile) use ($c, $probe, $inst) {
+                return self::run('ssh ' . self::sshOpts($keyFile, $inst, (int) $c['port'])
+                    . ' ' . escapeshellarg($c['user'] . '@' . $c['host'])
+                    . ' ' . escapeshellarg($probe));
+            });
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
+
+        $out = (string) $res['out'];
+        if (empty($res['ok'])) {
+            return ['ok' => false, 'message' => self::explain($out, $this->status($inst, $config))];
+        }
+
+        $found = [];
+        foreach (['USER', 'HOST', 'PATH'] as $k) {
+            if (preg_match('/TIKNIX_' . $k . '=(\S+)/', $out, $m)) $found[$k] = $m[1];
+        }
+        // Landing successfully in a directory we cannot write to is a failure the customer
+        // would otherwise only meet halfway through their first real publish.
+        if (($found['PATH'] ?? '') === 'missing')      return ['ok' => false, 'message' => 'Signed in fine, but the remote directory does not exist.'];
+        if (($found['PATH'] ?? '') === 'not-writable') return ['ok' => false, 'message' => 'Signed in as ' . ($found['USER'] ?? '?') . ', but that user cannot write to the remote directory.'];
+
+        $detail = ['Signed in as ' . ($found['USER'] ?? '?') . ' on ' . ($found['HOST'] ?? $c['host'])];
+        if (isset($found['PATH'])) $detail[] = 'Remote directory is writable';
+        return ['ok' => true, 'message' => 'Connection works.', 'detail' => $detail];
     }
 
     // ---- shared helpers ------------------------------------------------------

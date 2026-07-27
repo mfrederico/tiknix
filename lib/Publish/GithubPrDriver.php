@@ -116,6 +116,33 @@ class GithubPrDriver implements PublishDriver {
         ];
     }
 
+    /** Handshake: can the stored token actually see the repo it claims? Reads only. */
+    public function verify(object $inst, array $config): array {
+        $conn = self::connection($inst);
+        if (!$conn) return ['ok' => false, 'message' => 'No GitHub repo is connected to this project.'];
+
+        $meta  = json_decode((string) ($conn->metadataJson ?: '{}'), true) ?: [];
+        $owner = (string) ($meta['owner'] ?? '');
+        $repo  = (string) ($meta['repo'] ?? '');
+        if ($owner === '' || $repo === '') return ['ok' => false, 'message' => 'The connection is missing owner/repo.'];
+
+        try {
+            $token = \app\EncryptionService::decrypt($conn->accessToken);
+            $gh    = new \app\GitHubService($token, $owner, $repo);
+            $r     = $gh->getRepository();
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'GitHub rejected the stored token: ' . $e->getMessage()];
+        }
+
+        $branch = (string) ($r['default_branch'] ?? $meta['defaultBranch'] ?? 'main');
+        $detail = ['Repository ' . $owner . '/' . $repo . ' is reachable', 'Pull requests open against ' . $branch];
+        // A token that can read but not write produces a push failure at the worst moment.
+        if (isset($r['permissions']) && empty($r['permissions']['push'])) {
+            return ['ok' => false, 'message' => 'The token can read ' . $owner . '/' . $repo . ' but cannot push to it.'];
+        }
+        return ['ok' => true, 'message' => 'Connection works.', 'detail' => $detail];
+    }
+
     /** Publishing again IS the refresh — the branch is force-updated and the PR reused. */
     public function refresh(object $inst, array $config, array $opts = []): array {
         return $this->deploy($inst, $config, $opts);

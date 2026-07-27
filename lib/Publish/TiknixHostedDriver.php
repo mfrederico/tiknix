@@ -37,7 +37,31 @@ class TiknixHostedDriver implements PublishDriver {
      * capacity, so the door must not be a cheaper route to it than the button.
      */
     public static function minLevel(string $op): int {
-        return $op === 'status' ? LEVELS['MEMBER'] : LEVELS['ADMIN'];
+        // status and verify only READ — they spend nothing, so they sit at MEMBER with the
+        // rest of the reads. deploy and refresh spend hypervisor capacity.
+        return in_array($op, ['status', 'verify'], true) ? LEVELS['MEMBER'] : LEVELS['ADMIN'];
+    }
+
+    /** Handshake: is there a hypervisor to talk to, and does this tenant exist on it? */
+    public function verify(object $inst, array $config): array {
+        $cfg = \app\ProxmoxService::config();
+        if ($cfg['host'] === '' || $cfg['tokenid'] === '' || $cfg['secret'] === '') {
+            return ['ok' => false, 'message' => 'No hypervisor credentials on this control plane.'];
+        }
+        $pve = \app\ProxmoxService::fromConfig();
+        if (!$pve || $pve->node() === '') return ['ok' => false, 'message' => 'The hypervisor is not answering.'];
+
+        $s = ProxmoxDeploy::status($inst);
+        if (empty($s['deployed'])) {
+            // Not an error: nothing is wrong, the container simply has not been stood up.
+            return ['ok' => true, 'message' => 'Ready to deploy.',
+                    'detail' => ['Hypervisor reachable', 'No container yet — publishing will create one']];
+        }
+        return ['ok' => true, 'message' => 'Connection works.', 'detail' => array_filter([
+            'Container ' . $s['vmid'] . ' is ' . $s['status'] . ' at ' . $s['ip'],
+            $s['domain'] ? 'Serving ' . $s['domain'] : '',
+            $s['certExpires'] ? 'Certificate valid until ' . $s['certExpires'] : '',
+        ])];
     }
 
     public static function fields(): array {

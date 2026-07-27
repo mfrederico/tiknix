@@ -19,11 +19,12 @@ class Docs extends BaseControls\Control {
             ? $this->parse(file_get_contents($readmePath))
             : '<div class="alert alert-warning">Documentation file not found.</div>';
 
-        // Titled to match the nav entry that leads here ("Getting Started"), not the
-        // section it sits in — the page a link promises and the page it delivers should
-        // announce themselves the same way.
+        // TWO links lead here and they use different words: the account menu says
+        // "Documentation", the docs sidebar says "Getting Started". Both are reasonable
+        // names for this page, so it answers to both rather than making one of them a
+        // small lie.
         $this->render('docs/index', [
-            'title' => 'Getting Started',
+            'title' => 'Documentation — Getting Started',
             'content' => $content
         ]);
     }

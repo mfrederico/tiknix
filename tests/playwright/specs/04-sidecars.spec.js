@@ -64,23 +64,14 @@ test('a sidecar cannot be reached without going through core', async ({ browser 
   }
 });
 
-test("the builder's terminal bridge is up", async ({ page, watch }) => {
+test("the builder's terminal bridge is up", async ({ page }) => {
   // The xterm connects to a node bridge on CORE (wss://<core>/aibuilder/ws -> 127.0.0.1:3990),
-  // so a builder page that renders perfectly still has a dead terminal if that service
-  // is not running. Reported here, once, rather than as noise on every page that opens it.
-  watch.allowConsole(/aibuilder\/(chat-)?ws/);
-
-  const failures = [];
-  page.on('websocket', ws => {
-    ws.on('socketerror', err => failures.push(`${ws.url()}: ${err}`));
-  });
-
-  await page.goto('/sidecar/app/workbench', { waitUntil: 'domcontentloaded' });
-  await page.frameLocator('.sidecar-embed iframe').locator('body').waitFor({ timeout: 30_000 });
-  await page.goto('https://workbench.tiknix.com/aibuilder', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(5000);   // give the socket time to fail
-
-  expect(failures.join('\n'),
-    'the terminal bridge refused the websocket — the builder renders but its terminal is dead')
-    .toBe('');
+  // so a builder page that renders perfectly still has a dead terminal if that service is
+  // not running. Probed directly rather than by listening for a failed websocket: a
+  // handshake refused at the HTTP layer does not reliably raise a socket error, and a
+  // check that only sometimes notices is worse than no check.
+  const res = await page.request.get(`${env.BASE_URL}/aibuilder/ws`, { maxRedirects: 0 });
+  expect(res.status(),
+    'the terminal bridge is not answering — the builder renders but its terminal is dead')
+    .toBeLessThan(500);
 });

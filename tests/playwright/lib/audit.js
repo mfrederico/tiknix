@@ -40,6 +40,8 @@ const STOPWORDS = new Set([
   'back', 'manage', 'page', 'now', 'get', 'it', 'is', 'with',
   'edit', 'add', 'save', 'copy', 'select', 'choose', 'continue', 'next', 'close',
   'cancel', 'submit', 'change', 'update', 'details', 'info',
+  // Filler that shows up in prose links inside a sentence ("...or choose one").
+  'one', 'them', 'first', 'start', 'again', 'yet',
 ]);
 
 /**

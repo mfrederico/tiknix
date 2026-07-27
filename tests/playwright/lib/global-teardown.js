@@ -38,8 +38,11 @@ module.exports = async () => {
   let run = {};
   try { run = JSON.parse(fs.readFileSync(env.RUN_FILE, 'utf8')); } catch { return; }
 
-  // 1. The disposable project.
+  // 1. The disposable project. The tombstone is cleared either way: when the lifecycle
+  // spec deletes the project itself — the happy path — the archive is still left behind,
+  // and one per run adds up fast.
   const p = run.project;
+  if (p && p.slug) removeTombstone(p.slug);
   if (p && p.id && !p.deleted) {
     process.stdout.write(`[e2e] teardown: removing ${p.slug} (id ${p.id})… `);
     try {

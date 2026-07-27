@@ -15,24 +15,69 @@ class Docs extends BaseControls\Control {
      */
     public function index() {
         $readmePath = BASE_PATH . '/README.md';
-        $content = '';
-
-        if (file_exists($readmePath)) {
-            $markdown = file_get_contents($readmePath);
-
-            // Use MarkdownParser utility class
-            $content = MarkdownParser::parse($markdown);
-        } else {
-            $content = '<div class="alert alert-warning">Documentation file not found.</div>';
-        }
+        $content = file_exists($readmePath)
+            ? $this->parse(file_get_contents($readmePath))
+            : '<div class="alert alert-warning">Documentation file not found.</div>';
 
         $this->render('docs/index', [
             'title' => 'Documentation',
             'content' => $content
         ]);
     }
-    
-    
+
+    /**
+     * Render one of the repo's own markdown files.
+     *
+     * The README links to its siblings the way a README should — `[…](REDBEAN_README.md)`
+     * — which is right in a checkout and a 404 on the web, where nothing serves a bare
+     * .md from the project root. Rather than mangle the README to suit the browser, this
+     * route serves those files, and parse() rewrites the links to point here.
+     *
+     * Only markdown, only from the project root or docs/, and the resolved path is
+     * checked against those roots after realpath — so no amount of ../ reaches conf/.
+     */
+    public function file() {
+        $name = (string) $this->getParam('name', '');
+        $path = $this->docPath($name);
+
+        if ($path === '') {
+            Flight::notFound();
+            return;
+        }
+
+        $this->render('docs/index', [
+            'title'   => basename($path),
+            'content' => $this->parse(file_get_contents($path)),
+        ]);
+    }
+
+    /** Absolute path of a permitted doc, or '' if the name is not one. */
+    private function docPath(string $name): string {
+        if ($name === '' || substr(strtolower($name), -3) !== '.md') return '';
+
+        $real = realpath(BASE_PATH . '/' . $name);
+        if ($real === false || !is_file($real)) return '';
+
+        $root = realpath(BASE_PATH);
+        foreach ([$root, $root . '/docs'] as $allowed) {
+            // Root itself holds only top-level docs; docs/ may nest.
+            if ($allowed === $root && dirname($real) === $root) return $real;
+            if ($allowed !== $root && strpos($real, $allowed . '/') === 0) return $real;
+        }
+        return '';
+    }
+
+    /** Parse markdown, then point its relative .md links at a route that serves them. */
+    private function parse(string $markdown): string {
+        $html = MarkdownParser::parse($markdown);
+        return preg_replace_callback(
+            '/href="(?!https?:|\/|#)([^"#]+\.md)(#[^"]*)?"/i',
+            fn($m) => 'href="/docs/file?name=' . rawurlencode($m[1]) . '"',
+            $html
+        );
+    }
+
+
     /**
      * Display API documentation
      */
@@ -74,8 +119,7 @@ class Docs extends BaseControls\Control {
         $content = '';
 
         if (file_exists($workbenchPath)) {
-            $markdown = file_get_contents($workbenchPath);
-            $content = MarkdownParser::parse($markdown);
+            $content = $this->parse(file_get_contents($workbenchPath));
         } else {
             $content = '<div class="alert alert-warning">AI Projects documentation not found.</div>';
         }
@@ -94,8 +138,7 @@ class Docs extends BaseControls\Control {
         $content = '';
 
         if (file_exists($cachingPath)) {
-            $markdown = file_get_contents($cachingPath);
-            $content = MarkdownParser::parse($markdown);
+            $content = $this->parse(file_get_contents($cachingPath));
         } else {
             // Fallback content if file doesn't exist
             $content = '<div class="alert alert-info">

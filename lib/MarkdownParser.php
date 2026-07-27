@@ -114,6 +114,23 @@ class MarkdownParser {
         $text = preg_replace('/\*\*(.*?)\*\*/s', '<strong>$1</strong>', $text);
         $text = preg_replace('/(?<!\*)\*(?!\*)([^*\n]+)\*(?!\*)/s', '<em>$1</em>', $text);
 
+        // A LINKED image — [![alt](src)](href) — is the badge idiom every README opens
+        // with. It must be matched before the bare-image rule below, which would
+        // otherwise consume the inner image and leave the outer link wrapping it: the
+        // result was nested <a> tags, so clicking the badge went to the PNG instead of
+        // to the page it advertises.
+        $text = preg_replace_callback('/\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)/', function ($m) {
+            $src  = trim($m[2]);
+            $href = trim($m[3]);
+            if (!preg_match('#^https?://#i', $src) || !preg_match('#^https?://#i', $href)) {
+                return htmlspecialchars($m[0], ENT_QUOTES);
+            }
+            return '<a href="' . htmlspecialchars($href, ENT_QUOTES) . '" target="_blank" rel="noopener">'
+                 . '<img src="' . htmlspecialchars($src, ENT_QUOTES) . '" '
+                 . 'alt="' . htmlspecialchars($m[1], ENT_QUOTES) . '" loading="lazy" '
+                 . 'style="max-width:100%;max-height:320px;margin:6px 0"></a>';
+        }, $text);
+
         // Convert images ![alt](url) -> a clickable thumbnail. MUST run before links
         // (image syntax is a link with a leading '!'). Only http(s) srcs are allowed;
         // anything else falls back to literal text so no javascript:/data: sneaks in.

@@ -151,7 +151,8 @@
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <a href="/security/edit?id=<?= $rule->id ?>" class="btn btn-sm btn-outline-primary">
+                                    <a href="/security/edit?id=<?= $rule->id ?>" class="btn btn-sm btn-outline-primary"
+                                       aria-label="Edit rule" title="Edit rule">
                                         <i class="bi bi-pencil"></i>
                                     </a>
                                     <form method="POST" action="/security/delete" class="d-inline" onsubmit="return confirm('Delete this rule?');">
@@ -159,7 +160,8 @@
                                             <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                                         <?php endforeach; ?>
                                         <input type="hidden" name="id" value="<?= $rule->id ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                aria-label="Delete rule" title="Delete rule">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>
@@ -234,7 +236,8 @@
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <a href="/security/edit?id=<?= $rule->id ?>" class="btn btn-sm btn-outline-primary">
+                                    <a href="/security/edit?id=<?= $rule->id ?>" class="btn btn-sm btn-outline-primary"
+                                       aria-label="Edit rule" title="Edit rule">
                                         <i class="bi bi-pencil"></i>
                                     </a>
                                     <form method="POST" action="/security/delete" class="d-inline" onsubmit="return confirm('Delete this rule?');">
@@ -242,7 +245,8 @@
                                             <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                                         <?php endforeach; ?>
                                         <input type="hidden" name="id" value="<?= $rule->id ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                aria-label="Delete rule" title="Delete rule">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>

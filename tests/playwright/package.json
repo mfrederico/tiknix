@@ -1,0 +1,15 @@
+{
+  "name": "tiknix-e2e",
+  "private": true,
+  "description": "Tiknix end-to-end regression suite — clicks every element, audits every label, watches every log.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:hosted": "E2E_HOSTED=1 playwright test",
+    "report": "playwright show-report test-results/html-report",
+    "install-browser": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

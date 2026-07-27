@@ -65,7 +65,8 @@
                                 View Team
                             </a>
                             <?php if ($team['role'] === 'owner'): ?>
-                                <a href="/teams/settings?id=<?= $team['id'] ?>" class="btn btn-sm btn-outline-secondary">
+                                <a href="/teams/settings?id=<?= $team['id'] ?>" class="btn btn-sm btn-outline-secondary"
+                                   aria-label="Team settings" title="Team settings">
                                     <i class="bi bi-gear"></i>
                                 </a>
                             <?php endif; ?>

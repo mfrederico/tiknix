@@ -92,8 +92,8 @@
                                             <?= htmlspecialchars(($cfg['type'] ?? 'stdio') === 'http' ? ($cfg['url'] ?? '') : ($cfg['command'] ?? '')) ?>
                                         </td>
                                         <td class="text-end">
-                                            <button class="btn btn-sm btn-outline-primary" onclick="editServer('<?= htmlspecialchars(($slug) ?? '', ENT_QUOTES) ?>', <?= htmlspecialchars((json_encode($cfg)) ?? '', ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i></button>
-                                            <button class="btn btn-sm btn-outline-danger" onclick="deleteServer('<?= htmlspecialchars(($slug) ?? '', ENT_QUOTES) ?>')"><i class="bi bi-trash"></i></button>
+                                            <button class="btn btn-sm btn-outline-primary" aria-label="Edit server" title="Edit server" onclick="editServer('<?= htmlspecialchars(($slug) ?? '', ENT_QUOTES) ?>', <?= htmlspecialchars((json_encode($cfg)) ?? '', ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i></button>
+                                            <button class="btn btn-sm btn-outline-danger" aria-label="Delete server" title="Delete server" onclick="deleteServer('<?= htmlspecialchars(($slug) ?? '', ENT_QUOTES) ?>')"><i class="bi bi-trash"></i></button>
                                         </td>
                                     </tr>
                                     <?php endforeach; ?>
@@ -138,7 +138,7 @@
                                         <td class="small text-muted" style="max-width:300px;"><?= htmlspecialchars((substr($tool['description'], 0, 60)) ?? '') ?><?= strlen($tool['description']) > 60 ? '...' : '' ?></td>
                                         <td class="small"><code><?= htmlspecialchars(($tool['file']) ?? '') ?></code></td>
                                         <td class="text-end">
-                                            <a href="/mcptools/edit?name=<?= urlencode($tool['name']) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                                            <a href="/mcptools/edit?name=<?= urlencode($tool['name']) ?>" class="btn btn-sm btn-outline-primary" aria-label="Edit tool" title="Edit tool"><i class="bi bi-pencil"></i></a>
                                         </td>
                                     </tr>
                                     <?php endforeach; ?>
@@ -180,7 +180,7 @@
                                     <strong><?= htmlspecialchars(($file['name']) ?? '') ?></strong>
                                     <br><small class="text-muted"><?= date('M j, g:ia', $file['modTime']) ?> - <?= number_format($file['size']) ?> bytes</small>
                                 </div>
-                                <a href="/hooks/edit?name=<?= urlencode($file['name']) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                                <a href="/hooks/edit?name=<?= urlencode($file['name']) ?>" class="btn btn-sm btn-outline-primary" aria-label="Edit hook" title="Edit hook"><i class="bi bi-pencil"></i></a>
                             </div>
                             <?php endforeach; ?>
                         </div>

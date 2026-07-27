@@ -33,7 +33,8 @@ $fmt = function (string $iso): string {
         <input id="proj-search" class="form-control" type="search" autocomplete="off"
                placeholder="Search projects…" aria-label="Search projects">
       </div>
-      <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#proj-new">
+      <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#proj-new"
+              aria-label="New project" title="New project">
         <i class="bi bi-plus-lg"></i>
       </button>
     </div>

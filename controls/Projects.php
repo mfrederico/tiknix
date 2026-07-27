@@ -67,6 +67,47 @@ class Projects extends BaseControls\Control {
             'Created and selected. Provisioning can take a minute.');
     }
 
+    /**
+     * Delete a project, permanently.
+     *
+     * This lives here because the picker is where a project's whole life is visible —
+     * it could be created here but only removed from inside the builder's danger zone,
+     * which meant the one place that lists your projects was the one place that could
+     * not get rid of one.
+     *
+     * The teardown itself is ProvisionService::delete: it kills the jailed session,
+     * unlinks connectors, archives the folder to a zip and then trashes the registry
+     * row. Two guards are its, not ours, and are worth naming: you must own the project
+     * (or be ROOT), and you must type its domain back exactly. The (default) instance
+     * cannot be deleted at all.
+     */
+    public function delete($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+
+        $memberId = (int) $this->member->id;
+        $id       = (int) $this->getParam('id', 0);
+
+        $res = (new ProvisionService())->delete($memberId, [
+            'id'      => $id,
+            'confirm' => (string) $this->getParam('confirm', ''),
+            'is_root' => (int) $this->member->level === LEVELS['ROOT'],
+        ]);
+        if (empty($res['ok'])) {
+            $this->jsonError((string) ($res['error'] ?? 'Could not delete the project.'), (int) ($res['code'] ?? 400));
+            return;
+        }
+
+        // If it was the one you were working on, stop saying so. Reading the selection is
+        // enough — ProjectContext forgets a project that no longer exists — but it has to
+        // be read HERE, or the next page still renders a chip for a project that is gone.
+        ProjectContext::current($memberId);
+
+        $this->logger->info('project deleted', ['id' => $id, 'slug' => $res['slug'] ?? '', 'member' => $memberId]);
+        $this->jsonSuccess(['slug' => (string) ($res['slug'] ?? ''), 'steps' => $res['steps'] ?? []],
+            'Deleted ' . ($res['domain'] ?? 'the project') . '.');
+    }
+
     /** Choose the project to work on. Everything else follows from this. */
     public function select($params = []): void {
         if (!$this->requireLogin()) return;
@@ -94,12 +135,18 @@ class Projects extends BaseControls\Control {
     private function card(object $inst, int $memberId): array {
         $dir  = '/var/www/html/default/' . $inst->slug . '.tiknix';
         $last = $this->lastCommit($dir);
+        $owned = (int) $inst->memberId === $memberId;
 
         return [
             'id'           => (int) $inst->id,
             'slug'         => (string) $inst->slug,
+            // Only what you may actually delete gets the affordance, and the phrase comes
+            // from the service that will check it. The (default) instance is exempt: it is
+            // this control plane, and deleting it is refused.
+            'deletable'    => $owned && empty($inst->isDefault),
+            'confirm'      => (new ProvisionService())->confirmPhrase((string) $inst->slug),
             'name'         => (string) ($inst->displayName ?: $inst->slug),
-            'owned'        => (int) $inst->memberId === $memberId,
+            'owned'        => $owned,
             'status'       => (string) $inst->status,
             'created'      => (string) $inst->createdAt,
             // Hosting: a container is the strongest signal of "published"; fall back to

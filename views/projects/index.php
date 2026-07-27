@@ -136,10 +136,24 @@ $fmt = function (string $iso): string {
                 </div>
               <?php endif; ?>
 
-              <button class="btn <?= $active ? 'btn-outline-primary' : 'btn-primary' ?> w-100 mt-auto proj-pick"
-                      data-id="<?= (int) $p['id'] ?>" type="button">
-                <?= $active ? 'Continue' : 'Work on this' ?>
-              </button>
+              <div class="d-flex gap-2 mt-auto">
+                <button class="btn <?= $active ? 'btn-outline-primary' : 'btn-primary' ?> flex-grow-1 proj-pick"
+                        data-id="<?= (int) $p['id'] ?>" type="button">
+                  <?= $active ? 'Continue' : 'Work on this' ?>
+                </button>
+                <?php if (!empty($p['deletable'])): ?>
+                  <?php /* Deliberately small and quiet next to the thing you came here to
+                           do. It opens a dialogue rather than acting — see the modal. */ ?>
+                  <button class="btn btn-outline-danger proj-del" type="button"
+                          data-id="<?= (int) $p['id'] ?>"
+                          data-name="<?= htmlspecialchars($p['name']) ?>"
+                          data-confirm="<?= htmlspecialchars($p['confirm']) ?>"
+                          aria-label="Delete <?= htmlspecialchars($p['name']) ?>"
+                          title="Delete this project">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                <?php endif; ?>
+              </div>
 
             </div>
           </div>
@@ -148,6 +162,41 @@ $fmt = function (string $iso): string {
     </div>
     <div id="proj-empty" class="text-body-secondary small mt-3" hidden>No projects match that search.</div>
   <?php endif; ?>
+</div>
+
+<?php
+/* Deleting a project is irreversible and there is no undo button anywhere, so the
+   confirmation is the domain typed back exactly — the same phrase the service checks,
+   handed to us by it. A dialogue you can dismiss with Escape, and a button that stays
+   disabled until the words match, are what stand between a stray click and an erased
+   app. It says plainly what survives (the archive) and what does not. */
+?>
+<div class="modal fade" id="proj-del-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Delete project</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">This permanently deletes <code id="proj-del-domain"></code>. It:</p>
+        <ul class="small mb-3">
+          <li>stops the jailed session and removes its connectors (a linked repo is kept)</li>
+          <li>archives the folder to <code>public/&lt;slug&gt;.zip</code>, with config secrets stripped</li>
+          <li>removes everything else, and the project itself</li>
+        </ul>
+        <label class="form-label small mb-1" for="proj-del-input">Type <code id="proj-del-domain2"></code> to confirm:</label>
+        <input id="proj-del-input" class="form-control" autocomplete="off" spellcheck="false">
+        <div id="proj-del-msg" class="small text-danger mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="proj-del-confirm" class="btn btn-danger" type="button" disabled>
+          <i class="bi bi-trash me-1"></i>Delete permanently
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -216,5 +265,65 @@ $fmt = function (string $iso): string {
       }).catch(function () { btn.disabled = false; alert('Network error.'); });
     });
   });
+
+  // --- delete -------------------------------------------------------------
+  // The confirm button unlocks only on an exact match, so the dialogue cannot be
+  // clicked through by reflex — you have to have read which project this is.
+  var delModalEl = document.getElementById('proj-del-modal');
+  if (delModalEl) {
+    // Built on first click, not now: this script runs in the body and bootstrap's bundle
+    // is loaded after it, so constructing the modal here throws before anything renders.
+    var delModal  = null,
+        modalFor  = function () {
+          if (!delModal) delModal = bootstrap.Modal.getOrCreateInstance(delModalEl);
+          return delModal;
+        },
+        delInput  = document.getElementById('proj-del-input'),
+        delBtn    = document.getElementById('proj-del-confirm'),
+        delMsg    = document.getElementById('proj-del-msg'),
+        target    = null;
+
+    document.querySelectorAll('.proj-del').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        target = { id: btn.dataset.id, name: btn.dataset.name, confirm: btn.dataset.confirm };
+        document.getElementById('proj-del-domain').textContent  = target.confirm;
+        document.getElementById('proj-del-domain2').textContent = target.confirm;
+        delInput.value = '';
+        delMsg.textContent = '';
+        delBtn.disabled = true;
+        modalFor().show();
+        delModalEl.addEventListener('shown.bs.modal', function once() {
+          delInput.focus();
+          delModalEl.removeEventListener('shown.bs.modal', once);
+        });
+      });
+    });
+
+    delInput.addEventListener('input', function () {
+      delBtn.disabled = !target || delInput.value.trim() !== target.confirm;
+    });
+
+    delBtn.addEventListener('click', function () {
+      if (!target) return;
+      delBtn.disabled = true;
+      delMsg.className = 'small text-body-secondary mt-2';
+      delMsg.textContent = 'Deleting…';
+      fetch('/projects/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'},
+        body: new URLSearchParams({csrf_token: csrf, id: target.id, confirm: delInput.value.trim()}).toString()
+      }).then(r => r.json()).then(function (j) {
+        // Back to the picker, which is now the truth about what you have.
+        if (j && j.success) { window.location.href = '/projects'; return; }
+        delBtn.disabled = false;
+        delMsg.className = 'small text-danger mt-2';
+        delMsg.textContent = (j && j.message) || 'Could not delete the project.';
+      }).catch(function () {
+        delBtn.disabled = false;
+        delMsg.className = 'small text-danger mt-2';
+        delMsg.textContent = 'Network error.';
+      });
+    });
+  }
 })();
 </script>

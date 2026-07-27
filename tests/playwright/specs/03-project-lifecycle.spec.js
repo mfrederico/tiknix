@@ -186,37 +186,34 @@ test('the publisher offers this project a way to ship, and the handshake reports
   watch.allowServer(/publish|verify|ssh/i);
 });
 
-test('the project can be deleted from the danger zone, and stays deleted', async ({ page, watch }) => {
+test('the project can be deleted from the picker, and the confirmation actually guards it', async ({ page, watch }) => {
   project = readRun().project || project;
   watch.allowServer(/delete|provision|instance/i);
 
-  // Establish the sidecar session through core's SSO hop first — that is the only way
-  // in, and it is what makes the builder's own URL reachable afterwards.
-  await page.goto('/sidecar/app/workbench', { waitUntil: 'domcontentloaded' });
-  await page.frameLocator('.sidecar-embed iframe').locator('body').waitFor({ timeout: 30_000 });
+  await page.goto('/projects', { waitUntil: 'domcontentloaded' });
 
-  // The danger zone lives on the builder, which is a different page of the same sidecar.
-  await page.goto('https://workbench.tiknix.com/aibuilder', { waitUntil: 'domcontentloaded' });
-  const frame = page.mainFrame();
+  // The control plane itself is not deletable, and the picker must not offer to.
+  const cards = await page.locator('.proj-item').count();
+  const deletable = await page.locator('.proj-del').count();
+  expect(deletable, 'every project offered a delete button, including ones you do not own')
+    .toBeLessThan(cards);
 
-  const del = frame.locator('#ab-delete');
-  await expect(del, 'the builder has no delete control').toBeVisible({ timeout: 30_000 });
-  await del.click();
+  await page.locator(`.proj-del[data-id="${project.id}"]`).click();
 
-  // The confirmation is the project's own domain, typed exactly — a guard worth having
-  // and worth testing, because it is the only thing between a click and an erased app.
+  const confirmBtn = page.locator('#proj-del-confirm');
+  await expect(confirmBtn, 'the delete button was live before anything was typed').toBeDisabled();
+
+  // Nearly right is still wrong — this is the guard, so prove it holds.
+  await page.locator('#proj-del-input').fill(`${project.slug}.tiknix.co`);
+  await expect(confirmBtn, 'a mistyped domain unlocked the delete button').toBeDisabled();
+
   const domain = `${project.slug}.${env.APP_NAMESPACE}.com`;
-  await frame.locator('#ab-del-input').fill(domain);
+  await page.locator('#proj-del-input').fill(domain);
+  await expect(confirmBtn, 'the exact domain did not unlock the delete button').toBeEnabled();
 
-  // The confirm button stays disabled until the typed domain matches — that is the guard,
-  // so assert it actually engaged rather than just clicking through.
-  const confirmBtn = frame.locator('#ab-del-confirm');
-  await expect(confirmBtn, 'the delete button did not unlock after typing the domain').toBeEnabled();
-
-  // Same reason as the create call: the page navigates the moment this lands, so keep a
-  // copy of the body instead of racing the browser for it.
+  // The page reloads on success, so keep a copy of the answer rather than racing it.
   let json = null, status = 0, raw = '';
-  await page.route('**/aibuilder/delete', async route => {
+  await page.route('**/projects/delete', async route => {
     const response = await route.fetch({ timeout: 180_000 });
     status = response.status();
     raw = await response.text().catch(() => '');
@@ -232,8 +229,13 @@ test('the project can be deleted from the danger zone, and stays deleted', async
 
   writeRun({ project: { ...project, deleted: true } });
 
-  // Gone from the picker, and gone from disk.
+  // Gone from the picker, and no longer claimed as the project you are working on.
   await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-  const stillListed = await page.locator(`.proj-pick[data-id="${project.id}"]`).count();
-  expect(stillListed, 'the deleted project is still in the picker').toBe(0);
+  expect(await page.locator(`.proj-pick[data-id="${project.id}"]`).count(),
+    'the deleted project is still in the picker').toBe(0);
+
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+  const shell = await page.locator('body').innerText();
+  expect(shell, 'the shell still says you are working on the deleted project')
+    .not.toContain(project.slug);
 });

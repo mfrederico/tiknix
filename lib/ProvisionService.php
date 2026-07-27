@@ -233,6 +233,18 @@ class ProvisionService {
 
     // ---- delete: confirm-gated teardown (kill jail, unlink connectors, archive, trash) ----
 
+    /**
+     * The exact phrase delete() demands as confirmation.
+     *
+     * Public because a UI has to SHOW it and check what was typed against it, and a
+     * second copy of this rule in a view would drift from the one that actually guards
+     * the deletion — leaving a form that cannot be satisfied, or worse, one that looks
+     * satisfied and is not.
+     */
+    public function confirmPhrase(string $slug): string {
+        return $slug . '.' . $this->appNamespace() . '.com';
+    }
+
     public function delete(int $memberId, array $p): array {
         $instanceId = (int) ($p['id'] ?? 0);
         $isRoot     = !empty($p['is_root']);
@@ -243,7 +255,7 @@ class ProvisionService {
 
         $slug = (string) $inst->slug;
         if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'error' => 'Invalid instance slug', 'code' => 400];
-        $domain = $slug . '.' . $this->appNamespace() . '.com';
+        $domain = $this->confirmPhrase($slug);
         if (!hash_equals($domain, trim((string) ($p['confirm'] ?? ''))))
             return ['ok' => false, 'error' => 'Confirmation does not match — type "' . $domain . '" exactly.', 'code' => 400];
 

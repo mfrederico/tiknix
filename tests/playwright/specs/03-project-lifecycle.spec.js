@@ -189,9 +189,6 @@ test('the publisher offers this project a way to ship, and the handshake reports
 test('the project can be deleted from the danger zone, and stays deleted', async ({ page, watch }) => {
   project = readRun().project || project;
   watch.allowServer(/delete|provision|instance/i);
-  // The chat bridge is not running on this host; 04-sidecars reports that once, by name,
-  // instead of failing every test that happens to open this page.
-  watch.allowConsole(/aibuilder\/chat-ws/);
 
   // Establish the sidecar session through core's SSO hop first — that is the only way
   // in, and it is what makes the builder's own URL reachable afterwards.

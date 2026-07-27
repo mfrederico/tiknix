@@ -27,8 +27,9 @@ async function sidecarFrame(page, name) {
 
 for (const name of env.SIDECARS) {
   test(`${name} loads through SSO, and every control inside it holds up`, async ({ page, watch }) => {
-    // The builder's terminal talks to a bridge on core; it has its own test below.
-    watch.allowConsole(/aibuilder\/(chat-)?ws/);
+    // The chat bridge has its own named test below; the terminal is guarded there too,
+    // so it is NOT excused here — a regression on it should fail the page that shows it.
+    watch.allowConsole(/aibuilder\/chat-ws/);
 
     const frame = await sidecarFrame(page, name);
 
@@ -64,14 +65,46 @@ test('a sidecar cannot be reached without going through core', async ({ browser 
   }
 });
 
-test("the builder's terminal bridge is up", async ({ page }) => {
-  // The xterm connects to a node bridge on CORE (wss://<core>/aibuilder/ws -> 127.0.0.1:3990),
-  // so a builder page that renders perfectly still has a dead terminal if that service is
-  // not running. Probed directly rather than by listening for a failed websocket: a
-  // handshake refused at the HTTP layer does not reliably raise a socket error, and a
-  // check that only sometimes notices is worse than no check.
-  const res = await page.request.get(`${env.BASE_URL}/aibuilder/ws`, { maxRedirects: 0 });
-  expect(res.status(),
-    'the terminal bridge is not answering — the builder renders but its terminal is dead')
-    .toBeLessThan(500);
-});
+/**
+ * The builder opens TWO sockets on core, and they fail independently: the xterm talks to
+ * the terminal bridge (127.0.0.1:3990) and the chat pane to its own (127.0.0.1:3991),
+ * both proxied by openresty under /aibuilder/. One being up says nothing about the other,
+ * so they are checked separately and named separately.
+ */
+for (const [what, path] of [['terminal', '/aibuilder/ws'], ['chat', '/aibuilder/chat-ws']]) {
+  test(`the builder's ${what} bridge is reachable through the front door`, async ({ page }) => {
+    // Three ways this goes wrong, and they look different:
+    //
+    //   502  the proxy is configured and the bridge is not running
+    //   404  something is routing this path somewhere that is not the bridge
+    //   303  it fell through to the app, which sent it to a login page
+    //
+    // So "not a 5xx" is NOT good enough — the terminal is equally dead in all three, and
+    // a check that accepts them would go green while nothing works. A bridge actually
+    // being reached answers 401 (it wants the HMAC token this request does not carry)
+    // or, with one, 101. Those are the only two passes.
+    //
+    // Probe over HTTP/1.1, which is what playwright's request context and a real
+    // browser's websocket handshake both use. The same URL answers 404 over HTTP/2,
+    // where Upgrade is not a legal header at all — an artifact of the probe, not a
+    // broken route.
+    const res = await page.request.get(`${env.BASE_URL}${path}`, {
+      maxRedirects: 0,
+      headers: {
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+      },
+    });
+
+    const status = res.status();
+    const why =
+      status >= 500 ? 'the proxy is routing but the bridge is not answering — is it running?'
+      : status === 404 ? `nothing is routing ${path} to the bridge`
+      : status >= 300 && status < 400 ? `${path} fell through to the app and redirected — no proxy for it`
+      : `unexpected status ${status}`;
+
+    expect([101, 401], `the builder's ${what} is dead: ${why}`).toContain(status);
+  });
+}

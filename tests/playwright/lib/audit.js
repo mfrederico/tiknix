@@ -68,6 +68,23 @@ const LABEL_EXCEPTIONS = {
   'dashboard': 'goes to /dashboard',
 };
 
+/**
+ * Words this product uses interchangeably. A label is allowed to speak the user's
+ * language while the URL speaks the system's: "View storefront" landing on shop.* is
+ * honest, and demanding the two match letter for letter would push labels toward
+ * naming internals. Kept deliberately small — each entry is a claim that two words
+ * really do mean the same thing here.
+ */
+const SYNONYMS = {
+  storefront: ['shop', 'store'],
+  shop: ['storefront', 'store'],
+  project: ['instance'],
+  projects: ['instance', 'instances'],
+  builder: ['aibuilder'],
+  pipeline: ['pipe', 'automation'],
+  pipelines: ['pipe', 'automations'],
+};
+
 const norm = s => (s || '').replace(/\s+/g, ' ').trim();
 
 const tokens = label =>
@@ -165,7 +182,11 @@ function labelAgrees(label, url, title, heading) {
   if (!t.length) return { ok: true, why: 'no judgeable words in label' };
 
   const hay = `${url} ${title} ${heading}`.toLowerCase();
-  const hit = t.find(tok => hay.includes(tok) || hay.includes(tok.replace(/s$/, '')));
+  const matches = tok =>
+    hay.includes(tok) ||
+    hay.includes(tok.replace(/s$/, '')) ||
+    (SYNONYMS[tok] || []).some(alt => hay.includes(alt));
+  const hit = t.find(matches);
   return hit
     ? { ok: true, why: `"${hit}" matches` }
     : { ok: false, why: `none of [${t.join(', ')}] appears in ${url} / "${norm(title)}" / "${norm(heading)}"` };
@@ -177,6 +198,9 @@ function labelAgrees(label, url, title, heading) {
  * @returns {{checked: number, dead: object[], mislabelled: object[], skipped: object[]}}
  */
 async function auditLinks(page, { origin, sameSiteOnly = true } = {}) {
+  // Accepts a Page or a Frame — sidecars render inside an iframe, and their controls
+  // deserve the same scrutiny as core's.
+  const request = page.request || page.page().request;
   const controls = await collectControls(page);
   const links = controls.filter(c => c.kind === 'link');
 
@@ -206,7 +230,7 @@ async function auditLinks(page, { origin, sameSiteOnly = true } = {}) {
 
     let res;
     try {
-      res = await page.request.get(key, { maxRedirects: 5, timeout: 20000 });
+      res = await request.get(key, { maxRedirects: 5, timeout: 20000 });
     } catch (e) {
       dead.push({ ...l, url: key, why: `request failed: ${e.message.split('\n')[0]}` });
       continue;

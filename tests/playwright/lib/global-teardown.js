@@ -11,8 +11,28 @@
  */
 const { chromium } = require('@playwright/test');
 const fs = require('fs');
+const path = require('path');
 const env = require('./env');
 const { deleteInstance } = require('./provision');
+
+/**
+ * Deleting a project leaves a tombstone: an otherwise-empty directory holding a zip of
+ * what was there, so an owner can still get their work back. That is right for a real
+ * project and litter for a throwaway one, so the suite clears its own — and only its
+ * own, checked by name and by the fact that nothing but that archive is left.
+ */
+function removeTombstone(slug) {
+  if (!/^e2e[a-z0-9-]+$/.test(slug)) return;
+  const dir = path.join(env.INSTANCE_ROOT, `${slug}.${env.APP_NAMESPACE}`);
+  try {
+    const top = fs.readdirSync(dir);
+    if (top.length !== 1 || top[0] !== 'public') return;   // not a tombstone; leave it alone
+    const inside = fs.readdirSync(path.join(dir, 'public'));
+    if (inside.some(f => !f.endsWith('.zip'))) return;
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log(`[e2e] teardown: cleared the ${slug} archive`);
+  } catch { /* nothing there — fine */ }
+}
 
 module.exports = async () => {
   let run = {};
@@ -27,6 +47,7 @@ module.exports = async () => {
       if (res.ok) {
         console.log(res.alreadyGone ? 'already gone' : 'removed');
         run.project = { ...p, deleted: true };
+        removeTombstone(p.slug);
       } else {
         console.error(`FAILED — ${res.error}\n[e2e] LEAKED INSTANCE: ${p.slug} (id ${p.id}) needs manual removal.`);
       }

@@ -101,12 +101,15 @@ test('a controller, a view and a permission row are all it takes to ship a page'
   expect(html).toContain('2 widgets');
 });
 
-test('a route with no permission row of its own is NOT public', async ({ page }) => {
+test('a permission-controlled route refuses an anonymous visitor', async ({ page }) => {
   project = readRun().project || project;
 
-  // The counterpart to the test above, and the claim the dashboard makes to every new
-  // user: routes are not exposed by accident. /widget is public because its seed says
-  // so; a sibling method with no row inherits the admin default.
+  // The counterpart to the test above. /widget is public because its seed SAYS so —
+  // and this proves the row is what decides, not the fact that the file exists.
+  //
+  // Worth being precise about, because the fallback runs the other way: a route with
+  // NO authcontrol row at all falls through to PUBLIC (PermissionCache::check), so the
+  // row is what makes a page private, not what makes it reachable.
   const url = `https://${project.slug}.${env.APP_NAMESPACE}.com/member/settings`;
   const anon = await page.request.get(url, { headers: { Cookie: '' }, maxRedirects: 0, timeout: 30_000 });
   expect([302, 303, 401, 403], `${url} answered ${anon.status()} to an anonymous visitor`)

@@ -144,8 +144,9 @@
             <li><strong class="text-body">Data</strong> — no migrations to write; storing a bean creates its table.</li>
         </ul>
         <p class="text-secondary small mb-3">
-            Every new route needs a permission row, or it is not reachable. That is deliberate: nothing is exposed
-            by accident.
+            Give every new route a permission row. A route without one falls back to <em>public</em>, so the row is
+            what makes a page private — see the <code>authcontrol</code> table, or copy the pattern from an existing
+            seed in <code>scripts/</code>.
         </p>
 
         <div>

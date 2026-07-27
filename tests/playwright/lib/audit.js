@@ -244,6 +244,15 @@ async function auditLinks(page, { origin, sameSiteOnly = true } = {}) {
       continue;
     }
 
+    // Redirected somewhere else? Then we never saw what the link promises, and judging
+    // its wording against the page we were BOUNCED to is judging the wrong page. A gate
+    // in the way — sign in first, choose a project first — is not a mislabelled link.
+    const landed = res.url();
+    if (new URL(landed).pathname !== u.pathname || new URL(landed).host !== u.host) {
+      skipped.push({ ...l, url: key, why: `redirected to ${landed}` });
+      continue;
+    }
+
     const body = await res.text().catch(() => '');
     const title = (body.match(/<title[^>]*>([^<]*)</i) || [, ''])[1];
     const heading = (body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || [, ''])[1].replace(/<[^>]+>/g, '');

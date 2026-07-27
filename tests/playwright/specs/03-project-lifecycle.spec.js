@@ -116,6 +116,45 @@ test('a permission-controlled route refuses an anonymous visitor', async ({ page
     .toContain(anon.status());
 });
 
+test('the task board builds against the selected project, and does not ask which', async ({ page, watch }) => {
+  project = readRun().project || project;
+  watch.watchInstance(project.slug);
+
+  // Establish the sidecar session through core's SSO hop, then go to the form itself.
+  await page.goto('/sidecar/app/workbench', { waitUntil: 'domcontentloaded' });
+  await page.frameLocator('.sidecar-embed iframe').locator('body').waitFor({ timeout: 30_000 });
+  await page.goto('https://workbench.tiknix.com/workbench/create', { waitUntil: 'domcontentloaded' });
+
+  // No second picker. Core's Projects page is the only place a project is chosen, so a
+  // chooser here could disagree with the chip in the shell — and whichever the form used
+  // would silently win. Not a hidden field either: the server must not take it from the
+  // request at all.
+  expect(await page.locator('select[name="instance_id"]').count(),
+    'the create form still offers its own instance selector').toBe(0);
+  expect(await page.locator('input[name="instance_id"]').count(),
+    'the create form still posts an instance_id').toBe(0);
+
+  // It must SHOW what it will build against.
+  const body = await page.locator('body').innerText();
+  expect(body, 'the form does not name the project it will build against').toContain(project.slug);
+
+  // And the task must actually land on that project. Safe to create: this task lives in
+  // the disposable project's own workbench.db and goes away with it.
+  const title = `e2e task ${RUN_ID}`;
+  await page.locator('#title').fill(title);
+  // Unanchored on purpose: bootstrap-icons draws its glyph with CSS ::before content,
+  // and Chromium folds that private-use character into the accessible name — so the name
+  // is "\uF64D Create Task" and /^create task/ never matches it.
+  await page.getByRole('button', { name: /create task/i }).click();
+  await page.waitForLoadState('domcontentloaded');
+
+  expect(page.url(), 'creating the task did not open it').toMatch(/\/workbench\/view\?id=\d+/);
+  const task = await page.locator('body').innerText();
+  expect(task, 'the created task does not show the title it was given').toContain(title);
+  expect(task, 'the task was filed against a different project than the one selected')
+    .toContain(project.slug);
+});
+
 test('the publisher offers this project a way to ship, and the handshake reports back', async ({ page, watch }) => {
   project = readRun().project || project;
   watch.watchInstance(project.slug);

@@ -66,8 +66,12 @@ Flight::map('defaultRoute', function($prefix = '') {
                 $classname = '\\'.CLASS_NAMESPACE.'\\'.$classname;
 
                 // Check if controller class exists before trying to instantiate
+                // A URL nobody implements is a visitor typo or a scanner, not a fault in
+                // this application — so it is a warning. Logging routine 404s at ERROR
+                // buried the real errors and made "any ERROR in the log is a bug" — the
+                // rule the e2e suite enforces — impossible to hold.
                 if (!class_exists($classname)) {
-                    Flight::get('log')->error("Controller not found: {$classname}");
+                    Flight::get('log')->warning("Controller not found: {$classname}");
                     Flight::notFound();
                     return;
                 }
@@ -82,7 +86,7 @@ Flight::map('defaultRoute', function($prefix = '') {
                 $classFile = (new \ReflectionClass($classname))->getFileName();
                 if ($controlsDir === false || $classFile === false
                     || strpos(realpath($classFile), $controlsDir . DIRECTORY_SEPARATOR) !== 0) {
-                    Flight::get('log')->error("Refused non-controller class: {$classname}");
+                    Flight::get('log')->warning("Refused non-controller class: {$classname}");
                     Flight::notFound();
                     return;
                 }
@@ -103,7 +107,7 @@ Flight::map('defaultRoute', function($prefix = '') {
                         }
                         $instance->$function($params);
                     } else {
-                        Flight::get('log')->error("Method not public: {$function}");
+                        Flight::get('log')->warning("Method not public: {$function}");
                         Flight::notFound();
                     }
                 } else if (method_exists($instance, '_fallback')) {
@@ -115,7 +119,7 @@ Flight::map('defaultRoute', function($prefix = '') {
                     }
                     $instance->_fallback($function, $params);
                 } else {
-                    Flight::get('log')->error("Method not found: {$function}");
+                    Flight::get('log')->warning("Method not found: {$function}");
                     Flight::notFound();
                 }
             } catch(\Throwable $e) {
@@ -133,6 +137,10 @@ Flight::map('defaultRoute', function($prefix = '') {
             
             // If user is logged in, show forbidden error instead of redirecting to login
             if (Flight::isLoggedIn()) {
+                // A real 403, for the same reason notFound() sends a real 404: a refusal
+                // served with a 200 is invisible to logs, monitoring and every client
+                // that decides what to do from the status code.
+                Flight::response()->status(403);
                 Flight::renderView('error/403', [
                     'title' => '403 - Forbidden',
                     'message' => 'You do not have permission to access this page.'
@@ -280,11 +288,18 @@ Flight::map('notFound', function() {
     // pollutes logs, gets soft-404s indexed, and destroys the status-code
     // signal used to spot URL scanning. stop() also prevents execution from
     // continuing past the render (which was emitting stray redirects).
+    //
+    // ...but it must NOT stop() here. Flight v3 wraps the route handler in its own
+    // output buffer and writes that buffer into the response only once the handler
+    // returns. Stopping from inside it sent the headers while the rendered page was
+    // still sitting in the buffer, so every 404 on every instance arrived as a blank
+    // page with a Content-Length promising a body that never came. Rendering and
+    // returning is enough: every caller returns immediately after this, which is what
+    // the stop() was standing in for.
     Flight::response()->status(404);
     Flight::renderView('error/404', [
         'title' => '404 - Page Not Found'
     ]);
-    Flight::stop();
 });
 
 Flight::map('error', function($ex) {

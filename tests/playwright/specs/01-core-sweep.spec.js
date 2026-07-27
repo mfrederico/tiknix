@@ -85,3 +85,16 @@ test('the nav offers nothing this suite does not sweep', async ({ page }) => {
     'The nav grew links this suite does not visit. Add them to PAGES in 01-core-sweep.spec.js.')
     .toBe('');
 });
+
+test('the nav shows the control-plane tools on the control plane', async ({ page }) => {
+  // The flip side of hiding what an instance does not have: on the control plane those
+  // links must actually be there. Gating is one edit away from hiding something
+  // everywhere, and a nav that quietly loses Projects is the kind of regression nobody
+  // reports — they just assume it moved.
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const nav = await page.locator('.ui-nav').innerText();
+  for (const label of ['Projects', 'Teams', 'Communications']) {
+    expect(nav, `the nav lost "${label}" on the control plane`).toContain(label);
+  }
+});

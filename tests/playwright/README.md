@@ -51,10 +51,16 @@ Default runs use neither.
 
 ## Known red
 
-`04-sidecars › the builder's terminal bridge is up` fails on this host: nothing is
-listening on `127.0.0.1:3990`, so `wss://<core>/aibuilder/ws` answers 502 and the
-builder's terminal is dead even though the page renders. That is a true finding, not a
-flaky test — it goes green when the bridge service runs.
+`04-sidecars › the builder's chat bridge is reachable through the front door`. The
+builder opens two sockets on core and they fail independently — the terminal bridge
+(`127.0.0.1:3990`, `/aibuilder/ws`) is up; the chat bridge (`127.0.0.1:3991`,
+`/aibuilder/chat-ws`) is not running and has no proxy block, so the request falls through
+to the app. A true finding, not a flaky test.
+
+Both checks accept **only 101 or 401**. A 404, a redirect and a 502 all mean the same
+thing to a user — no terminal — so none of them may pass. They are probed over HTTP/1.1,
+which is what a browser's websocket handshake uses; over HTTP/2 the same URL answers 404
+because `Upgrade` is not a legal header there.
 
 ## Adding to it
 

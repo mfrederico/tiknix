@@ -78,6 +78,8 @@ if (empty($res['stalled'])) {
 // THREE outcomes, not two. A plan that finished with a failed subtask is not "done" —
 // it built most of a thing and stopped short, and reporting that as done means the one
 // state a human needs to act on looks exactly like the state that needs nothing.
+// 'resolved' is deliberately NOT counted here: a subtask that changed nothing because
+// nothing needed changing is a finished subtask, not a failure.
 $failedCount = (int) ($res['counts']['failed'] ?? 0) + (int) ($res['counts']['conflict'] ?? 0);
 $parent = R::load('workbenchtask', $planId);
 if (!empty($res['stalled'])) {

@@ -82,10 +82,10 @@ class PlanExecutor {
 
         // 3) Roll up plan state.
         $fresh = $this->subtasks();
-        $counts = ['pending'=>0,'running'=>0,'merged'=>0,'failed'=>0,'conflict'=>0];
+        $counts = ['pending'=>0,'running'=>0,'merged'=>0,'resolved'=>0,'failed'=>0,'conflict'=>0];
         foreach ($fresh as $t) { $counts[$t->status] = ($counts[$t->status] ?? 0) + 1; }
         $total    = count($fresh);
-        $terminal = ($counts['merged'] + $counts['failed'] + $counts['conflict']);
+        $terminal = ($counts['merged'] + $counts['resolved'] + $counts['failed'] + $counts['conflict']);
         $done     = ($total > 0 && $terminal >= $total);
         // Deadlock guard: nothing running, nothing launchable, but not all merged.
         $stalled  = (!$done && $counts['running'] === 0 && $counts['pending'] > 0
@@ -217,7 +217,16 @@ class PlanExecutor {
         $this->gitAt($wtRel, ['add', '-A']);
         $staged = $this->gitAt($wtRel, ['diff', '--cached', '--quiet']);
         if ($staged['ok']) {   // exit 0 = no staged changes
-            $this->finish($t, 'failed', 'agent produced no changes');
+            // RESOLVED, not failed. An empty diff means the goal of this subtask was
+            // already satisfied — a verification that passed, or work an earlier task
+            // had already landed. Calling that a failure made a checking task
+            // impossible to succeed at, and stalled everything downstream of it.
+            //
+            // It is NOT called success either: an agent that died early also produces
+            // no diff, and we cannot tell the two apart from here. So it gets its own
+            // terminal state and says exactly what is known — nothing changed — leaving
+            // the reader to judge whether that was the right outcome.
+            $this->finish($t, 'resolved', 'nothing to change — the task\'s goal was already satisfied, or the agent made no edits');
             $this->cleanupWorktree($wtRel, $branch, false);
             return;
         }
@@ -284,10 +293,16 @@ class PlanExecutor {
 
     // ---- readiness / status helpers ---------------------------------------
 
+    /**
+     * A dependency is satisfied when it MERGED or RESOLVED. Resolved means it produced
+     * no diff because there was nothing to change — the prerequisite state exists, it
+     * just already existed. Blocking on it would strand a whole plan behind a
+     * verification that passed.
+     */
     private function depsMerged($t, array $byId): bool {
         foreach ($this->deps($t) as $depId) {
             $dep = $byId[$depId] ?? null;
-            if (!$dep || $dep->status !== 'merged') return false;
+            if (!$dep || !in_array((string) $dep->status, ['merged', 'resolved'], true)) return false;
         }
         return true;
     }
@@ -324,6 +339,7 @@ class PlanExecutor {
 
         $labels = [
             'merged'   => ['info',    'Merged into the instance base branch'],
+            'resolved' => ['info',    'Nothing to change — already satisfied'],
             'conflict' => ['warning', 'Merge conflict — left on its branch for manual review'],
             'failed'   => ['error',   'Build failed'],
         ];

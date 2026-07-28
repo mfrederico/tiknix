@@ -63,6 +63,7 @@ class PlanNotifier {
         if (!is_file($coreDb)) return 'notify: skipped (no core db at ' . $coreDb . ')';
 
         $merged   = (int) ($counts['merged'] ?? 0);
+        $resolved = (int) ($counts['resolved'] ?? 0);
         $failed   = (int) ($counts['failed'] ?? 0);
         $conflict = (int) ($counts['conflict'] ?? 0);
         $ok       = $failed === 0 && $conflict === 0 && $status === 'done';
@@ -72,6 +73,7 @@ class PlanNotifier {
 
         $subject = ($ok ? 'Build finished: ' : 'Build needs attention: ') . $title;
         $summary = $merged . ' merged'
+                 . ($resolved ? ', ' . $resolved . ' already satisfied' : '')
                  . ($failed   ? ', ' . $failed   . ' failed'   : '')
                  . ($conflict ? ', ' . $conflict . ' with conflicts' : '');
 

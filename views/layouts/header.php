@@ -122,17 +122,41 @@ if ($__loggedIn) {
         <?php endif; ?>
 
         <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>
-        <?php /* Plugins act ON the selected project, so they are hidden until one is
-                 chosen — otherwise you click in, get asked to pick a project, and two
-                 places own that choice. /projects is the way in. */ ?>
-        <?php if ($__hasProject && class_exists('\\app\\Sidecar\\Registry')): ?>
-          <?php $__plugins = \app\Sidecar\Registry::launchable(); $__pfirst = true; ?>
-          <?php foreach ($__plugins as $__pname => $__p): ?>
-            <?php if (\app\Feature::isEnabled($__p['feature'], (int)($member['id'] ?? 0), $__level)): ?>
-              <?php if ($__pfirst): ?><div class="ui-nav-heading">Plugins</div><?php $__pfirst = false; endif; ?>
+        <?php
+        /* Plugins act ON the selected project, so they cannot be USED until one is
+           chosen — otherwise you click in, get asked to pick a project, and two places
+           own that choice. /projects is the way in.
+
+           But they are still SHOWN. Removing the section outright meant five nav items
+           vanished at once with nothing to explain it, which reads as "my plugins were
+           switched off" rather than "you are not on a project" — a real report, from the
+           person who owns this. So the heading stays and says what is missing. */
+        $__enabledPlugins = [];
+        if ($__loggedIn && class_exists('\\app\\Sidecar\\Registry')) {
+            foreach (\app\Sidecar\Registry::launchable() as $__pname => $__p) {
+                if (\app\Feature::isEnabled($__p['feature'], (int)($member['id'] ?? 0), $__level)) {
+                    $__enabledPlugins[$__pname] = $__p;
+                }
+            }
+        }
+        ?>
+        <?php if ($__enabledPlugins): ?>
+          <div class="ui-nav-heading">Plugins</div>
+          <?php if ($__hasProject): ?>
+            <?php foreach ($__enabledPlugins as $__pname => $__p): ?>
               <a class="ui-nav-link<?= $__active('/sidecar/app/' . $__pname) ?>" href="/sidecar/app/<?= htmlspecialchars($__pname) ?>"><i class="bi <?= htmlspecialchars($__p['icon']) ?>"></i> <?= htmlspecialchars($__p['label']) ?></a>
-            <?php endif; ?>
-          <?php endforeach; ?>
+            <?php endforeach; ?>
+          <?php else: ?>
+            <a class="ui-nav-link" href="/projects" style="white-space:normal;line-height:1.3">
+              <i class="bi bi-signpost-split"></i>
+              <span>
+                Choose a project
+                <span class="d-block small opacity-75" style="font-size:.7rem">
+                  <?= count($__enabledPlugins) ?> plugin<?= count($__enabledPlugins) === 1 ? '' : 's' ?> are waiting for one
+                </span>
+              </span>
+            </a>
+          <?php endif; ?>
         <?php endif; ?>
 
         <?php if ($__isAdmin): ?>
@@ -233,7 +257,23 @@ if ($__loggedIn) {
           <a href="/projects" class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle text-decoration-none"
              style="font-size:.62rem" title="Change project"><i class="bi bi-grid-3x3-gap me-1"></i>Change</a>
         </div>
-      <?php endif; endif; ?>
+      <?php endif; ?>
+      <?php elseif ($__loggedIn && builder_tools_enabled()): ?>
+        <?php
+        /* No project selected. Say so, here, where the chip normally is — because
+           everything that works on a project quietly does nothing until one is chosen,
+           and an empty space explains none of that. This is the state a new account
+           starts in, and the state you land in after deleting the project you were on. */
+        ?>
+        <a href="/projects"
+           class="ui-project-chip d-flex align-items-center gap-2 px-3 py-1 rounded-3 bg-warning-subtle ms-3 text-decoration-none">
+          <i class="bi bi-signpost-split-fill text-warning-emphasis"></i>
+          <span class="lh-sm">
+            <span class="d-block text-uppercase text-body-secondary fw-semibold" style="font-size:.6rem;letter-spacing:.06em">No project selected</span>
+            <span class="d-block fw-bold link-body-emphasis" style="font-size:.85rem">Create or choose one to begin</span>
+          </span>
+        </a>
+      <?php endif; ?>
 
       <ul class="navbar-nav flex-row align-items-center gap-2 ms-auto mb-0">
         <li class="nav-item">

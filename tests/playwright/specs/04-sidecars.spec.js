@@ -96,3 +96,29 @@ test("the builder's terminal bridge is reachable through the front door", async 
 
   expect([101, 401], `the builder's terminal is dead: ${why}`).toContain(status);
 });
+
+test('with no project selected, the plugins say so instead of vanishing', async ({ page }) => {
+  // This spec runs right after the lifecycle spec deleted its project, so the account is
+  // genuinely on NOTHING — the exact state that had five nav items disappear at once and
+  // read as "my plugins were switched off". Free to test here, and disruptive to force
+  // anywhere else, so it lives at this point in the run on purpose.
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const nav = await page.locator('.ui-nav').innerText();
+  const onAProject = /working on/i.test(await page.locator('body').innerText());
+
+  if (onAProject) {
+    // Something re-selected a project (a rehearsal, a manual click). The state under
+    // test is not present, so assert the normal one rather than pretend.
+    expect(nav, 'plugins are missing while a project IS selected').toMatch(/plugins/i);
+    return;
+  }
+
+  expect(nav, 'the Plugins section vanished entirely when no project was selected')
+    .toMatch(/plugins/i);
+  expect(nav, 'nothing told the user why the plugins are unavailable')
+    .toMatch(/choose a project/i);
+
+  const hint = page.locator('.ui-nav a[href="/projects"]').last();
+  await expect(hint, 'the hint does not lead to the picker').toBeVisible();
+});

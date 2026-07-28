@@ -28,6 +28,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const env = require('../lib/env');
 const { deleteInstance } = require('../lib/provision');
+const { readRun } = require('../lib/global-setup');
 
 const BEAT = Number(process.env.DEMO_BEAT || 2500);
 const BUILD_MINUTES = Number(process.env.DEMO_BUILD_MINUTES || 30);
@@ -106,6 +107,30 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
       const tomb = path.join(env.INSTANCE_ROOT, `${slug}.${env.APP_NAMESPACE}`);
       if (fs.existsSync(tomb)) fs.rmSync(tomb, { recursive: true, force: true });
     } catch { /* leave it; the message above says what to clean */ }
+
+    // Put the selection back. Creating a project selects it, so deleting it leaves the
+    // account on NOTHING — and the sidecars vanish from the nav, since a plugin acts on
+    // the selected project and hides until there is one. Looks exactly like the plugins
+    // got switched off. A real take does not need this (it keeps its project, selected);
+    // a rehearsal must clean up after itself.
+    const prior = readRun().priorProjectId;
+    if (prior) {
+      await page.goto('/projects', { waitUntil: 'domcontentloaded' });
+      const back = await page.evaluate(async (id) => {
+        const btn = document.querySelector(`.proj-pick[data-id="${id}"]`);
+        if (!btn) return 'that project is gone';
+        if (/continue/i.test(btn.innerText)) return 'already selected';
+        const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        const r = await fetch('/projects/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' },
+          body: new URLSearchParams({ csrf_token: csrf, id: String(id) }).toString(),
+        });
+        const j = await r.json().catch(() => null);
+        return j && j.success ? 'restored' : `failed: ${(j && j.message) || r.status}`;
+      }, prior);
+      console.log(`[demo] project selection -> ${back} (id ${prior})`);
+    }
     return;
   }
 

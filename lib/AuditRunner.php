@@ -137,10 +137,18 @@ class AuditRunner {
         }
 
         $logArg = escapeshellarg($log);
+        // Credentials follow the PERSON, not the project (app\AgentState) — the auditor
+        // must run as the same account the planner and the build agents did. Without
+        // this it used the per-project store, which for any project relying on a member
+        // store is empty: the QA agent died in a second with "Not logged in" and the
+        // driver reported only "no manifest produced within the time budget".
+        $engine = trim((string) @file_get_contents($ws . '/.aibuilder/engine')) ?: 'claude';
+        $agentStateArg = escapeshellarg(AgentState::resolve($this->memberId, $engine, $ws));
         return <<<BASH
 #!/bin/bash
 # Tiknix headless auditor (claude -p) — instance {$this->slug}
 export TIKNIX_MEMBER_ID={$this->memberId}
+export TIKNIX_AGENT_STATE={$agentStateArg}
 export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
 export TIKNIX_SESSION_NAME="{$this->sessionName}"
 export TIKNIX_WORKSPACE="{$ws}"

@@ -49,7 +49,16 @@ try {
     $configPath = $mainProject . '/conf/config.ini';
     if (file_exists($configPath)) {
         $config = parse_ini_file($configPath, true);
-        $dbPath = $mainProject . '/' . ($config['database']['path'] ?? 'database/tiknix.db');
+        // Task data lives in the INSTANCE'S workbench.db under the sidecar regime, and
+        // the agent's environment already carries that path. Falling straight through to
+        // core's db means loading a workbenchtask id that means something else there —
+        // the same mistake plan-ingest and plan-orchestrate both made. (This hook is not
+        // currently registered by provisioning; only cli/setup-hooks.sh installs it. It is
+        // corrected here so it cannot be wired up wrong later.)
+        $dbPath = trim((string) (getenv('TIKNIX_WORKBENCH_DB') ?: ''));
+        if ($dbPath === '') {
+            $dbPath = $mainProject . '/' . ($config['database']['path'] ?? 'database/tiknix.db');
+        }
         if (!R::hasDatabase('default')) {
             R::setup('sqlite:' . $dbPath);
         }
@@ -149,6 +158,9 @@ function addTaskLog(string $taskId, string $message): bool {
         // Get the task to find the member_id
         $task = Bean::load('workbenchtask', (int)$taskId);
         if (!$task->id) {
+            // Say so on stderr: a hook cannot show a user anything, and silently dropping
+            // the agent's reply is how a wrong database looks like "no response captured".
+            fwrite(STDERR, "[response-capture] no workbenchtask #{$taskId} in {$GLOBALS['dbPath']}\n");
             return false;
         }
 

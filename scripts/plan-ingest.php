@@ -92,8 +92,26 @@ if (!PlanIngestor::isValidPlan($plan)) {
     fwrite(STDERR, "[ingest] plan.json is not a valid plan — discarded\n");
     exit(1);
 }
+// If a plan was re-planned because it partly failed, link the new one to it. The chain
+// is what bounds automatic remediation to a single attempt (PlanRemediator), and it is
+// also the honest record: the failed plan stays on the board next to its replacement.
+$replanOf = 0;
+try {
+    $prev = R::findOne('workbenchtask',
+        'parent_task_id IS NULL AND replan_requested_at IS NOT NULL ORDER BY id DESC');
+    if ($prev && $prev->id) $replanOf = (int) $prev->id;
+} catch (\Throwable $e) { /* column absent until the first remediation */ }
+
 try {
     $res = PlanIngestor::ingest($inst, $plan, $member, '', $app);
+    if ($replanOf > 0) {
+        $newParent = R::load('workbenchtask', (int) $res['parent']['id']);
+        $newParent->replanOf = $replanOf;
+        R::store($newParent);
+        $old = R::load('workbenchtask', $replanOf);
+        if ($old->id) { $old->replanRequestedAt = null; R::store($old); }   // consumed
+        echo "[ingest] linked as a re-plan of #{$replanOf}\n";
+    }
 } catch (\Throwable $e) {
     @rename($claim, $planFile);   // release for retry (e.g. the browser fallback)
     fwrite(STDERR, "[ingest] failed: " . $e->getMessage() . "\n");

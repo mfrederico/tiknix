@@ -94,6 +94,20 @@ class PlanNotifier {
             if (!$failures) $lines[] = '<li>(the executor did not record which)</li>';
             $lines[] = '</ul>';
 
+            // If remediation already acted, say so FIRST — otherwise this reads as a
+            // request for a decision that has, in fact, already been taken for you.
+            $remedy = (array) ($p['remedy'] ?? []);
+            if (($remedy['action'] ?? '') === 'replan') {
+                $lines[] = '<p><strong>A re-plan has already been started automatically.</strong> '
+                    . htmlspecialchars((string) ($remedy['why'] ?? ''), ENT_QUOTES)
+                    . ' The goal is being decomposed again with those failures as context. '
+                    . 'Nothing is needed from you yet — the new plan will arrive as a draft to approve. '
+                    . 'This happens once: if the second attempt also fails, you decide.</p>';
+            } elseif (($remedy['action'] ?? '') === 'escalate') {
+                $lines[] = '<p><strong>Not re-planned automatically:</strong> '
+                    . htmlspecialchars((string) ($remedy['why'] ?? ''), ENT_QUOTES) . '</p>';
+            }
+
             // And say what the choices are. A notification that reports a problem without
             // saying what can be done about it just moves the problem to the reader.
             $lines[] = '<p><strong>What you can do:</strong></p><ul>'

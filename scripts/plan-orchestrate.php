@@ -120,6 +120,22 @@ try {
         } catch (\Throwable $e) { /* no logs for this task */ }
         $failures[] = ['title' => (string) $ft->title, 'why' => $why];
     }
+
+    // ONE automatic re-plan when work did not land. Task-level retries have already been
+    // exhausted by here, so what is left is a plan that was wrong — and the answer to a
+    // wrong plan is a better plan, once, then a person. See PlanRemediator.
+    $remedy = ['action' => 'none', 'why' => ''];
+    if ($failures) {
+        try {
+            $remedy = \app\PlanRemediator::afterPlan(
+                $parent, $failures, $slug, $dir, $planMember, $level,
+                (string) ($parent->engine ?: 'claude')
+            );
+        } catch (\Throwable $e) {
+            $remedy = ['action' => 'escalate', 'why' => 'remediation error: ' . $e->getMessage()];
+        }
+        echo "[orchestrator] remediation: {$remedy['action']} — {$remedy['why']}\n";
+    }
     echo '[orchestrator] ' . \app\PlanNotifier::planFinished(
         dirname(__DIR__) . '/database/tiknix.db',
         [
@@ -132,6 +148,7 @@ try {
             'base_url'  => $baseUrl,
             'board_url' => rtrim((string) ($aibCfg['sidecar']['workbench_url'] ?? 'https://workbench.tiknix.com'), '/') . '/workbench',
             'failures'  => $failures,
+            'remedy'    => $remedy,
         ]
     ) . "\n";
 } catch (\Throwable $e) {

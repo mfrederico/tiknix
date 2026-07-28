@@ -46,6 +46,12 @@ class PlanRunner {
     public function planFile(): string { return $this->abDir() . '/plan.json'; }
     public function logFile(): string  { return $this->abDir() . '/planner.log'; }
     public function requestFile(): string { return $this->abDir() . '/plan-request.md'; }
+    /**
+     * The RAW goal, kept beside the built request. plan-request.md wraps the goal in the
+     * planner's scaffolding, so re-planning from it would feed the scaffolding back in.
+     * Remediation needs the thing the human actually asked for. See PlanRemediator.
+     */
+    public function goalFile(): string { return $this->abDir() . '/plan-goal.md'; }
 
     /** True while the planner tmux session is alive. */
     public function running(): bool { return TmuxManager::exists($this->sessionName); }
@@ -80,6 +86,7 @@ class PlanRunner {
         @unlink($this->logFile());
 
         file_put_contents($this->requestFile(), $this->buildPlanRequest($goal));
+        file_put_contents($this->goalFile(), $goal);
 
         $script = $this->buildRunnerScript();
         $scriptFile = $ab . '/run-planner.sh';

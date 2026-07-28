@@ -27,10 +27,19 @@
 <script>
   // Optional dynamic height — a plugin can `parent.postMessage({tiknixHeight: N}, '*')`
   // to make the frame grow to its content instead of filling the viewport.
+  //
+  // WITH HYSTERESIS, because this is a feedback loop by construction: resizing the frame
+  // changes the plugin's viewport, which can add or remove its scrollbar, which changes
+  // the content width and therefore its height — so it reports again, and the frame
+  // oscillates. It showed up as a scrollbar flashing on and off several times a second.
+  // Ignoring small deltas breaks the cycle while still tracking real content changes.
+  var lastH = 0;
   window.addEventListener('message', function (e) {
-    if (e && e.data && typeof e.data.tiknixHeight === 'number') {
-      var wrap = document.querySelector('.sidecar-embed');
-      if (wrap) wrap.style.height = Math.max(320, e.data.tiknixHeight) + 'px';
-    }
+    if (!e || !e.data || typeof e.data.tiknixHeight !== 'number') return;
+    var h = Math.max(320, Math.round(e.data.tiknixHeight));
+    if (Math.abs(h - lastH) < 48) return;   // scrollbar-sized churn: not a real change
+    lastH = h;
+    var wrap = document.querySelector('.sidecar-embed');
+    if (wrap) wrap.style.height = h + 'px';
   });
 </script>

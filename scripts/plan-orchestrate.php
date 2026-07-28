@@ -80,9 +80,36 @@ $parent->planStatus = !empty($res['stalled']) ? 'stalled' : 'done';
 $parent->status     = !empty($res['stalled']) ? 'failed' : 'completed';   // sync list column
 $parent->updatedAt  = date('Y-m-d H:i:s');
 R::store($parent);
-R::close();
 
 echo "[orchestrator] plan #$planId finished status={$parent->planStatus} " . date('c') . "\n";
+
+// TELL THE OWNER. A build that ends by writing a line to a log file inside a tmux
+// session nobody has open has not told anyone anything. This lands in Communications
+// and lights the bell in the shell — no mail configuration required — and emails as
+// well only if core's [mail] is set up. Never fatal: a notification that fails must
+// not undo a build that succeeded.
+try {
+    $planTitle  = (string) $parent->title;
+    $planMember = (int) $parent->memberId;
+    $instCfg    = @parse_ini_file($dir . '/conf/config.ini', true) ?: [];
+    $baseUrl    = (string) ($instCfg['app']['baseurl'] ?? '');
+    echo '[orchestrator] ' . \app\PlanNotifier::planFinished(
+        dirname(__DIR__) . '/database/tiknix.db',
+        [
+            'plan_id'   => $planId,
+            'title'     => $planTitle,
+            'slug'      => $slug,
+            'member_id' => $planMember,
+            'status'    => (string) $parent->planStatus,
+            'counts'    => $res['counts'] ?? [],
+            'base_url'  => $baseUrl,
+        ]
+    ) . "\n";
+} catch (\Throwable $e) {
+    echo '[orchestrator] notify: FAILED — ' . $e->getMessage() . "\n";
+}
+
+R::close();
 
 // Definition-of-Done audit — only for a plan that actually completed. Spawned
 // DETACHED (the auditor drives Playwright for several minutes on its own), so

@@ -48,6 +48,15 @@ const env = {
   HOSTED: process.env.E2E_HOSTED === '1',
   GITHUB: process.env.E2E_GITHUB === '1',
 
+  /**
+   * The plan-pipeline spec spends a real frontier planner run, so it is opt-in too, and
+   * it needs a project that is ALREADY signed in — Claude credentials live per project
+   * (<instance>/.aibuilder/state/claude), so a disposable one cannot plan. Name the
+   * project explicitly rather than guessing: this test writes to it.
+   */
+  PLAN: process.env.E2E_PLAN === '1',
+  PLAN_PROJECT: process.env.E2E_PLAN_PROJECT || '',
+
   // rsync publish target for the disposable project (must already accept the instance's
   // key — the suite asserts the handshake rather than creating trust it does not have).
   RSYNC_HOST: process.env.E2E_RSYNC_HOST || 'localhost',

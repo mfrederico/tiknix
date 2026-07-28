@@ -7,6 +7,7 @@
     "demo": "playwright test --config demo/playwright.config.js",
     "test:headed": "playwright test --headed",
     "test:hosted": "E2E_HOSTED=1 playwright test",
+    "test:plan": "E2E_PLAN=1 playwright test specs/05-plan-pipeline.spec.js",
     "report": "playwright show-report playwright-report",
     "install-browser": "playwright install chromium"
   },

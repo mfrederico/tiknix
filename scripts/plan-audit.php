@@ -52,10 +52,23 @@ if (!filter_var($aib['audit']['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN)) {
     alog('audit disabled via config — skipping'); exit(0);
 }
 
+// TASKS come from whatever bootstrap selected — the instance's own workbench.db when
+// the orchestrator exported TIKNIX_WORKBENCH_DB, which it always does.
 $plan = R::load('workbenchtask', $planId);
 if (!$plan->id) { fwrite(STDERR, "no plan #$planId\n"); exit(1); }
+
+// The instance REGISTRY, however, only exists in CORE's database. Looking it up in
+// whatever happened to be selected meant asking a workbench.db for an `instance` table it
+// has never had — so every audit since the workbench moved to per-instance storage died
+// on "no instance <slug>" before it started. Same two-database discipline as plan-ingest.
+// The bean keeps its values in memory, so reading $inst->app / ->memberId below still
+// works after we switch back; only a lazy relation would need the connection again.
+$taskDbKey = (getenv('TIKNIX_WORKBENCH_DB') && R::hasDatabase('ws')) ? 'ws' : 'default';
+if (!R::hasDatabase('coreReg')) R::addDatabase('coreReg', 'sqlite:' . dirname(__DIR__) . '/database/tiknix.db');
+R::selectDatabase('coreReg');
 $inst = R::findOne('instance', 'slug = ?', [$slug]);
-if (!$inst || !$inst->id) { fwrite(STDERR, "no instance $slug\n"); exit(1); }
+R::selectDatabase($taskDbKey);
+if (!$inst || !$inst->id) { fwrite(STDERR, "no instance $slug in core's registry\n"); exit(1); }
 
 $appNs   = (string)($inst->app ?: 'tiknix');
 $baseUrl = "https://{$slug}.{$appNs}.com";

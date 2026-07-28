@@ -88,12 +88,34 @@ expensive way to find out.
 The spec the planner receives is `demo/scheduler-goal.md` — edit that, not the script, to
 change what gets built.
 
+Shoot it in **two segments** — nobody wants to watch a planner spin:
+
+```bash
+# segment 1 — drop the spec in, hit Decompose, cut on the banner (~1 min of footage)
+DEMO_USE_PROJECT=<signed-in slug> DEMO_STOP_AT_DECOMPOSE=1 npm run demo
+
+# ...the planner keeps running off camera. When its plan lands:
+
+# segment 2 — open on the plan, approve, build, end on the live app
+DEMO_USE_PROJECT=<same slug> DEMO_PLAN_ID=<plan id> npm run demo
+```
+
+Both open on the same board at the same size, so they cut together:
+
+```bash
+printf "file 'seg1.webm'\nfile 'seg2.webm'\n" > list.txt
+ffmpeg -f concat -safe 0 -i list.txt -c copy demo.webm
+```
+
 | knob | default | what it does |
 |---|---|---|
 | `DEMO_PROJECT` | `scheduler` | project name (a hash is appended, as always) |
 | `DEMO_SLOWMO` | `350` | ms between actions — a click that lands instantly reads as a glitch |
 | `DEMO_BEAT` | `2500` | ms to hold on a screen so a viewer can read it |
 | `DEMO_BUILD_MINUTES` | `30` | how long to keep filming the build |
+| `DEMO_USE_PROJECT` | — | reuse a project instead of creating one (needed while credentials are per-project) |
+| `DEMO_STOP_AT_DECOMPOSE` | — | end segment 1 on the banner; the planner keeps working |
+| `DEMO_PLAN_ID` | — | start segment 2 on an existing plan, no planner spend |
 
 Video lands in `demo-recordings/**/video.webm` (1280x720, so the footage needs no
 reframing), deliberately OUTSIDE `test-results/` — playwright clears that directory on

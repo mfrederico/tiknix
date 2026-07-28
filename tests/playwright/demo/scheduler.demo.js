@@ -42,6 +42,11 @@ const REUSE = process.env.DEMO_USE_PROJECT || '';
 // planner run — and two clips cut together, since both open on the same board at the
 // same size. Without it the run does the whole arc.
 const RESUME_PLAN = Number(process.env.DEMO_PLAN_ID || 0);
+// Segment one ends the moment the planner is off and running. Nobody wants to watch a
+// spinner for five minutes, and the plan landing is segment two's opening shot anyway.
+// The planner is NOT stopped — it keeps working off camera, and the plan it produces is
+// exactly what the next segment resumes from. Nothing filmed, nothing wasted.
+const STOP_AT_DECOMPOSE = process.env.DEMO_STOP_AT_DECOMPOSE === '1';
 const GOAL = fs.readFileSync(path.join(__dirname, 'scheduler-goal.md'), 'utf8');
 
 /** Narrate to the terminal so you can follow the take without watching the browser. */
@@ -140,9 +145,13 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   expect(body, 'the create form is not pointed at the project we just made').toContain(slug);
   await hold(page);
 
-  await page.locator('#title').fill('Shift Manager');
-  await page.locator('#description').fill(GOAL);
-  await hold(page);
+  // DROP THE SPEC IN, rather than typing it: the form has a markdown drop zone that reads
+  // the file and fills Title and Description itself. It films better than a textarea
+  // filling by magic, and it exercises the feature a customer would actually use.
+  await page.locator('#mdFile').setInputFiles(path.join(__dirname, 'scheduler-goal.md'));
+  await expect(page.locator('#description'), 'the dropped markdown did not load into the form')
+    .not.toBeEmpty({ timeout: 15_000 });
+  await hold(page, BEAT * 2);
 
   if (process.env.DEMO_REHEARSE && REUSE) {
     console.log('\n[demo] REHEARSAL on a REUSED project — stopping before Decompose, deleting nothing.');
@@ -191,6 +200,16 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   await page.getByRole('button', { name: /decompose into plan/i }).click();
   await page.waitForLoadState('domcontentloaded');
   await hold(page);
+
+  if (STOP_AT_DECOMPOSE) {
+    // The banner is the shot: the planner is away, grounding itself in the codebase.
+    await expect(page.locator('#wbDecomposeBanner'), 'the decomposing banner never appeared')
+      .toBeVisible({ timeout: 30_000 });
+    await hold(page, BEAT * 2);
+    console.log('\n[demo] segment one ends here. The planner keeps running off camera —');
+    console.log('[demo] when it lands, film the rest with DEMO_PLAN_ID=<its id>.');
+    return;
+  }
 
   // The board shows a live "decomposing…" banner for the selected project. Filming it is
   // the point: this is a frontier model reading the instance's reuse inventory and

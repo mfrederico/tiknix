@@ -16,7 +16,8 @@
  *   no teardown        the demo project SURVIVES — you just watched it get built
  *   one long timeout   a real decompose-and-build takes tens of minutes
  *
- * Video lands in test-results/demo/**\/video.webm
+ * Video lands in demo-recordings/**\/video.webm (kept out of test-results/,
+ * which the suite wipes on every run)
  */
 const { defineConfig, devices } = require('@playwright/test');
 const env = require('../lib/env');
@@ -53,5 +54,9 @@ module.exports = defineConfig({
   },
 
   projects: [{ name: 'demo', use: { ...devices['Desktop Chrome'] } }],
-  outputDir: '../test-results/demo',
+  // OUTSIDE the suite's test-results/. Playwright clears outputDir at the start of every
+  // run, so a demo recording nested in there is deleted the next time the suite runs —
+  // which is exactly how the first take's video was lost. Recordings are not test
+  // artifacts; they are the deliverable.
+  outputDir: '../demo-recordings',
 });

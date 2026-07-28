@@ -37,6 +37,11 @@ const PROJECT_NAME = process.env.DEMO_PROJECT || 'scheduler';
 // per-project (see the preflight below): a fresh project cannot plan until someone has
 // logged in inside ITS jail, so re-takes point at the project already signed in.
 const REUSE = process.env.DEMO_USE_PROJECT || '';
+// Shoot the take in SEGMENTS. DEMO_PLAN_ID skips create+decompose and opens on an
+// existing plan, so the approve→build half can be re-shot without spending another
+// planner run — and two clips cut together, since both open on the same board at the
+// same size. Without it the run does the whole arc.
+const RESUME_PLAN = Number(process.env.DEMO_PLAN_ID || 0);
 const GOAL = fs.readFileSync(path.join(__dirname, 'scheduler-goal.md'), 'utf8');
 
 /** Narrate to the terminal so you can follow the take without watching the browser. */
@@ -47,6 +52,7 @@ const hold = (page, ms = BEAT) => page.waitForTimeout(ms);
 
 test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   let slug = '';
+  let planId = 0;
 
   // ---- 1. the project ---------------------------------------------------------
   let created = null;
@@ -108,6 +114,17 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
     `  then re-run with DEMO_USE_PROJECT=${slug} to reuse it.\n` +
     `  (expected: ${creds})`).toBe(true);
   console.log('        -> credentials present');
+
+  if (RESUME_PLAN) {
+    // Segment two: the plan already exists. Open the board and carry on from there.
+    beat(2, `resuming at plan #${RESUME_PLAN} — approve and build`);
+    planId = RESUME_PLAN;
+    await page.goto('https://workbench.tiknix.com/workbench', { waitUntil: 'domcontentloaded' });
+    await hold(page, BEAT * 2);
+    await expect(page.locator(`.wb-plan-approve[data-plan-id="${planId}"], .wb-plan-build[data-plan-id="${planId}"]`).first(),
+      `plan #${planId} is not on the board — is it in this project, and already approved?`)
+      .toBeVisible({ timeout: 60_000 });
+  } else {
 
   // ---- 2. hand it the spec --------------------------------------------------
   beat(2, 'opening the task board and pasting the spec');
@@ -179,7 +196,6 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   // the point: this is a frontier model reading the instance's reuse inventory and
   // deciding what to REUSE, EXTEND or build NEW.
   const decomposeDeadline = Date.now() + 20 * 60_000;
-  let planId = 0;
   while (Date.now() < decomposeDeadline) {
     const res = await page.request.get('https://workbench.tiknix.com/workbench/decomposestatus',
       { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
@@ -193,6 +209,7 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   console.log('');
   expect(planId, 'the planner produced no plan within 20 minutes').toBeGreaterThan(0);
   console.log(`        -> plan #${planId}`);
+  }
 
   // ---- 4. read the plan -----------------------------------------------------
   beat(4, 'the plan: each subtask is a spec, not a suggestion');

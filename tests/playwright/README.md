@@ -95,8 +95,10 @@ change what gets built.
 | `DEMO_BEAT` | `2500` | ms to hold on a screen so a viewer can read it |
 | `DEMO_BUILD_MINUTES` | `30` | how long to keep filming the build |
 
-Video lands in `test-results/demo/**/video.webm` (1280x720, so the footage needs no
-reframing). The demo project is **kept** — you just watched it get built.
+Video lands in `demo-recordings/**/video.webm` (1280x720, so the footage needs no
+reframing), deliberately OUTSIDE `test-results/` — playwright clears that directory on
+every run, and a recording nested in it is deleted the next time the suite runs. The demo
+project is **kept** — you just watched it get built.
 
 Its config lives in `demo/`, not beside the suite's, because Playwright auto-discovers
 `playwright*.config.*` in the project root and loading two configs breaks collection for

@@ -260,6 +260,11 @@ test('the project can be deleted from the picker, and the confirmation actually 
     await route.fulfill({ response, body: raw });
   });
 
+  // The page navigates ITSELF to /projects on success — and it is already ON /projects,
+  // so waiting for the URL to "become" /projects returns instantly and any navigation of
+  // our own lands mid-flight (ERR_ABORTED / interrupted). Arm the wait BEFORE the click
+  // and let the app's own navigation be the thing we wait for.
+  const navigated = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => null);
   await confirmBtn.click();
   await expect.poll(() => status !== 0, { timeout: 180_000, message: 'delete never answered' }).toBe(true);
   expect(json && json.success,
@@ -268,13 +273,7 @@ test('the project can be deleted from the picker, and the confirmation actually 
 
   writeRun({ project: { ...project, deleted: true } });
 
-  // The page redirects ITSELF to /projects on success. Navigating at the same moment
-  // races that redirect ("Navigation ... is interrupted by another navigation"), which is
-  // why this passed alone and failed in a full run — pure timing. Let the app's own
-  // navigation settle first, then look.
-  await page.waitForURL(/\/projects/, { timeout: 30_000 }).catch(() => {});
-  await page.waitForLoadState('domcontentloaded');
-  await page.reload({ waitUntil: 'domcontentloaded' });
+  await navigated;   // the app's own reload of the picker, armed before the click
   expect(await page.locator(`.proj-pick[data-id="${project.id}"]`).count(),
     'the deleted project is still in the picker').toBe(0);
 

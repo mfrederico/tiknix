@@ -67,3 +67,37 @@ because `Upgrade` is not a legal header there.
 - Judging labels lives in `lib/audit.js` — `LABEL_EXCEPTIONS` for labels whose
   destination cannot be inferred, `SYNONYMS` for words this product uses
   interchangeably. Both should stay short.
+
+## The recorded demo
+
+`demo/` is not part of the suite. It is a **recording**: Tiknix building a shift-scheduling
+tool from a written spec, every beat a real action against the live control plane —
+a project really is provisioned, the planner really decomposes the spec against that
+project's reuse inventory, and the orchestrator really builds the subtasks.
+
+```bash
+DEMO_REHEARSE=1 npm run demo    # walk every beat up to Decompose, then clean up
+npm run demo                    # the real take (spends a planner run, ~30-45 min)
+```
+
+**Rehearse first, always.** The rehearsal proves the selectors, the provisioning and the
+video file for the cost of one throwaway project and about ten seconds. A real take
+spends a frontier planner run and half an hour; discovering a moved selector then is an
+expensive way to find out.
+
+The spec the planner receives is `demo/scheduler-goal.md` — edit that, not the script, to
+change what gets built.
+
+| knob | default | what it does |
+|---|---|---|
+| `DEMO_PROJECT` | `scheduler` | project name (a hash is appended, as always) |
+| `DEMO_SLOWMO` | `350` | ms between actions — a click that lands instantly reads as a glitch |
+| `DEMO_BEAT` | `2500` | ms to hold on a screen so a viewer can read it |
+| `DEMO_BUILD_MINUTES` | `30` | how long to keep filming the build |
+
+Video lands in `test-results/demo/**/video.webm` (1280x720, so the footage needs no
+reframing). The demo project is **kept** — you just watched it get built.
+
+Its config lives in `demo/`, not beside the suite's, because Playwright auto-discovers
+`playwright*.config.*` in the project root and loading two configs breaks collection for
+both.

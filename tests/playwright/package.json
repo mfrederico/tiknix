@@ -4,9 +4,10 @@
   "description": "Tiknix end-to-end regression suite — clicks every element, audits every label, watches every log.",
   "scripts": {
     "test": "playwright test",
+    "demo": "playwright test --config demo/playwright.config.js",
     "test:headed": "playwright test --headed",
     "test:hosted": "E2E_HOSTED=1 playwright test",
-    "report": "playwright show-report test-results/html-report",
+    "report": "playwright show-report playwright-report",
     "install-browser": "playwright install chromium"
   },
   "devDependencies": {

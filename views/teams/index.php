@@ -2,8 +2,12 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2">My Teams</h1>
         <div>
-            <a href="/sidecar/app/workbench" class="btn btn-outline-secondary me-2">
-                <i class="bi bi-kanban"></i> Projects
+            <?php /* "Projects" means the picker, which is the only place a project is
+                     chosen. This pointed at the builder — a leftover from when the task
+                     board was called Projects — so the one button on this page labelled
+                     Projects took you somewhere else entirely. */ ?>
+            <a href="/projects" class="btn btn-outline-secondary me-2">
+                <i class="bi bi-grid-3x3-gap"></i> Projects
             </a>
             <a href="/teams/create" class="btn btn-primary">
                 <i class="bi bi-plus-lg"></i> Create Team

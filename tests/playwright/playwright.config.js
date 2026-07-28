@@ -28,8 +28,10 @@ module.exports = defineConfig({
 
   reporter: [
     ['list'],
-    ['html', { outputFolder: 'test-results/html-report', open: 'never' }],
-    ['json', { outputFile: 'test-results/results.json' }],
+    // The report must NOT live inside outputDir: playwright clears the report folder
+    // before writing it, which would take the run's own artifacts with it.
+    ['html', { outputFolder: 'playwright-report', open: 'never' }],
+    ['json', { outputFile: 'playwright-report/results.json' }],
   ],
 
   use: {

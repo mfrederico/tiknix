@@ -25,22 +25,46 @@ $slug   = (string)($o['slug'] ?? '');
 $dir    = rtrim((string)($o['dir'] ?? ''), '/');
 $member = (int)($o['member'] ?? 0);
 $app    = (string)($o['app'] ?? 'tiknix');
-$db     = (string)($o['db'] ?? (dirname(__DIR__) . '/database/tiknix.db'));
+// TWO databases, and conflating them is what made every sidecar decompose invisible.
+//
+//   registry — core's db: the `instance` row, the member, the team shares. Resolving and
+//              authorizing happen here and nowhere else.
+//   tasks    — the instance's OWN data/workbench.db. That is what the AI Projects board
+//              reads (WorkbenchDb::select), and therefore the only place an ingested plan
+//              can be seen.
+//
+// This defaulted to core's db for BOTH, so a plan decomposed from the sidecar was written
+// to core's tables while the board looked in the per-instance file and found nothing —
+// the planner ran, succeeded, and produced a plan nobody could see.
+//
+// Resolution order, explicit first and never a silent guess: --db, then the
+// TIKNIX_WORKBENCH_DB the planner exports, then derived from the instance dir we were
+// given — which is where that instance's board reads by construction.
+$registryDb = dirname(__DIR__) . '/database/tiknix.db';
+$tasksDb    = trim((string)($o['db'] ?? ''));
+if ($tasksDb === '') $tasksDb = trim((string)(getenv('TIKNIX_WORKBENCH_DB') ?: ''));
 // Original task ids to remove ONCE the new (consolidated) plan is ingested — the
 // delete-and-replace half of the Consolidate feature. Runs only on success below.
 $supersede = array_values(array_filter(array_map('intval', explode(',', (string)($o['supersede'] ?? '')))));
 
 if ($slug === '' || $dir === '' || !$member) {
-    fwrite(STDERR, "usage: --slug=<slug> --dir=<instanceDir> --member=<id> [--app=tiknix] [--db=<path>]\n");
+    fwrite(STDERR, "usage: --slug=<slug> --dir=<instanceDir> --member=<id> [--app=tiknix] [--db=<tasks db>]\n");
     exit(2);
 }
+if ($tasksDb === '') $tasksDb = $dir . '/data/workbench.db';
 
 $planFile = $dir . '/.aibuilder/plan.json';
 if (!is_file($planFile)) { echo "[ingest] no plan.json — nothing to ingest\n"; exit(0); }
 
-R::setup('sqlite:' . $db);
+R::setup('sqlite:' . $registryDb);
 R::freeze(false);
-if (!R::testConnection()) { fwrite(STDERR, "[ingest] cannot open db: $db\n"); exit(1); }
+if (!R::testConnection()) { fwrite(STDERR, "[ingest] cannot open registry db: $registryDb\n"); exit(1); }
+
+$tasksDir = dirname($tasksDb);
+if (!is_dir($tasksDir) && !@mkdir($tasksDir, 0775, true)) {
+    fwrite(STDERR, "[ingest] cannot create $tasksDir for the tasks db\n"); exit(1);
+}
+R::addDatabase('tasks', 'sqlite:' . $tasksDb);
 
 // Resolve by slug (+app to disambiguate), then AUTHORIZE: the member must OWN the
 // instance or be on a team it's shared with — a team member decomposing a shared
@@ -52,6 +76,11 @@ if (!$inst || !$inst->id) { fwrite(STDERR, "[ingest] no instance '$slug'\n"); ex
 if (!(new \app\TaskAccessControl())->canAccessInstance($member, (int)$inst->id)) {
     fwrite(STDERR, "[ingest] member $member has no access to instance '$slug'\n"); exit(1);
 }
+
+// Registry work is done. Everything from here writes TASKS, so switch to the instance's
+// own workbench.db — the file its board reads.
+R::selectDatabase('tasks');
+R::freeze(false);   // fluid: the task tables auto-create on first store
 
 // Atomic claim: if the browser poll already ingested it, skip cleanly.
 $claim = PlanIngestor::claim($planFile);
@@ -72,7 +101,7 @@ try {
 }
 @unlink($claim);
 echo "[ingest] plan #{$res['parent']['id']} \"{$res['parent']['title']}\" with "
-   . count($res['subtasks']) . " subtask(s) — tagged {$slug}.{$app}\n";
+   . count($res['subtasks']) . " subtask(s) — tagged {$slug}.{$app} -> {$tasksDb}\n";
 
 // Delete-and-replace: now that the consolidated plan exists, remove the originals
 // (only tasks owned by this member) and any parent plan left empty by the removal.

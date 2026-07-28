@@ -36,8 +36,19 @@ class CachedDatabaseAdapter extends DBAdapter {
     public function __construct($database) {
         parent::__construct($database);
 
-        // Generate unique prefix for multi-tenant safety
-        $siteId = md5(__DIR__ . '_' . ($_SERVER['HTTP_HOST'] ?? 'cli'));
+        // Unique prefix per SITE **and per DATABASE**.
+        //
+        // The database used to be missing from this, and the key is otherwise just the
+        // SQL text — so any request that touched two databases got cross-database hits on
+        // identical SQL. That is not hypothetical: every sidecar request talks to core's
+        // db and an instance's, and RedBean's own "which tables exist?" lookup is
+        // byte-identical between them. It answered from the wrong database, RedBean
+        // concluded a table was missing, and issued CREATE TABLE — surfacing as
+        // "table `piperun` already exists" when running a pipeline in an instance.
+        //
+        // The same collision could return one database's ROWS for another's query, which
+        // is a good deal worse than an error message.
+        $siteId = md5(__DIR__ . '_' . ($_SERVER['HTTP_HOST'] ?? 'cli') . '_' . self::databaseIdentity($database));
         $this->cachePrefix = "rdb_{$siteId}_";
 
         // Get config if available
@@ -53,8 +64,8 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Override get() - intercepts SELECT queries
      */
     public function get($sql, $bindings = array()) {
-        // Only cache SELECT queries
-        if (!$this->enabled || !$this->isSelectQuery($sql)) {
+        // Only cache SELECT queries, and NEVER schema ones — see isSchemaQuery().
+        if (!$this->enabled || !$this->isSelectQuery($sql) || $this->isSchemaQuery($sql)) {
             $result = parent::get($sql, $bindings);
             $this->maybeInvalidate($sql);
             return $result;
@@ -196,6 +207,25 @@ class CachedDatabaseAdapter extends DBAdapter {
     }
 
     /**
+     * Something stable that identifies WHICH database this adapter talks to, for the
+     * cache prefix. The DSN is exactly that, and RedBean keeps it protected — read it
+     * without forcing a connection (RedBean connects lazily, and building an adapter
+     * must not change that).
+     */
+    private static function databaseIdentity($database): string {
+        try {
+            $ref = new \ReflectionObject($database);
+            if ($ref->hasProperty('dsn')) {
+                $prop = $ref->getProperty('dsn');
+                $prop->setAccessible(true);
+                $dsn = (string) $prop->getValue($database);
+                if ($dsn !== '') return $dsn;
+            }
+        } catch (\Throwable $e) { /* fall through */ }
+        return 'unknown-db';
+    }
+
+    /**
      * Generate cache key from query
      */
     private function getCacheKey($sql, $bindings = array()) {
@@ -324,6 +354,17 @@ class CachedDatabaseAdapter extends DBAdapter {
             $tables[] = $matches[1];
         }
 
+        // DDL counts as a change to that table. Schema queries are no longer cached, so
+        // this is not what fixes the "already exists" error — but a fluid ALTER adds a
+        // COLUMN, and rows cached from before it are a stale shape. Make the invariant
+        // simple and true: anything that touches a table busts that table.
+        if (preg_match('/\b(?:CREATE|DROP)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?[`"\[]?([a-z0-9_]+)/i', $sql, $matches)) {
+            $tables[] = $matches[1];
+        }
+        if (preg_match('/\bALTER\s+TABLE\s+[`"\[]?([a-z0-9_]+)/i', $sql, $matches)) {
+            $tables[] = $matches[1];
+        }
+
         return array_unique($tables);
     }
 
@@ -349,6 +390,27 @@ class CachedDatabaseAdapter extends DBAdapter {
         if ($this->enabled && !$this->isSelectQuery($sql)) {
             $this->invalidateFromSQL($sql);
         }
+    }
+
+    /**
+     * Is this the database describing ITSELF rather than returning data?
+     *
+     * These must never be cached. RedBean asks "which tables exist?" with
+     * `SELECT name FROM sqlite_master ...` — a SELECT, so it was cached like any other —
+     * and invalidation only ever fires on INSERT/UPDATE/DELETE. A CREATE TABLE matches
+     * none of those, so the moment RedBean fluid-created a table, every process still
+     * holding the cached list believed it was absent and tried to create it again:
+     * "table `piperun` already exists".
+     *
+     * Caching them buys nothing anyway — they are cheap, and they are asked once per
+     * bean type per process.
+     */
+    private function isSchemaQuery($sql): bool {
+        $s = strtolower(trim((string) $sql));
+        if (strpos($s, 'pragma') === 0) return true;
+        if (preg_match('/^show\s+(tables|columns|create|databases)/', $s)) return true;
+        return strpos($s, 'sqlite_master') !== false
+            || strpos($s, 'information_schema') !== false;
     }
 
     /**

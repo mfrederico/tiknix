@@ -98,3 +98,36 @@ test('the nav shows the control-plane tools on the control plane', async ({ page
     expect(nav, `the nav lost "${label}" on the control plane`).toContain(label);
   }
 });
+
+test('the topbar is the same height on every page', async ({ page }) => {
+  // It was not. --ui-topbar-height is 62px, but .ui-topbar sits in a flex column
+  // (.ui-main) and had no flex-shrink, so on any page whose content was tall enough the
+  // browser squashed it — 62px on short pages like /leads, 42.59px on /dashboard. The
+  // fractional height was the tell: nothing declares 42.59, it is what shrinking leaves.
+  //
+  // Measured, not asserted against a number, so the check survives a deliberate change to
+  // the variable: what matters is that every page agrees.
+  const heights = {};
+  for (const [url] of PAGES) {
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const h = await page.evaluate(() => {
+      const t = document.querySelector('.ui-topbar');
+      if (!t) return null;
+      const declared = getComputedStyle(document.documentElement)
+        .getPropertyValue('--ui-topbar-height').trim();
+      return { actual: Math.round(t.getBoundingClientRect().height * 100) / 100, declared };
+    });
+    if (h) heights[url] = h;
+  }
+
+  const distinct = [...new Set(Object.values(heights).map(h => h.actual))];
+  const detail = Object.entries(heights).map(([u, h]) => `  ${u}: ${h.actual}px`).join('\n');
+  expect(distinct.length, `the topbar is not a consistent height:\n${detail}`).toBe(1);
+
+  // And it should be the height the design system declares, not a squashed approximation.
+  const first = Object.values(heights)[0];
+  if (first && first.declared) {
+    expect(`${first.actual}px`, 'the topbar is not the height --ui-topbar-height declares')
+      .toBe(first.declared);
+  }
+});

@@ -112,7 +112,7 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 
 /* main + topbar */
 .ui-main{flex:1;min-width:0;display:flex;flex-direction:column;margin-left:var(--ui-sidebar-width);}
-.ui-topbar{height:var(--ui-topbar-height);position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bs-body-bg) 82%,transparent);backdrop-filter:saturate(150%) blur(10px);border-bottom:1px solid var(--bs-border-color);display:flex;align-items:center;gap:1rem;padding:0 1.5rem;}
+.ui-topbar{height:var(--ui-topbar-height);flex:0 0 auto;position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bs-body-bg) 82%,transparent);backdrop-filter:saturate(150%) blur(10px);border-bottom:1px solid var(--bs-border-color);display:flex;align-items:center;gap:1rem;padding:0 1.5rem;}
 .ui-topbar-title{line-height:1.1;}
 .ui-topbar-title .ui-eyebrow{display:block;margin-bottom:1px;}
 .ui-topbar-title strong{font-family:var(--ui-ff-display);font-weight:600;font-size:1.02rem;letter-spacing:-.01em;}

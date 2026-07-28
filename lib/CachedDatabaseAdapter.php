@@ -22,6 +22,8 @@ class CachedDatabaseAdapter extends DBAdapter {
     private $enabled = true;
     private $defaultTTL = 60;
     private $cachePrefix;
+    /** True when the connected database could not be identified — caching is then OFF. */
+    private $identityFailed = false;
 
     // Statistics
     private $hits = 0;
@@ -48,13 +50,35 @@ class CachedDatabaseAdapter extends DBAdapter {
         //
         // The same collision could return one database's ROWS for another's query, which
         // is a good deal worse than an error message.
-        $siteId = md5(__DIR__ . '_' . ($_SERVER['HTTP_HOST'] ?? 'cli') . '_' . self::databaseIdentity($database));
+        // If the database cannot be identified we do NOT fall back to a shared
+        // namespace — that is precisely the bug this key exists to prevent, and it would
+        // reappear silently. Caching is switched OFF for this adapter instead and the
+        // reason is logged at ERROR: a cold cache is a performance problem, and one
+        // database answering another's query is a correctness one.
+        $dbId = self::databaseIdentity($database);
+        $this->identityFailed = ($dbId === '');
+        $siteId = md5(__DIR__ . '_' . ($_SERVER['HTTP_HOST'] ?? 'cli') . '_'
+                      . ($this->identityFailed ? 'unidentified-' . bin2hex(random_bytes(8)) : $dbId));
         $this->cachePrefix = "rdb_{$siteId}_";
 
         // Get config if available
         if (class_exists('Flight')) {
             $this->enabled = Flight::get('cache.query_cache') ?? true;
             $this->defaultTTL = Flight::get('cache.query_cache_ttl') ?? 60;
+        }
+
+        if ($this->identityFailed) {
+            // Belt: the config block above may have enabled it. Nothing enables caching
+            // for an adapter that does not know which database it is in front of.
+            $this->enabled = false;
+            $msg = 'CachedDatabaseAdapter: could not identify the database (no readable DSN on '
+                 . get_class($database) . ') — QUERY CACHING DISABLED for this connection. '
+                 . 'Caching without a database identity can answer one database\'s query from '
+                 . 'another\'s rows.';
+            try {
+                if (class_exists('Flight') && \Flight::get('log')) { \Flight::get('log')->error($msg); }
+                else { error_log($msg); }
+            } catch (\Throwable $e) { error_log($msg); }
         }
 
         $this->log('CachedDatabaseAdapter initialized');
@@ -213,6 +237,8 @@ class CachedDatabaseAdapter extends DBAdapter {
      * must not change that).
      */
     private static function databaseIdentity($database): string {
+        // Returns '' when it cannot be determined. The caller treats that as fatal to
+        // CACHING (not to the request) — see the constructor.
         try {
             $ref = new \ReflectionObject($database);
             if ($ref->hasProperty('dsn')) {
@@ -221,8 +247,8 @@ class CachedDatabaseAdapter extends DBAdapter {
                 $dsn = (string) $prop->getValue($database);
                 if ($dsn !== '') return $dsn;
             }
-        } catch (\Throwable $e) { /* fall through */ }
-        return 'unknown-db';
+        } catch (\Throwable $e) { /* reported by the caller */ }
+        return '';
     }
 
     /**

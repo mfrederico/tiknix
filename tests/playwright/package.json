@@ -4,7 +4,8 @@
   "description": "Tiknix end-to-end regression suite — clicks every element, audits every label, watches every log.",
   "scripts": {
     "test": "playwright test",
-    "demo": "playwright test --config demo/playwright.config.js",
+    "demo": "playwright test --config demo/playwright.config.js demo/scheduler.demo.js",
+    "demo:notify": "playwright test --config demo/playwright.config.js demo/notifications.demo.js",
     "test:headed": "playwright test --headed",
     "test:hosted": "E2E_HOSTED=1 playwright test",
     "test:plan": "E2E_PLAN=1 playwright test specs/05-plan-pipeline.spec.js",

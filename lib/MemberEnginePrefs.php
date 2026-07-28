@@ -39,13 +39,38 @@ class MemberEnginePrefs {
     }
 
     /**
+     * A member's stored override, WITHOUT requiring the framework to be booted.
+     *
+     * Flight::getSetting is a mapped method, so it exists only after FlightMap has been
+     * loaded — i.e. in a web request. The plan pipeline runs in CLIs that deliberately
+     * skip bootstrap, and calling it there dies with "getSetting must be a mapped
+     * method", which is how automatic re-planning failed before it ever ran once. Fall
+     * back to reading the row directly, which is all getSetting does.
+     */
+    private static function stored(string $key, int $memberId): string {
+        try {
+            return (string) Flight::getSetting($key, $memberId);
+        } catch (\Throwable $e) {
+            // Not mapped: a CLI that skipped bootstrap. Read the row itself — which is
+            // all getSetting does — and treat any failure as "no override", since a
+            // missing preference must never stop a build.
+            try {
+                $row = \app\Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
+                return $row && $row->id ? (string) $row->settingValue : '';
+            } catch (\Throwable $e2) {
+                return '';   // no settings table on this connection (a per-instance tasks db)
+            }
+        }
+    }
+
+    /**
      * The member's effective model for (engine, tier): their override if set + valid,
      * else the registry default for that engine/tier.
      */
     public static function model(?int $memberId, string $engine, string $tier, string $fallback = 'sonnet'): string {
         $default = EngineRegistry::model($engine, $tier, $fallback);
         if (!$memberId || !in_array($tier, self::TIERS, true)) return $default;
-        $override = self::clean(Flight::getSetting(self::key($engine, $tier), $memberId));
+        $override = self::clean(self::stored(self::key($engine, $tier), $memberId));
         return $override !== '' ? $override : $default;
     }
 
@@ -57,7 +82,7 @@ class MemberEnginePrefs {
         $out = [];
         foreach (self::TIERS as $tier) {
             $default  = EngineRegistry::model($engine, $tier, 'sonnet');
-            $override = $memberId ? self::clean(Flight::getSetting(self::key($engine, $tier), $memberId)) : '';
+            $override = $memberId ? self::clean(self::stored(self::key($engine, $tier), $memberId)) : '';
             $out[$tier] = [
                 'default'   => $default,
                 'override'  => $override,

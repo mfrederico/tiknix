@@ -58,5 +58,9 @@ module.exports = defineConfig({
   // run, so a demo recording nested in there is deleted the next time the suite runs —
   // which is exactly how the first take's video was lost. Recordings are not test
   // artifacts; they are the deliverable.
-  outputDir: '../demo-recordings',
+  //
+  // And a SUBDIRECTORY PER TAKE, because playwright names the artifact folder after the
+  // test title — which never changes — so every run silently overwrote the one before it.
+  // Two segments shot to splice would have destroyed each other. DEMO_TAKE names the clip.
+  outputDir: '../demo-recordings/' + (process.env.DEMO_TAKE || 'latest'),
 });

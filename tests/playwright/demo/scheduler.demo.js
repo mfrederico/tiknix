@@ -47,7 +47,11 @@ const RESUME_PLAN = Number(process.env.DEMO_PLAN_ID || 0);
 // The planner is NOT stopped — it keeps working off camera, and the plan it produces is
 // exactly what the next segment resumes from. Nothing filmed, nothing wasted.
 const STOP_AT_DECOMPOSE = process.env.DEMO_STOP_AT_DECOMPOSE === '1';
-const GOAL = fs.readFileSync(path.join(__dirname, 'scheduler-goal.md'), 'utf8');
+// Which spec to hand the planner. The markdown drop reads the file and fills Title and
+// Description from it, so the goal document is the only thing that decides what gets
+// built — swap the file, not the script.
+const GOAL_FILE = process.env.DEMO_GOAL || 'scheduler-goal.md';
+const GOAL_PATH = path.join(__dirname, GOAL_FILE);
 
 /** Narrate to the terminal so you can follow the take without watching the browser. */
 const beat = (n, what) => console.log(`\n[demo ${n}] ${what}`);
@@ -148,7 +152,7 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   // DROP THE SPEC IN, rather than typing it: the form has a markdown drop zone that reads
   // the file and fills Title and Description itself. It films better than a textarea
   // filling by magic, and it exercises the feature a customer would actually use.
-  await page.locator('#mdFile').setInputFiles(path.join(__dirname, 'scheduler-goal.md'));
+  await page.locator('#mdFile').setInputFiles(GOAL_PATH);
   await expect(page.locator('#description'), 'the dropped markdown did not load into the form')
     .not.toBeEmpty({ timeout: 15_000 });
   await hold(page, BEAT * 2);

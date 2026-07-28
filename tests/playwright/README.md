@@ -91,13 +91,14 @@ change what gets built.
 Shoot it in **two segments** — nobody wants to watch a planner spin:
 
 ```bash
-# segment 1 — drop the spec in, hit Decompose, cut on the banner (~1 min of footage)
-DEMO_USE_PROJECT=<signed-in slug> DEMO_STOP_AT_DECOMPOSE=1 npm run demo
+# segment 1 — drop the spec in, hit Decompose, cut on the banner (~30s of footage)
+DEMO_TAKE=seg1 DEMO_GOAL=<spec>.md DEMO_USE_PROJECT=<signed-in slug> \
+  DEMO_STOP_AT_DECOMPOSE=1 npm run demo
 
 # ...the planner keeps running off camera. When its plan lands:
 
 # segment 2 — open on the plan, approve, build, end on the live app
-DEMO_USE_PROJECT=<same slug> DEMO_PLAN_ID=<plan id> npm run demo
+DEMO_TAKE=seg2 DEMO_USE_PROJECT=<same slug> DEMO_PLAN_ID=<plan id> npm run demo
 ```
 
 Both open on the same board at the same size, so they cut together:
@@ -116,6 +117,8 @@ ffmpeg -f concat -safe 0 -i list.txt -c copy demo.webm
 | `DEMO_USE_PROJECT` | — | reuse a project instead of creating one (needed while credentials are per-project) |
 | `DEMO_STOP_AT_DECOMPOSE` | — | end segment 1 on the banner; the planner keeps working |
 | `DEMO_PLAN_ID` | — | start segment 2 on an existing plan, no planner spend |
+| `DEMO_GOAL` | `scheduler-goal.md` | which spec in `demo/` to hand the planner |
+| `DEMO_TAKE` | `latest` | subdirectory for the clip — **name every take**, or the next run overwrites it |
 
 Video lands in `demo-recordings/**/video.webm` (1280x720, so the footage needs no
 reframing), deliberately OUTSIDE `test-results/` — playwright clears that directory on

@@ -268,8 +268,13 @@ test('the project can be deleted from the picker, and the confirmation actually 
 
   writeRun({ project: { ...project, deleted: true } });
 
-  // Gone from the picker, and no longer claimed as the project you are working on.
-  await page.goto('/projects', { waitUntil: 'domcontentloaded' });
+  // The page redirects ITSELF to /projects on success. Navigating at the same moment
+  // races that redirect ("Navigation ... is interrupted by another navigation"), which is
+  // why this passed alone and failed in a full run — pure timing. Let the app's own
+  // navigation settle first, then look.
+  await page.waitForURL(/\/projects/, { timeout: 30_000 }).catch(() => {});
+  await page.waitForLoadState('domcontentloaded');
+  await page.reload({ waitUntil: 'domcontentloaded' });
   expect(await page.locator(`.proj-pick[data-id="${project.id}"]`).count(),
     'the deleted project is still in the picker').toBe(0);
 

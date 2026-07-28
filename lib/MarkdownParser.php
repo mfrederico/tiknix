@@ -34,22 +34,29 @@ class MarkdownParser {
      * Parse UNTRUSTED markdown safely (task descriptions, acceptance criteria,
      * planner/LLM output, anything a user typed). Unlike parse() — which trusts
      * its input and is only for dev-authored docs — this:
-     *   1. strip_tags() the source, removing any injected HTML (<script>, <img
-     *      onerror>, <iframe>, event-handler tags, …) before rendering;
-     *   2. renders markdown via parse();
+     *   1. ESCAPES the source, so nothing an author typed can become an element;
+     *   2. renders markdown via parse(), which then wraps already-inert text in
+     *      its own markup (and must not re-escape it: hence $preEscaped);
      *   3. neutralizes javascript:/data:/vbscript: hrefs that the [text](url)
-     *      link syntax can generate AFTER strip_tags has run (the one vector
-     *      strip_tags structurally can't catch).
+     *      link syntax can generate, which escaping structurally can't catch.
      * Reuse this anywhere user- or model-authored text is displayed as HTML.
      *
-     * Tradeoff: strip_tags also removes literal angle brackets, so inline
-     * `<Foo>` in prose is lost (fenced code is the place for that anyway).
+     * It used to strip_tags() instead, which was equally safe and quietly DESTRUCTIVE:
+     * a description mentioning <track>, or writing `a < b`, lost the text entirely with
+     * nothing to show it had gone. Escaping keeps the author's words and displays them
+     * as written.
      *
      * @param string $text Untrusted markdown
      * @return string Safe HTML
      */
     public static function parseSafe($text) {
-        $html = self::parse(strip_tags((string)($text ?? '')));
+        // ESCAPE, do not strip. strip_tags() silently DELETED anything shaped like a tag,
+        // so a task description mentioning <track> or writing `a < b` lost the text
+        // entirely — the author's words vanished with no indication. Escaping shows them
+        // literally and is just as safe: the markdown parser then wraps already-inert
+        // text in its own markup, and nothing the author typed can become an element.
+        $escaped = htmlspecialchars((string) ($text ?? ''), ENT_QUOTES, 'UTF-8');
+        $html = self::parse($escaped, true);
         // Scrub dangerous hrefs the markdown link syntax may have produced.
         $html = preg_replace('/\shref\s*=\s*"\s*(?:javascript|data|vbscript):[^"]*"/i', ' href="#"', $html);
         return $html;
@@ -61,7 +68,12 @@ class MarkdownParser {
      * @param string $text Markdown text to parse
      * @return string HTML output
      */
-    public static function parse($text) {
+    /**
+     * @param bool $preEscaped input is ALREADY html-escaped (parseSafe), so the code
+     *                         handlers below must not escape it a second time and turn
+     *                         a user's `<` into a visible `&amp;lt;`.
+     */
+    public static function parse($text, bool $preEscaped = false) {
         // IMPORTANT: Process code blocks FIRST to protect code from other transformations
 
         // Store code blocks temporarily to prevent them from being processed
@@ -69,9 +81,9 @@ class MarkdownParser {
         $blockCounter = 0;
 
         // Convert code blocks first (triple backticks)
-        $text = preg_replace_callback('/```(\w*)\n(.*?)```/s', function($matches) use (&$codeBlocks, &$blockCounter) {
+        $text = preg_replace_callback('/```(\w*)\n(.*?)```/s', function($matches) use (&$codeBlocks, &$blockCounter, $preEscaped) {
             $language = $matches[1] ?: 'plaintext';
-            $code = htmlspecialchars(($matches[2]) ?? '', ENT_QUOTES, 'UTF-8');
+            $code = $preEscaped ? (string) $matches[2] : htmlspecialchars(($matches[2]) ?? '', ENT_QUOTES, 'UTF-8');
             $placeholder = "###CODEBLOCK{$blockCounter}###";
             $codeBlocks[$placeholder] = '<pre><code class="language-' . $language . '">' . $code . '</code></pre>';
             $blockCounter++;
@@ -83,8 +95,8 @@ class MarkdownParser {
         $inlineCounter = 0;
 
         // Convert inline code (single backticks) - must be before other inline formatting
-        $text = preg_replace_callback('/`([^`\n]+)`/', function($matches) use (&$inlineCode, &$inlineCounter) {
-            $code = htmlspecialchars(($matches[1]) ?? '', ENT_QUOTES, 'UTF-8');
+        $text = preg_replace_callback('/`([^`\n]+)`/', function($matches) use (&$inlineCode, &$inlineCounter, $preEscaped) {
+            $code = $preEscaped ? (string) $matches[1] : htmlspecialchars(($matches[1]) ?? '', ENT_QUOTES, 'UTF-8');
             $placeholder = "###INLINECODE{$inlineCounter}###";
             $inlineCode[$placeholder] = '<code>' . $code . '</code>';
             $inlineCounter++;

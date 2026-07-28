@@ -12,6 +12,14 @@ use \Flight as Flight;
 
 class PermissionCache {
 
+    /**
+     * Prefix on the description of a row this class INVENTED, rather than one a person or
+     * a seed set deliberately. It is the only thing that distinguishes a default from a
+     * policy, and seedRule() below depends on it.
+     */
+    public const AUTO_MARK = 'Auto-generated permission for';
+
+
     // Process-local cache (fastest access)
     private static $localCache = null;
 
@@ -350,7 +358,7 @@ class PermissionCache {
                 $auth->control = $control;
                 $auth->method = $method;
                 $auth->level = $level;
-                $auth->description = "Auto-generated permission for {$control}::{$method}";
+                $auth->description = self::AUTO_MARK . " {$control}::{$method}";
                 $auth->validcount = 0;
                 $auth->createdAt = date('Y-m-d H:i:s');
                 Bean::store($auth);
@@ -430,6 +438,50 @@ class PermissionCache {
             if (in_array($m, $publicAuth, true)) return LEVELS['PUBLIC'];
         }
         return LEVELS['ADMIN'];
+    }
+
+    /**
+     * Set a route's permission from a SEED, correctly.
+     *
+     * The rule seeds have always followed — "never widen an existing rule" — is right for
+     * policy and wrong for defaults, and the two were indistinguishable. A route gets an
+     * auto-generated row at the ADMIN default the first time anything touches it, so
+     * merely FETCHING a new route before its seed ran pinned it to admin forever: the
+     * seed would then find a row, decline to widen it, and say so in a line that scrolls
+     * past in a build log. It cost us twice in one day — once to a curl, once to a
+     * build's own verification step, which fetched the page it was about to seed.
+     *
+     * So: correct a row this class invented, never touch one somebody meant.
+     *
+     * @return string one of 'added' | 'corrected' | 'kept' | 'unchanged', for the seed to report
+     */
+    public static function seedRule(string $control, string $method, int $level, string $description = ''): string {
+        $row = \app\Bean::findOne('authcontrol', 'LOWER(control) = ? AND LOWER(method) = ?',
+            [strtolower($control), strtolower($method)]);
+
+        if (!$row || !$row->id) {
+            $row = \app\Bean::dispense('authcontrol');
+            $row->control     = $control;
+            $row->method      = $method;
+            $row->level       = $level;
+            $row->description = $description ?: "Seeded permission for {$control}::{$method}";
+            $row->validcount  = 0;
+            $row->createdAt   = date('Y-m-d H:i:s');
+            \app\Bean::store($row);
+            self::clear();
+            return 'added';
+        }
+
+        if ((int) $row->level === $level) return 'unchanged';
+
+        // Only a row we invented may be overruled. Anything else is somebody's decision.
+        if (strpos((string) $row->description, self::AUTO_MARK) !== 0) return 'kept';
+
+        $row->level       = $level;
+        $row->description = $description ?: "Seeded permission for {$control}::{$method}";
+        \app\Bean::store($row);
+        self::clear();
+        return 'corrected';
     }
 
     /**

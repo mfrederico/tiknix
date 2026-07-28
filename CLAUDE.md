@@ -48,6 +48,21 @@ model. When decomposing a plan, record what each task builds on in its `reuses` 
 Data & permissions ship as seeds, never as direct DB writes: a new route needs an
 `authcontrol` row, and starter/seed data goes in an idempotent `database/seeds/*.php`
 (via the `\app\Bean` wrapper) — reuse an existing `<controller>::* = <level>` pattern.
+
+**Set permission rows with `PermissionCache::seedRule()`, not by hand.** A route gets an
+auto-generated row at the ADMIN default the first time ANYTHING touches it — including a
+`curl` while you are testing, or a verification step that fetches the page before seeding
+it. A hand-written seed that "never widens an existing rule" then finds that row, declines
+to change it, and the route stays admin-only forever:
+
+```php
+use app\PermissionCache;
+// corrects a row the framework invented; never overrules one a person set
+echo PermissionCache::seedRule('apidocs', 'spec', 101, 'OpenAPI JSON (public)');  // added|corrected|kept|unchanged
+```
+
+Seed the rows BEFORE fetching the route, and report what `seedRule` returns — `kept` means
+somebody's deliberate rule won, which is a fact worth printing rather than swallowing.
 RedBean auto-creates a model's table on first store, so there is no `CREATE TABLE`.
 
 

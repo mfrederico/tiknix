@@ -46,7 +46,8 @@ class PlanNotifier {
      * Announce a finished plan.
      *
      * @param string $coreDb   path to core's sqlite db (where members and threads live)
-     * @param array  $p        [plan_id, title, slug, member_id, status, counts[], base_url]
+     * @param array  $p        [plan_id, title, slug, member_id, status, counts[], base_url,
+     *                          failures[] => ['title'=>..,'why'=>..], board_url]
      * @return string          a line describing what was sent, for the orchestrator log
      */
     public static function planFinished(string $coreDb, array $p): string {
@@ -66,6 +67,9 @@ class PlanNotifier {
         $conflict = (int) ($counts['conflict'] ?? 0);
         $ok       = $failed === 0 && $conflict === 0 && $status === 'done';
 
+        $failures = array_values((array) ($p['failures'] ?? []));
+        $boardUrl = rtrim((string) ($p['board_url'] ?? ''), '/');
+
         $subject = ($ok ? 'Build finished: ' : 'Build needs attention: ') . $title;
         $summary = $merged . ' merged'
                  . ($failed   ? ', ' . $failed   . ' failed'   : '')
@@ -78,11 +82,30 @@ class PlanNotifier {
             '<p>' . htmlspecialchars($summary, ENT_QUOTES) . '.</p>',
         ];
         if (!$ok) {
-            $lines[] = '<p>Some tasks did not land. Open the plan to see which, and why.</p>';
+            // Name what failed, here, in the notification. "Some tasks did not land" sends
+            // someone hunting through a log to find out what this message already knows.
+            $lines[] = '<p><strong>These did not land:</strong></p><ul>';
+            foreach ($failures as $f) {
+                $why = trim((string) ($f['why'] ?? ''));
+                $lines[] = '<li><strong>' . htmlspecialchars((string) ($f['title'] ?? 'untitled task'), ENT_QUOTES) . '</strong>'
+                    . ($why !== '' ? '<br><code>' . htmlspecialchars(mb_substr($why, 0, 300), ENT_QUOTES) . '</code>' : '')
+                    . '</li>';
+            }
+            if (!$failures) $lines[] = '<li>(the executor did not record which)</li>';
+            $lines[] = '</ul>';
+
+            // And say what the choices are. A notification that reports a problem without
+            // saying what can be done about it just moves the problem to the reader.
+            $lines[] = '<p><strong>What you can do:</strong></p><ul>'
+                . '<li><em>Build again</em> — re-runs only what did not land, for a failure that was transient.</li>'
+                . '<li><em>Re-plan</em> — decompose the goal again, when the spec was wrong rather than the run.</li>'
+                . '<li><em>Take it yourself</em> — open the task and finish it by hand.</li>'
+                . '</ul>';
         }
-        if ($baseUrl !== '') {
-            $lines[] = '<p><a href="' . htmlspecialchars($baseUrl, ENT_QUOTES) . '">Open the app</a></p>';
-        }
+        $links = [];
+        if ($boardUrl !== '') $links[] = '<a href="' . htmlspecialchars($boardUrl, ENT_QUOTES) . '">Open the plan</a>';
+        if ($baseUrl  !== '') $links[] = '<a href="' . htmlspecialchars($baseUrl,  ENT_QUOTES) . '">Open the app</a>';
+        if ($links) $lines[] = '<p>' . implode(' | ', $links) . '</p>';
         $content = implode("\n", $lines);
         $preview = $title . ' — ' . $summary;
 
@@ -123,7 +146,9 @@ class PlanNotifier {
             $msg->fromName   = 'AI Builder';
             $msg->subject    = $subject;
             $msg->content    = $content;
-            $msg->bodyPlain  = strip_tags(str_replace('</p>', "\n", $content));
+            $msg->bodyPlain  = trim(html_entity_decode(strip_tags(
+                str_replace(['</p>', '</li>', '<br>'], "\n", $content)
+            ), ENT_QUOTES));
             $msg->status     = 'received';
             $msg->createdAt  = $now;
             $msg->sentAt     = $now;

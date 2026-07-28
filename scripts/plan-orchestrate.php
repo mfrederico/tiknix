@@ -75,9 +75,21 @@ if (empty($res['stalled'])) {
     }
 }
 
+// THREE outcomes, not two. A plan that finished with a failed subtask is not "done" —
+// it built most of a thing and stopped short, and reporting that as done means the one
+// state a human needs to act on looks exactly like the state that needs nothing.
+$failedCount = (int) ($res['counts']['failed'] ?? 0) + (int) ($res['counts']['conflict'] ?? 0);
 $parent = R::load('workbenchtask', $planId);
-$parent->planStatus = !empty($res['stalled']) ? 'stalled' : 'done';
-$parent->status     = !empty($res['stalled']) ? 'failed' : 'completed';   // sync list column
+if (!empty($res['stalled'])) {
+    $parent->planStatus = 'stalled';                 // could not proceed
+    $parent->status     = 'failed';
+} elseif ($failedCount > 0) {
+    $parent->planStatus = 'attention';               // ran to the end, but not all of it landed
+    $parent->status     = 'failed';
+} else {
+    $parent->planStatus = 'done';
+    $parent->status     = 'completed';
+}
 $parent->updatedAt  = date('Y-m-d H:i:s');
 R::store($parent);
 
@@ -89,10 +101,25 @@ echo "[orchestrator] plan #$planId finished status={$parent->planStatus} " . dat
 // well only if core's [mail] is set up. Never fatal: a notification that fails must
 // not undo a build that succeeded.
 try {
+    $aibCfg     = @parse_ini_file(__DIR__ . '/../conf/aibuilder.ini', true) ?: [];
     $planTitle  = (string) $parent->title;
     $planMember = (int) $parent->memberId;
     $instCfg    = @parse_ini_file($dir . '/conf/config.ini', true) ?: [];
     $baseUrl    = (string) ($instCfg['app']['baseurl'] ?? '');
+
+    // Which subtasks did not land, and the last thing each said. Read from the same
+    // tasks db we have been driving, so the notification carries the detail instead of
+    // pointing at a log the reader has to go and find.
+    $failures = [];
+    foreach (R::find('workbenchtask', 'parent_task_id = ? AND status IN (?, ?) ORDER BY id',
+                     [$planId, 'failed', 'conflict']) as $ft) {
+        $why = '';
+        try {
+            $log = R::findOne('tasklog', 'task_id = ? ORDER BY id DESC', [(int) $ft->id]);
+            if ($log && $log->id) $why = (string) ($log->content ?? '');
+        } catch (\Throwable $e) { /* no logs for this task */ }
+        $failures[] = ['title' => (string) $ft->title, 'why' => $why];
+    }
     echo '[orchestrator] ' . \app\PlanNotifier::planFinished(
         dirname(__DIR__) . '/database/tiknix.db',
         [
@@ -103,6 +130,8 @@ try {
             'status'    => (string) $parent->planStatus,
             'counts'    => $res['counts'] ?? [],
             'base_url'  => $baseUrl,
+            'board_url' => rtrim((string) ($aibCfg['sidecar']['workbench_url'] ?? 'https://workbench.tiknix.com'), '/') . '/workbench',
+            'failures'  => $failures,
         ]
     ) . "\n";
 } catch (\Throwable $e) {

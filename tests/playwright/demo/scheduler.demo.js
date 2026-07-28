@@ -239,15 +239,24 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   await page.goto('https://workbench.tiknix.com/workbench', { waitUntil: 'domcontentloaded' });
   await hold(page, BEAT * 2);
 
+  // A DRAFT offers Approve; a plan that is already approved — or stalled, and being
+  // picked up again — offers Build straight away. Resuming an existing plan lands in
+  // either state, so follow the board rather than assuming the draft path.
   const approve = page.locator(`.wb-plan-approve[data-plan-id="${planId}"]`);
-  await expect(approve, 'the plan did not offer an Approve button').toBeVisible({ timeout: 60_000 });
+  const needsApproval = await approve.count() > 0;
+  await expect(
+    page.locator(`.wb-plan-approve[data-plan-id="${planId}"], .wb-plan-build[data-plan-id="${planId}"]`).first(),
+    'the plan offers neither Approve nor Build'
+  ).toBeVisible({ timeout: 60_000 });
 
-  // ---- 5. approve, then build ----------------------------------------------
-  beat(5, 'approving the plan, then building it');
-  await approve.click();
-  await page.waitForTimeout(3000);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await hold(page);
+  // ---- 5. approve (if it needs it), then build ------------------------------
+  beat(5, needsApproval ? 'approving the plan, then building it' : 'the plan is already approved — building it');
+  if (needsApproval) {
+    await approve.click();
+    await page.waitForTimeout(3000);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await hold(page);
+  }
 
   const build = page.locator(`.wb-plan-build[data-plan-id="${planId}"]`);
   await expect(build, 'the approved plan did not offer a Build button').toBeVisible({ timeout: 60_000 });

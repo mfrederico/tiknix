@@ -64,6 +64,13 @@ class PlanIngestor
         $parent->planCheckpoint = $checkpointTag;
         $parent->planStatus     = 'draft';
         $parent->createdAt      = $now;
+        // updatedAt is NOT optional: the task board sorts by it (order_by defaults to
+        // 'updated_at DESC'), and RedBean's fluid mode only creates a column when
+        // something writes it. Omitting it left a freshly-decomposed project with a
+        // table that had no updated_at at all — so the board's own query referenced a
+        // missing column, RedBean suppressed the error the way fluid mode does, and the
+        // board showed "No Tasks Found" next to a counter reading ten.
+        $parent->updatedAt      = $now;
         R::store($parent);
 
         // Pass 1: create every subtask, remembering the planner's stable ref.
@@ -89,6 +96,7 @@ class PlanIngestor
             $t->planRef      = $ref;
             $t->memberId     = $memberId;
             $t->createdAt    = $now;
+            $t->updatedAt    = $now;   // see the parent: the board sorts on this
             R::store($t);
             $refMap[$ref] = (int)$t->id;
             $rows[] = [$t, $st, $ref];

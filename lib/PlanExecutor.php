@@ -117,7 +117,14 @@ class PlanExecutor {
                 $name = basename($seed);
                 if (isset($appliedSet[$name])) { $log[] = "seed {$name}: already applied"; continue; }
                 $out = []; $code = 0;
-                exec('cd ' . escapeshellarg($this->instanceDir) . ' && php ' . escapeshellarg($seed) . ' 2>&1', $out, $code);
+                // env -u: this orchestrator runs with TIKNIX_WORKBENCH_DB set, and exec()
+                // hands its environment to the child. The instance's own bootstrap honours
+                // that variable, so a seed run this way wrote to the workbench.db instead
+                // of the app's database — the seed reported "ok" and the rows landed
+                // somewhere the app never reads.
+                exec('env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg(
+                        'cd ' . escapeshellarg($this->instanceDir) . ' && php ' . escapeshellarg($seed)
+                     ) . ' 2>&1', $out, $code);
                 $tail = trim(implode(' ', array_slice($out, -2)));
                 $log[] = "seed {$name}: " . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
                 if ($code === 0) { $applied[] = $name; }
@@ -132,7 +139,9 @@ class PlanExecutor {
         $rc = $this->instanceDir . '/scripts/resetcache.php';
         if (is_file($rc)) {
             $out = []; $code = 0;
-            exec('cd ' . escapeshellarg($this->instanceDir) . ' && php ' . escapeshellarg($rc) . ' 2>&1', $out, $code);
+            exec('env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg(
+                    'cd ' . escapeshellarg($this->instanceDir) . ' && php ' . escapeshellarg($rc)
+                 ) . ' 2>&1', $out, $code);
             $log[] = 'resetcache: ' . ($code === 0 ? 'ok' : 'FAILED');
         }
         return $log;

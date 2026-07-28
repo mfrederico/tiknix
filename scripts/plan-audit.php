@@ -81,8 +81,14 @@ $specs = ['root' => 1, 'admin' => 50, 'member' => 100];
 $creds = [];
 
 function runClitool(string $dir, array $args): array {
-    $cmd = 'cd ' . escapeshellarg($dir) . ' && php ' . escapeshellarg('scripts/clitool.php');
-    foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string)$a); }
+    $inner = 'cd ' . escapeshellarg($dir) . ' && php ' . escapeshellarg('scripts/clitool.php');
+    foreach ($args as $a) { $inner .= ' ' . escapeshellarg((string)$a); }
+    // env -u: this driver runs with TIKNIX_WORKBENCH_DB set and exec() passes its
+    // environment down. The instance's own bootstrap honours that variable, so the QA
+    // users were created in the workbench.db — clitool said "created", the web app could
+    // not authenticate them, and the audit reported three login failures against a
+    // feature it never reached.
+    $cmd = 'env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg($inner);
     $out = []; $code = 0;
     exec($cmd . ' 2>&1', $out, $code);
     return ['ok' => $code === 0, 'out' => implode("\n", $out), 'code' => $code];

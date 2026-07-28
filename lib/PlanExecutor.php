@@ -446,9 +446,15 @@ class PlanExecutor {
             $run = 'cd ' . escapeshellarg($this->instanceDir) . ' && ' . $inner;
         }
         $logArg = escapeshellarg($log);
+        // Credentials follow the PERSON who owns this plan, not the project — the build
+        // agents must run as the same account the planner did. See app\AgentState.
+        $agentStateArg = escapeshellarg(
+            AgentState::resolve($this->planMemberId(), $this->engineName(), $this->instanceDir)
+        );
         return <<<BASH
 #!/bin/bash
 export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
+export TIKNIX_AGENT_STATE={$agentStateArg}
 export TIKNIX_PROJECT_ROOT="{$mainProjectRoot}"
 export TIKNIX_WORKSPACE="{$this->instanceDir}"
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=250000
@@ -583,6 +589,19 @@ MD;
 
     private function sessionAlive(string $session): bool {
         return $session !== '' && TmuxManager::exists($session);
+    }
+
+    /** The member this plan belongs to — whose credentials its agents run with. */
+    private function planMemberId(): int {
+        try {
+            $plan = R::load('workbenchtask', $this->planId);
+            return (int) ($plan->memberId ?? 0);
+        } catch (\Throwable $e) { return 0; }
+    }
+
+    /** The engine recorded for this instance by provisioning. */
+    private function engineName(): string {
+        return trim((string) @file_get_contents($this->instanceDir . '/.aibuilder/engine')) ?: 'claude';
     }
 
     /** jail-run.sh path when the instance is jailable, else '' (mirrors ClaudeRunner). */

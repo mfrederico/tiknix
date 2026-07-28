@@ -166,6 +166,11 @@ class PlanRunner {
         // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so plan-ingest.php's bootstrap writes the decomposed
         // plan to THAT db, not core's. INERT for core's own /workbench (env unset).
+        // Credentials follow the PERSON, not the project (app\AgentState). jail-run.sh
+        // binds whatever this names as the agent's ~/.claude.
+        $agentStateArg = escapeshellarg(
+            AgentState::resolve($this->memberId, $this->engine, $this->instanceDir)
+        );
         $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
             ? "export TIKNIX_WORKBENCH_DB=" . escapeshellarg($wsDbEnv) . "\n" : '';
@@ -173,6 +178,7 @@ class PlanRunner {
 #!/bin/bash
 # Tiknix headless planner (claude -p) — instance {$this->slug}
 export TIKNIX_MEMBER_ID={$this->memberId}
+export TIKNIX_AGENT_STATE={$agentStateArg}
 export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
 export TIKNIX_SESSION_NAME="{$this->sessionName}"
 export TIKNIX_PROJECT_ROOT="{$mainProjectRoot}"

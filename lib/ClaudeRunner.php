@@ -227,6 +227,11 @@ class ClaudeRunner {
         // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so the child's bootstrap writes task state THERE, not
         // core's db. INERT for core's own /workbench — the env is unset there. See bootstrap.php.
+        // Credentials follow the PERSON, not the project — see app\AgentState.
+        // The engine is recorded per instance by provisioning (.aibuilder/engine).
+        $ws       = rtrim($this->getProjectPath(), '/');
+        $engine   = trim((string) @file_get_contents($ws . '/.aibuilder/engine')) ?: 'claude';
+        $agentStateArg = escapeshellarg(AgentState::resolve((int) $this->memberId, $engine, $ws));
         $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
             ? 'export TIKNIX_WORKBENCH_DB=' . escapeshellarg($wsDbEnv) . "\n" : '';
@@ -240,6 +245,7 @@ class ClaudeRunner {
 # Export task ID for hooks and child processes
 export TIKNIX_TASK_ID={$this->taskId}
 export TIKNIX_MEMBER_ID={$this->memberId}
+export TIKNIX_AGENT_STATE={$agentStateArg}
 export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
 export TIKNIX_SESSION_NAME="{$sessionName}"
 export TIKNIX_PROJECT_ROOT="{$mainProjectRoot}"

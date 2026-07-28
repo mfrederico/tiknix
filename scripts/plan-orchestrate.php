@@ -24,12 +24,23 @@ $slug   = (string)($o['slug'] ?? '');
 $dir    = rtrim((string)($o['dir'] ?? ''), '/');
 $model  = (string)($o['model'] ?? 'sonnet');
 $level  = (int)($o['level'] ?? 50);
-$db     = (string)($o['db'] ?? (dirname(__DIR__) . '/database/tiknix.db'));
+// The orchestrator touches ONLY task data, and task data lives in the instance's own
+// data/workbench.db — the file its board reads. Defaulting to core's db meant it loaded
+// workbenchtask #1 out of CORE and tried to drive that: a plan id from one database used
+// as a primary key in another. It died on core's foreign keys, which was lucky; had the
+// ids lined up it would have quietly marked an unrelated task as building.
+//
+// Explicit first, and never a silent fall back to core's: --db, then the
+// TIKNIX_WORKBENCH_DB the launcher exports, then derived from the --dir we were given.
+$db = trim((string)($o['db'] ?? ''));
+if ($db === '') $db = trim((string)(getenv('TIKNIX_WORKBENCH_DB') ?: ''));
 
 if (!$planId || $slug === '' || $dir === '' || !is_dir($dir)) {
     fwrite(STDERR, "usage: --plan=<id> --slug=<slug> --dir=<instanceDir>\n");
     exit(1);
 }
+if ($db === '') $db = $dir . '/data/workbench.db';
+if (!is_file($db)) { fwrite(STDERR, "no tasks db at $db\n"); exit(1); }
 
 R::setup('sqlite:' . $db);
 R::freeze(false);

@@ -25,11 +25,31 @@ use RedBeanPHP\R;
 
 class ProjectContext {
 
-    /** The member's currently selected project, or null if none / no longer accessible. */
+    /** Where THIS browser's choice lives. See current(). */
+    private const SESSION_KEY = 'active_instance_id';
+
+    /**
+     * The member's currently selected project, or null if none / no longer accessible.
+     *
+     * SESSION FIRST, database second. The stored column is account-wide, so every browser,
+     * tab and headless process signed in as the same member shared one selection — and a
+     * background run picking a project silently moved someone working in another
+     * window onto it, mid-decompose. A choice made in one browser is now scoped to it.
+     *
+     * The column is kept as the REMEMBERED DEFAULT: a fresh session with no choice yet
+     * adopts it, so coming back tomorrow still lands you where you left off. That is the
+     * part worth keeping from the old behaviour; sharing a live cursor between sessions
+     * was not.
+     */
     public static function current(int $memberId): ?object {
         if ($memberId <= 0) return null;
-        $member = R::load('member', $memberId);
-        $id     = (int) ($member->activeInstanceId ?? 0);
+
+        $id = (int) ($_SESSION[self::SESSION_KEY] ?? 0);
+        if ($id <= 0) {
+            $member = R::load('member', $memberId);
+            $id     = (int) ($member->activeInstanceId ?? 0);
+            if ($id > 0) $_SESSION[self::SESSION_KEY] = $id;   // adopt the remembered default
+        }
         if ($id <= 0) return null;
 
         $inst = R::load('instance', $id);
@@ -42,19 +62,24 @@ class ProjectContext {
         return $inst;
     }
 
-    /** Select a project. Returns false if the member cannot access it. */
+    /**
+     * Select a project: authoritative for THIS session, and remembered for the next one.
+     */
     public static function set(int $memberId, int $instanceId): bool {
         $inst = R::load('instance', $instanceId);
         if (!$inst->id || !self::canAccess($memberId, $inst)) return false;
 
         $member = R::load('member', $memberId);
         if (!$member->id) return false;
-        $member->activeInstanceId = (int) $inst->id;
+
+        $_SESSION[self::SESSION_KEY] = (int) $inst->id;
+        $member->activeInstanceId    = (int) $inst->id;   // the default a NEW session adopts
         R::store($member);
         return true;
     }
 
     public static function clear(int $memberId): void {
+        unset($_SESSION[self::SESSION_KEY]);
         $member = R::load('member', $memberId);
         if (!$member->id) return;
         $member->activeInstanceId = null;

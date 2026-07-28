@@ -96,7 +96,7 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
     console.log(`        -> ${slug} (id ${created.data.id}), provisioning`);
   }
 
-  await page.waitForURL(/\/dashboard/, { timeout: 120_000 });
+  await page.waitForURL(/\/dashboard|\/sidecar\/app\//, { timeout: 120_000 });   // picking a project leads to the work surface, not back to the dashboard
   await hold(page);
 
   // The working copy has to exist before the planner can read it — that inventory is

@@ -77,7 +77,7 @@ test('a spec decomposes into a plan, and the plan lands in the project\'s own da
   const card = page.locator(`.proj-item:has-text("${slug}")`).first();
   await expect(card, `no project named ${slug} on the picker`).toBeVisible({ timeout: 30_000 });
   await card.locator('.proj-pick').click();
-  await page.waitForURL(/\/dashboard/, { timeout: 60_000 });
+  await page.waitForURL(/\/dashboard|\/sidecar\/app\//, { timeout: 60_000 });   // picking a project leads to the work surface, not back to the dashboard
 
   const before = queryTasksDb(slug, 'SELECT COALESCE(MAX(id),0) AS m FROM workbenchtask')[0] || { m: 0 };
   const baseline = Number(before.m || 0);

@@ -28,11 +28,95 @@ class Projects extends BaseControls\Control {
         usort($projects, fn($a, $b) => strcasecmp($a['name'], $b['name']));
 
         $current = ProjectContext::current($memberId);
+
+        // Where picking a project should DROP YOU. You came here to work, so the answer is
+        // the build surface, not the dashboard — the dashboard is where you land at login,
+        // and routing through it again means a second click to get to the thing you just
+        // chose a project for.
+        //
+        // Conditional, because /sidecar/app/workbench bounces to the dashboard with an
+        // error flash for a member without the feature. Sending someone to a door that
+        // turns them away is worse than the extra click.
+        $workUrl = $this->pluginUrl('workbench') ?: '/dashboard';
+
+        // The project you are ON gets its own row, with what it is actually doing. The
+        // grid answers "which one?"; this answers "how is it going?" — which is the
+        // question you have once you have already chosen.
+        $currentCard = null;
+        if ($current) {
+            foreach ($projects as $p) {
+                if ($p['id'] === (int) $current->id) { $currentCard = $p; break; }
+            }
+            if ($currentCard) {
+                $currentCard['build'] = $this->buildState((string) $current->slug, (string) ($current->app ?: 'tiknix'));
+                $currentCard['links'] = array_values(array_filter([
+                    ['url' => '/connections', 'label' => 'Connections', 'icon' => 'plug'],
+                    ($u = $this->pluginUrl('pipelines')) ? ['url' => $u, 'label' => 'Pipelines', 'icon' => 'diagram-2'] : null,
+                    ($u = $this->pluginUrl('workbench')) ? ['url' => $u, 'label' => 'Builder', 'icon' => 'hammer'] : null,
+                ]));
+            }
+        }
+
         $this->render('projects/index', [
-            'title'     => 'Projects',
-            'projects'  => $projects,
-            'currentId' => $current ? (int) $current->id : 0,
+            'title'       => 'Projects',
+            'projects'    => $projects,
+            'currentId'   => $current ? (int) $current->id : 0,
+            'currentCard' => $currentCard,
+            'workUrl'     => $workUrl,
         ]);
+    }
+
+    /** A sidecar's launch URL, or '' when this member cannot open it. */
+    private function pluginUrl(string $name): string {
+        if (!class_exists('\\app\\Sidecar\\Registry')) return '';
+        if (!isset(\app\Sidecar\Registry::launchable()[$name])) return '';
+        return \app\Feature::isEnabled($name, (int) $this->member->id, (int) $this->member->level)
+            ? '/sidecar/app/' . $name : '';
+    }
+
+    /**
+     * What the selected project's builder is doing, read from that project's OWN
+     * workbench.db — the file the task board reads.
+     *
+     * Read-only, with a plain PDO rather than RedBean: this is a web request whose
+     * connection belongs to core, and pointing the ORM at another database mid-request to
+     * read three numbers is how plans ended up written to the wrong one twice today.
+     * Every failure is silent by design — a project with no builds yet has no file, and
+     * that is not an error worth showing anyone.
+     */
+    private function buildState(string $slug, string $app): array {
+        $out = ['plan' => '', 'status' => '', 'done' => 0, 'total' => 0, 'running' => [], 'at' => ''];
+        $file = '/var/www/html/default/' . $slug . '.' . $app . '/data/workbench.db';
+        if (!is_file($file)) return $out;
+
+        try {
+            $pdo = new \PDO('sqlite:' . $file);
+            $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+            $plan = $pdo->query('SELECT id, title, plan_status, status, updated_at
+                                 FROM workbenchtask WHERE parent_task_id IS NULL
+                                 ORDER BY id DESC LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
+            if (!$plan) return $out;
+
+            $out['plan']   = (string) $plan['title'];
+            $out['status'] = (string) ($plan['plan_status'] ?: $plan['status']);
+            $out['at']     = (string) ($plan['updated_at'] ?? '');
+
+            $st = $pdo->prepare('SELECT status, COUNT(*) c FROM workbenchtask
+                                 WHERE parent_task_id = ? GROUP BY status');
+            $st->execute([(int) $plan['id']]);
+            foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+                $out['total'] += (int) $row['c'];
+                if (preg_match('/merged|completed|done/i', (string) $row['status'])) $out['done'] += (int) $row['c'];
+            }
+
+            $st = $pdo->prepare('SELECT title FROM workbenchtask
+                                 WHERE parent_task_id = ? AND status = ? ORDER BY id LIMIT 3');
+            $st->execute([(int) $plan['id'], 'running']);
+            $out['running'] = array_map('strval', $st->fetchAll(\PDO::FETCH_COLUMN));
+        } catch (\Throwable $e) { /* no board yet, or mid-write; the row just shows less */ }
+
+        return $out;
     }
 
     /**

@@ -21,6 +21,87 @@ $fmt = function (string $iso): string {
 ?>
 <div class="container-fluid py-4" style="max-width:1200px">
 
+  <?php
+  /* The project you are ON, above the picker.
+     The grid answers "which one?"; this answers "how is it going?" — the question you
+     have once you have already chosen. Deliberately NOT one of the .proj-item cards: it
+     is a status row, not a thing to pick, and it carries no destructive action (delete
+     stays on the card below, in one place). */
+  if (!empty($currentCard)):
+      $cc = $currentCard;
+      $b  = $cc['build'] ?? [];
+      $pct = !empty($b['total']) ? (int) round(100 * (int) $b['done'] / (int) $b['total']) : 0;
+  ?>
+  <div class="card border-primary border-2 shadow-sm mb-4">
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-start gap-3">
+
+        <div class="flex-grow-1" style="min-width:16rem">
+          <div class="text-uppercase text-body-secondary fw-semibold" style="font-size:.65rem;letter-spacing:.08em">
+            Currently working on
+          </div>
+          <div class="d-flex align-items-baseline gap-2 flex-wrap">
+            <span class="fs-3 fw-bold"><?= htmlspecialchars($cc['name']) ?></span>
+            <code class="text-body-secondary"><?= htmlspecialchars($cc['slug']) ?></code>
+          </div>
+
+          <?php if (!empty($b['plan'])): ?>
+            <div class="mt-2">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="badge text-bg-<?= $b['status'] === 'done' ? 'success' : ($b['status'] === 'stalled' ? 'danger' : 'primary') ?>">
+                  <?= htmlspecialchars($b['status'] ?: 'draft') ?>
+                </span>
+                <span class="fw-semibold"><?= htmlspecialchars($b['plan']) ?></span>
+              </div>
+              <?php if (!empty($b['total'])): ?>
+                <div class="d-flex align-items-center gap-2 mt-2" style="max-width:26rem">
+                  <div class="progress flex-grow-1" style="height:.5rem" role="progressbar"
+                       aria-label="Build progress" aria-valuenow="<?= $pct ?>" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar<?= $b['status'] === 'done' ? ' bg-success' : '' ?>" style="width:<?= $pct ?>%"></div>
+                  </div>
+                  <span class="small text-body-secondary text-nowrap">
+                    <?= (int) $b['done'] ?>/<?= (int) $b['total'] ?> done
+                  </span>
+                </div>
+              <?php endif; ?>
+              <?php if (!empty($b['running'])): ?>
+                <div class="small text-body-secondary mt-1">
+                  <span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem" role="status"></span>
+                  now: <?= htmlspecialchars(implode(' · ', $b['running'])) ?>
+                </div>
+              <?php endif; ?>
+            </div>
+          <?php else: ?>
+            <div class="text-body-secondary small mt-2">No builds yet — open the Builder to start one.</div>
+          <?php endif; ?>
+
+          <div class="text-body-secondary small mt-2">
+            Last change <?= htmlspecialchars($fmt($cc['lastUpdate'])) ?>
+            <?php if ($cc['lastBy'] !== ''): ?> · <?= htmlspecialchars($cc['lastBy']) ?><?php endif; ?>
+            <?php if ($cc['hostedDomain'] !== ''): ?>
+              · <a href="https://<?= htmlspecialchars($cc['hostedDomain']) ?>" target="_blank" rel="noopener"><?= htmlspecialchars($cc['hostedDomain']) ?></a>
+            <?php endif; ?>
+          </div>
+        </div>
+
+        <div class="d-flex flex-column gap-2" style="min-width:12rem">
+          <button class="btn btn-primary proj-pick" data-id="<?= (int) $cc['id'] ?>" type="button">
+            Continue working
+          </button>
+          <div class="d-flex flex-wrap gap-1">
+            <?php foreach (($cc['links'] ?? []) as $l): ?>
+              <a href="<?= htmlspecialchars($l['url']) ?>" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-<?= htmlspecialchars($l['icon']) ?> me-1"></i><?= htmlspecialchars($l['label']) ?>
+              </a>
+            <?php endforeach; ?>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <?php endif; ?>
+
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
     <div>
       <h1 class="h4 fw-bold mb-0">Projects</h1>
@@ -202,6 +283,9 @@ $fmt = function (string $iso): string {
 <script>
 (function () {
   const csrf = <?= json_encode(csrf_token()) ?>;
+  // Picking a project leads INTO the work, not back to the dashboard. Falls back to the
+  // dashboard for a member without the build sidecar — see Projects::index.
+  const workUrl = <?= json_encode($workUrl ?? '/dashboard') ?>;
 
   // Client-side filter: the list is per-member and small, so a round trip per keystroke
   // would cost more than it saves.
@@ -238,7 +322,8 @@ $fmt = function (string $iso): string {
         headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'},
         body: new URLSearchParams({csrf_token: csrf, slug: slug, engine: eng}).toString()
       }).then(r => r.json()).then(function (j) {
-        // Created AND selected, so go straight to work rather than back to a list —
+        // Created AND selected, so go straight to work rather than back to a list — the
+        // button says "Create & work on it", and it should mean it —
         // unless it came out incomplete, in which case stop and say what is wrong. Being
         // whisked to the dashboard is how a half-made project goes unnoticed until the
         // first publish fails.
@@ -248,7 +333,7 @@ $fmt = function (string $iso): string {
           msg.textContent = j.data.warning;
           return;
         }
-        if (j && j.success) { window.location.href = '/dashboard'; return; }
+        if (j && j.success) { window.location.href = workUrl; return; }
         btn.disabled = false;
         msg.className = 'form-text text-danger';
         msg.textContent = (j && j.message) || 'Could not create the project.';
@@ -268,8 +353,8 @@ $fmt = function (string $iso): string {
         headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'},
         body: new URLSearchParams({csrf_token: csrf, id: btn.dataset.id}).toString()
       }).then(r => r.json()).then(function (j) {
-        // Straight to the dashboard: choosing a project is a means, not an end.
-        if (j && j.success) window.location.href = '/dashboard';
+        // Choosing a project is a means, not an end — go where the work is.
+        if (j && j.success) window.location.href = workUrl;
         else { btn.disabled = false; alert((j && j.message) || 'Could not select that project.'); }
       }).catch(function () { btn.disabled = false; alert('Network error.'); });
     });

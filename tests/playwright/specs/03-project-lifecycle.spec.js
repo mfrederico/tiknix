@@ -53,7 +53,7 @@ test('a project can be created from the picker, and creating it selects it', asy
   expect(project.id).toBeGreaterThan(0);
   expect(project.slug).toMatch(/^e2e/);
 
-  await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
+  await page.waitForURL(/\/dashboard|\/sidecar\/app\//, { timeout: 30_000 });   // picking a project leads to the work surface, not back to the dashboard
 
   // "Create and work on it" — so it must now be the selected project.
   await page.goto('/projects', { waitUntil: 'domcontentloaded' });

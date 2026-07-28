@@ -33,6 +33,10 @@ const { readRun } = require('../lib/global-setup');
 const BEAT = Number(process.env.DEMO_BEAT || 2500);
 const BUILD_MINUTES = Number(process.env.DEMO_BUILD_MINUTES || 30);
 const PROJECT_NAME = process.env.DEMO_PROJECT || 'scheduler';
+// Reuse an existing project instead of creating one. Needed because credentials are
+// per-project (see the preflight below): a fresh project cannot plan until someone has
+// logged in inside ITS jail, so re-takes point at the project already signed in.
+const REUSE = process.env.DEMO_USE_PROJECT || '';
 const GOAL = fs.readFileSync(path.join(__dirname, 'scheduler-goal.md'), 'utf8');
 
 /** Narrate to the terminal so you can follow the take without watching the browser. */
@@ -44,27 +48,38 @@ const hold = (page, ms = BEAT) => page.waitForTimeout(ms);
 test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   let slug = '';
 
-  // ---- 1. a new project -----------------------------------------------------
-  beat(1, `creating the project "${PROJECT_NAME}"`);
-  await page.goto('/projects', { waitUntil: 'domcontentloaded' });
-  await hold(page);
-
+  // ---- 1. the project ---------------------------------------------------------
   let created = null;
-  await page.route('**/projects/create', async route => {
-    const response = await route.fetch({ timeout: 300_000 });
-    created = await response.json().catch(() => null);
-    await route.fulfill({ response });
-  });
 
-  await page.getByRole('button', { name: 'New project' }).click();
-  await page.locator('#proj-new-slug').fill(PROJECT_NAME);
-  await hold(page, 1200);
-  await page.getByRole('button', { name: /create/i }).click();
+  if (REUSE) {
+    beat(1, `working on the existing project "${REUSE}"`);
+    await page.goto('/projects', { waitUntil: 'domcontentloaded' });
+    await hold(page);
+    const card = page.locator(`.proj-item:has-text("${REUSE}")`).first();
+    await expect(card, `no project on the picker matches "${REUSE}"`).toBeVisible({ timeout: 30_000 });
+    await card.locator('.proj-pick').click();
+    slug = REUSE;
+  } else {
+    beat(1, `creating the project "${PROJECT_NAME}"`);
+    await page.goto('/projects', { waitUntil: 'domcontentloaded' });
+    await hold(page);
 
-  await expect.poll(() => created !== null, { timeout: 300_000, message: 'the project was never created' }).toBe(true);
-  expect(created.success, `creating the project failed: ${created && created.message}`).toBe(true);
-  slug = String(created.data.slug);
-  console.log(`        -> ${slug} (id ${created.data.id}), provisioning`);
+    await page.route('**/projects/create', async route => {
+      const response = await route.fetch({ timeout: 300_000 });
+      created = await response.json().catch(() => null);
+      await route.fulfill({ response });
+    });
+
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.locator('#proj-new-slug').fill(PROJECT_NAME);
+    await hold(page, 1200);
+    await page.getByRole('button', { name: /create/i }).click();
+
+    await expect.poll(() => created !== null, { timeout: 300_000, message: 'the project was never created' }).toBe(true);
+    expect(created.success, `creating the project failed: ${created && created.message}`).toBe(true);
+    slug = String(created.data.slug);
+    console.log(`        -> ${slug} (id ${created.data.id}), provisioning`);
+  }
 
   await page.waitForURL(/\/dashboard/, { timeout: 120_000 });
   await hold(page);
@@ -78,6 +93,21 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   }
   expect(fs.existsSync(`${dir}/public/index.php`), `${dir} was never provisioned`).toBe(true);
   console.log('        -> provisioned');
+
+  // PREFLIGHT. Claude credentials are stored PER PROJECT
+  // (<instance>/.aibuilder/state/claude/.credentials.json — jail-run.sh binds that dir as
+  // the agent's ~/.claude), so a brand-new project cannot plan until someone has logged
+  // in inside ITS jail. Without this check the planner starts, dies in one second with
+  // "Not logged in · Please run /login", and the board sits on "Decomposing…" until the
+  // poll gives up twenty minutes later — which is exactly how this was found. Fail here
+  // instead, and say what to do.
+  const creds = path.join(dir, '.aibuilder', 'state', 'claude', '.credentials.json');
+  expect(fs.existsSync(creds),
+    `${slug} has no Claude credentials, so the planner cannot run.\n` +
+    `  Open the Advanced Builder with this project selected and run /login in its terminal,\n` +
+    `  then re-run with DEMO_USE_PROJECT=${slug} to reuse it.\n` +
+    `  (expected: ${creds})`).toBe(true);
+  console.log('        -> credentials present');
 
   // ---- 2. hand it the spec --------------------------------------------------
   beat(2, 'opening the task board and pasting the spec');
@@ -96,6 +126,11 @@ test('Tiknix builds a shift scheduler from a spec', async ({ page }) => {
   await page.locator('#title').fill('Shift Manager');
   await page.locator('#description').fill(GOAL);
   await hold(page);
+
+  if (process.env.DEMO_REHEARSE && REUSE) {
+    console.log('\n[demo] REHEARSAL on a REUSED project — stopping before Decompose, deleting nothing.');
+    return;
+  }
 
   if (process.env.DEMO_REHEARSE) {
     // Everything up to here is what a real take repeats; stopping now costs a project

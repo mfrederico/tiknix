@@ -108,10 +108,37 @@ try {
     if ($prev && $prev->id) $replanOf = (int) $prev->id;
 } catch (\Throwable $e) { /* column absent until the first remediation */ }
 
+// The prompt this plan was decomposed FROM. .aibuilder/plan-goal.md holds the exact goal
+// the planner was given — the human's ask, or for a re-plan the ask PLUS the failure
+// report PlanRemediator appended. Both files are per-instance and are overwritten by the
+// next decompose, so the one thing you most want when a plan looks wrong is gone by the
+// time you go looking. Captured here, at the moment it still describes THIS plan.
+$goalText = '';
+$goalSrc  = $dir . '/.aibuilder/plan-goal.md';
+if (is_file($goalSrc)) $goalText = trim((string) @file_get_contents($goalSrc));
+
 try {
     $res = PlanIngestor::ingest($inst, $plan, $member, '', $app);
+    $planId = (int) $res['parent']['id'];
+
+    if ($goalText !== '') {
+        $p = R::load('workbenchtask', $planId);
+        $p->planGoal = $goalText;
+        R::store($p);
+    }
+    // The FULL brief (goal + the instance's reuse inventory) is 19KB of mostly
+    // per-instance boilerplate, so it is snapshotted to disk rather than stored per
+    // plan in the tasks db — it shapes what the planner proposes, so it is worth
+    // keeping, just not worth duplicating into every row.
+    $reqSrc = $dir . '/.aibuilder/plan-request.md';
+    if (is_file($reqSrc)) {
+        $snapDir = $dir . '/.aibuilder/plans/' . $planId;
+        if ((is_dir($snapDir) || @mkdir($snapDir, 0775, true)) && !@copy($reqSrc, $snapDir . '/plan-request.md')) {
+            fwrite(STDERR, "[ingest] warning: could not snapshot the planner brief to $snapDir\n");
+        }
+    }
     if ($replanOf > 0) {
-        $newParent = R::load('workbenchtask', (int) $res['parent']['id']);
+        $newParent = R::load('workbenchtask', $planId);
         $newParent->replanOf = $replanOf;
         R::store($newParent);
         $old = R::load('workbenchtask', $replanOf);

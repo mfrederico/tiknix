@@ -30,6 +30,13 @@ class PlanRunner {
     private string $sessionName;
     /** Original task ids to remove after the produced plan is ingested (Consolidate feature). */
     private array $supersedeIds = [];
+    /**
+     * Straight-through mode: approve the produced plan and start building it the moment
+     * it is ingested, with no human click in between. OPT-IN per decompose — never
+     * remembered, never a default — because it lands agent-written code in the instance
+     * without anyone having read the plan first.
+     */
+    private bool $autoBuild = false;
 
     public function __construct(string $slug, string $instanceDir, int $memberId, int $memberLevel = 50, string $engine = 'claude') {
         $this->slug        = $slug;
@@ -72,8 +79,9 @@ class PlanRunner {
      * plan, and starts a detached tmux session running `claude -p`. Returns the
      * session name. Throws on setup failure.
      */
-    public function start(string $goal, array $supersedeIds = []): string {
+    public function start(string $goal, array $supersedeIds = [], bool $autoBuild = false): string {
         $this->supersedeIds = array_values(array_filter(array_map('intval', $supersedeIds)));
+        $this->autoBuild    = $autoBuild;
         if ($this->running()) {
             throw new \Exception('A planner is already running for this instance.');
         }
@@ -163,6 +171,11 @@ class PlanRunner {
         $supersedeArg = $this->supersedeIds
             ? ' --supersede=' . escapeshellarg(implode(',', $this->supersedeIds))
             : '';
+        // Straight-through: tell the ingest step to approve and build immediately. The
+        // member's level travels with it because the orchestrator stamps it onto the
+        // endpoints the plan creates — the person who opted in is the authority for
+        // what the build is allowed to expose.
+        $autoBuildArg = $this->autoBuild ? ' --autobuild=1 --level=' . (int)$this->memberLevel : '';
         // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so plan-ingest.php's bootstrap writes the decomposed
         // plan to THAT db, not core's. INERT for core's own /workbench (env unset).
@@ -193,7 +206,7 @@ echo "[planner] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
 # race-safe with the AI Builder browser poll (whichever wins ingests once).
 if [ -f {$planJsonArg} ]; then
   echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
-  php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg} 2>&1 | tee -a {$logArg}
+  php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg}{$autoBuildArg} 2>&1 | tee -a {$logArg}
 fi
 BASH;
     }

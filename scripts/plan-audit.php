@@ -233,16 +233,11 @@ function sweepOneDeferred($inst, string $dir, int $level): int {
         // Spawn the detached orchestrator (mirrors Firehose::startOrchestrator).
         // Escalate the final cap-cycle fix to opus; earlier cycles stay on sonnet.
         $model = ((int)$parent->auditCycle >= \app\AuditReporter::MAX_AUDIT_CYCLES) ? 'opus' : 'sonnet';
-        $session = 'tiknix-plan' . $planId . '-orchestrator';
-        if (!\app\TmuxManager::exists($session)) {
-            $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
-                 . ' --plan=' . $planId . ' --slug=' . escapeshellarg((string)$inst->slug)
-                 . ' --dir=' . escapeshellarg($dir) . ' --model=' . $model . ' --level=' . $level;
-            $ab = $dir . '/.aibuilder'; @mkdir($ab, 0775, true);
-            $sf = $ab . '/run-orchestrator.sh';
-            file_put_contents($sf, "#!/bin/bash\n" . $cmd . ' 2>&1 | tee ' . escapeshellarg($ab . '/orchestrator.log') . "\n");
-            @chmod($sf, 0755);
-            \app\TmuxManager::create($session, $sf, $dir);
+        // Was a hand-rolled copy of the launch block that did NOT export
+        // TIKNIX_WORKBENCH_DB — so a deferred fix plan for an instance drove core's db.
+        // app\PlanOrchestrator is the one launcher and carries the tasks db through.
+        if (!\app\PlanOrchestrator::launch($planId, (string)$inst->slug, $dir, $level, $model)) {
+            alog("idle-sweep could NOT start the orchestrator for plan #$planId");
         }
         $err->taskId = $planId;
         $err->status = 'building';

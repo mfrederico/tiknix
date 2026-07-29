@@ -325,23 +325,14 @@ class Firehose extends Control {
     private function startOrchestrator(int $planId, $inst, int $level): bool {
         $app = $inst->app ?: 'tiknix';
         $dir = '/var/www/html/default/' . $inst->slug . '.' . $app;
-        if (\app\TmuxManager::exists('tiknix-plan' . $planId . '-orchestrator')) return true;
         // Escalate the FINAL cap-cycle fix to a stronger model. The audit->fix loop
         // gets MAX_AUDIT_CYCLES attempts; the last one is the last auto-shot before a
         // human takes over, so give it opus (the earlier, cheaper cycles stay sonnet).
         $auditCycle = (int)(Bean::load('workbenchtask', $planId)->auditCycle ?? 0);
         $model = ($auditCycle >= \app\AuditReporter::MAX_AUDIT_CYCLES) ? 'opus' : 'sonnet';
-        $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/plan-orchestrate.php')
-             . ' --plan=' . $planId
-             . ' --slug=' . escapeshellarg((string)$inst->slug)
-             . ' --dir='  . escapeshellarg($dir)
-             . ' --model=' . $model
-             . ' --level=' . $level;
-        $ab = $dir . '/.aibuilder';
-        @mkdir($ab, 0775, true);
-        $scriptFile = $ab . '/run-orchestrator.sh';
-        file_put_contents($scriptFile, "#!/bin/bash\n" . $cmd . ' 2>&1 | tee ' . escapeshellarg($ab . '/orchestrator.log') . "\n");
-        @chmod($scriptFile, 0755);
-        return \app\TmuxManager::create('tiknix-plan' . $planId . '-orchestrator', $scriptFile, $dir);
+        // This copy of the launcher used to omit the TIKNIX_WORKBENCH_DB export the
+        // sidecar's copy had, so a sweep-launched plan for an instance wrote its task
+        // state to core's db instead of the instance's. app\PlanOrchestrator carries it.
+        return \app\PlanOrchestrator::launch($planId, (string)$inst->slug, $dir, $level, $model);
     }
 }

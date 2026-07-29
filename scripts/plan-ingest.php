@@ -19,8 +19,9 @@ require __DIR__ . '/../vendor/autoload.php';
 
 use RedBeanPHP\R;
 use app\PlanIngestor;
+use app\PlanOrchestrator;
 
-$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::']);
+$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::', 'autobuild::', 'level::']);
 $slug   = (string)($o['slug'] ?? '');
 $dir    = rtrim((string)($o['dir'] ?? ''), '/');
 $member = (int)($o['member'] ?? 0);
@@ -46,6 +47,11 @@ if ($tasksDb === '') $tasksDb = trim((string)(getenv('TIKNIX_WORKBENCH_DB') ?: '
 // Original task ids to remove ONCE the new (consolidated) plan is ingested — the
 // delete-and-replace half of the Consolidate feature. Runs only on success below.
 $supersede = array_values(array_filter(array_map('intval', explode(',', (string)($o['supersede'] ?? '')))));
+// Straight-through build: the member ticked "approve and build automatically" when they
+// decomposed, so the review gate is waived and the orchestrator starts the moment the
+// plan exists. Only ever set by PlanRunner from that explicit opt-in.
+$autoBuild = ((string)($o['autobuild'] ?? '')) === '1';
+$level     = (int)($o['level'] ?? 50);
 
 if ($slug === '' || $dir === '' || !$member) {
     fwrite(STDERR, "usage: --slug=<slug> --dir=<instanceDir> --member=<id> [--app=tiknix] [--db=<tasks db>]\n");
@@ -145,4 +151,52 @@ if ($supersede) {
     }
     echo "[ingest] superseded {$removed} original task(s)\n";
 }
+
+// ---------------------------------------------------------------------------
+// Straight-through: approve and build, no human click.
+//
+// The approval is recorded either way — the member DID approve, in advance, by ticking
+// the box — so the plan never sits in a state nobody chose. Only the build launch can
+// fail, and when it does the plan stays 'approved' with a loud reason: that is a plan
+// waiting for one Build click, not a plan silently doing nothing.
+// ---------------------------------------------------------------------------
+if ($autoBuild) {
+    $planId = (int) $res['parent']['id'];
+    $parent = R::load('workbenchtask', $planId);
+    $parent->planStatus = 'approved';
+    $parent->autoBuild  = 1;      // the board can say "this one was set to build itself"
+    $parent->updatedAt  = date('Y-m-d H:i:s');
+    R::store($parent);
+
+    // Pass $tasksDb EXPLICITLY. It is the path this script resolved and wrote the plan
+    // to; handing the launcher an env var instead would let the orchestrator write task
+    // state somewhere other than where the plan it is building actually lives.
+    $started = PlanOrchestrator::launch($planId, $slug, $dir, $level, 'sonnet', $tasksDb);
+
+    $note = R::dispense('tasklog');
+    $note->taskId     = $planId;
+    $note->memberId   = $member;
+    $note->logLevel   = $started ? 'info' : 'error';
+    $note->logType    = 'system';
+    $note->message    = $started
+        ? 'Auto-approved and started building (straight-through was requested at decompose).'
+        : 'Auto-approved, but the orchestrator could not be started — press Build to run it. See planner.log.';
+    $note->createdAt  = date('Y-m-d H:i:s');
+    R::store($note);
+
+    if ($started) {
+        $parent->planStatus = 'building';
+        $parent->status     = 'running';
+        $parent->updatedAt  = date('Y-m-d H:i:s');
+        R::store($parent);
+        echo "[ingest] auto-approved plan #{$planId} and started the build\n";
+    } else {
+        // Loud: the member asked for a build and there isn't one. Non-zero exit so the
+        // planner log ends on a failure rather than on the ingest success line above.
+        fwrite(STDERR, "[ingest] plan #{$planId} auto-approved but the orchestrator FAILED to start\n");
+        R::close();
+        exit(1);
+    }
+}
+
 R::close();

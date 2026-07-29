@@ -70,7 +70,12 @@ class PlanRemediator {
         }
 
         try {
-            $runner->start(self::buildGoal($goal, $parent, $failures));
+            // Carry the straight-through choice into the re-plan. Someone who said
+            // "don't stop and ask me" did not mean "…unless the first attempt fails",
+            // and a re-plan that quietly waits for a click is the one outcome that
+            // looks identical to nothing happening. Bounded either way: the replanOf
+            // chain still allows exactly one automatic attempt.
+            $runner->start(self::buildGoal($goal, $parent, $failures), [], !empty($parent->autoBuild));
         } catch (\Throwable $e) {
             return ['action' => 'escalate', 'why' => 'could not start the planner: ' . $e->getMessage()];
         }

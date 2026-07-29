@@ -85,6 +85,11 @@ const SYNONYMS = {
   builder: ['aibuilder'],
   pipeline: ['pipe', 'automation'],
   pipelines: ['pipe', 'automations'],
+  // The nav names these by what you DO with them (Build -> Deploy -> Data); the
+  // sidecars behind them still speak their own internal names. Both are honest, so
+  // the audit is told they mean the same thing rather than being made to fail.
+  deploy: ['publish', 'publisher', 'publishing'],
+  data: ['pipeline', 'pipelines', 'automation', 'automations'],
 };
 
 const norm = s => (s || '').replace(/\s+/g, ' ').trim();

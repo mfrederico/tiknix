@@ -35,18 +35,22 @@ class Feature {
             'blurb'     => 'A per-instance storefront + admin, with checkout via that instance\'s own Stripe. Runs as the shop.tiknix sidecar.',
             'min_level' => 100, // MEMBER and above — they own the instances that get a store
         ],
+        // Labels here MUST match the nav labels in conf/config.ini's [sidecar.*]
+        // sections: this catalog names the same plugins on the feature-toggle pages,
+        // and a toggle called "Publisher" governing a nav item called "Deploy" reads
+        // as two different things.
         'pipelines' => [
-            'label'     => 'Pipeline Editor',
+            'label'     => 'Data',
             'blurb'     => 'Build, edit, run + schedule deterministic pipelines in your instances. Runs as the pipelines.tiknix sidecar.',
             'min_level' => 100, // MEMBER and above — they own the instances whose pipelines they edit
         ],
         'publisher' => [
-            'label'     => 'Publisher',
+            'label'     => 'Deploy',
             'blurb'     => 'Decide where and how a project goes live. Publishing runs as a pipeline in the project itself, so it schedules and debugs like any other. Runs as the publisher.tiknix sidecar — deliberately outside the app, since a finished application should not ship its deployment tooling.',
             'min_level' => 100, // MEMBER and above — they own the projects they publish
         ],
         'workbench' => [
-            'label'     => 'AI Projects',
+            'label'     => 'Builder',
             'blurb'     => 'Plan, build + track AI-assisted development tasks per instance. Runs as the workbench.tiknix sidecar; each instance\'s task data lives in its own workbench.db.',
             'min_level' => 100, // MEMBER and above — they own the instances they build in
         ],

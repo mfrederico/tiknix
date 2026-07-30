@@ -82,6 +82,38 @@ foreach (glob($root . '/*.tiknix') ?: [] as $dir) {
 
 if (!$instances) { say($only !== '' ? "no instance '$only'" : 'no instances found'); exit(1); }
 
+// A sha from ANOTHER repo is the recurring mistake here, and it deserves one clear
+// answer rather than twelve confusing per-instance failures.
+//
+// Instances are clones of CORE. The sidecars (workbench, publisher, pipelines, explorer,
+// shop) are separate repositories AND single shared deployments — one publisher serves
+// every instance — so a fix committed there is already live everywhere the moment it
+// lands, and there is nothing to distribute. Cherry-picking its sha here cannot work: it
+// does not exist in the history these clones share.
+if ($pick !== '') {
+    $known = sh('git cat-file -e ' . escapeshellarg($pick), $coreDir);
+    if (!$known['ok']) {
+        say("$pick is not a commit in core (" . $coreDir . ").");
+        foreach (glob($root . '/*.tiknix') ?: [] as $other) {
+            if (realpath($other) === realpath($coreDir)) continue;
+            if (!is_dir($other . '/.git')) continue;
+            if (sh('git cat-file -e ' . escapeshellarg($pick), $other)['ok']) {
+                say('  It lives in ' . basename($other) . ', which is its own repository and a SINGLE');
+                say('  shared deployment — every instance already uses it. Nothing to push.');
+                exit(0);
+            }
+        }
+        say('  Not found in any repo here either. Check the sha.');
+        exit(1);
+    }
+    // Say what it touches, so "does this even apply to an instance?" is answerable
+    // before running anything rather than inferred from the wreckage afterwards.
+    $files = sh('git show --name-only --format= ' . escapeshellarg($pick), $coreDir);
+    $paths = array_values(array_filter(array_map('trim', explode("\n", $files['out']))));
+    if ($paths) say('touches: ' . implode(', ', array_slice($paths, 0, 8))
+        . (count($paths) > 8 ? ' +' . (count($paths) - 8) : '') . "\n");
+}
+
 say(count($instances) . ' instance(s)' . ($dryRun ? '   [DRY RUN — nothing will be changed]' : '') . "\n");
 
 $done = $skipped = $failed = 0;

@@ -119,6 +119,13 @@ if ($__loggedIn) {
           <?php /* AI Projects + AI Builder moved to the workbench.tiknix sidecar — listed under Plugins below (Feature-gated). */ ?>
           <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
           <a class="ui-nav-link<?= $__active('/integrations') ?>" href="/integrations"><i class="bi bi-diagram-3"></i> Integrations</a>
+          <?php /* Agent Setup is MCP configuration, so it follows the mcp GRANT rather than
+                   the admin heading it used to sit under — a granted member is not an admin,
+                   and filing their one tool under "Admin" says otherwise. Admins still see
+                   it: allows() is true for them without any switch being set. */ ?>
+          <?php if (\app\Feature::allows('mcp', (int)($member['id'] ?? 0), $__level)): ?>
+            <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
+          <?php endif; ?>
         <?php endif; ?>
 
         <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>
@@ -161,9 +168,7 @@ if ($__loggedIn) {
 
         <?php if ($__isAdmin): ?>
           <div class="ui-nav-heading">Admin</div>
-          <?php if (builder_tools_enabled()): ?>
-            <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
-          <?php else: /* inside an instance: read-only "what am I wired to" views */ ?>
+          <?php if (!builder_tools_enabled()): /* inside an instance: read-only "what am I wired to" views */ ?>
             <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
             <a class="ui-nav-link<?= $__active('/integrations') ?>" href="/integrations"><i class="bi bi-diagram-3"></i> Integrations</a>
           <?php endif; ?>

@@ -14,6 +14,7 @@ namespace app;
 
 use \Flight as Flight;
 use \Exception as Exception;
+use \app\Feature;
 use app\BaseControls\Control;
 use app\mcptools\ToolLoader;
 
@@ -22,6 +23,32 @@ class Agentsetup extends Control {
     private string $toolsDir;
     private string $hooksDir;
     private string $settingsFile;
+
+    /**
+     * May this member open Agent Setup and manage MCP servers?
+     *
+     * The same `mcp` grant that governs API keys and the tool list, deliberately not a
+     * flag of its own: this hub IS the MCP server/tool registry, so a separate switch
+     * would create a half-granted state — able to mint a key, unable to see the servers
+     * that key talks to.
+     *
+     * It replaces the ADMIN tier ONLY. Everything that writes executable PHP into
+     * mcptools/ or scripts/hooks/ still requires ROOT, and must: scripts/hooks holds
+     * security-sandbox.php, the PreToolUse control that confines agents. A grant is
+     * permission to configure MCP, never a promotion to editing the thing that contains
+     * the agents.
+     */
+    private function mayConfigure(): bool {
+        return Feature::allows('mcp', (int) $this->member->id, (int) $this->member->level);
+    }
+
+    private function denyConfigure(): void {
+        $this->logger->warning('Ungranted member attempted to reach Agent Setup', [
+            'member_id' => $this->member->id, 'member_level' => $this->member->level, 'feature' => 'mcp',
+        ]);
+        Flight::response()->status(403);
+        Flight::renderView('error/403', ['title' => '403 - Forbidden']);
+    }
 
     public function __construct() {
         parent::__construct();
@@ -35,7 +62,7 @@ class Agentsetup extends Control {
      * Main tabbed interface
      */
     public function index($params = []) {
-        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
+        if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
 
         $activeTab = $this->getParam('tab', 'servers');
         $isRoot = ($this->viewData['member']['level'] ?? 100) <= 1;
@@ -109,7 +136,7 @@ class Agentsetup extends Control {
      * Store new MCP server
      */
     public function storeServer($params = []) {
-        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
+        if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
 
         if (!$this->validatePost()) return;
 
@@ -145,7 +172,7 @@ class Agentsetup extends Control {
      * Update MCP server
      */
     public function updateServer($params = []) {
-        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
+        if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
 
         if (!$this->validatePost()) return;
 
@@ -175,7 +202,7 @@ class Agentsetup extends Control {
      * Delete MCP server
      */
     public function deleteServer($params = []) {
-        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
+        if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
 
         if (!$this->validatePost()) return;
 

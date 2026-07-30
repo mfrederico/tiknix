@@ -46,7 +46,9 @@ class Feature {
         // flag decouples the two: eligible from MEMBER up, but off until switched on.
         'mcp' => [
             'label'     => 'MCP Access',
-            'blurb'     => 'Issue API keys and manage MCP servers/tools. An API key authenticates tools/call against this instance, so this is programmatic access to its tools — grant it deliberately, per person.',
+            'blurb'     => 'Issue API keys, and open Agent Setup to manage MCP servers. An API key authenticates '
+                         . 'tools/call against this instance, so this is programmatic access to its tools — grant it '
+                         . 'deliberately, per person. Editing tool or hook CODE still requires ROOT and is not part of this grant.',
             'min_level' => 100, // MEMBER and above are ELIGIBLE; an admin still has to switch it on
         ],
         // Labels here MUST match the nav labels in conf/config.ini's [sidecar.*]

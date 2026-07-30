@@ -69,32 +69,41 @@ class TiknixHostedDriver implements PublishDriver {
     public const MAX_ALIASES = self::MAX_DOMAINS - 1;
 
     /**
-     * The host a customer's CNAME must point AT.
+     * The host a customer's CNAME must point AT: THIS PROJECT'S own hostname.
      *
-     * Read from core's url, never from app.baseurl. This class lives in core's lib but is
-     * loaded by the publisher SIDECAR, where app.baseurl is publisher.tiknix.com — telling
-     * someone to CNAME at the publisher would send their traffic to a host that proxies
-     * nothing. Same trap that pointed workspace .mcp.json at the wrong origin.
+     * Everything under the control plane already resolves to the same ingress —
+     * <slug>.tiknix.com is itself a CNAME to tiknix.com — and capricorn routes on the Host
+     * header, not on the name the DNS chain arrived through, so either would reach the
+     * container today. Naming the project's own hostname anyway is the difference between
+     * a coincidence and a contract: it is the conventional pattern, and it leaves us
+     * somewhere to move a single project later without every customer editing DNS.
+     * Pointing them at the apex would make that impossible without breaking everyone.
+     *
+     * The base is CORE's host, never app.baseurl — this class lives in core's lib but is
+     * loaded by the publisher SIDECAR, where app.baseurl is publisher.tiknix.com.
      */
-    public static function cnameTarget(): string {
-        $u = (string) (\Flight::get('sidecar.core_url') ?: \Flight::get('app.baseurl') ?: 'https://tiknix.com');
-        return (string) (parse_url($u, PHP_URL_HOST) ?: 'tiknix.com');
+    public static function cnameTarget(?string $slug = null): string {
+        $u    = (string) (\Flight::get('sidecar.core_url') ?: \Flight::get('app.baseurl') ?: 'https://tiknix.com');
+        $host = (string) (parse_url($u, PHP_URL_HOST) ?: 'tiknix.com');
+        $slug = trim((string) $slug);
+        return $slug !== '' ? $slug . '.' . $host : $host;
     }
 
     public static function fields(): array {
-        $target = self::cnameTarget();
+        // No instance in scope here, so the help defers to the banner above the fields,
+        // which knows THIS project's hostname. Naming a host here would mean guessing one.
         return [
             ['name' => 'domain', 'label' => 'Domain', 'type' => 'host', 'placeholder' => 'app.example.com',
-             'help' => 'Point a CNAME at ' . $target . ' first — the certificate is issued for this domain. '
-                     . 'This one is canonical: it becomes the site\'s own base URL.'],
+             'help' => 'Point a CNAME at this project\'s hostname (shown above) first — the certificate is '
+                     . 'issued for the domain you enter here. This one is canonical: it becomes the site\'s own base URL.'],
             // Extra hostnames the SAME container answers on. They get their own proxy entry
             // and their own certificate, but they do not change the site's base URL —
             // exactly one name has to be canonical or generated links contradict each other.
             ['name' => 'aliases', 'label' => 'Also answer on', 'type' => 'hostlist',
              'max' => self::MAX_ALIASES, 'placeholder' => "www.example.com\nexample.com",
              'help' => 'Optional. One per line, up to ' . self::MAX_ALIASES . ' more (' . self::MAX_DOMAINS
-                     . ' total). Each needs its own CNAME to ' . $target
-                     . ' and gets its own certificate. Links the site generates still use the domain above.'],
+                     . ' total). Each needs its own CNAME to the same hostname, and gets its own certificate. '
+                     . 'Links the site generates still use the domain above.'],
         ];
     }
 

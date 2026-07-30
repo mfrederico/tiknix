@@ -769,7 +769,12 @@ class ProxmoxDeploy {
     }
 
     private static function defaultDomain(string $slug): string {
-        $host = strtolower((string) (parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST) ?: 'tiknix.com'));
+        // CORE's host, not app.baseurl. Deploys are driven by the publisher SIDECAR, where
+        // app.baseurl is publisher.tiknix.com — so a blank domain field would have stood a
+        // container up on <slug>.publisher.tiknix.com, a name nothing resolves to and no
+        // certificate covers.
+        $src  = (string) (\Flight::get('sidecar.core_url') ?: \Flight::get('app.baseurl') ?: 'https://tiknix.com');
+        $host = strtolower((string) (parse_url($src, PHP_URL_HOST) ?: 'tiknix.com'));
         return $slug . '.' . $host;
     }
 

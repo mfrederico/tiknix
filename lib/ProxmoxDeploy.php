@@ -239,12 +239,32 @@ class ProxmoxDeploy {
             $steps[] = $cert['step'];
         }
 
-        $inst->ctVmid   = $vmid;
-        $inst->ctIp     = $addr;
-        $inst->ctDomain = $domain;
+        // Extra hostnames answer on the SAME container: one more proxy entry each, pointing
+        // at the same address, and one more certificate each. The primary stays canonical —
+        // BASE_URL is not touched — because exactly one name has to be authoritative or the
+        // links the site generates contradict the one you reached it on.
+        //
+        // An alias that fails does NOT fail the deploy. The site is already up on its
+        // primary domain; a mistyped alias is a DNS problem the customer fixes and
+        // re-publishes, not a reason to tear down a working container.
+        $aliases = self::aliasList($opts);
+        foreach ($aliases as $alias) {
+            $ap = self::writeProxy($alias, $addr);
+            $steps[] = $ap['ok'] ? $ap['step'] : 'alias ' . $alias . ' FAILED: ' . $ap['error'];
+            if ($ap['ok'] && !empty($opts['cert'])) {
+                $ac = self::ensureCert($alias);
+                $steps[] = 'alias ' . $alias . ': ' . $ac['step'];
+            }
+        }
+
+        $inst->ctVmid    = $vmid;
+        $inst->ctIp      = $addr;
+        $inst->ctDomain  = $domain;
+        $inst->ctAliases = $aliases ? json_encode(array_values($aliases)) : null;
         R::store($inst);
 
-        return ['ok' => true, 'vmid' => $vmid, 'ip' => $addr, 'domain' => $domain, 'steps' => $steps];
+        return ['ok' => true, 'vmid' => $vmid, 'ip' => $addr, 'domain' => $domain,
+                'aliases' => $aliases, 'steps' => $steps];
     }
 
     /**
@@ -395,6 +415,33 @@ class ProxmoxDeploy {
      * (last label), and determine_proxy reads /var/www/html/.proxy.<sname> — so
      * test1.tiknix.com is served from .proxy.test1.tiknix.
      */
+    /** Aliases as passed in opts, cleaned and capped by the driver that owns the rule. */
+    private static function aliasList(array $opts): array {
+        return \app\Publish\TiknixHostedDriver::normalizeAliases(
+            $opts['aliases'] ?? [], (string) ($opts['domain'] ?? '')
+        );
+    }
+
+    /** Aliases currently recorded on the instance. */
+    private static function storedAliases(object $inst): array {
+        $j = json_decode((string) ($inst->ctAliases ?? ''), true);
+        return is_array($j) ? array_values(array_filter(array_map('strval', $j))) : [];
+    }
+
+    /**
+     * Stop serving a hostname: delete its proxy file. capricorn resolves a request by
+     * reading .proxy.<name>, so removing the file is exactly "we no longer answer here".
+     * Returns false only when the file exists and cannot be removed.
+     */
+    private static function removeProxy(string $domain): bool {
+        $parts = explode('.', $domain);
+        if (count($parts) < 2) return true;
+        array_pop($parts);
+        $file = self::PROXY_DIR . '/.proxy.' . implode('.', $parts);
+        if (!is_file($file)) return true;
+        return @unlink($file);
+    }
+
     private static function writeProxy(string $domain, string $ip): array {
         $parts = explode('.', $domain);
         if (count($parts) < 2) return ['ok' => false, 'error' => 'domain needs at least one dot: ' . $domain];
@@ -415,17 +462,20 @@ class ProxmoxDeploy {
      * control plane has no hypervisor credentials at all, which the UI must show
      * differently from "configured but not deployed yet".
      *
-     * @return array{configured:bool, deployed:bool, vmid:int, ip:string, domain:string,
+     * @return array{configured:bool, deployed:bool, vmid:int, ip:string, domain:string, aliases:string[],
      *               status:string, uptime:int, memMb:int, diskMb:int, certExpires:string}
      */
     public static function status(object $inst): array {
-        $out = ['configured' => false, 'deployed' => false, 'vmid' => 0, 'ip' => '', 'domain' => '',
+        $out = ['configured' => false, 'deployed' => false, 'vmid' => 0, 'ip' => '', 'domain' => '', 'aliases' => [],
                 'status' => '', 'uptime' => 0, 'memMb' => 0, 'diskMb' => 0, 'certExpires' => ''];
 
         $pve = ProxmoxService::fromConfig();
         if (!$pve) return $out;
         $out['configured'] = true;
         $out['domain']     = (string) ($inst->ctDomain ?: '');
+        // Every other name this container answers on. Reported so the UI can show what is
+        // actually being served rather than only the canonical one.
+        $out['aliases']    = self::storedAliases($inst);
         $out['ip']         = (string) ($inst->ctIp ?: '');
         $out['vmid']       = (int) ($inst->ctVmid ?: 0);
         if ($out['vmid'] <= 0) return $out;
@@ -538,7 +588,35 @@ class ProxmoxDeploy {
         for ($i = 0; $i < 10 && (string) ($pve->ctStatus($node, $vmid)['status'] ?? '') !== 'stopped'; $i++) sleep(2);
         $pve->startCt($node, $vmid);
 
-        return ['ok' => true, 'steps' => ['rewrote boot command for CT ' . $vmid, 'restarted (volumes preserved)']];
+        $steps = ['rewrote boot command for CT ' . $vmid, 'restarted (volumes preserved)'];
+
+        // Reconcile the alias list on EVERY refresh, which is what makes "add another
+        // domain" just publishing again. Removing a name from the list removes its proxy
+        // entry too, so the list on the form is the truth rather than a log of everything
+        // ever typed. Certificates are left on disk: they cost nothing there and deleting
+        // one you might re-add burns a rate-limited issuance.
+        $addr    = (string) ($inst->ctIp ?: '');
+        $aliases = self::aliasList($opts);
+        $prev    = self::storedAliases($inst);
+        if ($addr !== '') {
+            foreach ($aliases as $alias) {
+                $ap = self::writeProxy($alias, $addr);
+                $steps[] = $ap['ok'] ? $ap['step'] : 'alias ' . $alias . ' FAILED: ' . $ap['error'];
+                if ($ap['ok'] && ($opts['cert'] ?? true)) {
+                    $ac = self::ensureCert($alias);
+                    $steps[] = 'alias ' . $alias . ': ' . $ac['step'];
+                }
+            }
+            foreach (array_diff($prev, $aliases) as $gone) {
+                $steps[] = self::removeProxy($gone)
+                    ? 'stopped serving ' . $gone
+                    : 'could not stop serving ' . $gone . ' (proxy file not writable)';
+            }
+        }
+        $inst->ctAliases = $aliases ? json_encode(array_values($aliases)) : null;
+        R::store($inst);
+
+        return ['ok' => true, 'aliases' => $aliases, 'steps' => $steps];
     }
 
     /**

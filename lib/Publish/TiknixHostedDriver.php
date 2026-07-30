@@ -64,10 +64,37 @@ class TiknixHostedDriver implements PublishDriver {
         ])];
     }
 
+    /** Max hostnames one container may answer on: the primary plus MAX_ALIASES. */
+    public const MAX_DOMAINS = 5;
+    public const MAX_ALIASES = self::MAX_DOMAINS - 1;
+
+    /**
+     * The host a customer's CNAME must point AT.
+     *
+     * Read from core's url, never from app.baseurl. This class lives in core's lib but is
+     * loaded by the publisher SIDECAR, where app.baseurl is publisher.tiknix.com — telling
+     * someone to CNAME at the publisher would send their traffic to a host that proxies
+     * nothing. Same trap that pointed workspace .mcp.json at the wrong origin.
+     */
+    public static function cnameTarget(): string {
+        $u = (string) (\Flight::get('sidecar.core_url') ?: \Flight::get('app.baseurl') ?: 'https://tiknix.com');
+        return (string) (parse_url($u, PHP_URL_HOST) ?: 'tiknix.com');
+    }
+
     public static function fields(): array {
+        $target = self::cnameTarget();
         return [
             ['name' => 'domain', 'label' => 'Domain', 'type' => 'host', 'placeholder' => 'app.example.com',
-             'help' => 'Point a CNAME at this control plane first — the certificate is issued for this domain.'],
+             'help' => 'Point a CNAME at ' . $target . ' first — the certificate is issued for this domain. '
+                     . 'This one is canonical: it becomes the site\'s own base URL.'],
+            // Extra hostnames the SAME container answers on. They get their own proxy entry
+            // and their own certificate, but they do not change the site's base URL —
+            // exactly one name has to be canonical or generated links contradict each other.
+            ['name' => 'aliases', 'label' => 'Also answer on', 'type' => 'hostlist',
+             'max' => self::MAX_ALIASES, 'placeholder' => "www.example.com\nexample.com",
+             'help' => 'Optional. One per line, up to ' . self::MAX_ALIASES . ' more (' . self::MAX_DOMAINS
+                     . ' total). Each needs its own CNAME to ' . $target
+                     . ' and gets its own certificate. Links the site generates still use the domain above.'],
         ];
     }
 
@@ -120,6 +147,33 @@ class TiknixHostedDriver implements PublishDriver {
         foreach (['cores', 'memory', 'rootfsGb', 'ip', 'gw', 'bridge', 'nameserver', 'image'] as $k) {
             if (isset($config[$k]) && $config[$k] !== '') $out[$k] = $config[$k];
         }
+        // Extra hostnames travel with every deploy AND every refresh, so adding one is
+        // just publishing again — there is no separate "add a domain" action to forget.
+        $out['aliases'] = self::normalizeAliases($config['aliases'] ?? null, (string) ($config['domain'] ?? ''));
         return $out;
+    }
+
+    /**
+     * Clean a submitted alias list: lowercase, de-duplicated, never the primary, capped.
+     *
+     * Capped HERE as well as in the form because the form is not the only way in — a
+     * pipeline step carries this config too, and a cap that only exists in the UI is a
+     * suggestion. Each extra name costs a certificate, and Let's Encrypt rate-limits
+     * duplicates, so an unbounded list would fail slowly and confusingly rather than
+     * being refused.
+     */
+    public static function normalizeAliases($raw, string $primary = ''): array {
+        if (is_string($raw)) $raw = preg_split('/[\s,]+/', $raw) ?: [];
+        if (!is_array($raw)) return [];
+        $primary = strtolower(trim($primary));
+        $out = [];
+        foreach ($raw as $h) {
+            $h = strtolower(trim((string) $h));
+            if ($h === '' || $h === $primary) continue;
+            if (!preg_match('/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/', $h)) continue;
+            $out[$h] = true;                       // key = dedupe
+            if (count($out) >= self::MAX_ALIASES) break;
+        }
+        return array_keys($out);
     }
 }

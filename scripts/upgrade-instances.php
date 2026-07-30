@@ -131,6 +131,27 @@ foreach ($instances as $slug => $meta) {
         // ask git directly whether the patch is already an ancestor by content.
         $has = sh('git cherry HEAD ' . escapeshellarg($pick) . ' | grep -c "^+"', $dir);
         if ((int) $has['out'] === 0) { say("   already has $pick"); $skipped++; say(''); continue; }
+        // TRIMMED instances carry none of the control-plane tooling that moved into the
+        // sidecars. A commit that only MODIFIES files such an instance does not have is not
+        // a conflict to resolve — applying it would un-trim the instance, reversing a
+        // deliberate decision and adding machinery it will never run. Additions are left
+        // alone: a genuinely new file has nothing to be missing from, so that stays a
+        // judgement call rather than an automatic skip.
+        $ns = sh('git show --name-status --format= ' . escapeshellarg($pick), $coreDir);
+        $touch = [];
+        foreach (explode("\n", $ns['out']) as $line) {
+            $parts = preg_split('/\s+/', trim($line), 2);
+            if (count($parts) === 2 && $parts[0] !== '') $touch[$parts[1]] = $parts[0][0];
+        }
+        if ($touch && !array_filter($touch, fn($st) => $st === 'A')) {
+            $present = array_filter(array_keys($touch), fn($f) => file_exists($dir . '/' . $f));
+            if (!$present) {
+                say('   ! SKIPPED — this instance carries none of the files this commit touches '
+                  . '(trimmed of that tooling); applying it would un-trim it');
+                $skipped++; say(''); continue;
+            }
+        }
+
         say("   cherry-picking $pick (instance is $n commit(s) behind; not merging)");
     } else {
         if ($n === 0) { say("   already current"); $skipped++; say(''); continue; }

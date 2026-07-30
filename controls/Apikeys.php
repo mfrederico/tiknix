@@ -15,12 +15,37 @@ use app\BaseControls\Control;
 
 class Apikeys extends Control {
 
+    /** Minting an API key is an operator action. See the constructor. */
+    const ADMIN_LEVEL = 50;
+
     public function __construct() {
         parent::__construct();
 
         // Require login
         if (!Flight::isLoggedIn()) {
             Flight::redirect('/auth/login?redirect=' . urlencode(Flight::request()->url));
+            exit;
+        }
+
+        // ADMIN ONLY.
+        //
+        // Not because the page leaks: every method here is already scoped to the caller's
+        // own keys (index lists ownApikeyList; edit/delete/regenerate all refuse a key
+        // whose member_id is not yours). The restriction is about what a key IS — it
+        // authenticates `tools/call` against this instance's MCP endpoint, so issuing one
+        // hands out programmatic access to the instance's tools. That is an operator's
+        // decision, not a per-member convenience.
+        //
+        // Enforced HERE and not only by the authcontrol row, because that row is data: it
+        // can be edited, and a route with no row at all is reachable by default. The code
+        // gate holds either way.
+        if ((int) $this->member->level > self::ADMIN_LEVEL) {
+            $this->logger->warning('Non-admin attempted to reach API key management', [
+                'member_id' => $this->member->id, 'member_level' => $this->member->level,
+                'path' => Flight::request()->url,
+            ]);
+            Flight::response()->status(403);
+            Flight::renderView('error/403', ['title' => '403 - Forbidden']);
             exit;
         }
     }

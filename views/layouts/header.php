@@ -292,7 +292,13 @@ if ($__loggedIn) {
               <li><a class="dropdown-item" href="/dashboard"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
               <li><a class="dropdown-item" href="/member/profile"><i class="bi bi-person me-2"></i>Profile</a></li>
               <li><a class="dropdown-item" href="/member/settings"><i class="bi bi-gear me-2"></i>Settings</a></li>
-              <li><a class="dropdown-item" href="/apikeys"><i class="bi bi-key me-2"></i>API Keys</a></li>
+              <?php /* Admin-only: an API key authenticates MCP tools/call against this
+                       instance, so issuing one is an operator action (see controls/Apikeys).
+                       Hidden rather than shown-and-refused — a link that always 403s is
+                       just a worse error message. */ ?>
+              <?php if ($__isAdmin): ?>
+                <li><a class="dropdown-item" href="/apikeys"><i class="bi bi-key me-2"></i>API Keys</a></li>
+              <?php endif; ?>
               <li><a class="dropdown-item" href="/teams"><i class="bi bi-people me-2"></i>Teams</a></li>
               <li><hr class="dropdown-divider"></li>
               <li><a class="dropdown-item" href="/docs"><i class="bi bi-book me-2"></i>Documentation</a></li>

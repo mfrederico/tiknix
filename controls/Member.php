@@ -124,6 +124,18 @@ class Member extends Control {
     /**
      * Member settings
      */
+    /**
+     * May this member set Builder model preferences?
+     *
+     * Two conditions, both required. The tooling has to exist here at all
+     * (builder_tools_enabled() is false on a published app, which has no Builder), and
+     * the member has to be an admin — planning models are an operator's decision about
+     * what a build costs and how good it is, not a per-user display preference.
+     */
+    private function canUseBuilderPrefs(): bool {
+        return builder_tools_enabled() && (int) $this->member->level <= LEVELS['ADMIN'];
+    }
+
     public function settings($params = []) {
         $request = Flight::request();
         if ($request->method === 'POST') {
@@ -132,7 +144,12 @@ class Member extends Control {
             } else {
                 // AI engine/model tier preferences: enginepref[<engine>][<tier>] = <model>.
                 // Handled explicitly (validated + normalized) and skipped by the generic loop.
-                $prefs = $request->data->enginepref ?? null;
+                //
+                // Gated on the SAME condition that decides whether to offer them below.
+                // Hiding the fields in the view is not a gate — the POST handler is the
+                // gate, and a form field that is merely absent from the page can still be
+                // submitted by anyone who knows its name.
+                $prefs = $this->canUseBuilderPrefs() ? ($request->data->enginepref ?? null) : null;
                 if (is_array($prefs)) {
                     foreach ($prefs as $engine => $tiers) {
                         if (!is_array($tiers)) continue;
@@ -152,9 +169,16 @@ class Member extends Control {
 
         // Selectable engines + each member's effective tier map, for the AI prefs section.
         // Uses menu() (available engines) so a closed-beta engine we can't use is hidden.
+        //
+        // Only for people who actually have a Builder. Which model plans a build is a
+        // control-plane setting for the Builder sidecar; on a finished app it governs
+        // nothing its members can reach, so offering it there is a control that does
+        // nothing — and an invitation to change something they cannot see the effect of.
         $engines = [];
-        foreach (array_keys(EngineRegistry::menu()) as $eng) {
-            $engines[$eng] = MemberEnginePrefs::effective((int)$this->member->id, $eng);
+        if ($this->canUseBuilderPrefs()) {
+            foreach (array_keys(EngineRegistry::menu()) as $eng) {
+                $engines[$eng] = MemberEnginePrefs::effective((int)$this->member->id, $eng);
+            }
         }
         $this->viewData['ai_engines'] = $engines;
 

@@ -220,10 +220,14 @@
                         <a href="/member/profile" class="list-group-item list-group-item-action">View Profile</a>
                         <a href="/member/edit" class="list-group-item list-group-item-action">Edit Profile</a>
                         <a href="/member/dashboard" class="list-group-item list-group-item-action">Dashboard</a>
-                        <a href="/apikeys" class="list-group-item list-group-item-action">
-                            <i class="bi bi-key"></i> API Keys
-                        </a>
-                        <?php if ($member->level <= 50): ?>
+                        <?php /* API keys authenticate MCP tools/call against this instance, so
+                                 minting one is an operator action, not a member preference —
+                                 see the gate in controls/Apikeys. Grouped with the other
+                                 admin-only links rather than gated separately. */ ?>
+                        <?php if ($member->level <= LEVELS['ADMIN']): ?>
+                            <a href="/apikeys" class="list-group-item list-group-item-action">
+                                <i class="bi bi-key"></i> API Keys
+                            </a>
                             <a href="/admin/settings" class="list-group-item list-group-item-action">System Settings</a>
                         <?php endif; ?>
                     </div>

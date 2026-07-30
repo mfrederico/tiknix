@@ -222,7 +222,17 @@ class PermissionCache {
         self::$CACHE_KEY = null;
         self::$STATS_KEY = null;
 
-        Flight::get('log')->info('PermissionCache: Cache cleared (version: ' . $newVersion . ')');
+        // The cache is ALREADY cleared by this point — logging must never be the thing that
+        // makes clearing it fail. Flight's logger only exists once the web bootstrap has
+        // run, so any CLI that touches an authcontrol row reached this line via
+        // Model_Authcontrol::after_delete() and died on `null->info()`, after the row had
+        // been deleted: the work was done and the caller saw a fatal.
+        $msg = 'PermissionCache: Cache cleared (version: ' . $newVersion . ')';
+        try {
+            $log = Flight::get('log');
+            if ($log) { $log->info($msg); return; }
+        } catch (\Throwable $e) { /* no Flight bootstrap in this process */ }
+        error_log($msg);
     }
 
     /**

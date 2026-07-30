@@ -150,17 +150,47 @@ class Introspector {
         }
 
         // --- Models / tables -------------------------------------------------
-        $models = $this->models();
-        $out[] = '';
-        $out[] = '### Models / tables (' . count($models) . ') — reuse a bean before creating a near-duplicate';
-        foreach ($models as $m) {
+        //
+        // Split in two, because "everything in models/" is not one kind of thing. An
+        // instance is a clone of core, so it inherits core's OWN tables — the task board
+        // the build system writes into, the instance registry, the MCP log. Offering
+        // those under "reuse a bean before creating a near-duplicate" invites a planner to
+        // put a customer's domain data inside the build system's furniture, and at best
+        // costs it a paragraph explaining why it will not: a real plan here opened with
+        // "NEW beans are justified: grocerylist/workbenchtask are unrelated domains",
+        // which is reasoning the inventory should never have demanded.
+        //
+        // They are still LISTED, not hidden. A planner that cannot see `member` may well
+        // invent a second one, and a name collision on an existing table is worse than a
+        // paragraph of noise.
+        $appModels = $platform = [];
+        foreach ($this->models() as $m) {
+            if (self::isPlatformBean($m['name'])) $platform[] = $m;
+            else                                  $appModels[] = $m;
+        }
+
+        $describe = function (array $m) use ($maxColsPerModel): string {
             $cols = array_column($this->columns($m['table']), 'name');
             $colShown = array_slice($cols, 0, $maxColsPerModel);
             $colMore = count($cols) > $maxColsPerModel ? ' +' . (count($cols) - $maxColsPerModel) : '';
             $rels = array_map(fn($r) => '→' . $r['belongsTo'], $this->relations($m['table']));
             $relStr = $rels ? '  {rel: ' . implode(' ', $rels) . '}' : '';
             $colStr = $cols ? implode(', ', $colShown) . $colMore : '(no live table yet)';
-            $out[] = "- **{$m['name']}** — {$colStr}{$relStr}";
+            return "- **{$m['name']}** — {$colStr}{$relStr}";
+        };
+
+        $out[] = '';
+        $out[] = '### Models / tables (' . count($appModels) . ') — reuse a bean before creating a near-duplicate';
+        foreach ($appModels as $m) $out[] = $describe($m);
+
+        if ($platform) {
+            $out[] = '';
+            $out[] = '### Platform tables (' . count($platform) . ') — the build system\'s own. DO NOT store app data in these';
+            $out[] = 'These exist in every instance because an instance is a clone of the platform.'
+                   . ' They are the task board, the instance registry and their logs — infrastructure,'
+                   . ' not domain models. Never extend one to hold a feature\'s data, and never create a'
+                   . ' bean whose name collides with one. Listed only so you avoid both.';
+            $out[] = '- ' . implode(', ', array_map(fn($m) => '`' . $m['name'] . '`', $platform));
         }
 
         // --- Lib services ----------------------------------------------------
@@ -384,6 +414,28 @@ class Introspector {
             $out[] = ['name' => $base, 'path' => "controls/{$base}.php", 'line' => $classLine, 'methods' => $methods, 'doc' => $doc];
         }
         return $this->_ctrl = $out;
+    }
+
+    /**
+     * Beans that belong to the PLATFORM, not to the app being built.
+     *
+     * Every instance is a clone of core, so it ships core's own tables. These are the
+     * build system's furniture: the plan/task board that PlanExecutor writes into (which
+     * now lives in the instance's data/workbench.db but whose FUSE models still ship in
+     * models/ because core's plan pipeline drives them), the instance registry, and the
+     * MCP call log. An app must never store its domain data in any of them.
+     */
+    private const PLATFORM_BEANS = [
+        'workbenchtask', 'tasklog', 'taskcomment', 'tasksnapshot',   // the build system's task board
+        'instance',                                                   // the project registry
+        'mcplog',                                                     // MCP call log
+        'authcontrol',                                                // route permissions (seeded, not modelled)
+        'detectederror',                                              // firehose intake
+        'promptlog',                                                  // a member's prompt history
+    ];
+
+    private static function isPlatformBean(string $bean): bool {
+        return in_array(strtolower($bean), self::PLATFORM_BEANS, true);
     }
 
     private array $_models;

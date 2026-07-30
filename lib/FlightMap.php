@@ -124,13 +124,22 @@ Flight::map('defaultRoute', function($prefix = '') {
                 }
             } catch(\Throwable $e) {
                 // Catch both Exception and Error (PHP 7+)
-                Flight::get('log')->error("Controller error: ".$e->getMessage());
+                Flight::get('log')->error("Controller error: ".$e->getMessage(), [
+                    'controller' => $classname, 'method' => $function,
+                    'file' => $e->getFile(), 'line' => $e->getLine(),
+                ]);
                 // Ship to the control-plane firehose (self-gates: only a live,
                 // firehose-provisioned instance actually reports). Never throws.
                 if (class_exists('\\app\\ErrorReporter')) {
                     \app\ErrorReporter::capture($e, 'controller', ['controller' => $classname, 'method' => $function]);
                 }
-                Flight::notFound();
+                // A controller that THREW is a server error, not a missing page. This
+                // called notFound(), so a broken route answered "404 Page Not Found" —
+                // telling the visitor the thing they wanted does not exist, and telling
+                // every monitor and crawler the same. The route exists and the code is
+                // broken; those need different answers, and only one of them is worth
+                // paging somebody about. Flight's mapped error handler renders 500.
+                Flight::error($e);
             }
         } else {
             Flight::get('log')->warning("Permission denied: {$class}->{$function}");
@@ -326,6 +335,12 @@ Flight::map('error', function($ex) {
         $errorData['traceString'] = $ex->getTraceAsString();
     }
     
+    // SAY it is an error. Without this the 500 page went out with HTTP 200: a page reading
+    // "500 - Server Error" that every client, proxy, cache and uptime check was told had
+    // succeeded. Nothing upstream can distinguish a broken request from a working one, and
+    // an outage looks green on the dashboard — which is exactly how this survived unnoticed
+    // until a deleted controller started throwing.
+    Flight::response()->status(500);
     Flight::renderView('error/500', $errorData);
 });
 

@@ -88,8 +88,10 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Override get() - intercepts SELECT queries
      */
     public function get($sql, $bindings = array()) {
-        // Only cache SELECT queries, and NEVER schema ones — see isSchemaQuery().
-        if (!$this->enabled || !$this->isSelectQuery($sql) || $this->isSchemaQuery($sql)) {
+        // Only cache SELECT queries, and NEVER schema ones — see isSchemaQuery() — nor
+        // tables another host writes — see isCrossHostTable().
+        if (!$this->enabled || !$this->isSelectQuery($sql) || $this->isSchemaQuery($sql)
+            || $this->isCrossHostTable($sql)) {
             $result = parent::get($sql, $bindings);
             $this->maybeInvalidate($sql);
             return $result;
@@ -431,6 +433,29 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Caching them buys nothing anyway — they are cheap, and they are asked once per
      * bean type per process.
      */
+    /**
+     * Tables that a DIFFERENT host's process writes into this database.
+     *
+     * The cache prefix deliberately includes HTTP_HOST, so each site namespaces its own
+     * entries. That also means a sidecar (workbench.tiknix.com) writing a row into core's
+     * db CANNOT invalidate core's cached SELECT for it: invalidateTable() stamps a version
+     * under the writer's prefix, and core is reading under its own. The row is committed
+     * and correct; core just keeps serving the list it cached before the write.
+     *
+     * For `promptlog` that failure is precisely the complaint the feature exists to fix —
+     * you write a prompt and it appears to have vanished. So these reads are never cached.
+     * The cost is nothing: one small member-scoped table read on one page.
+     *
+     * Add a table here only when it is written by one host and read by another. Anything
+     * written and read by the same site invalidates correctly and should stay cached.
+     */
+    private function isCrossHostTable($sql): bool {
+        foreach ($this->extractTables($sql) as $t) {
+            if (strtolower($t) === 'promptlog') return true;
+        }
+        return false;
+    }
+
     private function isSchemaQuery($sql): bool {
         $s = strtolower(trim((string) $sql));
         if (strpos($s, 'pragma') === 0) return true;

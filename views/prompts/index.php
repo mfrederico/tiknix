@@ -86,9 +86,21 @@
                                             <span class="badge text-bg-light border"><?= htmlspecialchars((string) $r->instanceTag) ?></span>
                                         <?php endif; ?>
                                         <span class="text-body-secondary small"><?= htmlspecialchars((string) $r->createdAt) ?></span>
-                                        <?php if ((int) $r->planRef > 0): ?>
-                                            <a class="small ms-auto" target="_top"
-                                               href="/sidecar/app/workbench">what it became &rarr; plan #<?= (int) $r->planRef ?></a>
+                                        <?php if (!empty($r->planUid)): ?>
+                                            <?php /* Named by what it became, not by a row id: the title is what a
+                                                     person recognises, and the id is only meaningful inside that one
+                                                     project's database. planUid is the durable handle behind it. */ ?>
+                                            <span class="small ms-auto text-body-secondary">
+                                                became
+                                                <a target="_top" href="/sidecar/app/workbench"
+                                                   title="Plan <?= htmlspecialchars((string) $r->planUid) ?><?= (int) $r->planRef > 0 ? ' (#' . (int) $r->planRef . ' in this project)' : '' ?>">
+                                                    <?= htmlspecialchars((string) ($r->planTitle ?: 'a plan')) ?>
+                                                </a>
+                                            </span>
+                                        <?php elseif ((string) $r->source === 'decompose'): ?>
+                                            <span class="small ms-auto text-body-secondary" title="This goal was recovered from disk. Which plan it produced — if any — was not recorded at the time.">
+                                                <i class="bi bi-question-circle"></i> plan unknown
+                                            </span>
                                         <?php endif; ?>
                                     </div>
 

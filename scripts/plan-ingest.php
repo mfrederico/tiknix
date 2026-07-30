@@ -21,7 +21,7 @@ use RedBeanPHP\R;
 use app\PlanIngestor;
 use app\PlanOrchestrator;
 
-$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::', 'autobuild::', 'level::']);
+$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::', 'autobuild::', 'level::', 'prompt::']);
 $slug   = (string)($o['slug'] ?? '');
 $dir    = rtrim((string)($o['dir'] ?? ''), '/');
 $member = (int)($o['member'] ?? 0);
@@ -52,6 +52,9 @@ $supersede = array_values(array_filter(array_map('intval', explode(',', (string)
 // plan exists. Only ever set by PlanRunner from that explicit opt-in.
 $autoBuild = ((string)($o['autobuild'] ?? '')) === '1';
 $level     = (int)($o['level'] ?? 50);
+// The prompt-log row this decompose came from, so the goal you typed can be linked to the
+// plan it turned into. 0 for a re-plan or any decompose that predates the prompt log.
+$promptId  = (int)($o['prompt'] ?? 0);
 
 if ($slug === '' || $dir === '' || !$member) {
     fwrite(STDERR, "usage: --slug=<slug> --dir=<instanceDir> --member=<id> [--app=tiknix] [--db=<tasks db>]\n");
@@ -121,10 +124,17 @@ try {
     $res = PlanIngestor::ingest($inst, $plan, $member, '', $app);
     $planId = (int) $res['parent']['id'];
 
+    $parentBean = R::load('workbenchtask', $planId);
     if ($goalText !== '') {
-        $p = R::load('workbenchtask', $planId);
-        $p->planGoal = $goalText;
-        R::store($p);
+        $parentBean->planGoal = $goalText;
+        R::store($parentBean);
+    }
+    // Close the loop in the member's prompt log: the goal they typed now names the plan it
+    // became. Linked by planUid, not by row id — see PlanIngestor for why.
+    if ($promptId > 0) {
+        \app\PromptLog::linkPlan(
+            $promptId, (string) $parentBean->planUid, (string) $parentBean->title, $planId
+        );
     }
     // The FULL brief (goal + the instance's reuse inventory) is 19KB of mostly
     // per-instance boilerplate, so it is snapshotted to disk rather than stored per

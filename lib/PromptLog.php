@@ -93,11 +93,18 @@ class PromptLog {
             // instance", it is a reference to a row that cannot exist, and the insert fails.
             $iid = (int) ($p['instance_id'] ?? 0);
             $row->instanceId  = $iid > 0 ? $iid : null;
-            // What the prompt BECAME, when we know. Deliberately NOT named *_id: these are
-            // primary keys in the INSTANCE's own workbench.db, not in core, so letting
-            // RedBean infer a foreign key here would point it at a `plan` table that does
-            // not exist in this database and reject every write. A cross-database id is a
-            // reference we resolve ourselves, never a constraint the engine can enforce.
+            // What the prompt BECAME, when we know.
+            //
+            // planUid is the real handle: minted by PlanIngestor and unique for all time,
+            // so it still names the right plan after an instance's workbench.db has been
+            // rebuilt and the row ids reassigned. planRef/taskRef are kept only as a
+            // convenience for building a link within that one instance, and are
+            // deliberately NOT named *_id — RedBean's fluid mode reads that suffix as a
+            // foreign key and would constrain them against a `plan` table that does not
+            // exist in core. A cross-database id is a reference we resolve ourselves,
+            // never a constraint the engine can enforce.
+            $row->planUid     = mb_substr(trim((string) ($p['plan_uid'] ?? '')), 0, 64);
+            $row->planTitle   = mb_substr(trim((string) ($p['plan_title'] ?? '')), 0, 200);
             $row->planRef     = (int) ($p['plan_id'] ?? 0) ?: null;
             $row->taskRef     = (int) ($p['task_id'] ?? 0) ?: null;
             // Dedup key for harvested prompts (terminal), empty for ones we were handed.
@@ -118,18 +125,28 @@ class PromptLog {
         }
     }
 
-    /** Attach the plan a decompose produced, so the log links to what it became. */
-    public static function linkPlan(int $promptId, int $planId): void {
-        if ($promptId <= 0 || $planId <= 0) return;
+    /**
+     * Attach the plan a decompose produced, closing the loop between what you asked for
+     * and what it became. Called from plan-ingest.php once the plan exists.
+     *
+     * $planUid is the durable half and $planId only the local one — see record().
+     */
+    public static function linkPlan(int $promptId, string $planUid, string $planTitle = '', int $planId = 0): void {
+        if ($promptId <= 0 || $planUid === '') return;
         $restore = null;
         try {
             $restore = R::getDatabaseAdapter() ? 'default' : null;
             if (!R::hasDatabase('promptlog')) R::addDatabase('promptlog', 'sqlite:' . self::coreDb());
             R::selectDatabase('promptlog');
             $row = R::load('promptlog', $promptId);
-            if ($row->id) { $row->planRef = $planId; R::store($row); }
+            if ($row->id) {
+                $row->planUid   = mb_substr($planUid, 0, 64);
+                $row->planTitle = mb_substr(trim($planTitle), 0, 200);
+                if ($planId > 0) $row->planRef = $planId;
+                R::store($row);
+            }
         } catch (\Throwable $e) {
-            self::warn('could not link prompt ' . $promptId . ' to plan ' . $planId . ': ' . $e->getMessage());
+            self::warn('could not link prompt ' . $promptId . ' to plan ' . $planUid . ': ' . $e->getMessage());
         } finally {
             if ($restore) { try { R::selectDatabase($restore); } catch (\Throwable $e) {} }
         }

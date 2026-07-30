@@ -37,6 +37,11 @@ class PlanRunner {
      * without anyone having read the plan first.
      */
     private bool $autoBuild = false;
+    /**
+     * The prompt-log row this decompose came from, so ingest can link the plan back to the
+     * goal you typed. 0 when the caller did not record one (e.g. an automatic re-plan).
+     */
+    private int $promptId = 0;
 
     public function __construct(string $slug, string $instanceDir, int $memberId, int $memberLevel = 50, string $engine = 'claude') {
         $this->slug        = $slug;
@@ -79,9 +84,10 @@ class PlanRunner {
      * plan, and starts a detached tmux session running `claude -p`. Returns the
      * session name. Throws on setup failure.
      */
-    public function start(string $goal, array $supersedeIds = [], bool $autoBuild = false): string {
+    public function start(string $goal, array $supersedeIds = [], bool $autoBuild = false, int $promptId = 0): string {
         $this->supersedeIds = array_values(array_filter(array_map('intval', $supersedeIds)));
         $this->autoBuild    = $autoBuild;
+        $this->promptId     = max(0, $promptId);
         if ($this->running()) {
             throw new \Exception('A planner is already running for this instance.');
         }
@@ -176,6 +182,7 @@ class PlanRunner {
         // endpoints the plan creates — the person who opted in is the authority for
         // what the build is allowed to expose.
         $autoBuildArg = $this->autoBuild ? ' --autobuild=1 --level=' . (int)$this->memberLevel : '';
+        $promptArg    = $this->promptId > 0 ? ' --prompt=' . $this->promptId : '';
         // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so plan-ingest.php's bootstrap writes the decomposed
         // plan to THAT db, not core's. INERT for core's own /workbench (env unset).
@@ -206,7 +213,7 @@ echo "[planner] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
 # race-safe with the AI Builder browser poll (whichever wins ingests once).
 if [ -f {$planJsonArg} ]; then
   echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
-  php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg}{$autoBuildArg} 2>&1 | tee -a {$logArg}
+  php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg}{$autoBuildArg}{$promptArg} 2>&1 | tee -a {$logArg}
 fi
 BASH;
     }

@@ -62,6 +62,14 @@ class PlanIngestor
         $parent->engine         = $inst->engine;
         $parent->memberId       = $memberId;
         $parent->planCheckpoint = $checkpointTag;
+        // A plan's identity that does NOT depend on which database it lives in.
+        //
+        // Row ids are only unique inside one instance's workbench.db, and those files get
+        // rebuilt — discotuba's has been — so "plan #12" can later mean a different plan
+        // entirely. Anything outside this database that wants to name a plan (core's prompt
+        // log does) needs a handle that cannot be reassigned, and a foreign key cannot span
+        // the two databases anyway. Minted once, here, and never reused.
+        $parent->planUid        = bin2hex(random_bytes(8));
         $parent->planStatus     = 'draft';
         $parent->createdAt      = $now;
         // updatedAt is NOT optional: the task board sorts by it (order_by defaults to

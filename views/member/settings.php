@@ -224,10 +224,12 @@
                                  minting one is an operator action, not a member preference —
                                  see the gate in controls/Apikeys. Grouped with the other
                                  admin-only links rather than gated separately. */ ?>
-                        <?php if ($member->level <= LEVELS['ADMIN']): ?>
+                        <?php if (\app\Feature::allows('mcp', (int)$member->id, (int)$member->level)): ?>
                             <a href="/apikeys" class="list-group-item list-group-item-action">
                                 <i class="bi bi-key"></i> API Keys
                             </a>
+                        <?php endif; ?>
+                        <?php if ($member->level <= LEVELS['ADMIN']): ?>
                             <a href="/admin/settings" class="list-group-item list-group-item-action">System Settings</a>
                         <?php endif; ?>
                     </div>

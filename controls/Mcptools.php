@@ -20,6 +20,19 @@ class Mcptools extends Control {
     public function __construct() {
         parent::__construct();
         $this->toolsDir = dirname(__DIR__) . '/mcptools';
+
+        // Editing MCP tools is editing what an API key can DO. Gated by the same
+        // `mcp` grant as key issuing (see controls/Apikeys) so the two cannot drift
+        // apart: admins always, everyone else only once an admin switches it on.
+        if (!\app\Feature::allows('mcp', (int) $this->member->id, (int) $this->member->level)) {
+            $this->logger->warning('Ungranted member attempted to reach MCP tools', [
+                'member_id' => $this->member->id, 'member_level' => $this->member->level,
+                'feature'   => 'mcp',
+            ]);
+            \Flight::response()->status(403);
+            \Flight::renderView('error/403', ['title' => '403 - Forbidden']);
+            exit;
+        }
     }
 
     /**

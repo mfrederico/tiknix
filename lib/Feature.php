@@ -35,6 +35,20 @@ class Feature {
             'blurb'     => 'A per-instance storefront + admin, with checkout via that instance\'s own Stripe. Runs as the shop.tiknix sidecar.',
             'min_level' => 100, // MEMBER and above — they own the instances that get a store
         ],
+        // MCP is NOT a sidecar — it is core's own tooling (API keys, the server registry,
+        // the tool editor). It gets a flag for the same reason the plugins do: on the
+        // control plane these genuinely need to be available, but "available to whoever
+        // asks" and "available to whoever an admin grants it to" are different policies,
+        // and only the second is a decision anyone actually made.
+        //
+        // Level alone could not express this. At 50 the tooling was admin-or-nothing, so
+        // letting one member use it meant making them an administrator of everything. The
+        // flag decouples the two: eligible from MEMBER up, but off until switched on.
+        'mcp' => [
+            'label'     => 'MCP Access',
+            'blurb'     => 'Issue API keys and manage MCP servers/tools. An API key authenticates tools/call against this instance, so this is programmatic access to its tools — grant it deliberately, per person.',
+            'min_level' => 100, // MEMBER and above are ELIGIBLE; an admin still has to switch it on
+        ],
         // Labels here MUST match the nav labels in conf/config.ini's [sidecar.*]
         // sections: this catalog names the same plugins on the feature-toggle pages,
         // and a toggle called "Publisher" governing a nav item called "Deploy" reads
@@ -97,6 +111,36 @@ class Feature {
         if ($level !== null && !self::eligible($flag, (int) $level)) return false;
         return self::stored($memberId, $flag) === '1';
     }
+
+    /**
+     * May this member USE $flag? Admins always; everyone else needs the grant.
+     *
+     * isEnabled() answers "is the switch on", which is the right question for a nav item
+     * an admin has chosen for themselves. This answers "may they do it", which is the
+     * question a route gate asks — and the two differ for administrators: requiring an
+     * admin to grant themselves a flag before they can reach tooling they already
+     * administer is a lockout waiting to happen, not a security boundary. The boundary
+     * is the grant for everyone below them.
+     */
+    public static function allows(string $flag, $memberId = null, ?int $level = null): bool {
+        if ($memberId === null) {
+            $m = \Flight::getMember();
+            $memberId = (int) ($m->id ?? 0);
+            if ($level === null) $level = (int) ($m->level ?? 101);
+        }
+        if ($level !== null && (int) $level <= self::ADMIN_LEVEL) return true;
+        return self::isEnabled($flag, $memberId, $level);
+    }
+
+    /**
+     * ADMIN, as a literal rather than the LEVELS constant.
+     *
+     * LEVELS is defined by the web bootstrap, and this class is reached from CLIs too
+     * (the plan pipeline, seed scripts). Referencing it here made a gate that worked in a
+     * request and fatalled in a script — the sort of dependency that only shows up when
+     * something already went wrong. Mirrors TwoFactorAuth::REQUIRED_LEVELS.
+     */
+    private const ADMIN_LEVEL = 50;
 
     /** Turn a flag on or off for a member. No-op for unknown flags. */
     public static function setEnabled(string $flag, bool $on, int $memberId): void {

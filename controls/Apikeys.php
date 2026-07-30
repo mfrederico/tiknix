@@ -10,13 +10,11 @@ namespace app;
 
 use \Flight as Flight;
 use \app\Bean;
+use \app\Feature;
 use \Exception as Exception;
 use app\BaseControls\Control;
 
 class Apikeys extends Control {
-
-    /** Minting an API key is an operator action. See the constructor. */
-    const ADMIN_LEVEL = 50;
 
     public function __construct() {
         parent::__construct();
@@ -27,22 +25,27 @@ class Apikeys extends Control {
             exit;
         }
 
-        // ADMIN ONLY.
+        // GRANTED, not merely logged in.
         //
         // Not because the page leaks: every method here is already scoped to the caller's
         // own keys (index lists ownApikeyList; edit/delete/regenerate all refuse a key
         // whose member_id is not yours). The restriction is about what a key IS — it
         // authenticates `tools/call` against this instance's MCP endpoint, so issuing one
-        // hands out programmatic access to the instance's tools. That is an operator's
-        // decision, not a per-member convenience.
+        // hands out programmatic access to the instance's tools.
         //
-        // Enforced HERE and not only by the authcontrol row, because that row is data: it
-        // can be edited, and a route with no row at all is reachable by default. The code
-        // gate holds either way.
-        if ((int) $this->member->level > self::ADMIN_LEVEL) {
-            $this->logger->warning('Non-admin attempted to reach API key management', [
+        // A level check alone could not express the policy. Admin-or-nothing meant that
+        // letting one person use MCP required making them an administrator of everything.
+        // The `mcp` feature flag decouples those: admins always, and anyone else only
+        // once an admin has switched it on for them specifically.
+        //
+        // Enforced HERE and not only by the authcontrol row, because that row is data —
+        // it can be edited, and it has to sit at MEMBER for a grant to be reachable at
+        // all, so the code gate is what actually holds.
+        if (!Feature::allows('mcp', (int) $this->member->id, (int) $this->member->level)) {
+            $this->logger->warning('Ungranted member attempted to reach API key management', [
                 'member_id' => $this->member->id, 'member_level' => $this->member->level,
-                'path' => Flight::request()->url,
+                'feature'   => 'mcp',
+                'path'      => Flight::request()->url,
             ]);
             Flight::response()->status(403);
             Flight::renderView('error/403', ['title' => '403 - Forbidden']);

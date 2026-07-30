@@ -119,9 +119,6 @@ if ($__loggedIn) {
           <?php /* AI Projects + AI Builder moved to the workbench.tiknix sidecar — listed under Plugins below (Feature-gated). */ ?>
           <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
           <a class="ui-nav-link<?= $__active('/integrations') ?>" href="/integrations"><i class="bi bi-diagram-3"></i> Integrations</a>
-          <?php /* The prompts are the build history — see app\PromptLog. Sits in Workspace
-                   rather than under a project, because your prompts span every project. */ ?>
-          <a class="ui-nav-link<?= $__active('/prompts') ?>" href="/prompts"><i class="bi bi-chat-left-quote"></i> Prompt Log</a>
         <?php endif; ?>
 
         <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>

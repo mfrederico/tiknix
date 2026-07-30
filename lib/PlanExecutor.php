@@ -211,6 +211,19 @@ class PlanExecutor {
         $branch = (string)$t->worktreeBranch;
         $wtRel  = '.aibuilder/wt/task-' . (int)$t->id;
 
+        // Save what the agent actually DID before the worktree (and its log) are deleted.
+        //
+        // Every exit path below ends in cleanupWorktree(), which removes the directory
+        // holding .aibuilder/agent.log — so the evidence for a task disappeared at the
+        // exact moment the task finished. That hurt most for 'resolved': a task that
+        // changed nothing leaves no diff to inspect either, so all that survived was the
+        // words "nothing to change", with no way to tell a verification that genuinely
+        // passed from an agent that died on its first tool call. Both look identical.
+        //
+        // Called once here, at the top, because the agent has exited by the time we reap
+        // and every branch below leads to cleanup.
+        $this->captureAgentFindings($t, $wtRel);
+
         // The force-tracked SQLite DB is runtime state, not a build artifact. Discard
         // any writes the agent's app made to it in the worktree so plan branches never
         // carry (and merge-clobber) the binary DB. Intentional DB / permission changes
@@ -251,6 +264,73 @@ class PlanExecutor {
         else                                      $this->finish($t, 'failed', $merge['out']);
 
         $this->cleanupWorktree($wtRel, $branch, $merge['status'] === 'merged');
+    }
+
+    /**
+     * Persist an agent's own account of its work into tasklog, before the worktree goes.
+     *
+     * Two things are kept, and they answer different questions:
+     *
+     *   - the agent's CLOSING message — what it says it found. Useful, and not to be
+     *     taken on trust.
+     *   - a census of the tools it actually called — what it did, which is checkable.
+     *     A verification task claiming success with no browser calls in its census is
+     *     visibly a task that wrote about testing rather than testing, and that exact
+     *     failure has happened here: a subtask reported an end-to-end smoke test and had
+     *     committed a document instead.
+     *
+     * Best-effort by design: a missing or unreadable log must never change a task's
+     * outcome, so failures are noted in the row rather than raised.
+     */
+    private function captureAgentFindings($t, string $wtRel): void {
+        $log = $this->instanceDir . '/' . $wtRel . '/.aibuilder/agent.log';
+        if (!is_file($log)) return;
+
+        $fh = @fopen($log, 'r');
+        if (!$fh) { $this->logEvent($t, 'warning', 'Agent findings: could not open ' . basename($log)); return; }
+
+        $texts = [];       // rolling tail of assistant prose; only the last few are kept
+        $tools = [];       // tool name => call count
+        $lines = 0;
+        while (($line = fgets($fh)) !== false) {
+            $lines++;
+            $line = ltrim($line);
+            if ($line === '' || $line[0] !== '{') continue;
+            $o = json_decode($line, true);
+            if (!is_array($o)) continue;
+            $msg = $o['message'] ?? null;
+            if (!is_array($msg) || ($msg['role'] ?? '') !== 'assistant') continue;
+            foreach ((array) ($msg['content'] ?? []) as $c) {
+                if (!is_array($c)) continue;
+                if (($c['type'] ?? '') === 'text' && trim((string) $c['text']) !== '') {
+                    $texts[] = trim((string) $c['text']);
+                    if (count($texts) > 4) array_shift($texts);   // bounded: logs reach megabytes
+                } elseif (($c['type'] ?? '') === 'tool_use' && ($c['name'] ?? '') !== '') {
+                    $name = (string) $c['name'];
+                    $tools[$name] = ($tools[$name] ?? 0) + 1;
+                }
+            }
+        }
+        fclose($fh);
+
+        if (!$texts && !$tools) {
+            // An agent that produced neither prose nor a tool call did essentially nothing.
+            // Worth recording as such, because it is indistinguishable from success once
+            // the worktree is gone.
+            $this->logEvent($t, 'warning', "Agent findings: the log held no assistant output and no tool calls ({$lines} line(s)) — the agent may have failed to start.");
+            return;
+        }
+
+        arsort($tools);
+        $census = [];
+        foreach (array_slice($tools, 0, 12, true) as $name => $n) $census[] = $name . ' x' . $n;
+
+        $out  = "Agent findings (kept before the worktree was removed)\n\n";
+        $out .= "What it did — " . array_sum($tools) . " tool call(s): " . (implode(', ', $census) ?: 'none') . "\n\n";
+        if ($texts) {
+            $out .= "What it said, closing:\n" . mb_substr(implode("\n\n", $texts), -3000);
+        }
+        $this->logEvent($t, 'info', $out);
     }
 
     /** Merge a task branch into base; abort cleanly on conflict. */

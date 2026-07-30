@@ -55,6 +55,62 @@ class PromptLog {
     }
 
     /**
+     * Run $fn with RedBean pointed at CORE's db, then put it back exactly as it was.
+     *
+     * EVERY read and write here goes through this, not just the writes. The prompt log is
+     * displayed by the workbench sidecar, whose default connection is the INSTANCE's
+     * data/workbench.db — so a bare R::find('promptlog', …) there queries the wrong file
+     * and reports an empty history. Restoring the previous connection matters just as
+     * much: leaving a sidecar's ORM pointed at core is what put plans in the wrong
+     * database twice before.
+     */
+    /**
+     * Which database key RedBean is currently on, so we can put it back.
+     *
+     * RedBean keeps this in a private static with no accessor, so it is read by
+     * reflection. If that ever stops working the caller's connection would be silently
+     * left pointing at core — the exact class of bug that made plans land in the wrong
+     * database — so a failure is logged loudly rather than assumed away, and 'default'
+     * (RedBean's own name for the connection R::setup() creates) is used as the last
+     * resort so the ORM is at least never abandoned on core's db.
+     */
+    private static function currentKey(): string {
+        try {
+            $p = new \ReflectionProperty(R::class, 'currentDB');
+            $p->setAccessible(true);
+            $k = (string) $p->getValue();
+            if ($k !== '') return $k;
+        } catch (\Throwable $e) {
+            self::warn('cannot read RedBean\'s current database key (' . $e->getMessage()
+                . ') — restoring to "default"; if this instance uses another key, its ORM '
+                . 'may be left on core\'s db after a prompt-log call');
+        }
+        return 'default';
+    }
+
+    private static function withCore(callable $fn, $onError = null) {
+        $core = self::coreDb();
+        if (!is_file($core)) { self::$lastError = 'no core db at ' . $core; self::warn(self::$lastError); return $onError; }
+
+        $restore = self::currentKey();
+
+        try {
+            if (!R::hasDatabase('promptlog')) R::addDatabase('promptlog', 'sqlite:' . $core);
+            R::selectDatabase('promptlog');
+            R::freeze(false);
+            return $fn();
+        } catch (\Throwable $e) {
+            self::$lastError = $e->getMessage();
+            self::warn($e->getMessage());
+            return $onError;
+        } finally {
+            if ($restore !== null && $restore !== 'promptlog') {
+                try { R::selectDatabase($restore); } catch (\Throwable $e) { /* nothing to restore to */ }
+            }
+        }
+    }
+
+    /**
      * Record a prompt. Safe to call from core OR from a sidecar: it opens core's db as a
      * named connection and restores whatever database the caller was on, so it can never
      * leave a sidecar's RedBean pointed at core — the mistake that put plans in the wrong
@@ -72,16 +128,7 @@ class PromptLog {
         $source = (string) ($p['source'] ?? self::SOURCE_TASK);
         if (!isset(self::sources()[$source])) $source = self::SOURCE_TASK;
 
-        $restore = null;
-        try {
-            $core = self::coreDb();
-            if (!is_file($core)) { self::warn('no core db at ' . $core); return 0; }
-
-            $restore = R::getDatabaseAdapter() ? 'default' : null;
-            if (!R::hasDatabase('promptlog')) R::addDatabase('promptlog', 'sqlite:' . $core);
-            R::selectDatabase('promptlog');
-            R::freeze(false);
-
+        return (int) self::withCore(function () use ($p, $memberId, $source, $body) {
             $row = R::dispense('promptlog');
             $row->memberId    = $memberId;
             $row->source      = $source;
@@ -107,22 +154,10 @@ class PromptLog {
             $row->planTitle   = mb_substr(trim((string) ($p['plan_title'] ?? '')), 0, 200);
             $row->planRef     = (int) ($p['plan_id'] ?? 0) ?: null;
             $row->taskRef     = (int) ($p['task_id'] ?? 0) ?: null;
-            // Dedup key for harvested prompts (terminal), empty for ones we were handed.
             $row->extKey      = mb_substr(trim((string) ($p['ext_key'] ?? '')), 0, 120);
             $row->createdAt   = (string) ($p['created_at'] ?? date('Y-m-d H:i:s'));
-            $id = (int) R::store($row);
-
-            return $id;
-        } catch (\Throwable $e) {
-            // Remember it as well as logging it. A silent 0 here is how this page came to
-            // say "No prompts recorded yet" while ten writes in a row were failing — the
-            // emptiest possible screen and the most misleading. Callers surface it.
-            self::$lastError = $e->getMessage();
-            self::warn('could not record a prompt: ' . $e->getMessage());
-            return 0;
-        } finally {
-            if ($restore) { try { R::selectDatabase($restore); } catch (\Throwable $e) {} }
-        }
+            return (int) R::store($row);
+        }, 0);
     }
 
     /**
@@ -133,23 +168,15 @@ class PromptLog {
      */
     public static function linkPlan(int $promptId, string $planUid, string $planTitle = '', int $planId = 0): void {
         if ($promptId <= 0 || $planUid === '') return;
-        $restore = null;
-        try {
-            $restore = R::getDatabaseAdapter() ? 'default' : null;
-            if (!R::hasDatabase('promptlog')) R::addDatabase('promptlog', 'sqlite:' . self::coreDb());
-            R::selectDatabase('promptlog');
+        self::withCore(function () use ($promptId, $planUid, $planTitle, $planId) {
             $row = R::load('promptlog', $promptId);
-            if ($row->id) {
-                $row->planUid   = mb_substr($planUid, 0, 64);
-                $row->planTitle = mb_substr(trim($planTitle), 0, 200);
-                if ($planId > 0) $row->planRef = $planId;
-                R::store($row);
-            }
-        } catch (\Throwable $e) {
-            self::warn('could not link prompt ' . $promptId . ' to plan ' . $planUid . ': ' . $e->getMessage());
-        } finally {
-            if ($restore) { try { R::selectDatabase($restore); } catch (\Throwable $e) {} }
-        }
+            if (!$row->id) return null;
+            $row->planUid   = mb_substr($planUid, 0, 64);
+            $row->planTitle = mb_substr(trim($planTitle), 0, 200);
+            if ($planId > 0) $row->planRef = $planId;
+            R::store($row);
+            return null;
+        });
     }
 
     /**
@@ -160,18 +187,13 @@ class PromptLog {
      */
     public static function forMember(int $memberId, string $source = '', int $limit = 200): array {
         if ($memberId <= 0) return [];
-        try {
-            $sql = 'member_id = ?';
+        return (array) self::withCore(function () use ($memberId, $source, $limit) {
+            $sql  = 'member_id = ?';
             $args = [$memberId];
             if ($source !== '' && isset(self::sources()[$source])) { $sql .= ' AND source = ?'; $args[] = $source; }
             $sql .= ' ORDER BY created_at DESC, id DESC LIMIT ' . max(1, min(1000, $limit));
             return array_values(R::find('promptlog', $sql, $args));
-        } catch (\Throwable $e) {
-            // A missing table means nothing has been logged yet — that is an empty list,
-            // not an error worth shouting about. Anything else is.
-            if (!preg_match('/no such table/i', $e->getMessage())) self::warn('read failed: ' . $e->getMessage());
-            return [];
-        }
+        }, []);
     }
 
     /** Per-source counts for the filter chips. */
@@ -253,14 +275,14 @@ class PromptLog {
 
     /** uuids already imported, so a re-harvest is a no-op rather than a duplicate. */
     private static function knownExtKeys(int $memberId): array {
-        $out = [];
-        try {
+        return (array) self::withCore(function () use ($memberId) {
+            $out = [];
             foreach (R::find('promptlog', 'member_id = ? AND source = ? AND ext_key != ""',
                              [$memberId, self::SOURCE_TERMINAL]) as $row) {
                 $out[(string) $row->extKey] = true;
             }
-        } catch (\Throwable $e) { /* nothing imported yet */ }
-        return $out;
+            return $out;
+        }, []);
     }
 
     /**

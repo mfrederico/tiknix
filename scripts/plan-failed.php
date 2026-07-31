@@ -42,6 +42,8 @@ if (is_file($log)) {
     $why   = trim(implode(' | ', array_slice($lines, -3)));
 }
 if ($why === '') $why = 'the planner exited ' . $exitCode . ' without producing a plan (no output captured)';
+// Prefixed at the point of storage below, once we know whether this was a crash or the
+// stranger case of a clean exit with nothing to show for it.
 
 R::setup('sqlite:' . dirname(__DIR__) . '/database/tiknix.db');
 R::freeze(false);
@@ -49,6 +51,24 @@ if (!R::testConnection()) { fwrite(STDERR, "cannot open core db\n"); exit(1); }
 
 $row = R::load('promptlog', $promptId);
 if (!$row->id) { fwrite(STDERR, "no prompt #$promptId\n"); exit(1); }
+
+// DID IT ACTUALLY FAIL?
+//
+// The absence of a plan file is not the question — the file legitimately disappears when
+// the browser poll claims it first, so "no file" happens on the success path too. The
+// question is whether this prompt ended up with a plan. If it did, the decompose worked
+// and recording a failure would tell someone their goal never ran when it did, which is
+// precisely the false alarm this script was added and then caught causing.
+if (trim((string) $row->planUid) !== '') {
+    echo "[plan-failed] prompt #$promptId already has plan {$row->planUid} — not a failure, nothing recorded\n";
+    R::close();
+    exit(0);
+}
+
+// Exit 0 with no plan is ambiguous rather than clean: the planner claimed success and
+// produced nothing we can find. Say exactly that instead of implying a crash — the two
+// have very different causes (a plan written to the wrong tree looks like this).
+$ambiguous = ($exitCode === 0);
 
 // A rate limit is not this prompt's problem — it blocks every decompose, build and
 // terminal for this member until it resets. Recorded once, per member, so one banner
@@ -59,7 +79,9 @@ if ($limitUntil > 0) {
        . date('c', $limitUntil) . "\n";
 }
 
-$row->lastError     = mb_substr($why, 0, 500);
+$row->lastError     = mb_substr(($ambiguous
+    ? 'The planner exited cleanly but no plan arrived. Last output: '
+    : 'The planner failed (exit ' . $exitCode . '). Last output: ') . $why, 0, 500);
 $row->lastAttemptAt = date('Y-m-d H:i:s');
 // A planner that started and died is NOT still waiting for a free slot. Leaving it queued
 // would retry it against whatever killed it, on a timer, which for a session limit means

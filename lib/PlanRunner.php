@@ -190,7 +190,7 @@ class PlanRunner {
         $failedCmd    = $this->promptId > 0
             ? 'php ' . escapeshellarg($mainProjectRoot . '/scripts/plan-failed.php')
               . ' --prompt=' . $this->promptId . ' --dir=' . $wsArg
-              . ' --exit="${PIPESTATUS[0]}" 2>&1 | tee -a ' . $logArg
+              . ' --exit="$PLANNER_RC" 2>&1 | tee -a ' . $logArg
             : 'true';
         // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so plan-ingest.php's bootstrap writes the decomposed
@@ -216,7 +216,11 @@ export TIKNIX_WORKSPACE="{$ws}"
 
 echo "[planner] instance {$this->slug} starting \$(date)" | tee {$logArg}
 {$runBlock} 2>&1 | tee -a {$logArg}
-echo "[planner] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
+# Capture the PLANNER's exit immediately. PIPESTATUS holds only the most recent
+# pipeline, and several run below — reading it later reported the exit status of an
+# echo, which is always 0 and told us nothing about the planner.
+PLANNER_RC=\${PIPESTATUS[0]}
+echo "[planner] exit=\$PLANNER_RC \$(date)" | tee -a {$logArg}
 # Server-side ingest the moment the planner finishes, so the plan lands in the
 # Workbench with no browser tab needing to stay open. Atomic-claim makes this
 # race-safe with the AI Builder browser poll (whichever wins ingests once).
@@ -224,10 +228,13 @@ if compgen -G {$planGlobArg}"/*.plan.json" > /dev/null || [ -f {$planGlobArg}"/p
   echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
   php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg}{$autoBuildArg}{$promptArg} 2>&1 | tee -a {$logArg}
 else
-  # The planner finished WITHOUT a plan. Until this branch existed the only trace was
-  # this log file on disk, so the Prompts page went on saying "never ran" and someone
-  # who pressed the button learned nothing. Record why, against the prompt.
-  echo "[planner] no plan produced — recording the failure" | tee -a {$logArg}
+  # No plan file. That is NOT proof of failure, and treating it as one told a client
+  # their decompose had failed when it had in fact succeeded: the file legitimately
+  # disappears when the browser poll ingests it first, and it can be missing because it
+  # was written elsewhere entirely. So hand the planner's real exit status to
+  # plan-failed.php, which checks whether the prompt ended up with a plan before it
+  # records anything.
+  echo "[planner] no plan file after exit=\$PLANNER_RC — checking whether it really failed" | tee -a {$logArg}
   {$failedCmd}
 fi
 BASH;

@@ -31,7 +31,18 @@ log/*.log
 /projects/
 
 # AI Projects (workspace) sidecar: per-instance task data, owned by the sidecar, never tracked
-data/workbench.db
+# The whole directory, not just workbench.db — workspace.db lives here too, and anything
+# else the sidecar decides to keep is runtime state by definition.
+data/
+
+# The agent's own working directory: plan.json, the runner scripts, and state/<engine>/,
+# which is the credential home app\AgentState binds into the jail. Runtime state, and the
+# last place a token should be able to reach a commit.
+.aibuilder/
+
+# Playwright output.
+test-results/
+playwright-report/
 
 # IDE
 .idea/

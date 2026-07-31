@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "tiknix": {
+      "_comment": "RELATIVE on purpose. This file is tracked and therefore cloned into every instance, and each instance ships its own mcptools/mcp-fastmcp.php. An absolute path would point every instance's agent at CORE's codebase instead of its own — and inside the jail, core's tree is not bound at all, so it would not even resolve. The contract is that the client starts the server with its working directory at the project root.",
       "command": "php",
       "args": ["mcptools/mcp-fastmcp.php"]
     },

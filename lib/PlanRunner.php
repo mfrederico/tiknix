@@ -183,6 +183,13 @@ class PlanRunner {
         // what the build is allowed to expose.
         $autoBuildArg = $this->autoBuild ? ' --autobuild=1 --level=' . (int)$this->memberLevel : '';
         $promptArg    = $this->promptId > 0 ? ' --prompt=' . $this->promptId : '';
+        // Only meaningful when we know which prompt to blame; otherwise the failure
+        // has nowhere to be shown and the log remains the only record.
+        $failedCmd    = $this->promptId > 0
+            ? 'php ' . escapeshellarg($mainProjectRoot . '/scripts/plan-failed.php')
+              . ' --prompt=' . $this->promptId . ' --dir=' . $wsArg
+              . ' --exit="${PIPESTATUS[0]}" 2>&1 | tee -a ' . $logArg
+            : 'true';
         // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so plan-ingest.php's bootstrap writes the decomposed
         // plan to THAT db, not core's. INERT for core's own /workbench (env unset).
@@ -214,6 +221,12 @@ echo "[planner] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
 if [ -f {$planJsonArg} ]; then
   echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
   php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg}{$autoBuildArg}{$promptArg} 2>&1 | tee -a {$logArg}
+else
+  # The planner finished WITHOUT a plan. Until this branch existed the only trace was
+  # this log file on disk, so the Prompts page went on saying "never ran" and someone
+  # who pressed the button learned nothing. Record why, against the prompt.
+  echo "[planner] no plan produced — recording the failure" | tee -a {$logArg}
+  {$failedCmd}
 fi
 BASH;
     }

@@ -98,73 +98,6 @@ footer {
     color: var(--accent-color);
 }
 
-/* ===== Inspector-Style Layout ===== */
-.inspector-layout {
-    display: flex;
-    min-height: calc(100vh - 56px);
-}
-
-.inspector-sidebar {
-    width: 280px;
-    min-width: 280px;
-    background-color: var(--sidebar-bg);
-    border-right: 1px solid var(--sidebar-border);
-    padding: 1rem;
-    overflow-y: auto;
-}
-
-.inspector-main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.inspector-content {
-    flex: 1;
-    padding: 1.5rem;
-    overflow-y: auto;
-}
-
-.inspector-panels {
-    display: flex;
-    border-top: 1px solid var(--panel-border);
-    height: 200px;
-    min-height: 150px;
-}
-
-.inspector-panel {
-    flex: 1;
-    background-color: var(--panel-bg);
-    border-right: 1px solid var(--panel-border);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-.inspector-panel:last-child {
-    border-right: none;
-}
-
-.inspector-panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 1rem;
-    border-bottom: 1px solid var(--panel-border);
-    font-weight: 600;
-    font-size: 0.875rem;
-}
-
-.inspector-panel-body {
-    flex: 1;
-    padding: 0.75rem 1rem;
-    overflow-y: auto;
-    font-size: 0.875rem;
-    color: var(--muted-color);
-    font-style: italic;
-}
-
 /* ===== Sidebar Components ===== */
 .sidebar-section {
     margin-bottom: 1rem;
@@ -565,31 +498,6 @@ footer {
 [data-bs-theme="dark"] footer {
     background-color: var(--sidebar-bg);
     border-top: 1px solid var(--sidebar-border);
-}
-
-/* ===== Responsive ===== */
-@media (max-width: 992px) {
-    .inspector-layout {
-        flex-direction: column;
-    }
-
-    .inspector-sidebar {
-        width: 100%;
-        min-width: 100%;
-        border-right: none;
-        border-bottom: 1px solid var(--sidebar-border);
-    }
-
-    .inspector-panels {
-        flex-direction: column;
-        height: auto;
-    }
-
-    .inspector-panel {
-        border-right: none;
-        border-bottom: 1px solid var(--panel-border);
-        min-height: 150px;
-    }
 }
 
 /* ===== Print Styles ===== */

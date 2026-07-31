@@ -154,6 +154,9 @@ class PromptLog {
             $row->planTitle   = mb_substr(trim((string) ($p['plan_title'] ?? '')), 0, 200);
             $row->planRef     = (int) ($p['plan_id'] ?? 0) ?: null;
             $row->taskRef     = (int) ($p['task_id'] ?? 0) ?: null;
+            // Whether this decompose was submitted straight-through, so a re-run can
+            // reproduce the request instead of silently changing it.
+            $row->autoBuild   = !empty($p['auto_build']) ? 1 : 0;
             $row->extKey      = mb_substr(trim((string) ($p['ext_key'] ?? '')), 0, 120);
             $row->createdAt   = (string) ($p['created_at'] ?? date('Y-m-d H:i:s'));
             return (int) R::store($row);
@@ -194,6 +197,35 @@ class PromptLog {
             $sql .= ' ORDER BY created_at DESC, id DESC LIMIT ' . max(1, min(1000, $limit));
             return array_values(R::find('promptlog', $sql, $args));
         }, []);
+    }
+
+    /**
+     * One prompt, scoped to its owner — as a plain array, not a bean.
+     *
+     * Returning an array is deliberate: the caller is usually a sidecar whose RedBean
+     * connection points at an instance's workbench.db, and a live bean carries its
+     * database with it. An array cannot be accidentally re-saved to the wrong file.
+     *
+     * $memberId is REQUIRED and always applied. There is no "load any prompt" here: the
+     * whole point of this log is that nobody reads anybody else's.
+     */
+    public static function find(int $promptId, int $memberId): ?array {
+        if ($promptId <= 0 || $memberId <= 0) return null;
+        return self::withCore(function () use ($promptId, $memberId) {
+            $row = R::findOne('promptlog', 'id = ? AND member_id = ?', [$promptId, $memberId]);
+            if (!$row || !$row->id) return null;
+            return [
+                'id'           => (int) $row->id,
+                'source'       => (string) $row->source,
+                'title'        => (string) $row->title,
+                'body'         => (string) $row->body,
+                'instance_tag' => (string) $row->instanceTag,
+                'plan_uid'     => (string) $row->planUid,
+                'plan_ref'     => (int) $row->planRef,
+                'auto_build'   => !empty($row->autoBuild),
+                'created_at'   => (string) $row->createdAt,
+            ];
+        }, null);
     }
 
     /** Per-source counts for the filter chips. */

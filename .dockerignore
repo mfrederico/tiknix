@@ -14,8 +14,10 @@ storage/logs/*
 # connector's .ini can never leak into an image layer; keep only the examples.
 conf/*.ini
 !conf/*.example.ini
-# User data lives in mounted volumes, never in the image (would bake in files + go stale).
-uploads/
+# Runtime user data lives in mounted volumes, never in the image (would bake in files + go stale).
+# NOTE: secure/uploads is currently git-TRACKED (ships in the repo), so it is intentionally
+# NOT ignored here — it lands in the image as shipped content. If you decide secure uploads
+# are runtime data (persist via a volume), gitignore secure/uploads and add it below.
 public/uploads/
 public/store/
 data/

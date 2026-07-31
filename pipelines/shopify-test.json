@@ -1,0 +1,41 @@
+{
+    "slug": "shopify-test",
+    "name": "shopify-test",
+    "description": "Test shopify",
+    "expose_as_tool": false,
+    "expose_as_api": false,
+    "trigger": [],
+    "context_schema": {
+        "name": {
+            "type": "string",
+            "required": true
+        }
+    },
+    "steps": [
+        {
+            "name": "greet",
+            "type": "connection",
+            "config": {
+                "connector": "shopify",
+                "environment": "production",
+                "tool": "graphql",
+                "arguments": {
+                    "query": "query ShopName {\n\tshop {\n\t\tname\n    email\n    plan {\n      publicDisplayName\n    }\n\t}\n}"
+                }
+            },
+            "on_success": "goto:notify2",
+            "on_fail": "exit"
+        },
+        {
+            "name": "notify2",
+            "type": "notify",
+            "config": {
+                "to": "{context.mailto}",
+                "subject": "Testing - {pipeline_slug} :: {time.iso}",
+                "body": "Your current shop: {greet.data.shop.name} \nwhich is on {greet.data.shop.plan.publicDisplayName} \nand you can reach the owner who is {greet.data.shop.email}\n\nThis is for: {context.name}\nThe time is: {time.now}"
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        }
+    ]
+}

@@ -29,6 +29,29 @@ class PlanIngestor
         return @rename($planFile, $claim) ? $claim : null;
     }
 
+    /**
+     * Every unclaimed plan file in an instance, oldest first.
+     *
+     * There used to be exactly one name — plan.json — which meant two members planning the
+     * same shared instance at once silently overwrote each other (PlanRunner locks per
+     * MEMBER, not per instance, so both are allowed to run). Plans are now written under
+     * unique names and ingested one at a time.
+     *
+     * The bare plan.json is still matched so a plan written by an older planner, or one
+     * recovered by hand, is not stranded by this change.
+     */
+    public static function pending(string $instanceDir): array
+    {
+        $dir   = rtrim($instanceDir, '/') . '/.aibuilder';
+        $files = array_merge(
+            glob($dir . '/*.plan.json') ?: [],
+            is_file($dir . '/plan.json') ? [$dir . '/plan.json'] : []
+        );
+        // Oldest first: if two landed, the one that has been waiting longer goes first.
+        usort($files, fn($a, $b) => (int) @filemtime($a) <=> (int) @filemtime($b));
+        return $files;
+    }
+
     /** {title, subtasks:[...]} shape check. */
     public static function isValidPlan($plan): bool
     {

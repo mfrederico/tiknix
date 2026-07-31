@@ -53,10 +53,43 @@ class SubmitPlanTool extends BaseTool {
             'summary'  => (string)($args['summary'] ?? ''),
             'subtasks' => array_values($subtasks),
         ];
-        $dir = dirname(__DIR__) . '/.aibuilder';
-        if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        if (@file_put_contents($dir . '/plan.json', json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) {
-            return 'Error: could not write the plan file (.aibuilder/plan.json).';
+        // WHERE the plan goes is the planner's workspace, not this tool's install dir.
+        //
+        // dirname(__DIR__) is whichever MCP server answered the call. Over stdio that is
+        // the instance's own server and happens to be right; over HTTP it is CORE's
+        // gateway, and a plan for an instance was written into core's .aibuilder/ where
+        // that instance's ingest never looked. The planner exports TIKNIX_WORKSPACE, and a
+        // stdio server inherits it, so that is the authoritative answer.
+        //
+        // No workspace means we cannot know who this plan is for. REFUSE rather than
+        // guess: a plan written to the wrong tree is worse than one not written, because
+        // the planner reports success and the goal silently never arrives.
+        $ws = trim((string) getenv('TIKNIX_WORKSPACE'));
+        if ($ws === '' || !is_dir($ws)) {
+            return 'Error: submit_plan cannot tell which project this plan is for '
+                 . '(TIKNIX_WORKSPACE is not set). This tool must be called by the planner '
+                 . 'through the project\'s own MCP server, not over the shared HTTP gateway.';
+        }
+
+        // Stamp the target INTO the plan. A file that names its own instance can be routed
+        // or rejected if it ever turns up somewhere unexpected, instead of being an
+        // anonymous plan.json whose owner has to be worked out from timestamps.
+        $plan['instance']  = basename($ws);
+        $plan['member_id'] = (int) getenv('TIKNIX_MEMBER_ID');
+        $plan['written_at'] = date('c');
+
+        $dir = rtrim($ws, '/') . '/.aibuilder';
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
+            return 'Error: could not create ' . $dir;
+        }
+
+        // UNIQUE per plan. PlanRunner locks per member+instance, so two members sharing an
+        // instance can plan at the same time — with one fixed plan.json the second write
+        // clobbered the first and a whole decomposition vanished with no error anywhere.
+        $file = $dir . '/' . $plan['member_id'] . '-' . date('Ymd-His') . '-'
+              . substr(bin2hex(random_bytes(4)), 0, 6) . '.plan.json';
+        if (@file_put_contents($file, json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) {
+            return 'Error: could not write the plan file (' . basename($file) . ').';
         }
         return 'Plan received: "' . $title . '" with ' . count($subtasks) . ' task(s). Reply PLAN_WRITTEN — the operator can now review and execute it.';
     }

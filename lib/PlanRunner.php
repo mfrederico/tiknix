@@ -69,7 +69,8 @@ class PlanRunner {
     public function running(): bool { return TmuxManager::exists($this->sessionName); }
 
     /** True once the planner has produced a plan file for ingest. */
-    public function planReady(): bool { return is_file($this->planFile()); }
+    /** True once the planner has produced a plan for ingest (any pending file). */
+    public function planReady(): bool { return PlanIngestor::pending($this->instanceDir) !== []; }
 
     /** Last N lines of the planner log for the UI. */
     public function logTail(int $lines = 40): string {
@@ -171,7 +172,8 @@ class PlanRunner {
 
         $logArg     = escapeshellarg($log);
         $ingestArg  = escapeshellarg($mainProjectRoot . '/scripts/plan-ingest.php');
-        $planJsonArg = escapeshellarg($ws . '/.aibuilder/plan.json');
+        // Match the unique names SubmitPlanTool writes, and the legacy plan.json.
+        $planGlobArg = escapeshellarg($ws . '/.aibuilder');
         $slugArg    = escapeshellarg($this->slug);
         $wsArg      = escapeshellarg($ws);
         $supersedeArg = $this->supersedeIds
@@ -218,7 +220,7 @@ echo "[planner] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
 # Server-side ingest the moment the planner finishes, so the plan lands in the
 # Workbench with no browser tab needing to stay open. Atomic-claim makes this
 # race-safe with the AI Builder browser poll (whichever wins ingests once).
-if [ -f {$planJsonArg} ]; then
+if compgen -G {$planGlobArg}"/*.plan.json" > /dev/null || [ -f {$planGlobArg}"/plan.json" ]; then
   echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
   php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg}{$autoBuildArg}{$promptArg} 2>&1 | tee -a {$logArg}
 else

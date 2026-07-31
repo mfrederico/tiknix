@@ -62,8 +62,15 @@ if ($slug === '' || $dir === '' || !$member) {
 }
 if ($tasksDb === '') $tasksDb = $dir . '/data/workbench.db';
 
-$planFile = $dir . '/.aibuilder/plan.json';
-if (!is_file($planFile)) { echo "[ingest] no plan.json — nothing to ingest\n"; exit(0); }
+// Every plan waiting in this instance, oldest first. Plans carry unique names now
+// (see SubmitPlanTool) because two members sharing an instance could both be planning,
+// and one fixed filename meant the second silently clobbered the first.
+$pending = PlanIngestor::pending($dir);
+if (!$pending) { echo "[ingest] no plan file — nothing to ingest\n"; exit(0); }
+$planFile = $pending[0];
+if (count($pending) > 1) {
+    echo '[ingest] ' . count($pending) . " plans waiting; taking the oldest, the rest follow on the next run\n";
+}
 
 R::setup('sqlite:' . $registryDb);
 R::freeze(false);

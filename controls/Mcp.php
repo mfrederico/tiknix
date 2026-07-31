@@ -392,6 +392,18 @@ class Mcp extends BaseControls\Control {
         // Start request timing for logging
         $this->requestStartTime = microtime(true);
 
+        // A fatal inside an MCP request writes nothing anywhere: logMcpRequest() is never
+        // reached, so neither the mcplog table nor the file gets a row, and the client
+        // just sees a dead connection. This is the only thing that turns that into
+        // evidence. Registered once per request; harmless when the request succeeds.
+        register_shutdown_function(function (): void {
+            $e = error_get_last();
+            if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+                $this->mcpFileLog('FATAL', sprintf('%s at %s:%d',
+                    $e['message'], $e['file'], (int) $e['line']));
+            }
+        });
+
         // Detect content type preference from Accept header
         // Claude Code's Streamable HTTP transport sends: "application/json, text/event-stream"
         // When BOTH are present, prefer SSE (this matches Playwright MCP behavior)
@@ -472,6 +484,15 @@ class Mcp extends BaseControls\Control {
         // Authenticate for non-public methods
         if (!in_array($method, $publicMethods)) {
             if (!$this->authenticate()) {
+                // Logged HERE because this returns before logMcpRequest() ever runs, so a
+                // rejected client otherwise appears in no MCP log at all — the exact case
+                // where someone is asking why their tools stopped working.
+                $this->mcpFileLog('ERROR', sprintf(
+                    '%s REJECTED (no valid credential) ip=%s ua=%s',
+                    $method,
+                    $_SERVER['REMOTE_ADDR'] ?? '-',
+                    mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? '-'), 0, 60)
+                ));
                 $this->sendError(-32000, 'Authentication required', null, 401);
                 return;
             }
@@ -2053,11 +2074,46 @@ class Mcp extends BaseControls\Control {
     /**
      * Log MCP request/response to database
      */
+    /**
+     * One greppable line per MCP event, in the SAME file the stdio server writes.
+     *
+     * The mcplog TABLE below is the richer record — bodies, IP, user agent — but it is a
+     * database table, so answering "why did MCP fail at 14:32" means writing a query, and
+     * it only ever gets a row when a request completes. Anything that dies first (a fatal,
+     * an auth rejection that returns early, a killed worker) leaves no trace in it at all.
+     *
+     * Sharing log/mcp-<date>.log with the stdio server is deliberate: a client failure is
+     * rarely reported with the transport attached, so one grep should answer for both.
+     * Each line is tagged `http` or `stdio` so they stay tellable apart.
+     */
+    private function mcpFileLog(string $level, string $msg): void {
+        $dir = dirname(__DIR__) . '/log';
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true)) return;
+        @file_put_contents(
+            $dir . '/mcp-' . date('Y-m-d') . '.log',
+            sprintf("[%s] %-5s pid=%d http %s\n", date('Y-m-d H:i:s'), $level, getmypid(), $msg),
+            FILE_APPEND
+        );
+    }
+
     private function logMcpRequest(string $method, string $responseBody, int $httpCode = 200, ?string $error = null): void {
+        $duration = $this->requestStartTime > 0
+            ? round((microtime(true) - $this->requestStartTime) * 1000)
+            : 0;
+
+        // File first, and outside the try below: if the DB write is what fails, the file
+        // line is the only evidence that the request happened at all.
+        $this->mcpFileLog(
+            $error !== null || $httpCode >= 400 ? 'ERROR' : 'req',
+            sprintf('%s member=%s key=%s http=%d %dms%s',
+                $method !== '' ? $method : '(none)',
+                $this->authMember->id ?? '-',
+                $this->authApiKey->id ?? '-',
+                $httpCode, $duration,
+                $error !== null ? ' error=' . str_replace("\n", ' ', mb_substr($error, 0, 160)) : '')
+        );
+
         try {
-            $duration = $this->requestStartTime > 0
-                ? round((microtime(true) - $this->requestStartTime) * 1000)
-                : 0;
 
             $log = Bean::dispense('mcplog');
             // Use NULL instead of 0 for optional foreign keys to avoid FK constraint errors

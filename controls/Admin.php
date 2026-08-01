@@ -152,7 +152,19 @@ class Admin extends Control {
                         $member->email = $email;
                         $member->level = $level;
                         $member->status = $status;
-                        
+
+                        // Profile fields. An admin editing an account should be able to
+                        // fix all of it — display_name in particular, because that is the
+                        // name everyone else sees ("X invited you", team lists) and a bad
+                        // one was previously only fixable by the member themselves.
+                        $display = trim($request->data->display_name ?? '');
+                        $member->displayName = $display !== '' ? $display : null;
+                        $member->firstName   = trim($request->data->first_name ?? '');
+                        $member->lastName    = trim($request->data->last_name ?? '');
+                        $member->bio         = trim($request->data->bio ?? '');
+                        $avatar = trim($request->data->avatar_url ?? '');
+                        $member->avatarUrl   = $avatar !== '' ? $avatar : null;
+
                         // Update password if provided
                         if (!empty($request->data->password)) {
                             if (strlen($request->data->password) < 8) {
@@ -174,7 +186,22 @@ class Admin extends Control {
                                     \app\Feature::setEnabled($fkey, !empty($submittedFeatures[$fkey]), (int)$member->id);
                                 }
 
-                                $this->viewData['success'] = 'Member updated successfully';
+                                // Account recovery: someone lost their authenticator. Clears
+                                // the secret and the recovery codes, so a member in
+                                // TwoFactorAuth::REQUIRED_LEVELS is walked through setup
+                                // again at their next login rather than being locked out.
+                                if (!empty($request->data->reset_2fa) && \app\TwoFactorAuth::isEnabled($member)) {
+                                    \app\TwoFactorAuth::disable($member);
+                                    $this->logger->warning('2FA reset by admin', [
+                                        'member_id' => $member->id,
+                                        'reset_by'  => $this->member->id,
+                                    ]);
+                                    $this->viewData['success'] = 'Member updated, and two-factor authentication was reset.';
+                                }
+
+                                if (empty($this->viewData['success'])) {
+                                    $this->viewData['success'] = 'Member updated successfully';
+                                }
                                 $this->logger->info('Member updated by admin', [
                                     'member_id' => $member->id,
                                     'updated_by' => $this->member->id
@@ -194,6 +221,20 @@ class Admin extends Control {
         
         $this->viewData['title'] = 'Edit Member';
         $this->viewData['editMember'] = $member;
+
+        // Who brought them in. Read from member.invited_by rather than the invite row, so
+        // it survives invitations being tidied away, and guarded because the inviter's
+        // account may since have been deleted.
+        $this->viewData['invitedBy'] = null;
+        if (!empty($member->invitedBy)) {
+            $inviter = Bean::load('member', (int) $member->invitedBy);
+            if ($inviter->id) $this->viewData['invitedBy'] = $inviter;
+        }
+        // How many people they have brought in, for the same reason an admin looks at the
+        // inviter in the first place.
+        $this->viewData['invitedCount'] = Bean::count('member', 'invited_by = ?', [(int) $member->id]);
+        $this->viewData['twofaEnabled'] = \app\TwoFactorAuth::isEnabled($member);
+
         $this->viewData['featureFlags'] = [];
         foreach (\app\Feature::catalogForLevel((int)$member->level) as $fkey => $fmeta) {
             $this->viewData['featureFlags'][] = [

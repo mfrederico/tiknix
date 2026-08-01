@@ -50,6 +50,7 @@
                     <th>Level</th>
                     <th>Status</th>
                     <th>Created</th>
+                    <th>Last Login</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -117,6 +118,25 @@
                                 echo date('Y-m-d', strtotime($member->created_at));
                             } else {
                                 echo '<span class="text-muted">N/A</span>';
+                            }
+                            ?>
+                        </td>
+                        <td>
+                            <?php
+                            /* "Never" is the useful answer here, not a blank cell: an account
+                               that has never been used is what an admin is looking for. */
+                            $ll = $member->last_login ?? null;
+                            $llTs = !empty($ll) ? (is_numeric($ll) ? (int)$ll : strtotime((string)$ll)) : false;
+                            if ($llTs) {
+                                // Calendar days, not 24-hour blocks — a login at 8pm last
+                                // night is "yesterday" to a human, whatever the elapsed hours.
+                                $days = (int) round((strtotime('today') - strtotime(date('Y-m-d', $llTs))) / 86400);
+                                $ago = $days <= 0 ? 'today' : ($days === 1 ? 'yesterday' : $days . 'd ago');
+                                echo '<span title="' . htmlspecialchars(date('Y-m-d H:i', $llTs)) . '">'
+                                   . htmlspecialchars(date('Y-m-d', $llTs))
+                                   . ' <span class="text-muted small">' . $ago . '</span></span>';
+                            } else {
+                                echo '<span class="text-danger">Never</span>';
                             }
                             ?>
                         </td>
@@ -209,11 +229,11 @@ function exportMembers() {
         row.style.display !== 'none' && row.cells.length > 1
     );
     
-    let csv = 'ID,Username,Email,Level,Status,Created\n';
+    let csv = 'ID,Username,Email,Level,Status,Created,Last Login\n';
     
     rows.forEach(row => {
-        if (row.cells.length >= 6) {
-            const cells = Array.from(row.cells).slice(0, 6);
+        if (row.cells.length >= 7) {
+            const cells = Array.from(row.cells).slice(0, 7);
             const rowData = cells.map(cell => {
                 let text = cell.textContent.trim();
                 // Clean up badge text

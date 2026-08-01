@@ -44,6 +44,9 @@ class Member extends Control {
             
             // Validate input
             $email = trim($request->data->email ?? '');
+            // What other people see: "X invited you", comments, team lists. Falls back to
+            // first+last then username when blank, so leaving it empty is a valid choice.
+            $display_name = trim($request->data->display_name ?? '');
             $first_name = trim($request->data->first_name ?? '');
             $last_name = trim($request->data->last_name ?? '');
             $bio = trim($request->data->bio ?? '');
@@ -61,28 +64,34 @@ class Member extends Control {
                 } else {
                     // Update allowed fields
                     $member->email = $email;
+                    $member->displayName = $display_name !== '' ? $display_name : null;
                     $member->firstName = $first_name;
                     $member->lastName = $last_name;
                     $member->bio = $bio;
                 }
             }
             
-            // Update password if provided
-            if (!empty($request->data->password) || !empty($request->data->current_password)) {
-                // Verify current password if changing password
-                if (!empty($request->data->current_password)) {
-                    if (!password_verify($request->data->current_password, $member->password)) {
-                        $this->viewData['error'] = 'Current password is incorrect';
-                    } else if (empty($request->data->password)) {
-                        $this->viewData['error'] = 'Please enter a new password';
-                    } else if ($request->data->password !== $request->data->password_confirm) {
-                        $this->viewData['error'] = 'New passwords do not match';
-                    } else if (strlen($request->data->password) < 8) {
-                        $this->viewData['error'] = 'Password must be at least 8 characters';
-                    } else {
-                        $member->password = password_hash($request->data->password, PASSWORD_DEFAULT);
-                        $this->viewData['success'] = 'Profile and password updated successfully';
-                    }
+            // Change the password ONLY when a new one was actually typed.
+            //
+            // This used to trigger on current_password being present too, which sounds
+            // harmless and is not: browsers and password managers autofill the "current
+            // password" box on any form that has one. Someone editing only their NAME got
+            // "Please enter a new password" from a field they never touched — and because
+            // any error skips the save below, the name change was silently discarded.
+            //
+            // Entering a new password is the only thing that signals intent to change it.
+            if (!empty($request->data->password)) {
+                if (empty($request->data->current_password)) {
+                    $this->viewData['error'] = 'Enter your current password to set a new one';
+                } else if (!password_verify($request->data->current_password, $member->password)) {
+                    $this->viewData['error'] = 'Current password is incorrect';
+                } else if ($request->data->password !== $request->data->password_confirm) {
+                    $this->viewData['error'] = 'New passwords do not match';
+                } else if (strlen($request->data->password) < 8) {
+                    $this->viewData['error'] = 'Password must be at least 8 characters';
+                } else {
+                    $member->password = password_hash($request->data->password, PASSWORD_DEFAULT);
+                    $this->viewData['success'] = 'Profile and password updated successfully';
                 }
             }
             

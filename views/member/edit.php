@@ -41,24 +41,31 @@
                         
                         <div class="mb-3">
                             <label for="current_password" class="form-label">Current Password</label>
-                            <input type="password" class="form-control" id="current_password" name="current_password">
+                            <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password">
                         </div>
                         
                         <div class="mb-3">
                             <label for="password" class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="password" name="password">
+                            <input type="password" class="form-control" id="password" name="password" autocomplete="new-password">
                             <small class="form-text text-muted">Minimum 8 characters</small>
                         </div>
                         
                         <div class="mb-3">
                             <label for="password_confirm" class="form-label">Confirm New Password</label>
-                            <input type="password" class="form-control" id="password_confirm" name="password_confirm">
+                            <input type="password" class="form-control" id="password_confirm" name="password_confirm" autocomplete="new-password">
                         </div>
                         
                         <hr class="my-4">
                         
                         <h5 class="mb-3">Profile Details</h5>
                         
+                        <div class="mb-3">
+                            <label for="display_name" class="form-label">Display Name</label>
+                            <input type="text" class="form-control" id="display_name" name="display_name"
+                                   value="<?= htmlspecialchars(($member->displayName) ?? '') ?>"
+                                   maxlength="60" autocomplete="name">
+                            <div class="form-text">Shown to other people — including in "X invited you" emails. Leave blank to use your name or username.</div>
+                        </div>
                         <div class="mb-3">
                             <label for="first_name" class="form-label">First Name</label>
                             <input type="text" class="form-control" id="first_name" name="first_name"

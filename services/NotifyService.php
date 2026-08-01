@@ -33,6 +33,7 @@ namespace app\services;
 
 use app\Bean;
 use app\ThreadMembers;
+use app\Mentions;
 use RedBeanPHP\R;
 use Flight;
 use Mailgun\Mailgun;
@@ -526,6 +527,12 @@ class NotifyService {
         Bean::store($thread);
 
         ThreadMembers::markRead($threadId, $senderMemberId);
+
+        // Who this message named. Recorded here rather than at the call sites so every
+        // way of posting — DM, room, team page — gets mentions without having to know
+        // about them.
+        Mentions::record($threadId, $id, $senderMemberId, $html);
+
         return $id;
     }
 
@@ -583,6 +590,13 @@ class NotifyService {
         $thread->updatedAt      = $now;
         $id = (int) Bean::store($thread);
         if (!$id) return null;
+
+        // The operator is a PARTICIPANT, not merely the owner. This was missed when
+        // participants were introduced: support threads predate them, so they had an
+        // owner and an empty roster — which meant nobody could be added to one, and a
+        // support team could not share a conversation. owner_member_id names one person
+        // and can only ever name one.
+        ThreadMembers::ensure($id, [$ownerMemberId], ThreadMembers::ROLE_OWNER);
 
         self::recordInbound($id, $fromEmail, $fromName, $subject, $html);
         return $id;

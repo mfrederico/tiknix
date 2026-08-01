@@ -117,4 +117,20 @@
 @media (hover: none) {
     .comms-hub .comms-thread-actions { opacity: 1; }
 }
+
+/* ---- @mentions ---- */
+.comms-hub .comms-mention,
+.comms-mention {
+    background: rgba(var(--bs-primary-rgb), .12);
+    color: var(--bs-primary-text-emphasis, var(--bs-primary));
+    border-radius: .25rem;
+    padding: 0 .2rem;
+    font-weight: 600;
+}
+/* Being mentioned yourself should not look the same as watching someone else be. */
+.comms-hub .comms-mention-me,
+.comms-mention-me {
+    background: rgba(var(--bs-warning-rgb), .28);
+    color: var(--bs-warning-text-emphasis, inherit);
+}
 </style>

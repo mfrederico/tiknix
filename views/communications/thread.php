@@ -100,7 +100,13 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
                                             <?php endif; ?>
                                         </div>
                                         <div class="comms-msg-bubble <?= $isOut ? 'out' : 'in' ?>">
-                                            <?= $m->content ?>
+                                            <?php /* Highlight only names that RESOLVED to a
+                                                     participant — marking up every @word
+                                                     would make an unmatched name look as
+                                                     though it had reached somebody. */ ?>
+                                            <?= \app\Mentions::highlight((string)$m->content,
+                                                    \app\ThreadMembers::participants((int)$thread->id),
+                                                    (int)($member['id'] ?? 0)) ?>
                                             <?php if ($m->status === 'failed' && $m->errorMessage): ?>
                                                 <div class="text-danger small mt-1 border-top pt-1"><?= htmlspecialchars(($m->errorMessage) ?? '') ?></div>
                                             <?php endif; ?>
@@ -133,7 +139,10 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
                             <textarea name="body" class="form-control" rows="1"
                                       placeholder="Write a message…" required
                                       style="resize:none; max-height:120px;"
-                                      oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';"></textarea>
+                                      oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';"
+                                      id="comms-body" autocomplete="off"></textarea>
+                            <?php /* Autocomplete list, positioned by the script below. */ ?>
+                            <div id="comms-at" class="dropdown-menu p-1" style="max-height:12rem;overflow-y:auto"></div>
                             <button type="submit" class="btn btn-primary" title="Send">
                                 <i class="bi bi-send"></i>
                             </button>
@@ -146,6 +155,110 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
     </div>
 
 </div>
+
+
+<script>
+/* @mention autocomplete.
+ *
+ * Roster comes from the THREAD's participants, not from every account — you cannot
+ * mention someone who is not in the conversation, so offering them would be offering
+ * something that silently does nothing. Fetched once on first '@' rather than on page
+ * load; most messages contain no mention at all.
+ */
+(function () {
+    var box  = document.getElementById('comms-body');
+    var menu = document.getElementById('comms-at');
+    if (!box || !menu) return;
+
+    var THREAD = <?= (int)$thread->id ?>;
+    var roster = null, active = -1, start = -1;
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+        });
+    }
+    function hide() { menu.classList.remove('show'); active = -1; start = -1; }
+
+    function render(matches) {
+        if (!matches.length) { hide(); return; }
+        menu.innerHTML = matches.map(function (m, i) {
+            return '<button type="button" class="dropdown-item small' + (i === 0 ? ' active' : '') +
+                   '" data-handle="' + esc(m.handle) + '">' +
+                   '<strong>@' + esc(m.handle) + '</strong> <span class="text-body-secondary">' +
+                   esc(m.name) + '</span></button>';
+        }).join('');
+        active = 0;
+        menu.classList.add('show');
+    }
+
+    function currentToken() {
+        var pos = box.selectionStart;
+        var upto = box.value.slice(0, pos);
+        var m = upto.match(/(?:^|\s)@([A-Za-z0-9_.-]*)$/);
+        if (!m) return null;
+        start = pos - m[1].length - 1;      // index of the '@'
+        return m[1].toLowerCase();
+    }
+
+    function choose(handle) {
+        if (start < 0) return;
+        var pos = box.selectionStart;
+        box.value = box.value.slice(0, start) + '@' + handle + ' ' + box.value.slice(pos);
+        var caret = start + handle.length + 2;
+        box.setSelectionRange(caret, caret);
+        hide();
+        box.focus();
+    }
+
+    box.addEventListener('input', function () {
+        var token = currentToken();
+        if (token === null) { hide(); return; }
+
+        var go = function () {
+            render((roster || []).filter(function (m) {
+                return !token || m.handle.toLowerCase().indexOf(token) === 0
+                    || m.name.toLowerCase().indexOf(token) === 0;
+            }).slice(0, 8));
+        };
+
+        if (roster) { go(); return; }
+        fetch('/communications/roster?thread=' + THREAD, { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : []; })
+            .then(function (list) { roster = list || []; go(); })
+            .catch(function () { roster = []; });   // never leave it null, or every keystroke refetches
+    });
+
+    box.addEventListener('keydown', function (e) {
+        if (!menu.classList.contains('show')) return;
+        var items = menu.querySelectorAll('.dropdown-item');
+        if (!items.length) return;
+
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            items[active] && items[active].classList.remove('active');
+            active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+            items[active].classList.add('active');
+            items[active].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+            // Enter completes the name rather than sending — sending a half-typed
+            // mention is the more annoying of the two mistakes.
+            e.preventDefault();
+            choose(items[active].dataset.handle);
+        } else if (e.key === 'Escape') {
+            hide();
+        }
+    });
+
+    menu.addEventListener('click', function (e) {
+        var b = e.target.closest('.dropdown-item');
+        if (b) choose(b.dataset.handle);
+    });
+    document.addEventListener('click', function (e) {
+        if (!menu.contains(e.target) && e.target !== box) hide();
+    });
+})();
+</script>
 
 <?php include __DIR__ . '/_compose-modal.php'; ?>
 

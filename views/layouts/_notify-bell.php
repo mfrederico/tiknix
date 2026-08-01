@@ -133,9 +133,67 @@
             renderList(data.threads);
             // Broadcast to any live thread-list rail on the page (comms pages).
             document.dispatchEvent(new CustomEvent('comms:threads', { detail: data.threads || [] }));
+            maybeNotify(data);
         })
         .catch(function () { /* swallow — next tick retries */ });
     }
+
+    /* Browser notifications.
+     *
+     * Only while the tab is HIDDEN — telling someone about a message they are looking at
+     * is noise, and noise is how a notification permission gets revoked.
+     *
+     * Permission is never requested on page load. A prompt nobody asked for is the thing
+     * everyone dismisses forever, and once dismissed it cannot be asked again. It is
+     * requested from a click on the bell instead, where the person has just expressed
+     * interest in being told about messages.
+     */
+    var lastUnread = null, lastMentions = null;
+
+    function canNotify() {
+        return ('Notification' in window) && Notification.permission === 'granted';
+    }
+
+    function maybeNotify(data) {
+        var unread   = parseInt(data.unread || 0, 10);
+        var mentions = parseInt(data.mentions || 0, 10);
+
+        // First poll of the page establishes the baseline; it is not news.
+        if (lastUnread === null) { lastUnread = unread; lastMentions = mentions; return; }
+
+        var newMentions = mentions > lastMentions;
+        var newUnread   = unread > lastUnread;
+        lastUnread = unread; lastMentions = mentions;
+
+        if (!document.hidden || !canNotify()) return;
+        if (!newMentions && !newUnread) return;
+
+        var top = (data.threads || [])[0] || {};
+        var title = newMentions
+            ? 'You were mentioned'
+            : (top.subject || 'New message');
+        var body = (top.preview || top.who || '').slice(0, 140);
+
+        try {
+            var n = new Notification(title, {
+                body: body,
+                tag: 'tiknix-comms',      // collapse a burst into one, rather than stacking
+                renotify: newMentions
+            });
+            n.onclick = function () {
+                window.focus();
+                if (top.id) window.location = '/communications/thread/' + top.id;
+                n.close();
+            };
+        } catch (e) { /* some browsers throw outside a service worker; not worth breaking the poll */ }
+    }
+
+    // Asking at the moment of interest, not on arrival.
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest || !e.target.closest('#notify-bell')) return;
+        if (!('Notification' in window) || Notification.permission !== 'default') return;
+        Notification.requestPermission();
+    });
 
     setInterval(poll, POLL_MS);
     window.addEventListener('focus', poll);

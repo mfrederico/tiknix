@@ -78,6 +78,7 @@ class Communications extends BaseControls\Control {
         // still written so anything not yet moved across stays consistent, but the figure
         // that now drives the bell is the per-person read mark.
         \app\ThreadMembers::markRead((int)$thread->id, (int)$this->member->id);
+        \app\Mentions::markRead((int)$thread->id, (int)$this->member->id);
         if ((int)$thread->unreadCount > 0) {
             $thread->unreadCount = 0;
             $thread->updatedAt   = date('Y-m-d H:i:s');
@@ -446,13 +447,40 @@ class Communications extends BaseControls\Control {
             Bean::store($thread);
         }
 
-        Flight::json(['new_messages' => $new, 'unread_total' => $this->unreadTotal()]);
+        Flight::json(['new_messages' => $new, 'unread_total' => $this->unreadTotal(),
+                      'mentions' => \app\Mentions::unreadCount((int)$this->member->id)]);
     }
 
     /**
      * Nav bell feed (GET, JSON): scoped unread total + the most recent threads
      * for the dropdown. Polled globally (every page) by the bell component.
      */
+    /**
+     * Everyone this member could @ in this thread — for the composer's autocomplete.
+     * Participants only: you cannot mention someone who is not in the conversation, so
+     * offering them would be offering something that silently does nothing.
+     */
+    public function roster($params = []) {
+        if (!$this->requireLogin()) { Flight::json([]); return; }
+
+        $thread = Bean::load('emailthread', (int)$this->getParam('thread', 0));
+        if (!$thread->id || !$this->canView($thread)) { Flight::json([]); return; }
+
+        $me  = (int)$this->member->id;
+        $out = [];
+        foreach (\app\ThreadMembers::participants((int)$thread->id) as $pid) {
+            if ($pid === $me) continue;
+            $m = Bean::load('member', $pid);
+            if (!$m->id) continue;
+            $out[] = [
+                'id'     => (int)$m->id,
+                'handle' => (string)$m->username,
+                'name'   => member_display_name($m, (string)$m->username),
+            ];
+        }
+        Flight::json($out);
+    }
+
     public function unreadjson() {
         if (!$this->requireLogin()) { Flight::json(['unread' => 0, 'threads' => []]); return; }
 
@@ -469,10 +497,15 @@ class Communications extends BaseControls\Control {
                 'last_message_at' => $t->lastMessageAt,
                 'last_direction'  => (string)($t->lastDirection ?? ''),
                 'unread_count'    => (int)$t->unreadCount,
+                'mentions'        => \app\Mentions::unreadInThread((int)$t->id, (int)$this->member->id),
             ];
         }
 
-        Flight::json(['unread' => $this->unreadTotal(), 'threads' => $out]);
+        Flight::json([
+            'unread'   => $this->unreadTotal(),
+            'mentions' => \app\Mentions::unreadCount((int)$this->member->id),
+            'threads'  => $out,
+        ]);
     }
 
     // ---- helpers -----------------------------------------------------------

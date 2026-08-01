@@ -106,6 +106,12 @@ if (!function_exists('comms_initials')) {
                                 <div class="d-flex align-items-center">
                                     <span class="comms-unread-dot"></span>
                                     <span class="comms-thread-subject flex-grow-1"><i class="bi <?= $kindIcon ?> me-1 opacity-50 small"></i><?= htmlspecialchars($label) ?></span>
+                                    <?php /* A mention outranks unread: in a busy room "new
+                                             messages" stops meaning anything, and "someone
+                                             asked YOU something" still does. */ ?>
+                                    <?php $mentions = \app\Mentions::unreadInThread((int)$t->id, $me); ?>
+                                    <span class="comms-mention-badge badge rounded-pill bg-warning text-dark ms-1 flex-shrink-0 <?= $mentions ? '' : 'd-none' ?>"
+                                          title="You were mentioned">@<?= (int)$mentions ?></span>
                                     <span class="comms-unread-badge badge rounded-pill bg-danger ms-1 flex-shrink-0 <?= $unread ? '' : 'd-none' ?>"><?= $unread ? 1 : 0 ?></span>
                                     <small class="comms-thread-when text-muted ms-2 flex-shrink-0"><?= htmlspecialchars(($when) ?? '') ?></small>
                                 </div>
@@ -158,6 +164,12 @@ if (!function_exists('comms_initials')) {
             var unread = (t.unread_count || 0) > 0;
             row.classList.toggle('unread', unread);
 
+            var mb = row.querySelector('.comms-mention-badge');
+            if (mb) {
+                var mc = t.mentions || 0;
+                mb.textContent = '@' + mc;
+                mb.classList.toggle('d-none', !mc);
+            }
             var badge = row.querySelector('.comms-unread-badge');
             if (badge) {
                 badge.textContent = t.unread_count;

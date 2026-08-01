@@ -206,8 +206,19 @@ class Contact extends BaseControls\Control {
                     'contact', $contactId
                 );
                 if ($threadId) {
+                    // Seat the whole support team, not just one operator. Support is a
+                    // queue somebody answers, not one person's mail — and per-person
+                    // unread means each of them tracks their own reading of it without
+                    // clearing anybody else's.
+                    $admins = array_values(array_map(
+                        fn($a) => (int) $a->id,
+                        Bean::find('member', 'level <= ? AND status = ?', [LEVELS['ADMIN'], 'active'])
+                    ));
+                    \app\ThreadMembers::ensure($threadId, $admins);
+
                     Flight::get('log')->info('Support message threaded into Communications', [
                         'contact_id' => $contactId, 'thread' => $threadId, 'owner' => $owner,
+                        'team' => count($admins),
                     ]);
                 } else {
                     Flight::get('log')->error('Support message could not open a thread', [

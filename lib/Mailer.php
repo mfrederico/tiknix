@@ -406,6 +406,48 @@ HTML;
     }
 
     /**
+     * Invitation to join Tiknix itself, while public sign-ups are closed.
+     *
+     * Distinct from sendTeamInvite: that one adds an existing person to a team, this one
+     * is the only route to an account at all. It says who invited them and when the link
+     * dies, because an invitation with neither reads like spam — and this arrives
+     * unsolicited, to someone who has never heard of us.
+     */
+    public static function sendSiteInvite(
+        string $email,
+        string $inviterName,
+        string $acceptUrl,
+        string $expiresOn,
+        string $note = ''
+    ): bool {
+        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $safeNote = $note !== ''
+            ? '<p style="border-left:3px solid #ddd;padding-left:12px;color:#444"><em>'
+              . htmlspecialchars($note, ENT_QUOTES) . '</em></p>'
+            : '';
+        $who = htmlspecialchars($inviterName, ENT_QUOTES);
+
+        $content = <<<HTML
+<h2>You've been invited to {$appName}</h2>
+<p><strong>{$who}</strong> has invited you to {$appName}, where you describe what you want built and AI agents build it.</p>
+{$safeNote}
+<p style="text-align: center;">
+    <a href="{$acceptUrl}" class="btn">Accept your invitation</a>
+</p>
+<p>Or copy and paste this link into your browser:</p>
+<p style="word-break: break-all; color: #666; font-size: 12px;">{$acceptUrl}</p>
+<p><strong>This invitation expires on {$expiresOn}</strong> and can only be used once, for this email address.</p>
+<p>If you weren't expecting this, you can ignore it — no account is created until you use the link.</p>
+<p>Best regards,<br>The {$appName} Team</p>
+HTML;
+
+        return self::create()
+            ->to($email)
+            ->subject("{$inviterName} invited you to {$appName}")
+            ->send($content);
+    }
+
+    /**
      * Send welcome email after registration
      */
     public static function sendWelcome(string $email, string $name): bool {

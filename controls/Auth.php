@@ -188,6 +188,94 @@ class Auth extends BaseControls\Control {
     }
 
     /**
+     * GET|POST /auth/invite?token=… — accept an invitation and create the account.
+     *
+     * This route deliberately IGNORES registrationEnabled(). An invite is not a way to
+     * open the front door; it is its own key, and sign-ups staying closed is the whole
+     * point of having invites at all.
+     *
+     * The email comes from the invite and is NOT editable. A link forwarded to a friend
+     * therefore still only ever creates the account it was addressed to — the token proves
+     * possession of the link, the bound email is what makes it an invitation to a person.
+     */
+    public function invite($params = []) {
+        if (Flight::isLoggedIn()) { Flight::redirect('/dashboard'); return; }
+
+        $request = Flight::request();
+        $token   = (string) ($request->query->token ?? $request->data->token ?? '');
+
+        $r = \app\Invite::resolve($token);
+        if (!$r['invite']) {
+            $this->render('auth/invite', ['title' => 'Invitation', 'fatal' => $r['error']]);
+            return;
+        }
+        $inv   = $r['invite'];
+        $email = (string) $inv->email;
+
+        if ($request->method !== 'POST') {
+            $this->render('auth/invite', ['title' => 'Accept your invitation', 'invite' => $inv, 'email' => $email]);
+            return;
+        }
+
+        if (!Flight::csrf()->validateRequest()) {
+            $this->render('auth/invite', ['title' => 'Accept your invitation', 'invite' => $inv,
+                'email' => $email, 'errors' => ['Your session expired — please try again.']]);
+            return;
+        }
+
+        $username = trim((string) $this->getParam('username', ''));
+        $password = (string) $this->getParam('password', '');
+        $confirm  = (string) $this->getParam('password_confirm', '');
+
+        $errors = [];
+        if ($username === '' || !preg_match('/^[a-zA-Z0-9_.-]{3,32}$/', $username)) {
+            $errors[] = 'Choose a username of 3–32 letters, numbers, dots, dashes or underscores.';
+        } elseif (Bean::findOne('member', 'LOWER(username) = ?', [strtolower($username)])) {
+            $errors[] = 'That username is already taken.';
+        }
+        if (strlen($password) < 8)      $errors[] = 'Your password must be at least 8 characters.';
+        if ($password !== $confirm)     $errors[] = 'The two passwords do not match.';
+
+        if ($errors) {
+            $this->render('auth/invite', ['title' => 'Accept your invitation', 'invite' => $inv,
+                'email' => $email, 'errors' => $errors, 'username' => $username]);
+            return;
+        }
+
+        try {
+            $member = Bean::dispense('member');
+            $member->email     = $email;              // from the INVITE, never from the form
+            $member->username  = $username;
+            $member->password  = password_hash($password, PASSWORD_DEFAULT);
+            $member->level     = LEVELS['MEMBER'];
+            $member->status    = 'active';
+            $member->createdAt = date('Y-m-d H:i:s');
+            $id = (int) Bean::store($member);
+
+            \app\Invite::markAccepted($inv, $id);
+
+            // An invited member arrives able to BUILD. Being invited to a place where you
+            // then have to ask for permission to do the thing you were invited for is a
+            // poor welcome; the other capabilities stay off until an admin grants them.
+            \app\Feature::setEnabled('workbench', true, $id);
+
+            Flight::get('log')->info('Invitation accepted', [
+                'invite' => (int) $inv->id, 'member' => $id, 'invited_by' => (int) $inv->invitedBy,
+            ]);
+
+            $_SESSION['member'] = $member->export();
+            $_SESSION['member']['id'] = $id;
+
+            $this->flash('success', 'Welcome to ' . Flight::get('app.name') . ' — your account is ready.');
+            Flight::redirect('/dashboard');
+        } catch (\Throwable $e) {
+            Flight::get('log')->error('Invitation accept failed: ' . $e->getMessage());
+            $this->render('auth/invite', ['title' => 'Accept your invitation', 'invite' => $inv,
+                'email' => $email, 'errors' => ['Something went wrong creating your account. Please try again.']]);
+        }
+    }
+
+    /**
      * Show registration form
      */
     public function register() {

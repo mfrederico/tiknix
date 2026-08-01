@@ -126,6 +126,11 @@ if ($__loggedIn) {
           <?php if (\app\Feature::allows('mcp', (int)($member['id'] ?? 0), $__level)): ?>
             <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
           <?php endif; ?>
+          <?php /* Registration is closed, so an invitation is the only way anyone new gets
+                   an account — a real permission, granted per member (see app\Invite). */ ?>
+          <?php if (\app\Feature::allows('invites', (int)($member['id'] ?? 0), $__level)): ?>
+            <a class="ui-nav-link<?= $__active('/invites') ?>" href="/invites"><i class="bi bi-envelope-plus"></i> Invitations</a>
+          <?php endif; ?>
         <?php endif; ?>
 
         <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>

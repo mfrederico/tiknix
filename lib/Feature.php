@@ -51,6 +51,16 @@ class Feature {
                          . 'deliberately, per person. Editing tool or hook CODE still requires ROOT and is not part of this grant.',
             'min_level' => 100, // MEMBER and above are ELIGIBLE; an admin still has to switch it on
         ],
+        // Invitations. Registration is closed, so an invite is the ONLY way a new person
+        // gets an account — which makes "who may create one" a real permission rather than
+        // a convenience. Granted per member; a granted member gets a small monthly
+        // allowance (app\Invite), admins are unmetered because they can already create
+        // members outright and a quota on them would be theatre.
+        'invites' => [
+            'label'     => 'Send Invitations',
+            'blurb'     => 'Invite people to Tiknix while sign-ups are closed. Each invite is bound to one email address and lasts 15 days. Members may send 3 per rolling 30 days; admins are unlimited.',
+            'min_level' => 100, // MEMBER and above are ELIGIBLE; an admin still has to switch it on
+        ],
         // Labels here MUST match the nav labels in conf/config.ini's [sidecar.*]
         // sections: this catalog names the same plugins on the feature-toggle pages,
         // and a toggle called "Publisher" governing a nav item called "Deploy" reads

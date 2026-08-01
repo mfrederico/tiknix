@@ -98,8 +98,6 @@
     .comms-hub .comms-scroll { overflow-y: visible; }
     .comms-hub .comms-msg-bubble-wrap { max-width: 92%; }
 }
-</style>
-
 /* Row actions: hidden until the row is hovered or something in it has focus, so the
    rail stays a list of conversations rather than a grid of buttons. Above the
    stretched-link, or the anchor would swallow the clicks. */
@@ -119,3 +117,4 @@
 @media (hover: none) {
     .comms-hub .comms-thread-actions { opacity: 1; }
 }
+</style>

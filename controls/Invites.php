@@ -53,14 +53,7 @@ class Invites extends Control {
      * bearing a nonsense sender is the difference between an invitation and spam.
      */
     private static function senderName(object $m): string {
-        $display = trim((string) ($m->displayName ?? ''));
-        if ($display !== '' && preg_match('/\p{L}/u', $display)) return $display;
-
-        $full = trim(trim((string) ($m->firstName ?? '')) . ' ' . trim((string) ($m->lastName ?? '')));
-        if ($full !== '' && preg_match('/\p{L}/u', $full)) return $full;
-
-        $username = trim((string) ($m->username ?? ''));
-        return $username !== '' ? $username : 'Someone';
+        return member_display_name($m, 'Someone');
     }
 
     /** GET /invites — send an invitation, and see the ones you have sent. */

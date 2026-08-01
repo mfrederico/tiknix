@@ -58,6 +58,37 @@ function builder_tools_enabled(): bool {
 }
 
 /**
+ * The name to show for a person, from whatever the account actually has.
+ *
+ * One chain, in one place, because every caller that rolled its own got a different
+ * answer: the contact form read first_name alone and showed nothing for anyone who had
+ * never filled it in, and an invitation went out reading "12:54:54 has invited you"
+ * because a bare timestamp in display_name is a non-empty string and therefore truthy.
+ *
+ * A name with no letter in it is not a name, whatever else it is — so each candidate has
+ * to contain one before it wins. Accepts a bean, an object, or the $_SESSION['member']
+ * array, since callers have all three.
+ */
+function member_display_name($m, string $fallback = ''): string {
+    if (!$m) return $fallback;
+    $get = function (string $camel, string $snake) use ($m) {
+        if (is_array($m))  return trim((string) ($m[$snake] ?? $m[$camel] ?? ''));
+        if (is_object($m)) return trim((string) ($m->$camel ?? ''));
+        return '';
+    };
+    $named = fn(string $s) => $s !== '' && preg_match('/\p{L}/u', $s);
+
+    $display = $get('displayName', 'display_name');
+    if ($named($display)) return $display;
+
+    $full = trim($get('firstName', 'first_name') . ' ' . $get('lastName', 'last_name'));
+    if ($named($full)) return $full;
+
+    $username = $get('username', 'username');
+    return $named($username) ? $username : $fallback;
+}
+
+/**
  * HTML-escape helper (shorthand for htmlspecialchars). Used by scaffolded views.
  */
 if (!function_exists('h')) {

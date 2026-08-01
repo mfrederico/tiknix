@@ -104,51 +104,14 @@
 </div>
 
 <?php
-/* This page is SCAFFOLDING. It ships with every instance so a fresh app has somewhere to
-   land after login — but it is a starting point, not the product, and saying so plainly
-   here is better than letting people assume the dashboard is fixed furniture they have to
-   work around. Everything below tells them where it lives and how to take it over. */
+/* Where to go when you are stuck. This used to be a "Make this page yours" panel
+   explaining how to rewrite views/dashboard/index.php — which is advice for whoever is
+   building an app, not for the people using one, and everybody lands here. Building
+   happens in the Builder, so the dashboard just points at help. */
 ?>
 <div class="ui-panel mt-4">
-    <div class="ui-panel-header"><h3><i class="bi bi-pencil-square text-primary me-2"></i>Make this page yours</h3></div>
+    <div class="ui-panel-header"><h3><i class="bi bi-life-preserver text-primary me-2"></i>Need a hand?</h3></div>
     <div class="ui-panel-body">
-        <p class="text-secondary mb-3">
-            This dashboard is a starting point that ships with every app — it is meant to be replaced.
-            It is one ordinary view file, so you can rewrite it, or point the route somewhere else entirely.
-        </p>
-
-        <div class="row g-3">
-            <div class="col-md-6">
-                <h6 class="mb-2"><i class="bi bi-1-circle text-primary me-1"></i> Rewrite this page</h6>
-                <p class="text-secondary small mb-2">The whole page is one file. Replace its contents with yours.</p>
-                <pre class="ui-mono small p-2 rounded bg-body-secondary mb-0">views/dashboard/index.php</pre>
-            </div>
-            <div class="col-md-6">
-                <h6 class="mb-2"><i class="bi bi-2-circle text-primary me-1"></i> Or send people elsewhere</h6>
-                <p class="text-secondary small mb-2">Add your own controller and make it the landing page. A file in <code>controls/</code> is routed by its name — <code>controls/Orders.php</code> serves <code>/orders</code>.</p>
-                <pre class="ui-mono small p-2 rounded bg-body-secondary mb-0">controls/Orders.php  &rarr;  /orders</pre>
-            </div>
-        </div>
-
-        <hr class="my-3">
-
-        <h6 class="mb-2">A good first thing to build</h6>
-        <p class="text-secondary small mb-2">
-            Pick one real thing your app does and build the smallest version of it end to end — a list, a form
-            that saves, a page that shows what was saved. Working software beats a plan, and you can extend it once
-            it runs. Three pieces you will use every time:
-        </p>
-        <ul class="text-secondary small mb-3">
-            <li><strong class="text-body">A controller</strong> in <code>controls/</code> — each public method is a URL.</li>
-            <li><strong class="text-body">A view</strong> in <code>views/</code> — rendered with <code>$this-&gt;render('folder/name', $data)</code>.</li>
-            <li><strong class="text-body">Data</strong> — no migrations to write; storing a bean creates its table.</li>
-        </ul>
-        <p class="text-secondary small mb-3">
-            Give every new route a permission row. A route without one falls back to <em>public</em>, so the row is
-            what makes a page private — see the <code>authcontrol</code> table, or copy the pattern from an existing
-            seed in <code>scripts/</code>.
-        </p>
-
         <div>
             <a href="https://docs.tiknix.com" target="_blank" rel="noopener" class="btn btn-primary"><i class="bi bi-book"></i> Read the docs</a>
             <a href="/help" class="btn btn-outline-secondary ms-2"><i class="bi bi-question-circle"></i> Help Center</a>

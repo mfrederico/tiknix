@@ -42,7 +42,7 @@
                                        class="form-control" 
                                        id="name" 
                                        name="name" 
-                                       value="<?= htmlspecialchars($data['name'] ?? $_SESSION['member']['first_name'] ?? '') ?>" 
+                                       value="<?= htmlspecialchars($data['name'] ?? member_display_name($_SESSION['member'] ?? null)) ?>"
                                        required>
                             </div>
                             

@@ -70,14 +70,19 @@ class Contact extends BaseControls\Control {
             }
 
             $contact->createdAt = date('Y-m-d H:i:s');
-            Bean::store($contact);
-            
+            $contactId = (int) Bean::store($contact);
+
             // Log the submission
             Flight::get('log')->info('Contact form submitted', [
                 'from' => $email,
                 'subject' => $subject
             ]);
-            
+
+            // ...and tell somebody. Saving the row is not delivery: this table held five
+            // months of messages at status "new" because arrival was announced nowhere.
+            $this->alertOperators($contactId, $name, $email, $subject, $message,
+                                  $category ?: 'general', !empty($contact->memberId));
+
             // Show success message
             $this->render('contact/form', [
                 'title' => 'Contact Support',
@@ -94,6 +99,65 @@ class Contact extends BaseControls\Control {
         }
     }
     
+    /**
+     * Where support mail should land: an explicitly configured address, or failing that
+     * the most senior active admin. Returns '' when there is nobody to tell.
+     */
+    private function supportAddress(): string {
+        $configured = trim((string) (Flight::get('mail.support_email') ?? ''));
+        if ($configured !== '' && filter_var($configured, FILTER_VALIDATE_EMAIL)) return $configured;
+
+        $admin = Bean::findOne('member',
+            'level <= ? AND status = ? ORDER BY level ASC, id ASC',
+            [LEVELS['ADMIN'], 'active']);
+        $email = trim((string) ($admin->email ?? ''));
+        return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : '';
+    }
+
+    /**
+     * Announce a new support message. Never throws and never blocks the submission — the
+     * message is already stored, so the visitor is done either way — but a failure here is
+     * logged at ERROR, because "we could not tell anyone" is exactly the kind of quiet
+     * breakage that let this table fill up unread in the first place.
+     */
+    private function alertOperators(
+        int $contactId, string $name, string $email, string $subject,
+        string $message, string $category, bool $fromMember
+    ): void {
+        try {
+            $to = $this->supportAddress();
+            if ($to === '') {
+                Flight::get('log')->error('Support message saved but nobody to notify', [
+                    'contact_id' => $contactId,
+                    'hint' => 'set [mail] support_email, or give an admin account a valid email',
+                ]);
+                return;
+            }
+            if (!Mailer::isConfigured()) {
+                Flight::get('log')->error('Support message saved but mail is not configured', [
+                    'contact_id' => $contactId, 'would_have_told' => $to,
+                ]);
+                return;
+            }
+
+            $sent = Mailer::sendContactAlert($to, $name, $email, $category, $subject,
+                                             $message, $contactId, $fromMember);
+            if ($sent) {
+                Flight::get('log')->info('Support message notification sent', [
+                    'contact_id' => $contactId, 'to' => $to,
+                ]);
+            } else {
+                Flight::get('log')->error('Support message notification FAILED to send', [
+                    'contact_id' => $contactId, 'to' => $to,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Flight::get('log')->error('Support message notification threw', [
+                'contact_id' => $contactId, 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     /**
      * Admin: View all contact messages
      */

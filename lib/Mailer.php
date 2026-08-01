@@ -448,6 +448,60 @@ HTML;
     }
 
     /**
+     * Tell the operators a support message arrived.
+     *
+     * The contact form used to write a row and stop there. Nothing announced it, so the
+     * table accumulated five months of messages at "new" — including ones from signed-in
+     * members, who had every reason to think somebody was reading them. Filing a message
+     * where nobody looks is the same as losing it, so arrival is now announced.
+     *
+     * Failure to send is reported to the caller rather than swallowed: the message itself
+     * is already saved, and an operator who is told delivery failed can go and look.
+     */
+    public static function sendContactAlert(
+        string $toEmail,
+        string $fromName,
+        string $fromEmail,
+        string $category,
+        string $subject,
+        string $message,
+        int $contactId,
+        bool $fromMember
+    ): bool {
+        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $baseUrl = rtrim((string) (Flight::get('app.baseurl') ?? ''), '/');
+        $link    = $baseUrl . '/contact/view?id=' . $contactId;
+
+        $who  = htmlspecialchars($fromName, ENT_QUOTES);
+        $addr = htmlspecialchars($fromEmail, ENT_QUOTES);
+        $subj = htmlspecialchars($subject, ENT_QUOTES);
+        $cat  = htmlspecialchars($category, ENT_QUOTES);
+        $body = nl2br(htmlspecialchars($message, ENT_QUOTES));
+
+        // Worth stating plainly at the top: a message from a signed-in member is a
+        // different thing from the anonymous traffic this form mostly receives.
+        $badge = $fromMember
+            ? '<p style="background:#e7f3ff;padding:8px 12px;border-radius:6px;margin:0 0 16px">'
+              . '<strong>From a signed-in member.</strong></p>'
+            : '';
+
+        $content = <<<HTML
+<h2>New support message</h2>
+{$badge}
+<p><strong>{$who}</strong> &lt;{$addr}&gt; &mdash; <em>{$cat}</em></p>
+<p style="font-size:16px"><strong>{$subj}</strong></p>
+<div style="background:#f8f9fa;padding:15px;border-radius:6px;margin:20px 0">{$body}</div>
+<p><a href="{$link}" class="btn">Open it in {$appName}</a></p>
+<p style="word-break:break-all;color:#666;font-size:12px">{$link}</p>
+HTML;
+
+        return self::create()
+            ->to($toEmail)
+            ->subject("[{$cat}] {$subject}")
+            ->send($content);
+    }
+
+    /**
      * Send welcome email after registration
      */
     public static function sendWelcome(string $email, string $name): bool {

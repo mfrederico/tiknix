@@ -17,7 +17,9 @@ if (!function_exists('comms_initials')) {
     }
 }
 ?>
-<div class="col-lg-4">
+<?php /* $railClass lets the thread view hide this column on narrow screens, where the
+         rail and the conversation stack instead of sitting side by side. */ ?>
+<div class="col-lg-4 <?= htmlspecialchars($railClass ?? '') ?>">
     <div class="card border-0 shadow-sm comms-panel">
 <?php
 /* Rooms are separated from conversations because they are not the same kind of thing.

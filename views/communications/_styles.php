@@ -8,7 +8,13 @@
 <style>
 .comms-hub .comms-panel {
     height: calc(100vh - 210px);
-    min-height: 420px;
+    /* dvh, where supported, tracks the viewport as mobile browser chrome shows and hides;
+       the vh line above stays as the fallback. */
+    height: calc(100dvh - 210px);
+    /* Was 420px, which is taller than the space available on a short window — the panel
+       then overflowed the viewport and pushed the composer below the fold, which is the
+       one part of a message pane that has to stay reachable. */
+    min-height: 260px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -94,9 +100,36 @@
 
 /* ---- mobile: collapse the rail when a thread is open ---- */
 @media (max-width: 991.98px) {
-    .comms-hub .comms-panel { height: auto; min-height: 0; }
-    .comms-hub .comms-scroll { overflow-y: visible; }
+    /* Narrow screens used to let the panel grow to fit every message (height:auto,
+       overflow-y:visible) and scroll the whole PAGE instead. That put the composer at the
+       bottom of a document taller than the window, so on a phone you had to scroll past
+       the entire conversation to reach the box you were trying to type in.
+
+       Now the panel is the window, the messages scroll inside it, and the composer stays
+       where your thumb already is. */
+    /* The hub fills what is left of the window below the app bar, and the conversation
+       row absorbs whatever the page heading did not use. Subtracting a guessed offset
+       instead was wrong by 45px here, because the heading wraps differently at each
+       width — so the panel is told to take "the rest" rather than "the height minus a
+       number somebody measured once". --comms-top is set from the real offset by the
+       script below. */
+    .comms-hub {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - var(--comms-top, 80px));
+        height: calc(100dvh - var(--comms-top, 80px));
+    }
+    .comms-hub > .row { flex: 1 1 auto; min-height: 0; }
+    .comms-hub > .row > [class*="col-"] { height: 100%; }
+    .comms-hub .comms-panel { height: 100%; min-height: 0; }
+    .comms-hub .comms-scroll { overflow-y: auto; }
     .comms-hub .comms-msg-bubble-wrap { max-width: 92%; }
+
+    /* The thread list stacks ABOVE the conversation at this width, so with a thread open
+       you scrolled through the whole rail to reach it. With one open the rail is hidden
+       and the back arrow in the conversation header returns to it — which is what that
+       arrow was already there for (it carries d-lg-none). */
+    .comms-hub .comms-rail-hide-mobile { display: none; }
 }
 /* Row actions: hidden until the row is hovered or something in it has focus, so the
    rail stays a list of conversations rather than a grid of buttons. Above the
@@ -178,3 +211,37 @@
     flex-shrink: 0;
 }
 </style>
+
+<script>
+/* Tell the CSS where the hub actually starts.
+ *
+ * The narrow-screen rule needs the height from the top of the messaging hub to the bottom
+ * of the window. Everything above it (the app bar) is layout this file does not own and
+ * cannot assume, so it is measured rather than guessed — a hard-coded offset was wrong by
+ * 45px at 390px wide, which is exactly enough to push the composer off the bottom.
+ */
+(function () {
+    // This partial is included at the TOP of the view, so .comms-hub does not exist yet
+    // when the script runs — querying for it here returns null and the whole thing
+    // silently does nothing. It has to wait for the document.
+    function init() {
+        var hub = document.querySelector('.comms-hub');
+        if (!hub) return;
+        setTop(hub);
+        window.addEventListener('resize', function () { setTop(hub); });
+        window.addEventListener('load',   function () { setTop(hub); });
+    }
+
+    function setTop(hub) {
+        // Distance from the document top, so page scroll does not change the answer.
+        var top = hub.getBoundingClientRect().top + window.scrollY;
+        document.documentElement.style.setProperty('--comms-top', Math.round(top) + 'px');
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>

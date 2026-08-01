@@ -59,6 +59,7 @@ switch ((string)$thread->kind) {
     </div>
 
     <div class="row g-3">
+        <?php $railClass = 'comms-rail-hide-mobile'; ?>
         <?php include __DIR__ . '/_thread-list.php'; ?>
 
         <div class="col-lg-8">

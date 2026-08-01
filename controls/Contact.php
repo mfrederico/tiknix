@@ -381,29 +381,46 @@ class Contact extends BaseControls\Control {
             $message->respondedBy = $_SESSION['member']['id'];
             Bean::store($message);
 
-            // Send email to user
-            if (Mailer::isConfigured()) {
-                $adminName = $_SESSION['member']['displayName']
-                    ?? $_SESSION['member']['username']
-                    ?? 'Support Team';
+            // Reply ON THE THREAD, not as a standalone email.
+            //
+            // This used to go out through Mailer::sendContactResponse(), which sends a
+            // perfectly good message carrying no reply token. controls/Webhook.php routes
+            // inbound mail back to a conversation by matching reply-{token}@ — so with no
+            // token, when the person answered, their answer matched nothing and was lost.
+            // Support was one-way and did not look it.
+            //
+            // NotifyService puts the reply on the thread this contact row already owns
+            // (relatedTo finds it), which means the outbound carries the token and their
+            // reply comes back into the same conversation by itself.
+            $adminName = member_display_name($_SESSION['member'] ?? null, 'Support');
+            $html = nl2br(htmlspecialchars($responseText, ENT_QUOTES));
 
-                $sent = Mailer::sendContactResponse(
-                    $message->email,
-                    $message->name,
-                    $message->subject,
-                    $message->message,
-                    $responseText,
-                    $adminName
-                );
+            $result = \app\services\NotifyService::create()
+                ->to((string)$message->email, (string)$message->name)
+                ->subject((string)$message->subject)
+                ->owner((int)($_SESSION['member']['id'] ?? 0))
+                ->relatedTo('contact', (int)$message->id)
+                ->fromName($adminName)
+                ->send($html);
 
-                if ($sent) {
-                    $response->emailSent = 1;
-                    $response->emailSentAt = date('Y-m-d H:i:s');
-                    Bean::store($response);
-                }
+            $sent = !empty($result['sent']);
+            if ($sent) {
+                $response->emailSent   = 1;
+                $response->emailSentAt = date('Y-m-d H:i:s');
+                Bean::store($response);
+            } else {
+                // Saved but not delivered is a state somebody has to know about — the
+                // person is waiting on an answer that never left the building.
+                Flight::get('log')->error('Support reply saved but NOT delivered', [
+                    'contact' => (int)$message->id,
+                    'thread'  => (int)($result['thread'] ?? 0),
+                    'error'   => (string)($result['error'] ?? 'unknown'),
+                ]);
             }
 
-            $this->flash('success', 'Response sent successfully');
+            $this->flash($sent ? 'success' : 'error', $sent
+                ? 'Response sent'
+                : 'Your response was saved but could NOT be delivered: ' . (string)($result['error'] ?? 'unknown'));
             Flight::redirect('/contact/view?id=' . $messageId);
             
         } catch (\Exception $e) {

@@ -36,6 +36,20 @@
                             endif;
                             ?>
                             
+                            <?php
+                            /* Bot defences that cost a person nothing. The honeypot is
+                               hidden from people and irresistible to form-fillers; the
+                               timestamp catches a submission that arrived faster than
+                               anyone could have typed it. Both are checked in
+                               Contact::submit(). Do not add a label or a placeholder —
+                               a screen reader would read them out, and a bot reads
+                               them too. */
+                            ?>
+                            <div aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden">
+                                <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off" value=""></label>
+                            </div>
+                            <input type="hidden" name="form_ts" value="<?= time() ?>">
+
                             <div class="mb-3">
                                 <label for="name" class="form-label">Your Name <span class="text-danger">*</span></label>
                                 <input type="text" 

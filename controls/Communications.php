@@ -133,6 +133,66 @@ class Communications extends BaseControls\Control {
         Flight::redirect('/communications/thread/' . (int)$result['thread']);
     }
 
+    /**
+     * Mark a thread read or unread (POST, CSRF).
+     *
+     * The same three controls the support queue has had all along — read, open, delete —
+     * because a thread list you can only ever open is a list you cannot keep tidy.
+     *
+     * unread_count is a count rather than a flag, so "unread" is written as 1 instead of
+     * restoring a number nobody recorded. That is a deliberate small lie: the badge exists
+     * to say "something here needs you", and it says that correctly at 1.
+     */
+    public function markread($params = []) {
+        if (!$this->requireLogin()) return;
+        if (!Flight::csrf()->validateRequest()) { Flight::jsonError('Invalid CSRF token', 403); return; }
+
+        $thread = Bean::load('emailthread', (int)$this->getParam('id', 0));
+        if (!$thread->id)        { Flight::jsonError('No such conversation.', 404); return; }
+        if (!$this->canView($thread)) { Flight::jsonError('That is not your conversation.', 403); return; }
+
+        $read = (int)$this->getParam('read', 1) === 1;
+        $thread->unreadCount = $read ? 0 : 1;
+        $thread->updatedAt   = date('Y-m-d H:i:s');
+        Bean::store($thread);
+
+        Flight::jsonSuccess(
+            ['id' => (int)$thread->id, 'unread' => (int)$thread->unreadCount, 'unread_total' => $this->unreadTotal()],
+            $read ? 'Marked as read' : 'Marked as unread'
+        );
+    }
+
+    /**
+     * Delete a thread and its messages (POST, CSRF).
+     *
+     * The notify rows are removed explicitly rather than by cascade: they hang off
+     * thread_id, but RedBean's xown cascade keys off the PARENT BEAN TYPE, and the parent
+     * here is 'emailthread' while the column says 'thread'. Relying on a cascade that does
+     * not fire would leave orphaned messages behind and nothing would say so.
+     */
+    public function remove($params = []) {
+        if (!$this->requireLogin()) return;
+        if (!Flight::csrf()->validateRequest()) { Flight::jsonError('Invalid CSRF token', 403); return; }
+
+        $thread = Bean::load('emailthread', (int)$this->getParam('id', 0));
+        if (!$thread->id)        { Flight::jsonError('No such conversation.', 404); return; }
+        if (!$this->canView($thread)) { Flight::jsonError('That is not your conversation.', 403); return; }
+
+        $id = (int)$thread->id;
+        $messages = Bean::find('notify', 'thread_id = ?', [$id]);
+        foreach ($messages as $m) Bean::trash($m);
+        Bean::trash($thread);
+
+        $this->logger->info('Conversation deleted', [
+            'thread' => $id, 'messages' => count($messages), 'by' => (int)$this->member->id,
+        ]);
+
+        Flight::jsonSuccess(
+            ['id' => $id, 'messages' => count($messages), 'unread_total' => $this->unreadTotal()],
+            'Conversation deleted'
+        );
+    }
+
     /** Send a threaded reply (POST, CSRF-protected). */
     public function reply($params = []) {
         if (!$this->requireLogin()) return;

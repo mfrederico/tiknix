@@ -27,7 +27,61 @@ class Contact extends BaseControls\Control {
      */
     public function submit() {
         $request = Flight::request();
-        
+
+        // Bot defences, in order of cheapness. This form took 189 submissions before it
+        // had any: it is public by design (a person who cannot log in still needs to
+        // reach support), Contact::submit() validated no CSRF token at all, and
+        // csrf_enabled is false globally anyway — so a bare POST to /contact/submit from
+        // anywhere worked, forever, at any rate.
+        //
+        // None of these stop a determined human, and none of them are meant to. They stop
+        // the automated volume, which is all of what was in that table.
+
+        // 1. Honeypot: a field a person never sees and a form-filler always completes.
+        if (trim((string)($request->data->website ?? '')) !== '') {
+            Flight::get('log')->info('Contact form honeypot tripped', [
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? '', 'email' => (string)($request->data->email ?? ''),
+            ]);
+            // Answer exactly as success does. Telling a bot why it failed teaches it.
+            $this->render('contact/form', ['title' => 'Contact Support', 'success' => true]);
+            return;
+        }
+
+        // 2. Proof the form was actually loaded, and how long it was open for.
+        //
+        //    REQUIRED, not "checked when present" — that distinction is the whole defence.
+        //    The bot this form actually attracts does not scrape the page; it POSTs
+        //    straight to /contact/submit with the four fields it already knows. A check
+        //    that skips when the field is missing is no check at all against exactly that.
+        //
+        //    A person always has this field, because the rendered form always emits it.
+        $rendered = (int)($request->data->form_ts ?? 0);
+        $age      = $rendered > 0 ? time() - $rendered : -1;
+        if ($rendered <= 0 || $age < 3 || $age > 86400) {
+            Flight::get('log')->info('Contact form rejected: no proof the form was loaded', [
+                'form_ts' => $rendered, 'age' => $age, 'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+                'email' => (string)($request->data->email ?? ''),
+            ]);
+            $this->render('contact/form', ['title' => 'Contact Support', 'success' => true]);
+            return;
+        }
+
+        // 3. Rate limit per IP. A real person does not file four support requests an hour.
+        $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+        if ($ip !== '') {
+            $since  = date('Y-m-d H:i:s', time() - 3600);
+            $recent = (int) Bean::count('contact', 'ip_address = ? AND created_at >= ?', [$ip, $since]);
+            if ($recent >= 3) {
+                Flight::get('log')->warning('Contact form rate limit hit', ['ip' => $ip, 'recent' => $recent]);
+                $this->render('contact/form', [
+                    'title'  => 'Contact Support',
+                    'errors' => ['You have sent several messages recently. Please give us a little time to reply before sending another.'],
+                    'data'   => $request->data->getData(),
+                ]);
+                return;
+            }
+        }
+
         // Get form data
         $name = $this->sanitize($request->data->name);
         $email = $this->sanitize($request->data->email, 'email');
@@ -100,6 +154,19 @@ class Contact extends BaseControls\Control {
     }
     
     /**
+     * Which operator's inbox support threads land in: the most senior active admin.
+     *
+     * Deliberately the same person the alert email goes to when [mail] support_email is
+     * unset, so the mail and the thread do not end up with different owners.
+     */
+    private function supportOwnerId(): int {
+        $admin = Bean::findOne('member',
+            'level <= ? AND status = ? ORDER BY level ASC, id ASC',
+            [LEVELS['ADMIN'], 'active']);
+        return (int) ($admin->id ?? 0);
+    }
+
+    /**
      * Where support mail should land: an explicitly configured address, or failing that
      * the most senior active admin. Returns '' when there is nobody to tell.
      */
@@ -124,6 +191,41 @@ class Contact extends BaseControls\Control {
         int $contactId, string $name, string $email, string $subject,
         string $message, string $category, bool $fromMember
     ): void {
+        // First, into the inbox. A support message IS a message, and Communications is
+        // where messages live — an emailed alert about a row in a table is a notification
+        // ABOUT the thing rather than the thing itself. The thread is owned by the
+        // operator and addressed to the sender, so replying to it answers them through
+        // the ordinary reply path.
+        try {
+            $owner = $this->supportOwnerId();
+            if ($owner > 0) {
+                $threadId = \app\services\NotifyService::openInboundThread(
+                    $owner, $email, $name,
+                    '[' . $category . '] ' . $subject,
+                    nl2br(htmlspecialchars($message, ENT_QUOTES)),
+                    'contact', $contactId
+                );
+                if ($threadId) {
+                    Flight::get('log')->info('Support message threaded into Communications', [
+                        'contact_id' => $contactId, 'thread' => $threadId, 'owner' => $owner,
+                    ]);
+                } else {
+                    Flight::get('log')->error('Support message could not open a thread', [
+                        'contact_id' => $contactId, 'owner' => $owner,
+                    ]);
+                }
+            } else {
+                Flight::get('log')->error('Support message saved but there is no operator to own it', [
+                    'contact_id' => $contactId,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Flight::get('log')->error('Support message threading threw', [
+                'contact_id' => $contactId, 'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Then the email, because nobody watches an inbox they are not signed into.
         try {
             $to = $this->supportAddress();
             if ($to === '') {

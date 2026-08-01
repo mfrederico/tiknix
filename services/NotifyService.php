@@ -437,6 +437,103 @@ class NotifyService {
      * Used to record internal events ("Order #42 shipped", "Address bounced")
      * so the thread owner sees them alongside real messages.
      */
+    /**
+     * Open a thread for something that arrived from OUTSIDE the email pipeline.
+     *
+     * The support form is the case this exists for. A contact submission is a message
+     * from a person, and the inbox is where messages belong — but it never travelled
+     * through Mailgun, so nothing here knew about it and it was only ever an emailed
+     * alert plus a row in a table with no link to it.
+     *
+     * The thread is OWNED by the operator (so it appears in their Communications) and
+     * ADDRESSED to whoever wrote in (so replying in the thread answers them, through the
+     * ordinary reply path, with no special case). Idempotent per related entity: called
+     * twice for the same contact row, it returns the existing thread.
+     *
+     * @return int|null thread id, or null if the thread could not be created
+     */
+    public static function openInboundThread(
+        int $ownerMemberId,
+        string $fromEmail,
+        string $fromName,
+        string $subject,
+        string $html,
+        ?string $relatedType = null,
+        ?int $relatedId = null
+    ): ?int {
+        if ($relatedType !== null && $relatedId !== null) {
+            $existing = Bean::findOne('emailthread', 'related_type = ? AND related_id = ?',
+                [$relatedType, $relatedId]);
+            if ($existing && $existing->id) {
+                self::recordInbound((int)$existing->id, $fromEmail, $fromName, $subject, $html);
+                return (int)$existing->id;
+            }
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $thread = Bean::dispense('emailthread');
+        // The RAW subject: normalizeSubject() lowercases because it is a matching key
+        // for grouping "Re: Foo" with "foo", not something to show a person.
+        $thread->subject        = trim($subject);
+        $thread->replyToken     = self::mintReplyToken();
+        $thread->relatedType    = $relatedType;
+        $thread->relatedId      = $relatedId;
+        $thread->ownerMemberId  = $ownerMemberId;
+        $thread->recipientEmail = $fromEmail;
+        $thread->recipientName  = $fromName;
+        $thread->messageCount   = 0;
+        $thread->unreadCount    = 0;
+        $thread->lastDirection  = 'in';
+        $thread->lastPreview    = '';
+        $thread->lastMessageAt  = $now;
+        $thread->status         = 'open';
+        $thread->createdAt      = $now;
+        $thread->updatedAt      = $now;
+        $id = (int) Bean::store($thread);
+        if (!$id) return null;
+
+        self::recordInbound($id, $fromEmail, $fromName, $subject, $html);
+        return $id;
+    }
+
+    /**
+     * Record a received message on a thread and move the thread's counters.
+     * Mirrors createSystemMessage(), but keeps the real sender rather than "System".
+     */
+    private static function recordInbound(
+        int $threadId, string $fromEmail, string $fromName, string $subject, string $html
+    ): ?int {
+        $thread = Bean::load('emailthread', $threadId);
+        if (!$thread->id) return null;
+        $now = date('Y-m-d H:i:s');
+
+        $n = Bean::dispense('notify');
+        $n->threadId   = $threadId;
+        $n->direction  = 'in';
+        $n->notifyType = 'inbound';
+        $n->fromEmail  = $fromEmail;
+        $n->fromName   = $fromName;
+        $n->toEmail    = '';
+        $n->subject    = $subject;
+        $n->content    = $html;
+        $n->bodyPlain  = self::htmlToPlain($html);
+        $n->status     = 'received';
+        $n->ip         = $_SERVER['REMOTE_ADDR'] ?? '';
+        $n->createdAt  = $now;
+        $n->sentAt     = $now;
+        $id = (int) Bean::store($n);
+
+        $thread->messageCount  = (int)$thread->messageCount + 1;
+        $thread->unreadCount   = (int)$thread->unreadCount + 1;
+        $thread->lastDirection = 'in';
+        $thread->lastPreview   = self::previewFromHtml($html);
+        $thread->lastMessageAt = $now;
+        $thread->updatedAt     = $now;
+        Bean::store($thread);
+
+        return $id;
+    }
+
     public static function createSystemMessage(int $threadId, string $html): ?int {
         $thread = Bean::load('emailthread', $threadId);
         if (!$thread->id) {

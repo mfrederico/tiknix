@@ -99,3 +99,23 @@
     .comms-hub .comms-msg-bubble-wrap { max-width: 92%; }
 }
 </style>
+
+/* Row actions: hidden until the row is hovered or something in it has focus, so the
+   rail stays a list of conversations rather than a grid of buttons. Above the
+   stretched-link, or the anchor would swallow the clicks. */
+.comms-hub .comms-thread-actions {
+    position: absolute;
+    top: .35rem;
+    right: .5rem;
+    z-index: 2;
+    display: flex;
+    gap: .5rem;
+    opacity: 0;
+    transition: opacity .12s ease-in-out;
+}
+.comms-hub .comms-thread-row:hover .comms-thread-actions,
+.comms-hub .comms-thread-row:focus-within .comms-thread-actions { opacity: 1; }
+/* Touch has no hover — never leave the actions unreachable there. */
+@media (hover: none) {
+    .comms-hub .comms-thread-actions { opacity: 1; }
+}

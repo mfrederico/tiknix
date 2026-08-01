@@ -50,9 +50,28 @@ if (!function_exists('comms_initials')) {
                         $dirIcon = $t->lastDirection === 'in' ? 'bi-arrow-down-left text-success' : 'bi-arrow-up-right text-primary';
                         $when    = $t->lastMessageAt ? date('M j', strtotime($t->lastMessageAt)) : '';
                     ?>
-                    <a href="/communications/thread/<?= (int)$t->id ?>"
-                       data-thread-id="<?= (int)$t->id ?>"
-                       class="comms-thread-row <?= $unread ? 'unread' : '' ?> <?= $active ? 'active' : '' ?>">
+                    <?php
+                    /* The row is the WRAPPER now, not the anchor. It has to be: the live-rail
+                       JS below re-sorts by prepending `.comms-thread-row`, and if that were
+                       still the <a> the sort would rip it out of its actions. The anchor keeps
+                       covering the whole row via .stretched-link, so clicking anywhere still
+                       opens the thread — except on the buttons, which sit above it. */
+                    ?>
+                    <div data-thread-id="<?= (int)$t->id ?>"
+                         class="comms-thread-row position-relative <?= $unread ? 'unread' : '' ?> <?= $active ? 'active' : '' ?>">
+                        <a href="/communications/thread/<?= (int)$t->id ?>"
+                           class="stretched-link" aria-label="Open conversation"></a>
+                        <div class="comms-thread-actions">
+                            <button type="button" class="btn btn-sm btn-link p-0 comms-act" data-act="read"
+                                    data-id="<?= (int)$t->id ?>" data-read="<?= $unread ? 1 : 0 ?>"
+                                    title="<?= $unread ? 'Mark as read' : 'Mark as unread' ?>">
+                                <i class="bi <?= $unread ? 'bi-envelope-open' : 'bi-envelope' ?>"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-link p-0 text-danger comms-act" data-act="del"
+                                    data-id="<?= (int)$t->id ?>" title="Delete conversation">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
                         <div class="d-flex gap-2">
                             <span class="comms-avatar"><?= htmlspecialchars((comms_initials($who)) ?? '') ?></span>
                             <div class="min-w-0 flex-grow-1">
@@ -74,7 +93,7 @@ if (!function_exists('comms_initials')) {
                                 </div>
                             </div>
                         </div>
-                    </a>
+                    </div>
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
@@ -136,6 +155,56 @@ if (!function_exists('comms_initials')) {
             }
         }
     }
+
+    // Row actions. Delegated, so rows the poll re-orders keep working.
+    rail.addEventListener('click', function (e) {
+        var btn = e.target.closest('.comms-act');
+        if (!btn) return;
+        e.preventDefault();          // the row is a stretched-link; don't follow it
+        e.stopPropagation();
+
+        var csrf = document.querySelector('meta[name="csrf-token"]');
+        var id   = btn.dataset.id;
+        var row  = rail.querySelector('.comms-thread-row[data-thread-id="' + id + '"]');
+        var fd   = new FormData();
+        fd.append('id', id);
+        if (csrf) fd.append('_csrf_token', csrf.content);
+
+        if (btn.dataset.act === 'del') {
+            if (!confirm('Delete this conversation and its messages? This cannot be undone.')) return;
+            btn.disabled = true;
+            fetch('/communications/remove', { method: 'POST', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function (j) {
+                    if (!j.success) { alert(j.message || 'Could not delete that conversation.'); btn.disabled = false; return; }
+                    if (row) row.remove();
+                    // If the deleted thread is the one on screen, there is nothing left to show.
+                    if (window.location.pathname === '/communications/thread/' + id) window.location = '/communications';
+                })
+                .catch(function (err) { alert('Could not delete that conversation: ' + err); btn.disabled = false; });
+            return;
+        }
+
+        // Mark read / unread. data-read is "is it currently unread", i.e. what to set it to.
+        var makeRead = btn.dataset.read === '1';
+        fd.append('read', makeRead ? '1' : '0');
+        btn.disabled = true;
+        fetch('/communications/markread', { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                btn.disabled = false;
+                if (!j.success) { alert(j.message || 'Could not update that conversation.'); return; }
+                var unread = (j.data && j.data.unread) > 0;
+                if (row) row.classList.toggle('unread', unread);
+                var badge = row && row.querySelector('.comms-unread-badge');
+                if (badge) { badge.textContent = unread ? 1 : 0; badge.classList.toggle('d-none', !unread); }
+                btn.dataset.read = unread ? '1' : '0';
+                btn.title = unread ? 'Mark as read' : 'Mark as unread';
+                var ic = btn.querySelector('i');
+                if (ic) ic.className = 'bi ' + (unread ? 'bi-envelope-open' : 'bi-envelope');
+            })
+            .catch(function (err) { btn.disabled = false; alert('Could not update that conversation: ' + err); });
+    });
 
     document.addEventListener('comms:threads', function (e) { update(e.detail); });
 })();

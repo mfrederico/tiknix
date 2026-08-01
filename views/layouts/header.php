@@ -81,6 +81,14 @@ if ($__loggedIn) {
         try { $__leadCount = (int)\app\Bean::count('lead'); } catch (\Throwable $e) {}
         $__sections['Main'][] = ['url' => '/leads', 'label' => 'Leads', 'icon' => 'person-lines-fill', 'badge' => $__leadCount];
     }
+    /* Support messages had no way in at all — /contact/admin was reachable only by typing
+       the URL, which is most of why 187 of them sat unread. A page nobody can navigate to
+       is a page nobody reads, so the unanswered count goes where it can be seen. */
+    if ($__isAdmin && !isset($__have['/contact/admin'])) {
+        $__supportNew = 0;
+        try { $__supportNew = (int)\app\Bean::count('contact', 'status = ?', ['new']); } catch (\Throwable $e) {}
+        $__sections['Main'][] = ['url' => '/contact/admin', 'label' => 'Support', 'icon' => 'life-preserver', 'badge' => $__supportNew];
+    }
 }
 ?>
 <div class="ui-shell">

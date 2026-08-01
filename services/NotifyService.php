@@ -32,6 +32,8 @@
 namespace app\services;
 
 use app\Bean;
+use app\ThreadMembers;
+use RedBeanPHP\R;
 use Flight;
 use Mailgun\Mailgun;
 
@@ -437,6 +439,96 @@ class NotifyService {
      * Used to record internal events ("Order #42 shipped", "Address bounced")
      * so the thread owner sees them alongside real messages.
      */
+    /**
+     * Find or create the direct conversation between two people.
+     *
+     * A DM is identified by WHO IS IN IT, not by a subject line — so the lookup is over
+     * participants, and the pair (a,b) is the same conversation as (b,a). Anything else
+     * and every new message starts a new thread.
+     */
+    public static function dmThread(int $memberA, int $memberB): ?int {
+        if ($memberA <= 0 || $memberB <= 0 || $memberA === $memberB) return null;
+
+        $existing = (int) R::getCell(
+            'SELECT t.id FROM emailthread t '
+          . 'JOIN threadmember ma ON ma.thread_id = t.id AND ma.member_id = ? '
+          . 'JOIN threadmember mb ON mb.thread_id = t.id AND mb.member_id = ? '
+          . "WHERE t.kind = 'dm' LIMIT 1",
+            [$memberA, $memberB]
+        );
+        if ($existing > 0) return $existing;
+
+        $now = date('Y-m-d H:i:s');
+        $thread = Bean::dispense('emailthread');
+        $thread->subject        = '';        // a DM is named by its people, not a subject
+        $thread->kind           = 'dm';
+        $thread->replyToken     = self::mintReplyToken();
+        $thread->ownerMemberId  = $memberA;
+        $thread->recipientEmail = '';        // nothing here is addressed to an inbox
+        $thread->recipientName  = '';
+        $thread->messageCount   = 0;
+        $thread->unreadCount    = 0;
+        $thread->lastDirection  = 'out';
+        $thread->lastPreview    = '';
+        $thread->lastMessageAt  = $now;
+        $thread->status         = 'open';
+        $thread->createdAt      = $now;
+        $thread->updatedAt      = $now;
+        $id = (int) Bean::store($thread);
+        if (!$id) return null;
+
+        ThreadMembers::ensure($id, [$memberA], ThreadMembers::ROLE_OWNER);
+        ThreadMembers::ensure($id, [$memberB]);
+        return $id;
+    }
+
+    /**
+     * Post a message that stays inside the application. No Mailgun, no message-id, no
+     * reply token — it never leaves, so none of the email machinery applies.
+     *
+     * The sender is marked read immediately: nobody needs a badge for what they just
+     * typed. Everyone else's unread is derived from their own read mark, so there is no
+     * per-recipient counter to keep in step.
+     *
+     * @return int|null the new message id
+     */
+    public static function postInApp(int $threadId, int $senderMemberId, string $html): ?int {
+        $thread = Bean::load('emailthread', $threadId);
+        if (!$thread->id) return null;
+
+        $now = date('Y-m-d H:i:s');
+        $sender = Bean::load('member', $senderMemberId);
+
+        $n = Bean::dispense('notify');
+        $n->threadId       = $threadId;
+        $n->senderMemberId = $senderMemberId;
+        $n->transport      = 'inapp';
+        $n->direction      = 'out';
+        $n->notifyType     = 'message';
+        $n->fromEmail      = (string) ($sender->email ?? '');
+        $n->fromName       = member_display_name($sender, 'Someone');
+        $n->toEmail        = '';
+        $n->subject        = (string) ($thread->subject ?: '');
+        $n->content        = $html;
+        $n->bodyPlain      = self::htmlToPlain($html);
+        $n->status         = 'delivered';    // in-app delivery is the write itself
+        $n->ip             = $_SERVER['REMOTE_ADDR'] ?? '';
+        $n->createdAt      = $now;
+        $n->sentAt         = $now;
+        $id = (int) Bean::store($n);
+        if (!$id) return null;
+
+        $thread->messageCount  = (int) $thread->messageCount + 1;
+        $thread->lastDirection = 'out';
+        $thread->lastPreview   = self::previewFromHtml($html);
+        $thread->lastMessageAt = $now;
+        $thread->updatedAt     = $now;
+        Bean::store($thread);
+
+        ThreadMembers::markRead($threadId, $senderMemberId);
+        return $id;
+    }
+
     /**
      * Open a thread for something that arrived from OUTSIDE the email pipeline.
      *

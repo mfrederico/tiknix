@@ -69,7 +69,10 @@ class Communications extends BaseControls\Control {
             if ($r && $r->id) $related = $r;
         }
 
-        // Reading clears the unread badge.
+        // Reading clears the unread badge — for THIS reader. The thread-level counter is
+        // still written so anything not yet moved across stays consistent, but the figure
+        // that now drives the bell is the per-person read mark.
+        \app\ThreadMembers::markRead((int)$thread->id, (int)$this->member->id);
         if ((int)$thread->unreadCount > 0) {
             $thread->unreadCount = 0;
             $thread->updatedAt   = date('Y-m-d H:i:s');
@@ -97,10 +100,62 @@ class Communications extends BaseControls\Control {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
 
-        $to      = trim((string)$this->getParam('to', ''));
-        $toName  = trim((string)$this->getParam('to_name', ''));
-        $subject = trim((string)$this->getParam('subject', '')) ?: 'New conversation';
-        $body    = $this->sanitizeReply((string)$this->getParam('body', ''));
+        $to       = trim((string)$this->getParam('to', ''));
+        $toName   = trim((string)$this->getParam('to_name', ''));
+        $toMember = (int)$this->getParam('to_member', 0);
+        $subject  = trim((string)$this->getParam('subject', '')) ?: 'New conversation';
+        $body     = $this->sanitizeReply((string)$this->getParam('body', ''));
+
+        $mid   = (int)$this->member->id;
+        $level = (int)$this->member->level;
+
+        // A message to a PERSON stays in the application. This is the default path and
+        // needs no grant, because both ends already share a team.
+        if ($toMember > 0) {
+            if (trim(strip_tags($body)) === '') {
+                $this->flash('error', 'Message cannot be empty');
+                Flight::redirect('/communications');
+                return;
+            }
+            if (!\app\Teammates::canMessage($mid, $toMember, $level)) {
+                // Says the rule, not just "no". Someone who cannot find a colleague here
+                // needs to know the answer is "share a team with them".
+                $this->logger->warning('Blocked DM outside shared teams', [
+                    'from' => $mid, 'to' => $toMember,
+                ]);
+                $this->flash('error', 'You can only message people you share a team with.');
+                Flight::redirect('/communications');
+                return;
+            }
+
+            $threadId = \app\services\NotifyService::dmThread($mid, $toMember);
+            if (!$threadId) {
+                $this->logger->error('Could not open a direct conversation', ['from' => $mid, 'to' => $toMember]);
+                $this->flash('error', 'Could not open that conversation.');
+                Flight::redirect('/communications');
+                return;
+            }
+            if (!\app\services\NotifyService::postInApp($threadId, $mid, $body)) {
+                $this->logger->error('Could not post an in-app message', ['thread' => $threadId, 'from' => $mid]);
+                $this->flash('error', 'Could not send that message.');
+                Flight::redirect('/communications');
+                return;
+            }
+            Flight::redirect('/communications/thread/' . $threadId);
+            return;
+        }
+
+        // Everything below leaves the building.
+        if (!\app\Teammates::canSendEmail($mid, $level)) {
+            // The compose form does not offer email to anyone without the grant, so
+            // arriving here means the field was supplied by hand. Refuse and say so.
+            $this->logger->warning('Blocked outbound email from Communications', [
+                'member' => $mid, 'level' => $level, 'to' => $to,
+            ]);
+            $this->flash('error', 'Sending email is not enabled for your account. You can message people you share a team with.');
+            Flight::redirect('/communications');
+            return;
+        }
 
         if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
             $this->flash('error', 'A valid recipient email is required');
@@ -152,6 +207,11 @@ class Communications extends BaseControls\Control {
         if (!$this->canView($thread)) { Flight::jsonError('That is not your conversation.', 403); return; }
 
         $read = (int)$this->getParam('read', 1) === 1;
+        // Per-person, so one operator marking a shared support thread unread does not
+        // put a badge on it for the whole team.
+        $mid = (int)$this->member->id;
+        $read ? \app\ThreadMembers::markRead((int)$thread->id, $mid)
+              : \app\ThreadMembers::markUnread((int)$thread->id, $mid);
         $thread->unreadCount = $read ? 0 : 1;
         $thread->updatedAt   = date('Y-m-d H:i:s');
         Bean::store($thread);
@@ -210,6 +270,19 @@ class Communications extends BaseControls\Control {
         $bodyHtml = $this->sanitizeReply((string)$this->getParam('body', ''));
         if (trim(strip_tags($bodyHtml)) === '') {
             $this->flash('error', 'Reply cannot be empty');
+            Flight::redirect('/communications/thread/' . $id);
+            return;
+        }
+
+        // An in-app conversation is answered in-app. Falling through to the email path
+        // would try to post a DM to an empty address, and the only reason it would not
+        // send something absurd is that it fails the recipient check below by accident.
+        if (in_array((string)$thread->kind, ['dm', 'room'], true)) {
+            $mid = (int)$this->member->id;
+            if (!\app\services\NotifyService::postInApp($id, $mid, $bodyHtml)) {
+                $this->logger->error('In-app reply failed', ['thread' => $id, 'from' => $mid]);
+                $this->flash('error', 'Could not send that message.');
+            }
             Flight::redirect('/communications/thread/' . $id);
             return;
         }
@@ -300,6 +373,9 @@ class Communications extends BaseControls\Control {
 
         // The viewer is actively looking at this thread, so anything that just
         // arrived is "read" — clear its badge (mirrors thread() on load).
+        if ($new) {
+            \app\ThreadMembers::markRead((int)$thread->id, (int)$this->member->id);
+        }
         if ($new && (int)$thread->unreadCount > 0) {
             $thread->unreadCount = 0;
             $thread->updatedAt   = date('Y-m-d H:i:s');
@@ -365,21 +441,39 @@ class Communications extends BaseControls\Control {
 
     /** WHERE fragment scoping threads to the viewer's role. */
     private function scopeClause(): array {
-        // Only ROOT sees every member's threads; admins are scoped to their own.
+        // Only ROOT sees every member's threads.
         if (Flight::hasLevel(LEVELS['ROOT'])) {
             return ['1=1', []];
         }
-        return ['owner_member_id = ?', [(int)$this->member->id]];
+        // PARTICIPATION, not ownership. A DM has two people in it and a room has many;
+        // owner_member_id can only ever name one of them, so scoping by it would hide a
+        // conversation from everyone in it but its creator. Threads that predate
+        // participants are covered by the owner clause until the backfill has run.
+        $mid = (int)$this->member->id;
+        return ['(id IN (SELECT thread_id FROM threadmember WHERE member_id = ?) OR owner_member_id = ?)',
+                [$mid, $mid]];
     }
 
     private function canView($thread): bool {
         if (Flight::hasLevel(LEVELS['ROOT'])) return true;   // only ROOT sees others' threads
-        return (int)$thread->ownerMemberId === (int)$this->member->id;
+        $mid = (int)$this->member->id;
+        if ((int)$thread->ownerMemberId === $mid) return true;
+        return \app\ThreadMembers::isMember((int)$thread->id, $mid);
     }
 
     private function unreadTotal(): int {
-        [$scopeSql, $scopeParams] = $this->scopeClause();
-        return (int)Bean::count('emailthread', $scopeSql . ' AND unread_count > 0', $scopeParams);
+        // Per-person now: with more than one participant, "has this been read" has no
+        // single answer, and the thread-level counter cannot represent one.
+        // ROOT keeps the everything-view, which is a different question.
+        if (Flight::hasLevel(LEVELS['ROOT'])) {
+            [$scopeSql, $scopeParams] = $this->scopeClause();
+            $own = \app\ThreadMembers::unreadThreadCount((int)$this->member->id);
+            $legacy = (int)Bean::count('emailthread',
+                $scopeSql . ' AND unread_count > 0 AND id NOT IN (SELECT thread_id FROM threadmember)',
+                $scopeParams);
+            return $own + $legacy;
+        }
+        return \app\ThreadMembers::unreadThreadCount((int)$this->member->id);
     }
 
     /** Path id from /communications/{method}/{id}, falling back to ?id=. */

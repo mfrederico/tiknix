@@ -44,6 +44,21 @@ class Feature {
         // Level alone could not express this. At 50 the tooling was admin-or-nothing, so
         // letting one member use it meant making them an administrator of everything. The
         // flag decouples the two: eligible from MEMBER up, but off until switched on.
+        // Sending EMAIL from Communications. In-app messaging between teammates needs no
+        // grant — it stays inside the product and reaches people who already share a team
+        // with you. Email is different in kind: it leaves the building under Tiknix's
+        // name, reaches an address nobody verified, and is answerable to spam
+        // reputation. So it is handed out per person, like invitations.
+        //
+        // Admins pass without a switch, via Feature::allows().
+        'email_out' => [
+            'label'     => 'Send Email',
+            'blurb'     => 'Start email conversations from Communications, to addresses outside Tiknix. '
+                         . 'Messaging people you share a team with works without this and is always available. '
+                         . 'Email goes out under Tiknix\'s name and reaches people who never signed up, so it '
+                         . 'is granted deliberately, per person.',
+            'min_level' => 100, // MEMBER and above are ELIGIBLE; an admin still switches it on
+        ],
         'mcp' => [
             'label'     => 'MCP Access',
             'blurb'     => 'Issue API keys, and open Agent Setup to manage MCP servers. An API key authenticates '

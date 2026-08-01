@@ -44,9 +44,30 @@ if (!function_exists('comms_initials')) {
             <?php else: ?>
                 <?php foreach ($threads as $t): ?>
                     <?php
-                        $unread  = (int)$t->unreadCount > 0;
+                        $me      = (int)($member['id'] ?? 0);
+                        // Per-person unread now. The thread-level counter cannot answer this
+                        // once a conversation has more than one participant.
+                        $unread  = \app\ThreadMembers::unreadFor((int)$t->id, $me) > 0
+                                   || ((int)$t->unreadCount > 0 && !\app\ThreadMembers::isMember((int)$t->id, $me));
                         $active  = (int)$t->id === (int)($activeId ?? 0);
-                        $who     = $t->recipientName ?: $t->recipientEmail ?: 'Unknown';
+                        $kind    = (string)($t->kind ?: 'email');
+
+                        // A DM is named by WHO IS IN IT — it has no subject and no
+                        // recipient address, so the email fields would render "(no
+                        // subject)" from "Unknown".
+                        if ($kind === 'dm') {
+                            $others = array_values(array_filter(
+                                \app\ThreadMembers::participants((int)$t->id), fn($id) => $id !== $me));
+                            $who = $others
+                                ? member_display_name(\app\Bean::load('member', $others[0]), 'Someone')
+                                : 'Just you';
+                            $label = $who;
+                            $kindIcon = 'bi-person-circle';
+                        } else {
+                            $who   = $t->recipientName ?: $t->recipientEmail ?: 'Unknown';
+                            $label = $t->subject ?: '(no subject)';
+                            $kindIcon = 'bi-envelope';
+                        }
                         $dirIcon = $t->lastDirection === 'in' ? 'bi-arrow-down-left text-success' : 'bi-arrow-up-right text-primary';
                         $when    = $t->lastMessageAt ? date('M j', strtotime($t->lastMessageAt)) : '';
                     ?>
@@ -77,8 +98,8 @@ if (!function_exists('comms_initials')) {
                             <div class="min-w-0 flex-grow-1">
                                 <div class="d-flex align-items-center">
                                     <span class="comms-unread-dot"></span>
-                                    <span class="comms-thread-subject flex-grow-1"><?= htmlspecialchars(($t->subject ?: '(no subject)') ?? '') ?></span>
-                                    <span class="comms-unread-badge badge rounded-pill bg-danger ms-1 flex-shrink-0 <?= $unread ? '' : 'd-none' ?>"><?= (int)$t->unreadCount ?></span>
+                                    <span class="comms-thread-subject flex-grow-1"><i class="bi <?= $kindIcon ?> me-1 opacity-50 small"></i><?= htmlspecialchars($label) ?></span>
+                                    <span class="comms-unread-badge badge rounded-pill bg-danger ms-1 flex-shrink-0 <?= $unread ? '' : 'd-none' ?>"><?= $unread ? 1 : 0 ?></span>
                                     <small class="comms-thread-when text-muted ms-2 flex-shrink-0"><?= htmlspecialchars(($when) ?? '') ?></small>
                                 </div>
                                 <div class="comms-thread-preview">

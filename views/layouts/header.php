@@ -185,12 +185,21 @@ if ($__loggedIn) {
     </nav>
 
     <?php if ($__loggedIn): ?>
+    <?php /* Identity only. Signing out sits with the other things you do to your own
+             account — profile, settings, keys — in the topbar dropdown, rather than
+             being the one account action stranded at the bottom of the navigation. */ ?>
     <div class="ui-sidebar-foot">
       <div class="d-flex align-items-center gap-2">
         <span class="ui-avatar" style="background:var(--ui-accent-order)"><?= htmlspecialchars($__initials) ?></span>
         <div style="min-width:0;line-height:1.2">
           <div class="text-truncate" style="color:#fff;font-size:.85rem;font-weight:600"><?= htmlspecialchars($__uname) ?></div>
-          <a href="/auth/logout" style="font-size:.72rem;color:var(--ui-sidebar-heading);text-decoration:none">Sign out</a>
+          <div style="font-size:.72rem;color:var(--ui-sidebar-heading)"><?php
+            /* The sign-out link used to live on this line. Replacing it with nothing
+               would leave an empty row under the name, so it says what the account IS —
+               which is the other thing people look at the bottom of a sidebar for. */
+            $__levels = [0 => 'Root', 1 => 'Root', 50 => 'Admin', 100 => 'Member', 101 => 'Guest'];
+            echo htmlspecialchars($__levels[$__level] ?? 'Member');
+          ?></div>
         </div>
       </div>
     </div>
@@ -314,6 +323,8 @@ if ($__loggedIn) {
               <li><hr class="dropdown-divider"></li>
               <li><a class="dropdown-item" href="/docs"><i class="bi bi-book me-2"></i>Documentation</a></li>
               <li><a class="dropdown-item" href="/help"><i class="bi bi-question-circle me-2"></i>Help</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item text-danger" href="/auth/logout"><i class="bi bi-box-arrow-right me-2"></i>Sign out</a></li>
             </ul>
           </li>
         <?php else: ?>

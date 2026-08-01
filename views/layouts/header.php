@@ -135,14 +135,15 @@ if ($__loggedIn) {
 
         <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>
         <?php
-        /* Plugins act ON the selected project, so they cannot be USED until one is
-           chosen — otherwise you click in, get asked to pick a project, and two places
-           own that choice. /projects is the way in.
+        /* These act ON the selected project, so they cannot be USED until one is chosen —
+           otherwise you click in, get asked to pick a project, and two places own that
+           choice. /projects is the way in, and it is also where a project gets made
+           (/projects/create is a POST endpoint, not a page).
 
-           But they are still SHOWN. Removing the section outright meant five nav items
-           vanished at once with nothing to explain it, which reads as "my plugins were
-           switched off" rather than "you are not on a project" — a real report, from the
-           person who owns this. So the heading stays and says what is missing. */
+           But the section is still SHOWN. Removing it outright meant five nav items
+           vanished at once with nothing to explain it, which reads as "my tools were
+           switched off" rather than "you are not on a project". So the heading stays and
+           offers the one thing a new account actually needs to do first. */
         $__enabledPlugins = [];
         if ($__loggedIn && class_exists('\\app\\Sidecar\\Registry')) {
             foreach (\app\Sidecar\Registry::launchable() as $__pname => $__p) {
@@ -153,21 +154,13 @@ if ($__loggedIn) {
         }
         ?>
         <?php if ($__enabledPlugins): ?>
-          <div class="ui-nav-heading">Plugins</div>
+          <div class="ui-nav-heading">Build</div>
           <?php if ($__hasProject): ?>
             <?php foreach ($__enabledPlugins as $__pname => $__p): ?>
               <a class="ui-nav-link<?= $__active('/sidecar/app/' . $__pname) ?>" href="/sidecar/app/<?= htmlspecialchars($__pname) ?>"><i class="bi <?= htmlspecialchars($__p['icon']) ?>"></i> <?= htmlspecialchars($__p['label']) ?></a>
             <?php endforeach; ?>
           <?php else: ?>
-            <a class="ui-nav-link" href="/projects" style="white-space:normal;line-height:1.3">
-              <i class="bi bi-signpost-split"></i>
-              <span>
-                Choose a project
-                <span class="d-block small opacity-75" style="font-size:.7rem">
-                  <?= count($__enabledPlugins) ?> plugin<?= count($__enabledPlugins) === 1 ? '' : 's' ?> are waiting for one
-                </span>
-              </span>
-            </a>
+            <a class="ui-nav-link" href="/projects"><i class="bi bi-plus-circle"></i> New Project</a>
           <?php endif; ?>
         <?php endif; ?>
 

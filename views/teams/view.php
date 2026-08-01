@@ -137,6 +137,68 @@
 
         <!-- Sidebar -->
         <div class="col-lg-4">
+        <?php
+        /* The team's #general, inline. Posting here IS broadcasting to the team — there
+           is no separate broadcast feature, because a message everyone can see and reply
+           to in one place is what telling the team should mean.
+
+           Deliberately a short tail plus a box, not the full conversation: this is the
+           team page, and the whole thread lives in Communications. */
+        ?>
+        <?php if (!empty($roomId)): ?>
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-hash"></i>general</h6>
+                <div class="d-flex align-items-center gap-2">
+                    <?php if (!empty($roomUnread)): ?>
+                        <span class="badge rounded-pill bg-danger"><?= (int)$roomUnread ?> new</span>
+                    <?php endif; ?>
+                    <a href="/communications/thread/<?= (int)$roomId ?>" class="small text-decoration-none">
+                        Open in Communications <i class="bi bi-arrow-right-short"></i>
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <?php if (empty($roomMessages)): ?>
+                    <div class="text-body-secondary small mb-3">
+                        Nothing here yet. Anything posted is seen by everyone on this team.
+                    </div>
+                <?php else: ?>
+                    <div class="mb-3" style="max-height:18rem;overflow-y:auto">
+                        <?php foreach ($roomMessages as $rm): ?>
+                            <div class="d-flex gap-2 mb-2">
+                                <div class="flex-grow-1 min-w-0">
+                                    <div class="small">
+                                        <strong><?= htmlspecialchars((string)($rm->fromName ?: 'Someone')) ?></strong>
+                                        <span class="text-body-secondary ms-1" style="font-size:.75rem">
+                                            <?= htmlspecialchars($rm->createdAt ? date('j M, H:i', strtotime((string)$rm->createdAt)) : '') ?>
+                                        </span>
+                                    </div>
+                                    <?php /* content is stored already sanitized on the way in */ ?>
+                                    <div class="small"><?= $rm->content ?></div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
+                <form method="post" action="/communications/create">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="to_room" value="<?= (int)$roomId ?>">
+                    <?php /* Posting from here should leave you here. */ ?>
+                    <input type="hidden" name="redirect" value="/teams/view?id=<?= (int)$team->id ?>">
+                    <div class="input-group">
+                        <input type="text" name="body" class="form-control form-control-sm"
+                               placeholder="Message the team…" maxlength="2000" required>
+                        <button class="btn btn-sm btn-primary" type="submit">
+                            <i class="bi bi-send"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <?php endif; ?>
+
             <!-- Team Info -->
             <div class="card mb-4">
                 <div class="card-header">

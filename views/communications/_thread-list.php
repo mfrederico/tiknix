@@ -63,6 +63,13 @@ if (!function_exists('comms_initials')) {
                                 : 'Just you';
                             $label = $who;
                             $kindIcon = 'bi-person-circle';
+                        } elseif ($kind === 'room') {
+                            // Named by its handle, and by the team it belongs to — two
+                            // teams may each have a #general and they are not the same room.
+                            $team  = $t->teamId ? \app\Bean::load('team', (int)$t->teamId) : null;
+                            $label = '#' . ($t->slug ?: 'room');
+                            $who   = $team && $team->id ? (string)$team->name : 'Team';
+                            $kindIcon = 'bi-hash';
                         } else {
                             $who   = $t->recipientName ?: $t->recipientEmail ?: 'Unknown';
                             $label = $t->subject ?: '(no subject)';

@@ -18,6 +18,17 @@ $__level    = (int) ($member['level'] ?? 100);
 $__mates    = \app\Teammates::of($__mid);
 $__canEmail = \app\Teammates::canSendEmail($__mid, $__level);
 $__canDm    = !empty($__mates);
+
+// Rooms of every team this person is on. Posting in one is how you reach the whole team.
+$__rooms = [];
+foreach (\app\Teammates::teamIds($__mid) as $__tid) {
+    $__team = \app\Bean::load('team', $__tid);
+    foreach (\app\Rooms::forTeam($__tid) as $__r) {
+        $__rooms[] = ['id' => (int)$__r->id, 'slug' => (string)$__r->slug,
+                      'team' => (string)($__team->name ?? 'Team')];
+    }
+}
+$__canRoom = !empty($__rooms);
 ?>
 <div class="modal fade" id="comms-compose-modal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -31,7 +42,7 @@ $__canDm    = !empty($__mates);
 
                 <div class="modal-body">
 
-                <?php if (!$__canDm && !$__canEmail): ?>
+                <?php if (!$__canDm && !$__canEmail && !$__canRoom): ?>
                     <div class="text-center py-3">
                         <i class="bi bi-people text-body-secondary" style="font-size:2rem"></i>
                         <p class="mt-2 mb-1">There is nobody to message yet.</p>
@@ -43,25 +54,47 @@ $__canDm    = !empty($__mates);
                     </div>
                 <?php else: ?>
 
-                    <?php if ($__canDm && $__canEmail): ?>
-                        <?php /* Only worth a choice when there IS one. */ ?>
+                    <?php
+                    /* Tabs only when there is more than one thing to choose between. */
+                    $__tabs = [];
+                    if ($__canRoom)  $__tabs['room']   = ['#compose-room',   'bi-hash',     'A room'];
+                    if ($__canDm)    $__tabs['person'] = ['#compose-person', 'bi-person',   'Someone on my team'];
+                    if ($__canEmail) $__tabs['email']  = ['#compose-email',  'bi-envelope', 'Email address'];
+                    $__first = array_key_first($__tabs);
+                    ?>
+                    <?php if (count($__tabs) > 1): ?>
                         <ul class="nav nav-pills nav-fill mb-3" role="tablist">
-                            <li class="nav-item">
-                                <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#compose-person" type="button">
-                                    <i class="bi bi-person me-1"></i>Someone on my team
-                                </button>
-                            </li>
-                            <li class="nav-item">
-                                <button class="nav-link" data-bs-toggle="pill" data-bs-target="#compose-email" type="button">
-                                    <i class="bi bi-envelope me-1"></i>Email address
-                                </button>
-                            </li>
+                            <?php foreach ($__tabs as $__k => [$__target, $__icon, $__lbl]): ?>
+                                <li class="nav-item">
+                                    <button class="nav-link <?= $__k === $__first ? 'active' : '' ?>"
+                                            data-bs-toggle="pill" data-bs-target="<?= $__target ?>" type="button">
+                                        <i class="bi <?= $__icon ?> me-1"></i><?= htmlspecialchars($__lbl) ?>
+                                    </button>
+                                </li>
+                            <?php endforeach; ?>
                         </ul>
                     <?php endif; ?>
 
                     <div class="tab-content">
+                        <?php if ($__canRoom): ?>
+                        <div class="tab-pane fade <?= $__first === 'room' ? 'show active' : '' ?>" id="compose-room">
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Room</label>
+                                <select name="to_room" class="form-select">
+                                    <option value="">Choose a room…</option>
+                                    <?php foreach ($__rooms as $__r): ?>
+                                        <option value="<?= (int)$__r['id'] ?>">
+                                            #<?= htmlspecialchars($__r['slug']) ?> &middot; <?= htmlspecialchars($__r['team']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">Everyone on that team sees it. This is how you tell the whole team something.</div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
                         <?php if ($__canDm): ?>
-                        <div class="tab-pane fade show active" id="compose-person">
+                        <div class="tab-pane fade <?= $__first === 'person' ? 'show active' : '' ?>" id="compose-person">
                             <div class="mb-2">
                                 <label class="form-label small mb-1">To</label>
                                 <select name="to_member" class="form-select" id="compose-to-member">
@@ -78,7 +111,7 @@ $__canDm    = !empty($__mates);
                         <?php endif; ?>
 
                         <?php if ($__canEmail): ?>
-                        <div class="tab-pane fade <?= $__canDm ? '' : 'show active' ?>" id="compose-email">
+                        <div class="tab-pane fade <?= $__first === 'email' ? 'show active' : '' ?>" id="compose-email">
                             <div class="row g-2 mb-2">
                                 <div class="col-sm-7">
                                     <label class="form-label small mb-1">Recipient email</label>
@@ -104,7 +137,7 @@ $__canDm    = !empty($__mates);
                 <?php endif; ?>
                 </div>
 
-                <?php if ($__canDm || $__canEmail): ?>
+                <?php if ($__canDm || $__canEmail || $__canRoom): ?>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Send</button>
@@ -115,7 +148,7 @@ $__canDm    = !empty($__mates);
     </div>
 </div>
 
-<?php if ($__canDm && $__canEmail): ?>
+<?php if (count($__tabs ?? []) > 1): ?>
 <script>
 /* Whichever tab is showing is the one that submits. Without this both sets of fields post
    together and the server has to guess which was meant — and it would guess "person",
@@ -125,21 +158,32 @@ $__canDm    = !empty($__mates);
     var modal = document.getElementById('comms-compose-modal');
     if (!modal) return;
 
+    var fields = {
+        '#compose-room':   ['to_room'],
+        '#compose-person': ['to_member'],
+        '#compose-email':  ['to', 'subject']
+    };
+    function clearAllBut(keep) {
+        Object.keys(fields).forEach(function (pane) {
+            if (pane === keep) return;
+            fields[pane].forEach(function (n) {
+                var el = modal.querySelector('[name="' + n + '"]');
+                if (el) el.value = '';
+            });
+        });
+    }
     modal.addEventListener('shown.bs.tab', function (e) {
-        var toPerson = e.target.dataset.bsTarget === '#compose-person';
-        var sel = modal.querySelector('[name="to_member"]');
-        var eml = modal.querySelector('[name="to"]');
-        var sub = modal.querySelector('[name="subject"]');
-        if (toPerson) { if (eml) eml.value = ''; if (sub) sub.value = ''; }
-        else if (sel) { sel.value = ''; }
+        clearAllBut(e.target.dataset.bsTarget);
     }, true);
 
     modal.querySelector('form').addEventListener('submit', function (e) {
-        var sel = modal.querySelector('[name="to_member"]');
-        var eml = modal.querySelector('[name="to"]');
-        if ((!sel || !sel.value) && (!eml || !eml.value)) {
+        var any = ['to_room', 'to_member', 'to'].some(function (n) {
+            var el = modal.querySelector('[name="' + n + '"]');
+            return el && el.value;
+        });
+        if (!any) {
             e.preventDefault();
-            alert('Choose someone on your team, or enter an email address.');
+            alert('Choose a room, someone on your team, or an email address.');
         }
     });
 })();

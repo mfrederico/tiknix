@@ -27,6 +27,11 @@ class Communications extends BaseControls\Control {
     public function index() {
         if (!$this->requireLogin()) return;
 
+        // Rooms follow team membership, so bring them into step before listing. Doing it
+        // on read means a room is correct after ANY change to a team — including changes
+        // made by code that has never heard of rooms.
+        \app\Rooms::syncForMember((int)$this->member->id);
+
         $search = trim((string)$this->getParam('q', ''));
 
         $this->render('communications/index', [
@@ -106,8 +111,51 @@ class Communications extends BaseControls\Control {
         $subject  = trim((string)$this->getParam('subject', '')) ?: 'New conversation';
         $body     = $this->sanitizeReply((string)$this->getParam('body', ''));
 
-        $mid   = (int)$this->member->id;
-        $level = (int)$this->member->level;
+        $toRoom  = (int)$this->getParam('to_room', 0);
+        $mid     = (int)$this->member->id;
+        $level   = (int)$this->member->level;
+
+        // Posting in a team's room IS broadcasting to that team — there is no separate
+        // broadcast, because a message everyone on the team can see and reply to in one
+        // place is what "tell the team" should mean.
+        if ($toRoom > 0) {
+            if (trim(strip_tags($body)) === '') {
+                $this->flash('error', 'Message cannot be empty');
+                Flight::redirect('/communications');
+                return;
+            }
+            $room = Bean::load('emailthread', $toRoom);
+            if (!$room->id || (string)$room->kind !== 'room') {
+                $this->flash('error', 'No such room.');
+                Flight::redirect('/communications');
+                return;
+            }
+            // Sync first: membership is derived from the team, so the answer to "may I
+            // post here" must be computed from the team as it is NOW, not as it was when
+            // the participant rows were last written.
+            \app\Rooms::syncMembers($toRoom, (int)$room->teamId);
+            if (!\app\Rooms::canPost($toRoom, $mid, $level)) {
+                $this->logger->warning('Blocked room post from a non-member', [
+                    'thread' => $toRoom, 'team' => (int)$room->teamId, 'member' => $mid,
+                ]);
+                $this->flash('error', 'That room belongs to a team you are not on.');
+                Flight::redirect('/communications');
+                return;
+            }
+            if (!\app\Rooms::post($toRoom, $mid, $body)) {
+                $this->logger->error('Could not post to room', ['thread' => $toRoom, 'member' => $mid]);
+                $this->flash('error', 'Could not post that message.');
+                Flight::redirect('/communications');
+                return;
+            }
+            // Posting from a team page should leave you on that team page. Only an
+            // in-app path is accepted — an open redirect is an open redirect even when
+            // the form that feeds it is ours.
+            $back = (string)$this->getParam('redirect', '');
+            $safe = (str_starts_with($back, '/') && !str_starts_with($back, '//'));
+            Flight::redirect($safe && $back !== '' ? $back : '/communications/thread/' . $toRoom);
+            return;
+        }
 
         // A message to a PERSON stays in the application. This is the default path and
         // needs no grant, because both ends already share a team.
@@ -279,6 +327,22 @@ class Communications extends BaseControls\Control {
         // send something absurd is that it fails the recipient check below by accident.
         if (in_array((string)$thread->kind, ['dm', 'room'], true)) {
             $mid = (int)$this->member->id;
+
+            // For a room, canView() above passed on a participant row — which is a COPY
+            // of team membership and can be stale. Re-derive from the team before
+            // accepting a post, so somebody removed from a team cannot keep talking in
+            // its room just because nobody has opened the inbox since.
+            if ((string)$thread->kind === 'room') {
+                \app\Rooms::syncMembers($id, (int)$thread->teamId);
+                if (!\app\Rooms::canPost($id, $mid, (int)$this->member->level)) {
+                    $this->logger->warning('Blocked room reply from a non-member', [
+                        'thread' => $id, 'team' => (int)$thread->teamId, 'member' => $mid,
+                    ]);
+                    $this->flash('error', 'That room belongs to a team you are not on.');
+                    Flight::redirect('/communications');
+                    return;
+                }
+            }
             if (!\app\services\NotifyService::postInApp($id, $mid, $bodyHtml)) {
                 $this->logger->error('In-app reply failed', ['thread' => $id, 'from' => $mid]);
                 $this->flash('error', 'Could not send that message.');

@@ -211,6 +211,22 @@ class Teams extends Control {
         $this->viewData['sharedHereIds'] = $sharedHereIds;
         $this->viewData['memberId']      = (int)$this->member->id;
 
+        // The team's #general, so "tell everyone here" is on the page where you are
+        // already looking at who everyone is. Synced on read like everywhere else, so a
+        // member added on this very page is in the room by the time it renders.
+        $roomId = \app\Rooms::ensureGeneral($teamId);
+        $this->viewData['roomId']       = (int) $roomId;
+        $this->viewData['roomMessages'] = [];
+        if ($roomId) {
+            \app\Rooms::syncMembers((int) $roomId, $teamId);
+            // Newest 20, then reversed: the query wants the LAST 20, the reader wants
+            // them in the order they were said.
+            $this->viewData['roomMessages'] = array_reverse(array_values(
+                \RedBeanPHP\R::find('notify', 'thread_id = ? ORDER BY id DESC LIMIT 20', [(int) $roomId])
+            ));
+            $this->viewData['roomUnread'] = \app\ThreadMembers::unreadFor((int) $roomId, (int)$this->member->id);
+        }
+
         $this->render('teams/view', $this->viewData);
     }
 

@@ -268,6 +268,7 @@ class NotifyService {
 
         $now = date('Y-m-d H:i:s');
         $thread = Bean::dispense('emailthread');
+        $thread->kind            = 'email';
         $thread->subject         = $this->subjectLine;
         $thread->replyToken      = self::mintReplyToken();
         $thread->relatedType     = $this->relatedType;
@@ -284,6 +285,12 @@ class NotifyService {
         $thread->createdAt       = $now;
         $thread->updatedAt       = $now;
         Bean::store($thread);
+        // Seat the owner as a participant. An outbound-created thread had the same gap
+        // inbound ones did: an owner_member_id and an empty roster, so nobody could be
+        // added to a conversation this side started either.
+        if ($this->ownerMemberId) {
+            ThreadMembers::ensure((int)$thread->id, [(int)$this->ownerMemberId], ThreadMembers::ROLE_OWNER);
+        }
         return $thread;
     }
 
@@ -573,6 +580,7 @@ class NotifyService {
         $thread = Bean::dispense('emailthread');
         // The RAW subject: normalizeSubject() lowercases because it is a matching key
         // for grouping "Re: Foo" with "foo", not something to show a person.
+        $thread->kind           = 'email';   // set at creation, not only by the backfill
         $thread->subject        = trim($subject);
         $thread->replyToken     = self::mintReplyToken();
         $thread->relatedType    = $relatedType;

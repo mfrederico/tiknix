@@ -398,6 +398,14 @@ class Teams extends Control {
             return;
         }
 
+        $email = trim($this->getParam('email', ''));
+        $role = $this->getParam('role', 'member');
+
+        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            Flight::jsonError('Valid email address is required', 400);
+            return;
+        }
+
         // Inviting an address with NO account auto-creates one further down this flow
         // (see join()), which makes it a way into a closed Tiknix — a second front door
         // that skipped the invites grant, the allowance and the activity requirement
@@ -409,14 +417,6 @@ class Teams extends Control {
                 Flight::jsonError('That address has no Tiknix account, so this would create one. ' . $why, 403);
                 return;
             }
-        }
-
-        $email = trim($this->getParam('email', ''));
-        $role = $this->getParam('role', 'member');
-
-        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            Flight::jsonError('Valid email address is required', 400);
-            return;
         }
 
         // Validate role

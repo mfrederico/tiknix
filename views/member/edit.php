@@ -39,9 +39,20 @@
                         <h5 class="mb-3">Change Password</h5>
                         <p class="text-muted">Leave blank to keep current password</p>
                         
+                        <?php
+                        /* autocomplete="new-password" on the CURRENT password box is deliberate,
+                           not a copy-paste slip. The semantically correct "current-password" is
+                           an instruction to password managers to fill it — which is precisely
+                           what we don't want here: this is a profile form, the password section
+                           is optional, and a box that fills itself made people think they were
+                           being asked for a password just to change their name.
+                           autocomplete="off" does not work; browsers ignore it on password
+                           inputs. "new-password" is the value they actually honour. */
+                        ?>
                         <div class="mb-3">
                             <label for="current_password" class="form-label">Current Password</label>
-                            <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password">
+                            <input type="password" class="form-control" id="current_password" name="current_password"
+                                   autocomplete="new-password" data-lpignore="true" data-1p-ignore data-bwignore>
                         </div>
                         
                         <div class="mb-3">

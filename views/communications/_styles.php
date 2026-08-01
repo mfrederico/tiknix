@@ -133,4 +133,48 @@
     background: rgba(var(--bs-warning-rgb), .28);
     color: var(--bs-warning-text-emphasis, inherit);
 }
+
+/* ---- rooms rail ---- */
+.comms-hub .comms-section-head {
+    padding: .5rem .75rem .25rem;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+}
+/* Capped and scrollable on its own: a long room list must not push conversations off
+   the screen, which is the failure mode of putting one list above another. */
+.comms-hub .comms-rooms { max-height: 40%; overflow-y: auto; }
+
+.comms-hub .comms-room-row {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .3rem .75rem;
+    text-decoration: none;
+    color: var(--bs-body-color);
+    font-size: .875rem;
+}
+.comms-hub .comms-room-row:hover { background: var(--bs-tertiary-bg); }
+.comms-hub .comms-room-row.active {
+    background: var(--bs-tertiary-bg);
+    box-shadow: inset 3px 0 0 var(--bs-primary);
+}
+.comms-hub .comms-room-name { font-weight: 500; }
+.comms-hub .comms-room-row.unread .comms-room-name { font-weight: 700; }
+.comms-hub .comms-room-team {
+    color: var(--bs-secondary-color);
+    font-size: .75rem;
+    margin-left: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 45%;
+}
+.comms-hub .comms-unread-dot-room {
+    width: .5rem; height: .5rem; border-radius: 50%;
+    background: var(--bs-danger);
+    flex-shrink: 0;
+}
 </style>

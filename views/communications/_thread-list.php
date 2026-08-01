@@ -19,8 +19,33 @@ if (!function_exists('comms_initials')) {
 ?>
 <div class="col-lg-4">
     <div class="card border-0 shadow-sm comms-panel">
+<?php
+/* Rooms are separated from conversations because they are not the same kind of thing.
+   A room is a PLACE — you are a member of it, it has no end, and sorting it by recency
+   makes it wander around the list. A conversation has a beginning and an end and should
+   sort by recency. Mixed together, one of the two always sorts wrongly, and a #room
+   reads as just another message thread.
+
+   Still one rail, one bell, one poll: this is a grouping, not a second inbox. */
+$__rooms   = [];
+$__convos  = [];
+foreach (($threads ?? []) as $__t) {
+    if ((string)$__t->kind === 'room') $__rooms[] = $__t; else $__convos[] = $__t;
+}
+$__me = (int)($member['id'] ?? 0);
+
+/* Stable order — by team, then room name. Recency is the right sort for a conversation
+   and the wrong one for a place: a room that moves when somebody speaks is harder to
+   find, not easier, and the muscle memory of "mine is third" is worth more than knowing
+   which had the last message (the unread dot already says that). */
+usort($__rooms, function ($a, $b) {
+    $ta = $a->teamId ? (string)(\app\Bean::load('team', (int)$a->teamId)->name ?? '') : '';
+    $tb = $b->teamId ? (string)(\app\Bean::load('team', (int)$b->teamId)->name ?? '') : '';
+    return [$ta, (string)$a->slug] <=> [$tb, (string)$b->slug];
+});
+?>
         <div class="card-header bg-body-tertiary d-flex justify-content-between align-items-center">
-            <span class="fw-semibold"><i class="bi bi-inbox me-1"></i>Threads</span>
+            <span class="fw-semibold"><i class="bi bi-inbox me-1"></i>Messages</span>
             <span class="text-muted small"><?= count($threads) ?></span>
         </div>
 
@@ -35,16 +60,44 @@ if (!function_exists('comms_initials')) {
             </form>
         </div>
 
+        <?php if ($__rooms): ?>
+        <div class="comms-rooms border-bottom" id="comms-room-list">
+            <div class="comms-section-head">
+                <i class="bi bi-hash"></i> Rooms
+            </div>
+            <?php foreach ($__rooms as $r): ?>
+                <?php
+                    $rUnread   = \app\ThreadMembers::unreadFor((int)$r->id, $__me) > 0;
+                    $rMentions = \app\Mentions::unreadInThread((int)$r->id, $__me);
+                    $rTeam     = $r->teamId ? \app\Bean::load('team', (int)$r->teamId) : null;
+                    $rActive   = (int)$r->id === (int)($activeId ?? 0);
+                ?>
+                <a href="/communications/thread/<?= (int)$r->id ?>"
+                   data-room-id="<?= (int)$r->id ?>"
+                   class="comms-room-row <?= $rUnread ? 'unread' : '' ?> <?= $rActive ? 'active' : '' ?>">
+                    <span class="comms-room-name">#<?= htmlspecialchars((string)($r->slug ?: 'room')) ?></span>
+                    <span class="comms-room-team"><?= htmlspecialchars($rTeam && $rTeam->id ? (string)$rTeam->name : 'Team') ?></span>
+                    <span class="comms-mention-badge badge rounded-pill bg-warning text-dark ms-1 <?= $rMentions ? '' : 'd-none' ?>"
+                          title="You were mentioned">@<?= (int)$rMentions ?></span>
+                    <span class="comms-unread-dot-room <?= $rUnread ? '' : 'd-none' ?>" title="New messages"></span>
+                </a>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
         <div class="comms-scroll flex-grow-1" id="comms-thread-list">
-            <?php if (empty($threads)): ?>
-                <div class="text-center text-muted small py-5">
-                    <i class="bi bi-inbox" style="font-size:1.8rem;"></i>
+            <?php if ($__rooms && $__convos): ?>
+                <div class="comms-section-head"><i class="bi bi-chat-left-text"></i> Conversations</div>
+            <?php endif; ?>
+            <?php if (empty($__convos)): ?>
+                <div class="text-center text-muted small py-4">
+                    <i class="bi bi-chat-left-text" style="font-size:1.6rem;"></i>
                     <div class="mt-2"><?= !empty($search) ? 'No matches.' : 'No conversations yet.' ?></div>
                 </div>
             <?php else: ?>
-                <?php foreach ($threads as $t): ?>
+                <?php foreach ($__convos as $t): ?>
                     <?php
-                        $me      = (int)($member['id'] ?? 0);
+                        $me      = $__me;
                         // Per-person unread now. The thread-level counter cannot answer this
                         // once a conversation has more than one participant.
                         $unread  = \app\ThreadMembers::unreadFor((int)$t->id, $me) > 0
@@ -154,8 +207,32 @@ if (!function_exists('comms_initials')) {
         return isNaN(d) ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric' });
     }
 
+    var roomList = document.getElementById('comms-room-list');
+
+    /* Rooms live in their own list and are NOT re-sorted: a room is a place, and a place
+       that moves around when somebody speaks is harder to find, not easier. Only their
+       badges change. */
+    function updateRooms(threads) {
+        if (!roomList) return;
+        threads.forEach(function (t) {
+            var row = roomList.querySelector('.comms-room-row[data-room-id="' + t.id + '"]');
+            if (!row) return;
+            var unread = (t.unread_count || 0) > 0;
+            row.classList.toggle('unread', unread);
+            var dot = row.querySelector('.comms-unread-dot-room');
+            if (dot) dot.classList.toggle('d-none', !unread);
+            var mb = row.querySelector('.comms-mention-badge');
+            if (mb) {
+                var mc = t.mentions || 0;
+                mb.textContent = '@' + mc;
+                mb.classList.toggle('d-none', !mc);
+            }
+        });
+    }
+
     function update(threads) {
         if (!Array.isArray(threads) || !threads.length) return;
+        updateRooms(threads);
 
         threads.forEach(function (t) {
             var row = rail.querySelector('.comms-thread-row[data-thread-id="' + t.id + '"]');
@@ -187,11 +264,17 @@ if (!function_exists('comms_initials')) {
 
         // Re-sort to newest-first (server order), but only if the top actually
         // changed — avoids needless DOM churn on every poll.
+        //
+        // Inserted BEFORE the first row rather than prepended to the rail: the rail now
+        // starts with a "Conversations" heading, and prepending would stack rows above
+        // their own heading.
+        var first  = rail.querySelector('.comms-thread-row');
         var topRow = rail.querySelector('.comms-thread-row[data-thread-id="' + threads[0].id + '"]');
-        if (topRow && rail.firstElementChild !== topRow) {
+        if (topRow && first !== topRow) {
             for (var i = threads.length - 1; i >= 0; i--) {
                 var r = rail.querySelector('.comms-thread-row[data-thread-id="' + threads[i].id + '"]');
-                if (r) rail.prepend(r);
+                var anchor = rail.querySelector('.comms-thread-row');
+                if (r && anchor) rail.insertBefore(r, anchor);
             }
         }
     }

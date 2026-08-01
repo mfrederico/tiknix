@@ -57,8 +57,8 @@ $__canRoom = !empty($__rooms);
                     <?php
                     /* Tabs only when there is more than one thing to choose between. */
                     $__tabs = [];
-                    if ($__canRoom)  $__tabs['room']   = ['#compose-room',   'bi-hash',     'A room'];
-                    if ($__canDm)    $__tabs['person'] = ['#compose-person', 'bi-person',   'Someone on my team'];
+                    if ($__canRoom)  $__tabs['room']   = ['#compose-room',   'bi-hash',     'Whole team'];
+                    if ($__canDm)    $__tabs['person'] = ['#compose-person', 'bi-person',   'One person'];
                     if ($__canEmail) $__tabs['email']  = ['#compose-email',  'bi-envelope', 'Email address'];
                     $__first = array_key_first($__tabs);
                     ?>
@@ -79,9 +79,9 @@ $__canRoom = !empty($__rooms);
                         <?php if ($__canRoom): ?>
                         <div class="tab-pane fade <?= $__first === 'room' ? 'show active' : '' ?>" id="compose-room">
                             <div class="mb-2">
-                                <label class="form-label small mb-1">Room</label>
+                                <label class="form-label small mb-1">Team room</label>
                                 <select name="to_room" class="form-select">
-                                    <option value="">Choose a room…</option>
+                                    <option value="">Choose a team room…</option>
                                     <?php foreach ($__rooms as $__r): ?>
                                         <option value="<?= (int)$__r['id'] ?>">
                                             #<?= htmlspecialchars($__r['slug']) ?> &middot; <?= htmlspecialchars($__r['team']) ?>

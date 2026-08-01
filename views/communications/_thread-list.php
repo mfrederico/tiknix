@@ -63,7 +63,7 @@ usort($__rooms, function ($a, $b) {
         <?php if ($__rooms): ?>
         <div class="comms-rooms border-bottom" id="comms-room-list">
             <div class="comms-section-head">
-                <i class="bi bi-hash"></i> Rooms
+                <i class="bi bi-hash"></i> Team messaging
             </div>
             <?php foreach ($__rooms as $r): ?>
                 <?php

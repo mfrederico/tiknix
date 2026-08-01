@@ -196,7 +196,9 @@ switch ((string)$thread->kind) {
                                       oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';"
                                       id="comms-body" autocomplete="off"></textarea>
                             <?php /* Autocomplete list, positioned by the script below. */ ?>
-                            <div id="comms-at" class="dropdown-menu p-1" style="max-height:12rem;overflow-y:auto"></div>
+                            <?php /* max-height and position are set by place() at open time,
+                                     from the space actually available. */ ?>
+                            <div id="comms-at" class="dropdown-menu p-1" style="overflow-y:auto"></div>
                             <button type="submit" class="btn btn-primary" title="Send">
                                 <i class="bi bi-send"></i>
                             </button>
@@ -234,17 +236,55 @@ switch ((string)$thread->kind) {
     }
     function hide() { menu.classList.remove('show'); active = -1; start = -1; }
 
+    /* Position the menu.
+     *
+     * position:fixed, not absolute. The composer sits inside .comms-panel, which is
+     * overflow:hidden so the message list can scroll inside it — and an absolutely
+     * positioned child of an overflow:hidden ancestor gets clipped by it. The menu was
+     * losing its bottom rows to exactly that.
+     *
+     * It also opens UPWARD. The composer is pinned to the bottom of the panel, so a menu
+     * that drops down has nowhere to go; above the box is where the room actually is. It
+     * flips back down only if the space above is somehow smaller.
+     */
+    function place() {
+        var r = box.getBoundingClientRect();
+        var above = r.top - 8;
+        var below = window.innerHeight - r.bottom - 8;
+        var up = above >= below;
+        var max = Math.max(120, Math.min(260, (up ? above : below)));
+
+        menu.style.position  = 'fixed';
+        menu.style.left      = Math.round(r.left) + 'px';
+        menu.style.width     = Math.round(Math.min(320, r.width)) + 'px';
+        menu.style.maxHeight = Math.round(max) + 'px';
+        menu.style.zIndex    = '1080';          // above the panel, below a modal backdrop
+
+        if (up) {
+            menu.style.top    = 'auto';
+            menu.style.bottom = Math.round(window.innerHeight - r.top + 4) + 'px';
+        } else {
+            menu.style.bottom = 'auto';
+            menu.style.top    = Math.round(r.bottom + 4) + 'px';
+        }
+    }
+
     function render(matches) {
         if (!matches.length) { hide(); return; }
         menu.innerHTML = matches.map(function (m, i) {
-            return '<button type="button" class="dropdown-item small' + (i === 0 ? ' active' : '') +
+            return '<button type="button" class="dropdown-item small text-truncate' + (i === 0 ? ' active' : '') +
                    '" data-handle="' + esc(m.handle) + '">' +
                    '<strong>@' + esc(m.handle) + '</strong> <span class="text-body-secondary">' +
                    esc(m.name) + '</span></button>';
         }).join('');
         active = 0;
         menu.classList.add('show');
+        place();
     }
+
+    // The box grows as you type, and the page can scroll under a fixed menu.
+    window.addEventListener('resize', function () { if (menu.classList.contains('show')) place(); });
+    window.addEventListener('scroll', function () { if (menu.classList.contains('show')) place(); }, true);
 
     function currentToken() {
         var pos = box.selectionStart;

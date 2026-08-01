@@ -88,7 +88,9 @@ class Communications extends BaseControls\Control {
         $search = trim((string)$this->getParam('q', ''));
 
         $this->render('communications/thread', [
-            'title'       => $thread->subject ?: 'Conversation',
+            // Browser-tab title. "#general" alone is ambiguous with several teams, and a
+            // tab title is exactly where you are choosing between open windows.
+            'title'       => $this->threadTitle($thread),
             'threads'     => $this->fetchThreads($search),
             'search'      => $search,
             'activeId'    => (int)$thread->id,
@@ -549,6 +551,32 @@ class Communications extends BaseControls\Control {
         $mid = (int)$this->member->id;
         return ['(id IN (SELECT thread_id FROM threadmember WHERE member_id = ?) OR owner_member_id = ?)',
                 [$mid, $mid]];
+    }
+
+    /**
+     * A name for a conversation that is meaningful out of context — in a browser tab, or
+     * a notification. A room needs its team ("#general" is every team's); a DM has no
+     * subject at all and is named by the other person.
+     */
+    private function threadTitle($thread): string {
+        $kind = (string) $thread->kind;
+
+        if ($kind === 'room') {
+            $team = $thread->teamId ? Bean::load('team', (int) $thread->teamId) : null;
+            $name = '#' . ($thread->slug ?: 'room');
+            return ($team && $team->id) ? $name . ' · ' . $team->name : $name;
+        }
+
+        if ($kind === 'dm') {
+            $me     = (int) $this->member->id;
+            $others = array_values(array_filter(
+                \app\ThreadMembers::participants((int) $thread->id), fn($id) => $id !== $me));
+            return $others
+                ? member_display_name(Bean::load('member', $others[0]), 'Conversation')
+                : 'Conversation';
+        }
+
+        return (string) ($thread->subject ?: 'Conversation');
     }
 
     private function canView($thread): bool {

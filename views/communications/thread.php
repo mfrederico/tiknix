@@ -17,7 +17,28 @@ if (!empty($thread->ownerMemberId)) {
     $owner = \app\Bean::load('member', (int)$thread->ownerMemberId);
     if ($owner->id) $ownerName = $owner->username ?: $owner->email;
 }
-$headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
+/* Who this conversation is WITH — used for the avatar initials and the sub-line.
+ *
+ * The email fields only answer that for email threads. A room is addressed to no inbox
+ * and a DM's other side is a member, so both fell through to "Unknown" with a "U" avatar,
+ * which is worse than saying nothing. */
+$headWho = '';
+$__me    = (int)($member['id'] ?? 0);
+switch ((string)$thread->kind) {
+    case 'room':
+        $__t = $thread->teamId ? \app\Bean::load('team', (int)$thread->teamId) : null;
+        $headWho = ($__t && $__t->id) ? (string)$__t->name : 'Team';
+        break;
+    case 'dm':
+        $__others = array_values(array_filter(
+            \app\ThreadMembers::participants((int)$thread->id), fn($id) => $id !== $__me));
+        $headWho = $__others
+            ? member_display_name(\app\Bean::load('member', $__others[0]), 'Someone')
+            : 'Just you';
+        break;
+    default:
+        $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
+}
 ?>
 <?php include __DIR__ . '/_styles.php'; ?>
 
@@ -50,11 +71,44 @@ $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
                     </a>
                     <span class="comms-avatar"><?= htmlspecialchars((comms_initials($headWho)) ?? '') ?></span>
                     <div class="min-w-0 flex-grow-1">
-                        <div class="fw-semibold text-truncate"><?= htmlspecialchars(($thread->subject ?: '(no subject)') ?? '') ?></div>
+                        <?php
+                        /* "#general" on its own is ambiguous the moment you are on more than
+                           one team — every team has one. The team name is what distinguishes
+                           them, so it belongs in the title, not only in the line beneath. */
+                        $headTeam = '';
+                        if ((string)$thread->kind === 'dm') {
+                            // A DM has no subject on purpose — it is named by who is in it.
+                            // "(no subject)" is the email default leaking into something
+                            // that was never addressed to a subject line.
+                            $headTitle = $headWho;
+                        } else {
+                            $headTitle = (string)($thread->subject ?: '(no subject)');
+                            if ((string)$thread->kind === 'room' && !empty($thread->teamId)) {
+                                $t = \app\Bean::load('team', (int)$thread->teamId);
+                                if ($t->id) $headTeam = (string)$t->name;
+                            }
+                        }
+                        ?>
+                        <div class="fw-semibold text-truncate">
+                            <?= htmlspecialchars($headTitle) ?>
+                            <?php if ($headTeam !== ''): ?>
+                                <span class="text-body-secondary fw-normal">· <?= htmlspecialchars($headTeam) ?></span>
+                            <?php endif; ?>
+                        </div>
                         <div class="small text-muted text-truncate">
                             <?= count($messages) ?> msg<?= count($messages) === 1 ? '' : 's' ?>
-                            · <?= htmlspecialchars(($headWho) ?? '') ?>
-                            <?php if ($ownerName !== ''): ?> · owned by <?= htmlspecialchars(($ownerName) ?? '') ?><?php endif; ?>
+                            <?php
+                            /* Do not repeat what the title just said. For a room the team is
+                               already up there, so the useful second fact is how many people
+                               are in it; "owned by <person>" is actively wrong for a room,
+                               which belongs to the team rather than to whoever created it. */
+                            if ((string)$thread->kind === 'room'):
+                                $n = count(\app\ThreadMembers::participants((int)$thread->id));
+                                ?> · <?= $n ?> member<?= $n === 1 ? '' : 's' ?><?php
+                            elseif ((string)$thread->kind !== 'dm'): ?>
+                                · <?= htmlspecialchars(($headWho) ?? '') ?>
+                                <?php if ($ownerName !== ''): ?> · owned by <?= htmlspecialchars(($ownerName) ?? '') ?><?php endif; ?>
+                            <?php endif; ?>
                             <?php if (!empty($related)): ?>
                                 · <span class="badge bg-info-subtle text-info-emphasis"><?= htmlspecialchars(($thread->relatedType) ?? '') ?> #<?= (int)$thread->relatedId ?></span>
                             <?php endif; ?>

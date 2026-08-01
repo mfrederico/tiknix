@@ -30,7 +30,10 @@ class Invites extends Control {
 
         // GRANTED, not merely logged in. Enforced here as well as by the authcontrol row,
         // because that row is data and a route with no row at all is reachable by default.
-        if (!Invite::canSend((int) $this->member->id, (int) $this->member->level)) {
+        // Gated on the GRANT only. The has-built condition is checked at send time and
+        // explained on the page — bouncing a granted member with a 403 would tell them
+        // nothing about the one thing they need to do to unlock it.
+        if (!Feature::allows(Invite::FLAG, (int) $this->member->id, (int) $this->member->level)) {
             $this->logger->warning('Ungranted member attempted to reach invitations', [
                 'member_id' => $this->member->id, 'member_level' => $this->member->level,
             ]);
@@ -52,6 +55,11 @@ class Invites extends Control {
         $this->viewData['windowDays']= Invite::WINDOW_DAYS;
         $this->viewData['ttlDays']   = Invite::TTL_DAYS;
         $this->viewData['nextSlot']  = Invite::nextSlotAt($mid);
+        // Empty when they may send. The page needs the REASON, not just a boolean: "ask an
+        // admin" and "go build something" are different next steps.
+        $this->viewData['blocked']   = Invite::blockedReason($mid, $level);
+        $this->viewData['downline']  = Invite::downline($mid);
+        $this->viewData['downlineN'] = Invite::downlineCount($mid);
 
         // An admin sees every invite (they are accountable for who is in the system);
         // everyone else sees only their own.

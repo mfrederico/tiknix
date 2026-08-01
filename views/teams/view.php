@@ -164,11 +164,27 @@
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h6 class="mb-0">Members (<?= count($memberships) ?>)</h6>
-                    <?php if ($isAdmin): ?>
-                        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#inviteModal">
-                            <i class="bi bi-person-plus"></i>
-                        </button>
-                    <?php endif; ?>
+                    <div class="d-flex gap-2">
+                        <?php
+                        /* Two different actions, deliberately side by side and labelled
+                           apart. The button adds someone to THIS team; the link invites
+                           someone to Tiknix at all. They were easy to confuse when only
+                           the first existed — and the first quietly did the second when
+                           the address had no account. */
+                        ?>
+                        <?php if (\app\Feature::allows(\app\Invite::FLAG, (int) (\Flight::getMember()->id ?? 0), (int) (\Flight::getMember()->level ?? 101))): ?>
+                            <a href="/invites" class="btn btn-sm btn-outline-secondary"
+                               title="Invite someone who has no Tiknix account yet">
+                                <i class="bi bi-envelope-plus"></i> Invite to Tiknix
+                            </a>
+                        <?php endif; ?>
+                        <?php if ($isAdmin): ?>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#inviteModal"
+                                    title="Add an existing Tiknix member to this team">
+                                <i class="bi bi-person-plus"></i>
+                            </button>
+                        <?php endif; ?>
+                    </div>
                 </div>
                 <div class="list-group list-group-flush">
                     <?php $count = 0; foreach ($memberships as $tm): ?>

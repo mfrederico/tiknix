@@ -382,6 +382,19 @@ class Teams extends Control {
             return;
         }
 
+        // Inviting an address with NO account auto-creates one further down this flow
+        // (see join()), which makes it a way into a closed Tiknix — a second front door
+        // that skipped the invites grant, the allowance and the activity requirement
+        // entirely. Adding an EXISTING member to a team is unchanged and ungated: that is
+        // team management, not account creation.
+        if (!Bean::findOne('member', 'LOWER(email) = ?', [strtolower(trim($email))])) {
+            $why = \app\Invite::blockedReason((int) $this->member->id, (int) $this->member->level);
+            if ($why !== '') {
+                Flight::jsonError('That address has no Tiknix account, so this would create one. ' . $why, 403);
+                return;
+            }
+        }
+
         $email = trim($this->getParam('email', ''));
         $role = $this->getParam('role', 'member');
 
@@ -519,6 +532,11 @@ class Teams extends Control {
             $member->isActive = 1;
             $member->emailVerified = 1; // Email is verified by receiving invite
             $member->createdAt = date('Y-m-d H:i:s');
+            // Same lineage stamp app\Invite::markAccepted makes, so somebody who joined
+            // via a team invitation still appears in their sponsor's downline. Without it
+            // this route created members with no parent and the tree quietly had holes.
+            $member->invitedBy = (int) $invitation->invitedBy;
+            $member->invitedAt = date('Y-m-d H:i:s');
             Bean::store($member);
 
             $this->logger->info('Auto-created member from team invite', [

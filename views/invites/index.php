@@ -28,7 +28,14 @@
               <h5 class="card-title mb-3">Invite someone</h5>
 
               <?php /* Say the allowance BEFORE they type, not after they hit the limit. */ ?>
-              <?php if ($isAdmin): ?>
+              <?php if (!empty($blocked)): ?>
+                <?php /* A granted member who has not built yet. They reached this page, so
+                         the grant is on — what is missing is the activity, and saying which
+                         is the whole value of the message. */ ?>
+                <div class="alert alert-warning py-2 small mb-3">
+                  <i class="bi bi-lock me-1"></i><?= htmlspecialchars($blocked) ?>
+                </div>
+              <?php elseif ($isAdmin): ?>
                 <div class="alert alert-secondary py-2 small mb-3">
                   <i class="bi bi-infinity me-1"></i>
                   As an admin your invitations are unlimited.
@@ -57,18 +64,18 @@
                   <label for="email" class="form-label">Their email address</label>
                   <input type="email" class="form-control" id="email" name="email" required
                          placeholder="jane@example.com"
-                         <?= (!$isAdmin && $remaining <= 0) ? 'disabled' : '' ?>>
+                         <?= (!empty($blocked) || (!$isAdmin && $remaining <= 0)) ? 'disabled' : '' ?>>
                 </div>
 
                 <div class="mb-3">
                   <label for="note" class="form-label">A short note <span class="text-body-secondary">(optional)</span></label>
                   <textarea class="form-control" id="note" name="note" rows="2" maxlength="500"
                             placeholder="Why you're inviting them — it goes in the email."
-                            <?= (!$isAdmin && $remaining <= 0) ? 'disabled' : '' ?>></textarea>
+                            <?= (!empty($blocked) || (!$isAdmin && $remaining <= 0)) ? 'disabled' : '' ?>></textarea>
                 </div>
 
                 <button type="submit" class="btn btn-primary w-100"
-                        <?= (!$isAdmin && $remaining <= 0) ? 'disabled' : '' ?>>
+                        <?= (!empty($blocked) || (!$isAdmin && $remaining <= 0)) ? 'disabled' : '' ?>>
                   <i class="bi bi-envelope-plus me-1"></i> Send invitation
                 </button>
               </form>
@@ -137,6 +144,48 @@
                     </tbody>
                   </table>
                 </div>
+              <?php endif; ?>
+            </div>
+          </div>
+
+          <?php
+          /* The downline. Rendered from member.invited_by, not from the invite rows, so it
+             survives invites being tidied away. `built` is shown per person because the
+             useful question about someone you brought in is whether they are actually
+             using it — a downline of dormant accounts is not growth. */
+          $renderTree = function (array $nodes, int $depth = 0) use (&$renderTree) {
+              foreach ($nodes as $n) {
+                  $m = $n['member'];
+                  printf(
+                      '<div class="d-flex align-items-center gap-2 py-1" style="padding-left:%dpx">'
+                      . '<i class="bi bi-%s text-body-secondary"></i>'
+                      . '<span>%s</span>'
+                      . '<span class="badge bg-%s-subtle text-%s-emphasis border border-%s-subtle">%s</span>'
+                      . '<span class="small text-body-secondary ms-auto">%s</span></div>',
+                      $depth * 18,
+                      $depth === 0 ? 'person' : 'arrow-return-right',
+                      htmlspecialchars((string) ($m->username ?: $m->email)),
+                      $n['built'] ? 'success' : 'secondary',
+                      $n['built'] ? 'success' : 'secondary',
+                      $n['built'] ? 'success' : 'secondary',
+                      $n['built'] ? 'building' : 'not started',
+                      htmlspecialchars($n['joined'] ? date('j M Y', strtotime($n['joined'])) : '')
+                  );
+                  if ($n['children']) $renderTree($n['children'], $depth + 1);
+              }
+          };
+          ?>
+          <div class="card mt-4">
+            <div class="card-body">
+              <h5 class="card-title mb-1">Who you've brought in</h5>
+              <div class="text-body-secondary small mb-3">
+                <?= (int) $downlineN ?> <?= (int) $downlineN === 1 ? 'person' : 'people' ?>,
+                including anyone they invited in turn.
+              </div>
+              <?php if (empty($downline)): ?>
+                <div class="text-body-secondary small">Nobody yet — accepted invitations appear here.</div>
+              <?php else: ?>
+                <?php $renderTree($downline); ?>
               <?php endif; ?>
             </div>
           </div>

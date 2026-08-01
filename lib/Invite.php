@@ -33,9 +33,78 @@ class Invite {
 
     public static function isAdmin(int $level): bool { return $level > 0 && $level <= self::ADMIN_LEVEL; }
 
-    /** May this member send invites at all? Admins always; everyone else needs the grant. */
+    /** Task states that mean something was actually BUILT, not merely started. */
+    private const BUILT_STATES = ['merged', 'completed', 'resolved'];
+
+    /**
+     * May this member send invites at all?
+     *
+     * TWO conditions for a member, and they are different questions. The grant is an admin
+     * saying "you may"; having built something is the member showing they are here to use
+     * the thing. Without the second, an invite grant is a spigot — somebody can be handed
+     * one and spend it before ever creating anything, which is exactly how a closed beta
+     * fills up with accounts that never build.
+     *
+     * Admins bypass both, as everywhere else.
+     */
     public static function canSend(int $memberId, int $level): bool {
-        return Feature::allows(self::FLAG, $memberId, $level);
+        if (self::isAdmin($level)) return true;
+        return Feature::allows(self::FLAG, $memberId, $level) && self::hasBuilt($memberId);
+    }
+
+    /**
+     * Has this member actually built something with the Builder?
+     *
+     * Answered from the instances they OWN: a task that reached merged/completed/resolved
+     * is work that landed. Once true it is stamped on the member and never recomputed —
+     * the scan opens one sqlite file per project, which is fine once and wasteful on every
+     * page load, and "has built at some point" cannot become false again.
+     */
+    public static function hasBuilt(int $memberId): bool {
+        if ($memberId <= 0) return false;
+
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) return false;
+        if (!empty($member->firstBuildAt)) return true;
+
+        $marks = implode(',', array_fill(0, count(self::BUILT_STATES), '?'));
+        foreach (Bean::find('instance', 'member_id = ? AND status = ?', [$memberId, 'active']) as $inst) {
+            $db = '/var/www/html/default/' . $inst->slug . '.' . ($inst->app ?: 'tiknix') . '/data/workbench.db';
+            if (!is_file($db)) continue;
+            try {
+                $pdo = new \PDO('sqlite:' . $db);
+                $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+                $st = $pdo->prepare("SELECT COUNT(*) FROM workbenchtask WHERE status IN ($marks)");
+                $st->execute(self::BUILT_STATES);
+                if ((int) $st->fetchColumn() > 0) {
+                    $member->firstBuildAt = date('Y-m-d H:i:s');
+                    Bean::store($member);
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                // A project with no task table yet simply has not been built in. Not an
+                // error, and certainly not a reason to grant or deny anything.
+                continue;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Why this member cannot send, in words they can act on — or '' if they can.
+     * The two blockers need different actions (ask an admin / go and build something),
+     * so a single "not allowed" would be useless.
+     */
+    public static function blockedReason(int $memberId, int $level): string {
+        if (self::isAdmin($level)) return '';
+        if (!Feature::allows(self::FLAG, $memberId, $level)) {
+            return 'An admin has not enabled invitations for your account yet.';
+        }
+        if (!self::hasBuilt($memberId)) {
+            return 'Invitations unlock once you have built something. Create a project and '
+                 . 'run your first build in the Builder, then come back here.';
+        }
+        return '';
     }
 
     /**
@@ -102,9 +171,11 @@ class Invite {
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return ['ok' => false, 'error' => 'That is not a valid email address.'];
         }
-        if (!self::canSend($memberId, $level)) {
-            return ['ok' => false, 'error' => 'You have not been given permission to send invites.'];
-        }
+        // blockedReason(), not canSend(): the two blockers need different actions, and
+        // telling somebody who HAS the grant that they lack permission sends them to ask
+        // an admin for something they already have.
+        $why = self::blockedReason($memberId, $level);
+        if ($why !== '') return ['ok' => false, 'error' => $why];
 
         // Already a member: an invite would create a second account on the same address,
         // or fail confusingly at accept time. Say so now.
@@ -170,6 +241,62 @@ class Invite {
         $inv->acceptedAt      = date('Y-m-d H:i:s');
         $inv->acceptedMemberId = $newMemberId;
         Bean::store($inv);
+
+        // Stamp the parent on the MEMBER as well, not only on the invite.
+        //
+        // The invite row already links the two, but invites are transient records — they
+        // expire, get tidied, and are the sort of thing a cleanup script eventually
+        // prunes. Lineage is not transient: "who brought whom in" is the one fact that
+        // must still be true in a year. One column on the member keeps the tree walkable
+        // even if every invite row were deleted tomorrow.
+        $m = Bean::load('member', $newMemberId);
+        if ($m->id) {
+            $m->invitedBy   = (int) $inv->invitedBy;
+            $m->invitedAt   = $inv->acceptedAt;
+            Bean::store($m);
+        }
+    }
+
+    /**
+     * Everyone below this member, as a nested tree.
+     *
+     * Depth-limited and cycle-guarded. A cycle should be impossible — you cannot invite
+     * someone who already exists, so the graph is a forest by construction — but a guard
+     * costs nothing and an infinite loop in a page render costs everything.
+     *
+     * @return array<int, array{member:object, joined:string, built:bool, children:array}>
+     */
+    public static function downline(int $memberId, int $maxDepth = 5, array $seen = []): array {
+        if ($memberId <= 0 || $maxDepth <= 0 || isset($seen[$memberId])) return [];
+        $seen[$memberId] = true;
+
+        $out = [];
+        foreach (Bean::find('member', 'invited_by = ? ORDER BY invited_at ASC, id ASC', [$memberId]) as $m) {
+            $out[] = [
+                'member'   => $m,
+                'joined'   => (string) ($m->invitedAt ?: $m->createdAt),
+                // Shown so a sponsor can see whether the people they brought in are
+                // actually using it — which is the point of tracking a downline at all.
+                'built'    => !empty($m->firstBuildAt),
+                'children' => self::downline((int) $m->id, $maxDepth - 1, $seen),
+            ];
+        }
+        return $out;
+    }
+
+    /** Flat count of everyone below, at any depth. */
+    public static function downlineCount(int $memberId): int {
+        $n = 0;
+        foreach (self::downline($memberId) as $node) {
+            $n += 1 + self::countTree($node['children']);
+        }
+        return $n;
+    }
+
+    private static function countTree(array $nodes): int {
+        $n = 0;
+        foreach ($nodes as $node) $n += 1 + self::countTree($node['children']);
+        return $n;
     }
 
     /** The public link for an invite. */

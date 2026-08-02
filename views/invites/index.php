@@ -164,7 +164,7 @@
                       . '<span class="small text-body-secondary ms-auto">%s</span></div>',
                       $depth * 18,
                       $depth === 0 ? 'person' : 'arrow-return-right',
-                      htmlspecialchars((string) ($m->username ?: $m->email)),
+                      htmlspecialchars($m->displayName((string) $m->email)),
                       $n['built'] ? 'success' : 'secondary',
                       $n['built'] ? 'success' : 'secondary',
                       $n['built'] ? 'success' : 'secondary',

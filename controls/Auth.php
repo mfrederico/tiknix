@@ -467,7 +467,7 @@ class Auth extends BaseControls\Control {
                 $resetUrl = Flight::get('app.baseurl') . "/auth/reset?token={$token}";
 
                 // Send the password reset email
-                $name = $member->displayName ?? $member->username ?? $email;
+                $name = $member->displayName($email);
                 if (Mailer::isConfigured()) {
                     Mailer::sendPasswordReset($email, $name, $resetUrl);
                 } else {
@@ -657,7 +657,7 @@ class Auth extends BaseControls\Control {
             'email' => $member->email
         ]);
 
-        $displayName = $member->display_name ?: $member->username ?: $member->email;
+        $displayName = $member->displayName((string) $member->email);
         $this->flash('success', "Welcome, {$displayName}!");
 
         Flight::redirect('/dashboard');

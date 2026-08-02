@@ -286,7 +286,7 @@ class AuditReporter {
         $out = [];
         try {
             $owner = R::load('member', (int)$inst->memberId);
-            if ($owner->id && $owner->email) $out[strtolower((string)$owner->email)] = (string)($owner->username ?: $owner->email);
+            if ($owner->id && $owner->email) $out[strtolower((string)$owner->email)] = $owner->displayName((string)$owner->email);
 
             if (in_array('instance_team', R::inspect(), true)) {
                 $emails = R::getAll(

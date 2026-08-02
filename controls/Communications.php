@@ -514,13 +514,7 @@ class Communications extends BaseControls\Control {
      * stays the verified Mailgun sender — only the display name changes.
      */
     private function senderName(): string {
-        $first = trim((string)($this->member->firstName ?? ''));
-        $last  = trim((string)($this->member->lastName  ?? ''));
-        $name  = trim($first . ' ' . $last);
-        if ($name === '') {
-            $name = (string)($this->member->username ?: $this->member->email ?: '');
-        }
-        return $name;
+        return $this->member->displayName((string) $this->member->email);
     }
 
     /** Scoped, optionally-searched thread list for the sidebar rail. */

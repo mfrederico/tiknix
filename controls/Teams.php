@@ -461,7 +461,7 @@ class Teams extends Control {
         $joinUrl = Flight::get('baseurl') . '/teams/join?token=' . $invitation->token;
 
         // Send invitation email
-        $inviterName = $this->member->displayName ?? $this->member->username ?? 'A team admin';
+        $inviterName = $this->member->displayName('A team admin');
         $emailSent = false;
 
         if (Mailer::isConfigured()) {
@@ -778,7 +778,7 @@ class Teams extends Control {
         Bean::store($invitation);
 
         $joinUrl     = Flight::get('baseurl') . '/teams/join?token=' . $invitation->token;
-        $inviterName = $this->member->displayName ?? $this->member->username ?? 'A team admin';
+        $inviterName = $this->member->displayName('A team admin');
 
         $emailSent = false;
         if (Mailer::isConfigured()) {

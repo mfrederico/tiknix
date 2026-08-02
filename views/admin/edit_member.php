@@ -231,7 +231,7 @@ $when = function ($v, string $fmt = 'Y-m-d H:i') {
                         <div class="small text-muted mb-1">Invited by</div>
                         <div class="mb-2">
                             <a href="/admin/editMember?id=<?= (int) $invitedBy->id ?>">
-                                <?= htmlspecialchars((string) ($invitedBy->displayName ?: ($invitedBy->username ?: $invitedBy->email))) ?>
+                                <?= htmlspecialchars($invitedBy->displayName((string) $invitedBy->email)) ?>
                             </a>
                             <div class="small text-muted"><?= htmlspecialchars((string) $invitedBy->email) ?></div>
                         </div>

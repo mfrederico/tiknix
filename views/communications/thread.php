@@ -15,7 +15,7 @@
 $ownerName = '';
 if (!empty($thread->ownerMemberId)) {
     $owner = \app\Bean::load('member', (int)$thread->ownerMemberId);
-    if ($owner->id) $ownerName = $owner->username ?: $owner->email;
+    if ($owner->id) $ownerName = $owner->displayName((string) $owner->email);
 }
 /* Who this conversation is WITH — used for the avatar initials and the sub-line.
  *

@@ -75,10 +75,13 @@ This project uses FlightPHP and RedBeanPHP. You MUST follow these conventions st
 > **Official Documentation**: https://redbeanphp.com/
 > Always refer to the official docs for the most accurate information.
 
-### Bean Wrapper Class (lib/Bean.php)
+### Bean Wrapper Class (lib/Bean.php) — REQUIRED
 
-The `Bean` class normalizes bean type names for R::dispense() which requires all lowercase.
-It accepts camelCase, snake_case, or lowercase and converts them:
+**ALWAYS use `Bean::` for database operations. Never call `R::` directly.**
+
+Raw `R::dispense()` requires all-lowercase bean types and throws "Invalid bean type" on
+anything else. `Bean::` normalizes the type name for you, so it accepts camelCase,
+snake_case, or lowercase and converts them:
 
 ```php
 use \app\Bean;
@@ -86,28 +89,45 @@ use \app\Bean;
 // Bean:: normalizes the type name automatically
 $key = Bean::dispense('apiKey');        // → 'apikey'
 $key = Bean::dispense('api_key');       // → 'apikey'
+$key = Bean::dispense('ApiKey');        // → 'apikey'
 $setting = Bean::findOne('userSettings', 'key = ?', ['theme']);
-
-// All Bean methods: dispense, load, findOne, find, findAll, count, store, trash
 ```
+
+`Bean::` wraps the full surface — CRUD, raw queries, transactions, schema and
+multi-database control:
+
+| Group | Methods |
+|-------|---------|
+| CRUD | `dispense`, `load`, `store`, `trash`, `trashAll` |
+| Queries | `findOne`, `find`, `findAll`, `count` |
+| Raw SQL | `exec`, `getAll`, `getRow`, `getCol`, `getCell` |
+| Transactions | `begin`, `commit`, `rollback` |
+| Schema / DB | `freeze`, `inspect`, `addDatabase`, `selectDatabase`, `hasDatabase`, `currentDatabaseKey`, `getDatabaseAdapter` |
+| Utility | `normalize`, `genSlots` |
+
+**Direct `R::` is legitimate in exactly two places:**
+1. Connection lifecycle in `bootstrap.php` — `R::setup()`, `R::close()` (not wrapped).
+2. **Schema seeds** (`services/Schema/Seeds/*.php`) — these build the schema itself and
+   run before the ORM layer is meaningful, so raw `R::` is expected there.
+
+Everywhere else — controllers, lib services, models, scripts — goes through `Bean::`.
 
 ### Naming Conventions (CRITICAL)
 
-**R::dispense() requires ALL LOWERCASE bean types - no underscores, no uppercase!**
+Bean type names reach RedBeanPHP as all-lowercase, no underscores. `Bean::` handles the
+conversion, which is exactly why you should never bypass it:
 
 ```php
-// CORRECT - all lowercase for dispense
-$bean = R::dispense('member');          // OK
-$bean = R::dispense('apikey');          // OK
-$bean = R::dispense('contactresponse'); // OK
+// CORRECT - Bean:: normalizes whatever you pass
+$bean = Bean::dispense('member');         // → 'member'
+$bean = Bean::dispense('apiKey');         // → 'apikey'
+$bean = Bean::dispense('order_item');     // → 'orderitem'
+$bean = Bean::dispense('contactResponse');// → 'contactresponse'
 
-// WRONG - will throw "Invalid bean type" error!
+// WRONG - bypassing the wrapper, throws "Invalid bean type" at RUNTIME
 $bean = R::dispense('orderItem');       // WRONG - uppercase!
 $bean = R::dispense('order_item');      // WRONG - underscore!
 $bean = R::dispense('ApiKey');          // WRONG - uppercase!
-
-// Use Bean:: wrapper to auto-normalize:
-$bean = Bean::dispense('orderItem');    // OK - normalizes to 'orderitem'
 ```
 
 **Column names - use camelCase (RedBeanPHP converts to snake_case):**
@@ -143,24 +163,24 @@ class Model_Contact extends \RedBeanPHP\SimpleModel {
 
 ```php
 // Member has many API keys - use association instead of manual FK query
-$member = R::load('member', $memberId);
+$member = Bean::load('member', $memberId);
 
 // BAD - manual FK query
-$keys = R::find('apikey', 'member_id = ?', [$memberId]);
+$keys = Bean::find('apikey', 'member_id = ?', [$memberId]);
 
 // GOOD - use association (lazy loaded, cached)
 $keys = $member->ownApikeyList;
 
 // Creating with association - FK set automatically
-$key = R::dispense('apikey');
+$key = Bean::dispense('apikey');
 $key->name = 'My API Key';
 $member->ownApikeyList[] = $key;
-R::store($member);  // Saves both member and new key
+Bean::store($member);  // Saves both member and new key
 
 // CASCADE DELETE with xown prefix
-$contact = R::load('contact', $id);
+$contact = Bean::load('contact', $id);
 $contact->xownContactresponseList;  // Marks for cascade
-R::trash($contact);  // Deletes contact AND all its responses
+Bean::trash($contact);  // Deletes contact AND all its responses
 ```
 
 **Ordering and filtering associations:**
@@ -179,15 +199,15 @@ Use `shared[BeanType]List` for many-to-many relationships:
 
 ```php
 // Products can have many tags, tags can have many products
-$product = R::dispense('product');
+$product = Bean::dispense('product');
 $product->name = 'Widget';
 
-$tag = R::dispense('tag');
+$tag = Bean::dispense('tag');
 $tag->name = 'Featured';
 
 // Add tag to product (creates product_tag link table automatically)
 $product->sharedTagList[] = $tag;
-R::store($product);
+Bean::store($product);
 
 // Retrieve related beans
 $tags = $product->sharedTagList;
@@ -202,72 +222,78 @@ Foreign keys are automatically named `[parent_type]_id`:
 
 ### Bean Operations (CRITICAL)
 
-**ALWAYS use bean operations for CRUD. R::exec should ONLY be used in extreme situations where there is no other way to get the data.**
+**ALWAYS use bean operations for CRUD. `Bean::exec` should ONLY be used in extreme situations where there is no other way to get the data.**
 
 ```php
 // CORRECT - Use beans for create
-$member = R::dispense('member');
+$member = Bean::dispense('member');
 $member->email = 'test@example.com';
 $member->createdAt = date('Y-m-d H:i:s');
-R::store($member);
+Bean::store($member);
 
-// CORRECT - Use R::load for updates
-$member = R::load('member', $id);
+// CORRECT - Use Bean::load for updates
+$member = Bean::load('member', $id);
 $member->lastLogin = date('Y-m-d H:i:s');
-R::store($member);
+Bean::store($member);
 
-// CORRECT - Use R::findOne for lookups
-$member = R::findOne('member', 'email = ?', [$email]);
+// CORRECT - Use Bean::findOne for lookups
+$member = Bean::findOne('member', 'email = ?', [$email]);
 
-// CORRECT - Use R::trash for deletes
-$member = R::load('member', $id);
-R::trash($member);
-// Or: R::trash('member', $id);
+// CORRECT - Use Bean::trash for deletes
+$member = Bean::load('member', $id);
+Bean::trash($member);
+// Or: Bean::trash('member', $id);
 
-// WRONG - NEVER use R::exec for simple CRUD
-R::exec('INSERT INTO member (email) VALUES (?)', [$email]);  // WRONG!
-R::exec('UPDATE member SET email = ? WHERE id = ?', [$email, $id]);  // WRONG!
-R::exec('DELETE FROM member WHERE id = ?', [$id]);  // WRONG!
+// WRONG - NEVER use exec for simple CRUD
+Bean::exec('INSERT INTO member (email) VALUES (?)', [$email]);  // WRONG!
+Bean::exec('UPDATE member SET email = ? WHERE id = ?', [$email, $id]);  // WRONG!
+Bean::exec('DELETE FROM member WHERE id = ?', [$id]);  // WRONG!
 ```
 
-**The ONLY acceptable uses for R::exec:**
+**The ONLY acceptable uses for `Bean::exec`:**
 ```php
 // Complex atomic operation that can't be done with beans
-R::exec('UPDATE member SET loginCount = loginCount + 1 WHERE id = ?', [$id]);
+Bean::exec('UPDATE member SET loginCount = loginCount + 1 WHERE id = ?', [$id]);
 
 // Bulk operations on many records with complex conditions
-R::exec('DELETE FROM session WHERE expiresAt < NOW() AND memberId IN (SELECT id FROM member WHERE isDeleted = 1)');
+Bean::exec('DELETE FROM session WHERE expiresAt < NOW() AND memberId IN (SELECT id FROM member WHERE isDeleted = 1)');
 ```
 
-**If you think you need R::exec, ask yourself:**
-1. Can this be done with R::load + R::store? → Use that instead
-2. Can this be done with R::find + loop + R::store? → Use that instead
-3. Is this a complex aggregate/batch that truly can't use beans? → Only then use R::exec
+**If you think you need `Bean::exec`, ask yourself:**
+1. Can this be done with `Bean::load` + `Bean::store`? → Use that instead
+2. Can this be done with `Bean::find` + loop + `Bean::store`? → Use that instead
+3. Is this a complex aggregate/batch that truly can't use beans? → Only then use `Bean::exec`
 
 ### Why Bean Operations Are Mandatory
 
-RedBeanPHP models (FUSE) ONLY work with bean operations. Using R::exec bypasses:
+RedBeanPHP models (FUSE) ONLY work with bean operations. Using raw `exec` bypasses:
 - Model hooks (`update()`, `afterUpdate()`, `delete()`, etc.)
 - Model validation
 - Business logic in models
 - The entire point of using an ORM
 
-If you use R::exec for simple CRUD, the ORM becomes useless and models are ignored.
+If you use `exec` for simple CRUD, the ORM becomes useless and models are ignored.
 
 ### Query Methods Reference
 
 | Method | Returns | Use Case |
 |--------|---------|----------|
-| `R::load($type, $id)` | Single bean (empty if not found) | Get by ID |
-| `R::findOne($type, $sql, $params)` | Single bean or NULL | Get first match |
-| `R::find($type, $sql, $params)` | Array of beans | Get matching rows |
-| `R::findAll($type, $sql, $params)` | Array of beans | Same as find |
-| `R::count($type, $sql, $params)` | Integer | Count rows |
-| `R::getAll($sql, $params)` | Array of arrays | Complex SELECT with joins |
+| `Bean::load($type, $id)` | Single bean (empty if not found) | Get by ID |
+| `Bean::findOne($type, $sql, $params)` | Single bean or NULL | Get first match |
+| `Bean::find($type, $sql, $params)` | Array of beans (**id-keyed**) | Get matching rows |
+| `Bean::findAll($type, $sql, $params)` | Array of beans (**id-keyed**) | Same as find |
+| `Bean::count($type, $sql, $params)` | Integer | Count rows |
+| `Bean::dispense($type)` | New bean | Create new bean |
+| `Bean::store($bean)` | ID | Save bean |
+| `Bean::trash($bean)` | void | Delete bean |
+| `Bean::getAll($sql, $params)` | Array of arrays | Complex SELECT with joins |
+| `Bean::getRow($sql, $params)` | Array or null | Single row as array |
+| `Bean::getCol($sql, $params)` | Flat array | Single column |
+| `Bean::getCell($sql, $params)` | Mixed | Single value |
 
 ### CRITICAL: find() returns id-KEYED arrays — array_values() before IN() bindings
 
-`R::find` / `R::findAll` / `Bean::find` return beans **keyed by bean id**, NOT 0,1,2.
+`Bean::find` / `Bean::findAll` return beans **keyed by bean id**, NOT 0,1,2.
 `array_map()` over such a result **preserves those id keys**. If you then pass that
 array straight into a query with an `IN (?,?)` binding, RedBeanPHP maps each integer
 KEY to a **positional parameter index** — so `[3 => 5, 7 => 9]` binds params at
@@ -276,17 +302,17 @@ column index out of range`.
 
 ```php
 // WRONG — id-keyed array flows into an IN() binding
-$teamIds = array_map(fn($m) => (int)$m->teamId, R::find('teammember', 'member_id = ?', [$id]));
-R::getCol("SELECT id FROM instance WHERE team_id IN (" . implode(',', array_fill(0, count($teamIds), '?')) . ")", $teamIds); // BOOM
+$teamIds = array_map(fn($m) => (int)$m->teamId, Bean::find('teammember', 'member_id = ?', [$id]));
+Bean::getCol("SELECT id FROM instance WHERE team_id IN (" . implode(',', array_fill(0, count($teamIds), '?')) . ")", $teamIds); // BOOM
 
 // CORRECT — array_values() drops the id keys (fix at the SOURCE getter so every caller is safe)
-$teamIds = array_values(array_map(fn($m) => (int)$m->teamId, R::find('teammember', 'member_id = ?', [$id])));
+$teamIds = array_values(array_map(fn($m) => (int)$m->teamId, Bean::find('teammember', 'member_id = ?', [$id])));
 ```
 
 `array_merge($a, $b)` also reindexes integer keys, so params built via `array_merge`
 are accidentally safe — which MASKS the bug until someone passes the raw array through
 directly. Any `find()`/relation-list result or `array_map` over one that flows into
-`R::exec`/`getCol`/`getAll`/`find` params must be `array_values()`'d first.
+`Bean::exec`/`getCol`/`getAll`/`find` params must be `array_values()`'d first.
 
 ### Quick Reference: PHP Property → Database Column
 
@@ -350,10 +376,22 @@ Lower number = higher privilege. Check with `Flight::hasLevel(LEVELS['ADMIN'])`.
 
 ## Code Validation Hook
 
-A validation hook at `.claude/hooks/validate-tiknix-php.py` enforces these standards:
-- **Blocks** on invalid R::dispense bean names (underscores, uppercase)
-- **Warns** on R::exec for CRUD (should use beans)
+A validation hook at `scripts/hooks/validate-tiknix-php.php` (wired up as a `Write|Edit`
+PreToolUse hook in `.claude/settings.json`) enforces these standards:
+- **Blocks** on invalid `R::dispense` bean names (underscores, uppercase)
+- **Warns** on `R::exec` for CRUD (should use beans)
 - **Warns** on manual FK assignments (should use associations)
+
+A duplicate/anti-pattern scanner also lives at `scripts/hooks/check-duplicates.php`
+(patterns in `scripts/hooks/duplicate-patterns.json`):
+
+```bash
+php scripts/hooks/check-duplicates.php --quick      # controls/ + services/
+php scripts/hooks/check-duplicates.php --verbose    # + lib/ and models/
+```
+
+Install `scripts/hooks/pre-commit-duplicates` as `.git/hooks/pre-commit` to block
+commits on critical violations.
 
 ## MCP Server Security Model
 

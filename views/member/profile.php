@@ -15,7 +15,7 @@
                            everyone ELSE sees you called, so it is the one most worth
                            confirming. */
                         $displayName = trim((string)($member->displayName ?? ''));
-                        $fullName = trim(($member->firstName ?? $member->first_name ?? '') . ' ' . ($member->lastName ?? $member->last_name ?? ''));
+                        $fullName    = $member->fullName();
                         ?>
                         <tr>
                             <th width="30%">Display Name:</th>

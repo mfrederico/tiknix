@@ -33,6 +33,19 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
      * method. PHP tells them apart, but they are not the same answer — the column is one
      * candidate, this is the decision.
      */
+    /**
+     * First and last name joined, or '' when neither is set.
+     *
+     * One place, because the join was being rebuilt inline wherever it was needed — and
+     * every copy carried the same dead defence, `$member->firstName ?? $member->first_name`.
+     * RedBean resolves BOTH spellings to the same column, so that fallback can never fire;
+     * it reads like care and is noise.
+     */
+    public function fullName(): string {
+        return trim(trim((string) ($this->bean->firstName ?? ''))
+             . ' ' . trim((string) ($this->bean->lastName ?? '')));
+    }
+
     public function displayName(string $fallback = 'Unknown'): string {
         $bean  = $this->bean;
         $named = fn(string $s) => $s !== '' && preg_match('/\p{L}/u', $s);
@@ -40,7 +53,7 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
         $display = trim((string) ($bean->displayName ?? ''));
         if ($named($display)) return $display;
 
-        $full = trim(trim((string) ($bean->firstName ?? '')) . ' ' . trim((string) ($bean->lastName ?? '')));
+        $full = $this->fullName();
         if ($named($full)) return $full;
 
         $username = trim((string) ($bean->username ?? ''));

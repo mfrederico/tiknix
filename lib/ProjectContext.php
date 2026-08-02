@@ -87,11 +87,13 @@ class ProjectContext {
         R::store($member);
     }
 
-    /** Owner, or a member of a team the instance is shared with. */
+    /**
+     * Owner, or a member of a team the instance is shared with.
+     *
+     * Was a FOURTH implementation of this rule. The instance answers it now.
+     */
     public static function canAccess(int $memberId, object $inst): bool {
-        if (!$inst->id) return false;
-        if ((int) $inst->memberId === $memberId) return true;
-        return in_array((int) $inst->id, self::sharedInstanceIds($memberId), true);
+        return $inst->id ? $inst->accessibleBy($memberId) : false;
     }
 
     /**
@@ -100,38 +102,6 @@ class ProjectContext {
      * @return object[]
      */
     public static function accessible(int $memberId): array {
-        $own = R::find('instance', 'member_id = ? AND status != ?', [$memberId, 'deleted']);
-
-        $shared = [];
-        $ids    = self::sharedInstanceIds($memberId);
-        if ($ids) {
-            $shared = R::find('instance',
-                'id IN (' . R::genSlots($ids) . ') AND member_id != ? AND status != ?',
-                array_merge($ids, [$memberId, 'deleted']));
-        }
-
-        // array_values because find() returns beans keyed by id — merging keyed arrays
-        // would silently drop rows whose ids collide across the two result sets.
-        return array_merge(array_values($own), array_values($shared));
-    }
-
-    /**
-     * Instance ids shared with this member through team membership.
-     *
-     * array_values() is load-bearing: find() returns id-KEYED arrays and array_map over
-     * one preserves those keys, so passing the result straight into an IN(?,?) binding
-     * makes RedBean map integer KEYS to positional parameters — "column index out of
-     * range" rather than anything that reads like the real problem.
-     *
-     * @return int[]
-     */
-    /**
-     * THIRD copy of this query, now delegated. It differed from the others in one way:
-     * no DISTINCT, so an instance shared with two teams the same member belongs to came
-     * back twice — and a duplicate id flows straight into an IN (?,?) binding. Nothing is
-     * multi-team shared yet, which is the only reason it never showed.
-     */
-    private static function sharedInstanceIds(int $memberId): array {
-        return Bean::load('member', $memberId)->sharedInstanceIds();
+        return Bean::load('member', $memberId)->accessibleInstances();
     }
 }

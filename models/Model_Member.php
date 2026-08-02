@@ -157,6 +157,33 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
             $this->ownedInstanceIds(), $this->sharedInstanceIds())));
     }
 
+    /**
+     * Every project this member may work on, as beans — the source list for the picker.
+     *
+     * Owned first, then shared, and DELETED ones excluded. That last part is why this is
+     * not just a load() over accessibleInstanceIds(): the id list deliberately includes
+     * everything the member may touch, while the picker must not offer a project that has
+     * been destroyed.
+     */
+    public function accessibleInstances(): array {
+        $id = (int) $this->bean->id;
+        if ($id <= 0) return [];
+
+        $own = \RedBeanPHP\R::find('instance', 'member_id = ? AND status != ?', [$id, 'deleted']);
+
+        $shared = [];
+        $ids = $this->sharedInstanceIds();
+        if ($ids) {
+            $shared = \RedBeanPHP\R::find('instance',
+                'id IN (' . \RedBeanPHP\R::genSlots($ids) . ') AND member_id != ? AND status != ?',
+                array_merge($ids, [$id, 'deleted']));
+        }
+
+        // array_values because find() returns beans keyed by id — merging keyed arrays
+        // would silently drop rows whose ids collide across the two result sets.
+        return array_merge(array_values($own), array_values($shared));
+    }
+
     public function sharesTeamWith(int $otherId): bool {
         if ($otherId <= 0) return false;
         $other = \app\Bean::load('member', $otherId);

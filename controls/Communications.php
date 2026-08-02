@@ -429,6 +429,14 @@ class Communications extends BaseControls\Control {
                 'id'          => (int)$m->id,
                 'thread_id'   => (int)$m->threadId,
                 'direction'   => $m->direction,
+                // Which side of the feed it belongs on. direction only answers that for
+                // email; an in-app message is always direction='out' whoever sent it.
+                //
+                // 0 is a real answer for EMAIL — it came from an address, not an account.
+                // For an in-app message it is not: postInApp() always records a sender, so
+                // a missing one is a corrupt row. Say so rather than quietly rendering it
+                // as somebody else's message.
+                'sender_member_id' => $this->senderIdOf($m),
                 'notify_type' => $m->notifyType,
                 'from_name'   => $m->fromName ?: $m->fromEmail,
                 'status'      => $m->status,
@@ -577,6 +585,24 @@ class Communications extends BaseControls\Control {
         }
 
         return (string) ($thread->subject ?: 'Conversation');
+    }
+
+    /**
+     * The account that sent a message, or 0 when it genuinely came from none.
+     *
+     * "None" is correct for email — an address is not an account. It is never correct for
+     * an in-app message, so that case is logged rather than defaulted into: it would
+     * otherwise render as another person's message, which looks like a UI quirk and is
+     * actually a corrupt row.
+     */
+    private function senderIdOf($m): int {
+        $id = (int) ($m->senderMemberId ?? 0);
+        if ($id <= 0 && (string) $m->transport === 'inapp') {
+            $this->logger->error('In-app message has no sender account', [
+                'message' => (int) $m->id, 'thread' => (int) $m->threadId,
+            ]);
+        }
+        return $id;
     }
 
     private function canView($thread): bool {

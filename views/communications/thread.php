@@ -23,7 +23,7 @@ if (!empty($thread->ownerMemberId)) {
  * and a DM's other side is a member, so both fell through to "Unknown" with a "U" avatar,
  * which is worse than saying nothing. */
 $headWho = '';
-$__me    = (int)($member['id'] ?? 0);
+$__me    = member_id($member ?? null, 'communications/thread');
 switch ((string)$thread->kind) {
     case 'room':
         $__t = $thread->teamId ? \app\Bean::load('team', (int)$thread->teamId) : null;
@@ -127,7 +127,18 @@ switch ((string)$thread->kind) {
                     <?php else: ?>
                         <?php foreach ($messages as $m): ?>
                             <?php
-                                $isOut    = $m->direction === 'out';
+                                /* "Mine" is what decides the side, and direction only answers
+                                   that for email — where "out" means this system sent it.
+                                   postInApp() writes direction='out' for EVERY in-app
+                                   message, because from the application's point of view it
+                                   is always outbound, so in a room everybody's messages
+                                   rendered as though they were yours.
+
+                                   For anything with a sender account, compare that account
+                                   to the reader. Fall back to direction for email, which has
+                                   no sender_member_id. */
+                                $sender   = (int)($m->senderMemberId ?? 0);
+                                $isOut    = $sender > 0 ? ($sender === $__me) : ($m->direction === 'out');
                                 $isSystem = $m->notifyType === 'system';
                                 $when     = $m->createdAt ? date('M j, g:i a', strtotime($m->createdAt)) : '';
                                 $atts     = $attachments[(int)$m->id] ?? [];
@@ -161,7 +172,7 @@ switch ((string)$thread->kind) {
                                                      though it had reached somebody. */ ?>
                                             <?= \app\Mentions::highlight((string)$m->content,
                                                     \app\ThreadMembers::participants((int)$thread->id),
-                                                    (int)($member['id'] ?? 0)) ?>
+                                                    $__me) ?>
                                             <?php if ($m->status === 'failed' && $m->errorMessage): ?>
                                                 <div class="text-danger small mt-1 border-top pt-1"><?= htmlspecialchars(($m->errorMessage) ?? '') ?></div>
                                             <?php endif; ?>
@@ -366,6 +377,7 @@ switch ((string)$thread->kind) {
     if (!feed) return;
 
     var threadId = <?= (int)$thread->id ?>;
+    var ME       = <?= $__me ?>;   // who is reading, to decide "mine" (never defaulted)
     var POLL_MS  = 10000;
 
     // Newest message id currently in the DOM (0 if the feed is empty).
@@ -415,8 +427,11 @@ switch ((string)$thread->kind) {
                 '<span class="ms-1 opacity-75">' + esc(when) + '</span></span>';
             return sys;
         }
-        var isOut = m.direction === 'out';
-        var who   = m.from_name || (isOut ? 'You' : 'Them');
+        // Same rule as the server render: a sender account decides the side, and
+        // direction is only the fallback for email, which has no sender account.
+        var sender = parseInt(m.sender_member_id || 0, 10);
+        var isOut  = sender > 0 ? (sender === ME) : (m.direction === 'out');
+        var who    = m.from_name || (isOut ? 'You' : 'Them');
         var avatar = '<span class="comms-avatar sm">' + esc(initials(who)) + '</span>';
         var statusHtml = '';
         if (m.status === 'failed')       statusHtml = ' <span class="text-danger"><i class="bi bi-exclamation-triangle"></i> failed</span>';

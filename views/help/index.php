@@ -10,10 +10,18 @@
  * Everything here points at a route that exists, and says only what the system does.
  * Where a capability is gated, it says so rather than sending someone to a 403.
  */
-$__lvl     = (int) ($member['level'] ?? 100);
-$__mid     = (int) ($member['id'] ?? 0);
-$__isAdmin = $__lvl <= 50;
-$has = fn(string $flag) => class_exists('\app\Feature') && \app\Feature::allows($flag, $__mid, $__lvl);
+/* Help is PUBLIC — someone who cannot sign in still needs it — so a guest here is a
+ * legitimate state rather than a broken one, and this branches instead of demanding a
+ * member.
+ *
+ * Level comes from the member itself rather than a literal default: a guest IS the
+ * public-user bean at level PUBLIC, so nothing gated gets offered to one. */
+$__signedIn = !empty($isLoggedIn) && !empty($member);
+$__mid      = $__signedIn ? member_id($member, 'help') : 0;
+$__lvl      = $__signedIn ? (int) member_field($member, 'level') : LEVELS['PUBLIC'];
+$__isAdmin  = $__lvl <= LEVELS['ADMIN'];
+$has = fn(string $flag) => $__signedIn
+    && class_exists('\app\Feature') && \app\Feature::allows($flag, $__mid, $__lvl);
 ?>
 <div class="container py-4">
 

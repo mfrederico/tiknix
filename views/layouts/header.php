@@ -5,10 +5,19 @@
  * Design tokens in views/components/design-system.php.
  */
 $__loggedIn = $isLoggedIn ?? false;
-$__uname = 'User'; $__level = 100;
+/* A guest is PUBLIC, not MEMBER. This started at 100, which is the wrong direction to be
+   wrong in: every level test here is "<=", so an unauthenticated visitor was being
+   measured as though they were a signed-in member. Nothing was reachable through it
+   (each gated block sits inside $__loggedIn), but a default that fails open is a trap
+   waiting for the first person to move a check outside that guard. */
+$__uname = 'User'; $__level = LEVELS['PUBLIC'];
+$__mid   = 0;
 if ($__loggedIn && $member) {
     $__uname = (string)($member['username'] ?? 'User');
-    $__level = (int)($member['level'] ?? 100);
+    // No defaults past this point: inside this branch the member is signed in, so a
+    // missing id or level is a broken session and should say so rather than be guessed.
+    $__mid   = member_id($member, 'layout header');
+    $__level = (int)$member['level'];
 }
 $__initials = strtoupper(mb_substr($__uname, 0, 2)) ?: 'U';
 $__isAdmin = $__level <= 50;
@@ -131,12 +140,12 @@ if ($__loggedIn) {
                    the admin heading it used to sit under — a granted member is not an admin,
                    and filing their one tool under "Admin" says otherwise. Admins still see
                    it: allows() is true for them without any switch being set. */ ?>
-          <?php if (\app\Feature::allows('mcp', (int)($member['id'] ?? 0), $__level)): ?>
+          <?php if (\app\Feature::allows('mcp', $__mid, $__level)): ?>
             <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
           <?php endif; ?>
           <?php /* Registration is closed, so an invitation is the only way anyone new gets
                    an account — a real permission, granted per member (see app\Invite). */ ?>
-          <?php if (\app\Feature::allows('invites', (int)($member['id'] ?? 0), $__level)): ?>
+          <?php if (\app\Feature::allows('invites', $__mid, $__level)): ?>
             <a class="ui-nav-link<?= $__active('/invites') ?>" href="/invites"><i class="bi bi-envelope-plus"></i> Invitations</a>
           <?php endif; ?>
         <?php endif; ?>
@@ -155,7 +164,7 @@ if ($__loggedIn) {
         $__enabledPlugins = [];
         if ($__loggedIn && class_exists('\\app\\Sidecar\\Registry')) {
             foreach (\app\Sidecar\Registry::launchable() as $__pname => $__p) {
-                if (\app\Feature::isEnabled($__p['feature'], (int)($member['id'] ?? 0), $__level)) {
+                if (\app\Feature::isEnabled($__p['feature'], $__mid, $__level)) {
                     $__enabledPlugins[$__pname] = $__p;
                 }
             }
@@ -316,7 +325,7 @@ if ($__loggedIn) {
                        authenticates MCP tools/call against this instance, so issuing one is
                        programmatic access — see controls/Apikeys. Hidden rather than
                        shown-and-refused: a link that always 403s is a worse error message. */ ?>
-              <?php if (\app\Feature::allows('mcp', (int)($member['id'] ?? 0), $__level)): ?>
+              <?php if (\app\Feature::allows('mcp', $__mid, $__level)): ?>
                 <li><a class="dropdown-item" href="/apikeys"><i class="bi bi-key me-2"></i>API Keys</a></li>
               <?php endif; ?>
               <li><a class="dropdown-item" href="/teams"><i class="bi bi-people me-2"></i>Teams</a></li>

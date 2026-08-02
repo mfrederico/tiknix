@@ -13,8 +13,8 @@
  * Someone with no teammates and no grant gets an honest empty state instead of a form
  * that cannot be submitted.
  */
-$__mid      = (int) ($member['id'] ?? 0);
-$__level    = (int) ($member['level'] ?? 100);
+$__mid      = member_id($member ?? null, 'communications compose');
+$__level    = (int) $member['level'];
 $__mates    = \app\Teammates::of($__mid);
 $__canEmail = \app\Teammates::canSendEmail($__mid, $__level);
 $__canDm    = !empty($__mates);

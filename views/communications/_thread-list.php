@@ -34,7 +34,7 @@ $__convos  = [];
 foreach (($threads ?? []) as $__t) {
     if ((string)$__t->kind === 'room') $__rooms[] = $__t; else $__convos[] = $__t;
 }
-$__me = (int)($member['id'] ?? 0);
+$__me = member_id($member ?? null, 'communications thread list');
 
 /* Stable order — by team, then room name. Recency is the right sort for a conversation
    and the wrong one for a place: a room that moves when somebody speaks is harder to

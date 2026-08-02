@@ -58,6 +58,48 @@ function builder_tools_enabled(): bool {
 }
 
 /**
+ * Read a field off $member, whatever it is.
+ *
+ * $member from a view is a RedBeanPHP OODBBean — signed in or not, since Flight::getMember
+ * now hands back the public-user bean for guests. It USED to be a hand-rolled stdClass
+ * when signed out, and because OODBBean implements ArrayAccess and stdClass does not,
+ * `$member['level']` worked signed in and was a fatal signed out. That is fixed at the
+ * source; this accessor stays because $_SESSION['member'] is a plain ARRAY (a bean
+ * export), so both shapes are still in circulation.
+ */
+function member_field($member, string $key, $fallback = null) {
+    if (is_array($member))  return $member[$key] ?? $fallback;
+    if (is_object($member)) return $member->$key ?? $fallback;
+    return $fallback;
+}
+
+/**
+ * The id of the person a page is being rendered FOR — or an exception.
+ *
+ * Deliberately has no default. `(int)($member['id'] ?? 0)` reads as harmless and is not:
+ * member 0 is not a person, so every comparison against it silently takes the "not you"
+ * branch. That turns a broken session into a page that renders perfectly and answers
+ * every "is this mine?" question wrongly, which is far worse than a 500 — a 500 gets
+ * fixed, a quietly wrong page gets shipped.
+ *
+ * Only for contexts that already require a login. Anywhere a guest is legitimate, branch
+ * on the logged-in flag instead of calling this.
+ */
+function member_id($member, string $context = ''): int {
+    $id = 0;
+    if (is_array($member))       $id = (int) ($member['id'] ?? 0);
+    elseif (is_object($member))  $id = (int) ($member->id ?? 0);
+
+    if ($id <= 0) {
+        throw new \RuntimeException(
+            'No member in scope' . ($context !== '' ? " ($context)" : '')
+            . ' — this view requires a signed-in member.'
+        );
+    }
+    return $id;
+}
+
+/**
  * The name to show for a person, from whatever the account actually has.
  *
  * One chain, in one place, because every caller that rolled its own got a different

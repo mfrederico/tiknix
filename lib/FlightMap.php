@@ -175,12 +175,28 @@ Flight::map('permissionFor', function($control, $function, $level = LEVELS['PUBL
  */
 Flight::map('getMember', function() {
     if (!isset($_SESSION['member'])) {
-        // Return guest member object
-        $guest = new \stdClass();
-        $guest->id = 0;
-        $guest->level = LEVELS['PUBLIC'];
-        $guest->username = 'Guest';
-        $guest->email = '';
+        /* A guest is a BEAN too, not a hand-rolled stdClass.
+         *
+         * Returning two different types from one accessor made every caller's assumptions
+         * true half the time. OODBBean implements ArrayAccess and stdClass does not, so
+         * $member['level'] worked when signed in and was a FATAL when signed out — a 500
+         * that only appears in the state nobody is looking at. A bean also carries its
+         * FUSE model (models/Model_Member.php), so anything defined there works for a
+         * guest instead of blowing up on a bare object.
+         *
+         * If the seed row is missing this THROWS rather than fabricating a stand-in. An
+         * invented guest is a default in the worst place there is: every permission check
+         * on the site is measured against this identity, so making one up means answering
+         * "who is asking?" with a guess. The site being down is recoverable and obvious;
+         * a site serving pages to an identity nobody defined is neither. */
+        $guest = PUBLIC_USER_ID > 0 ? Bean::load('member', PUBLIC_USER_ID) : null;
+        if (!$guest || !$guest->id) {
+            throw new \RuntimeException(
+                'The public-user-entity member row is missing, so there is no identity to '
+              . 'treat unauthenticated visitors as. Seed it before serving requests '
+              . '(see database/seeds and scripts/reseed.php).'
+            );
+        }
         return $guest;
     }
     
@@ -364,7 +380,33 @@ Flight::map('isOff', function($val) {
  * Protected system members - cannot be deleted
  */
 define('SYSTEM_ADMIN_ID', 1);        // Root admin, owns system settings
-define('PUBLIC_USER_ID', 2);         // public-user-entity, represents unauthenticated users
+
+/**
+ * The public-user-entity row — the account unauthenticated visitors are treated as.
+ *
+ * RESOLVED, not hard-coded. This was `define('PUBLIC_USER_ID', 2)` and no member with id
+ * 2 exists: the row is id 10 here, and would be a different id in every instance clone,
+ * because it is seeded rather than fixed. Three things were quietly wrong as a result —
+ * CliHandler loaded an EMPTY bean and ran as a member with no id and no level; admin's
+ * "these accounts cannot be deleted" guard never matched, leaving the public user
+ * editable and deletable; and Mcp logged a member_id pointing at nothing.
+ *
+ * Looked up by username, which is what actually identifies it. 0 if the seed is missing,
+ * and that is worth knowing rather than papering over — every comparison against it then
+ * fails closed instead of matching a real account.
+ */
+$__publicUserId = 0;
+try {
+    $__pu = \app\Bean::findOne('member', 'username = ?', ['public-user-entity']);
+    $__publicUserId = (int) ($__pu->id ?? 0);
+    if ($__publicUserId === 0) {
+        Flight::get('log')?->error('public-user-entity row is missing; guest identity is unresolved');
+    }
+} catch (\Throwable $e) {
+    Flight::get('log')?->error('Could not resolve public-user-entity', ['error' => $e->getMessage()]);
+}
+define('PUBLIC_USER_ID', $__publicUserId);
+unset($__pu, $__publicUserId);
 
 /**
  * Setting management helpers

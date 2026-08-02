@@ -29,7 +29,6 @@ new app\Bootstrap('conf/config.ini');
 use \RedBeanPHP\R;
 use \app\TaskAccessControl;
 use \app\ProvisionService;
-use \app\ProjectContext;
 
 $file = __DIR__ . '/../data/instance-oracle.json';
 $save = in_array('--save', $argv, true);
@@ -93,10 +92,12 @@ foreach ($members as $m) {
     $snapshot['sets']["$m"] = [
         'accessible' => array_values($tac->getAccessibleInstanceIds($m)),
         'shared'     => array_values($tac->getSharedInstanceIds($m)),
-        'context'    => (function () use ($m) {
-            $c = ProjectContext::current($m);
-            return $c ? (int) $c->id : 0;
-        })(),
+        // NOT ProjectContext::current(): that is live user state, not behaviour. It
+        // changes the moment anyone clicks a project — it moved 14 -> 17 -> 62 during
+        // one test run — so recording it made the oracle cry wolf about a session
+        // write. An oracle that reports differences nobody caused gets ignored, which
+        // is worse than not having one.
+        'accessible_count' => count($tac->getAccessibleInstanceIds($m)),
     ];
 }
 

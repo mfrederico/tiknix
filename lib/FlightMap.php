@@ -184,19 +184,30 @@ Flight::map('getMember', function() {
          * FUSE model (models/Model_Member.php), so anything defined there works for a
          * guest instead of blowing up on a bare object.
          *
-         * If the seed row is missing this THROWS rather than fabricating a stand-in. An
-         * invented guest is a default in the worst place there is: every permission check
-         * on the site is measured against this identity, so making one up means answering
-         * "who is asking?" with a guess. The site being down is recoverable and obvious;
-         * a site serving pages to an identity nobody defined is neither. */
+         * When the row is not in THIS database, fail CLOSED rather than fatally.
+         *
+         * This threw, briefly, on the reasoning that inventing an identity is a default in
+         * the worst possible place. That was right about core and wrong about the system:
+         * a SIDECAR runs against its own database and does not own identity at all, so the
+         * row being absent there is normal, not broken — and throwing took every sidecar
+         * down with a 500 on a page that was only going to render a login form.
+         *
+         * A dispensed PUBLIC-level bean is the safe answer instead: level 101 is the least
+         * privilege there is, so every check denies. It is still a BEAN, so ArrayAccess and
+         * the FUSE model work as they do everywhere else. Logged at ERROR because on core
+         * it really would mean a broken install. */
         $guest = PUBLIC_USER_ID > 0 ? Bean::load('member', PUBLIC_USER_ID) : null;
-        if (!$guest || !$guest->id) {
-            throw new \RuntimeException(
-                'The public-user-entity member row is missing, so there is no identity to '
-              . 'treat unauthenticated visitors as. Seed it before serving requests '
-              . '(see database/seeds and scripts/reseed.php).'
-            );
-        }
+        if ($guest && $guest->id) return $guest;
+
+        Flight::get('log')?->error(
+            'No public-user-entity row in the current database; falling back to a '
+          . 'PUBLIC-level guest. Normal in a sidecar, a broken seed on core.'
+        );
+
+        $guest = Bean::dispense('member');
+        $guest->level    = LEVELS['PUBLIC'];
+        $guest->username = 'Guest';
+        $guest->email    = '';
         return $guest;
     }
     
@@ -391,22 +402,24 @@ Flight::map('isOff', function($val) {
  * Looked up by username, which is what the seed actually keys on, with a fall back to the
  * most senior active account so a renamed admin still resolves.
  */
-$__systemAdminId = 0;
-try {
-    $__sa = \app\Bean::findOne('member', 'username = ?', ['admin']);
-    if (!$__sa || !$__sa->id) {
-        $__sa = \app\Bean::findOne('member', 'level <= ? AND status = ? ORDER BY level ASC, id ASC',
-                                   [LEVELS['ADMIN'], 'active']);
+// Resolved against CORE's database explicitly, via CoreDb::with(). A bare lookup here
+// runs on whatever connection is current, and in a SIDECAR that is its own
+// data/<name>.db — which has no member table at all, so the id came back 0 and every
+// comparison against it silently matched nobody. CoreDb exists precisely for this and
+// its docblock already records two earlier instances of the same mistake.
+$__systemAdminId = (int) \app\CoreDb::with(function () {
+    $sa = \app\Bean::findOne('member', 'username = ?', ['admin']);
+    if (!$sa || !$sa->id) {
+        $sa = \app\Bean::findOne('member', 'level <= ? AND status = ? ORDER BY level ASC, id ASC',
+                                 [LEVELS['ADMIN'], 'active']);
     }
-    $__systemAdminId = (int) ($__sa->id ?? 0);
-    if ($__systemAdminId === 0) {
-        Flight::get('log')?->error('No root admin account found; system-account protections cannot match');
-    }
-} catch (\Throwable $e) {
-    Flight::get('log')?->error('Could not resolve the root admin', ['error' => $e->getMessage()]);
+    return (int) ($sa->id ?? 0);
+}, 0);
+if ($__systemAdminId === 0) {
+    Flight::get('log')?->error('No root admin in the core database; system-account protections cannot match');
 }
 define('SYSTEM_ADMIN_ID', $__systemAdminId);
-unset($__sa, $__systemAdminId);
+unset($__systemAdminId);
 
 /**
  * The public-user-entity row — the account unauthenticated visitors are treated as.
@@ -422,18 +435,18 @@ unset($__sa, $__systemAdminId);
  * and that is worth knowing rather than papering over — every comparison against it then
  * fails closed instead of matching a real account.
  */
-$__publicUserId = 0;
-try {
-    $__pu = \app\Bean::findOne('member', 'username = ?', ['public-user-entity']);
-    $__publicUserId = (int) ($__pu->id ?? 0);
-    if ($__publicUserId === 0) {
-        Flight::get('log')?->error('public-user-entity row is missing; guest identity is unresolved');
-    }
-} catch (\Throwable $e) {
-    Flight::get('log')?->error('Could not resolve public-user-entity', ['error' => $e->getMessage()]);
+// Against CORE's database, explicitly — see the note on SYSTEM_ADMIN_ID above. A bare
+// lookup resolves on the ambient connection, which in a sidecar is its own
+// data/<name>.db with no member table at all.
+$__publicUserId = (int) \app\CoreDb::with(function () {
+    $pu = \app\Bean::findOne('member', 'username = ?', ['public-user-entity']);
+    return (int) ($pu->id ?? 0);
+}, 0);
+if ($__publicUserId === 0) {
+    Flight::get('log')?->error('No public-user-entity row in the core database; guest identity is unresolved');
 }
 define('PUBLIC_USER_ID', $__publicUserId);
-unset($__pu, $__publicUserId);
+unset($__publicUserId);
 
 /**
  * Setting management helpers

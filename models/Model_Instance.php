@@ -62,23 +62,6 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
     }
 
     /**
-     * The instance's application database, as an absolute path.
-     *
-     * Reads the instance's own config where present, because an instance may have been
-     * configured with a different filename; falls back to the conventional
-     * database/<slug>.db. Mirrors ProvisionService::instanceDbRel(), which is where this
-     * rule was written.
-     */
-    public function dbPath(): string {
-        $ini = @parse_ini_file($this->dir() . '/conf/config.ini', true) ?: [];
-        $rel = (string) ($ini['database']['path'] ?? '');
-        if (!preg_match('#^database/[A-Za-z0-9._-]+\.db$#', $rel)) {
-            $rel = 'database/' . $this->bean->slug . '.db';
-        }
-        return $this->dir() . '/' . $rel;
-    }
-
-    /**
      * True when the instance is actually provisioned on disk.
      *
      * NOT called exists(). OODBBean has its own public exists($property), so a model method
@@ -86,6 +69,9 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      * argument and fatals without one. It had no callers, so nobody found out. Unlike a
      * method that merely shares a name with a COLUMN, this one is unreachable through the
      * bean at all.
+     *
+     * Answers for THIS machine only: with a hosted database the row is global while the
+     * directory is local, so a false here can mean "provisioned elsewhere".
      */
     public function isProvisioned(): bool {
         return is_file($this->dir() . '/public/index.php');

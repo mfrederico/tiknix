@@ -9,9 +9,30 @@
                     
                     <table class="table">
                         <?php
+                        /* Every field the edit form offers should be visible here, or this
+                           page quietly disagrees with the one you just saved. Display name
+                           was missing entirely — which is the field that decides what
+                           everyone ELSE sees you called, so it is the one most worth
+                           confirming. */
+                        $displayName = trim((string)($member->displayName ?? ''));
                         $fullName = trim(($member->firstName ?? $member->first_name ?? '') . ' ' . ($member->lastName ?? $member->last_name ?? ''));
-                        if (!empty($fullName)):
                         ?>
+                        <tr>
+                            <th width="30%">Display Name:</th>
+                            <td>
+                                <?php if ($displayName !== ''): ?>
+                                    <?= htmlspecialchars($displayName) ?>
+                                <?php else: ?>
+                                    <?php /* Say what happens instead, not just that it is blank —
+                                             the fallback chain is the thing people need to know. */ ?>
+                                    <span class="text-muted">
+                                        Not set &mdash; shown as
+                                        <strong><?= htmlspecialchars($member->displayName('your username')) ?></strong>
+                                    </span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php if (!empty($fullName)): ?>
                         <tr>
                             <th width="30%">Name:</th>
                             <td><?= htmlspecialchars(($fullName) ?? '') ?></td>

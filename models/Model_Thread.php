@@ -199,7 +199,7 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
      * copy and can be stale, so somebody removed from a team could otherwise keep talking
      * in its room until the next time anyone opened the inbox.
      */
-    public function canPost(int $memberId, int $level = 100): bool {
+    public function canPost(int $memberId, int $level = LEVELS['MEMBER']): bool {
         if ($level <= 1) return true;                        // ROOT
         if ($this->isRoom()) $this->syncWithTeam();
         return $this->isParticipant($memberId);

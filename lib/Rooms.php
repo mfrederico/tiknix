@@ -78,7 +78,7 @@ class Rooms {
         }
     }
 
-    public static function canPost(int $threadId, int $memberId, int $level = 100): bool {
+    public static function canPost(int $threadId, int $memberId, int $level = LEVELS['MEMBER']): bool {
         return self::thread($threadId)?->canPost($memberId, $level) ?? false;
     }
 

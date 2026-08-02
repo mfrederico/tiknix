@@ -80,13 +80,13 @@
                         <div class="mb-3">
                             <label for="first_name" class="form-label">First Name</label>
                             <input type="text" class="form-control" id="first_name" name="first_name"
-                                   value="<?= htmlspecialchars($member->firstName ?? $member->first_name ?? '') ?>">
+                                   value="<?= htmlspecialchars((string)($member->firstName ?? '')) ?>">
                         </div>
 
                         <div class="mb-3">
                             <label for="last_name" class="form-label">Last Name</label>
                             <input type="text" class="form-control" id="last_name" name="last_name"
-                                   value="<?= htmlspecialchars($member->lastName ?? $member->last_name ?? '') ?>">
+                                   value="<?= htmlspecialchars((string)($member->lastName ?? '')) ?>">
                         </div>
 
                         <div class="mb-3">
@@ -110,25 +110,7 @@
                     <dl>
                         <dt>Account Level</dt>
                         <dd>
-                            <?php
-                            $levelName = 'Unknown';
-                            switch($member->level) {
-                                case 0:
-                                case 1:
-                                    $levelName = 'ROOT';
-                                    break;
-                                case 50:
-                                    $levelName = 'ADMIN';
-                                    break;
-                                case 100:
-                                    $levelName = 'MEMBER';
-                                    break;
-                                case 101:
-                                    $levelName = 'PUBLIC';
-                                    break;
-                            }
-                            ?>
-                            <?= $levelName ?>
+                            <?= level_name((int)$member->level) ?>
                         </dd>
                         
                         <dt>Status</dt>

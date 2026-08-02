@@ -12,32 +12,21 @@
  * @var bool   $isAdmin
  * @var int    $unreadTotal
  */
+$__me = member_id($member ?? null, 'communications/thread');
+
+/* Everything the page needs about this conversation, worked out ONCE.
+ *
+ * These were scattered down the template: the team bean loaded twice, participants
+ * fetched three times — including once PER MESSAGE inside the feed loop, which is a query
+ * per message to answer a question that cannot change while the page renders. */
+$__participants = $thread->participantIds();
+$headWho        = $thread->counterpart($__me);
+$__team         = $thread->team();
+
 $ownerName = '';
 if (!empty($thread->ownerMemberId)) {
     $owner = \app\Bean::load('member', (int)$thread->ownerMemberId);
     if ($owner->id) $ownerName = $owner->displayName((string) $owner->email);
-}
-/* Who this conversation is WITH — used for the avatar initials and the sub-line.
- *
- * The email fields only answer that for email threads. A room is addressed to no inbox
- * and a DM's other side is a member, so both fell through to "Unknown" with a "U" avatar,
- * which is worse than saying nothing. */
-$headWho = '';
-$__me    = member_id($member ?? null, 'communications/thread');
-switch ((string)$thread->kind) {
-    case 'room':
-        $__t = $thread->teamId ? \app\Bean::load('team', (int)$thread->teamId) : null;
-        $headWho = ($__t && $__t->id) ? (string)$__t->name : 'Team';
-        break;
-    case 'dm':
-        $__others = array_values(array_filter(
-            \app\ThreadMembers::participants((int)$thread->id), fn($id) => $id !== $__me));
-        $headWho = $__others
-            ? \app\Bean::load('member', $__others[0])->displayName('Someone')
-            : 'Just you';
-        break;
-    default:
-        $headWho = $thread->recipientName ?: $thread->recipientEmail ?: 'Unknown';
 }
 ?>
 <?php include __DIR__ . '/_styles.php'; ?>
@@ -85,8 +74,7 @@ switch ((string)$thread->kind) {
                         } else {
                             $headTitle = (string)($thread->subject ?: '(no subject)');
                             if ((string)$thread->kind === 'room' && !empty($thread->teamId)) {
-                                $t = \app\Bean::load('team', (int)$thread->teamId);
-                                if ($t->id) $headTeam = (string)$t->name;
+                                if ($__team) $headTeam = (string)$__team->name;
                             }
                         }
                         ?>
@@ -104,7 +92,7 @@ switch ((string)$thread->kind) {
                                are in it; "owned by <person>" is actively wrong for a room,
                                which belongs to the team rather than to whoever created it. */
                             if ((string)$thread->kind === 'room'):
-                                $n = count(\app\ThreadMembers::participants((int)$thread->id));
+                                $n = count($__participants);
                                 ?> · <?= $n ?> member<?= $n === 1 ? '' : 's' ?><?php
                             elseif ((string)$thread->kind !== 'dm'): ?>
                                 · <?= htmlspecialchars(($headWho) ?? '') ?>
@@ -169,9 +157,7 @@ switch ((string)$thread->kind) {
                                                      participant — marking up every @word
                                                      would make an unmatched name look as
                                                      though it had reached somebody. */ ?>
-                                            <?= \app\Mentions::highlight((string)$m->content,
-                                                    \app\ThreadMembers::participants((int)$thread->id),
-                                                    $__me) ?>
+                                            <?= \app\Mentions::highlight((string)$m->content, $__participants, $__me) ?>
                                             <?php if ($m->status === 'failed' && $m->errorMessage): ?>
                                                 <div class="text-danger small mt-1 border-top pt-1"><?= htmlspecialchars(($m->errorMessage) ?? '') ?></div>
                                             <?php endif; ?>

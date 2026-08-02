@@ -20,7 +20,7 @@ if ($__loggedIn && $member) {
     $__level = (int)$member['level'];
 }
 $__initials = strtoupper(mb_substr($__uname, 0, 2)) ?: 'U';
-$__isAdmin = $__level <= 50;
+$__isAdmin = $__level <= LEVELS['ADMIN'];
 $__cur = $_SERVER['REQUEST_URI'] ?? '';
 $__active = function (string $u) use ($__cur): string {
     return ($u !== '' && $u !== '#' && $u !== '/' && strpos($__cur, $u) === 0) ? ' active' : '';

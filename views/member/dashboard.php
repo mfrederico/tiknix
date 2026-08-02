@@ -145,7 +145,7 @@
                         <dd class="col-sm-8"><?= date('F j, Y', strtotime($member->updated_at ?? 'now')) ?></dd>
                     </dl>
                     
-                    <?php if ($member->level <= 50): ?>
+                    <?php if ($member->level <= LEVELS['ADMIN']): ?>
                         <hr>
                         <a href="/admin" class="btn btn-warning">Admin Panel →</a>
                     <?php endif; ?>

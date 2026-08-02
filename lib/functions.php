@@ -58,6 +58,39 @@ function builder_tools_enabled(): bool {
 }
 
 /**
+ * The NAME of a permission level.
+ *
+ * The mapping was retyped as a ternary or a switch in six files, which is how a level
+ * label ends up disagreeing with the level it describes. LEVELS is the source; this is
+ * how you print it.
+ */
+function level_name(int $level): string {
+    $names = array_flip(LEVELS);            // 1 => ROOT, 50 => ADMIN, 100 => MEMBER, 101 => PUBLIC
+    if (isset($names[$level])) return $names[$level];
+
+    // Not an exact match: report the strongest level it satisfies, since every check in
+    // the codebase is "<=".
+    foreach ([LEVELS["ROOT"], LEVELS["ADMIN"], LEVELS["MEMBER"], LEVELS["PUBLIC"]] as $l) {
+        if ($level <= $l) return $names[$l];
+    }
+    return "UNKNOWN";
+}
+
+/**
+ * Bootstrap contextual colour for a permission level, so the badge and the label are
+ * decided in the same place. Paired with level_name().
+ */
+function level_class(int $level): string {
+    return match (level_name($level)) {
+        "ROOT"   => "danger",
+        "ADMIN"  => "warning",
+        "MEMBER" => "primary",
+        "PUBLIC" => "success",
+        default  => "secondary",
+    };
+}
+
+/**
  * Read a field off $member, whatever it is.
  *
  * $member from a view is a RedBeanPHP OODBBean — signed in or not, since Flight::getMember

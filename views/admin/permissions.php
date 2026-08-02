@@ -30,27 +30,8 @@
                                         <td><code><?= htmlspecialchars(($method) ?? '') ?></code></td>
                                         <td>
                                             <?php
-                                            $levelName = 'Unknown';
-                                            $levelClass = 'secondary';
-                                            switch($perm['level']) {
-                                                case 0:
-                                                case 1:
-                                                    $levelName = 'ROOT';
-                                                    $levelClass = 'danger';
-                                                    break;
-                                                case 50:
-                                                    $levelName = 'ADMIN';
-                                                    $levelClass = 'warning';
-                                                    break;
-                                                case 100:
-                                                    $levelName = 'MEMBER';
-                                                    $levelClass = 'primary';
-                                                    break;
-                                                case 101:
-                                                    $levelName = 'PUBLIC';
-                                                    $levelClass = 'success';
-                                                    break;
-                                            }
+                                            $levelName  = level_name((int)$perm['level']);
+                                            $levelClass = level_class((int)$perm['level']);
                                             ?>
                                             <span class="badge bg-<?= $levelClass ?>">
                                                 <?= $levelName ?> (<?= $perm['level'] ?>)

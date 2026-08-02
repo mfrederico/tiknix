@@ -55,25 +55,10 @@
                         <tr>
                             <th>Account Level:</th>
                             <td>
-                                <?php // shouldn't we be pulling this from the flightmap DEFINEs?
-                                $levelName = 'Unknown';
-                                switch($member->level) {
-                                    case 0:
-                                    case 1:
-                                        $levelName = 'ROOT';
-                                        break;
-                                    case 50:
-                                        $levelName = 'ADMIN';
-                                        break;
-                                    case 100:
-                                        $levelName = 'MEMBER';
-                                        break;
-                                    case 101:
-                                        $levelName = 'PUBLIC';
-                                        break;
-                                }
-                                ?>
-                                <?= $levelName ?> (<?= $member->level ?>)
+                                <?php /* The comment that used to sit here asked "shouldn't we be
+                                         pulling this from the flightmap DEFINEs?" — yes, and now it
+                                         does, via level_name(). */ ?>
+                                <?= level_name((int)$member->level) ?> (<?= (int)$member->level ?>)
                             </td>
                         </tr>
                         <tr>
@@ -105,7 +90,7 @@
                     <div class="list-group">
                         <a href="/member/dashboard" class="list-group-item list-group-item-action">Dashboard</a>
                         <a href="/member/settings" class="list-group-item list-group-item-action">Settings</a>
-                        <?php if ($member->level <= 50): ?>
+                        <?php if ($member->level <= LEVELS['ADMIN']): ?>
                             <a href="/admin" class="list-group-item list-group-item-action">Admin Panel</a>
                         <?php endif; ?>
                         <a href="/auth/logout" class="list-group-item list-group-item-action">Logout</a>

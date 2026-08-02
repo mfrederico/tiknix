@@ -147,7 +147,7 @@
                                         <span class="text-muted">All</span>
                                     <?php else: ?>
                                         <?= $rule->level ?>
-                                        <small class="text-muted">(<?= $rule->level <= 1 ? 'ROOT' : ($rule->level <= 50 ? 'ADMIN' : 'MEMBER') ?>)</small>
+                                        <small class="text-muted">(<?= level_name((int)$rule->level) ?>)</small>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -232,7 +232,7 @@
                                         <span class="text-muted">All</span>
                                     <?php else: ?>
                                         <?= $rule->level ?>
-                                        <small class="text-muted">(<?= $rule->level <= 1 ? 'ROOT' : ($rule->level <= 50 ? 'ADMIN' : 'MEMBER') ?>)</small>
+                                        <small class="text-muted">(<?= level_name((int)$rule->level) ?>)</small>
                                     <?php endif; ?>
                                 </td>
                                 <td>

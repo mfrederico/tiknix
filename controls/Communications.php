@@ -36,7 +36,7 @@ class Communications extends BaseControls\Control {
 
         $this->render('communications/index', [
             'title'       => 'Communications',
-            'threads'     => $this->fetchThreads($search),
+            'threads'     => $this->railRows($this->fetchThreads($search), (int)$this->member->id),
             'search'      => $search,
             'activeId'    => 0,
             'isAdmin'     => Flight::hasLevel(LEVELS['ROOT']),   // "sees all" is ROOT-only
@@ -86,7 +86,7 @@ class Communications extends BaseControls\Control {
             // Browser-tab title. "#general" alone is ambiguous with several teams, and a
             // tab title is exactly where you are choosing between open windows.
             'title'       => $thread->title((int)$this->member->id),
-            'threads'     => $this->fetchThreads($search),
+            'threads'     => $this->railRows($this->fetchThreads($search), (int)$this->member->id),
             'search'      => $search,
             'activeId'    => (int)$thread->id,
             'thread'      => $thread,
@@ -526,6 +526,112 @@ class Communications extends BaseControls\Control {
             array_push($params, $like, $like, $like);
         }
         return Bean::find('thread', $where . ' ORDER BY last_message_at DESC, id DESC', $params);
+    }
+
+    /**
+     * Everything the rail needs to draw a row, prepared once and in bulk.
+     *
+     * The view used to work this out per row, which meant a query per thread for unread,
+     * another for mentions, another to load the team or the other person — and, worst, a
+     * usort comparator that loaded TWO team beans per comparison, so sorting alone was
+     * O(n log n) queries. None of that is visible when you are looking at six threads and
+     * all of it is wrong in shape.
+     *
+     * Teams and members are fetched in one query each and looked up from a map. Unread and
+     * mentions are two aggregate queries for the whole list instead of two per row.
+     */
+    private function railRows(array $threads, int $viewerId): array {
+        if (!$threads) return [];
+
+        $threadIds = array_values(array_map(fn($t) => (int) $t->id, $threads));
+
+        // --- the related records, in bulk -------------------------------------------
+        $teamIds = array_values(array_unique(array_filter(
+            array_map(fn($t) => (int) $t->teamId, $threads))));
+        $teams = [];
+        if ($teamIds) {
+            foreach (Bean::find('team', 'id IN (' . \RedBeanPHP\R::genSlots($teamIds) . ')', $teamIds) as $t) {
+                $teams[(int) $t->id] = (string) $t->name;
+            }
+        }
+
+        // The other side of every DM, in one pass over threadmember.
+        $dmIds = array_values(array_map(fn($t) => (int) $t->id,
+            array_filter($threads, fn($t) => (string) $t->kind === 'dm')));
+        $dmOther = [];
+        if ($dmIds) {
+            $rows = \RedBeanPHP\R::getAll(
+                'SELECT thread_id, member_id FROM threadmember WHERE thread_id IN ('
+                . \RedBeanPHP\R::genSlots($dmIds) . ') AND member_id != ?',
+                array_merge($dmIds, [$viewerId]));
+            $needed = array_values(array_unique(array_map(fn($r) => (int) $r['member_id'], $rows)));
+            $names  = [];
+            if ($needed) {
+                foreach (Bean::find('member', 'id IN (' . \RedBeanPHP\R::genSlots($needed) . ')', $needed) as $m) {
+                    $names[(int) $m->id] = $m->displayName('Someone');
+                }
+            }
+            foreach ($rows as $r) {
+                $dmOther[(int) $r['thread_id']] ??= $names[(int) $r['member_id']] ?? 'Someone';
+            }
+        }
+
+        // --- unread + mentions, two queries for the whole list ------------------------
+        $slots  = \RedBeanPHP\R::genSlots($threadIds);
+        $unread = [];
+        foreach (\RedBeanPHP\R::getAll(
+            'SELECT tm.thread_id, COUNT(m.id) AS n FROM threadmember tm '
+          . 'LEFT JOIN message m ON m.thread_id = tm.thread_id AND m.id > tm.last_read_id '
+          . '  AND (m.sender_member_id IS NULL OR m.sender_member_id != ?) '
+          . "WHERE tm.member_id = ? AND tm.thread_id IN ($slots) GROUP BY tm.thread_id",
+            array_merge([$viewerId, $viewerId], $threadIds)) as $r) {
+            $unread[(int) $r['thread_id']] = (int) $r['n'];
+        }
+
+        $mentions = [];
+        foreach (\RedBeanPHP\R::getAll(
+            'SELECT thread_ref, COUNT(*) AS n FROM mention WHERE member_id = ? '
+          . "AND (read_at IS NULL OR read_at = '') AND thread_ref IN ($slots) GROUP BY thread_ref",
+            array_merge([$viewerId], $threadIds)) as $r) {
+            $mentions[(int) $r['thread_ref']] = (int) $r['n'];
+        }
+
+        // --- rows ---------------------------------------------------------------------
+        $rows = [];
+        foreach ($threads as $t) {
+            $id   = (int) $t->id;
+            $kind = (string) ($t->kind ?: 'email');
+
+            if ($kind === 'dm') {
+                $who = $dmOther[$id] ?? 'Just you';
+                [$label, $icon] = [$who, 'bi-person-circle'];
+            } elseif ($kind === 'room') {
+                $who = $teams[(int) $t->teamId] ?? 'Team';
+                [$label, $icon] = ['#' . ($t->slug ?: 'room'), 'bi-hash'];
+            } else {
+                $who = (string) ($t->recipientName ?: $t->recipientEmail ?: 'Unknown');
+                [$label, $icon] = [(string) ($t->subject ?: '(no subject)'), 'bi-envelope'];
+            }
+
+            $rows[] = [
+                'id'        => $id,
+                'kind'      => $kind,
+                'label'     => $label,
+                'who'       => $who,
+                'icon'      => $icon,
+                'team'      => $teams[(int) $t->teamId] ?? '',
+                'slug'      => (string) ($t->slug ?? ''),
+                'unread'    => ($unread[$id] ?? 0) > 0,
+                'mentions'  => $mentions[$id] ?? 0,
+                'preview'   => (string) ($t->lastPreview ?: $who),
+                'when'      => $t->lastMessageAt ? date('M j', strtotime((string) $t->lastMessageAt)) : '',
+                'dir_icon'  => $t->lastDirection === 'in'
+                                 ? 'bi-arrow-down-left text-success' : 'bi-arrow-up-right text-primary',
+                'rel_type'  => (string) ($t->relatedType ?? ''),
+                'rel_id'    => (int) ($t->relatedId ?? 0),
+            ];
+        }
+        return $rows;
     }
 
     /** WHERE fragment scoping threads to the viewer's role. */

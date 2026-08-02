@@ -2,8 +2,13 @@
 /**
  * Thread-list rail (left pane). Shared by index.php + thread.php.
  *
- * @var array $threads    emailthread beans, newest-first
- * @var int   $activeId   currently open thread id (0 on index)
+ * Takes PREPARED ROWS, not beans. The view used to work each row out itself, which cost a
+ * query per thread for unread, another for mentions, another to load the team or the other
+ * person — and a usort comparator that loaded two team beans per comparison, so sorting
+ * alone was O(n log n) queries. Communications::railRows() does it once, in bulk.
+ *
+ * @var array  $threads   rows from Communications::railRows()
+ * @var int    $activeId  currently open thread id (0 on index)
  * @var string $search    current search query
  */
 if (!function_exists('comms_initials')) {
@@ -16,39 +21,29 @@ if (!function_exists('comms_initials')) {
         return ($a . $b) ?: '?';
     }
 }
+
+/* Rooms are separated from conversations because they are not the same kind of thing.
+   A room is a PLACE — you are a member of it, it has no end, and sorting it by recency
+   makes it wander. A conversation has a beginning and an end and should sort by recency.
+   Mixed together one of the two always sorts wrongly.
+
+   Still one rail, one bell, one poll: a grouping, not a second inbox. */
+$__rooms  = array_values(array_filter($threads ?? [], fn($r) => $r['kind'] === 'room'));
+$__convos = array_values(array_filter($threads ?? [], fn($r) => $r['kind'] !== 'room'));
+
+/* Stable order — team, then room name. Recency is right for a conversation and wrong for
+   a place: a room that moves when somebody speaks is harder to find, not easier, and the
+   unread dot already says which has news. Sorting on values that are already in the row
+   means no query in the comparator. */
+usort($__rooms, fn($a, $b) => [$a['team'], $a['slug']] <=> [$b['team'], $b['slug']]);
 ?>
 <?php /* $railClass lets the thread view hide this column on narrow screens, where the
          rail and the conversation stack instead of sitting side by side. */ ?>
 <div class="col-lg-4 <?= htmlspecialchars($railClass ?? '') ?>">
     <div class="card border-0 shadow-sm comms-panel">
-<?php
-/* Rooms are separated from conversations because they are not the same kind of thing.
-   A room is a PLACE — you are a member of it, it has no end, and sorting it by recency
-   makes it wander around the list. A conversation has a beginning and an end and should
-   sort by recency. Mixed together, one of the two always sorts wrongly, and a #room
-   reads as just another message thread.
-
-   Still one rail, one bell, one poll: this is a grouping, not a second inbox. */
-$__rooms   = [];
-$__convos  = [];
-foreach (($threads ?? []) as $__t) {
-    if ((string)$__t->kind === 'room') $__rooms[] = $__t; else $__convos[] = $__t;
-}
-$__me = member_id($member ?? null, 'communications thread list');
-
-/* Stable order — by team, then room name. Recency is the right sort for a conversation
-   and the wrong one for a place: a room that moves when somebody speaks is harder to
-   find, not easier, and the muscle memory of "mine is third" is worth more than knowing
-   which had the last message (the unread dot already says that). */
-usort($__rooms, function ($a, $b) {
-    $ta = $a->teamId ? (string)(\app\Bean::load('team', (int)$a->teamId)->name ?? '') : '';
-    $tb = $b->teamId ? (string)(\app\Bean::load('team', (int)$b->teamId)->name ?? '') : '';
-    return [$ta, (string)$a->slug] <=> [$tb, (string)$b->slug];
-});
-?>
         <div class="card-header bg-body-tertiary d-flex justify-content-between align-items-center">
             <span class="fw-semibold"><i class="bi bi-inbox me-1"></i>Messages</span>
-            <span class="text-muted small"><?= count($threads) ?></span>
+            <span class="text-muted small"><?= count($threads ?? []) ?></span>
         </div>
 
         <div class="p-2 border-bottom">
@@ -64,24 +59,16 @@ usort($__rooms, function ($a, $b) {
 
         <?php if ($__rooms): ?>
         <div class="comms-rooms border-bottom" id="comms-room-list">
-            <div class="comms-section-head">
-                <i class="bi bi-hash"></i> Team messaging
-            </div>
+            <div class="comms-section-head"><i class="bi bi-hash"></i> Team messaging</div>
             <?php foreach ($__rooms as $r): ?>
-                <?php
-                    $rUnread   = \app\ThreadMembers::unreadFor((int)$r->id, $__me) > 0;
-                    $rMentions = \app\Mentions::unreadInThread((int)$r->id, $__me);
-                    $rTeam     = $r->teamId ? \app\Bean::load('team', (int)$r->teamId) : null;
-                    $rActive   = (int)$r->id === (int)($activeId ?? 0);
-                ?>
-                <a href="/communications/thread/<?= (int)$r->id ?>"
-                   data-room-id="<?= (int)$r->id ?>"
-                   class="comms-room-row <?= $rUnread ? 'unread' : '' ?> <?= $rActive ? 'active' : '' ?>">
-                    <span class="comms-room-name">#<?= htmlspecialchars((string)($r->slug ?: 'room')) ?></span>
-                    <span class="comms-room-team"><?= htmlspecialchars($rTeam && $rTeam->id ? (string)$rTeam->name : 'Team') ?></span>
-                    <span class="comms-mention-badge badge rounded-pill bg-warning text-dark ms-1 <?= $rMentions ? '' : 'd-none' ?>"
-                          title="You were mentioned">@<?= (int)$rMentions ?></span>
-                    <span class="comms-unread-dot-room <?= $rUnread ? '' : 'd-none' ?>" title="New messages"></span>
+                <a href="/communications/thread/<?= (int)$r['id'] ?>"
+                   data-room-id="<?= (int)$r['id'] ?>"
+                   class="comms-room-row <?= $r['unread'] ? 'unread' : '' ?> <?= (int)$r['id'] === (int)($activeId ?? 0) ? 'active' : '' ?>">
+                    <span class="comms-room-name">#<?= htmlspecialchars($r['slug'] ?: 'room') ?></span>
+                    <span class="comms-room-team"><?= htmlspecialchars($r['team'] ?: 'Team') ?></span>
+                    <span class="comms-mention-badge badge rounded-pill bg-warning text-dark ms-1 <?= $r['mentions'] ? '' : 'd-none' ?>"
+                          title="You were mentioned">@<?= (int)$r['mentions'] ?></span>
+                    <span class="comms-unread-dot-room <?= $r['unread'] ? '' : 'd-none' ?>" title="New messages"></span>
                 </a>
             <?php endforeach; ?>
         </div>
@@ -98,85 +85,49 @@ usort($__rooms, function ($a, $b) {
                 </div>
             <?php else: ?>
                 <?php foreach ($__convos as $t): ?>
-                    <?php
-                        $me      = $__me;
-                        // Per-person unread now. The thread-level counter cannot answer this
-                        // once a conversation has more than one participant.
-                        $unread  = $t->unreadFor($me) > 0;
-                        $active  = (int)$t->id === (int)($activeId ?? 0);
-                        $kind    = (string)($t->kind ?: 'email');
-
-                        // A DM is named by WHO IS IN IT — it has no subject and no
-                        // recipient address, so the email fields would render "(no
-                        // subject)" from "Unknown".
-                        if ($kind === 'dm') {
-                            $others = array_values(array_filter(
-                                \app\ThreadMembers::participants((int)$t->id), fn($id) => $id !== $me));
-                            $who = $others
-                                ? \app\Bean::load('member', $others[0])->displayName('Someone')
-                                : 'Just you';
-                            $label = $who;
-                            $kindIcon = 'bi-person-circle';
-                        } elseif ($kind === 'room') {
-                            // Named by its handle, and by the team it belongs to — two
-                            // teams may each have a #general and they are not the same room.
-                            $team  = $t->teamId ? \app\Bean::load('team', (int)$t->teamId) : null;
-                            $label = '#' . ($t->slug ?: 'room');
-                            $who   = $team && $team->id ? (string)$team->name : 'Team';
-                            $kindIcon = 'bi-hash';
-                        } else {
-                            $who   = $t->recipientName ?: $t->recipientEmail ?: 'Unknown';
-                            $label = $t->subject ?: '(no subject)';
-                            $kindIcon = 'bi-envelope';
-                        }
-                        $dirIcon = $t->lastDirection === 'in' ? 'bi-arrow-down-left text-success' : 'bi-arrow-up-right text-primary';
-                        $when    = $t->lastMessageAt ? date('M j', strtotime($t->lastMessageAt)) : '';
-                    ?>
-                    <?php
-                    /* The row is the WRAPPER now, not the anchor. It has to be: the live-rail
-                       JS below re-sorts by prepending `.comms-thread-row`, and if that were
-                       still the <a> the sort would rip it out of its actions. The anchor keeps
-                       covering the whole row via .stretched-link, so clicking anywhere still
-                       opens the thread — except on the buttons, which sit above it. */
-                    ?>
-                    <div data-thread-id="<?= (int)$t->id ?>"
-                         class="comms-thread-row position-relative <?= $unread ? 'unread' : '' ?> <?= $active ? 'active' : '' ?>">
-                        <a href="/communications/thread/<?= (int)$t->id ?>"
+                    <?php $active = (int)$t['id'] === (int)($activeId ?? 0); ?>
+                    <?php /* The row is the WRAPPER, not the anchor: the live-rail JS re-sorts by
+                             moving `.comms-thread-row`, and if that were the <a> the sort would
+                             rip it out of its own action buttons. The anchor covers the row via
+                             .stretched-link, so clicking anywhere opens the thread — except on
+                             the buttons, which sit above it. */ ?>
+                    <div data-thread-id="<?= (int)$t['id'] ?>"
+                         class="comms-thread-row position-relative <?= $t['unread'] ? 'unread' : '' ?> <?= $active ? 'active' : '' ?>">
+                        <a href="/communications/thread/<?= (int)$t['id'] ?>"
                            class="stretched-link" aria-label="Open conversation"></a>
                         <div class="comms-thread-actions">
                             <button type="button" class="btn btn-sm btn-link p-0 comms-act" data-act="read"
-                                    data-id="<?= (int)$t->id ?>" data-read="<?= $unread ? 1 : 0 ?>"
-                                    title="<?= $unread ? 'Mark as read' : 'Mark as unread' ?>">
-                                <i class="bi <?= $unread ? 'bi-envelope-open' : 'bi-envelope' ?>"></i>
+                                    data-id="<?= (int)$t['id'] ?>" data-read="<?= $t['unread'] ? 1 : 0 ?>"
+                                    title="<?= $t['unread'] ? 'Mark as read' : 'Mark as unread' ?>">
+                                <i class="bi <?= $t['unread'] ? 'bi-envelope-open' : 'bi-envelope' ?>"></i>
                             </button>
                             <button type="button" class="btn btn-sm btn-link p-0 text-danger comms-act" data-act="del"
-                                    data-id="<?= (int)$t->id ?>" title="Delete conversation">
+                                    data-id="<?= (int)$t['id'] ?>" title="Delete conversation">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
                         <div class="d-flex gap-2">
-                            <span class="comms-avatar"><?= htmlspecialchars((comms_initials($who)) ?? '') ?></span>
+                            <span class="comms-avatar"><?= htmlspecialchars(comms_initials($t['who'])) ?></span>
                             <div class="min-w-0 flex-grow-1">
                                 <div class="d-flex align-items-center">
                                     <span class="comms-unread-dot"></span>
-                                    <span class="comms-thread-subject flex-grow-1"><i class="bi <?= $kindIcon ?> me-1 opacity-50 small"></i><?= htmlspecialchars($label) ?></span>
-                                    <?php /* A mention outranks unread: in a busy room "new
-                                             messages" stops meaning anything, and "someone
-                                             asked YOU something" still does. */ ?>
-                                    <?php $mentions = \app\Mentions::unreadInThread((int)$t->id, $me); ?>
-                                    <span class="comms-mention-badge badge rounded-pill bg-warning text-dark ms-1 flex-shrink-0 <?= $mentions ? '' : 'd-none' ?>"
-                                          title="You were mentioned">@<?= (int)$mentions ?></span>
-                                    <span class="comms-unread-badge badge rounded-pill bg-danger ms-1 flex-shrink-0 <?= $unread ? '' : 'd-none' ?>"><?= $unread ? 1 : 0 ?></span>
-                                    <small class="comms-thread-when text-muted ms-2 flex-shrink-0"><?= htmlspecialchars(($when) ?? '') ?></small>
+                                    <span class="comms-thread-subject flex-grow-1"><i class="bi <?= $t['icon'] ?> me-1 opacity-50 small"></i><?= htmlspecialchars($t['label']) ?></span>
+                                    <?php /* A mention outranks unread: in a busy room "new messages"
+                                             stops meaning anything, and "someone asked YOU
+                                             something" still does. */ ?>
+                                    <span class="comms-mention-badge badge rounded-pill bg-warning text-dark ms-1 flex-shrink-0 <?= $t['mentions'] ? '' : 'd-none' ?>"
+                                          title="You were mentioned">@<?= (int)$t['mentions'] ?></span>
+                                    <span class="comms-unread-badge badge rounded-pill bg-danger ms-1 flex-shrink-0 <?= $t['unread'] ? '' : 'd-none' ?>"><?= $t['unread'] ? 1 : 0 ?></span>
+                                    <small class="comms-thread-when text-muted ms-2 flex-shrink-0"><?= htmlspecialchars($t['when']) ?></small>
                                 </div>
                                 <div class="comms-thread-preview">
-                                    <i class="bi <?= $dirIcon ?>"></i>
-                                    <?= htmlspecialchars(($t->lastPreview ?: $who) ?? '') ?>
+                                    <i class="bi <?= $t['dir_icon'] ?>"></i>
+                                    <?= htmlspecialchars($t['preview']) ?>
                                 </div>
                                 <div class="small text-muted text-truncate">
-                                    <i class="bi bi-person"></i> <?= htmlspecialchars(($who) ?? '') ?>
-                                    <?php if (!empty($t->relatedType)): ?>
-                                        · <span class="badge bg-info-subtle text-info-emphasis"><?= htmlspecialchars(($t->relatedType) ?? '') ?> #<?= (int)$t->relatedId ?></span>
+                                    <i class="bi bi-person"></i> <?= htmlspecialchars($t['who']) ?>
+                                    <?php if ($t['rel_type'] !== ''): ?>
+                                        · <span class="badge bg-info-subtle text-info-emphasis"><?= htmlspecialchars($t['rel_type']) ?> #<?= (int)$t['rel_id'] ?></span>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -187,7 +138,6 @@ usort($__rooms, function ($a, $b) {
         </div>
     </div>
 </div>
-
 <script>
 // Live rail — updates thread rows in place from the nav bell's poll data
 // (comms:threads event). Strictly scoped to #comms-thread-list: it never touches

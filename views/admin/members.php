@@ -62,27 +62,8 @@
                         <td><?= htmlspecialchars(($member->email) ?? '') ?></td>
                         <td>
                             <?php
-                            $levelName = 'Unknown';
-                            $levelClass = 'secondary';
-                            switch($member->level) {
-                                case 0:
-                                case 1:
-                                    $levelName = 'ROOT';
-                                    $levelClass = 'danger';
-                                    break;
-                                case 50:
-                                    $levelName = 'ADMIN';
-                                    $levelClass = 'warning';
-                                    break;
-                                case 100:
-                                    $levelName = 'MEMBER';
-                                    $levelClass = 'primary';
-                                    break;
-                                case 101:
-                                    $levelName = 'PUBLIC';
-                                    $levelClass = 'success';
-                                    break;
-                            }
+                            $levelName  = level_name((int)$member->level);
+                            $levelClass = level_class((int)$member->level);
                             ?>
                             <span class="badge bg-<?= $levelClass ?>">
                                 <?= $levelName ?> (<?= $member->level ?>)

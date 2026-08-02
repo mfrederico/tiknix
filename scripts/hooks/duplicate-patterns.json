@@ -1,0 +1,71 @@
+{
+    "description": "Tiknix duplicate/anti-pattern definitions. Patterns are PHP regex (JSON-escaped). Severity: critical|high|medium|low. Optional 'exclude' is a path regex for files that are the legitimate home of the pattern.",
+    "patterns": {
+        "Hand-rolled authcontrol row": {
+            "pattern": "Bean::dispense\\(\\s*['\"]authcontrol['\"]|R::dispense\\(\\s*['\"]authcontrol['\"]",
+            "suggestion": "Use PermissionCache::seedRule($controller, $method, $level, $desc) - a hand-written row silently loses to the ADMIN-default row the framework auto-creates on first request",
+            "severity": "critical",
+            "exclude": "^(lib/(PermissionCache|Scaffold)|controls/(Permissions|Admin)\\.php|services/Schema/Seeds/)"
+        },
+        "Direct R:: call (use Bean::)": {
+            "pattern": "\\bR::(dispense|load|findOne|findAll|find|store|trash|trashAll|exec|getAll|getRow|getCol|getCell|count|freeze|begin|commit|rollback|addDatabase|selectDatabase)\\b",
+            "suggestion": "Use the Bean:: wrapper - it normalizes bean type names, so R::dispense('orderItem') throws 'Invalid bean type' at runtime while Bean::dispense('orderItem') works. Legitimate raw R:: is limited to bootstrap connection setup and schema seeds",
+            "severity": "high",
+            "exclude": "^(lib/Bean\\.php$|lib/ValidationService\\.php$|services/Schema/Seeds/|database/seeds/)"
+        },
+        "Direct R::exec for CRUD": {
+            "pattern": "R::exec\\(\\s*['\"]\\s*(INSERT|UPDATE|DELETE)\\s+",
+            "suggestion": "Use bean operations (Bean::dispense/store/trash) - raw SQL bypasses FUSE model hooks entirely",
+            "severity": "high"
+        },
+        "JSON input parsing": {
+            "pattern": "\\$\\w+\\s*=\\s*json_decode\\(\\s*file_get_contents\\(\\s*['\"]php:\\/\\/input['\"]\\s*\\)\\s*,\\s*true\\s*\\)",
+            "suggestion": "Use $this->getJsonInput() from BaseControls\\Control",
+            "severity": "high",
+            "exclude": "^controls/BaseControls/Control\\.php$"
+        },
+        "Manual JSON response": {
+            "pattern": "header\\(\\s*['\"]Content-Type:\\s*application\\/json|echo\\s+json_encode\\(",
+            "suggestion": "Use Flight::jsonSuccess()/Flight::jsonError() so envelope and status codes stay consistent",
+            "severity": "medium",
+            "exclude": "^(lib/|scripts/)"
+        },
+        "Flight jsonError + return": {
+            "pattern": "Flight::jsonError\\([^;]+\\);\\s*\\n\\s*return;",
+            "suggestion": "Frequent 2-line idiom - consider a base-class helper that emits and returns in one call",
+            "severity": "high"
+        },
+        "Bean findOne + not found check": {
+            "pattern": "\\$\\w+\\s*=\\s*Bean::findOne\\([^;]+\\);\\s*\\n\\s*if\\s*\\(\\s*!\\s*\\$\\w+\\s*\\)\\s*\\{",
+            "suggestion": "Consider Bean::findOneOrFail() that throws on not found",
+            "severity": "high"
+        },
+        "Hardcoded permission level": {
+            "pattern": "(level|minlevel|min_level)['\"]?\\s*(=>|=|===|==)\\s*(1|50|100|101)\\b",
+            "suggestion": "Use LEVELS['ROOT'|'ADMIN'|'MEMBER'|'PUBLIC'] - hardcoded ints drift when levels change and do not render in UI dropdowns",
+            "severity": "medium",
+            "exclude": "^(lib/PermissionCache|lib/Scaffold|conf/)"
+        },
+        "Manual logger fetch": {
+            "pattern": "\\$\\w+\\s*=\\s*Flight::get\\(\\s*['\"]log['\"]\\s*\\)",
+            "suggestion": "Controllers already have $this->logger from BaseControls\\Control - only stateless/CLI classes need to fetch it",
+            "severity": "low",
+            "exclude": "^(lib/|scripts/)"
+        },
+        "requireLogin guard": {
+            "pattern": "if\\s*\\(\\s*!\\s*\\$this->requireLogin\\(\\)\\s*\\)\\s*return\\s*;",
+            "suggestion": "Established idiom, but a middleware/attribute would remove the repetition",
+            "severity": "low"
+        },
+        "try-catch with logger": {
+            "pattern": "try\\s*\\{[^}]+\\}\\s*catch\\s*\\([^)]+\\$e\\)\\s*\\{\\s*\\n\\s*\\$this->logger->error\\(",
+            "suggestion": "Standard pattern, but consider a withErrorHandling() wrapper",
+            "severity": "low"
+        },
+        "Hyphenated controller/method name": {
+            "pattern": "Flight::route\\(\\s*['\"][A-Z]*\\s*\\/[a-z]+-[a-z]+",
+            "suggestion": "Hyphens cannot map to PHP class/method names - use lowercase single words so DefaultRoute auto-routes without a route file",
+            "severity": "medium"
+        }
+    }
+}

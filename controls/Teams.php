@@ -184,9 +184,9 @@ class Teams extends Control {
 
         // Instances shared with this team (many-to-many via instance_team), plus the
         // current member's own instances they can toggle for this team.
-        $hasShare       = in_array('instance_team', \RedBeanPHP\R::inspect(), true);
+        $hasShare       = in_array('instance_team', Bean::inspect(), true);
         $sharedHereIds  = $hasShare
-            ? array_map('intval', \RedBeanPHP\R::getCol('SELECT instance_id FROM instance_team WHERE team_id = ?', [$teamId]))
+            ? array_map('intval', Bean::getCol('SELECT instance_id FROM instance_team WHERE team_id = ?', [$teamId]))
             : [];
         $teamInstances = [];
         if ($sharedHereIds) {
@@ -194,9 +194,9 @@ class Teams extends Control {
             // positional (find() results/getCol are already sequential here, but this
             // is the safe idiom for any id list).
             $vals = array_values($sharedHereIds);
-            $teamInstances = \RedBeanPHP\R::find('instance', 'id IN (' . \RedBeanPHP\R::genSlots($vals) . ') ORDER BY slug', $vals);
+            $teamInstances = Bean::find('instance', 'id IN (' . Bean::genSlots($vals) . ') ORDER BY slug', $vals);
         }
-        $myInstances = \RedBeanPHP\R::find('instance', 'member_id = ? ORDER BY slug', [(int)$this->member->id]);
+        $myInstances = Bean::find('instance', 'member_id = ? ORDER BY slug', [(int)$this->member->id]);
 
         $this->viewData['title'] = $team->name;
         $this->viewData['team'] = $team;
@@ -227,7 +227,7 @@ class Teams extends Control {
             // thread in Communications keeps chat order, where reading top-to-bottom is
             // the point.
             $this->viewData['roomMessages'] = array_values(
-                \RedBeanPHP\R::find('message', 'thread_id = ? ORDER BY id DESC LIMIT 20', [(int) $roomId])
+                Bean::find('message', 'thread_id = ? ORDER BY id DESC LIMIT 20', [(int) $roomId])
             );
             $this->viewData['roomUnread'] = \app\ThreadMembers::unreadFor((int) $roomId, (int)$this->member->id);
         }

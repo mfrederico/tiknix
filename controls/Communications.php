@@ -550,7 +550,7 @@ class Communications extends BaseControls\Control {
             array_map(fn($t) => (int) $t->teamId, $threads))));
         $teams = [];
         if ($teamIds) {
-            foreach (Bean::find('team', 'id IN (' . \RedBeanPHP\R::genSlots($teamIds) . ')', $teamIds) as $t) {
+            foreach (Bean::find('team', 'id IN (' . Bean::genSlots($teamIds) . ')', $teamIds) as $t) {
                 $teams[(int) $t->id] = (string) $t->name;
             }
         }
@@ -560,14 +560,14 @@ class Communications extends BaseControls\Control {
             array_filter($threads, fn($t) => (string) $t->kind === 'dm')));
         $dmOther = [];
         if ($dmIds) {
-            $rows = \RedBeanPHP\R::getAll(
+            $rows = Bean::getAll(
                 'SELECT thread_id, member_id FROM threadmember WHERE thread_id IN ('
-                . \RedBeanPHP\R::genSlots($dmIds) . ') AND member_id != ?',
+                . Bean::genSlots($dmIds) . ') AND member_id != ?',
                 array_merge($dmIds, [$viewerId]));
             $needed = array_values(array_unique(array_map(fn($r) => (int) $r['member_id'], $rows)));
             $names  = [];
             if ($needed) {
-                foreach (Bean::find('member', 'id IN (' . \RedBeanPHP\R::genSlots($needed) . ')', $needed) as $m) {
+                foreach (Bean::find('member', 'id IN (' . Bean::genSlots($needed) . ')', $needed) as $m) {
                     $names[(int) $m->id] = $m->displayName('Someone');
                 }
             }
@@ -577,9 +577,9 @@ class Communications extends BaseControls\Control {
         }
 
         // --- unread + mentions, two queries for the whole list ------------------------
-        $slots  = \RedBeanPHP\R::genSlots($threadIds);
+        $slots  = Bean::genSlots($threadIds);
         $unread = [];
-        foreach (\RedBeanPHP\R::getAll(
+        foreach (Bean::getAll(
             'SELECT tm.thread_id, COUNT(m.id) AS n FROM threadmember tm '
           . 'LEFT JOIN message m ON m.thread_id = tm.thread_id AND m.id > tm.last_read_id '
           . '  AND (m.sender_member_id IS NULL OR m.sender_member_id != ?) '
@@ -589,7 +589,7 @@ class Communications extends BaseControls\Control {
         }
 
         $mentions = [];
-        foreach (\RedBeanPHP\R::getAll(
+        foreach (Bean::getAll(
             'SELECT thread_ref, COUNT(*) AS n FROM mention WHERE member_id = ? '
           . "AND (read_at IS NULL OR read_at = '') AND thread_ref IN ($slots) GROUP BY thread_ref",
             array_merge([$viewerId], $threadIds)) as $r) {

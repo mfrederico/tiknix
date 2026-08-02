@@ -34,7 +34,6 @@ namespace app\services;
 use app\Bean;
 use app\ThreadMembers;
 use app\Mentions;
-use RedBeanPHP\R;
 use Flight;
 use Mailgun\Mailgun;
 
@@ -456,7 +455,7 @@ class NotifyService {
     public static function dmThread(int $memberA, int $memberB): ?int {
         if ($memberA <= 0 || $memberB <= 0 || $memberA === $memberB) return null;
 
-        $existing = (int) R::getCell(
+        $existing = (int) Bean::getCell(
             'SELECT t.id FROM emailthread t '
           . 'JOIN threadmember ma ON ma.thread_id = t.id AND ma.member_id = ? '
           . 'JOIN threadmember mb ON mb.thread_id = t.id AND mb.member_id = ? '

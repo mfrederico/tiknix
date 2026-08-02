@@ -11,7 +11,6 @@
 namespace app;
 
 use \Flight as Flight;
-use RedBeanPHP\R;
 
 class ProvisionService {
 
@@ -60,7 +59,7 @@ class ProvisionService {
         for ($i = 0; $i < 8; $i++) {
             $hash = substr(bin2hex(random_bytes(4)), 0, 6);   // 6 hex chars: [0-9a-f], DNS/path safe
             $slug = $base . '-' . $hash;
-            if (R::count('instance', 'slug = ?', [$slug]) === 0 && !is_dir($this->instanceDir($slug))) return $slug;
+            if (Bean::count('instance', 'slug = ?', [$slug]) === 0 && !is_dir($this->instanceDir($slug))) return $slug;
         }
         return '';
     }
@@ -79,8 +78,8 @@ class ProvisionService {
 
     /** Register an instance bean owned by $memberId (shared by create/fork). */
     private function registerInstanceBean(int $memberId, string $slug, string $name, string $engine, bool $isDefault): object {
-        $member = R::load('member', $memberId);
-        $inst = R::dispense('instance');
+        $member = Bean::load('member', $memberId);
+        $inst = Bean::dispense('instance');
         $inst->slug        = $slug;
         $inst->app         = $this->appNamespace();
         $inst->displayName = $name;
@@ -89,7 +88,7 @@ class ProvisionService {
         $inst->isDefault   = $isDefault ? 1 : 0;
         $inst->createdAt   = date('Y-m-d H:i:s');
         $member->ownInstanceList[] = $inst;   // sets member_id via the association
-        R::store($member);
+        Bean::store($member);
         // The broker key is what lets this project talk to the control plane at all —
         // publish, connected stores, the lot. Failing to write it used to be swallowed on
         // the theory that it could be minted later, which produced a project that looked
@@ -124,14 +123,14 @@ class ProvisionService {
         // exception is the root-flagged "(default)" core sandbox, which keeps its bare slug.
         if ($isDefault) {
             $slug = $base;
-            if (R::count('instance', 'slug = ?', [$slug]) > 0 || is_dir($this->instanceDir($slug)))
+            if (Bean::count('instance', 'slug = ?', [$slug]) > 0 || is_dir($this->instanceDir($slug)))
                 return ['ok' => false, 'error' => 'That name is already taken.', 'code' => 409];
         } else {
             $slug = $this->mintSlug($base);
             if ($slug === '') return ['ok' => false, 'error' => 'Could not allocate a unique instance id.', 'code' => 500];
         }
 
-        $member = R::load('member', $memberId);
+        $member = Bean::load('member', $memberId);
         if (!$member->id) return ['ok' => false, 'error' => 'Unknown member.', 'code' => 403];
 
         // capricorn clones the app, seeds an isolated sqlite db + guardrails + reset secrets.
@@ -153,10 +152,10 @@ class ProvisionService {
     // TaskAccessControl only by coincidence of nobody having changed either. Both now ask
     // the instance, which is the thing the question is about.
     private function ownsInstance(int $memberId, int $instanceId): bool {
-        return $instanceId > 0 && R::load('instance', $instanceId)->ownedBy($memberId);
+        return $instanceId > 0 && Bean::load('instance', $instanceId)->ownedBy($memberId);
     }
     private function canAccessInstance(int $memberId, int $instanceId): bool {
-        return $instanceId > 0 && R::load('instance', $instanceId)->accessibleBy($memberId);
+        return $instanceId > 0 && Bean::load('instance', $instanceId)->accessibleBy($memberId);
     }
 
     /** Run git inside an instance's own repo. */
@@ -184,16 +183,16 @@ class ProvisionService {
         $shared     = !empty($p['shared']);
         if (!$this->ownsInstance($memberId, $instanceId)) return ['ok' => false, 'error' => 'No such instance (owner only)', 'code' => 404];
         if ($teamId <= 0) return ['ok' => false, 'error' => 'Pick a team', 'code' => 400];
-        if ((int) R::getCell('SELECT COUNT(*) FROM teammember WHERE team_id = ? AND member_id = ?', [$teamId, $memberId]) === 0)
+        if ((int) Bean::getCell('SELECT COUNT(*) FROM teammember WHERE team_id = ? AND member_id = ?', [$teamId, $memberId]) === 0)
             return ['ok' => false, 'error' => 'You are not a member of that team', 'code' => 403];
-        $team = R::load('team', $teamId);
+        $team = Bean::load('team', $teamId);
         if (!$team->id) return ['ok' => false, 'error' => 'No such team', 'code' => 404];
 
-        $inst  = R::load('instance', $instanceId);
+        $inst  = Bean::load('instance', $instanceId);
         $teams = $inst->sharedTeamList;
         if ($shared) $teams[$team->id] = $team; else unset($teams[$team->id]);
         $inst->sharedTeamList = $teams;
-        R::store($inst);
+        Bean::store($inst);
 
         return ['ok' => true, 'team_id' => $teamId, 'team_name' => (string) $team->name, 'shared' => $shared,
                 'shared_team_ids' => array_values(array_map('intval', array_keys($inst->sharedTeamList)))];
@@ -207,8 +206,8 @@ class ProvisionService {
         $base   = strtolower(trim((string) ($p['slug'] ?? '')));
         $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
         if (!$this->canAccessInstance($memberId, $srcId)) return ['ok' => false, 'error' => 'No such source instance', 'code' => 404];
-        $srcSlug = (string) R::getCell('SELECT slug FROM instance WHERE id = ?', [$srcId]);
-        $engine  = (string) (R::getCell('SELECT engine FROM instance WHERE id = ?', [$srcId]) ?: 'claude');
+        $srcSlug = (string) Bean::getCell('SELECT slug FROM instance WHERE id = ?', [$srcId]);
+        $engine  = (string) (Bean::getCell('SELECT engine FROM instance WHERE id = ?', [$srcId]) ?: 'claude');
         if (!preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $ckpt)) return ['ok' => false, 'error' => 'Invalid checkpoint name', 'code' => 400];
         if (trim($this->gitInstance($srcSlug, ['tag', '-l', $ckpt])['out']) !== $ckpt)
             return ['ok' => false, 'error' => 'Checkpoint not found in source instance', 'code' => 404];
@@ -216,7 +215,7 @@ class ProvisionService {
         $slug = $this->mintSlug($base);   // fresh {base}-{hash}; the base may repeat across tenants
         if ($slug === '') return ['ok' => false, 'error' => 'Could not allocate a unique instance id.', 'code' => 500];
 
-        $member = R::load('member', $memberId);
+        $member = Bean::load('member', $memberId);
         $srcDir = $this->instanceDir($srcSlug);
         $newDir = $this->instanceDir($slug);
 
@@ -275,7 +274,7 @@ class ProvisionService {
     public function delete(int $memberId, array $p): array {
         $instanceId = (int) ($p['id'] ?? 0);
         $isRoot     = !empty($p['is_root']);
-        $inst = R::load('instance', $instanceId);
+        $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) return ['ok' => false, 'error' => 'No such instance', 'code' => 404];
         if ((int) $inst->memberId !== $memberId && !$isRoot) return ['ok' => false, 'error' => 'Not your instance', 'code' => 403];
         if (!empty($inst->isDefault)) return ['ok' => false, 'error' => 'The (default) core instance cannot be deleted here.', 'code' => 403];
@@ -297,8 +296,8 @@ class ProvisionService {
         $sock = $dir . '/.aibuilder/tmux.sock';
         if (@file_exists($sock)) { @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1'); $steps[] = 'killed jailed session'; }
 
-        $conns = R::find('connections', 'instance_id = ?', [$instanceId]);
-        if ($conns) { R::trashAll($conns); $steps[] = 'removed ' . count($conns) . ' connector(s)'; }
+        $conns = Bean::find('connections', 'instance_id = ?', [$instanceId]);
+        if ($conns) { Bean::trashAll($conns); $steps[] = 'removed ' . count($conns) . ' connector(s)'; }
 
         if (is_dir($dir)) {
             $res = $this->archiveInstance($dir, $slug);   // wipes the dir (incl. its workbench.db) → tombstone zip
@@ -307,7 +306,7 @@ class ProvisionService {
         } else { $steps[] = 'folder already absent'; }
 
         // Clean core's task records for this instance (stale copies + sessions + /projects clones).
-        $tasks = R::find('workbenchtask', 'instance_id = ?', [$instanceId]);
+        $tasks = Bean::find('workbenchtask', 'instance_id = ?', [$instanceId]);
         if ($tasks) {
             $killed = 0; $wiped = 0;
             foreach ($tasks as $t) {
@@ -319,17 +318,17 @@ class ProvisionService {
                 $ws = (string) $t->projectPath;
                 if ($ws !== '' && strpos($ws, '/projects/') !== false && is_dir($ws)) { @exec('rm -rf ' . escapeshellarg($ws) . ' 2>&1'); $wiped++; }
                 foreach (['tasklog', 'taskcomment', 'tasksnapshot'] as $child) {
-                    $rows = R::find($child, 'task_id = ?', [(int) $t->id]);
-                    if ($rows) R::trashAll($rows);
+                    $rows = Bean::find($child, 'task_id = ?', [(int) $t->id]);
+                    if ($rows) Bean::trashAll($rows);
                 }
             }
-            R::trashAll($tasks);
+            Bean::trashAll($tasks);
             $steps[] = 'deleted ' . count($tasks) . ' workbench task(s)'
                      . ($killed ? ", stopped {$killed} session(s)" : '')
                      . ($wiped ? ", removed {$wiped} workspace(s)" : '');
         }
 
-        R::trash($inst);
+        Bean::trash($inst);
         $steps[] = 'removed instance record';
         return ['ok' => true, 'slug' => $slug, 'domain' => $domain, 'steps' => $steps];
     }

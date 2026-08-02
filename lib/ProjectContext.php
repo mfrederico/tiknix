@@ -21,7 +21,6 @@
  */
 namespace app;
 
-use RedBeanPHP\R;
 use app\Bean;
 
 class ProjectContext {
@@ -47,13 +46,13 @@ class ProjectContext {
 
         $id = (int) ($_SESSION[self::SESSION_KEY] ?? 0);
         if ($id <= 0) {
-            $member = R::load('member', $memberId);
+            $member = Bean::load('member', $memberId);
             $id     = (int) ($member->activeInstanceId ?? 0);
             if ($id > 0) $_SESSION[self::SESSION_KEY] = $id;   // adopt the remembered default
         }
         if ($id <= 0) return null;
 
-        $inst = R::load('instance', $id);
+        $inst = Bean::load('instance', $id);
         if (!$inst->id || !self::canAccess($memberId, $inst)) {
             // Selection has gone stale (unshared, deleted, archived). Forget it rather
             // than leaving a dangling id that every surface has to defend against.
@@ -67,24 +66,24 @@ class ProjectContext {
      * Select a project: authoritative for THIS session, and remembered for the next one.
      */
     public static function set(int $memberId, int $instanceId): bool {
-        $inst = R::load('instance', $instanceId);
+        $inst = Bean::load('instance', $instanceId);
         if (!$inst->id || !self::canAccess($memberId, $inst)) return false;
 
-        $member = R::load('member', $memberId);
+        $member = Bean::load('member', $memberId);
         if (!$member->id) return false;
 
         $_SESSION[self::SESSION_KEY] = (int) $inst->id;
         $member->activeInstanceId    = (int) $inst->id;   // the default a NEW session adopts
-        R::store($member);
+        Bean::store($member);
         return true;
     }
 
     public static function clear(int $memberId): void {
         unset($_SESSION[self::SESSION_KEY]);
-        $member = R::load('member', $memberId);
+        $member = Bean::load('member', $memberId);
         if (!$member->id) return;
         $member->activeInstanceId = null;
-        R::store($member);
+        Bean::store($member);
     }
 
     /**

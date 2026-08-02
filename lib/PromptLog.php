@@ -27,7 +27,7 @@
 
 namespace app;
 
-use RedBeanPHP\R;
+use app\Bean;
 
 class PromptLog {
 
@@ -59,7 +59,7 @@ class PromptLog {
      *
      * EVERY read and write here goes through this, not just the writes. The prompt log is
      * displayed by the workbench sidecar, whose default connection is the INSTANCE's
-     * data/workbench.db — so a bare R::find('promptlog', …) there queries the wrong file
+     * data/workbench.db — so a bare Bean::find('promptlog', …) there queries the wrong file
      * and reports an empty history. Restoring the previous connection matters just as
      * much: leaving a sidecar's ORM pointed at core is what put plans in the wrong
      * database twice before.
@@ -67,18 +67,16 @@ class PromptLog {
     /**
      * Which database key RedBean is currently on, so we can put it back.
      *
-     * RedBean keeps this in a private static with no accessor, so it is read by
-     * reflection. If that ever stops working the caller's connection would be silently
-     * left pointing at core — the exact class of bug that made plans land in the wrong
-     * database — so a failure is logged loudly rather than assumed away, and 'default'
-     * (RedBean's own name for the connection R::setup() creates) is used as the last
-     * resort so the ORM is at least never abandoned on core's db.
+     * Bean::currentDatabaseKey() reads it from RedBean. If that ever stops working the
+     * caller's connection would be silently left pointing at core — the exact class of
+     * bug that made plans land in the wrong database — so a failure is logged loudly
+     * rather than assumed away, and 'default' (RedBean's own name for the connection
+     * R::setup() creates) is used as the last resort so the ORM is at least never
+     * abandoned on core's db.
      */
     private static function currentKey(): string {
         try {
-            $p = new \ReflectionProperty(R::class, 'currentDB');
-            $p->setAccessible(true);
-            $k = (string) $p->getValue();
+            $k = Bean::currentDatabaseKey();
             if ($k !== '') return $k;
         } catch (\Throwable $e) {
             self::warn('cannot read RedBean\'s current database key (' . $e->getMessage()
@@ -95,9 +93,9 @@ class PromptLog {
         $restore = self::currentKey();
 
         try {
-            if (!R::hasDatabase('promptlog')) R::addDatabase('promptlog', 'sqlite:' . $core);
-            R::selectDatabase('promptlog');
-            R::freeze(false);
+            if (!Bean::hasDatabase('promptlog')) Bean::addDatabase('promptlog', 'sqlite:' . $core);
+            Bean::selectDatabase('promptlog');
+            Bean::freeze(false);
             return $fn();
         } catch (\Throwable $e) {
             self::$lastError = $e->getMessage();
@@ -105,7 +103,7 @@ class PromptLog {
             return $onError;
         } finally {
             if ($restore !== null && $restore !== 'promptlog') {
-                try { R::selectDatabase($restore); } catch (\Throwable $e) { /* nothing to restore to */ }
+                try { Bean::selectDatabase($restore); } catch (\Throwable $e) { /* nothing to restore to */ }
             }
         }
     }
@@ -129,7 +127,7 @@ class PromptLog {
         if (!isset(self::sources()[$source])) $source = self::SOURCE_TASK;
 
         return (int) self::withCore(function () use ($p, $memberId, $source, $body) {
-            $row = R::dispense('promptlog');
+            $row = Bean::dispense('promptlog');
             $row->memberId    = $memberId;
             $row->source      = $source;
             $row->title       = mb_substr(trim((string) ($p['title'] ?? '')), 0, 200);
@@ -159,7 +157,7 @@ class PromptLog {
             $row->autoBuild   = !empty($p['auto_build']) ? 1 : 0;
             $row->extKey      = mb_substr(trim((string) ($p['ext_key'] ?? '')), 0, 120);
             $row->createdAt   = (string) ($p['created_at'] ?? date('Y-m-d H:i:s'));
-            return (int) R::store($row);
+            return (int) Bean::store($row);
         }, 0);
     }
 
@@ -172,12 +170,12 @@ class PromptLog {
     public static function linkPlan(int $promptId, string $planUid, string $planTitle = '', int $planId = 0): void {
         if ($promptId <= 0 || $planUid === '') return;
         self::withCore(function () use ($promptId, $planUid, $planTitle, $planId) {
-            $row = R::load('promptlog', $promptId);
+            $row = Bean::load('promptlog', $promptId);
             if (!$row->id) return null;
             $row->planUid   = mb_substr($planUid, 0, 64);
             $row->planTitle = mb_substr(trim($planTitle), 0, 200);
             if ($planId > 0) $row->planRef = $planId;
-            R::store($row);
+            Bean::store($row);
             return null;
         });
     }
@@ -195,7 +193,7 @@ class PromptLog {
             $args = [$memberId];
             if ($source !== '' && isset(self::sources()[$source])) { $sql .= ' AND source = ?'; $args[] = $source; }
             $sql .= ' ORDER BY created_at DESC, id DESC LIMIT ' . max(1, min(1000, $limit));
-            return array_values(R::find('promptlog', $sql, $args));
+            return array_values(Bean::find('promptlog', $sql, $args));
         }, []);
     }
 
@@ -212,7 +210,7 @@ class PromptLog {
     public static function find(int $promptId, int $memberId): ?array {
         if ($promptId <= 0 || $memberId <= 0) return null;
         return self::withCore(function () use ($promptId, $memberId) {
-            $row = R::findOne('promptlog', 'id = ? AND member_id = ?', [$promptId, $memberId]);
+            $row = Bean::findOne('promptlog', 'id = ? AND member_id = ?', [$promptId, $memberId]);
             if (!$row || !$row->id) return null;
             return [
                 'id'           => (int) $row->id,
@@ -309,7 +307,7 @@ class PromptLog {
     private static function knownExtKeys(int $memberId): array {
         return (array) self::withCore(function () use ($memberId) {
             $out = [];
-            foreach (R::find('promptlog', 'member_id = ? AND source = ? AND ext_key != ""',
+            foreach (Bean::find('promptlog', 'member_id = ? AND source = ? AND ext_key != ""',
                              [$memberId, self::SOURCE_TERMINAL]) as $row) {
                 $out[(string) $row->extKey] = true;
             }

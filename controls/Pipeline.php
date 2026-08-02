@@ -18,7 +18,6 @@ use \Flight as Flight;
 use app\BaseControls\Control;
 use app\Pipeline\Runner;
 use app\Pipeline\ApiKey;
-use RedBeanPHP\R;
 
 class Pipeline extends Control {
 
@@ -88,11 +87,11 @@ class Pipeline extends Control {
             $ad->invalidateTable('pipesteprun');
         }
 
-        $run = R::load('piperun', (int) $this->slugArg());
+        $run = Bean::load('piperun', (int) $this->slugArg());
         if (!$run->id) { Flight::jsonError('No such run.', 404); return; }
 
         $steps = [];
-        foreach (R::find('pipesteprun', 'run_id = ? ORDER BY id', [(int) $run->id]) as $s) {
+        foreach (Bean::find('pipesteprun', 'run_id = ? ORDER BY id', [(int) $run->id]) as $s) {
             $steps[] = [
                 'name'     => (string) $s->stepName,
                 'type'     => (string) $s->stepType,
@@ -146,10 +145,10 @@ class Pipeline extends Control {
     public function varshapes($params = []) {
         if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
         $slug = $this->slugArg();
-        $run  = R::findOne('piperun', 'slug = ? ORDER BY id DESC', [$slug]);
+        $run  = Bean::findOne('piperun', 'slug = ? ORDER BY id DESC', [$slug]);
         $shapes = [];
         if ($run && $run->id) {
-            foreach (R::find('pipesteprun', 'run_id = ? ORDER BY id', [(int) $run->id]) as $s) {
+            foreach (Bean::find('pipesteprun', 'run_id = ? ORDER BY id', [(int) $run->id]) as $s) {
                 $name = (string) $s->stepName;
                 if ($name === '') continue;
                 $shapes[$name] = $this->shapeOf(json_decode((string) $s->outputJson, true), 0);
@@ -242,7 +241,7 @@ class Pipeline extends Control {
             $action = (string) $this->getParam('action');
             if ($action === 'mint') {
                 $memberId = (int) $this->getParam('member_id');
-                if ($memberId > 0 && R::load('member', $memberId)->id) {
+                if ($memberId > 0 && Bean::load('member', $memberId)->id) {
                     $minted = ApiKey::mint($memberId, (string) $this->getParam('label'), (int) $this->member->id);
                 }
             } elseif ($action === 'revoke') {
@@ -254,7 +253,7 @@ class Pipeline extends Control {
         $this->render('pipeline/keys', [
             'title'   => 'Pipeline API keys',
             'keys'    => ApiKey::all(),
-            'members' => R::getAll('SELECT id, COALESCE(display_name, username, email) AS name FROM member ORDER BY id'),
+            'members' => Bean::getAll('SELECT id, COALESCE(display_name, username, email) AS name FROM member ORDER BY id'),
             'minted'  => $minted,
         ]);
     }
@@ -273,9 +272,9 @@ class Pipeline extends Control {
      * show + inject data), and which step ran last / runs next.
      */
     private function breakpoint(int $runId, array $r): array {
-        $run = R::load('piperun', $runId);
+        $run = Bean::load('piperun', $runId);
         $steps = [];
-        foreach (R::find('pipesteprun', 'run_id = ? ORDER BY id', [$runId]) as $s) {
+        foreach (Bean::find('pipesteprun', 'run_id = ? ORDER BY id', [$runId]) as $s) {
             $steps[] = ['step' => $s->stepName, 'type' => $s->stepType, 'status' => $s->status,
                 'input' => json_decode((string) $s->inputJson, true), 'output' => json_decode((string) $s->outputJson, true),
                 'stdout' => (string) $s->stdout, 'stderr' => (string) $s->stderr,

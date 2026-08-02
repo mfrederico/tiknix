@@ -104,9 +104,9 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
     public function accessibleBy(int $memberId): bool {
         if ($this->ownedBy($memberId)) return true;
         if ($memberId <= 0) return false;
-        if (!in_array('instance_team', \RedBeanPHP\R::inspect(), true)) return false;
+        if (!in_array('instance_team', \app\Bean::inspect(), true)) return false;
 
-        return (int) \RedBeanPHP\R::getCell(
+        return (int) \app\Bean::getCell(
             'SELECT COUNT(*) FROM instance_team it JOIN teammember tm ON tm.team_id = it.team_id '
           . 'WHERE it.instance_id = ? AND tm.member_id = ?',
             [(int) $this->bean->id, $memberId]

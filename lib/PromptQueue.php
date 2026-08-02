@@ -23,8 +23,6 @@
 
 namespace app;
 
-use RedBeanPHP\R;
-
 class PromptQueue {
 
     /** Give up after this many automatic attempts; the manual button remains. */
@@ -40,11 +38,11 @@ class PromptQueue {
     public static function enqueue(int $promptId, bool $autoBuild): bool {
         if ($promptId <= 0 || !$autoBuild) return false;
         return (bool) CoreDb::with(function () use ($promptId) {
-            $row = R::load('promptlog', $promptId);
+            $row = Bean::load('promptlog', $promptId);
             if (!$row->id) return false;
             $row->queuedAt      = date('Y-m-d H:i:s');
             $row->queueAttempts = (int) $row->queueAttempts;   // create the column at 0
-            R::store($row);
+            Bean::store($row);
             return true;
         }, false);
     }
@@ -53,8 +51,8 @@ class PromptQueue {
     public static function dequeue(int $promptId): void {
         if ($promptId <= 0) return;
         CoreDb::with(function () use ($promptId) {
-            $row = R::load('promptlog', $promptId);
-            if ($row->id) { $row->queuedAt = null; R::store($row); }
+            $row = Bean::load('promptlog', $promptId);
+            if ($row->id) { $row->queuedAt = null; Bean::store($row); }
             return null;
         });
     }
@@ -70,7 +68,7 @@ class PromptQueue {
         $out = [];
         $queued = CoreDb::with(function () {
             $rows = [];
-            foreach (R::find('promptlog', 'queued_at IS NOT NULL ORDER BY queued_at ASC') as $r) {
+            foreach (Bean::find('promptlog', 'queued_at IS NOT NULL ORDER BY queued_at ASC') as $r) {
                 $rows[] = [
                     'id'         => (int) $r->id,
                     'member_id'  => (int) $r->memberId,
@@ -116,7 +114,7 @@ class PromptQueue {
                 continue;
             }
 
-            $inst = CoreDb::with(fn() => R::findOne('instance', 'slug = ? AND app = ?', [$slug, $app]), null);
+            $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ? AND app = ?', [$slug, $app]), null);
             $engine = $inst && $inst->id ? (string) ($inst->engine ?: 'claude') : 'claude';
 
             $runner = new PlanRunner($slug, $dir, $q['member_id'],
@@ -129,15 +127,15 @@ class PromptQueue {
             try {
                 $runner->start($q['body'], [], true, $id);
                 CoreDb::with(function () use ($id) {
-                    $row = R::load('promptlog', $id);
-                    if ($row->id) { $row->queuedAt = null; $row->queueAttempts = (int) $row->queueAttempts + 1; R::store($row); }
+                    $row = Bean::load('promptlog', $id);
+                    if ($row->id) { $row->queuedAt = null; $row->queueAttempts = (int) $row->queueAttempts + 1; Bean::store($row); }
                     return null;
                 });
                 $out[] = "#$id started on {$q['tag']} (straight-through)";
             } catch (\Throwable $e) {
                 CoreDb::with(function () use ($id) {
-                    $row = R::load('promptlog', $id);
-                    if ($row->id) { $row->queueAttempts = (int) $row->queueAttempts + 1; R::store($row); }
+                    $row = Bean::load('promptlog', $id);
+                    if ($row->id) { $row->queueAttempts = (int) $row->queueAttempts + 1; Bean::store($row); }
                     return null;
                 });
                 $out[] = "#$id failed: " . $e->getMessage();

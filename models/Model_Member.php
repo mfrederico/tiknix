@@ -17,6 +17,19 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
     private const EMAIL_FLAG = 'email_out';
 
     /**
+     * First and last name joined, or '' when neither is set.
+     *
+     * One place, because the join was being rebuilt inline wherever it was needed — and
+     * every copy carried the same dead defence, `$member->firstName ?? $member->first_name`.
+     * RedBean resolves BOTH spellings to the same column, so that fallback can never fire;
+     * it reads like care and is noise.
+     */
+    public function fullName(): string {
+        return trim(trim((string) ($this->bean->firstName ?? ''))
+             . ' ' . trim((string) ($this->bean->lastName ?? '')));
+    }
+
+    /**
      * The name to show for this person.
      *
      * ONE chain, because there were three. This model had its own that ignored
@@ -33,19 +46,6 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
      * method. PHP tells them apart, but they are not the same answer — the column is one
      * candidate, this is the decision.
      */
-    /**
-     * First and last name joined, or '' when neither is set.
-     *
-     * One place, because the join was being rebuilt inline wherever it was needed — and
-     * every copy carried the same dead defence, `$member->firstName ?? $member->first_name`.
-     * RedBean resolves BOTH spellings to the same column, so that fallback can never fire;
-     * it reads like care and is noise.
-     */
-    public function fullName(): string {
-        return trim(trim((string) ($this->bean->firstName ?? ''))
-             . ' ' . trim((string) ($this->bean->lastName ?? '')));
-    }
-
     public function displayName(string $fallback = 'Unknown'): string {
         $bean  = $this->bean;
         $named = fn(string $s) => $s !== '' && preg_match('/\p{L}/u', $s);
@@ -112,15 +112,15 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
         $teamIds = $this->teamIds();
         if (!$teamIds) return [];
 
-        $ids = array_values(array_unique(array_map('intval', \RedBeanPHP\R::getCol(
+        $ids = array_values(array_unique(array_map('intval', \app\Bean::getCol(
             'SELECT DISTINCT member_id FROM teammember WHERE team_id IN ('
-            . \RedBeanPHP\R::genSlots($teamIds) . ')', $teamIds
+            . \app\Bean::genSlots($teamIds) . ')', $teamIds
         ))));
         $ids = array_values(array_filter($ids, fn($i) => $i !== (int) $this->bean->id));
         if (!$ids) return [];
 
         return array_values(\app\Bean::find('member',
-            'id IN (' . \RedBeanPHP\R::genSlots($ids) . ') AND status = ? ORDER BY username',
+            'id IN (' . \app\Bean::genSlots($ids) . ') AND status = ? ORDER BY username',
             array_merge($ids, ['active'])));
     }
 
@@ -129,8 +129,8 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
     /** Instances this member owns outright. */
     public function ownedInstanceIds(): array {
         $id = (int) $this->bean->id;
-        if ($id <= 0 || !in_array('instance', \RedBeanPHP\R::inspect(), true)) return [];
-        return array_values(array_map('intval', \RedBeanPHP\R::getCol(
+        if ($id <= 0 || !in_array('instance', \app\Bean::inspect(), true)) return [];
+        return array_values(array_map('intval', \app\Bean::getCol(
             'SELECT id FROM instance WHERE member_id = ?', [$id])));
     }
 
@@ -144,11 +144,11 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
      */
     public function sharedInstanceIds(): array {
         $teamIds = $this->teamIds();
-        if (!$teamIds || !in_array('instance_team', \RedBeanPHP\R::inspect(), true)) return [];
+        if (!$teamIds || !in_array('instance_team', \app\Bean::inspect(), true)) return [];
 
-        return array_values(array_unique(array_map('intval', \RedBeanPHP\R::getCol(
+        return array_values(array_unique(array_map('intval', \app\Bean::getCol(
             'SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ('
-            . \RedBeanPHP\R::genSlots($teamIds) . ')', $teamIds))));
+            . \app\Bean::genSlots($teamIds) . ')', $teamIds))));
     }
 
     /** Everything this member may use: owned plus shared. */
@@ -169,13 +169,13 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
         $id = (int) $this->bean->id;
         if ($id <= 0) return [];
 
-        $own = \RedBeanPHP\R::find('instance', 'member_id = ? AND status != ?', [$id, 'deleted']);
+        $own = \app\Bean::find('instance', 'member_id = ? AND status != ?', [$id, 'deleted']);
 
         $shared = [];
         $ids = $this->sharedInstanceIds();
         if ($ids) {
-            $shared = \RedBeanPHP\R::find('instance',
-                'id IN (' . \RedBeanPHP\R::genSlots($ids) . ') AND member_id != ? AND status != ?',
+            $shared = \app\Bean::find('instance',
+                'id IN (' . \app\Bean::genSlots($ids) . ') AND member_id != ? AND status != ?',
                 array_merge($ids, [$id, 'deleted']));
         }
 

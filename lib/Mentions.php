@@ -18,7 +18,6 @@
 namespace app;
 
 use \app\Bean;
-use \RedBeanPHP\R as R;
 
 class Mentions {
 
@@ -49,7 +48,7 @@ class Mentions {
         if (!$ids) return [];
         // genSlots builds the "?,?,?" list; array_values keeps the binding positional,
         // because an id-KEYED array maps its keys to parameter positions. See CLAUDE.md.
-        return array_values(Bean::find('member', 'id IN (' . R::genSlots($ids) . ')', $ids));
+        return array_values(Bean::find('member', 'id IN (' . Bean::genSlots($ids) . ')', $ids));
     }
 
     /** The handles a member answers to: their username, and their display name slugged. */
@@ -102,7 +101,7 @@ class Mentions {
     /** Unread mentions for a person, across everything. */
     public static function unreadCount(int $memberId): int {
         if ($memberId <= 0) return 0;
-        return (int) R::getCell(
+        return (int) Bean::getCell(
             'SELECT COUNT(*) FROM mention WHERE member_id = ? AND (read_at IS NULL OR read_at = ?)',
             [$memberId, '']
         );
@@ -111,7 +110,7 @@ class Mentions {
     /** Unread mentions for a person in one thread — drives the @ badge on a rail row. */
     public static function unreadInThread(int $threadId, int $memberId): int {
         if ($threadId <= 0 || $memberId <= 0) return 0;
-        return (int) R::getCell(
+        return (int) Bean::getCell(
             'SELECT COUNT(*) FROM mention WHERE thread_ref = ? AND member_id = ? AND (read_at IS NULL OR read_at = ?)',
             [$threadId, $memberId, '']
         );
@@ -120,7 +119,7 @@ class Mentions {
     /** Thread ids where this person has an unread mention. */
     public static function threadsWithUnread(int $memberId): array {
         if ($memberId <= 0) return [];
-        return array_values(array_map('intval', R::getCol(
+        return array_values(array_map('intval', Bean::getCol(
             'SELECT DISTINCT thread_ref FROM mention WHERE member_id = ? AND (read_at IS NULL OR read_at = ?)',
             [$memberId, '']
         )));

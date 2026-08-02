@@ -20,7 +20,6 @@
 
 namespace app;
 
-use RedBeanPHP\R;
 use app\EngineRegistry;
 
 class PlanExecutor {
@@ -45,11 +44,11 @@ class PlanExecutor {
     // ---- public API --------------------------------------------------------
 
     /** The plan (parent) bean. */
-    public function plan() { return R::load('workbenchtask', $this->planId); }
+    public function plan() { return Bean::load('workbenchtask', $this->planId); }
 
     /** Subtasks of this plan, priority-ordered. */
     public function subtasks(): array {
-        return R::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [$this->planId]);
+        return Bean::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [$this->planId]);
     }
 
     /**
@@ -200,7 +199,7 @@ class PlanExecutor {
         $t->worktreeBranch = $branch;       // fluid
         $t->agentSession   = $session;      // fluid
         $t->startedAt      = date('Y-m-d H:i:s');
-        R::store($t);
+        Bean::store($t);
         $this->logEvent($t, 'info', 'Build agent started on ' . $branch . ' (engine ' . $ranOn . ')');
         return true;
     }
@@ -424,7 +423,7 @@ class PlanExecutor {
         $t->status       = $status;
         $t->completedAt  = date('Y-m-d H:i:s');
         if ($note !== '') $t->errorMessage = mb_substr($note, 0, 1000);
-        R::store($t);
+        Bean::store($t);
 
         $labels = [
             'merged'   => ['info',    'Merged into the instance base branch'],
@@ -464,7 +463,7 @@ class PlanExecutor {
         $t->lastFailReason = mb_substr($note, 0, 1000);
         $t->status         = 'pending';   // orchestrator re-launches it next tick
         $t->errorMessage   = '';
-        R::store($t);
+        Bean::store($t);
         $this->logEvent($t, 'warning', 'Auto-retry ' . ($retries + 1) . '/' . self::MAX_AUTO_RETRIES . ' — ' . $tri['class'] . ': ' . mb_substr($note, 0, 160));
         return true;
     }
@@ -501,14 +500,14 @@ class PlanExecutor {
      */
     private function logEvent($t, string $level, string $message): void {
         try {
-            $log = R::dispense('tasklog');
+            $log = Bean::dispense('tasklog');
             $log->taskId    = (int)$t->id;
             $log->memberId  = ((int)$t->memberId) ?: null;
             $log->logLevel  = $level;              // info | warning | error
             $log->logType   = 'orchestrator';
             $log->message   = $message;
             $log->createdAt = date('Y-m-d H:i:s');
-            R::store($log);
+            Bean::store($log);
         } catch (\Throwable $e) { /* swallow — logging is best-effort */ }
     }
 
@@ -683,7 +682,7 @@ MD;
     /** The member this plan belongs to — whose credentials its agents run with. */
     private function planMemberId(): int {
         try {
-            $plan = R::load('workbenchtask', $this->planId);
+            $plan = Bean::load('workbenchtask', $this->planId);
             return (int) ($plan->memberId ?? 0);
         } catch (\Throwable $e) { return 0; }
     }

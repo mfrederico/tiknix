@@ -221,6 +221,32 @@ class Bean {
     }
 
     /**
+     * Check whether a database connection has been registered
+     *
+     * @param string $key Database key
+     * @return bool
+     */
+    public static function hasDatabase(string $key): bool {
+        return R::hasDatabase($key);
+    }
+
+    /**
+     * Which database key RedBean is currently on.
+     *
+     * Callers that switch connections need this to put the previous one back —
+     * leaving another surface's ORM pointed at the wrong database is how rows end
+     * up in the wrong file. Returns '' when RedBean has no connection selected;
+     * the caller decides what to fall back to.
+     *
+     * R::$currentDB is a public static on the Facade, so this is a plain read.
+     *
+     * @return string Database key, or '' if none is selected
+     */
+    public static function currentDatabaseKey(): string {
+        return (string) R::$currentDB;
+    }
+
+    /**
      * Set freeze mode
      *
      * @param bool $frozen Freeze mode
@@ -257,5 +283,30 @@ class Bean {
      */
     public static function getDatabaseAdapter() {
         return R::getDatabaseAdapter();
+    }
+
+    /**
+     * Inspect the schema: table list, or the columns of one table
+     *
+     * @param string|null $type Bean type; omit for the full table list
+     * @return array
+     */
+    public static function inspect(?string $type = null) {
+        return $type === null ? R::inspect() : R::inspect(self::normalize($type));
+    }
+
+    /**
+     * Build a comma-separated placeholder list ("?,?,?") for an IN() binding
+     *
+     * NOTE: find()/findAll() return id-KEYED arrays. array_values() the parameter
+     * array before binding it, or RedBeanPHP maps each id key to a positional
+     * parameter index and throws "column index out of range".
+     *
+     * @param array $array Parameter array the slots are generated for
+     * @param string|null $tpl Optional sprintf template wrapping the slots
+     * @return string
+     */
+    public static function genSlots(array $array, ?string $tpl = null) {
+        return R::genSlots($array, $tpl);
     }
 }

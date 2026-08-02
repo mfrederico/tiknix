@@ -12,7 +12,6 @@
 namespace app;
 
 use \app\Bean;
-use \RedBeanPHP\R as R;
 
 class ThreadMembers {
 
@@ -59,7 +58,7 @@ class ThreadMembers {
      */
     public static function unreadThreadCount(int $memberId): int {
         if ($memberId <= 0) return 0;
-        return (int) R::getCell(
+        return (int) Bean::getCell(
             'SELECT COUNT(*) FROM threadmember tm WHERE tm.member_id = ? AND EXISTS ('
           . '  SELECT 1 FROM message m WHERE m.thread_id = tm.thread_id AND m.id > tm.last_read_id'
           . '    AND (m.sender_member_id IS NULL OR m.sender_member_id != ?)'
@@ -70,7 +69,7 @@ class ThreadMembers {
 
     public static function threadIdsFor(int $memberId): array {
         if ($memberId <= 0) return [];
-        return array_values(array_map('intval', R::getCol(
+        return array_values(array_map('intval', Bean::getCol(
             'SELECT tm.thread_id FROM threadmember tm JOIN thread t ON t.id = tm.thread_id '
           . 'WHERE tm.member_id = ? ORDER BY t.last_message_at DESC, t.id DESC',
             [$memberId]

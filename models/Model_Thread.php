@@ -8,7 +8,7 @@
  * message + messageattachment link via the plain `thread_id` column (an aliased relation
  * set by NotifyService), so they are NOT reachable through a conventional ownMessageList.
  * Cascade delete is handled in the delete() hook below, using bean operations rather than
- * R::exec so child model hooks still fire.
+ * raw SQL, so child model hooks still fire.
  *
  * Participants and per-person unread were lib/ThreadMembers; the room half was lib/Rooms.
  * Both took `(int $threadId, …)` as their first argument, which is the tell for thread
@@ -156,7 +156,7 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
         $row = $this->membershipOf($memberId);
         if (!$row) return 0;
 
-        return (int) \RedBeanPHP\R::getCell(
+        return (int) \app\Bean::getCell(
             'SELECT COUNT(*) FROM message WHERE thread_id = ? AND id > ? '
           . 'AND (sender_member_id IS NULL OR sender_member_id != ?)',
             [(int) $this->bean->id, (int) $row->lastReadId, $memberId]
@@ -170,7 +170,7 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
 
         // The newest message id, not "now" — a message arriving mid-read stays unread,
         // which is the honest answer.
-        $row->lastReadId = (int) \RedBeanPHP\R::getCell(
+        $row->lastReadId = (int) \app\Bean::getCell(
             'SELECT MAX(id) FROM message WHERE thread_id = ?', [(int) $this->bean->id]);
         $row->readAt = date('Y-m-d H:i:s');
         \app\Bean::store($row);
@@ -183,8 +183,8 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
         if (!$row) return false;
 
         $id     = (int) $this->bean->id;
-        $newest = (int) \RedBeanPHP\R::getCell('SELECT MAX(id) FROM message WHERE thread_id = ?', [$id]);
-        $row->lastReadId = (int) \RedBeanPHP\R::getCell(
+        $newest = (int) \app\Bean::getCell('SELECT MAX(id) FROM message WHERE thread_id = ?', [$id]);
+        $row->lastReadId = (int) \app\Bean::getCell(
             'SELECT MAX(id) FROM message WHERE thread_id = ? AND id < ?', [$id, $newest]);
         \app\Bean::store($row);
         return true;

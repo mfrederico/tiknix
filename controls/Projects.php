@@ -86,7 +86,7 @@ class Projects extends BaseControls\Control {
      */
     private function buildState(string $slug, string $app): array {
         $out = ['plan' => '', 'status' => '', 'done' => 0, 'total' => 0, 'running' => [], 'at' => ''];
-        $file = '/var/www/html/default/' . $slug . '.' . $app . '/data/workbench.db';
+        $file = \Model_Instance::dirForSlug((string) $slug, (string) $app) . '/data/workbench.db';
         if (!is_file($file)) return $out;
 
         try {
@@ -223,7 +223,7 @@ class Projects extends BaseControls\Control {
      * need to see it.
      */
     private function card(object $inst, int $memberId): array {
-        $dir  = '/var/www/html/default/' . $inst->slug . '.tiknix';
+        $dir  = $inst->dir();
         $last = $this->lastCommit($dir);
         $owned = (int) $inst->memberId === $memberId;
 

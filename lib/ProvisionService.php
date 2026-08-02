@@ -45,7 +45,9 @@ class ProvisionService {
     }
 
     private function instanceDir(string $slug): string {
-        return '/var/www/html/default/' . $slug . '.' . $this->appNamespace();
+        // appNamespace() is derived from the HOST, which is what a not-yet-provisioned slug
+        // has to use — there is no row to read yet. Once there is one, the row wins.
+        return \Model_Instance::dirForSlug($slug, $this->appNamespace());
     }
 
     /**
@@ -287,6 +289,9 @@ class ProvisionService {
             return ['ok' => false, 'error' => 'Confirmation does not match — type "' . $domain . '" exactly.', 'code' => 400];
 
         $dir = $this->instanceDir($slug);
+        // Deliberately recomputed INLINE rather than through instanceDir(): this is the
+        // guard standing in front of an rm -rf, and a guard that calls the thing it is
+        // guarding cannot catch that thing being wrong.
         if ($dir !== '/var/www/html/default/' . $slug . '.' . $this->appNamespace() || strpos(basename($dir), '.') === false)
             return ['ok' => false, 'error' => 'Refusing to delete: path failed validation', 'code' => 400];
 

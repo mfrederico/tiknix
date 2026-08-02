@@ -22,7 +22,8 @@ class GitHubPublisher {
     private const SLUG_RE = '/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/';
 
     private static function instanceDir(string $slug): string {
-        return '/var/www/html/default/' . $slug . '.' . self::APP;
+        // self::APP is this app's namespace, the right fallback for a slug with no row yet.
+        return \Model_Instance::dirForSlug($slug, self::APP);
     }
 
     private static function git(string $slug, array $args): array {

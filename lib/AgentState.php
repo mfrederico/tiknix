@@ -101,7 +101,7 @@ class AgentState {
             $st = $pdo->prepare('SELECT slug, app FROM instance WHERE member_id = ?');
             $st->execute([$memberId]);
             foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $row) {
-                $dir  = '/var/www/html/default/' . $row['slug'] . '.' . ($row['app'] ?: 'tiknix');
+                $dir  = \Model_Instance::dirForSlug((string) $row['slug'], (string) ($row['app'] ?: 'tiknix'));
                 $cand = self::projectDir($dir, $engine);
                 $file = $cand . '/.credentials.json';
                 if (!is_file($file)) continue;

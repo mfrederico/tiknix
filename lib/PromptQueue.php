@@ -109,7 +109,7 @@ class PromptQueue {
 
             $slug = (string) (strstr($q['tag'], '.', true) ?: $q['tag']);
             $app  = ltrim((string) strstr($q['tag'], '.'), '.') ?: 'tiknix';
-            $dir  = '/var/www/html/default/' . $slug . '.' . $app;
+            $dir  = \Model_Instance::dirForSlug((string) $slug, (string) $app);
             if (!is_file($dir . '/public/index.php')) {
                 self::dequeue($id);
                 $out[] = "#$id project {$q['tag']} is gone — dequeued";

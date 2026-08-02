@@ -245,7 +245,8 @@ abstract class SshTargetDriver implements PublishDriver {
 
     /** The instance's working directory on this control plane. */
     protected static function instanceDir(object $inst): string {
-        return '/var/www/html/default/' . (string) $inst->slug . '.tiknix';
+        // Was a hard-coded '.tiknix'; the row carries the namespace.
+        return $inst->dir();
     }
 
     /** Run a command with a wall-clock cap; returns [ok, output]. */

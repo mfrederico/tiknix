@@ -44,10 +44,38 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      * Falls back to the default namespace for a slug with no row, which is what a caller
      * mid-provision has.
      */
-    public static function dirForSlug(string $slug): string {
+    public static function dirForSlug(string $slug, string $fallbackApp = self::DEFAULT_APP): string {
         $bean = \app\Bean::findOne('instance', 'slug = ?', [$slug]);
-        $app  = ($bean && $bean->id && $bean->app) ? (string) $bean->app : self::DEFAULT_APP;
-        return self::ROOT . '/' . $slug . '.' . $app;
+        $app  = ($bean && $bean->id && $bean->app) ? (string) $bean->app : $fallbackApp;
+        return self::ROOT . '/' . $slug . '.' . ($app ?: self::DEFAULT_APP);
+    }
+
+    /**
+     * The instance's own workbench database — where its plans and tasks live.
+     *
+     * Built inline in several places, always as dir() . '/data/workbench.db'. It is the
+     * file the Builder writes to, so getting it wrong means writing someone's task data
+     * into the wrong instance.
+     */
+    public function workbenchDb(): string {
+        return $this->dir() . '/data/workbench.db';
+    }
+
+    /**
+     * The instance's application database, as an absolute path.
+     *
+     * Reads the instance's own config where present, because an instance may have been
+     * configured with a different filename; falls back to the conventional
+     * database/<slug>.db. Mirrors ProvisionService::instanceDbRel(), which is where this
+     * rule was written.
+     */
+    public function dbPath(): string {
+        $ini = @parse_ini_file($this->dir() . '/conf/config.ini', true) ?: [];
+        $rel = (string) ($ini['database']['path'] ?? '');
+        if (!preg_match('#^database/[A-Za-z0-9._-]+\.db$#', $rel)) {
+            $rel = 'database/' . $this->bean->slug . '.db';
+        }
+        return $this->dir() . '/' . $rel;
     }
 
     /**

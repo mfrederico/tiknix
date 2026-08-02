@@ -46,7 +46,7 @@ class Connections extends Control {
     private const APP = 'tiknix';
 
     private function instanceDir(string $sub): string {
-        return '/var/www/html/default/' . $sub . '.' . self::APP;
+        return \Model_Instance::dirForSlug($sub, self::APP);
     }
 
     /** Load an instance the current member owns and that exists on disk. */

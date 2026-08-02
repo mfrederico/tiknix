@@ -218,7 +218,7 @@ class Webhook extends Control {
 
         $inst = \RedBeanPHP\R::load('instance', (int) $conn->instanceId);
         if (!$inst->id) { \Flight::json(['accepted' => false, 'reason' => 'instance gone'], 200); return; }
-        $dir    = '/var/www/html/default/' . $inst->slug . '.tiknix';
+        $dir    = $inst->dir();
         $branch = (string) preg_replace('#^refs/heads/#', '', (string) ($payload['ref'] ?? ''));
         $sha    = (string) ($payload['after'] ?? ($payload['head_commit']['id'] ?? ($payload['pull_request']['head']['sha'] ?? '')));
         $context = [

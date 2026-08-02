@@ -69,7 +69,7 @@ class Invite {
 
         $marks = implode(',', array_fill(0, count(self::BUILT_STATES), '?'));
         foreach (Bean::find('instance', 'member_id = ? AND status = ?', [$memberId, 'active']) as $inst) {
-            $db = '/var/www/html/default/' . $inst->slug . '.' . ($inst->app ?: 'tiknix') . '/data/workbench.db';
+            $db = $inst->workbenchDb();
             if (!is_file($db)) continue;
             try {
                 $pdo = new \PDO('sqlite:' . $db);

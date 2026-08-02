@@ -324,7 +324,7 @@ class Firehose extends Control {
     /** Launch the detached worktree orchestrator for a plan (headless mirror of Workbench). */
     private function startOrchestrator(int $planId, $inst, int $level): bool {
         $app = $inst->app ?: 'tiknix';
-        $dir = '/var/www/html/default/' . $inst->slug . '.' . $app;
+        $dir = $inst->dir();
         // Escalate the FINAL cap-cycle fix to a stronger model. The audit->fix loop
         // gets MAX_AUDIT_CYCLES attempts; the last one is the last auto-shot before a
         // human takes over, so give it opus (the earlier, cheaper cycles stay sonnet).

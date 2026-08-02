@@ -556,9 +556,33 @@ class CachedDatabaseAdapter extends DBAdapter {
     }
 
     /**
-     * Simple logging
+     * Per-query cache tracing — OFF unless you ask for it.
+     *
+     * This logged every hit, miss, invalidation and init at debug level, which came to
+     * 93,855 of 166,635 lines in one day: 56% of the log, for a cache that is working
+     * correctly. A log that is mostly cache chatter is a log nobody reads, and this
+     * codebase holds the rule that any ERROR in the log is a bug — a rule you cannot
+     * apply to a file where the errors are one line in two hundred.
+     *
+     * Turn it back on per environment when actually debugging the cache:
+     *
+     *   [logging]
+     *   query_cache_debug = true
+     *
+     * Real problems — a DSN it cannot read, an invalidation that fails — are logged at
+     * warning/error elsewhere and are NOT gated by this.
      */
+    private static ?bool $traceEnabled = null;
+
     private function log($message, $context = []) {
+        if (self::$traceEnabled === null) {
+            $v = class_exists('Flight') ? Flight::get('logging.query_cache_debug') : null;
+            self::$traceEnabled = is_bool($v)
+                ? $v
+                : in_array(strtolower(trim((string) $v)), ['1', 'true', 'on', 'yes'], true);
+        }
+        if (!self::$traceEnabled) return;
+
         if (class_exists('Flight') && Flight::has('log')) {
             Flight::get('log')->debug("CachedDatabaseAdapter: $message", $context);
         }

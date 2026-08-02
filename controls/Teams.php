@@ -219,11 +219,16 @@ class Teams extends Control {
         $this->viewData['roomMessages'] = [];
         if ($roomId) {
             \app\Rooms::syncMembers((int) $roomId, $teamId);
-            // Newest 20, then reversed: the query wants the LAST 20, the reader wants
-            // them in the order they were said.
-            $this->viewData['roomMessages'] = array_reverse(array_values(
+            // Newest FIRST here, unlike the conversation view.
+            //
+            // This is a summary pane on someone else's page, not the conversation itself.
+            // You arrive to see what has happened lately, so the latest message should be
+            // the one under your eyes rather than the one you have to scroll to. The full
+            // thread in Communications keeps chat order, where reading top-to-bottom is
+            // the point.
+            $this->viewData['roomMessages'] = array_values(
                 \RedBeanPHP\R::find('message', 'thread_id = ? ORDER BY id DESC LIMIT 20', [(int) $roomId])
-            ));
+            );
             $this->viewData['roomUnread'] = \app\ThreadMembers::unreadFor((int) $roomId, (int)$this->member->id);
         }
 

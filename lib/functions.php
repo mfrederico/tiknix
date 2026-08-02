@@ -113,6 +113,16 @@ function member_id($member, string $context = ''): int {
  */
 function member_display_name($m, string $fallback = ''): string {
     if (!$m) return $fallback;
+
+    // A bean answers for itself — Model_Member::displayName() is the one chain.
+    if ($m instanceof \RedBeanPHP\OODBBean) {
+        return $m->displayName($fallback);
+    }
+
+    // $_SESSION['member'] is a bean EXPORT, i.e. a plain snake_case array with no model
+    // attached, so it cannot dispatch. Rehydrating a bean per call would be a query for a
+    // name, so the array case is answered here — deliberately the same order and the same
+    // letter test as the model.
     $get = function (string $camel, string $snake) use ($m) {
         if (is_array($m))  return trim((string) ($m[$snake] ?? $m[$camel] ?? ''));
         if (is_object($m)) return trim((string) ($m->$camel ?? ''));

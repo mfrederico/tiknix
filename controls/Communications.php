@@ -485,7 +485,7 @@ class Communications extends BaseControls\Control {
             $out[] = [
                 'id'     => (int)$m->id,
                 'handle' => (string)$m->username,
-                'name'   => member_display_name($m, (string)$m->username),
+                'name'   => $m->displayName((string)$m->username),
             ];
         }
         Flight::json($out);
@@ -580,7 +580,7 @@ class Communications extends BaseControls\Control {
             $others = array_values(array_filter(
                 \app\ThreadMembers::participants((int) $thread->id), fn($id) => $id !== $me));
             return $others
-                ? member_display_name(Bean::load('member', $others[0]), 'Conversation')
+                ? Bean::load('member', $others[0])->displayName('Conversation')
                 : 'Conversation';
         }
 

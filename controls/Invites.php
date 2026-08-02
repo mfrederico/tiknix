@@ -43,19 +43,6 @@ class Invites extends Control {
         }
     }
 
-    /**
-     * The name to put in "X has invited you", with a sanity check on display_name.
-     *
-     * This exists because a real invitation went out reading "12:54:54 has invited you":
-     * one account had a bare timestamp sitting in display_name, and the old chain trusted
-     * whatever was there because a non-empty string is truthy. A display name that
-     * contains no letter at all is not a name, whatever it is — and an unsolicited email
-     * bearing a nonsense sender is the difference between an invitation and spam.
-     */
-    private static function senderName(object $m): string {
-        return member_display_name($m, 'Someone');
-    }
-
     /** GET /invites — send an invitation, and see the ones you have sent. */
     public function index($params = []) {
         $mid   = (int) $this->member->id;
@@ -108,7 +95,9 @@ class Invites extends Control {
         }
 
         $inv  = $r['invite'];
-        $from = self::senderName($this->member);
+        // "X has invited you" — asked of the member, so it is the same name they are known
+        // by everywhere else. Model_Member::displayName() carries the reason it is picky.
+        $from = $this->member->displayName('Someone');
 
         // Mail can fail (Mailgun down, a bad address). The invite still EXISTS and its link
         // still works, so say what happened and show the link rather than pretending the

@@ -514,7 +514,7 @@ class NotifyService {
         $n->direction      = 'out';
         $n->notifyType     = 'message';
         $n->fromEmail      = (string) ($sender->email ?? '');
-        $n->fromName       = member_display_name($sender, 'Someone');
+        $n->fromName       = $sender->displayName('Someone');
         $n->toEmail        = '';
         $n->subject        = (string) ($thread->subject ?: '');
         $n->content        = $html;

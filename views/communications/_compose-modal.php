@@ -101,7 +101,7 @@ $__canRoom = !empty($__rooms);
                                     <option value="">Choose someone…</option>
                                     <?php foreach ($__mates as $m): ?>
                                         <option value="<?= (int)$m->id ?>">
-                                            <?= htmlspecialchars(member_display_name($m, (string)$m->username)) ?>
+                                            <?= htmlspecialchars($m->displayName((string)$m->username)) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>

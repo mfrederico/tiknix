@@ -114,7 +114,7 @@ usort($__rooms, function ($a, $b) {
                             $others = array_values(array_filter(
                                 \app\ThreadMembers::participants((int)$t->id), fn($id) => $id !== $me));
                             $who = $others
-                                ? member_display_name(\app\Bean::load('member', $others[0]), 'Someone')
+                                ? \app\Bean::load('member', $others[0])->displayName('Someone')
                                 : 'Just you';
                             $label = $who;
                             $kindIcon = 'bi-person-circle';

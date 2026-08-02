@@ -33,7 +33,7 @@ switch ((string)$thread->kind) {
         $__others = array_values(array_filter(
             \app\ThreadMembers::participants((int)$thread->id), fn($id) => $id !== $__me));
         $headWho = $__others
-            ? member_display_name(\app\Bean::load('member', $__others[0]), 'Someone')
+            ? \app\Bean::load('member', $__others[0])->displayName('Someone')
             : 'Just you';
         break;
     default:

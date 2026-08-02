@@ -29,7 +29,7 @@ if (count($args) < 2) {
 $targetId = (int)array_shift($args);
 $srcIds   = array_values(array_unique(array_map('intval', $args)));
 
-$target = Bean::load('emailthread', $targetId);
+$target = Bean::load('thread', $targetId);
 if (!$target->id) {
     fwrite(STDERR, "target thread {$targetId} not found\n");
     exit(1);
@@ -37,19 +37,19 @@ if (!$target->id) {
 
 foreach ($srcIds as $srcId) {
     if ($srcId === $targetId) continue;
-    $src = Bean::load('emailthread', $srcId);
+    $src = Bean::load('thread', $srcId);
     if (!$src->id) {
         echo "skip: thread {$srcId} not found\n";
         continue;
     }
 
     $moved = 0;
-    foreach (Bean::find('notify', 'thread_id = ?', [$srcId]) as $n) {
+    foreach (Bean::find('message', 'thread_id = ?', [$srcId]) as $n) {
         $n->threadId = $targetId;
         Bean::store($n);
         $moved++;
     }
-    foreach (Bean::find('notifyattachment', 'thread_id = ?', [$srcId]) as $a) {
+    foreach (Bean::find('messageattachment', 'thread_id = ?', [$srcId]) as $a) {
         $a->threadId = $targetId;
         Bean::store($a);
     }
@@ -58,7 +58,7 @@ foreach ($srcIds as $srcId) {
 }
 
 // Recompute the target's rollup fields from its (now complete) message set.
-$msgs = Bean::find('notify', 'thread_id = ? ORDER BY created_at ASC, id ASC', [$targetId]);
+$msgs = Bean::find('message', 'thread_id = ? ORDER BY created_at ASC, id ASC', [$targetId]);
 $target->messageCount = count($msgs);
 if ($msgs) {
     $last = end($msgs);

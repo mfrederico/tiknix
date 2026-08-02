@@ -23,7 +23,7 @@
  * The FK column is named after the PROPERTY ('thread'), so it comes out as
  * `thread_id` (not `emailthread_id`) — matching the spec. Because the relation
  * is aliased, query a thread's messages explicitly rather than via ownNotifyList:
- *   Bean::find('notify', 'thread_id = ? ORDER BY created_at ASC', [$id]).
+ *   Bean::find('message', 'thread_id = ? ORDER BY created_at ASC', [$id]).
  * Cascade delete lives in Model_Emailthread::delete().
  *
  * Ghosts are deferred parent-first (thread, notify, attachment); the builder
@@ -34,7 +34,7 @@
 use \RedBeanPHP\R;
 
 // ---- emailthread ghost -----------------------------------------------------
-$thread = R::dispense('emailthread');
+$thread = R::dispense('thread');
 $thread->subject         = str_repeat('x', 255);
 $thread->reply_token     = str_repeat('x', 64);
 $thread->related_type    = str_repeat('x', 64);
@@ -43,7 +43,6 @@ $thread->owner_member_id = 999999;   // polymorphic owner (may be 0) — plain i
 $thread->recipient_email = str_repeat('x', 200);
 $thread->recipient_name  = str_repeat('x', 150);
 $thread->message_count   = 999999;
-$thread->unread_count    = 999999;
 $thread->last_direction  = str_repeat('x', 8);
 $thread->last_preview    = str_repeat('x', 500);
 $thread->last_message_at = date('Y-m-d H:i:s');
@@ -54,7 +53,7 @@ R::store($thread);
 $_defer($thread);
 
 // ---- notify ghost (child of thread) ----------------------------------------
-$notify = R::dispense('notify');
+$notify = R::dispense('message');
 $notify->thread          = $thread;              // → notify.thread_id (FK + idx)
 $notify->direction       = str_repeat('x', 8);
 $notify->notify_type     = str_repeat('x', 16);
@@ -80,7 +79,7 @@ R::store($notify);
 $_defer($notify);
 
 // ---- notifyattachment ghost (child of thread + notify) ---------------------
-$att = R::dispense('notifyattachment');
+$att = R::dispense('messageattachment');
 $att->thread     = $thread;          // → notifyattachment.thread_id (FK + idx)
 $att->notify     = $notify;          // → notifyattachment.notify_id (FK + idx)
 $att->disk_path  = str_repeat('x', 500);

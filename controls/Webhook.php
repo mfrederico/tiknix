@@ -103,7 +103,7 @@ class Webhook extends Control {
             return;
         }
 
-        $thread = Bean::findOne('emailthread', 'reply_token = ?', [$replyToken]);
+        $thread = Bean::findOne('thread', 'reply_token = ?', [$replyToken]);
         if (!$thread || !$thread->id) {
             $this->logger?->info('Webhook: no thread for token', ['token' => $replyToken]);
             \Flight::json(['accepted' => false, 'reason' => 'unknown thread'], 200);
@@ -124,7 +124,7 @@ class Webhook extends Control {
 
         try {
             $now = date('Y-m-d H:i:s');
-            $notify = Bean::dispense('notify');
+            $notify = Bean::dispense('message');
             $notify->threadId       = (int)$thread->id;
             $notify->direction      = 'in';
             $notify->notifyType     = 'email';
@@ -149,7 +149,6 @@ class Webhook extends Control {
 
             // Bump thread counters — new inbound message + unread badge.
             $thread->messageCount  = (int)$thread->messageCount + 1;
-            $thread->unreadCount   = (int)$thread->unreadCount + 1;
             $thread->lastDirection = 'in';
             $thread->lastPreview   = mb_substr(preg_replace('/\s+/u', ' ', trim($displayPlain)), 0, 220, 'UTF-8');
             $thread->lastMessageAt = $now;
@@ -296,7 +295,7 @@ class Webhook extends Control {
         $recipient = (string)($data['recipient'] ?? '');
 
         $notify = $messageId !== ''
-            ? Bean::findOne('notify', 'message_id = ? AND direction = ?', [$messageId, 'out'])
+            ? Bean::findOne('message', 'message_id = ? AND direction = ?', [$messageId, 'out'])
             : null;
 
         if ($notify && $notify->id) {
@@ -334,7 +333,7 @@ class Webhook extends Control {
             $dest = $dir . '/' . bin2hex(random_bytes(4)) . '-' . $safeName;
             if (!move_uploaded_file($f['tmp_name'], $dest)) continue;
 
-            $att = Bean::dispense('notifyattachment');
+            $att = Bean::dispense('messageattachment');
             $att->threadId  = (int)$thread->id;
             $att->notifyId  = (int)$notify->id;
             $att->filename  = $origName;

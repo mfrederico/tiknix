@@ -49,7 +49,7 @@ class Communications extends BaseControls\Control {
         if (!$this->requireLogin()) return;
 
         $id = (int)($this->routeId($params));
-        $thread = Bean::load('emailthread', $id);
+        $thread = Bean::load('thread', $id);
 
         if (!$thread->id || !$this->canView($thread)) {
             $this->flash('error', 'Conversation not found');
@@ -59,11 +59,11 @@ class Communications extends BaseControls\Control {
 
         // Messages linked by the plain thread_id column (aliased relation — not
         // an ownNotifyList), so query them explicitly, oldest first.
-        $messages = Bean::find('notify', 'thread_id = ? ORDER BY created_at ASC, id ASC', [$id]);
+        $messages = Bean::find('message', 'thread_id = ? ORDER BY created_at ASC, id ASC', [$id]);
 
         // Attachments grouped by notify id for inline rendering.
         $attachments = [];
-        foreach (Bean::find('notifyattachment', 'thread_id = ? ORDER BY id ASC', [$id]) as $att) {
+        foreach (Bean::find('messageattachment', 'thread_id = ? ORDER BY id ASC', [$id]) as $att) {
             $attachments[(int)$att->notifyId][] = $att;
         }
 
@@ -77,20 +77,15 @@ class Communications extends BaseControls\Control {
         // Reading clears the unread badge — for THIS reader. The thread-level counter is
         // still written so anything not yet moved across stays consistent, but the figure
         // that now drives the bell is the per-person read mark.
-        \app\ThreadMembers::markRead((int)$thread->id, (int)$this->member->id);
+        $thread->markRead((int)$this->member->id);
         \app\Mentions::markRead((int)$thread->id, (int)$this->member->id);
-        if ((int)$thread->unreadCount > 0) {
-            $thread->unreadCount = 0;
-            $thread->updatedAt   = date('Y-m-d H:i:s');
-            Bean::store($thread);
-        }
 
         $search = trim((string)$this->getParam('q', ''));
 
         $this->render('communications/thread', [
             // Browser-tab title. "#general" alone is ambiguous with several teams, and a
             // tab title is exactly where you are choosing between open windows.
-            'title'       => $this->threadTitle($thread),
+            'title'       => $thread->title((int)$this->member->id),
             'threads'     => $this->fetchThreads($search),
             'search'      => $search,
             'activeId'    => (int)$thread->id,
@@ -127,7 +122,7 @@ class Communications extends BaseControls\Control {
                 Flight::redirect('/communications');
                 return;
             }
-            $room = Bean::load('emailthread', $toRoom);
+            $room = Bean::load('thread', $toRoom);
             if (!$room->id || (string)$room->kind !== 'room') {
                 $this->flash('error', 'No such room.');
                 Flight::redirect('/communications');
@@ -245,15 +240,15 @@ class Communications extends BaseControls\Control {
      * The same three controls the support queue has had all along — read, open, delete —
      * because a thread list you can only ever open is a list you cannot keep tidy.
      *
-     * unread_count is a count rather than a flag, so "unread" is written as 1 instead of
-     * restoring a number nobody recorded. That is a deliberate small lie: the badge exists
-     * to say "something here needs you", and it says that correctly at 1.
+     * Per person: one operator marking a shared support thread unread must not put a
+     * badge on it for the whole team. markUnread() rewinds the read mark to just before
+     * the newest message, so exactly one thing is waiting.
      */
     public function markread($params = []) {
         if (!$this->requireLogin()) return;
         if (!Flight::csrf()->validateRequest()) { Flight::jsonError('Invalid CSRF token', 403); return; }
 
-        $thread = Bean::load('emailthread', (int)$this->getParam('id', 0));
+        $thread = Bean::load('thread', (int)$this->getParam('id', 0));
         if (!$thread->id)        { Flight::jsonError('No such conversation.', 404); return; }
         if (!$this->canView($thread)) { Flight::jsonError('That is not your conversation.', 403); return; }
 
@@ -261,14 +256,10 @@ class Communications extends BaseControls\Control {
         // Per-person, so one operator marking a shared support thread unread does not
         // put a badge on it for the whole team.
         $mid = (int)$this->member->id;
-        $read ? \app\ThreadMembers::markRead((int)$thread->id, $mid)
-              : \app\ThreadMembers::markUnread((int)$thread->id, $mid);
-        $thread->unreadCount = $read ? 0 : 1;
-        $thread->updatedAt   = date('Y-m-d H:i:s');
-        Bean::store($thread);
+        $read ? $thread->markRead($mid) : $thread->markUnread($mid);
 
         Flight::jsonSuccess(
-            ['id' => (int)$thread->id, 'unread' => (int)$thread->unreadCount, 'unread_total' => $this->unreadTotal()],
+            ['id' => (int)$thread->id, 'unread' => $thread->unreadFor($mid), 'unread_total' => $this->unreadTotal()],
             $read ? 'Marked as read' : 'Marked as unread'
         );
     }
@@ -278,19 +269,19 @@ class Communications extends BaseControls\Control {
      *
      * The notify rows are removed explicitly rather than by cascade: they hang off
      * thread_id, but RedBean's xown cascade keys off the PARENT BEAN TYPE, and the parent
-     * here is 'emailthread' while the column says 'thread'. Relying on a cascade that does
+     * here is 'thread' while the column says 'thread'. Relying on a cascade that does
      * not fire would leave orphaned messages behind and nothing would say so.
      */
     public function remove($params = []) {
         if (!$this->requireLogin()) return;
         if (!Flight::csrf()->validateRequest()) { Flight::jsonError('Invalid CSRF token', 403); return; }
 
-        $thread = Bean::load('emailthread', (int)$this->getParam('id', 0));
+        $thread = Bean::load('thread', (int)$this->getParam('id', 0));
         if (!$thread->id)        { Flight::jsonError('No such conversation.', 404); return; }
         if (!$this->canView($thread)) { Flight::jsonError('That is not your conversation.', 403); return; }
 
         $id = (int)$thread->id;
-        $messages = Bean::find('notify', 'thread_id = ?', [$id]);
+        $messages = Bean::find('message', 'thread_id = ?', [$id]);
         foreach ($messages as $m) Bean::trash($m);
         Bean::trash($thread);
 
@@ -310,7 +301,7 @@ class Communications extends BaseControls\Control {
         if (!$this->validateCSRF()) return;
 
         $id = (int)($this->routeId($params));
-        $thread = Bean::load('emailthread', $id);
+        $thread = Bean::load('thread', $id);
 
         if (!$thread->id || !$this->canView($thread)) {
             $this->flash('error', 'Conversation not found');
@@ -358,7 +349,7 @@ class Communications extends BaseControls\Control {
         $toEmail = $thread->recipientEmail ?: '';
         $toName  = $thread->recipientName  ?: '';
         if ($toEmail === '') {
-            $firstOut = Bean::findOne('notify', 'thread_id = ? AND direction = ? ORDER BY created_at ASC', [$id, 'out']);
+            $firstOut = Bean::findOne('message', 'thread_id = ? AND direction = ? ORDER BY created_at ASC', [$id, 'out']);
             if ($firstOut) { $toEmail = $firstOut->toEmail; $toName = $firstOut->toName; }
         }
         if ($toEmail === '') {
@@ -369,7 +360,7 @@ class Communications extends BaseControls\Control {
 
         // Thread the reply off the most recent message that carries a Message-ID.
         $last = Bean::findOne(
-            'notify',
+            'message',
             "thread_id = ? AND message_id != '' ORDER BY created_at DESC, id DESC",
             [$id]
         );
@@ -414,7 +405,7 @@ class Communications extends BaseControls\Control {
 
         $threadId = (int)$this->getParam('thread', 0);
         $sinceId  = (int)$this->getParam('since_msg', 0);
-        $thread   = Bean::load('emailthread', $threadId);
+        $thread   = Bean::load('thread', $threadId);
 
         // Unknown/forbidden thread: still hand back the bell total so the poll
         // isn't wasted, but no messages.
@@ -424,7 +415,7 @@ class Communications extends BaseControls\Control {
         }
 
         $new = [];
-        foreach (Bean::find('notify', 'thread_id = ? AND id > ? ORDER BY id ASC', [$threadId, $sinceId]) as $m) {
+        foreach (Bean::find('message', 'thread_id = ? AND id > ? ORDER BY id ASC', [$threadId, $sinceId]) as $m) {
             $new[] = [
                 'id'          => (int)$m->id,
                 'thread_id'   => (int)$m->threadId,
@@ -437,6 +428,7 @@ class Communications extends BaseControls\Control {
                 // a missing one is a corrupt row. Say so rather than quietly rendering it
                 // as somebody else's message.
                 'sender_member_id' => $this->senderIdOf($m),
+                'is_mine'          => $m->isMine((int)$this->member->id),
                 'notify_type' => $m->notifyType,
                 'from_name'   => $m->fromName ?: $m->fromEmail,
                 'status'      => $m->status,
@@ -448,14 +440,7 @@ class Communications extends BaseControls\Control {
 
         // The viewer is actively looking at this thread, so anything that just
         // arrived is "read" — clear its badge (mirrors thread() on load).
-        if ($new) {
-            \app\ThreadMembers::markRead((int)$thread->id, (int)$this->member->id);
-        }
-        if ($new && (int)$thread->unreadCount > 0) {
-            $thread->unreadCount = 0;
-            $thread->updatedAt   = date('Y-m-d H:i:s');
-            Bean::store($thread);
-        }
+        if ($new) $thread->markRead((int)$this->member->id);
 
         Flight::json(['new_messages' => $new, 'unread_total' => $this->unreadTotal(),
                       'mentions' => \app\Mentions::unreadCount((int)$this->member->id)]);
@@ -473,7 +458,7 @@ class Communications extends BaseControls\Control {
     public function roster($params = []) {
         if (!$this->requireLogin()) { Flight::json([]); return; }
 
-        $thread = Bean::load('emailthread', (int)$this->getParam('thread', 0));
+        $thread = Bean::load('thread', (int)$this->getParam('thread', 0));
         if (!$thread->id || !$this->canView($thread)) { Flight::json([]); return; }
 
         $me  = (int)$this->member->id;
@@ -495,18 +480,21 @@ class Communications extends BaseControls\Control {
         if (!$this->requireLogin()) { Flight::json(['unread' => 0, 'threads' => []]); return; }
 
         [$where, $params] = $this->scopeClause();
-        $threads = Bean::find('emailthread', $where . ' ORDER BY last_message_at DESC, id DESC LIMIT 8', $params);
+        $threads = Bean::find('thread', $where . ' ORDER BY last_message_at DESC, id DESC LIMIT 8', $params);
 
         $out = [];
         foreach ($threads as $t) {
             $out[] = [
                 'id'              => (int)$t->id,
-                'subject'         => (string)($t->subject ?: '(no subject)'),
-                'who'             => (string)($t->recipientName ?: $t->recipientEmail ?: 'Unknown'),
+                // Ask the thread what it is called. The raw column only answers for email:
+                // it showed "(no subject)" for a DM, which is named by who is in it, and
+                // dropped the team from a room, where "#general" identifies nothing.
+                'subject'         => $t->title((int)$this->member->id),
+                'who'             => $t->counterpart((int)$this->member->id),
                 'preview'         => (string)($t->lastPreview ?? ''),
                 'last_message_at' => $t->lastMessageAt,
                 'last_direction'  => (string)($t->lastDirection ?? ''),
-                'unread_count'    => (int)$t->unreadCount,
+                'unread_count'    => $t->unreadFor((int)$this->member->id),
                 'mentions'        => \app\Mentions::unreadInThread((int)$t->id, (int)$this->member->id),
             ];
         }
@@ -543,7 +531,7 @@ class Communications extends BaseControls\Control {
             $like = '%' . $search . '%';
             array_push($params, $like, $like, $like);
         }
-        return Bean::find('emailthread', $where . ' ORDER BY last_message_at DESC, id DESC', $params);
+        return Bean::find('thread', $where . ' ORDER BY last_message_at DESC, id DESC', $params);
     }
 
     /** WHERE fragment scoping threads to the viewer's role. */
@@ -616,14 +604,9 @@ class Communications extends BaseControls\Control {
         // Per-person now: with more than one participant, "has this been read" has no
         // single answer, and the thread-level counter cannot represent one.
         // ROOT keeps the everything-view, which is a different question.
-        if (Flight::hasLevel(LEVELS['ROOT'])) {
-            [$scopeSql, $scopeParams] = $this->scopeClause();
-            $own = \app\ThreadMembers::unreadThreadCount((int)$this->member->id);
-            $legacy = (int)Bean::count('emailthread',
-                $scopeSql . ' AND unread_count > 0 AND id NOT IN (SELECT thread_id FROM threadmember)',
-                $scopeParams);
-            return $own + $legacy;
-        }
+        // Per person, always. The thread-level counter is gone: with more than one
+        // participant it could not represent an answer, and keeping it as a fallback
+        // meant two sources of truth for one badge.
         return \app\ThreadMembers::unreadThreadCount((int)$this->member->id);
     }
 

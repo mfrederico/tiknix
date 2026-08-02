@@ -249,7 +249,7 @@ class NotifyService {
         // Explicit thread id wins — inbox replies continue a known conversation
         // even when it carries no polymorphic related entity.
         if ($this->threadId !== null) {
-            $existing = Bean::load('emailthread', $this->threadId);
+            $existing = Bean::load('thread', $this->threadId);
             if ($existing && $existing->id) {
                 return $existing;
             }
@@ -257,7 +257,7 @@ class NotifyService {
 
         if ($this->relatedType !== null && $this->relatedId !== null) {
             $existing = Bean::findOne(
-                'emailthread',
+                'thread',
                 'related_type = ? AND related_id = ?',
                 [$this->relatedType, $this->relatedId]
             );
@@ -267,7 +267,7 @@ class NotifyService {
         }
 
         $now = date('Y-m-d H:i:s');
-        $thread = Bean::dispense('emailthread');
+        $thread = Bean::dispense('thread');
         $thread->kind            = 'email';
         $thread->subject         = $this->subjectLine;
         $thread->replyToken      = self::mintReplyToken();
@@ -277,7 +277,6 @@ class NotifyService {
         $thread->recipientEmail  = $this->toEmail;
         $thread->recipientName   = $this->toName;
         $thread->messageCount    = 0;
-        $thread->unreadCount     = 0;
         $thread->lastDirection   = 'out';
         $thread->lastPreview     = '';
         $thread->lastMessageAt   = $now;
@@ -306,7 +305,7 @@ class NotifyService {
     private static function mintReplyToken(): string {
         do {
             $token = bin2hex(random_bytes(16));
-        } while (Bean::count('emailthread', 'reply_token = ?', [$token]) > 0);
+        } while (Bean::count('thread', 'reply_token = ?', [$token]) > 0);
         return $token;
     }
 
@@ -343,7 +342,7 @@ class NotifyService {
         $messageId = sprintf('<tk.%d.%s@%s>', (int)$thread->id, bin2hex(random_bytes(8)), $msgDomain);
 
         // ---- always write the outbound notify row --------------------------
-        $notify = Bean::dispense('notify');
+        $notify = Bean::dispense('message');
         $notify->threadId       = (int)$thread->id;
         $notify->direction      = 'out';
         $notify->notifyType     = 'email';
@@ -467,7 +466,7 @@ class NotifyService {
         if ($existing > 0) return $existing;
 
         $now = date('Y-m-d H:i:s');
-        $thread = Bean::dispense('emailthread');
+        $thread = Bean::dispense('thread');
         $thread->subject        = '';        // a DM is named by its people, not a subject
         $thread->kind           = 'dm';
         $thread->replyToken     = self::mintReplyToken();
@@ -475,7 +474,6 @@ class NotifyService {
         $thread->recipientEmail = '';        // nothing here is addressed to an inbox
         $thread->recipientName  = '';
         $thread->messageCount   = 0;
-        $thread->unreadCount    = 0;
         $thread->lastDirection  = 'out';
         $thread->lastPreview    = '';
         $thread->lastMessageAt  = $now;
@@ -501,13 +499,13 @@ class NotifyService {
      * @return int|null the new message id
      */
     public static function postInApp(int $threadId, int $senderMemberId, string $html): ?int {
-        $thread = Bean::load('emailthread', $threadId);
+        $thread = Bean::load('thread', $threadId);
         if (!$thread->id) return null;
 
         $now = date('Y-m-d H:i:s');
         $sender = Bean::load('member', $senderMemberId);
 
-        $n = Bean::dispense('notify');
+        $n = Bean::dispense('message');
         $n->threadId       = $threadId;
         $n->senderMemberId = $senderMemberId;
         $n->transport      = 'inapp';
@@ -568,7 +566,7 @@ class NotifyService {
         ?int $relatedId = null
     ): ?int {
         if ($relatedType !== null && $relatedId !== null) {
-            $existing = Bean::findOne('emailthread', 'related_type = ? AND related_id = ?',
+            $existing = Bean::findOne('thread', 'related_type = ? AND related_id = ?',
                 [$relatedType, $relatedId]);
             if ($existing && $existing->id) {
                 self::recordInbound((int)$existing->id, $fromEmail, $fromName, $subject, $html);
@@ -577,7 +575,7 @@ class NotifyService {
         }
 
         $now = date('Y-m-d H:i:s');
-        $thread = Bean::dispense('emailthread');
+        $thread = Bean::dispense('thread');
         // The RAW subject: normalizeSubject() lowercases because it is a matching key
         // for grouping "Re: Foo" with "foo", not something to show a person.
         $thread->kind           = 'email';   // set at creation, not only by the backfill
@@ -589,7 +587,6 @@ class NotifyService {
         $thread->recipientEmail = $fromEmail;
         $thread->recipientName  = $fromName;
         $thread->messageCount   = 0;
-        $thread->unreadCount    = 0;
         $thread->lastDirection  = 'in';
         $thread->lastPreview    = '';
         $thread->lastMessageAt  = $now;
@@ -617,11 +614,11 @@ class NotifyService {
     private static function recordInbound(
         int $threadId, string $fromEmail, string $fromName, string $subject, string $html
     ): ?int {
-        $thread = Bean::load('emailthread', $threadId);
+        $thread = Bean::load('thread', $threadId);
         if (!$thread->id) return null;
         $now = date('Y-m-d H:i:s');
 
-        $n = Bean::dispense('notify');
+        $n = Bean::dispense('message');
         $n->threadId   = $threadId;
         $n->direction  = 'in';
         $n->notifyType = 'inbound';
@@ -638,7 +635,6 @@ class NotifyService {
         $id = (int) Bean::store($n);
 
         $thread->messageCount  = (int)$thread->messageCount + 1;
-        $thread->unreadCount   = (int)$thread->unreadCount + 1;
         $thread->lastDirection = 'in';
         $thread->lastPreview   = self::previewFromHtml($html);
         $thread->lastMessageAt = $now;
@@ -649,13 +645,13 @@ class NotifyService {
     }
 
     public static function createSystemMessage(int $threadId, string $html): ?int {
-        $thread = Bean::load('emailthread', $threadId);
+        $thread = Bean::load('thread', $threadId);
         if (!$thread->id) {
             return null;
         }
         $now = date('Y-m-d H:i:s');
 
-        $n = Bean::dispense('notify');
+        $n = Bean::dispense('message');
         $n->threadId   = (int)$thread->id;
         $n->direction  = 'in';
         $n->notifyType = 'system';
@@ -672,7 +668,6 @@ class NotifyService {
         $id = Bean::store($n);
 
         $thread->messageCount  = (int)$thread->messageCount + 1;
-        $thread->unreadCount   = (int)$thread->unreadCount + 1;
         $thread->lastDirection = 'in';
         $thread->lastPreview   = self::previewFromHtml($html);
         $thread->lastMessageAt = $now;

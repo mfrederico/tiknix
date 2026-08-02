@@ -222,7 +222,7 @@ class Teams extends Control {
             // Newest 20, then reversed: the query wants the LAST 20, the reader wants
             // them in the order they were said.
             $this->viewData['roomMessages'] = array_reverse(array_values(
-                \RedBeanPHP\R::find('notify', 'thread_id = ? ORDER BY id DESC LIMIT 20', [(int) $roomId])
+                \RedBeanPHP\R::find('message', 'thread_id = ? ORDER BY id DESC LIMIT 20', [(int) $roomId])
             ));
             $this->viewData['roomUnread'] = \app\ThreadMembers::unreadFor((int) $roomId, (int)$this->member->id);
         }

@@ -102,8 +102,7 @@ usort($__rooms, function ($a, $b) {
                         $me      = $__me;
                         // Per-person unread now. The thread-level counter cannot answer this
                         // once a conversation has more than one participant.
-                        $unread  = \app\ThreadMembers::unreadFor((int)$t->id, $me) > 0
-                                   || ((int)$t->unreadCount > 0 && !\app\ThreadMembers::isMember((int)$t->id, $me));
+                        $unread  = $t->unreadFor($me) > 0;
                         $active  = (int)$t->id === (int)($activeId ?? 0);
                         $kind    = (string)($t->kind ?: 'email');
 

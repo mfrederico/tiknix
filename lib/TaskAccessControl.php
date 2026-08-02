@@ -154,8 +154,7 @@ class TaskAccessControl {
      * @return bool
      */
     public function isTeamMember(int $teamId, int $memberId): bool {
-        $membership = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, $memberId]);
-        return $membership !== null;
+        return Bean::load('team', $teamId)->hasMember($memberId);
     }
 
     /**
@@ -167,20 +166,7 @@ class TaskAccessControl {
      * @return bool
      */
     public function hasTeamPermission(int $teamId, int $memberId, string $permission): bool {
-        $membership = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, $memberId]);
-
-        if (!$membership) {
-            return false;
-        }
-
-        // Owner and admin have all permissions
-        if (in_array($membership->role, ['owner', 'admin'])) {
-            return true;
-        }
-
-        // Check specific permission flag
-        $permField = $permission;
-        return !empty($membership->$permField);
+        return Bean::load('team', $teamId)->memberCan($memberId, $permission);
     }
 
     /**
@@ -191,8 +177,7 @@ class TaskAccessControl {
      * @return string|null Role or null if not a member
      */
     public function getTeamRole(int $teamId, int $memberId): ?string {
-        $membership = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, $memberId]);
-        return $membership ? $membership->role : null;
+        return Bean::load('team', $teamId)->roleOf($memberId);
     }
 
     /**
@@ -203,8 +188,7 @@ class TaskAccessControl {
      * @return bool
      */
     public function isTeamOwner(int $teamId, int $memberId): bool {
-        $team = Bean::load('team', $teamId);
-        return $team && (int)$team->ownerId === $memberId;
+        return Bean::load('team', $teamId)->isOwner($memberId);
     }
 
     /**
@@ -215,14 +199,7 @@ class TaskAccessControl {
      * @return bool
      */
     public function isTeamAdmin(int $teamId, int $memberId): bool {
-        // Check if owner
-        if ($this->isTeamOwner($teamId, $memberId)) {
-            return true;
-        }
-
-        // Check role
-        $role = $this->getTeamRole($teamId, $memberId);
-        return in_array($role, ['owner', 'admin']);
+        return Bean::load('team', $teamId)->isAdmin($memberId);
     }
 
     /**
@@ -233,7 +210,7 @@ class TaskAccessControl {
      * @return bool
      */
     public function canManageTeam(int $teamId, int $memberId): bool {
-        return $this->isTeamOwner($teamId, $memberId);
+        return Bean::load('team', $teamId)->canManage($memberId);
     }
 
     /**
@@ -244,7 +221,7 @@ class TaskAccessControl {
      * @return bool
      */
     public function canManageMembers(int $teamId, int $memberId): bool {
-        return $this->isTeamAdmin($teamId, $memberId);
+        return Bean::load('team', $teamId)->canManageMembers($memberId);
     }
 
     /**
@@ -255,7 +232,7 @@ class TaskAccessControl {
      * @return bool
      */
     public function canInviteToTeam(int $teamId, int $memberId): bool {
-        return $this->isTeamAdmin($teamId, $memberId);
+        return Bean::load('team', $teamId)->canInvite($memberId);
     }
 
     /**
@@ -266,7 +243,7 @@ class TaskAccessControl {
      * @return bool
      */
     public function canDeleteTeam(int $teamId, int $memberId): bool {
-        return $this->isTeamOwner($teamId, $memberId);
+        return Bean::load('team', $teamId)->canDelete($memberId);
     }
 
     /**

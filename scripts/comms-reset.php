@@ -32,7 +32,7 @@ use \app\ThreadMembers;
 $confirm = in_array('--confirm', $argv, true);
 
 /** The bean types messaging owns. */
-$types = ['mention', 'threadmember', 'notify', 'emailthread', 'contactresponse', 'contact'];
+$types = ['mention', 'threadmember', 'message', 'thread', 'contactresponse', 'contact'];
 
 echo "Current state\n";
 $counts = [];
@@ -99,5 +99,5 @@ foreach ($teams as $team) {
 
 echo "\nDone.\n";
 printf("  threads %d · messages %d · participants %d · mentions %d · support %d\n",
-    R::count('emailthread'), R::count('notify'), R::count('threadmember'),
+    R::count('thread'), R::count('message'), R::count('threadmember'),
     R::count('mention'), R::count('contact'));

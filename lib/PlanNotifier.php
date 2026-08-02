@@ -135,15 +135,14 @@ class PlanNotifier {
 
             // One thread per plan: a rebuild of the same plan continues the conversation
             // rather than starting a new one beside it.
-            $thread = Bean::findOne('emailthread', 'related_type = ? AND related_id = ?', ['plan', $planId]);
+            $thread = Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['plan', $planId]);
             if (!$thread || !$thread->id) {
-                $thread = Bean::dispense('emailthread');
+                $thread = Bean::dispense('thread');
                 $thread->subject       = $subject;
                 $thread->relatedType   = 'plan';
                 $thread->relatedId     = $planId;
                 $thread->ownerMemberId = $memberId;
                 $thread->messageCount  = 0;
-                $thread->unreadCount   = 0;
                 $thread->status        = 'open';
                 $thread->createdAt     = $now;
             }
@@ -151,11 +150,12 @@ class PlanNotifier {
             $thread->lastPreview   = mb_substr($preview, 0, 200);
             $thread->lastMessageAt = $now;
             $thread->messageCount  = (int) $thread->messageCount + 1;
-            $thread->unreadCount   = (int) $thread->unreadCount + 1;   // this is the bell
+            // The bell is DERIVED now: everyone whose read mark is behind this message
+            // is unread, so there is no counter to bump. See Model_Thread::unreadFor().
             $thread->updatedAt     = $now;
             Bean::store($thread);
 
-            $msg = Bean::dispense('notify');
+            $msg = Bean::dispense('message');
             $msg->threadId   = (int) $thread->id;
             $msg->direction  = 'in';
             $msg->notifyType = 'system';

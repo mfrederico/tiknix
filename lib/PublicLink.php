@@ -35,7 +35,7 @@ class PublicLink {
         if ($token === '' || !preg_match('/^[a-f0-9]{32,}$/', $token)) {
             return null;
         }
-        $thread = Bean::findOne('emailthread', 'reply_token = ?', [$token]);
+        $thread = Bean::findOne('thread', 'reply_token = ?', [$token]);
         return ($thread && $thread->id) ? $thread : null;
     }
 }

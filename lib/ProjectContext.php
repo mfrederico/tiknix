@@ -22,6 +22,7 @@
 namespace app;
 
 use RedBeanPHP\R;
+use app\Bean;
 
 class ProjectContext {
 
@@ -124,16 +125,13 @@ class ProjectContext {
      *
      * @return int[]
      */
+    /**
+     * THIRD copy of this query, now delegated. It differed from the others in one way:
+     * no DISTINCT, so an instance shared with two teams the same member belongs to came
+     * back twice — and a duplicate id flows straight into an IN (?,?) binding. Nothing is
+     * multi-team shared yet, which is the only reason it never showed.
+     */
     private static function sharedInstanceIds(int $memberId): array {
-        $teamIds = array_values(array_map(
-            fn($tm) => (int) $tm->teamId,
-            R::find('teammember', 'member_id = ?', [$memberId])
-        ));
-        if (!$teamIds) return [];
-
-        return array_values(array_map(
-            fn($it) => (int) $it->instanceId,
-            R::find('instance_team', 'team_id IN (' . R::genSlots($teamIds) . ')', $teamIds)
-        ));
+        return Bean::load('member', $memberId)->sharedInstanceIds();
     }
 }

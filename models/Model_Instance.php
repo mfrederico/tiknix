@@ -93,6 +93,37 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
 
     /** Public URL of the instance subdomain. */
     public function url(): string {
-        return 'https://' . $this->bean->slug . '.' . ($this->bean->app ?: 'tiknix') . '.com';
+        return 'https://' . $this->bean->slug . '.' . ($this->bean->app ?: self::DEFAULT_APP) . '.com';
+    }
+
+    // ---- access ----------------------------------------------------------------------
+    // Who may touch this instance. There were TWO implementations of these — one in
+    // TaskAccessControl, one private in ProvisionService — verified agreeing across 130
+    // (member × instance) pairs, which is the same "correct today" position every other
+    // duplicate in this codebase held right up until it wasn't.
+
+    /**
+     * Ownership. The gate for destructive and administrative actions: delete, fork,
+     * share management, restart. Distinct from access — a teammate can use an instance
+     * without being able to end it.
+     */
+    public function ownedBy(int $memberId): bool {
+        return $memberId > 0 && (int) $this->bean->memberId === $memberId;
+    }
+
+    /**
+     * May this member use this instance at all — own it, or share a team it is shared
+     * with. This is the gate that decides whose code an agent may edit.
+     */
+    public function accessibleBy(int $memberId): bool {
+        if ($this->ownedBy($memberId)) return true;
+        if ($memberId <= 0) return false;
+        if (!in_array('instance_team', \RedBeanPHP\R::inspect(), true)) return false;
+
+        return (int) \RedBeanPHP\R::getCell(
+            'SELECT COUNT(*) FROM instance_team it JOIN teammember tm ON tm.team_id = it.team_id '
+          . 'WHERE it.instance_id = ? AND tm.member_id = ?',
+            [(int) $this->bean->id, $memberId]
+        ) > 0;
     }
 }

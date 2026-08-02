@@ -149,16 +149,14 @@ class ProvisionService {
 
     // ---- authorization (core is the authority; the caller passes ids, we re-check) ----
 
+    // These were a SECOND implementation of the access rules, agreeing with
+    // TaskAccessControl only by coincidence of nobody having changed either. Both now ask
+    // the instance, which is the thing the question is about.
     private function ownsInstance(int $memberId, int $instanceId): bool {
-        return $instanceId > 0
-            && (int) R::getCell('SELECT member_id FROM instance WHERE id = ?', [$instanceId]) === $memberId;
+        return $instanceId > 0 && R::load('instance', $instanceId)->ownedBy($memberId);
     }
     private function canAccessInstance(int $memberId, int $instanceId): bool {
-        if ($this->ownsInstance($memberId, $instanceId)) return true;
-        if (!in_array('instance_team', R::inspect(), true)) return false;
-        return (int) R::getCell(
-            'SELECT COUNT(*) FROM instance_team it JOIN teammember tm ON tm.team_id = it.team_id
-             WHERE it.instance_id = ? AND tm.member_id = ?', [$instanceId, $memberId]) > 0;
+        return $instanceId > 0 && R::load('instance', $instanceId)->accessibleBy($memberId);
     }
 
     /** Run git inside an instance's own repo. */

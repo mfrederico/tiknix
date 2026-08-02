@@ -369,11 +369,7 @@ class TaskAccessControl {
      * array_values so the id-keyed getCol result is safe to splat into IN() bindings.
      */
     public function getSharedInstanceIds(int $memberId): array {
-        $teamIds = $this->getMemberTeamIds($memberId);
-        if (empty($teamIds) || !in_array('instance_team', \RedBeanPHP\R::inspect(), true)) return [];
-        $tph = implode(',', array_fill(0, count($teamIds), '?'));
-        return array_values(array_map('intval', \RedBeanPHP\R::getCol(
-            "SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ($tph)", $teamIds)));
+        return Bean::load('member', $memberId)->sharedInstanceIds();
     }
 
     /**
@@ -382,12 +378,7 @@ class TaskAccessControl {
      * I see / create tasks in" (workbench tabs + the New Task instance picker).
      */
     public function getAccessibleInstanceIds(int $memberId): array {
-        $ids = [];
-        if (in_array('instance', \RedBeanPHP\R::inspect(), true)) {
-            $ids = array_map('intval', \RedBeanPHP\R::getCol(
-                'SELECT id FROM instance WHERE member_id = ?', [$memberId]));
-        }
-        return array_values(array_unique(array_merge($ids, $this->getSharedInstanceIds($memberId))));
+        return Bean::load('member', $memberId)->accessibleInstanceIds();
     }
 
     /**
@@ -397,8 +388,7 @@ class TaskAccessControl {
      * tasks, decomposing, building, polling status.
      */
     public function canAccessInstance(int $memberId, int $instanceId): bool {
-        return $instanceId > 0
-            && in_array($instanceId, $this->getAccessibleInstanceIds($memberId), true);
+        return $instanceId > 0 && Bean::load('instance', $instanceId)->accessibleBy($memberId);
     }
 
     /**
@@ -407,8 +397,7 @@ class TaskAccessControl {
      * provision, share management, restart).
      */
     public function ownsInstance(int $memberId, int $instanceId): bool {
-        if ($instanceId <= 0 || !in_array('instance', \RedBeanPHP\R::inspect(), true)) return false;
-        return (int)\RedBeanPHP\R::getCell('SELECT member_id FROM instance WHERE id = ?', [$instanceId]) === $memberId;
+        return $instanceId > 0 && Bean::load('instance', $instanceId)->ownedBy($memberId);
     }
 
     /**

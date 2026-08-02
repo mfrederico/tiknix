@@ -124,6 +124,39 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
             array_merge($ids, ['active'])));
     }
 
+    // ---- instances -------------------------------------------------------------------
+
+    /** Instances this member owns outright. */
+    public function ownedInstanceIds(): array {
+        $id = (int) $this->bean->id;
+        if ($id <= 0 || !in_array('instance', \RedBeanPHP\R::inspect(), true)) return [];
+        return array_values(array_map('intval', \RedBeanPHP\R::getCol(
+            'SELECT id FROM instance WHERE member_id = ?', [$id])));
+    }
+
+    /**
+     * Instances shared with a team this member is on.
+     *
+     * DISTINCT deliberately: an instance shared with two teams the same person belongs to
+     * is one instance. TaskAccessControl had it, ProjectContext's copy did not, and they
+     * agreed only because nothing is multi-team shared yet — a duplicate id would have
+     * flowed straight into an IN (?,?) binding.
+     */
+    public function sharedInstanceIds(): array {
+        $teamIds = $this->teamIds();
+        if (!$teamIds || !in_array('instance_team', \RedBeanPHP\R::inspect(), true)) return [];
+
+        return array_values(array_unique(array_map('intval', \RedBeanPHP\R::getCol(
+            'SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ('
+            . \RedBeanPHP\R::genSlots($teamIds) . ')', $teamIds))));
+    }
+
+    /** Everything this member may use: owned plus shared. */
+    public function accessibleInstanceIds(): array {
+        return array_values(array_unique(array_merge(
+            $this->ownedInstanceIds(), $this->sharedInstanceIds())));
+    }
+
     public function sharesTeamWith(int $otherId): bool {
         if ($otherId <= 0) return false;
         $other = \app\Bean::load('member', $otherId);

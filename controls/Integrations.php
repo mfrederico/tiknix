@@ -112,7 +112,9 @@ class Integrations extends Control {
     }
 
     private function instanceDir(string $slug): string {
-        return '/var/www/html/default/' . $slug . '.tiknix';
+        // Was a hard-coded '.tiknix', which is only right while every instance uses that
+        // app namespace. Model_Instance derives it from the row.
+        return \Model_Instance::dirForSlug($slug);
     }
 
     /** Load an instance the current member owns and that exists on disk. */

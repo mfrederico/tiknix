@@ -21,13 +21,45 @@
 
 class Model_Instance extends \RedBeanPHP\SimpleModel {
 
+    /** Where instance directories live. One definition, so a path cannot drift. */
+    public const ROOT = '/var/www/html/default';
+
+    /** Default app namespace when a row does not carry one. */
+    public const DEFAULT_APP = 'tiknix';
+
     /** Absolute on-disk path to this instance directory. */
     public function dir(): string {
-        return '/var/www/html/default/' . $this->bean->slug . '.' . ($this->bean->app ?: 'tiknix');
+        return self::ROOT . '/' . $this->bean->slug . '.' . ($this->bean->app ?: self::DEFAULT_APP);
     }
 
-    /** True when the instance is actually provisioned on disk. */
-    public function exists(): bool {
+    /**
+     * The directory for a slug, for callers holding one rather than a bean.
+     *
+     * Derives the app namespace from the ROW, which is the point: three separate copies of
+     * this path existed and controls/Integrations.php hard-coded ".tiknix". They agreed
+     * only because every instance so far has app='tiknix'; the first one that does not
+     * would have sent Integrations at a directory that is not there — and these paths feed
+     * git operations and archiving.
+     *
+     * Falls back to the default namespace for a slug with no row, which is what a caller
+     * mid-provision has.
+     */
+    public static function dirForSlug(string $slug): string {
+        $bean = \app\Bean::findOne('instance', 'slug = ?', [$slug]);
+        $app  = ($bean && $bean->id && $bean->app) ? (string) $bean->app : self::DEFAULT_APP;
+        return self::ROOT . '/' . $slug . '.' . $app;
+    }
+
+    /**
+     * True when the instance is actually provisioned on disk.
+     *
+     * NOT called exists(). OODBBean has its own public exists($property), so a model method
+     * of that name is SHADOWED — $instance->exists() reaches RedBean's, which requires an
+     * argument and fatals without one. It had no callers, so nobody found out. Unlike a
+     * method that merely shares a name with a COLUMN, this one is unreachable through the
+     * bean at all.
+     */
+    public function isProvisioned(): bool {
         return is_file($this->dir() . '/public/index.php');
     }
 

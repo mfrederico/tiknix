@@ -689,7 +689,7 @@ class Connections extends Control {
         $type = strtolower(trim((string)$this->getParam('type', '')));
         $env  = $this->normalizeEnv($this->getParam('env', 'production'));
         $shop = trim((string)$this->getParam('shop', ''));
-        $returnUrl = rtrim((string)(Flight::get('app.baseurl') ?: ''), '/') . '/connections';
+        $returnUrl = app_url('/connections');
         $r = \app\InstanceAutomations::connectIntent($root, $type, $env, $shop, $returnUrl);
         if (!empty($r['error'])) { $this->flash('error', $r['error']); Flight::redirect('/connections'); return; }
         Flight::redirect($r['url']);
@@ -770,7 +770,7 @@ class Connections extends Control {
         $owner = (string) ($meta['owner'] ?? ''); $repo = (string) ($meta['repo'] ?? '');
         if ($owner === '' || $repo === '') { Flight::jsonError('This GitHub connection has no owner/repo.', 400); return; }
 
-        $callback = rtrim((string) (Flight::get('app.baseurl') ?: 'https://tiknix.com'), '/') . '/webhook/github';
+        $callback = app_url('/webhook/github');
         try {
             $pat = (string) EncryptionService::decrypt((string) $conn->accessToken);
             $gh  = new GitHubService($pat, $owner, $repo);
@@ -1172,7 +1172,7 @@ class Connections extends Control {
             if (function_exists('sodium_memzero')) sodium_memzero($token);
         } catch (\Throwable $e) { /* leave empty; the cron / a reconnect will fill it */ }
 
-        $base = rtrim((string)(Flight::get('app.baseurl') ?: ('https://' . ($_SERVER['HTTP_HOST'] ?? 'tiknix.com'))), '/');
+        $base = app_url();
         $this->jsonSuccess([
             'published' => (bool)$page->published,
             'url'       => $base . '/social/' . $slug,

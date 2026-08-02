@@ -195,7 +195,7 @@
 claude mcp list
 
 # Should show:
-# tiknix: <?= htmlspecialchars(Flight::get('baseurl') ?? 'https://your-domain.com') ?>/mcp/message (HTTP) - ✓ Connected</code></pre>
+# tiknix: <?= htmlspecialchars(app_url('/mcp/message')) ?> (HTTP) - ✓ Connected</code></pre>
 
             <div class="alert alert-info mt-3 mb-0">
                 <i class="bi bi-lightbulb"></i> <strong>Tips:</strong>
@@ -293,7 +293,7 @@ let currentRegenerateId = null;
 let regenerateModal = null;
 let useKeyModal = null;
 
-const mcpBaseUrl = '<?= htmlspecialchars(Flight::get('baseurl') ?? 'https://your-domain.com') ?>/mcp/message';
+const mcpBaseUrl = '<?= htmlspecialchars(app_url('/mcp/message')) ?>';
 
 // Initialize modals when DOM and bootstrap are ready
 document.addEventListener('DOMContentLoaded', function() {

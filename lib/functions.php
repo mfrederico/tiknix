@@ -58,6 +58,37 @@ function builder_tools_enabled(): bool {
 }
 
 /**
+ * An absolute URL into THIS application.
+ *
+ * There were two config keys for one value — `app.baseurl` (24 uses) and `baseurl` (15) —
+ * which agree only because bootstrap.php copies one into the other, so a reader cannot
+ * tell which is canonical and a change to one would not follow. On top of that, every
+ * caller decided for itself whether to rtrim the base and what to do when it is unset:
+ * Invite::url() normalises and defaults, three other URL builders concatenate raw and
+ * would emit `https://tiknix.com//auth/reset` the day anyone configures a trailing slash.
+ *
+ * One function, one key, one answer. Pass a path with or without a leading slash.
+ */
+function app_url(string $path = ''): string {
+    $base = rtrim((string) (\Flight::get('app.baseurl') ?: ''), '/');
+
+    if ($base === '') {
+        // Not a guess worth making silently: every link in an outbound email is built from
+        // this, so a wrong base means unreachable links in mail that has already been sent.
+        \Flight::get('log')?->error('app.baseurl is not configured; generated links will be relative');
+    }
+
+    $path = trim($path);
+    if ($path === '') return $base;
+    return $base . '/' . ltrim($path, '/');
+}
+
+/** Just the host of this application, for comparisons rather than links. */
+function app_host(): string {
+    return strtolower((string) (parse_url(app_url(), PHP_URL_HOST) ?: ''));
+}
+
+/**
  * The NAME of a permission level.
  *
  * The mapping was retyped as a ternary or a switch in six files, which is how a level

@@ -464,7 +464,7 @@ class Auth extends BaseControls\Control {
                 Bean::store($member);
                 
                 // Send reset email
-                $resetUrl = Flight::get('app.baseurl') . "/auth/reset?token={$token}";
+                $resetUrl = app_url("/auth/reset?token={$token}");
 
                 // Send the password reset email
                 $name = $member->displayName($email);

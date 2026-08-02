@@ -765,7 +765,7 @@ class ProxmoxDeploy {
      * precisely why the boot log can now be served for diagnostics.
      */
     private static function remoteUrl(string $slug): string {
-        return rtrim((string) \Flight::get('app.baseurl'), '/') . '/git/' . $slug . '.git';
+        return app_url('/git/' . $slug . '.git');
     }
 
     private static function defaultDomain(string $slug): string {

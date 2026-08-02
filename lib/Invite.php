@@ -301,7 +301,6 @@ class Invite {
 
     /** The public link for an invite. */
     public static function url(object $inv): string {
-        $base = rtrim((string) (\Flight::get('app.baseurl') ?: 'https://tiknix.com'), '/');
-        return $base . '/auth/invite?token=' . rawurlencode((string) $inv->token);
+        return app_url('/auth/invite?token=' . rawurlencode((string) $inv->token));
     }
 }

@@ -2374,7 +2374,7 @@ class Mcp extends BaseControls\Control {
      */
     private static function buildMcpUrl(?string $baseUrl = null): string {
         if (!$baseUrl) {
-            $baseUrl = Flight::get('app.baseurl') ?? Flight::get('baseurl') ?? 'https://dev.tiknix.com';
+            $baseUrl = app_url();
         }
 
         $baseUrl = rtrim($baseUrl, '/');

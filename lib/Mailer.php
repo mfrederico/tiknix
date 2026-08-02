@@ -218,7 +218,7 @@ class Mailer {
      */
     private function wrapInTemplate(string $content): string {
         $appName = Flight::get('app.name') ?? 'Tiknix';
-        $baseUrl = Flight::get('app.baseurl') ?? Flight::get('baseurl') ?? 'https://tiknix.com';
+        $baseUrl = app_url();
         $year = date('Y');
 
         return <<<HTML

@@ -57,7 +57,7 @@ class BrokerService {
     public static function endpoint(): string {
         $host = strtolower(trim((string)(\Flight::get('app.control_plane_host') ?? '')));
         if ($host === '') {
-            $host = (string)(parse_url((string)\Flight::get('app.baseurl'), PHP_URL_HOST) ?: 'tiknix.com');
+            $host = app_host() ?: 'tiknix.com';
         }
         return 'https://' . $host . '/mcp/message';
     }

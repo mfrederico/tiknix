@@ -153,7 +153,7 @@ class Brokerinfo extends Control {
             'shop'        => $shop,
             'return_url'  => $returnUrl,
         ]);
-        $base = rtrim((string) (Flight::get('app.baseurl') ?: 'https://tiknix.com'), '/');
+        $base = app_url();
         Flight::jsonSuccess(['url' => $base . '/connections/handoff/' . rawurlencode($type) . '?intent=' . urlencode($intent)]);
     }
 

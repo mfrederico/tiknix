@@ -458,7 +458,7 @@ class Teams extends Control {
         Bean::store($invitation);
 
         // Generate join link
-        $joinUrl = Flight::get('baseurl') . '/teams/join?token=' . $invitation->token;
+        $joinUrl = app_url('/teams/join?token=' . $invitation->token);
 
         // Send invitation email
         $inviterName = $this->member->displayName('A team admin');
@@ -777,7 +777,7 @@ class Teams extends Control {
         $invitation->updatedAt = date('Y-m-d H:i:s');
         Bean::store($invitation);
 
-        $joinUrl     = Flight::get('baseurl') . '/teams/join?token=' . $invitation->token;
+        $joinUrl     = app_url('/teams/join?token=' . $invitation->token);
         $inviterName = $this->member->displayName('A team admin');
 
         $emailSent = false;

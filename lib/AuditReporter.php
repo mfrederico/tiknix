@@ -184,7 +184,7 @@ class AuditReporter {
 
     private static function reportFailure(array $f, $inst, int $planId, int $nextCycle = 1, array $screenUrls = []): bool {
         $key = (string)\Flight::get('firehose.ingest_key');
-        $url = rtrim((string)\Flight::get('app.baseurl'), '/') . '/firehose/report';
+        $url = app_url('/firehose/report');
         if ($key === '' || $url === '/firehose/report') return false;
 
         $instTag = (string)$inst->slug . '.' . (string)($inst->app ?: 'tiknix');
@@ -229,7 +229,7 @@ class AuditReporter {
         $slug   = (string)$inst->slug;
         $title  = (string)($plan->title ?: ('Plan #' . $plan->id));
         $status = $passed ? 'PASSED ✅' : 'FAILED ❌';
-        $planUrl = rtrim((string)\Flight::get('app.baseurl'), '/') . '/workbench/view?id=' . (int)$plan->id;
+        $planUrl = app_url('/workbench/view?id=' . (int)$plan->id);
 
         // HTML body.
         $rows = '';

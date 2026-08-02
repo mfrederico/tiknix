@@ -243,7 +243,7 @@ if ($__loggedIn) {
            change when a target is reconfigured, or not exist yet. Sending you there from
            the chip would mean the one control that says "you are working on X" points
            somewhere X is not being edited. */
-        $__phost   = strtolower((string) (parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST) ?: 'tiknix.com'));
+        $__phost   = app_host() ?: 'tiknix.com';
         $__pdomain = $__proj->slug . '.' . $__phost;
         ?>
         <div class="ui-project-chip d-flex align-items-center gap-2 px-3 py-1 rounded-3 bg-primary-subtle ms-3 flex-wrap">

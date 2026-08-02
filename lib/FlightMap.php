@@ -379,7 +379,34 @@ Flight::map('isOff', function($val) {
 /**
  * Protected system members - cannot be deleted
  */
-define('SYSTEM_ADMIN_ID', 1);        // Root admin, owns system settings
+/**
+ * The bootstrap root admin — owns system settings, and cannot be deleted.
+ *
+ * RESOLVED, for the same reason PUBLIC_USER_ID below is. `define(..., 1)` happens to be
+ * right on every instance built so far, and is WRONG on a database seeded from empty:
+ * services/Schema/Seeds/01_Member.php stores a `__schema_seed_` padding row to size the
+ * columns BEFORE creating the admin, then trashes it — so a from-scratch reseed puts the
+ * admin at id 2 and id 1 at nothing. Verified by building one.
+ *
+ * Looked up by username, which is what the seed actually keys on, with a fall back to the
+ * most senior active account so a renamed admin still resolves.
+ */
+$__systemAdminId = 0;
+try {
+    $__sa = \app\Bean::findOne('member', 'username = ?', ['admin']);
+    if (!$__sa || !$__sa->id) {
+        $__sa = \app\Bean::findOne('member', 'level <= ? AND status = ? ORDER BY level ASC, id ASC',
+                                   [LEVELS['ADMIN'], 'active']);
+    }
+    $__systemAdminId = (int) ($__sa->id ?? 0);
+    if ($__systemAdminId === 0) {
+        Flight::get('log')?->error('No root admin account found; system-account protections cannot match');
+    }
+} catch (\Throwable $e) {
+    Flight::get('log')?->error('Could not resolve the root admin', ['error' => $e->getMessage()]);
+}
+define('SYSTEM_ADMIN_ID', $__systemAdminId);
+unset($__sa, $__systemAdminId);
 
 /**
  * The public-user-entity row — the account unauthenticated visitors are treated as.

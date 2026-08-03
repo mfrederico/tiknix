@@ -655,7 +655,7 @@ class Connections extends Control {
             // the pipelines themselves are shown on /integrations, not here.
             'pipelines'      => \app\InstanceAutomations::pipelines($this->instanceDir($inst->slug)),
             'environments'   => ['development', 'production'],
-            'categoryOrder'  => ['Deploy', 'Payments', 'Stores', 'Messaging', 'Social', 'Other'],
+            'categoryOrder'  => ['Deploy', 'Project', 'Payments', 'Stores', 'Messaging', 'Social', 'Other'],
         ]);
     }
 

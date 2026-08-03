@@ -136,7 +136,7 @@ class Webhook extends Control {
                 ? $this->sanitizeInboundHtml($displayHtml)
                 : nl2br(htmlspecialchars(($displayPlain) ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8'));
             $notify->bodyPlain      = $displayPlain;
-            $notify->messageId      = $messageId;
+            $notify->messageEid     = $messageId;
             $notify->inReplyTo      = $inReplyTo;
             $notify->referencesList = $referencesHdr;
             $notify->status         = 'received';
@@ -300,7 +300,7 @@ class Webhook extends Control {
         $recipient = (string)($data['recipient'] ?? '');
 
         $notify = $messageId !== ''
-            ? Bean::findOne('message', 'message_id = ? AND direction = ?', [$messageId, 'out'])
+            ? Bean::findOne('message', 'message_eid = ? AND direction = ?', [$messageId, 'out'])
             : null;
 
         if ($notify && $notify->id) {

@@ -361,10 +361,10 @@ class Communications extends BaseControls\Control {
         // Thread the reply off the most recent message that carries a Message-ID.
         $last = Bean::findOne(
             'message',
-            "thread_id = ? AND message_id != '' ORDER BY created_at DESC, id DESC",
+            "thread_id = ? AND message_eid != '' ORDER BY created_at DESC, id DESC",
             [$id]
         );
-        $inReplyTo = $last->messageId ?? null;
+        $inReplyTo = $last->messageEid ?? null;
         $prevRefs  = ($last && $last->referencesList) ? preg_split('/\s+/', trim($last->referencesList)) : [];
 
         $subject = $this->replySubject($thread->subject ?: 'Conversation');

@@ -64,7 +64,13 @@ $notify->to_name         = str_repeat('x', 150);
 $notify->subject         = str_repeat('x', 255);
 $notify->content         = str_repeat('x', 16000);
 $notify->body_plain      = str_repeat('x', 16000);
-$notify->message_id      = str_repeat('x', 250);
+// message_eid, not message_id. This holds the RFC822 Message-ID -- a STRING minted
+// by whoever sent the mail -- and the _id suffix is reserved for RedBean's integer
+// foreign keys. Under the old `notify` name that was harmless, because no table
+// called `message` existed for it to point at. Renaming the bean to `message` made
+// it self-referential: fluid mode emitted message.message_id -> message.id, and
+// storing a Message-ID string into it failed the constraint. See CLAUDE.md.
+$notify->message_eid     = str_repeat('x', 250);
 $notify->in_reply_to     = str_repeat('x', 250);
 $notify->references_list = str_repeat('x', 4000);
 $notify->provider_id     = str_repeat('x', 250);

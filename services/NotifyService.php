@@ -352,7 +352,7 @@ class NotifyService {
         $notify->subject        = $this->subjectLine;
         $notify->content        = $content;
         $notify->bodyPlain      = self::htmlToPlain($content);
-        $notify->messageId      = $messageId;
+        $notify->messageEid     = $messageId;
         $notify->inReplyTo      = $this->inReplyTo ?? '';
         $notify->referencesList = $this->referencesList ? implode(' ', $this->referencesList) : '';
         $notify->relatedType    = $this->relatedType;

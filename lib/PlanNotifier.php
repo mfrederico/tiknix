@@ -170,6 +170,12 @@ class PlanNotifier {
             $msg->sentAt     = $now;
             Bean::store($msg);
 
+            // These threads are opened by machinery and usually have an owner and no
+            // participant rows, which is exactly the case wakeParticipants() falls back
+            // on. Running against the 'plannotify' connection is fine: MQTT is a socket,
+            // not a query, and the participant lookup reads the core db we just selected.
+            $thread->wakeParticipants((int) $msg->id);
+
             $sent = 'notify: thread #' . (int) $thread->id . ' for member ' . $memberId;
 
             // Email is the EXTRA. No mailgun.ini is a normal, silent state — the in-app

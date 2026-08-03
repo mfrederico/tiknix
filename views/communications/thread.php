@@ -469,6 +469,9 @@ if (!empty($thread->ownerMemberId)) {
     // republishes, so an open thread needs no second socket.
     document.addEventListener('tnx:wake', function (e) {
         var d = e.detail || {};
+        // Messages only. A 'read' notice is for the bell — fetching here would mean
+        // the poll that marked this thread read woke the very tab that marked it.
+        if (d.t && d.t !== 'message') return;
         if (!d.thread || Number(d.thread) === threadId) tick();
     });
 

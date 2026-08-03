@@ -155,6 +155,11 @@ class Webhook extends Control {
             $thread->updatedAt     = $now;
             Bean::store($thread);
 
+            // An emailed reply is the one arrival nobody is sitting there expecting,
+            // so it is the one that most needs to announce itself. No sender to
+            // exclude — it came from an address, not an account.
+            $thread->wakeParticipants((int)$notify->id);
+
             $this->logger?->info('Webhook: inbound stored', [
                 'thread_id' => (int)$thread->id,
                 'from'      => $fromEmail,

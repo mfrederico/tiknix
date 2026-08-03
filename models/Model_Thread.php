@@ -174,6 +174,21 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
             'SELECT MAX(id) FROM message WHERE thread_id = ?', [(int) $this->bean->id]);
         $row->readAt = date('Y-m-d H:i:s');
         \app\Bean::store($row);
+
+        // Tell this person's OTHER tabs, so a conversation read in one window stops
+        // showing a badge in the next. Sent to the reader's own topic, which is the
+        // one place all of their sessions are already listening.
+        //
+        // This is not decoration: with live delivery connected the bell polls every
+        // 120s instead of 30s, so without it, reading here would leave a stale badge
+        // elsewhere four times as long as before the broker existed.
+        //
+        // Only the bell acts on 'read' — the thread view deliberately ignores it. If
+        // it fetched too, the poll that marked this read would wake the tab that made
+        // it, which would poll, and the read would echo around one more time for
+        // nothing.
+        \app\Mqtt::wake($memberId, ['t' => 'read', 'thread' => (int) $this->bean->id]);
+
         return true;
     }
 
@@ -208,6 +223,45 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
     /** Post an in-app message. Never touches email — see NotifyService::postInApp. */
     public function post(int $senderMemberId, string $html): ?int {
         return \app\services\NotifyService::postInApp((int) $this->bean->id, $senderMemberId, $html);
+    }
+
+    /**
+     * Ring the doorbell for everyone in this conversation.
+     *
+     * Here rather than at each call site because a message can land on a thread
+     * five different ways — posted in-app, replied to by email, opened by the
+     * support form, announced by the plan runner, delivered by the Mailgun
+     * webhook — and every one of them owes the same notice. A sixth path added
+     * later gets it by asking the thread, instead of by remembering to.
+     *
+     * Falls back to the OWNER when there are no participant rows. Threads opened
+     * by machinery have an owner and nobody else — a plan notice, or an inbound
+     * message that arrived before anyone joined — and for those, waking the
+     * empty set is indistinguishable from a broker being down.
+     *
+     * IDs only, and never checked: the message is already stored, so a broker
+     * outage costs latency, not delivery. See app\Mqtt.
+     *
+     * @param  int|null $exceptMemberId whoever caused this, who does not need telling
+     * @return int how many notices went out
+     */
+    public function wakeParticipants(int $messageId, ?int $exceptMemberId = null): int {
+        $ids = $this->participantIds();
+
+        if (!$ids) {
+            $owner = (int) ($this->bean->ownerMemberId ?? 0);
+            if ($owner > 0) $ids = [$owner];
+        }
+
+        if ($exceptMemberId !== null) {
+            $ids = array_values(array_diff($ids, [$exceptMemberId]));
+        }
+
+        return \app\Mqtt::wakeAll($ids, [
+            't'      => 'message',
+            'thread' => (int) $this->bean->id,
+            'msg'    => $messageId,
+        ]);
     }
 
     /** Messages, oldest first. */

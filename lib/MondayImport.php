@@ -317,8 +317,43 @@ class MondayImport {
      * a workbench db that is missing means the workbench has not been used on this
      * instance yet, which is a normal state and not a reason to fail the caller.
      */
+    /**
+     * Where the workbench tasks live, when this class has to open them itself.
+     *
+     * The workbench SIDECAR already points RedBean at the right instance's
+     * workbench.db before it calls anything here (WorkbenchDb::selectInstance), and
+     * this class lives in core's lib — so resolving a path from __DIR__ would give
+     * CORE's workbench.db no matter which instance the sidecar is showing. Callers
+     * that have already selected the database call useCurrentDatabase() and this
+     * stops switching entirely.
+     */
+    private static ?string $workbenchDb = null;
+    private static bool $useCurrent = false;
+
+    /** The caller has already selected the right database; do not switch. */
+    public static function useCurrentDatabase(bool $yes = true): void {
+        self::$useCurrent = $yes;
+    }
+
+    /** Open this workbench.db explicitly (a CLI, or core acting on one instance). */
+    public static function setWorkbenchDb(string $path): void {
+        self::$workbenchDb = $path;
+        self::$useCurrent  = false;
+    }
+
     private static function withWorkbench(callable $fn, $onError = null) {
-        $db = dirname(__DIR__) . '/data/workbench.db';
+        // Already pointed at the right place by whoever called us.
+        if (self::$useCurrent) {
+            try {
+                return $fn();
+            } catch (\Throwable $e) {
+                \Flight::get('log')?->error('MondayImport: workbench operation failed',
+                    ['err' => $e->getMessage()]);
+                return $onError;
+            }
+        }
+
+        $db = self::$workbenchDb ?: (dirname(__DIR__) . '/data/workbench.db');
         if (!is_file($db)) {
             \Flight::get('log')?->warning('MondayImport: no workbench db at ' . $db);
             return $onError;

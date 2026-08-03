@@ -225,6 +225,51 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
         return \app\services\NotifyService::postInApp((int) $this->bean->id, $senderMemberId, $html);
     }
 
+    /** Does this conversation live on a connected platform as well as here? */
+    public function isExternal(): bool {
+        return !empty($this->bean->connectionRef) && !empty($this->bean->externalRef);
+    }
+
+    /**
+     * Send a reply back out to the platform this conversation came from.
+     *
+     * Here rather than in the Telegram code because it is a property of the
+     * THREAD: a conversation that arrived from somewhere has to answer back to the
+     * same place, whichever connector brought it. Adding Slack later means adding
+     * sendMessage() to that connector, not another branch at every reply site.
+     *
+     * Returns false and LOGS on failure, and never throws. The reply is already
+     * stored and visible in the inbox; a bot token that has been revoked must not
+     * turn a member's reply into an error page. It does mean a reply can be stored
+     * here and never reach the far end — which is why the failure is logged at
+     * ERROR with the thread id rather than swallowed.
+     */
+    public function relayExternal(string $html): bool {
+        if (!$this->isExternal()) return false;
+
+        $conn = \app\Bean::load('connections', (int) $this->bean->connectionRef);
+        if (!$conn->id || (int) $conn->enabled !== 1 || !empty($conn->revokedAt)) return false;
+
+        $connector = \app\services\connectors\ConnectorRegistry::get((string) $conn->connectorType);
+        if (!$connector || !method_exists($connector, 'sendMessage')) return false;
+
+        try {
+            $connector->sendMessage(
+                (string) $conn->accessToken,
+                (string) $this->bean->externalRef,
+                \app\services\connectors\TelegramConnector::htmlToTelegram($html)
+            );
+            return true;
+        } catch (\Throwable $e) {
+            \Flight::get('log')?->error('Reply did not reach the connected platform', [
+                'thread'    => (int) $this->bean->id,
+                'connector' => (string) $conn->connectorType,
+                'err'       => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
     /**
      * Ring the doorbell for everyone in this conversation.
      *

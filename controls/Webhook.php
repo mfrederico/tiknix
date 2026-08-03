@@ -375,4 +375,147 @@ class Webhook extends Control {
         $ini['inboundDomain'] = $ini['inboundDomain'] ?? $ini['inbound_domain'] ?? ($ini['domain'] ?? '');
         return $ini;
     }
+
+    // ---- telegram ----------------------------------------------------------------
+
+    /**
+     * POST /webhook/telegram/<connection id> — inbound messages from a bot.
+     *
+     * The connection id in the URL is addressing, not authentication: it is a
+     * small integer anybody could guess. The secret is
+     * X-Telegram-Bot-Api-Secret-Token, which Telegram sends on every delivery
+     * because setWebhook was given it, and which is compared here in constant time.
+     *
+     * Almost everything answers 200. Telegram retries any non-2xx and disables a
+     * webhook that keeps failing, so returning 500 because one message was
+     * malformed would take the whole channel down. The body says what happened and
+     * the log says why; only a genuinely retryable fault deserves a non-200, and
+     * there isn't one here — the message is either stored or it is not wanted.
+     */
+    public function telegram(): void {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            \Flight::json(['error' => 'POST only'], 405);
+            return;
+        }
+
+        $op   = $this->routeParams['operation'] ?? null;
+        $cid  = (int) (is_object($op) ? ($op->name ?? 0) : 0);
+        $conn = $cid > 0 ? Bean::load('connections', $cid) : null;
+
+        if (!$conn || !$conn->id || (string) $conn->connectorType !== 'telegram') {
+            $this->logger?->warning('Telegram webhook: no such connection', ['id' => $cid]);
+            \Flight::json(['accepted' => false, 'reason' => 'unknown connection'], 404);
+            return;
+        }
+
+        $secret = (string) ($conn->webhookSecret ?? '');
+        $sent   = (string) ($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '');
+        if ($secret === '' || !hash_equals($secret, $sent)) {
+            // 403, not 200: an unsigned caller is not Telegram, and there is nothing
+            // for Telegram to retry. Loud, because this is the one failure that means
+            // somebody is poking at the endpoint.
+            $this->logger?->warning('Telegram webhook: bad or missing secret token',
+                ['connection' => $cid, 'had_secret' => $secret !== '']);
+            \Flight::json(['accepted' => false, 'reason' => 'forbidden'], 403);
+            return;
+        }
+
+        if (!empty($conn->revokedAt) || (int) $conn->enabled !== 1) {
+            \Flight::json(['accepted' => false, 'reason' => 'connection disabled'], 200);
+            return;
+        }
+
+        // Per connection, not per IP: Telegram delivers from many addresses, and the
+        // thing worth bounding is how much one channel can push at us.
+        $perMinute = (int) (\Flight::get('integrations.inbound_per_minute') ?: 120);
+        if (!\app\RateLimiter::shared('webhook:telegram:' . $cid, $perMinute, 60)) {
+            $this->logger?->warning('Telegram webhook: rate limited', ['connection' => $cid, 'limit' => $perMinute]);
+            \Flight::json(['accepted' => false, 'reason' => 'rate limited'], 200);
+            return;
+        }
+
+        $update = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($update)) {
+            \Flight::json(['accepted' => false, 'reason' => 'unparseable'], 200);
+            return;
+        }
+
+        $msg = \app\services\connectors\TelegramConnector::parseUpdate($update);
+        if (!$msg) {
+            // A sticker, a join, a poll. Real events, but not messages.
+            \Flight::json(['accepted' => true, 'stored' => false, 'reason' => 'nothing to store'], 200);
+            return;
+        }
+        if ($msg['is_bot']) {
+            // Including our own sends echoing back, which would otherwise be stored
+            // as if somebody had said them.
+            \Flight::json(['accepted' => true, 'stored' => false, 'reason' => 'from a bot'], 200);
+            return;
+        }
+
+        try {
+            $identity = \Model_Externalidentity::resolve((int) $conn->id, $msg['from_eid'], [
+                'display_name'    => $msg['from_name'],
+                'external_handle' => $msg['from_handle'],
+            ]);
+            if (!$identity) {
+                // resolve() already logged why (the cap).
+                \Flight::json(['accepted' => true, 'stored' => false, 'reason' => 'identity cap'], 200);
+                return;
+            }
+            if ($identity->box()->isBlocked()) {
+                \Flight::json(['accepted' => true, 'stored' => false, 'reason' => 'blocked'], 200);
+                return;
+            }
+
+            $thread = $this->telegramThread($conn, $msg);
+            $id = NotifyService::postExternal(
+                (int) $thread->id, $identity,
+                nl2br(htmlspecialchars($msg['text'], ENT_QUOTES, 'UTF-8')),
+                'telegram', $msg['message_id']
+            );
+
+            \Flight::json(['accepted' => true, 'stored' => $id !== null,
+                           'thread_id' => (int) $thread->id, 'message_id' => $id], 200);
+        } catch (\Throwable $e) {
+            // 200 on purpose. A bug here must not make Telegram disable the webhook
+            // for every future message; the log is where this gets found.
+            $this->logger?->error('Telegram webhook: storing failed',
+                ['connection' => $cid, 'err' => $e->getMessage()]);
+            \Flight::json(['accepted' => true, 'stored' => false, 'reason' => 'error'], 200);
+        }
+    }
+
+    /**
+     * The thread for one Telegram chat, created the first time that chat speaks.
+     *
+     * Keyed on (connection, chat id) so a group keeps one conversation however many
+     * people are in it — which is what makes it read like a channel rather than a
+     * pile of separate messages.
+     */
+    private function telegramThread($conn, array $msg) {
+        $thread = Bean::findOne('thread', 'connection_ref = ? AND external_ref = ?',
+            [(int) $conn->id, $msg['chat_id']]);
+        if ($thread && $thread->id) return $thread;
+
+        $now = date('Y-m-d H:i:s');
+        $thread = Bean::dispense('thread');
+        $thread->kind          = 'external';
+        $thread->connectionRef = (int) $conn->id;
+        $thread->externalRef   = $msg['chat_id'];
+        $thread->subject       = $msg['chat_type'] === 'private'
+                               ? $msg['chat_title']
+                               : '#' . $msg['chat_title'];
+        // The person who connected the bot owns the conversation, and is who gets
+        // woken. wakeParticipants() falls back to the owner when there are no
+        // participant rows, which is exactly this case.
+        $thread->ownerMemberId = (int) $conn->memberId;
+        $thread->status        = 'open';
+        $thread->messageCount  = 0;
+        $thread->createdAt     = $now;
+        $thread->updatedAt     = $now;
+        Bean::store($thread);
+
+        return $thread;
+    }
 }

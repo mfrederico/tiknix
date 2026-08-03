@@ -541,6 +541,82 @@ class NotifyService {
         // message, and a wake would make it re-fetch its own post.
         $thread->wakeParticipants($id, $senderMemberId);
 
+        // If this conversation came from a connected platform, answer back to it.
+        // Unchecked for the same reason as the wake: the reply is already stored,
+        // and Model_Thread::relayExternal logs its own failures.
+        $thread->relayExternal($html);
+
+        return $id;
+    }
+
+    /**
+     * Record a message written by someone with no account — a Telegram or Slack
+     * handle (models/Model_Externalidentity.php).
+     *
+     * Mirrors postInApp(), with two differences that matter. sender_member_id
+     * stays NULL and external_identity_ref carries the author instead: exactly one
+     * of the two is ever set, so "who wrote this" has a single answer. And
+     * provider_id holds the platform's own message id, which is what makes a
+     * redelivered webhook a no-op rather than a second copy — the partial unique
+     * index in database/migrate-external-identity.php enforces it.
+     *
+     * @return int|null message id, or null if this message is already stored
+     */
+    public static function postExternal(
+        int $threadId, \RedBeanPHP\OODBBean $identity, string $html,
+        string $transport, string $providerId = ''
+    ): ?int {
+        $thread = Bean::load('thread', $threadId);
+        if (!$thread->id) return null;
+
+        // Cheap check first; the unique index below is what actually guarantees it
+        // under two retries arriving at once.
+        if ($providerId !== '') {
+            $seen = Bean::findOne('message', 'transport = ? AND provider_id = ?', [$transport, $providerId]);
+            if ($seen && $seen->id) return null;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $n = Bean::dispense('message');
+        $n->threadId            = $threadId;
+        $n->senderMemberId      = null;
+        $n->externalIdentityRef = (int) $identity->id;
+        $n->transport           = $transport;
+        $n->direction           = 'in';
+        $n->notifyType          = 'message';
+        $n->fromEmail           = '';
+        $n->fromName            = $identity->box()->displayName('Someone');
+        $n->toEmail             = '';
+        $n->subject             = (string) ($thread->subject ?: '');
+        $n->content             = $html;
+        $n->bodyPlain           = self::htmlToPlain($html);
+        $n->providerId          = $providerId;
+        $n->status              = 'received';
+        $n->ip                  = $_SERVER['REMOTE_ADDR'] ?? '';
+        $n->createdAt           = $now;
+        $n->sentAt              = $now;
+
+        try {
+            $id = (int) Bean::store($n);
+        } catch (\Throwable $e) {
+            // idx_message_provider. The other delivery won the race and stored it,
+            // which is the right outcome — this one just stops.
+            return null;
+        }
+        if (!$id) return null;
+
+        $thread->messageCount  = (int) $thread->messageCount + 1;
+        $thread->lastDirection = 'in';
+        $thread->lastPreview   = self::previewFromHtml($html);
+        $thread->lastMessageAt = $now;
+        $thread->updatedAt     = $now;
+        Bean::store($thread);
+
+        $identity->box()->touch();
+
+        // No sender to exclude: whoever wrote this has no account to be reading in.
+        $thread->wakeParticipants($id);
+
         return $id;
     }
 

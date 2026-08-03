@@ -132,6 +132,7 @@ class MondayConnector extends AbstractConnector {
                     id
                     name
                     description
+                    type
                     items_count
                     workspace { id name }
                 }
@@ -139,6 +140,13 @@ class MondayConnector extends AbstractConnector {
 
         $out = [];
         foreach (($data['boards'] ?? []) as $b) {
+            // Skip subitem boards. monday exposes the subitems of every board as a
+            // board in its own right ("Subitems of Click Simple"), which on a real
+            // account is half the list and none of it is somewhere you would import
+            // work FROM. Filtered on type rather than the name, because the name is
+            // just a default a person can change.
+            if ((string) ($b['type'] ?? 'board') === 'sub_items_board') continue;
+
             $out[] = [
                 'id'          => (string) ($b['id'] ?? ''),
                 'name'        => (string) ($b['name'] ?? 'Untitled board'),
@@ -160,9 +168,14 @@ class MondayConnector extends AbstractConnector {
      * @return array{items: array, cursor: string}
      */
     public function items(string $token, string $boardId, int $limit = 50, string $cursor = ''): array {
+        // columns {} comes back alongside the items so values can be shown under the
+        // titles a person recognises. Without it every field is an opaque generated
+        // id — a real board returns color_mm50ntd4 = "Done", which tells a reader
+        // nothing and tells a planner less.
         $q = '
             query ($board: [ID!], $limit: Int!, $cursor: String) {
                 boards (ids: $board) {
+                    columns { id title type }
                     items_page (limit: $limit, cursor: $cursor) {
                         cursor
                         items {
@@ -184,17 +197,28 @@ class MondayConnector extends AbstractConnector {
             'cursor' => $cursor !== '' ? $cursor : null,
         ]);
 
-        $page  = $data['boards'][0]['items_page'] ?? [];
+        $board = $data['boards'][0] ?? [];
+        $page  = $board['items_page'] ?? [];
         $items = [];
 
+        // column id -> human title, e.g. color_mm50ntd4 -> "Status".
+        $titles = [];
+        foreach (($board['columns'] ?? []) as $c) {
+            $titles[(string) ($c['id'] ?? '')] = trim((string) ($c['title'] ?? ''));
+        }
+
         foreach (($page['items'] ?? []) as $it) {
-            // Long-text and status columns carry the actual description of the work;
-            // the item name is usually a one-liner. Flattened to text because that is
-            // what a person reads and what a decomposition step would be given.
+            // Keyed by TITLE, falling back to the id when a column has no title.
+            // On a real board these are status, priority, dates and people rather
+            // than prose — there is often no description column at all, so the item
+            // name plus its group is the substance and these are the context.
             $fields = [];
             foreach (($it['column_values'] ?? []) as $cv) {
                 $text = trim((string) ($cv['text'] ?? ''));
-                if ($text !== '') $fields[(string) $cv['id']] = $text;
+                if ($text === '') continue;
+                $id  = (string) $cv['id'];
+                $key = ($titles[$id] ?? '') !== '' ? $titles[$id] : $id;
+                $fields[$key] = $text;
             }
 
             $items[] = [
@@ -220,7 +244,7 @@ class MondayConnector extends AbstractConnector {
                     name
                     state
                     url
-                    board { id name }
+                    board { id name columns { id title type } }
                     group { id title }
                     column_values { id text type }
                     updates (limit: 20) { id body created_at creator { name } }
@@ -230,10 +254,19 @@ class MondayConnector extends AbstractConnector {
         $it = $data['items'][0] ?? null;
         if (!$it) return null;
 
+        // Same title mapping as items() — see the note there.
+        $titles = [];
+        foreach (($it['board']['columns'] ?? []) as $c) {
+            $titles[(string) ($c['id'] ?? '')] = trim((string) ($c['title'] ?? ''));
+        }
+
         $fields = [];
         foreach (($it['column_values'] ?? []) as $cv) {
             $text = trim((string) ($cv['text'] ?? ''));
-            if ($text !== '') $fields[(string) $cv['id']] = $text;
+            if ($text === '') continue;
+            $id  = (string) $cv['id'];
+            $key = ($titles[$id] ?? '') !== '' ? $titles[$id] : $id;
+            $fields[$key] = $text;
         }
 
         $updates = [];

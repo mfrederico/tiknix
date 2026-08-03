@@ -4,6 +4,12 @@
  *
  * Uses session-based storage for rate limiting.
  * Prevents brute force attacks on login, forgot password, etc.
+ *
+ * check() is for things a BROWSER does — login, forgot-password — where a session
+ * exists and is the natural bucket. It is useless against a webhook: an inbound
+ * POST from Telegram or Slack carries no cookie, so every request starts a fresh
+ * session, the counter is always 1, and the limit never fires. shared() below is
+ * the sessionless form for exactly that case.
  */
 
 namespace app;
@@ -11,6 +17,62 @@ namespace app;
 class RateLimiter
 {
     private const SESSION_KEY = '_rate_limits';
+
+    /** APCu key prefix for the sessionless limiter. */
+    private const SHARED_PREFIX = 'ratelimit:';
+
+    /**
+     * Rate limit something with no session behind it — a webhook, a public API.
+     *
+     * Backed by APCu, so the count is shared across the PHP-FPM workers that
+     * actually handle concurrent webhook deliveries. It is per-host and lost on a
+     * restart, which is the right trade for abuse control: forgetting resets
+     * somebody to zero attempts, it never locks anyone out wrongly.
+     *
+     * Fails OPEN when APCu is unavailable (CLI, or an install without it) and says
+     * so once. A rate limiter that silently becomes a brick wall would take
+     * delivery down for every connected channel, which is a worse outage than the
+     * abuse it was guarding against — but "we are not limiting anything right now"
+     * must never be a thing you have to infer.
+     *
+     * @param  string $bucket   what is being limited, e.g. "webhook:telegram:12"
+     * @return bool   true if allowed, false if over the limit
+     */
+    public static function shared(string $bucket, int $maxAttempts = 60, int $windowSeconds = 60): bool {
+        if (!function_exists('apcu_fetch') || !apcu_enabled()) {
+            static $warned = false;
+            if (!$warned) {
+                $warned = true;
+                \Flight::get('log')?->warning(
+                    'RateLimiter::shared has no APCu backend — inbound rate limiting is OFF');
+            }
+            return true;
+        }
+
+        // One key per bucket per window. The window is part of the key, so an
+        // expiring key IS the reset and there is no list of timestamps to prune.
+        $window = (int) floor(time() / max(1, $windowSeconds));
+        $key    = self::SHARED_PREFIX . $bucket . ':' . $window;
+
+        // apcu_inc with $success tells us whether the key already existed, which
+        // is how the TTL gets set exactly once. apcu_add would race two workers.
+        $count = apcu_inc($key, 1, $success);
+        if (!$success) {
+            apcu_store($key, 1, $windowSeconds + 1);
+            $count = 1;
+        }
+
+        return $count <= $maxAttempts;
+    }
+
+    /** How many are left in the current window, for a Retry-After or a log line. */
+    public static function sharedRemaining(string $bucket, int $maxAttempts = 60, int $windowSeconds = 60): int {
+        if (!function_exists('apcu_fetch') || !apcu_enabled()) return $maxAttempts;
+
+        $window = (int) floor(time() / max(1, $windowSeconds));
+        $count  = (int) apcu_fetch(self::SHARED_PREFIX . $bucket . ':' . $window);
+        return max(0, $maxAttempts - $count);
+    }
 
     /**
      * Check if action is rate limited

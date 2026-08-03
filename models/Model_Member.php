@@ -248,4 +248,26 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
     public function canSendEmail(): bool {
         return \app\Feature::allows(self::EMAIL_FLAG, (int) $this->bean->id, (int) $this->bean->level);
     }
+
+    /**
+     * FUSE hook: deleting an account releases any external handles linked to it.
+     *
+     * Members are HARD deleted (controls/Admin.php calls Bean::trash), and
+     * externalidentity.member_ref is a plain pointer rather than a foreign key —
+     * precisely so that deleting somebody does not fail on a constraint. The
+     * trade is that nothing in the schema stops the pointer going stale, so it is
+     * cleared here.
+     *
+     * Unlinked, not deleted. The handle is the record of how that person reached
+     * you on a platform, and their messages still refer to it; destroying it would
+     * quietly rewrite history that other people were part of.
+     */
+    public function delete() {
+        $id = (int) $this->bean->id;
+        if ($id <= 0 || !in_array('externalidentity', \app\Bean::inspect(), true)) return;
+
+        foreach (\app\Bean::find('externalidentity', 'member_ref = ?', [$id]) as $identity) {
+            $identity->box()->unlink();
+        }
+    }
 }

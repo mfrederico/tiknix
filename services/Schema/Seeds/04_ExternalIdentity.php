@@ -55,7 +55,11 @@ use \RedBeanPHP\R;
 // ---- externalidentity ghost ------------------------------------------------
 $identity = R::dispense('externalidentity');
 $identity->connection_ref    = 999999;              // connections.id — see note above
-$identity->external_user_id  = str_repeat('x', 128); // platform's own user id
+// external_eid, matching connections.external_eid and the connector contract in
+// services/connectors/ConnectorInterface.php: "what the far end calls this
+// thing". There it is a GitHub repo path or a Shopify domain; here it is the
+// platform's own user id. Same concept, so the same name.
+$identity->external_eid      = str_repeat('x', 128);
 $identity->external_handle   = str_repeat('x', 128); // @name on that platform
 $identity->display_name      = str_repeat('x', 200);
 $identity->avatar_url        = str_repeat('x', 500);

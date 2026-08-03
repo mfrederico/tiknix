@@ -50,11 +50,11 @@ class Model_Externalidentity extends \RedBeanPHP\SimpleModel {
      *                       themselves and the stale name is the one in your inbox.
      * @return \RedBeanPHP\OODBBean|null null when the connection is at its cap
      */
-    public static function resolve(int $connectionRef, string $externalUserId, array $profile = []): ?\RedBeanPHP\OODBBean {
-        $externalUserId = trim($externalUserId);
-        if ($connectionRef <= 0 || $externalUserId === '') return null;
+    public static function resolve(int $connectionRef, string $externalEid, array $profile = []): ?\RedBeanPHP\OODBBean {
+        $externalEid = trim($externalEid);
+        if ($connectionRef <= 0 || $externalEid === '') return null;
 
-        $found = self::find($connectionRef, $externalUserId);
+        $found = self::find($connectionRef, $externalEid);
         if ($found) {
             $found->box()->refresh($profile);
             return $found;
@@ -75,7 +75,7 @@ class Model_Externalidentity extends \RedBeanPHP\SimpleModel {
         $now = date('Y-m-d H:i:s');
         $row = \app\Bean::dispense('externalidentity');
         $row->connectionRef   = $connectionRef;
-        $row->externalUserId  = $externalUserId;
+        $row->externalEid     = $externalEid;
         $row->externalHandle  = (string) ($profile['external_handle'] ?? '');
         $row->displayName     = (string) ($profile['display_name'] ?? '');
         $row->avatarUrl       = (string) ($profile['avatar_url'] ?? '');
@@ -92,7 +92,7 @@ class Model_Externalidentity extends \RedBeanPHP\SimpleModel {
             // idx_extid_unique. Two webhook retries can arrive at once, both miss
             // above, and both insert; the database refuses the second. That is the
             // index doing its job, so re-read rather than fail the message.
-            $again = self::find($connectionRef, $externalUserId);
+            $again = self::find($connectionRef, $externalEid);
             if ($again) return $again;
             throw $e;
         }
@@ -100,9 +100,9 @@ class Model_Externalidentity extends \RedBeanPHP\SimpleModel {
         return $row;
     }
 
-    private static function find(int $connectionRef, string $externalUserId): ?\RedBeanPHP\OODBBean {
+    private static function find(int $connectionRef, string $externalEid): ?\RedBeanPHP\OODBBean {
         $row = \app\Bean::findOne('externalidentity',
-            'connection_ref = ? AND external_user_id = ?', [$connectionRef, $externalUserId]);
+            'connection_ref = ? AND external_eid = ?', [$connectionRef, $externalEid]);
         return ($row && $row->id) ? $row : null;
     }
 

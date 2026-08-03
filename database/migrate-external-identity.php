@@ -34,9 +34,17 @@ echo "===========================\n\n";
 
 $indexes = [
     // One handle per connection. The pair is the identity.
+    //
+    // Does NOT protect a row whose external_eid is NULL: SQLite (and the SQL
+    // standard) treat NULLs as distinct, so any number of them can coexist. That
+    // is not theoretical — writing a misspelled property makes RedBean's fluid
+    // mode add a NEW column and leave this one null, and the index then has
+    // nothing to compare. Model_Externalidentity::resolve() refusing an empty eid
+    // is what actually guarantees the value is there; this index guarantees it is
+    // unique once it is.
     'idx_extid_unique' =>
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_extid_unique
-           ON externalidentity(connection_ref, external_user_id)',
+           ON externalidentity(connection_ref, external_eid)',
 
     // "who is in this channel", and the purge query for idle handles.
     'idx_extid_connection' =>
@@ -89,7 +97,7 @@ echo $failed ? ", $failed FAILED\n" : "\n";
 
 if ($failed) {
     echo "\n  A failed UNIQUE index means existing rows already break it. Find them with:\n";
-    echo "    SELECT connection_ref, external_user_id, COUNT(*) FROM externalidentity\n";
+    echo "    SELECT connection_ref, external_eid, COUNT(*) FROM externalidentity\n";
     echo "     GROUP BY 1,2 HAVING COUNT(*) > 1;\n";
 }
 

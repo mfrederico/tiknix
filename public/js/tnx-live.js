@@ -24,7 +24,13 @@ window.TnxLive = (function () {
     'use strict';
 
     // MQTT 3.1.1 control packet types, high nibble of byte 0.
-    var CONNECT = 0x10, CONNACK = 0x20, PUBLISH = 0x30, SUBSCRIBE = 0x80,
+    //
+    // SUBSCRIBE is 0x82, not 0x80: its low nibble is RESERVED and the spec fixes
+    // it at 0010 (§3.8.1). A broker is required to treat 0x80 as a protocol
+    // violation and close the connection — which it does, silently, right after
+    // a successful CONNACK, so it looks like the credential was rejected when it
+    // was actually accepted.
+    var CONNECT = 0x10, CONNACK = 0x20, PUBLISH = 0x30, SUBSCRIBE = 0x82,
         SUBACK  = 0x90, PINGREQ = 0xC0, PINGRESP = 0xD0, DISCONNECT = 0xE0;
 
     var KEEPALIVE  = 60;      // seconds; ping at half this

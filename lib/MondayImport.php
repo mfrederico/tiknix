@@ -56,56 +56,32 @@ class MondayImport {
      * rather than as a call that fails later with a stranger error.
      */
     public static function connection(?int $instanceId = null): ?\RedBeanPHP\OODBBean {
-        $where = "connector_type = 'monday' AND enabled = 1 AND (revoked_at IS NULL OR revoked_at = 0)";
-
-        // When an instance is named, BOTH lookups must be scoped to it — including
-        // the local one. Core's own connections table holds every instance's rows,
-        // so an unscoped "local first" running on core returns whichever monday row
-        // sorts first and imports one customer's board using another customer's
-        // token. Getting this wrong is silent: both calls succeed, against the
-        // wrong account.
+        // The scoping rule lives in ConnectionStore, not here. This method's only
+        // job is deciding WHERE to look — own database first, then the platform's.
         if ($instanceId !== null && $instanceId > 0) {
-            $local = Bean::findOne('connections', $where . ' AND instance_id = ?', [$instanceId]);
-            if ($local && $local->id) return $local;
+            $local = ConnectionStore::forInstance($instanceId, 'monday');
+            if ($local) return $local;
 
-            // The bean carries its values with it, so reading accessToken after the
+            // The bean carries its values with it, so reading the token after the
             // connection has been switched back is fine.
-            return CoreDb::with(function () use ($where, $instanceId) {
-                $c = Bean::findOne('connections', $where . ' AND instance_id = ?', [$instanceId]);
-                return ($c && $c->id) ? $c : null;
-            }, null);
+            return CoreDb::with(
+                fn() => ConnectionStore::forInstance($instanceId, 'monday'),
+                null
+            );
         }
 
         // No instance context: a standalone or self-hosted install asking about its
         // own connection. A missing connections table returns null rather than
         // raising — fluid mode treats it as no rows.
-        $own = Bean::findOne('connections', $where . ' AND (instance_id IS NULL OR instance_id = 0)');
+        $own = Bean::findOne('connections',
+            "connector_type = 'monday' AND enabled = 1 AND (revoked_at IS NULL OR revoked_at = 0) "
+          . 'AND (instance_id IS NULL OR instance_id = 0)');
         return ($own && $own->id) ? $own : null;
     }
 
-    /**
-     * The usable bot token for a connection.
-     *
-     * access_token is stored ENCRYPTED (lib/ConnectionStore.php encrypts on write),
-     * so handing the column straight to monday gets "Not authenticated" — which
-     * reads like a revoked token rather than like a decrypt that never happened.
-     * Same treatment as GitHubPublisher and Storebroker.
-     */
+    /** Decryption lives in ConnectionStore — every consumer needs the same answer. */
     private static function token(\RedBeanPHP\OODBBean $conn): string {
-        $raw = (string) ($conn->accessToken ?? '');
-        if ($raw === '') return '';
-
-        try {
-            $plain = EncryptionService::decrypt($raw);
-        } catch (\Throwable $e) {
-            \Flight::get('log')?->error('MondayImport: could not decrypt the monday token', [
-                'connection' => (int) $conn->id, 'err' => $e->getMessage(),
-            ]);
-            return '';
-        }
-
-        // A connection stored before encryption existed would come back unchanged.
-        return $plain !== '' ? $plain : $raw;
+        return ConnectionStore::token($conn);
     }
 
     private static function connector(): \app\services\connectors\MondayConnector {

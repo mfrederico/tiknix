@@ -32,9 +32,29 @@ class CoreDb {
 
     public static function lastError(): string { return self::$lastError; }
 
-    /** Absolute path to core's registry db. This class only ever lives in core's lib. */
+    /**
+     * Absolute path to the registry db — THIS install's own database.
+     *
+     * This used to hardcode 'database/tiknix.db' on the reasoning that the class
+     * only lives in core's lib. That is not true of the file: an instance is a git
+     * clone of core, so this ships to every one of them, where the database is
+     * named after the instance (database/collectiq-302eb3.db). The path did not
+     * exist, every lookup returned the error value, and PUBLIC_USER_ID resolved to
+     * 0 — which fails closed, but logged an ERROR on every single request and left
+     * the guest identity unresolved.
+     *
+     * Read from config instead, which is the same answer on core and correct
+     * everywhere else. An instance IS its own registry: its members live in its own
+     * database, and there is no second one to reach for.
+     */
     public static function path(): string {
-        return dirname(__DIR__) . '/database/tiknix.db';
+        $configured = trim((string) \Flight::get('database.path'));
+        $root       = dirname(__DIR__);
+
+        if ($configured === '') return $root . '/database/tiknix.db';
+
+        // Absolute stays absolute; relative is relative to the install root.
+        return $configured[0] === '/' ? $configured : $root . '/' . ltrim($configured, '/');
     }
 
     /**

@@ -9,8 +9,27 @@
  *
  * Exposes window.notifyBellRefresh() so the thread view can nudge it the instant
  * a new message lands, without waiting for the 30s interval.
+ *
+ * Also the one place live delivery is started, because it is the one component
+ * already on every page for a signed-in member. When the broker is reachable a
+ * wake arrives in milliseconds and drives the poll, which drops the interval to
+ * a safety net; when it is not, the interval alone is unchanged and still the
+ * guarantee. Nothing below depends on MQTT being configured.
+ *
+ * The credential is derived, not stored (app\Mqtt::passwordFor), and grants read
+ * on tnx/<this member>/# and nothing else — so it is no more sensitive than the
+ * session cookie already sitting in the same document.
  */
+// member_id() rather than a bare $__mid ?? 0: this partial is only ever reached
+// inside header.php's signed-in branch, so a missing id is a broken include and
+// not a guest. Falling back to 0 would quietly turn live delivery off and leave
+// nothing to find later.
+$__mqtt = \app\Mqtt::browserCredentials(member_id($member, 'notify bell'));
 ?>
+<?php if ($__mqtt): ?>
+<script src="/js/tnx-live.js"></script>
+<script>window.__tnxLiveCfg = <?= json_encode($__mqtt, JSON_UNESCAPED_SLASHES) ?>;</script>
+<?php endif; ?>
 <li class="nav-item dropdown" id="notify-bell">
     <a class="nav-link position-relative" href="#" role="button"
        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-label="Messages">
@@ -195,7 +214,33 @@
         Notification.requestPermission();
     });
 
-    setInterval(poll, POLL_MS);
+    // ---- live delivery -------------------------------------------------------
+    // MQTT decides WHEN to fetch; it never carries what was said. A wake is ids
+    // only, so everything below still goes through poll() and the server's own
+    // authorisation — the broker cannot be used to show somebody a message they
+    // would not otherwise be handed.
+    var live = false;
+    if (window.TnxLive && window.__tnxLiveCfg) {
+        live = TnxLive.start(window.__tnxLiveCfg);
+        TnxLive.onWake(function (data) {
+            poll();
+            // Let the open thread view react to its own messages without giving
+            // this component any knowledge of what a thread view is.
+            document.dispatchEvent(new CustomEvent('tnx:wake', { detail: data || {} }));
+        });
+    }
+
+    var ticks = 0;
+    setInterval(function () {
+        ticks++;
+        // Connected, so a wake already covers anything that arrives. Keep a slow
+        // beat anyway — a dropped wake would otherwise be invisible until the
+        // next page load, and "usually instant, occasionally never" is worse than
+        // consistently slow.
+        if (live && TnxLive.isConnected() && (ticks % 4) !== 0) return;
+        poll();
+    }, POLL_MS);
+
     window.addEventListener('focus', poll);
     window.notifyBellRefresh = poll;   // let the thread poller trigger us instantly
     poll();                            // initial fill

@@ -537,6 +537,21 @@ class NotifyService {
         // about them.
         Mentions::record($threadId, $id, $senderMemberId, $html);
 
+        // Ring the doorbell. Same reasoning as mentions above: here, so every posting
+        // path gets it. IDs only — the browser fetches the message through /poll, under
+        // the same authorisation as a page load, so nothing here has to decide what a
+        // given recipient is allowed to see.
+        //
+        // Not the sender: their own browser rendered the message optimistically the
+        // moment they hit send, and a wake would make it re-fetch its own post.
+        //
+        // Deliberately unchecked. A broker that is down must not fail a message that is
+        // already stored — Mqtt logs the reason once and the 60s poll still delivers.
+        \app\Mqtt::wakeAll(
+            array_diff($thread->participantIds(), [$senderMemberId]),
+            ['t' => 'message', 'thread' => $threadId, 'msg' => $id]
+        );
+
         return $id;
     }
 

@@ -464,7 +464,24 @@ if (!empty($thread->ownerMemberId)) {
         } catch (e) { /* transient — next tick retries */ }
     }
 
-    setInterval(tick, POLL_MS);
+    // A wake naming THIS thread fetches immediately. The bell component owns the
+    // MQTT connection (it is on every page); this only listens for the event it
+    // republishes, so an open thread needs no second socket.
+    document.addEventListener('tnx:wake', function (e) {
+        var d = e.detail || {};
+        if (!d.thread || Number(d.thread) === threadId) tick();
+    });
+
+    var ticks = 0;
+    setInterval(function () {
+        ticks++;
+        // Live: the wake above is the trigger, so this drops to a safety net for
+        // a notice that never arrived. Not live: this IS delivery, unchanged.
+        var live = window.TnxLive && TnxLive.isConnected();
+        if (live && (ticks % 6) !== 0) return;
+        tick();
+    }, POLL_MS);
+
     document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
 })();
 </script>

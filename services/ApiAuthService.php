@@ -37,6 +37,13 @@ class ApiAuthService {
             return ['success' => false, 'member_id' => null, 'error' => 'API token owner not found'];
         }
 
+        // is_active above is the KEY's own revocation flag. It says nothing about whether
+        // the person still has an account, so without this a suspended member kept every
+        // API token they had ever issued.
+        if (!$member->canAuthenticate()) {
+            return ['success' => false, 'member_id' => null, 'error' => 'API token owner is not active'];
+        }
+
         $scopes = json_decode(((string)$key->scopes) ?? '', true) ?: [];
         if ($bean !== '' && $scopes && !self::allows($scopes, $bean, $action)) {
             return ['success' => false, 'member_id' => null, 'error' => "API token lacks scope {$bean}.{$action}"];

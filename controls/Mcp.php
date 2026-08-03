@@ -1738,6 +1738,15 @@ class Mcp extends BaseControls\Control {
             return false;
         }
 
+        // Before the password, not after: a suspended account must be refused whether
+        // or not the credential is correct. This path had no status check at all, so
+        // suspending somebody left their MCP access untouched.
+        if (!$member->canAuthenticate()) {
+            $this->logger->warning('MCP auth failed: account not active',
+                ['username' => $username, 'status' => (string) $member->status]);
+            return false;
+        }
+
         // Verify password
         if (!password_verify($password, $member->password)) {
             $this->logger->warning('MCP auth failed: invalid password', ['username' => $username]);
@@ -1775,6 +1784,12 @@ class Mcp extends BaseControls\Control {
             return false;
         }
 
+        if (!$member->canAuthenticate()) {
+            $this->logger->warning('MCP auth failed: account not active',
+                ['member_id' => (int) $member->id, 'status' => (string) $member->status]);
+            return false;
+        }
+
         $this->authMember = $member;
         $this->logger->debug('MCP authenticated via Bearer token (legacy)', ['member_id' => $member->id]);
         return true;
@@ -1801,6 +1816,12 @@ class Mcp extends BaseControls\Control {
 
         if (!$member) {
             $this->logger->warning('MCP auth failed: invalid X-MCP-Token');
+            return false;
+        }
+
+        if (!$member->canAuthenticate()) {
+            $this->logger->warning('MCP auth failed: account not active',
+                ['member_id' => (int) $member->id, 'status' => (string) $member->status]);
             return false;
         }
 
@@ -1842,6 +1863,16 @@ class Mcp extends BaseControls\Control {
         $member = Bean::load('member', $key->memberId);
         if (!$member->id) {
             $this->logger->warning('MCP auth failed: API key member not found', ['key_id' => $key->id]);
+            return false;
+        }
+
+        // is_active on the KEY is not enough: it says the key was not revoked, not that
+        // its owner is still allowed in. Suspending somebody left every key they had
+        // working.
+        if (!$member->canAuthenticate()) {
+            $this->logger->warning('MCP auth failed: API key owner not active',
+                ['key_id' => (int) $key->id, 'member_id' => (int) $member->id,
+                 'status' => (string) $member->status]);
             return false;
         }
 

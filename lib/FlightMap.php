@@ -214,10 +214,23 @@ Flight::map('getMember', function() {
     // Refresh member data from database
     $member = Bean::load('member', $_SESSION['member']['id']);
     if ($member->id) {
+        // Suspension has to end the session that is already open, not just refuse the
+        // next login. The row is re-read here on EVERY request, so this is the one
+        // place where revoking an account takes effect immediately everywhere — which
+        // is exactly why it has to be checked here and not only in Auth.
+        if (!$member->canHoldSession()) {
+            Flight::get('log')?->warning('Session dropped: account is not active', [
+                'member_id' => (int) $member->id,
+                'status'    => (string) $member->status,
+            ]);
+            unset($_SESSION['member']);
+            return Flight::getMember();   // guest
+        }
+
         $_SESSION['member'] = $member->export();
         return $member;
     }
-    
+
     // Invalid session
     unset($_SESSION['member']);
     return Flight::getMember(); // Return guest

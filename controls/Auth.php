@@ -498,9 +498,9 @@ class Auth extends BaseControls\Control {
             return;
         }
         
-        $member = Bean::findOne('member', 'reset_token = ? AND reset_expires > ?', 
-            [$token, date('Y-m-d H:i:s')]);
-        
+        $member = Bean::findOne('member', 'reset_token = ? AND reset_expires > ? AND status = ?',
+            [$token, date('Y-m-d H:i:s'), 'active']);
+
         if (!$member) {
             $this->flash('error', 'Invalid or expired reset link');
             Flight::redirect('/auth/login');
@@ -547,8 +547,8 @@ class Auth extends BaseControls\Control {
             }
             
             // Find member
-            $member = Bean::findOne('member', 'reset_token = ? AND reset_expires > ?', 
-                [$token, date('Y-m-d H:i:s')]);
+            $member = Bean::findOne('member', 'reset_token = ? AND reset_expires > ? AND status = ?',
+                [$token, date('Y-m-d H:i:s'), 'active']);
             
             if (!$member) {
                 $this->flash('error', 'Invalid or expired reset link');

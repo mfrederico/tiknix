@@ -194,12 +194,34 @@ class GoogleAuth {
      * @param array $googleUser Google user info
      * @return object RedBean member bean
      */
+    /**
+     * Signing in with Google must not be a way around a suspension.
+     *
+     * Applied to BOTH lookups below. The google_id one matters most: somebody who has
+     * signed in this way before is found there and returned early, so a check only on
+     * the email path would miss exactly the people most likely to have an account.
+     *
+     * Throws rather than returns null — findOrCreateMember() is declared to return an
+     * object, and authenticate() already turns a RuntimeException into a clean
+     * ['success' => false] for the caller to render.
+     */
+    private static function refuseUnlessActive(?object $member): void {
+        if (!$member || $member->canAuthenticate()) return;
+
+        Flight::get('log')->warning('Google sign-in refused: account not active', [
+            'member_id' => (int) $member->id,
+            'status'    => (string) $member->status,
+        ]);
+        throw new \RuntimeException('This account is not active');
+    }
+
     public static function findOrCreateMember(array $googleUser): object {
         $googleId = $googleUser['id'];
         $email = $googleUser['email'];
 
         // Try to find by Google ID first
         $member = Bean::findOne('member', 'google_id = ?', [$googleId]);
+        self::refuseUnlessActive($member);
 
         if ($member) {
             // Update last login
@@ -217,6 +239,7 @@ class GoogleAuth {
 
         // Try to find by email (link existing account)
         $member = Bean::findOne('member', 'email = ?', [$email]);
+        self::refuseUnlessActive($member);
 
         if ($member) {
             // Link Google ID to existing account

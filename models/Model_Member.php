@@ -92,6 +92,38 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
         return (int) $this->bean->level <= LEVELS['ADMIN'];
     }
 
+    // ---- may this account be used at all? ---------------------------------------------
+    //
+    // Suspension used to mean "cannot log in again", which is not what anybody means by
+    // it. Only controls/Auth.php filtered on status, so a suspended member kept their
+    // existing session, their API keys, their MCP access and their Google sign-in. The
+    // two answers below are the whole rule, and they are deliberately ALLOWLISTS: a
+    // status nobody has thought of yet — 'deleted', 'banned', 'external' — is refused
+    // rather than quietly permitted.
+
+    /**
+     * May credentials resolve to this account?
+     *
+     * 'active' and nothing else. In particular NOT 'system': the public-user-entity is
+     * an identity we assign, never one anybody signs in as, and it holds no password.
+     */
+    public function canAuthenticate(): bool {
+        return (string) $this->bean->status === 'active';
+    }
+
+    /**
+     * May this account be the identity of a request?
+     *
+     * Wider than canAuthenticate() by exactly one case. CLI scripts put the
+     * public-user-entity ('system') into the session on purpose — see
+     * lib/CliHandler.php — so requiring 'active' here would log every script out of
+     * itself. It is level 101, the least privilege there is, so admitting it grants
+     * nothing.
+     */
+    public function canHoldSession(): bool {
+        return $this->canAuthenticate() || (string) $this->bean->status === 'system';
+    }
+
     /** Teams this member belongs to. */
     public function teamIds(): array {
         $id = (int) $this->bean->id;

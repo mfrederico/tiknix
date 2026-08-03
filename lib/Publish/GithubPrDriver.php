@@ -156,11 +156,8 @@ class GithubPrDriver implements PublishDriver {
      * is the correct one to use no matter which team member set it up.
      */
     private static function connection(object $inst) {
-        $conn = Bean::findOne('connections',
-            'instance_id = ? AND connector_type = ? AND enabled = 1',
-            [(int) $inst->id, 'github']);
-        if (!$conn || !$conn->id) return null;
-        if (!empty($conn->revokedAt)) return null;
-        return $conn;
+        // ConnectionStore owns the scoping rule, and excludes revoked rows — which
+        // is what the two guards below were doing by hand.
+        return \app\ConnectionStore::forInstance((int) $inst->id, 'github');
     }
 }

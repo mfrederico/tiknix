@@ -95,9 +95,23 @@ class MondayImport {
         return ($own && $own->id) ? $own : null;
     }
 
+    /**
+     * A token the caller already holds in the clear.
+     *
+     * The workbench sidecar gets one from core over the broker channel, because the
+     * decryption key stays in core. Passing it here rather than writing it onto the
+     * connection bean keeps ConnectionStore::token() honest: that function's job is
+     * to decrypt, and handing it something already decrypted would make it fail.
+     */
+    private static string $plainToken = '';
+
+    public static function setToken(string $token): void {
+        self::$plainToken = $token;
+    }
+
     /** Decryption lives in ConnectionStore — every consumer needs the same answer. */
     private static function token(\RedBeanPHP\OODBBean $conn): string {
-        return ConnectionStore::token($conn);
+        return self::$plainToken !== '' ? self::$plainToken : ConnectionStore::token($conn);
     }
 
     private static function connector(): \app\services\connectors\MondayConnector {

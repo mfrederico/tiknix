@@ -179,6 +179,66 @@ class Brokerinfo extends Control {
         return [$key, $iid, (int) ($key->memberId ?? 0)];
     }
 
+    /**
+     * POST /brokerinfo/connectiontoken — hand ONE decrypted credential to a sidecar.
+     *
+     * The key that decrypts connection tokens stays in core. A sidecar already
+     * reads core's database, so it can see every customer's ciphertext; giving it
+     * the key would let it decrypt all of them at once. This hands back exactly one
+     * token, for one connector, on one instance, to a caller that has proved it
+     * knows that sidecar's shared secret — so the blast radius of the channel is a
+     * single credential rather than the whole table.
+     *
+     * Request: { sidecar: "workbench", token: <signed> }
+     * The signed claims carry instance_id, connector and member_id, and are minted
+     * by the sidecar with its own [sidecar.<name>] sso_secret. Same trust model as
+     * controls/Storebroker.php.
+     *
+     * Ownership is resolved HERE, never taken from the claims: the member must be
+     * able to reach the instance, and the connection must belong to that instance.
+     * A signed request is proof of who is asking, not of what they may have.
+     */
+    public function connectiontoken($params = []): void {
+        $name   = preg_replace('/[^a-z0-9_]/', '', strtolower((string) $this->getParam('sidecar', '')));
+        $secret = $name !== '' ? (string) (Flight::get('sidecar.' . $name . '.sso_secret') ?? '') : '';
+        if ($secret === '') { Flight::jsonError('Unknown sidecar.', 403); return; }
+
+        $claims = \app\Sidecar\Token::verify((string) $this->getParam('token', ''), $secret, 'connection-token');
+        if (!$claims) { Flight::jsonError('Invalid request.', 403); return; }
+
+        $instanceId = (int) ($claims['instance_id'] ?? 0);
+        $connector  = preg_replace('/[^a-z0-9_]/', '', strtolower((string) ($claims['connector'] ?? '')));
+        $memberId   = (int) ($claims['member_id'] ?? 0);
+        if ($instanceId <= 0 || $connector === '' || $memberId <= 0) {
+            Flight::jsonError('Malformed request.', 400); return;
+        }
+
+        // Can this member actually reach this instance? Asked of the member row, so
+        // the same rule that governs the rest of the platform governs this.
+        $member = \app\Bean::load('member', $memberId);
+        if (!$member->id || !$member->canAuthenticate()
+            || !in_array($instanceId, $member->box()->accessibleInstanceIds(), true)) {
+            Flight::jsonError('No access to that project.', 403); return;
+        }
+
+        $conn = \app\ConnectionStore::forInstance($instanceId, $connector);
+        if (!$conn) { Flight::jsonError('No enabled ' . $connector . ' connection for that project.', 404); return; }
+
+        $token = \app\ConnectionStore::token($conn);
+        if ($token === '') { Flight::jsonError('That connection could not be read.', 409); return; }
+
+        $this->logger?->info('brokerinfo: handed a connection token to a sidecar', [
+            'sidecar' => $name, 'instance' => $instanceId, 'connector' => $connector, 'member' => $memberId,
+        ]);
+
+        Flight::json([
+            'connector'     => $connector,
+            'connection_id' => (int) $conn->id,
+            'external_name' => (string) ($conn->externalName ?? ''),
+            'token'         => $token,
+        ]);
+    }
+
     /** Decode the JSON request body (broker calls are server-to-server JSON). */
     private function jsonBody(): array {
         $raw = file_get_contents('php://input') ?: '';

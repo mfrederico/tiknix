@@ -755,6 +755,90 @@ class Connections extends Control {
      * (re)creates the hook via the GitHub API pointing at /webhook/github, and stores
      * the secret encrypted on the connection. Owner-scoped.
      */
+    /**
+     * POST /connections/telegramwebhook — point a bot at THIS install.
+     *
+     * The URL is app_url(), which is the install's own base — so core points
+     * Telegram at core, a hosted tenant points it at its own subdomain, and a
+     * self-hosted deployment points it at wherever that box lives. There is no
+     * branch on which of those is running, because there does not need to be: a
+     * Telegram bot is created by whoever owns it with @BotFather, so the token
+     * belongs to this install rather than to a control plane, and inbound,
+     * storage and outbound all happen here.
+     *
+     * Scoped by connection ownership rather than by instance: an install that has
+     * no instances at all still has connections and still needs this.
+     *
+     * The secret is minted here and never shown. Its only power is to prove a POST
+     * came from Telegram about this connection, so it is regenerated on every call
+     * — re-running this after a leak is the fix, and costs nothing.
+     */
+    public function telegramwebhook($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+
+        $conn = Bean::findOne('connections', "id = ? AND member_id = ? AND connector_type = 'telegram'",
+            [(int) $this->getParam('connection', 0), (int) $this->member->id]);
+        if (!$conn || !$conn->id) { Flight::jsonError('Telegram connection not found.', 404); return; }
+
+        $token = (string) ($conn->accessToken ?? '');
+        if ($token === '') { Flight::jsonError('This connection has no bot token.', 400); return; }
+
+        $connector = ConnectorRegistry::get('telegram');
+        $url       = app_url('/webhook/telegram/' . (int) $conn->id);
+
+        // https only. Telegram refuses a plain-http webhook anyway, but failing here
+        // says why, rather than surfacing as its less obvious complaint.
+        if (stripos($url, 'https://') !== 0) {
+            Flight::jsonError('Telegram only delivers to https. This install\'s [app] baseurl is "'
+                            . $url . '".', 400);
+            return;
+        }
+
+        $secret = bin2hex(random_bytes(24));
+
+        try {
+            $connector->setWebhook($token, $url, $secret);
+        } catch (\Throwable $e) {
+            Flight::jsonError($e->getMessage(), 400);
+            return;
+        }
+
+        // Stored only after Telegram accepted it. Storing first would leave the
+        // database claiming a secret that the bot is not actually sending.
+        $conn->webhookSecret = $secret;
+        $conn->updatedAt     = date('Y-m-d H:i:s');
+        Bean::store($conn);
+
+        Flight::jsonSuccess(['url' => $url], 'Telegram will deliver messages here.');
+    }
+
+    /** POST /connections/telegramwebhookremove — stop delivery to this install. */
+    public function telegramwebhookremove($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+
+        $conn = Bean::findOne('connections', "id = ? AND member_id = ? AND connector_type = 'telegram'",
+            [(int) $this->getParam('connection', 0), (int) $this->member->id]);
+        if (!$conn || !$conn->id) { Flight::jsonError('Telegram connection not found.', 404); return; }
+
+        try {
+            ConnectorRegistry::get('telegram')->deleteWebhook((string) ($conn->accessToken ?? ''));
+        } catch (\Throwable $e) {
+            // Clear the secret regardless. If Telegram is unreachable the operator
+            // still wants this install to stop trusting deliveries for this bot, and
+            // an empty secret makes the webhook refuse everything.
+            Flight::get('log')?->warning('deleteWebhook failed; clearing the secret anyway',
+                ['connection' => (int) $conn->id, 'err' => $e->getMessage()]);
+        }
+
+        $conn->webhookSecret = '';
+        $conn->updatedAt     = date('Y-m-d H:i:s');
+        Bean::store($conn);
+
+        Flight::jsonSuccess([], 'Telegram will no longer deliver here.');
+    }
+
     public function githubwebhook($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;

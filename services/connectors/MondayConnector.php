@@ -257,6 +257,100 @@ class MondayConnector extends AbstractConnector {
         ];
     }
 
+    // ---- writing back ----------------------------------------------------------------
+
+    /**
+     * Post an update (what monday calls a comment) on one item.
+     *
+     * This is the non-destructive half of posting back: it lands in the item's
+     * activity feed, needs nothing configured on the board, and cannot be confused
+     * with the board's own data.
+     *
+     * @return string the new update's id
+     */
+    public function createUpdate(string $token, string $itemId, string $body): string {
+        $data = $this->query($token, '
+            mutation ($item: ID!, $body: String!) {
+                create_update (item_id: $item, body: $body) { id }
+            }', ['item' => $itemId, 'body' => $body]);
+
+        return (string) ($data['create_update']['id'] ?? '');
+    }
+
+    /**
+     * Create a subitem under an item.
+     *
+     * monday creates the board's subitems column the first time one is added, so
+     * this works on a board that has never used them — but it DOES change the
+     * board's structure, which is why it is worth knowing it is happening. The
+     * update above is the safe half; this is the one that writes.
+     *
+     * @return string the new subitem's id
+     */
+    public function createSubitem(string $token, string $parentItemId, string $name): string {
+        $data = $this->query($token, '
+            mutation ($parent: ID!, $name: String!) {
+                create_subitem (parent_item_id: $parent, item_name: $name) { id }
+            }', ['parent' => $parentItemId, 'name' => $name]);
+
+        return (string) ($data['create_subitem']['id'] ?? '');
+    }
+
+    /**
+     * Post a completed decomposition back to the item it came from.
+     *
+     * Subitems for structure, then one update summarising — the "both" shape. The
+     * update is posted LAST and reports how many subitems actually landed, so a
+     * partial failure is visible in monday rather than only in our logs.
+     *
+     * A subitem that fails does not abort the rest: the point of this call is to
+     * get as much of the finished work onto the board as possible, and a summary
+     * that says "7 of 9" is more use than nothing.
+     *
+     * @param  array $tasks  ['title' => string, 'completed_at' => string]
+     * @return array{subitems: int, failed: int, update_id: string}
+     */
+    public function postCompletion(string $token, string $itemId, array $tasks, string $summary = ''): array {
+        $made = 0; $failed = 0; $errors = [];
+
+        foreach ($tasks as $t) {
+            $title = trim((string) ($t['title'] ?? ''));
+            if ($title === '') continue;
+            try {
+                if ($this->createSubitem($token, $itemId, $title) !== '') $made++;
+                else { $failed++; $errors[] = $title . ': no id returned'; }
+            } catch (\Throwable $e) {
+                $failed++;
+                $errors[] = $title . ': ' . $e->getMessage();
+            }
+        }
+
+        $lines = [];
+        $lines[] = $summary !== '' ? $summary : 'Completed in tiknix.';
+        $lines[] = '';
+        foreach ($tasks as $t) {
+            $when = trim((string) ($t['completed_at'] ?? ''));
+            $lines[] = '✓ ' . (string) ($t['title'] ?? '') . ($when !== '' ? '  (' . $when . ')' : '');
+        }
+        if ($failed > 0) {
+            $lines[] = '';
+            $lines[] = $failed . ' subitem(s) could not be created: ' . implode('; ', array_slice($errors, 0, 3));
+        }
+
+        $updateId = '';
+        try {
+            $updateId = $this->createUpdate($token, $itemId, implode("\n", $lines));
+        } catch (\Throwable $e) {
+            // The subitems are already on the board; losing the summary should not
+            // present as "post-back failed" when most of it succeeded.
+            \Flight::get('log')?->error('monday: subitems posted but the summary update failed', [
+                'item' => $itemId, 'err' => $e->getMessage(),
+            ]);
+        }
+
+        return ['subitems' => $made, 'failed' => $failed, 'update_id' => $updateId];
+    }
+
     // ---- transport -------------------------------------------------------------------
 
     /**

@@ -55,7 +55,23 @@ class MondayImport {
      * Enabled and unrevoked only, so a revoked token presents as "not connected"
      * rather than as a call that fails later with a stranger error.
      */
+    /**
+     * A connection supplied by the caller, used in preference to looking one up.
+     *
+     * The workbench sidecar reaches core through Sidecar\Kernel::coreDb(), not
+     * through app\CoreDb — it has its own database and its own idea of where core
+     * is. Rather than teach this class both routes, a caller that already knows how
+     * to reach core hands the row over and this stops guessing.
+     */
+    private static ?\RedBeanPHP\OODBBean $injected = null;
+
+    public static function setConnection(?\RedBeanPHP\OODBBean $conn): void {
+        self::$injected = $conn;
+    }
+
     public static function connection(?int $instanceId = null): ?\RedBeanPHP\OODBBean {
+        if (self::$injected && self::$injected->id) return self::$injected;
+
         // The scoping rule lives in ConnectionStore, not here. This method's only
         // job is deciding WHERE to look — own database first, then the platform's.
         if ($instanceId !== null && $instanceId > 0) {

@@ -1,112 +1,118 @@
-# Connections move to the instance
+# Connections live with the instance
 
-**Status: designed, not built.** Decided 2026-08-04. Nothing below is implemented
-yet; the current code still stores every connection in core's `connections` table
-scoped by `instance_id`.
+**Built and in use** since 2026-08-04. Core owns core's connectors; every
+instance owns its own. Nothing is stored centrally on anyone's behalf.
 
-## The model, stated plainly
+Core is not special in this — it is the primary instance, on tiknix.com, and it
+asks for its own connectors exactly the way every other install does.
 
-**Core owns core's connectors. Every instance owns its own.** Core is an install
-like any other — it has connectors for its own use, and that is all it has. It
-does not hold connectors on behalf of anybody else.
+## Where things are
 
-That is a stronger claim than "move the storage", and it deletes a concept rather
-than relocating one: `connections.instance_id` stops meaning anything. Today a
-row says "this connection belongs to instance 82"; afterwards, the *file it is
-in* says that, and every install asks the same question — "what are my
-connections?" — with no id to pass and no id to get wrong.
+```
+<install root>/data/connections.db     the connections, encrypted
+<install root>/secure/connections.key  the key. 0600, in a 0700 directory
+```
 
-Which means `ConnectionStore::forInstance($instanceId, $type, ...)` becomes
-`ConnectionStore::for($type, ...)`. The instance-scoping work done this week —
-required argument, production-first ordering, the tenant-mixup it was written to
-prevent — all becomes unnecessary, because there is nothing to mix up. Keep the
-signature until the readers move, then drop the parameter.
+So `/var/www/html/default/tiknix/…` for core and
+`/var/www/html/default/<slug>.tiknix/…` for an instance. Both are gitignored —
+`data/` already was, and `secure/` is a **directory** rule on purpose: the
+earlier `conf/*.key` glob ignored a `.key` and would have let a `.pem`, `.json`
+or `.txt` straight through.
 
-## What changes
+The key is minted on first write and never leaves its install. Core cannot read
+an instance's connections without reading that instance's key file, which is
+what makes ejection real: a self-hosted copy works identically with no control
+plane to ask.
 
-A connection becomes the instance's, not the platform's:
+## The API
 
-| | now | after |
-|---|---|---|
-| storage | `connections` table in core's db, `instance_id` column | `data/connections.db` inside the instance |
-| encryption key | core's `[security] app_key` | the instance's own key, in its gitignored config |
-| who can read a token | core, and anything with core's db + key | that instance |
-| sidecar access | broker call to core (`/brokerinfo/connectiontoken`) | opens the file directly when local |
+```php
+use app\ConnectionStore as CS;
 
-## Why
+CS::for('monday');                    // this install's, or null
+CS::for('stripe', 'production');      // pinned to an environment
+CS::token($conn);                     // the usable credential
+CS::put('monday', 'production', $payload);   // store one here
 
-**Credentials must not reach git.** Instances force-track their main database so
-checkpoint/rollback can capture it — `collectiq-302eb3` has a commit that *is*
-its `.db`. And `acp.tiknix` holds 4 connections in its main database, all 4
-carrying tokens. Those two facts have not collided yet, but an instance doing
-both commits encrypted credentials into history, where they survive every clone
-and rollback. A separate gitignored file cannot.
+CS::forInstall(82, 'monday');         // another install's, by instance id
+CS::putForInstall(82, 'monday', 'production', $payload);
+```
 
-**Ejection becomes real.** With a per-instance key the instance can read its own
-connections without asking anything. A self-hosted copy works identically to a
-hosted one, which is the "option C" custody model already chosen for Telegram and
-monday.
+`for()` takes no instance id and no member id, because the **file is the scope**.
+`forInstall()` exists for code that runs on core but acts *for* an instance — MCP
+tool calls, publish drivers, the Connections hub. It resolves that instance's
+directory, reads there, and decrypts with that instance's key while it is still
+in scope, carrying the plaintext on the bean as `plainToken`; decrypting later
+would need the caller to know whose key to use, which is the knowledge this class
+holds so callers do not have to.
 
-**It removes a bug class rather than guarding against it.** Two separate defects
-this week came from core's table holding every customer's rows: an unscoped
-lookup returning another customer's connection, and an ordering rule that
-preferred staging over production. With one file per instance there is no other
-customer's row to select.
+`env` defaults to "any", and when unspecified **production wins** over staging.
+That is not cosmetic: an install with both, ordered only by id, silently gets
+staging because staging was created second.
 
-## File, not table
+### Two functions refuse rather than answer
 
-`data/connections.db`, following `data/workbench.db` — per-instance, gitignored,
-opened as a named RedBean connection. **Not** `connections-<slug>.db`: the slug is
-already the directory, and putting it in the filename goes stale the moment a
-slug changes.
+`forInstance()` and `upsert()` both throw. They read and wrote core's shared
+table, and while either exists somebody can call it and get a connector that did
+not travel with its instance. Throwing beats returning null — null surfaces as
+"not connected" and sends people hunting for a setting that is not missing.
 
-## The two hard parts
+There are **no fallbacks anywhere**. No instance named means no connection, full
+stop. A fallback is a way for a connector not to travel.
 
-**1. OAuth becomes two-step.** Redirect URIs are registered to core's domain, so
-core receives the token and must hand it onward to the instance to be stored.
-There is a failure window between "core has it" and "the instance stored it" that
-did not exist before. Needs an explicit answer: retry, or a short-lived staging
-row in core that the instance claims and core then deletes.
+## How connecting works
 
-**2. Core's Connections hub can no longer read what it shows.** It currently
-renders connection state from its own table. After this it must ask the instance,
-or keep a non-secret mirror (connector type, external name, enabled, revoked) with
-the token living only in the instance. The mirror is probably right — the hub
-needs to *list*, not to *use*.
+Both flows route by the OAuth `state`, which has always carried `instance_id`:
 
-## Migration: there isn't one
+- **Hub** (`/connections`) → `Connections::upsertConnection` → `putForInstall()`
+- **Instance-driven** (`/brokerinfo/connectkey`) → `putForInstall()`, using the
+  broker key's own instance id
+- **Direct** (`/connectorapi/connect`) → `put()`, on the install being called
 
-Decided 2026-08-04: **people re-apply their connectors.** Nothing is carried
-across.
+`member_id` is deliberately not recorded. A connection belongs to the instance,
+whoever attached it; an owner field would reintroduce "whose connection is this",
+which is the question this design removes.
 
-This is the decision that makes the whole change safe, and it is worth
-understanding why rather than treating it as a shortcut. Migrating would have
-meant, per connection: decrypt with core's key, re-encrypt with the instance's
-new key, write, verify against the live API, then delete from core — with a
-window in the middle where a credential exists in neither place, or in both.
-Seven of those, across four instances, holding a customer's Stripe and Shopify
-and monday tokens. Re-applying is a few minutes of somebody's time and has no
-such window.
+## Reaching an instance that is not on this disk
 
-What that means in practice:
+`controls/Connectorapi` is the inverse of `Brokerinfo`, and the inversion is the
+point. Brokerinfo exists because credentials used to live in core, so an instance
+called **in** to ask what it was wired to. Now core and sidecars call the
+**instance**:
 
-- Core's existing rows are **left alone**, not deleted. They stop being read once
-  the readers point at the instance file. Clearing them out is a separate,
-  unhurried job once every instance has reconnected.
-- Every connector stops working at the moment the readers switch, until its owner
-  reconnects. That is user-visible and needs saying out loud before the switch —
-  it is not a silent degradation.
-- The instance's `data/connections.db` and its key are created on first connect,
-  so an instance nobody reconnects simply has no connections, which is the
-  honest state rather than a broken one.
+```
+GET|POST /connectorapi/list         metadata only — connector, account, status
+POST     /connectorapi/connect      {connector, key} validated then stored here
+POST     /connectorapi/disconnect   {id}
+```
 
-Order that follows from this: build the storage and the key, switch the readers,
-tell people to reconnect. No data moves at any point.
+Auth is that install's own broker key (`conf/broker.ini`), `hash_equals`
+compared. **No key configured means closed, not open.**
 
-## What already fits
+It will not hand back a token. A caller that wants to *use* a connection asks
+this install to use it, or shares its disk. A route returning credentials over
+HTTP would undo the reason they moved here.
 
-- `ConnectionStore` is the single read/write point (`forInstance`, `token`,
-  `upsert`) — the place to change the storage target.
-- `/brokerinfo/connectiontoken` stays, for genuinely remote instances.
-- `MondayImport::setConnection()` / `setToken()` already let a caller supply both,
-  so the sidecar needs no change to read locally instead.
+## Gotchas worth knowing
+
+**Reading never creates a file.** RedBean opens SQLite and SQLite creates on
+open, so an early version left an empty database behind on every instance a
+lookup touched. `withOwnDb()` takes a `$create` flag; only writers pass it.
+
+**One RedBean connection name per install path.** The name is derived from the
+path, because reusing a fixed one across installs silently keeps the first
+database open — and that failure is one project reading another's credentials.
+
+**A sidecar must name the install it acts for** (`useInstall($dir)`), or it reads
+its own connections, finds none, and that is indistinguishable from "the customer
+never connected anything".
+
+## Migration
+
+There was none. Connectors were re-applied by hand, which is why this was safe to
+do at all: no decrypt-with-the-old-key, re-encrypt, verify, delete — and no
+window where a credential existed in neither place or in both.
+
+Core's old `connections` rows were left where they are rather than deleted. They
+are unreachable: every reader is on the new store and both legacy functions
+throw. Clearing them out is an unhurried job.

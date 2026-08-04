@@ -69,11 +69,27 @@ try {
     exit(0);
 }
 
+// THE STATUS TRANSITION HAPPENS FIRST, before anything that can bail out.
+//
+// This used to run at the very end, after five silent exit(0) guards belonging to
+// the TRANSCRIPT capture — stdin not being valid JSON, no message, a reply under
+// ten characters, a reply that starts with { or [. So "mark the task no longer
+// running" was gated behind "successfully record what Claude said", which are two
+// unrelated jobs, and any of those conditions left the task showing `running`
+// forever with the agent sitting idle at its prompt.
+//
+// That is the bug behind "the task still thinks it is running": the agent had
+// finished, the hook had fired, and the one line that mattered was never reached.
+// Capturing the reply is a convenience. Releasing the task is the contract.
+$statusResult = updateTaskStatus($taskId);
+file_put_contents($debugLog, "updateTaskStatus (early): " . ($statusResult ? 'ok' : 'FAILED') . "\n", FILE_APPEND);
+
 // Read the hook input from stdin
 $input = file_get_contents('php://stdin');
 $hookInput = json_decode(($input) ?? '', true);
 
 if (!$hookInput) {
+    file_put_contents($debugLog, "no usable stdin payload — status already handled\n\n", FILE_APPEND);
     echo json_encode(new stdClass());
     exit(0);
 }
@@ -107,9 +123,10 @@ if (str_starts_with($trimmed, '{') || str_starts_with($trimmed, '[')) {
 $logResult = addTaskLog($taskId, $textContent);
 file_put_contents($debugLog, "addTaskLog result: " . ($logResult ? 'success' : 'failed') . "\n", FILE_APPEND);
 
-// Update task status to "awaiting" (user's turn)
-$statusResult = updateTaskStatus($taskId);
-file_put_contents($debugLog, "updateTaskStatus result: " . ($statusResult ? 'success' : 'failed') . "\n", FILE_APPEND);
+// Status was already released at the top, before any guard that can exit — see
+// the note there. Not repeated here: updateTaskStatus only acts on a task still
+// marked `running`, so a second call is a no-op, but calling it twice invites
+// somebody to move the first one back down.
 file_put_contents($debugLog, "Content length: " . strlen($textContent) . "\n\n", FILE_APPEND);
 
 // Always return success to not block Claude

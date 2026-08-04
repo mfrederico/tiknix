@@ -278,6 +278,18 @@ class ConnectionStore {
     public static function forInstance(
         int $instanceId, string $type, ?string $env = null, ?int $memberId = null
     ): ?\RedBeanPHP\OODBBean {
+        // Refuses rather than reads. This looked in core's shared connections table,
+        // and a connector found there is one that did NOT travel with its instance —
+        // which is the whole thing this move exists to prevent. Returning null would
+        // be worse than throwing: the caller would report "not connected" and
+        // somebody would go looking for a setting that is not missing.
+        //
+        // Use for() for this install, or forInstall($instanceId, ...) for another.
+        throw new \RuntimeException(
+            'ConnectionStore::forInstance is retired — connectors live with their '
+          . 'instance now. Use for() or forInstall(). See CONNECTIONS_PER_INSTANCE.md.');
+
+        // @phpstan-ignore-next-line — kept so the original query is readable in blame
         if ($instanceId <= 0 || $type === '') return null;
 
         // revoked_at is NOT in the WHERE, and that is deliberate. RedBean's fluid

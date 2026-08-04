@@ -78,13 +78,11 @@ class MondayImport {
             return ConnectionStore::forInstall($instanceId, 'monday');
         }
 
-        // No instance context: a standalone or self-hosted install asking about its
-        // own connection. A missing connections table returns null rather than
-        // raising — fluid mode treats it as no rows.
-        $own = Bean::findOne('connections',
-            "connector_type = 'monday' AND enabled = 1 AND (revoked_at IS NULL OR revoked_at = 0) "
-          . 'AND (instance_id IS NULL OR instance_id = 0)');
-        return ($own && $own->id) ? $own : null;
+        // No instance named means no connection. There is deliberately no fallback:
+        // a connector belongs to an instance and travels with it, so "look somewhere
+        // else" would be a way for one NOT to travel — and the somewhere else was
+        // core￢ﾀﾙs old shared table, which is exactly what this move retired.
+        return null;
     }
 
     /**

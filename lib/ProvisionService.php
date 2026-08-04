@@ -296,8 +296,10 @@ class ProvisionService {
         $sock = $dir . '/.aibuilder/tmux.sock';
         if (@file_exists($sock)) { @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1'); $steps[] = 'killed jailed session'; }
 
-        $conns = Bean::find('connections', 'instance_id = ?', [$instanceId]);
-        if ($conns) { Bean::trashAll($conns); $steps[] = 'removed ' . count($conns) . ' connector(s)'; }
+        // No connector cleanup here any more: the connections live in the instance's
+        // own data/connections.db, sealed with its own secure/connections.key, and
+        // both are inside $dir. Archiving the directory takes them with it — and
+        // keeps them recoverable from the tombstone, which deleting rows here did not.
 
         if (is_dir($dir)) {
             $res = $this->archiveInstance($dir, $slug);   // wipes the dir (incl. its workbench.db) → tombstone zip

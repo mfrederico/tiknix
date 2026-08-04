@@ -109,10 +109,57 @@ never connected anything".
 
 ## Migration
 
-There was none. Connectors were re-applied by hand, which is why this was safe to
+There was none. Connectors are re-applied by hand, which is why this was safe to
 do at all: no decrypt-with-the-old-key, re-encrypt, verify, delete — and no
 window where a credential existed in neither place or in both.
 
-Core's old `connections` rows were left where they are rather than deleted. They
-are unreachable: every reader is on the new store and both legacy functions
-throw. Clearing them out is an unhurried job.
+Core's ten legacy rows were **deleted on 2026-08-04**, listing kept at
+`data/tombstones/core-connections-dropped-2026-08-04.tsv` (metadata only — no
+tokens). Everything in it gets reconnected rather than moved.
+
+### What the first pass missed
+
+This document previously claimed "every reader is on the new store". That was
+wrong, and the way it was wrong is worth keeping:
+
+- `Connections::githubconnect` **wrote core's table** for another day, encrypted
+  with core's key, while `githubConn()` read the instance's store. So connecting
+  GitHub returned "GitHub connected" and left the card empty. It caught a real
+  customer (member 24, 2026-08-04 03:29).
+- `SshTargetDriver::keyConnection` read the instance's store and wrote core's, so
+  it never found the keypair it had just minted and generated a **new one on every
+  publish** — silently invalidating the `authorized_keys` line the customer had
+  just pasted in.
+- `Brokerinfo::connections` answered "you have no connections" to instances that
+  had several, which is the worst available answer: identical to the truth.
+
+The common cause is one rule that is easy to miss and now stated explicitly:
+
+> **A bean from `forInstall()` is READ-ONLY.** RedBean stores to the database
+> selected at `store()` time, not the one the bean was loaded from. Keeping one
+> past the call and saving it writes to whatever file is open — core's.
+
+Anything that mutates goes inside `ConnectionStore::withInstall($id, fn)`, which
+holds the right database selected for the whole unit of work.
+
+## Still on core's table
+
+These have **not** moved, and now read an empty table, so they report "not
+connected" instead of failing:
+
+| Where | What it does |
+|---|---|
+| `controls/Webhook.php:202` | maps a pushed repo → its instance |
+| `controls/Webhook.php:403` | telegram webhook by connection id |
+| `controls/Integrations.php:58` | an instance's integrations list |
+| `controls/Connections.php` 565, 773, 814, 841, 883, 1168-1223 | hub display, telegram, enable/disable/revoke |
+
+`Webhook.php:202` is the one that needs a decision rather than a repoint. It maps
+**repo → instance** by scanning every GitHub connection, and per-instance stores
+leave core with no such index — the lookup is global but the data no longer is.
+Opening every instance's database per webhook would work and does not scale.
+
+The answer is the **non-secret mirror**: core keeps `instance_id`, connector,
+`external_eid` and status — never a token — written whenever an instance's store
+is written. That also gives the hub something to render without opening ten files,
+which is the other half of this same gap.

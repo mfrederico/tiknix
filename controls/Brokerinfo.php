@@ -30,19 +30,27 @@ class Brokerinfo extends Control {
         $instanceId = (int) ($key->instanceId ?? 0);
         if ($instanceId <= 0) { Flight::jsonError('This broker key is not bound to an instance.', 403); return; }
 
-        $out = [];
-        foreach (Bean::find('connections', 'instance_id = ? ORDER BY connector_type, environment', [$instanceId]) as $c) {
-            $out[] = [
-                'id'          => (int) $c->id,
-                'connector'   => (string) $c->connectorType,
-                'environment' => (string) ($c->environment ?: 'production'),
-                'name'        => (string) ($c->externalName ?: $c->externalEid),
-                'url'         => (string) ($c->externalUrl ?? ''),
-                'enabled'     => (int) $c->enabled === 1,
-                'revoked'     => !empty($c->revokedAt),
-                'last_used'   => (string) ($c->lastUsedAt ?? ''),
-            ];
-        }
+        // The instance's own store, not core's table. Reading core's here answered
+        // "you have no connections" to an instance that had several — the worst
+        // possible answer, because it is indistinguishable from the truth.
+        $out = \app\ConnectionStore::withInstall($instanceId, function () {
+            $rows = [];
+            foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
+                if (!$c->id) continue;
+                $rows[] = [
+                    'id'          => (int) $c->id,
+                    'connector'   => (string) $c->connectorType,
+                    'environment' => (string) ($c->environment ?: 'production'),
+                    'name'        => (string) ($c->externalName ?: $c->externalEid),
+                    'url'         => (string) ($c->externalUrl ?? ''),
+                    'enabled'     => (int) $c->enabled === 1,
+                    'revoked'     => !empty($c->revokedAt),
+                    'last_used'   => (string) ($c->lastUsedAt ?? ''),
+                ];
+            }
+            return $rows;
+        }, []);
+
         Flight::json(['instance_id' => $instanceId, 'connections' => $out]);
     }
 
@@ -112,10 +120,20 @@ class Brokerinfo extends Control {
      */
     public function disconnect($params = []) {
         [$key, $iid] = $this->requireBroker(); if (!$key) return;
-        $cid  = (int) ($this->jsonBody()['connection_id'] ?? 0);
-        $conn = Bean::load('connections', $cid);
-        if (!$conn->id || (int) $conn->instanceId !== $iid) { Flight::jsonError('Connection not found for this instance.', 404); return; }
-        Bean::trash($conn);
+        $cid = (int) ($this->jsonBody()['connection_id'] ?? 0);
+        if ($cid <= 0) { Flight::jsonError('connection_id is required.', 400); return; }
+
+        // Scoping by instance_id is no longer a WHERE clause — it is which FILE we
+        // open. A key can only reach its own instance's store, so a row found in
+        // there is by construction that instance's.
+        $gone = \app\ConnectionStore::withInstall($iid, function () use ($cid) {
+            $conn = Bean::load('connections', $cid);
+            if (!$conn->id) return false;
+            Bean::trash($conn);
+            return true;
+        }, false);
+
+        if (!$gone) { Flight::jsonError('Connection not found for this instance.', 404); return; }
         Flight::jsonSuccess([], 'Disconnected.');
     }
 

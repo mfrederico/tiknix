@@ -62,7 +62,7 @@ class RsyncDriver extends SshTargetDriver {
                 return self::run($cmd);
             });
         } catch (\Throwable $e) {
-            self::record($conn, false, $e->getMessage());
+            self::record($conn, $inst, false, $e->getMessage());
             return ['ok' => false, 'error' => $e->getMessage()];
         } finally {
             @unlink($listFile);
@@ -70,11 +70,11 @@ class RsyncDriver extends SshTargetDriver {
 
         if (empty($res['ok'])) {
             $why = self::explain((string) $res['out'], $this->status($inst, $config));
-            self::record($conn, false, substr((string) strtok($why, "\n"), 0, 250));
+            self::record($conn, $inst, false, substr((string) strtok($why, "\n"), 0, 250));
             return ['ok' => false, 'error' => $why];
         }
 
-        self::record($conn, true, null);
+        self::record($conn, $inst, true, null);
         return [
             'ok'      => true,
             'message' => 'Copied ' . count($files) . ' files to ' . $c['user'] . '@' . $c['host'] . ':' . $p['path'],

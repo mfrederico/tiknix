@@ -180,34 +180,29 @@ class Connections extends Control {
             $this->jsonError('GitHub rejected the token/repo: ' . $e->getMessage(), 400); return;
         }
 
-        // One GitHub connection per instance — upsert.
-        $conn = $this->githubConn((int)$inst->id);
-        if (!$conn || !$conn->id) $conn = Bean::dispense('connections');
-        $now = date('Y-m-d H:i:s');
-        $conn->connectorType  = 'github';
-        $conn->memberId       = (int)$this->member->id;
-        $conn->instanceId     = (int)$inst->id;
-        $conn->authType       = $authType;
-        $conn->accessToken    = EncryptionService::encrypt($pat);
-        $conn->tokenType      = 'Bearer';
-        $conn->externalEid    = $fullName;
-        $conn->externalName   = $fullName;
-        $conn->externalUrl    = 'https://github.com/' . $owner . '/' . $repo;
-        $conn->connectionName = $fullName;
-        $prevMeta = json_decode((string) ($conn->metadataJson ?: '{}'), true) ?: [];
-        $conn->metadataJson   = json_encode(['owner' => $owner, 'repo' => $repo, 'defaultBranch' => $defaultBranch,
-            'autoPublish' => $auto, 'resolvesTo' => array_values($prevMeta['resolvesTo'] ?? [])]);
-        $conn->enabled        = 1;
-        $conn->shared         = 0;
-        $conn->lastError      = null;
-        $conn->lastUsedAt     = $now;
-        if (!$conn->id) $conn->createdAt = $now;
-        $conn->updatedAt      = $now;
-        Bean::store($conn);
+        // One GitHub connection per instance — upsert into THAT INSTANCE's store.
+        // This wrote core's table until 2026-08-04, encrypted with core's key: the
+        // connector did not travel, and a self-hosted copy of the instance had no
+        // GitHub connection at all.
+        $prev     = $this->githubConn((int)$inst->id);
+        $prevMeta = json_decode((string) ($prev->metadataJson ?? '{}'), true) ?: [];
+
+        $connId = ConnectionStore::putForInstall((int)$inst->id, 'github', 'production', [
+            'external_eid'    => $fullName,
+            'external_name'   => $fullName,
+            'external_url'    => 'https://github.com/' . $owner . '/' . $repo,
+            'connection_name' => $fullName,
+            'token_type'      => 'Bearer',
+            'auth_type'       => $authType,
+            'access_token'    => $pat,
+            'metadata'        => ['owner' => $owner, 'repo' => $repo, 'defaultBranch' => $defaultBranch,
+                'autoPublish' => $auto, 'resolvesTo' => array_values($prevMeta['resolvesTo'] ?? [])],
+        ]);
+        if ($connId <= 0) { $this->jsonError('GitHub was authorized but the connection could not be stored.', 500); return; }
         if ($useOauth) unset($_SESSION['gh_oauth']);
 
         $this->jsonSuccess([
-            'id'            => (int)$conn->id,
+            'id'            => $connId,
             'repo'          => $fullName,
             'defaultBranch' => $defaultBranch,
             'authType'      => $authType,

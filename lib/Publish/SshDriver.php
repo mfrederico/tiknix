@@ -49,18 +49,18 @@ class SshDriver extends SshTargetDriver {
                 return self::run($cmd);
             });
         } catch (\Throwable $e) {
-            self::record($conn, false, $e->getMessage());
+            self::record($conn, $inst, false, $e->getMessage());
             return ['ok' => false, 'error' => $e->getMessage()];
         }
 
         $out = (string) $res['out'];
         if (empty($res['ok'])) {
             $why = self::explain($out, $this->status($inst, $config));
-            self::record($conn, false, substr((string) strtok($why, "\n"), 0, 250));
+            self::record($conn, $inst, false, substr((string) strtok($why, "\n"), 0, 250));
             return ['ok' => false, 'error' => $why];
         }
 
-        self::record($conn, true, null);
+        self::record($conn, $inst, true, null);
         // The remote output IS the useful part of this target — surface it in the run log
         // rather than a bare "ok", but keep it bounded so a chatty build cannot flood the
         // step record.

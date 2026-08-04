@@ -163,29 +163,55 @@ abstract class SshTargetDriver implements PublishDriver {
         $kp = SshKey::generate('tiknix-publish:' . $inst->slug . ':' . $driverKey);
         if (empty($kp['ok'])) return null;
 
-        $conn = Bean::dispense('connections');
-        $conn->memberId      = (int) $inst->memberId;
-        $conn->instanceId    = (int) $inst->id;
-        $conn->connectorType = $driverKey;
-        $conn->environment   = 'production';
-        $conn->enabled       = 1;
-        $conn->accessToken   = SshKey::seal((string) $kp['private']);
-        $conn->metadataJson  = json_encode([
-            'driver'      => $driverKey,
-            'public_key'  => (string) $kp['public'],
-            'fingerprint' => (string) $kp['fingerprint'],
-        ]);
-        $conn->createdAt = date('Y-m-d H:i:s');
-        Bean::store($conn);
-        return $conn;
+        // Into the INSTANCE's store, not core's. This dispensed against whatever
+        // database was selected -- core's -- while the read above came from the
+        // instance, so the key was written where the reader never looked and a fresh
+        // keypair was minted on EVERY publish. The customer's authorized_keys entry
+        // stopped matching the moment it was added.
+        //
+        // SshKey::seal is deliberately kept: these are core-minted deploy keys and
+        // core has to be able to use them. What changes is only WHERE the row lives.
+        \app\ConnectionStore::withInstall((int) $inst->id, function () use ($inst, $driverKey, $kp) {
+            $conn = Bean::dispense('connections');
+            $conn->connectorType = $driverKey;
+            $conn->environment   = 'production';
+            $conn->enabled       = 1;
+            $conn->authType      = \app\ConnectionStore::AUTH_SEALED;
+            $conn->accessToken   = SshKey::seal((string) $kp['private']);
+            $conn->metadataJson  = json_encode([
+                'driver'      => $driverKey,
+                'public_key'  => (string) $kp['public'],
+                'fingerprint' => (string) $kp['fingerprint'],
+            ]);
+            $conn->createdAt = date('Y-m-d H:i:s');
+            return (int) Bean::store($conn);
+        }, 0, true);
+
+        // Re-read through the same door every other caller uses, so a failed write
+        // surfaces here as "no connection" rather than as a bean that looks stored.
+        return \app\ConnectionStore::forInstall((int) $inst->id, $driverKey);
     }
 
-    /** Record the outcome so the card and the next status() agree with what happened. */
-    protected static function record($conn, bool $ok, ?string $error): void {
+    /**
+     * Record the outcome so the card and the next status() agree with what happened.
+     *
+     * The bean came from forInstall() and is READ-ONLY: RedBean stores to the database
+     * selected at store() time, so saving it here wrote core's table. Re-open the
+     * instance's store and update it there.
+     */
+    protected static function record($conn, object $inst, bool $ok, ?string $error): void {
         if (!$conn) return;
-        $conn->lastUsedAt = date('Y-m-d H:i:s');
-        $conn->lastError  = $ok ? null : $error;
-        Bean::store($conn);
+        $id = (int) $conn->id;
+        if ($id <= 0) return;
+
+        \app\ConnectionStore::withInstall((int) $inst->id, function () use ($id, $ok, $error) {
+            $row = Bean::load('connections', $id);
+            if (!$row->id) return false;
+            $row->lastUsedAt = date('Y-m-d H:i:s');
+            $row->lastError  = $ok ? null : $error;
+            Bean::store($row);
+            return true;
+        }, false, true);
     }
 
     /**

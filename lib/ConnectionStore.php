@@ -22,8 +22,15 @@ class ConnectionStore {
     // and every install asks the same question — "what are my connections?" — with
     // no id to pass and none to get wrong. See CONNECTIONS_PER_INSTANCE.md.
     //
-    // Additive for now. The readers still use forInstance() against core's table;
-    // this is the storage they move onto.
+    // Core's old shared table is gone; forInstance() and upsert() throw rather than
+    // answer, so nothing can accidentally read a connector that did not travel.
+
+    /**
+     * A credential this class stores but does NOT encrypt: the publish drivers' SSH
+     * keys, sealed by SshKey and unsealed by them at the point of use. Marked so
+     * ownToken() leaves it alone instead of reporting a decrypt failure.
+     */
+    public const AUTH_SEALED = 'ssh_sealed';
 
     /** Named RedBean connection for this install's own connections file. */
     private const OWN_KEY = 'ownconn';
@@ -218,6 +225,8 @@ class ConnectionStore {
         $dir = $inst->box()->dir();
         if ($dir === '' || !is_dir($dir)) return 0;
 
+        // Not withInstall(): put() opens the store itself, and nesting withOwnDb
+        // would restore the caller's database halfway through the outer one.
         self::useInstall($dir);
         try {
             return self::put($type, $env, $payload);
@@ -226,10 +235,61 @@ class ConnectionStore {
         }
     }
 
-    /** The usable credential for one of this install's own connections. */
+    /**
+     * Run arbitrary bean work against an INSTANCE's store.
+     *
+     * for()/put() cover "read one connection" and "write one connection", which is
+     * most callers. It is not all of them: the publish drivers create a row and then
+     * update it with the outcome, and Brokerinfo lists and deletes. Those were left
+     * doing plain Bean:: calls against whatever database happened to be selected —
+     * which is CORE's, so a driver read the instance's key and wrote core's table,
+     * and never found its own keypair again.
+     *
+     * The lesson is that a bean from forInstall() is READ-ONLY: RedBean stores to the
+     * database selected at store() time, not the one the bean came from, so keeping
+     * one past the call and saving it silently writes to the wrong file. Anything
+     * that mutates belongs in here, where the right database is selected for the
+     * whole unit of work.
+     */
+    public static function withInstall(int $instanceId, callable $fn, $onError = null, bool $create = false) {
+        if ($instanceId <= 0) return $onError;
+
+        $inst = Bean::load('instance', $instanceId);
+        if (!$inst->id) return $onError;
+
+        $dir = $inst->box()->dir();
+        if ($dir === '' || !is_dir($dir)) {
+            \Flight::get('log')?->warning('ConnectionStore: instance has no directory on this host',
+                ['instance' => $instanceId, 'dir' => $dir]);
+            return $onError;
+        }
+
+        self::useInstall($dir);
+        try {
+            return self::withOwnDb($fn, $onError, $create);
+        } finally {
+            self::useOwnInstall();
+        }
+    }
+
+    /** This install's encryption key, for callers writing inside withInstall(). */
+    public static function currentKey(): string {
+        return self::ownKey();
+    }
+
+    /**
+     * The usable credential for one of this install's own connections.
+     *
+     * SEALED rows are not ours to open. The publish drivers store an SSH private key
+     * sealed by SshKey, not by EncryptionService, and they unseal it themselves at
+     * the point of use. Trying anyway logged a decrypt ERROR on every publish for a
+     * connection that was working perfectly — and a log that cries wolf is worse than
+     * no log, because it is the one people learn to scroll past.
+     */
     public static function ownToken(?\RedBeanPHP\OODBBean $conn): string {
         $raw = (string) ($conn->accessToken ?? '');
         if ($raw === '') return '';
+        if ((string) ($conn->authType ?? '') === self::AUTH_SEALED) return '';
 
         try {
             return EncryptionService::decryptWith($raw, self::ownKey());
@@ -267,8 +327,20 @@ class ConnectionStore {
             $conn->scopes        = (string) ($payload['scopes'] ?? '');
             $conn->authType      = (string) ($payload['auth_type'] ?? 'api_key');
             $conn->accessToken   = EncryptionService::encryptWith((string) ($payload['access_token'] ?? ''), $key);
+
+            // Connector-specific detail: github's owner/repo/defaultBranch, a publish
+            // driver's public key and fingerprint. Dropping it made put() unusable for
+            // those flows, which is why they were still writing core's table by hand.
+            if (isset($payload['connection_name'])) $conn->connectionName = (string) $payload['connection_name'];
+            if (array_key_exists('metadata', $payload)) {
+                $conn->metadataJson = is_string($payload['metadata'])
+                    ? $payload['metadata']
+                    : json_encode($payload['metadata'] ?: []);
+            }
+
             $conn->enabled       = 1;
             $conn->revokedAt     = null;
+            $conn->lastError     = null;
             $conn->updatedAt     = date('Y-m-d H:i:s');
             if (!$conn->createdAt) $conn->createdAt = $conn->updatedAt;
 

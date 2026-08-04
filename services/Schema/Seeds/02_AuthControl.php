@@ -67,8 +67,6 @@ $defaults = [
     ['member', '*', 100, 'All member methods'],
     ['dashboard', '*', 100, 'Dashboard access'],
     ['apikeys', '*', 100, 'API key management'],
-    ['grocery', '*', 100, 'Grocery list management'],
-    ['workbench', '*', 100, 'Workbench access'],
     // Generic sidecar-plugin launcher: /sidecar/launch/<name> (Explorer, Store, …).
     // MEMBER-eligible; each plugin's own Feature grant gates it (Sidecar::launch enforces).
     ['sidecar', '*', 100, 'Sidecar plugin launcher (per-plugin feature-gated)'],
@@ -90,20 +88,15 @@ $defaults = [
     ['teams', '*', 100, 'Teams management'],
     ['communications', '*', 100, 'Threaded email inbox'],
 
+    // NOT SEEDED, deliberately: grocery, workbench, aibuilder and mcpregistry have no
+    // controller here. AI Builder and the Workbench became the workbench.tiknix sidecar
+    // (reached via sidecar::*, gated by the `workbench` Feature flag); mcpregistry is
+    // now Mcpconfig/Mcptools; grocery was a sample. Seeding a rule for a route that
+    // does not exist just makes the map lie about what this app has.
+
     // Admin (50)
     ['admin', '*', 50, 'Admin panel access'],
     ['translations', '*', 50, 'Translations editor (i18n)'],
-    // MEMBER (100), not ADMIN — members are team members, and the level is not what
-    // decides who builds. The real gate is the `workbench` Feature flag (min_level 100,
-    // switched on per person from editMember), so ADMIN here would only mean "you must
-    // administer everything to be granted one tool", which is the coupling Feature
-    // exists to break.
-    //
-    // Core no longer has this controller at all — AI Builder became the workbench
-    // sidecar — so on core this row governs nothing. It stays for the instances still
-    // carrying controls/Aibuilder.php: dropping it would leave their route with no rule,
-    // and the first request would invent one at the ADMIN default.
-    ['aibuilder', '*', 100, 'AI Builder (feature-gated by `workbench`; sidecar on core)'],
     ['permissions', '*', 50, 'Permission management'],
     ['contact', 'admin', 50, 'View contact messages'],
     ['contact', 'view', 50, 'View single message'],
@@ -113,7 +106,6 @@ $defaults = [
     ['lead', 'export', 50, 'Export leads CSV'],
     ['leads', 'data', 50, 'Leads DataTable AJAX feed'],
     ['leads', 'delete', 50, 'Delete a lead / purge bot-flagged leads'],
-    ['mcpregistry', '*', 50, 'MCP Server Registry management'],
     // The Integrations hub is MEMBER (100) — instance owners manage their OWN instance's
     // connectors + pipelines + durable objects (Connections::index is ownedInstance-scoped).
     // An instance asks core "what am I connected to?" with its own broker key (metadata only).

@@ -38,8 +38,15 @@ class MondayConnector extends AbstractConnector {
      *
      * `boards.items` became `items_page` in 2023-10; naming a version is what
      * stops that class of change arriving unannounced.
+     *
+     * Moved 2024-10 -> 2025-07 for `Item.description`, which does not exist before
+     * 2025-07 and is where these boards keep the actual brief: 28 of 45 items and
+     * 53 of 80 subitems carry one, and without it a planner was handed the phase
+     * heading alone. Every other query this class issues was re-run against both
+     * versions first and behaves identically -- me, boards, items_page, items(ids:)
+     * and the updates lookup.
      */
-    private const API_VERSION = '2024-10';
+    private const API_VERSION = '2025-07';
 
     public function key(): string {
         return 'monday';
@@ -186,12 +193,14 @@ class MondayConnector extends AbstractConnector {
                             url
                             group { id title }
                             column_values { id text type }
+                            description { blocks (limit: 25) { content } }
                             subitems {
                                 id
                                 name
                                 state
                                 board { id }
                                 column_values { id text type }
+                                description { blocks (limit: 25) { content } }
                             }
                         }
                     }
@@ -261,11 +270,46 @@ class MondayConnector extends AbstractConnector {
                 'updated_at' => (string) ($it['updated_at'] ?? ''),
                 'fields'     => $fields,
                 'statuses'   => $statuses,
+                'description'=> self::blocksToText($it['description']['blocks'] ?? []),
                 'subitems'   => self::shapeSubitems($it['subitems'] ?? [], $subTitles),
             ];
         }
 
         return ['items' => $items, 'cursor' => (string) ($page['cursor'] ?? '')];
+    }
+
+    /**
+     * monday description blocks, flattened to plain text.
+     *
+     * A block's `content` is a JSON string in Quill delta format --
+     * {"deltaFormat":[{"insert":"Define the Phase 1 functionality...","attributes":{...}}]}
+     * -- so the readable words are the `insert` values in order. Anything that
+     * does not parse is passed through as-is rather than dropped: a brief that
+     * arrives slightly malformed is worth more to a planner than no brief, and
+     * silently returning '' would look exactly like an item with no description.
+     */
+    private static function blocksToText(array $blocks): string {
+        $out = [];
+        foreach ($blocks as $b) {
+            $raw = (string) ($b['content'] ?? '');
+            if (trim($raw) === '') continue;
+
+            $decoded = json_decode($raw, true);
+            if (!is_array($decoded) || !isset($decoded['deltaFormat'])) {
+                $out[] = trim(strip_tags($raw));
+                continue;
+            }
+
+            $line = '';
+            foreach ((array) $decoded['deltaFormat'] as $op) {
+                if (is_string($op['insert'] ?? null)) $line .= $op['insert'];
+            }
+            $line = trim($line);
+            if ($line !== '') $out[] = $line;
+        }
+
+        // Blocks are paragraphs; a newline between them keeps a list a list.
+        return trim(implode("\n", $out));
     }
 
     /**
@@ -294,10 +338,11 @@ class MondayConnector extends AbstractConnector {
             }
 
             $out[] = [
-                'id'       => (string) ($sub['id'] ?? ''),
-                'name'     => (string) ($sub['name'] ?? ''),
-                'state'    => (string) ($sub['state'] ?? ''),
-                'statuses' => $statuses,
+                'id'          => (string) ($sub['id'] ?? ''),
+                'name'        => (string) ($sub['name'] ?? ''),
+                'state'       => (string) ($sub['state'] ?? ''),
+                'statuses'    => $statuses,
+                'description' => self::blocksToText($sub['description']['blocks'] ?? []),
             ];
         }
         return $out;

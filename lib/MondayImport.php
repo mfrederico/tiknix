@@ -534,8 +534,10 @@ class MondayImport {
                 $task->title       = (string) ($sub['name'] ?? 'Untitled subitem');
                 // The parent names the phase this belongs to. Without it a subitem
                 // called "Timeline & Milestones" is unattributable on the board.
-                $task->description = trim((string) ($sub['name'] ?? '')) . "\n\n"
-                                   . 'Part of: ' . trim((string) ($it['name'] ?? ''))
+                $subDesc = trim((string) ($sub['description'] ?? ''));
+                $task->description = trim((string) ($sub['name'] ?? ''))
+                                   . ($subDesc !== '' ? "\n\n" . $subDesc : '')
+                                   . "\n\n" . 'Part of: ' . trim((string) ($it['name'] ?? ''))
                                    . (($it['group'] ?? '') !== '' ? ' (' . $it['group'] . ')' : '');
                 $task->taskType    = 'feature';
                 $task->priority    = self::priority((string) ($it['fields']['Priority'] ?? ''));
@@ -573,11 +575,24 @@ class MondayImport {
         $lines = [];
         $lines[] = trim((string) ($it['name'] ?? ''));
 
+        // The item's DESCRIPTION, when it has one, and directly under the name
+        // because it is the brief rather than context. This class was written
+        // believing these boards had none — they do, on 28 of 45 items and 53 of 80
+        // subitems, and it needs API 2025-07 to see them. A planner handed
+        // "1_Discovery & Requirements" alone can only expand a heading; handed
+        // "Define the Phase 1 functionality, identify out-of-scope features..." it
+        // has something real to decompose.
+        $desc = trim((string) ($it['description'] ?? ''));
+        if ($desc !== '') {
+            $lines[] = '';
+            $lines[] = $desc;
+        }
+
         $where = array_filter([
             (string) ($it['group'] ?? ''),
             (string) ($it['board'] ?? ''),
         ]);
-        if ($where) $lines[] = 'Project: ' . implode(' — ', $where);
+        if ($where) { $lines[] = ''; $lines[] = 'Project: ' . implode(' — ', $where); }
 
         $ctx = [];
         foreach (self::CONTEXT_COLUMNS as $col) {

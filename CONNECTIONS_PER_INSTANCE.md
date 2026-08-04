@@ -194,7 +194,32 @@ None of it needs a change to be right. It needs to run in the right place.
 | | What | Depends on |
 |---|---|---|
 | 1 | Webhooks land on `<slug>.tiknix.com`. The domain IS the tenant scope, so the repo→instance lookup is deleted, not repointed. HMAC verifies against that instance's own secret. | nothing |
-| 1.5 | `.mcp.json` points at `<slug>.tiknix.com`. Correctness, not tidiness — the introspection tools root themselves in the install they run in, so a project pointed at core gets **core's** controllers and models. `project_root` and `project.root` are two different keys and neither is ever set. | nothing |
+| 1.5 | `.mcp.json` — **two forms, and the live one is already right.** See below. | nothing |
+
+### 1.5: the two `.mcp.json` forms
+
+**What is live: stdio, relative path.** Tracked and cloned, so every instance runs
+its own `mcptools/mcp-fastmcp.php` in its own tree. That is why `Introspector`'s
+`dirname(__DIR__)` and `BaseTool`'s `{instanceRoot}/data/workbench.db` resolve to
+the instance — the process IS the instance. The file's own comment explains that an
+absolute path would be a regression, since inside the jail core's tree is not bound
+and would not resolve at all. **Do not "fix" this into an absolute path.**
+
+**What exists but is not wired: HTTP + `tk_` bearer key.**
+`Mcp::ensureWorkspaceMcpConfig()` and `Mcp::generateServerConfig()` write the
+`{type: http, url, Authorization: Bearer tk_…}` shape that myctobot uses at
+`https://demo.myctobot.ai/mcp/pipelines` — the tenant's own domain. Both are
+**called from nowhere** in core or the sidecars, which is why no tiknix instance
+has ever had one written.
+
+The two are complementary, not competing: stdio serves an agent already inside the
+jail, HTTP serves an external client that cannot exec into the instance.
+
+**If HTTP is ever wired up, the one thing that must not be defaulted is the URL.**
+`buildMcpUrl(null)` falls back to `app_url()` — whichever install is running the
+generator. Called on core, every project gets `https://tiknix.com/mcp/message` and
+therefore core's tree. `ensureWorkspaceMcpConfig()` already accepts a `$baseUrl`;
+pass the instance's, and treat a missing one as an error rather than a fallback.
 | 2 | Secret-key connectors (monday, stripe, rsync/ssh) attach on the instance's own hub via `for()`/`put()`. No instance id in the flow at all. | 1 |
 | 3 | OAuth: core keeps the registered callback as a **thin landing pad** — reads `state`, resolves the instance, pushes the token in over `POST /connectorapi/connect` with that instance's broker key, stores nothing. Same door on-disk or self-hosted. | 2 |
 

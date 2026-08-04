@@ -545,11 +545,20 @@ class MondayImport {
             $lines[] = $desc;
         }
 
-        $where = array_filter([
-            (string) ($it['group'] ?? ''),
-            (string) ($it['board'] ?? ''),
-        ]);
-        if ($where) { $lines[] = ''; $lines[] = 'Project: ' . implode(' — ', $where); }
+        // A SUBITEM says what it is part of. Its own board is "Subitems of X" and
+        // its group is "Subitems" — a hidden board nobody chose and a group name
+        // that says nothing, where the parent phase is the context that matters.
+        $parent = trim((string) ($it['parent_name'] ?? ''));
+        if ($parent !== '') {
+            $lines[] = '';
+            $lines[] = 'Part of: ' . $parent;
+        } else {
+            $where = array_filter([
+                (string) ($it['group'] ?? ''),
+                (string) ($it['board'] ?? ''),
+            ]);
+            if ($where) { $lines[] = ''; $lines[] = 'Project: ' . implode(' — ', $where); }
+        }
 
         $ctx = [];
         foreach (self::CONTEXT_COLUMNS as $col) {

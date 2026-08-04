@@ -418,6 +418,19 @@ class MondayConnector extends AbstractConnector {
                         group { id title }
                         board { id name columns { id title type } }
                         column_values { id text type }
+                        # Not optional. The sync rebuilds every brief from this
+                        # reply, so a field missing HERE is a field DELETED from the
+                        # task: the first sync stripped every description the import
+                        # had brought in, and reported that as a change it had made.
+                        # (No apostrophes in here -- this block lives inside a
+                        # single-quoted PHP string and one would close it.)
+                        description { blocks (limit: 25) { content } }
+                        # A subitem knows its parent; a top-level item returns null.
+                        # The sync needs it to rebuild a subitem brief the way the
+                        # import wrote it -- "Part of: 3_Product Data" rather than
+                        # "Project: Subitems of Click Simple", which names the hidden
+                        # board somebody never chose and loses the phase.
+                        parent_item { id name }
                     }
                 }', ['ids' => $chunk, 'limit' => count($chunk)]);
 
@@ -453,8 +466,10 @@ class MondayConnector extends AbstractConnector {
                     'board_id' => (string) ($it['board']['id'] ?? ''),
                     'group'    => (string) ($it['group']['title'] ?? ''),
                     'url'      => (string) ($it['url'] ?? ''),
-                    'fields'   => $fields,
-                    'statuses' => $statuses,
+                    'fields'      => $fields,
+                    'statuses'    => $statuses,
+                    'description' => self::blocksToText($it['description']['blocks'] ?? []),
+                    'parent_name' => (string) ($it['parent_item']['name'] ?? ''),
                 ];
             }
         }

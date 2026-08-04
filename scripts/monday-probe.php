@@ -26,16 +26,31 @@ $app = new app\Bootstrap('conf/config.ini');
 use app\Bean;
 use app\services\connectors\ConnectorRegistry;
 
-$opts  = getopt('', ['connection:', 'board:', 'items:']);
+$opts  = getopt('', ['connection:', 'board:', 'items:', 'instance:']);
 $token = (string) (getenv('MONDAY_TOKEN') ?: '');
 
 if ($token === '' && isset($opts['connection'])) {
-    $c = Bean::load('connections', (int) $opts['connection']);
-    if (!$c->id || (string) $c->connectorType !== 'monday') {
-        fwrite(STDERR, "  no monday connection with id " . (int) $opts['connection'] . "\n");
+    // Connections live in their instance's own store, so a bare id is ambiguous --
+    // id 5 exists in several files and means a different account in each. Pass
+    // --instance=<id> to say which, or run this from inside the instance itself.
+    $cid = (int) $opts['connection'];
+    $iid = (int) ($opts['instance'] ?? 0);
+
+    $reader = function () use ($cid) {
+        $c = Bean::load('connections', $cid);
+        if (!$c->id || (string) $c->connectorType !== 'monday') return '';
+        return \app\ConnectionStore::ownToken($c);
+    };
+
+    $token = (string) ($iid > 0
+        ? \app\ConnectionStore::withInstall($iid, $reader, '')
+        : \app\ConnectionStore::withOwnDb($reader, ''));
+
+    if ($token === '') {
+        fwrite(STDERR, "  no usable monday connection with id $cid"
+            . ($iid > 0 ? " on instance $iid" : " on this install (pass --instance=<id>)") . "\n");
         exit(1);
     }
-    $token = (string) $c->accessToken;
 }
 
 if ($token === '') {

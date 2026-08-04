@@ -54,12 +54,15 @@ class Integrations extends Control {
         $dir = $this->instanceDir($inst->slug);
         // Connected services for the selected instance, service+status only (the owner
         // sees full detail on /connections; this catalog never carries identifiers).
-        $services = [];
-        foreach (Bean::find('connections', 'instance_id = ? AND enabled = 1', [(int)$inst->id]) as $c) {
-            $svc = (string)$c->connectorType; if ($svc === '') continue;
-            if (!isset($services[$svc])) $services[$svc] = ['connector' => $svc, 'connected' => false, 'revoked' => false];
-            if (empty($c->revokedAt)) $services[$svc]['connected'] = true; else $services[$svc]['revoked'] = true;
-        }
+        $services = \app\ConnectionStore::withInstall((int)$inst->id, function () {
+            $out = [];
+            foreach (Bean::find('connections', 'enabled = 1') as $c) {
+                $svc = (string)$c->connectorType; if ($svc === '') continue;
+                if (!isset($out[$svc])) $out[$svc] = ['connector' => $svc, 'connected' => false, 'revoked' => false];
+                if (empty($c->revokedAt)) $out[$svc]['connected'] = true; else $out[$svc]['revoked'] = true;
+            }
+            return $out;
+        }, []);
         $this->render('integrations/hub', [
             'title'          => 'Integrations',
             'instance'       => $inst,
@@ -92,23 +95,28 @@ class Integrations extends Control {
     }
 
     /**
-     * Service+status-only connected-services list for the instance catalog. Uses the
-     * instance's own broker key (read-only metadata, scoped by that key's instance_id)
-     * and strips everything except connector + connected/revoked status. The "no broker
-     * key" state (nothing wired yet) is surfaced as an empty list, not a warning.
+     * Service+status-only connected-services list for the instance catalog, read from
+     * THIS install's own store.
+     *
+     * It used to ask core over the broker and then flatten every failure into an empty
+     * list -- `$broker['connections'] ?? []` plus a rule that swallowed "no broker key"
+     * on purpose. That made four different states (nothing connected / no broker key /
+     * core unreachable / malformed reply) render identically as "nothing connected".
+     * There is no remote call left to fail, so there is nothing left to flatten.
      */
     private function connectedServices(string $root): array {
-        $broker = InstanceAutomations::brokerConnections($root);
-        $services = [];
-        foreach ($broker['connections'] ?? [] as $c) {
-            $svc = (string)($c['connector'] ?? ''); if ($svc === '') continue;
-            if (!isset($services[$svc])) $services[$svc] = ['connector' => $svc, 'connected' => false, 'revoked' => false];
-            if (!empty($c['enabled']) && empty($c['revoked'])) $services[$svc]['connected'] = true;
-            if (!empty($c['revoked'])) $services[$svc]['revoked'] = true;
-        }
-        $err = (string)($broker['error'] ?? '');
-        if (stripos($err, 'no broker key') !== false) $err = '';   // not-yet-wired = empty state, not an error
-        return ['services' => array_values($services), 'brokerError' => $err];
+        $services = \app\ConnectionStore::withOwnDb(function () {
+            $out = [];
+            foreach (Bean::find('connections') as $c) {
+                $svc = (string)$c->connectorType; if ($svc === '') continue;
+                if (!isset($out[$svc])) $out[$svc] = ['connector' => $svc, 'connected' => false, 'revoked' => false];
+                if ((int)$c->enabled === 1 && empty($c->revokedAt)) $out[$svc]['connected'] = true;
+                if (!empty($c->revokedAt)) $out[$svc]['revoked'] = true;
+            }
+            return $out;
+        }, []);
+
+        return ['services' => array_values($services), 'brokerError' => ''];
     }
 
     private function instanceDir(string $slug): string {

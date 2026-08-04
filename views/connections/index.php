@@ -377,7 +377,7 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
       fetch('/connections/disconnect', {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-        body: new URLSearchParams({csrf_token: csrf, cid: btn.getAttribute('data-disconnect')}).toString()
+        body: new URLSearchParams({csrf_token: csrf, id: iid, cid: btn.getAttribute('data-disconnect')}).toString()
       }).then(r=>r.json()).then(function(j){
         if (j && j.success) { location.reload(); }
         else { alert((j && j.message) || 'Could not disconnect'); }
@@ -388,10 +388,11 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
     form.addEventListener('submit', function(ev){
       ev.preventDefault();
       const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      const fdW = new FormData(form); fdW.append('id', iid);
       fetch('/connections/webhooksecret', {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-        body: new URLSearchParams(new FormData(form)).toString()
+        body: new URLSearchParams(fdW).toString()
       }).then(r=>r.json()).then(function(j){
         if (j && j.success) { location.reload(); }
         else { alert((j && j.message) || 'Could not save'); if (btn) btn.disabled = false; }
@@ -402,10 +403,11 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
     form.addEventListener('submit', function(ev){
       ev.preventDefault();
       const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+      const fdP = new FormData(form); fdP.append('id', iid);
       fetch('/connections/publishfeed', {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-        body: new URLSearchParams(new FormData(form)).toString()
+        body: new URLSearchParams(fdP).toString()
       }).then(r=>r.json()).then(function(j){
         if (btn) btn.disabled = false;
         if (j && j.success) {
@@ -445,7 +447,7 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
       fetch('/connections/webhooksecret', {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-        body: new URLSearchParams({csrf_token: csrf, cid: btn.getAttribute('data-whsec-clear'), clear: '1'}).toString()
+        body: new URLSearchParams({csrf_token: csrf, id: iid, cid: btn.getAttribute('data-whsec-clear'), clear: '1'}).toString()
       }).then(r=>r.json()).then(function(j){
         if (j && j.success) { location.reload(); }
         else { alert((j && j.message) || 'Could not clear'); }

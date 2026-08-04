@@ -73,45 +73,27 @@ class InstanceAutomations {
     }
 
     /**
-     * Ask CORE (via this instance's own broker key) what this instance is connected to.
-     * Metadata only — connector/environment/account/status, never a credential. This is
-     * how an instance can SEE its connections: core and instances are separate apps with
-     * separate databases, so the rows live in core and are reached through the broker.
-     * Returns ['connections' => [...]] or ['error' => string].
+     * Begin an OAuth connect: returns ['url' => <handoff URL to redirect to>] or ['error'].
+     *
+     * The LAST broker call about connections, and the only one that has to exist. Asking
+     * core "what am I connected to?", "what connectors do you offer?", "store this key",
+     * "delete this row" all went away in Phase 2: those answers were always on local
+     * disk, and the round-trip only added a way for them to go missing.
+     *
+     * OAuth is different in kind. The app registration — client id, secret, the redirect
+     * URI the provider will accept — belongs to core, so an instance genuinely cannot
+     * start the handshake alone. Core runs it and hands the token back (Phase 3).
+     *
+     * Note it already refuses to guess: an empty url is an explicit error rather than a
+     * silent redirect to nowhere. That was the shape the rest of this class should have
+     * had all along.
      */
-    public static function brokerConnections(string $dir): array {
-        $r = self::brokerPost($dir, '/brokerinfo/connections');
-        if (!$r['ok']) return ['error' => $r['error']];
-        return ['connections' => $r['body']['connections'] ?? []];
-    }
-
-    /** Connectors CORE offers (metadata only) so the instance can render Connect buttons. */
-    public static function connectors(string $dir): array {
-        $r = self::brokerPost($dir, '/brokerinfo/connectors');
-        if (!$r['ok']) return ['error' => $r['error']];
-        return ['connectors' => $r['body']['connectors'] ?? []];
-    }
-
-    /** Begin an OAuth connect: returns ['url' => <handoff URL to redirect to>] or ['error']. */
     public static function connectIntent(string $dir, string $connector, string $env, string $shop, string $returnUrl): array {
         $r = self::brokerPost($dir, '/brokerinfo/connectintent',
             ['connector' => $connector, 'environment' => $env, 'shop' => $shop, 'return_url' => $returnUrl]);
         if (!$r['ok']) return ['error' => $r['error']];
         $url = (string) ($r['body']['data']['url'] ?? '');
         return $url !== '' ? ['url' => $url] : ['error' => 'The control plane did not return a connect URL.'];
-    }
-
-    /** Connect an api_key connector with a pasted key. Returns ['data'=>...] or ['error']. */
-    public static function connectKey(string $dir, string $connector, string $env, string $key): array {
-        $r = self::brokerPost($dir, '/brokerinfo/connectkey',
-            ['connector' => $connector, 'environment' => $env, 'key' => $key]);
-        return $r['ok'] ? ['data' => $r['body']['data'] ?? []] : ['error' => $r['error']];
-    }
-
-    /** Disconnect one of this instance's connections by id. Returns ['ok'=>true] or ['error']. */
-    public static function disconnectConnection(string $dir, int $connectionId): array {
-        $r = self::brokerPost($dir, '/brokerinfo/disconnect', ['connection_id' => $connectionId]);
-        return $r['ok'] ? ['ok' => true] : ['error' => $r['error']];
     }
 
     /** [base, key, error] from the instance's conf/broker.ini (base=null on error). */

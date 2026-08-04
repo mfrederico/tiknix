@@ -15,6 +15,7 @@ require_once __DIR__ . '/../bootstrap.php';
 new app\Bootstrap('conf/config.ini');
 
 use app\Bean;
+use app\ConnectionStore;
 use app\EncryptionService;
 use app\services\connectors\ConnectorRegistry;
 use RedBeanPHP\R;
@@ -29,30 +30,47 @@ echo '[' . date('c') . "] syncing " . count($pages) . " published social page(s)
 foreach ($pages as $page) {
     $slug = (string)$page->slug;
     try {
-        $conn = Bean::load('connections', (int)$page->connectionId);
-        if (!$conn->id || (int)$conn->enabled !== 1 || !empty($conn->revokedAt)) {
-            throw new \Exception('connection missing/disabled');
-        }
-        $connector = (new ConnectorRegistry())->get((string)$conn->connectorType);
-        if (!$connector) throw new \Exception('no connector for ' . $conn->connectorType);
+        // The connection lives in its INSTANCE's store, not here. A social page is
+        // identified by the pair (instance_ref, connection_ref) because a connection
+        // id is only unique inside one instance's file; a bare id used to be enough
+        // and silently is not any more.
+        $iid = (int)$page->instanceRef;
+        if ($iid <= 0) throw new \Exception('page predates per-instance connections (no instance_ref) — republish it');
 
-        $token = EncryptionService::decrypt((string)$conn->accessToken);
-        $meta  = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
-
-        // --- refresh an expiring token -------------------------------------
-        $expiresAt = (int)($meta['expires_at'] ?? 0);
-        if ($expiresAt > 0 && $expiresAt - time() < $REFRESH_WINDOW) {
-            $r = $connector->refreshToken($conn, $token);
-            if ($r && !empty($r['access_token'])) {
-                $token = (string)$r['access_token'];
-                $meta['expires_at'] = (int)($r['expires_at'] ?? (time() + 5184000));
-                $conn->accessToken  = EncryptionService::encrypt($token);
-                $conn->metadataJson = json_encode($meta);
-                $conn->updatedAt    = date('Y-m-d H:i:s');
-                Bean::store($conn);
-                echo "  [$slug] token refreshed (expires " . date('Y-m-d', $meta['expires_at']) . ")\n";
+        // Everything that touches the credential happens inside, including the
+        // refresh WRITE: a bean stored outside would land in core's database, and the
+        // token would be re-sealed with core's key instead of the instance's.
+        $res = ConnectionStore::withInstall($iid, function () use ($page, $REFRESH_WINDOW, $slug) {
+            $conn = Bean::load('connections', (int)$page->connectionRef);
+            if (!$conn->id || (int)$conn->enabled !== 1 || !empty($conn->revokedAt)) {
+                throw new \Exception('connection missing/disabled');
             }
-        }
+            $connector = (new ConnectorRegistry())->get((string)$conn->connectorType);
+            if (!$connector) throw new \Exception('no connector for ' . $conn->connectorType);
+
+            $token = ConnectionStore::ownToken($conn);
+            if ($token === '') throw new \Exception('stored token could not be decrypted with the instance key');
+            $meta  = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
+
+            // --- refresh an expiring token ---------------------------------
+            $expiresAt = (int)($meta['expires_at'] ?? 0);
+            if ($expiresAt > 0 && $expiresAt - time() < $REFRESH_WINDOW) {
+                $r = $connector->refreshToken($conn, $token);
+                if ($r && !empty($r['access_token'])) {
+                    $token = (string)$r['access_token'];
+                    $meta['expires_at'] = (int)($r['expires_at'] ?? (time() + 5184000));
+                    $conn->accessToken  = EncryptionService::encryptWith($token, ConnectionStore::currentKey());
+                    $conn->metadataJson = json_encode($meta);
+                    $conn->updatedAt    = date('Y-m-d H:i:s');
+                    Bean::store($conn);
+                    echo "  [$slug] token refreshed (expires " . date('Y-m-d', $meta['expires_at']) . ")\n";
+                }
+            }
+            return ['conn' => $conn, 'token' => $token, 'meta' => $meta, 'connector' => $connector];
+        }, null);
+
+        if ($res === null) throw new \Exception('instance ' . $iid . ' has no connections store on this host');
+        $conn = $res['conn']; $token = $res['token']; $meta = $res['meta']; $connector = $res['connector'];
 
         // --- pull the feed --------------------------------------------------
         $feed  = $connector->fetchFeed($conn, $token, ['limit' => (int)($page->maxItems ?: 30)]);

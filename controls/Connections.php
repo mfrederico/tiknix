@@ -562,43 +562,48 @@ class Connections extends Control {
         $ad = Flight::get('cachedDatabaseAdapter');
         if ($ad instanceof \app\CachedDatabaseAdapter) $ad->invalidateTable('connections');
 
-        $rows = Bean::find('connections',
-            'member_id = ? AND instance_id = ? ORDER BY connector_type, environment',
-            [(int)$this->member->id, (int)$inst->id]);
-        $byType = [];
-        foreach ($rows as $c) {
-            // Decrypt just far enough to show the last 4 chars as a which-secret hint
-            // (never the whole value); the fields themselves stay write-only.
-            $whHint = '';
-            $enc = (string)($c->webhookSecret ?? '');
-            if ($enc !== '') {
-                try {
-                    $plain = (string)EncryptionService::decrypt($enc);
-                    if ($plain !== '') $whHint = substr($plain, -4);
-                } catch (\Throwable $e) { $whHint = ''; }
-            }
-            $keyHint = '';
-            $encKey = (string)($c->accessToken ?? '');
-            if ($encKey !== '') {
-                try {
-                    $plainKey = (string)EncryptionService::decrypt($encKey);
+        // The SELECTED instance's own store. member_id is gone from the scoping: a
+        // connection belongs to the instance, whoever attached it, and the file is
+        // the boundary that used to be a WHERE clause.
+        //
+        // The key hint is computed INSIDE the closure, because that is the only place
+        // the instance's key is the one in scope -- ConnectionStore::ownToken() reads
+        // secure/connections.key from whichever install useInstall() named.
+        //
+        // The webhook-secret hint is NOT computed at all, and cannot be. That secret is
+        // sealed with the instance's APPLICATION key (EncryptionService), which core
+        // does not hold and which switching databases does not bring into scope. The
+        // old code called EncryptionService::decrypt() here and swallowed the failure
+        // in a catch, so the hint silently rendered blank and looked like "no secret
+        // set". Core now reports only WHETHER one is set, which is the whole of what
+        // it honestly knows.
+        $byType = ConnectionStore::withInstall((int)$inst->id, function () {
+            $out = [];
+            foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
+                if (!$c->id) continue;
+
+                $keyHint = '';
+                if ((string)($c->accessToken ?? '') !== '') {
+                    $plainKey = ConnectionStore::ownToken($c);
                     if ($plainKey !== '') $keyHint = substr($plainKey, -4);
-                } catch (\Throwable $e) { $keyHint = ''; }
+                }
+
+                $out[(string)$c->connectorType][] = [
+                    'id'          => (int)$c->id,
+                    'environment' => $c->environment ?: 'production',
+                    'name'        => $c->externalName ?: $c->externalEid,
+                    'eid'         => $c->externalEid,
+                    'url'         => $c->externalUrl,
+                    'enabled'     => (int)$c->enabled === 1,
+                    'revoked'     => !empty($c->revokedAt),
+                    'lastError'   => $c->lastError,
+                    'webhookSet'  => (string)($c->webhookSecret ?? '') !== '',
+                    'webhookHint' => '',   // core cannot open the instance's app key
+                    'keyHint'     => $keyHint,
+                ];
             }
-            $byType[(string)$c->connectorType][] = [
-                'id'          => (int)$c->id,
-                'environment' => $c->environment ?: 'production',
-                'name'        => $c->externalName ?: $c->externalEid,
-                'eid'         => $c->externalEid,
-                'url'         => $c->externalUrl,
-                'enabled'     => (int)$c->enabled === 1,
-                'revoked'     => !empty($c->revokedAt),
-                'lastError'   => $c->lastError,
-                'webhookSet'  => $enc !== '',
-                'webhookHint' => $whHint,
-                'keyHint'     => $keyHint,
-            ];
-        }
+            return $out;
+        }, []);
 
         // Unified connector cards: GitHub (deploy) first, then every registry
         // connector. Each card carries its own existing connections so the hub
@@ -653,17 +658,65 @@ class Connections extends Control {
     }
 
     /** Inside an instance: read-only list of what this app is connected to (broker). */
+    /**
+     * The instance's own Connections page, answered ENTIRELY from this install.
+     *
+     * It used to ask core two questions over the broker -- "what am I connected to?"
+     * and "what connectors do you offer?" -- and both answers were already here. The
+     * connections are in this install's own data/connections.db, and the connector
+     * catalogue is ConnectorRegistry, which ships in every clone.
+     *
+     * Removing that round-trip removes what came with it: `$r['body']['connections']
+     * ?? []` turned a garbled or failed response into an empty list, which renders as
+     * "you have not connected anything" -- indistinguishable from the truth, and
+     * wrong. There is nothing left to default here because there is no longer a
+     * remote answer that can go missing.
+     */
     private function instanceConnections(): void {
         if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/dashboard'); return; }
         $root = dirname(__DIR__);
-        $broker     = \app\InstanceAutomations::brokerConnections($root);
-        $connectors = \app\InstanceAutomations::connectors($root);
+
+        $connections = ConnectionStore::withOwnDb(function () {
+            $rows = [];
+            foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
+                if (!$c->id) continue;
+                $rows[] = [
+                    'id'          => (int) $c->id,
+                    'connector'   => (string) $c->connectorType,
+                    'environment' => (string) ($c->environment ?: 'production'),
+                    'name'        => (string) ($c->externalName ?: $c->externalEid),
+                    'url'         => (string) ($c->externalUrl ?? ''),
+                    'enabled'     => (int) $c->enabled === 1,
+                    'revoked'     => !empty($c->revokedAt),
+                    'last_used'   => (string) ($c->lastUsedAt ?? ''),
+                ];
+            }
+            return $rows;
+        }, []);
+
+        // An OAuth connector reports unconfigured here on purpose: the app
+        // registration lives on core, so this install genuinely cannot start that
+        // handshake alone. api_key connectors are configured by definition.
+        $connectors = [];
+        foreach (\app\services\connectors\ConnectorRegistry::all() as $c) {
+            $m = $c->meta();
+            $connectors[] = [
+                'key'        => $c->key(),
+                'label'      => (string) ($m['label'] ?? $c->key()),
+                'blurb'      => (string) ($m['blurb'] ?? ''),
+                'category'   => (string) ($m['category'] ?? 'Other'),
+                'icon'       => (string) ($m['icon'] ?? 'plug'),
+                'auth_type'  => (string) ($m['auth_type'] ?? 'oauth'),
+                'configured' => (bool) $c->isConfigured(),
+            ];
+        }
+
         $this->render('connections/instance', [
             'title'           => 'Connections',
-            'connections'     => $broker['connections'] ?? [],
-            'brokerError'     => $broker['error'] ?? '',
-            'connectors'      => $connectors['connectors'] ?? [],
-            'connectorsError' => $connectors['error'] ?? '',
+            'connections'     => $connections,
+            'brokerError'     => '',
+            'connectors'      => $connectors,
+            'connectorsError' => '',
             'appName'         => basename($root),
             'environments'    => ['development', 'production'],
         ]);
@@ -697,9 +750,34 @@ class Connections extends Control {
         $env  = $this->normalizeEnv($this->getParam('env', 'production'));
         $key  = trim((string)$this->getParam('key', ''));
         if ($type === '' || $key === '') { $this->jsonError('Connector and key are required.', 400); return; }
-        $r = \app\InstanceAutomations::connectKey(dirname(__DIR__), $type, $env, $key);
-        if (!empty($r['error'])) { $this->jsonError($r['error'], 400); return; }
-        $this->jsonSuccess($r['data'] ?? [], ucfirst($type) . ' connected.');
+
+        // Stored HERE, by this install, with this install's key. It used to POST the
+        // raw credential to core's /brokerinfo/connectkey so core could write it back
+        // into this very file -- a network round-trip, and the customer's secret over
+        // the wire, to reach a database on local disk.
+        $connector = \app\services\connectors\ConnectorRegistry::get($type);
+        if (!$connector) { $this->jsonError('Unknown connector: ' . $type, 400); return; }
+        if (($connector->meta()['auth_type'] ?? 'oauth') !== 'api_key') {
+            $this->jsonError(ucfirst($type) . ' does not connect with a pasted key.', 400); return;
+        }
+
+        try {
+            // The provider's own words on failure -- "Not Authenticated" and "token
+            // expired" want different things done about them.
+            $payload = $connector->validateApiKey($key);
+            $payload['auth_type'] = 'api_key';
+            $id = ConnectionStore::put($type, $env, $payload);
+        } catch (\Throwable $e) {
+            $this->jsonError($e->getMessage(), 400); return;
+        }
+        if ($id <= 0) { $this->jsonError('The connection could not be stored on this install.', 500); return; }
+
+        $this->jsonSuccess([
+            'id'          => $id,
+            'connector'   => $type,
+            'environment' => $env,
+            'account'     => (string) ($payload['external_name'] ?? $payload['external_eid'] ?? ''),
+        ], ucfirst($type) . ' connected.');
     }
 
     /** POST /connections/instancedisconnect — instance-driven disconnect (owner/admin). JSON. */
@@ -709,8 +787,18 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $cid = (int)$this->getParam('cid', 0);
         if ($cid <= 0) { $this->jsonError('connection id required.', 400); return; }
-        $r = \app\InstanceAutomations::disconnectConnection(dirname(__DIR__), $cid);
-        if (!empty($r['error'])) { $this->jsonError($r['error'], 400); return; }
+
+        // Local, for the same reason as instanceconnectkey: the row is in this
+        // install's own file. The id needs no ownership check because a foreign id
+        // simply is not in this database.
+        $gone = ConnectionStore::withOwnDb(function () use ($cid) {
+            $conn = Bean::load('connections', $cid);
+            if (!$conn->id) return false;
+            Bean::trash($conn);
+            return true;
+        }, false);
+
+        if (!$gone) { $this->jsonError('No such connection on this install.', 404); return; }
         $this->jsonSuccess([], 'Disconnected.');
     }
 
@@ -770,12 +858,19 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
 
-        $conn = Bean::findOne('connections', "id = ? AND member_id = ? AND connector_type = 'telegram'",
-            [(int) $this->getParam('connection', 0), (int) $this->member->id]);
+        // This install's own store. member_id was the shared-table way of asking
+        // "is this yours?"; the file answers it now -- a connection that is not this
+        // install's is not in this database.
+        $cid  = (int) $this->getParam('connection', 0);
+        $conn = ConnectionStore::withOwnDb(
+            fn() => Bean::findOne('connections', "id = ? AND connector_type = 'telegram'", [$cid]), null);
         if (!$conn || !$conn->id) { Flight::jsonError('Telegram connection not found.', 404); return; }
 
-        $token = (string) ($conn->accessToken ?? '');
-        if ($token === '') { Flight::jsonError('This connection has no bot token.', 400); return; }
+        // Decrypted with this install's key. Read raw, this is ciphertext -- put()
+        // encrypts access_token, so handing it to Telegram would fail authentication
+        // with a message about the token, not about the encryption.
+        $token = ConnectionStore::ownToken($conn);
+        if ($token === '') { Flight::jsonError('This connection has no usable bot token.', 400); return; }
 
         $connector = ConnectorRegistry::get('telegram');
         $url       = app_url('/webhook/telegram/' . (int) $conn->id);
@@ -799,9 +894,15 @@ class Connections extends Control {
 
         // Stored only after Telegram accepted it. Storing first would leave the
         // database claiming a secret that the bot is not actually sending.
-        $conn->webhookSecret = $secret;
-        $conn->updatedAt     = date('Y-m-d H:i:s');
-        Bean::store($conn);
+        $cidNow = (int) $conn->id;
+        ConnectionStore::withOwnDb(function () use ($cidNow, $secret) {
+            $row = Bean::load('connections', $cidNow);
+            if (!$row->id) return false;
+            $row->webhookSecret = $secret;
+            $row->updatedAt     = date('Y-m-d H:i:s');
+            Bean::store($row);
+            return true;
+        }, false, true);
 
         Flight::jsonSuccess(['url' => $url], 'Telegram will deliver messages here.');
     }
@@ -811,12 +912,16 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
 
-        $conn = Bean::findOne('connections', "id = ? AND member_id = ? AND connector_type = 'telegram'",
-            [(int) $this->getParam('connection', 0), (int) $this->member->id]);
+        // This install's own store. member_id was the shared-table way of asking
+        // "is this yours?"; the file answers it now -- a connection that is not this
+        // install's is not in this database.
+        $cid  = (int) $this->getParam('connection', 0);
+        $conn = ConnectionStore::withOwnDb(
+            fn() => Bean::findOne('connections', "id = ? AND connector_type = 'telegram'", [$cid]), null);
         if (!$conn || !$conn->id) { Flight::jsonError('Telegram connection not found.', 404); return; }
 
         try {
-            ConnectorRegistry::get('telegram')->deleteWebhook((string) ($conn->accessToken ?? ''));
+            ConnectorRegistry::get('telegram')->deleteWebhook(ConnectionStore::ownToken($conn));
         } catch (\Throwable $e) {
             // Clear the secret regardless. If Telegram is unreachable the operator
             // still wants this install to stop trusting deliveries for this bot, and
@@ -825,9 +930,15 @@ class Connections extends Control {
                 ['connection' => (int) $conn->id, 'err' => $e->getMessage()]);
         }
 
-        $conn->webhookSecret = '';
-        $conn->updatedAt     = date('Y-m-d H:i:s');
-        Bean::store($conn);
+        $cidNow = (int) $conn->id;
+        ConnectionStore::withOwnDb(function () use ($cidNow) {
+            $row = Bean::load('connections', $cidNow);
+            if (!$row->id) return false;
+            $row->webhookSecret = '';
+            $row->updatedAt     = date('Y-m-d H:i:s');
+            Bean::store($row);
+            return true;
+        }, false, true);
 
         Flight::jsonSuccess([], 'Telegram will no longer deliver here.');
     }
@@ -895,10 +1006,15 @@ class Connections extends Control {
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
 
-        // Advisory allowlist: the connectors this instance actually has connections for.
-        $conns = Bean::find('connections', 'instance_id = ? AND enabled = 1', [(int)$inst->id]);
-        $keys = [];
-        foreach ($conns as $c) { if ($c->connectorType) $keys[(string)$c->connectorType] = true; }
+        // Advisory allowlist: the connectors this instance actually has connections
+        // for, read from its own store.
+        $keys = ConnectionStore::withInstall((int)$inst->id, function () {
+            $k = [];
+            foreach (Bean::find('connections', 'enabled = 1') as $c) {
+                if ($c->connectorType) $k[(string)$c->connectorType] = true;
+            }
+            return $k;
+        }, []);
 
         $res = BrokerService::mint((int)$inst->id, (int)$this->member->id, array_keys($keys));
         $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
@@ -1177,32 +1293,74 @@ class Connections extends Control {
         ], ucfirst($type) . ' connected');
     }
 
+    /**
+     * Which instance's store, and which row in it, a hub action is aimed at.
+     *
+     * Ownership used to be `$conn->memberId === $this->member->id`, a column that no
+     * longer exists: a per-instance store records no owner, because everything in the
+     * file belongs to that instance already. The check that replaces it is STRONGER --
+     * ownedInstance() proves this member owns the instance, and only then do we open
+     * its file. A cid belonging to somebody else is not in that database to find.
+     *
+     * @return array{0:int,1:int}|null [instanceId, connectionId], or null having sent the error
+     */
+    private function hubTarget(): ?array {
+        $inst = $this->ownedInstance($this->getParam('id', 0));
+        if (!$inst) { $this->jsonError('Instance not found.', 404); return null; }
+        $cid = (int)$this->getParam('cid', 0);
+        if ($cid <= 0) { $this->jsonError('Connection not found', 404); return null; }
+        return [(int)$inst->id, $cid];
+    }
+
     /** POST /connections/test — re-validate a stored connection. */
     public function test($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
-        $conn = Bean::load('connections', (int)$this->getParam('cid', 0));
-        if (!$conn->id || (int)$conn->memberId !== (int)$this->member->id) { $this->jsonError('Connection not found', 404); return; }
-        $meta = json_decode(($conn->metadataJson ?: '{}') ?? '', true) ?: [];
-        try {
-            $pat = EncryptionService::decrypt($conn->accessToken);
-            $gh  = new GitHubService($pat, $meta['owner'] ?? '', $meta['repo'] ?? '');
-            $r   = $gh->getRepository();
-            $conn->lastUsedAt = date('Y-m-d H:i:s'); $conn->lastError = null; Bean::store($conn);
-            $this->jsonSuccess(['repo' => $r['full_name'] ?? '', 'defaultBranch' => $r['default_branch'] ?? 'main'], 'Connection OK');
-        } catch (\Throwable $e) {
-            $conn->lastError = $e->getMessage(); Bean::store($conn);
-            $this->jsonError('Test failed: ' . $e->getMessage(), 400);
-        }
+        if (($t = $this->hubTarget()) === null) return;
+        [$iid, $cid] = $t;
+
+        // The whole unit of work runs inside the instance's store: the token is
+        // decrypted with that instance's key (ownToken), and the outcome is written
+        // back to the same file. Carrying the bean out and storing it afterwards
+        // would save it to core -- see ConnectionStore::withInstall.
+        $res = ConnectionStore::withInstall($iid, function () use ($cid) {
+            $conn = Bean::load('connections', $cid);
+            if (!$conn->id) return ['error' => 'Connection not found', 'code' => 404];
+
+            $meta = json_decode(($conn->metadataJson ?: '{}') ?? '', true) ?: [];
+            $pat  = ConnectionStore::ownToken($conn);
+            if ($pat === '') return ['error' => 'The stored token could not be decrypted on this instance.', 'code' => 500];
+
+            try {
+                $gh = new GitHubService($pat, $meta['owner'] ?? '', $meta['repo'] ?? '');
+                $r  = $gh->getRepository();
+                $conn->lastUsedAt = date('Y-m-d H:i:s'); $conn->lastError = null; Bean::store($conn);
+                return ['ok' => ['repo' => $r['full_name'] ?? '', 'defaultBranch' => $r['default_branch'] ?? 'main']];
+            } catch (\Throwable $e) {
+                $conn->lastError = $e->getMessage(); Bean::store($conn);
+                return ['error' => 'Test failed: ' . $e->getMessage(), 'code' => 400];
+            }
+        }, ['error' => 'That instance has no connections store on this host.', 'code' => 404]);
+
+        if (isset($res['error'])) { $this->jsonError($res['error'], (int)$res['code']); return; }
+        $this->jsonSuccess($res['ok'], 'Connection OK');
     }
 
     /** POST /connections/disconnect — remove a stored connection. */
     public function disconnect($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
-        $conn = Bean::load('connections', (int)$this->getParam('cid', 0));
-        if (!$conn->id || (int)$conn->memberId !== (int)$this->member->id) { $this->jsonError('Connection not found', 404); return; }
-        Bean::trash($conn);
+        if (($t = $this->hubTarget()) === null) return;
+        [$iid, $cid] = $t;
+
+        $gone = ConnectionStore::withInstall($iid, function () use ($cid) {
+            $conn = Bean::load('connections', $cid);
+            if (!$conn->id) return false;
+            Bean::trash($conn);
+            return true;
+        }, false);
+
+        if (!$gone) { $this->jsonError('Connection not found', 404); return; }
         $this->jsonSuccess([], 'Disconnected');
     }
 
@@ -1214,17 +1372,36 @@ class Connections extends Control {
     public function webhooksecret($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
-        $conn = Bean::load('connections', (int)$this->getParam('cid', 0));
-        if (!$conn->id || (int)$conn->memberId !== (int)$this->member->id) { $this->jsonError('Connection not found', 404); return; }
-        $secret = trim((string)$this->getParam('secret', ''));
-        if ($secret !== '') {
-            $conn->webhookSecret = EncryptionService::encrypt($secret);
-        } elseif (filter_var($this->getParam('clear', false), FILTER_VALIDATE_BOOLEAN)) {
-            $conn->webhookSecret = '';
+
+        // INSTALL-LOCAL, and forced -- the same constraint as githubwebhook(). This
+        // secret is sealed with EncryptionService, i.e. the running install's APP key,
+        // and it is opened by that install's own /webhook/* handler. Core setting it
+        // for an instance would seal it with core's key and hand the instance a value
+        // it can never verify against -- and the failure would show up as an HMAC
+        // mismatch on a live webhook, nowhere near the button that caused it.
+        if (builder_tools_enabled()) {
+            $this->jsonError('Set the webhook secret from the instance\'s own Connections page: '
+                . 'it is encrypted with that install\'s key, which the control plane does not hold.', 409);
+            return;
         }
-        $conn->updatedAt = date('Y-m-d H:i:s');
-        Bean::store($conn);
-        $this->jsonSuccess(['set' => !empty($conn->webhookSecret)], 'Webhook secret saved');
+
+        $cid = (int)$this->getParam('cid', 0);
+        if ($cid <= 0) { $this->jsonError('Connection not found', 404); return; }
+        $secret = trim((string)$this->getParam('secret', ''));
+        $clear  = filter_var($this->getParam('clear', false), FILTER_VALIDATE_BOOLEAN);
+
+        $set = ConnectionStore::withOwnDb(function () use ($cid, $secret, $clear) {
+            $conn = Bean::load('connections', $cid);
+            if (!$conn->id) return null;
+            if ($secret !== '')   $conn->webhookSecret = EncryptionService::encrypt($secret);
+            elseif ($clear)       $conn->webhookSecret = '';
+            $conn->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($conn);
+            return !empty($conn->webhookSecret);
+        }, null, true);
+
+        if ($set === null) { $this->jsonError('Connection not found on this install', 404); return; }
+        $this->jsonSuccess(['set' => $set], 'Webhook secret saved');
     }
 
     /**
@@ -1236,8 +1413,24 @@ class Connections extends Control {
     public function publishfeed($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
-        $conn = Bean::load('connections', (int)$this->getParam('cid', 0));
-        if (!$conn->id || (int)$conn->memberId !== (int)$this->member->id) { $this->jsonError('Connection not found', 404); return; }
+        if (($t = $this->hubTarget()) === null) return;
+        [$iid, $cid] = $t;
+
+        // The connection lives in the instance's file; socialpage lives HERE, because
+        // /social/<slug> is served by core. So the credential-shaped work happens
+        // inside withInstall and only plain values come back out.
+        // The bean comes back out and the token with it. Reading a bean outside its
+        // database is fine -- it is store() that writes to whatever is selected, which
+        // is why nothing here saves it. The token must be decrypted inside, while the
+        // instance's key is the one in scope.
+        $src = ConnectionStore::withInstall($iid, function () use ($cid) {
+            $conn = Bean::load('connections', $cid);
+            if (!$conn->id) return null;
+            return ['conn' => $conn, 'token' => ConnectionStore::ownToken($conn)];
+        }, null);
+
+        if ($src === null) { $this->jsonError('Connection not found', 404); return; }
+        $conn = $src['conn'];
 
         $connector = ConnectorRegistry::get((string)$conn->connectorType);
         if (!$connector || (string)($connector->meta()['category'] ?? '') !== 'Social') {
@@ -1255,10 +1448,18 @@ class Connections extends Control {
         $taken = Bean::findOne('socialpage', 'slug = ? AND member_id != ?', [$slug, (int)$this->member->id]);
         if ($taken && $taken->id) { $this->jsonError('That page name is taken — pick another.', 409); return; }
 
-        $page = Bean::findOne('socialpage', 'member_id = ? AND connection_id = ?', [(int)$this->member->id, (int)$conn->id]);
+        // instance_ref is what makes connection_ref findable again: a connection id is
+        // only unique WITHIN one instance's file now, so the pair identifies it and a
+        // bare id does not. Both are _ref, not _id -- the bean type is plural
+        // ('connections'), so connection_id would have RedBean chasing a bean type
+        // 'connection' that does not exist, and the instance is hard-deleted on
+        // teardown, which a real FK would forbid.
+        $page = Bean::findOne('socialpage', 'member_id = ? AND instance_ref = ? AND connection_ref = ?',
+            [(int)$this->member->id, $iid, $cid]);
         if (!$page || !$page->id) { $page = Bean::dispense('socialpage'); $page->createdAt = date('Y-m-d H:i:s'); $page->feedJson = '[]'; }
-        $page->memberId     = (int)$this->member->id;
-        $page->connectionId = (int)$conn->id;
+        $page->memberId      = (int)$this->member->id;
+        $page->instanceRef   = $iid;
+        $page->connectionRef = $cid;
         $page->slug         = $slug;
         $page->title        = trim((string)$this->getParam('title', '')) ?: ('@' . ltrim((string)($meta['username'] ?? $conn->externalName), '@'));
         $page->handle       = (string)($meta['username'] ?? ltrim((string)$conn->externalName, '@'));
@@ -1271,7 +1472,8 @@ class Connections extends Control {
         // Best-effort immediate fetch so the page isn't empty (cron mirrors media later).
         $count = 0;
         try {
-            $token = EncryptionService::decrypt((string)$conn->accessToken);
+            $token = $src['token'];
+            if ($token === '') throw new \Exception('the stored token could not be decrypted on that instance');
             $feed  = $connector->fetchFeed($conn, $token, ['limit' => (int)$page->maxItems]);
             $page->feedJson = json_encode(array_values($feed['items'] ?? []), JSON_UNESCAPED_SLASHES);
             $page->syncedAt = date('Y-m-d H:i:s');

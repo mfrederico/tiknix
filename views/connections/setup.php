@@ -217,7 +217,7 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
   const dc = document.getElementById('gh-disconnect');
   if(dc) dc.addEventListener('click', function(){
     if(!confirm('Disconnect this GitHub repo?')) return;
-    post('/connections/disconnect', {cid:this.dataset.cid}).then(()=>location.reload());
+    post('/connections/disconnect', {id:iid, cid:this.dataset.cid}).then(()=>location.reload());
   });
 
   // Custom domains ("resolves to") — branch → your domain, DNS-verified

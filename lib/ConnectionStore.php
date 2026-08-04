@@ -116,8 +116,15 @@ class ConnectionStore {
      * Run against this install's own connections db, restoring the caller's
      * connection afterwards. Mirrors app\CoreDb::with.
      */
-    public static function withOwnDb(callable $fn, $onError = null) {
+    public static function withOwnDb(callable $fn, $onError = null, bool $create = false) {
         $db = self::ownDbPath();
+
+        // A READ must not bring the file into existence. RedBean::addDatabase opens
+        // SQLite, and SQLite creates on open, so merely asking an instance what it is
+        // connected to left an empty database behind -- scheduler-17d481 and
+        // quickticket-027513 both acquired one from a lookup that touched nothing.
+        if (!$create && !is_file($db)) return $onError;
+
         $dir = dirname($db);
         if (!is_dir($dir)) @mkdir($dir, 0755, true);
 
@@ -266,7 +273,7 @@ class ConnectionStore {
             if (!$conn->createdAt) $conn->createdAt = $conn->updatedAt;
 
             return (int) Bean::store($conn);
-        }, 0);
+        }, 0, true);
     }
 
     /**
@@ -384,6 +391,13 @@ class ConnectionStore {
      * Returns the connection id.
      */
     public static function upsert(string $type, int $memberId, int $instanceId, string $env, array $payload, string $authType = 'oauth'): int {
+        // Retired. This wrote core's shared table, which is the one place a
+        // credential can land and then not travel with its instance. Use
+        // put() for this install or putForInstall($instanceId, ...) for another.
+        throw new \RuntimeException(
+            'ConnectionStore::upsert is retired — connectors live with their instance '
+          . 'now. Use put() or putForInstall(). See CONNECTIONS_PER_INSTANCE.md.');
+
         $eid = (string) ($payload['external_eid'] ?? '');
 
         $conn = Bean::findOne('connections',

@@ -91,7 +91,9 @@ class Brokerinfo extends Control {
         }
         try {
             $payload = $connector->validateApiKey($raw);
-            $id = ConnectionStore::upsert($type, $mid, $iid, $env, $payload, 'api_key');
+            // The key's instance owns it — same routing as the OAuth callback.
+            $payload['auth_type'] = 'api_key';
+            $id = ConnectionStore::putForInstall($iid, $type, $env, $payload);
         } catch (\Throwable $e) {
             Flight::jsonError($e->getMessage(), 400); return;
         }

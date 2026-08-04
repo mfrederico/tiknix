@@ -77,8 +77,11 @@ class Connectorapi extends Control {
 
         $body = $this->jsonBody();
         $type = strtolower(trim((string) ($body['connector'] ?? '')));
-        $env  = in_array(($body['environment'] ?? 'production'), ['production', 'development', 'staging'], true)
-              ? (string) $body['environment'] : 'production';
+        // Read once, then validate. The previous form guarded the in_array() check
+        // with ?? but read $body['environment'] raw in the true branch, so omitting
+        // the key — which every caller does — was an undefined-key error and a 500.
+        $env = (string) ($body['environment'] ?? 'production');
+        if (!in_array($env, ['production', 'development', 'staging'], true)) $env = 'production';
         $raw  = trim((string) ($body['key'] ?? ''));
 
         if ($type === '' || $raw === '') { Flight::jsonError('connector and key are required.', 400); return; }

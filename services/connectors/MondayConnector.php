@@ -181,7 +181,12 @@ class MondayConnector extends AbstractConnector {
         // nothing and tells a planner less.
         $q = '
             query ($board: [ID!], $limit: Int!, $cursor: String) {
-                boards (ids: $board) {
+                # state: active here as well as on the board LIST. Without it a
+                # stale link or bookmark to a board somebody archived still returns
+                # its items, and they import as live work -- the list refuses to
+                # offer that board and this refuses to read it. (# not //: this is
+                # GraphQL, and a // here is a syntax error at the far end.)
+                boards (ids: $board, state: active) {
                     columns { id title type }
                     items_page (limit: $limit, cursor: $cursor) {
                         cursor
@@ -367,7 +372,7 @@ class MondayConnector extends AbstractConnector {
         if ($boardId === '') return [];
 
         $data = $this->query($token, '
-            query ($ids: [ID!]) { boards (ids: $ids) { columns { id title type } } }',
+            query ($ids: [ID!]) { boards (ids: $ids, state: active) { columns { id title type } } }',
             ['ids' => [$boardId]]);
 
         $titles = [];

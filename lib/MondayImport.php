@@ -72,18 +72,10 @@ class MondayImport {
     public static function connection(?int $instanceId = null): ?\RedBeanPHP\OODBBean {
         if (self::$injected && self::$injected->id) return self::$injected;
 
-        // The scoping rule lives in ConnectionStore, not here. This method's only
-        // job is deciding WHERE to look — own database first, then the platform's.
+        // The instance owns its connectors, so there is one place to look and no
+        // fallback to a platform copy — there is no platform copy any more.
         if ($instanceId !== null && $instanceId > 0) {
-            $local = ConnectionStore::forInstance($instanceId, 'monday');
-            if ($local) return $local;
-
-            // The bean carries its values with it, so reading the token after the
-            // connection has been switched back is fine.
-            return CoreDb::with(
-                fn() => ConnectionStore::forInstance($instanceId, 'monday'),
-                null
-            );
+            return ConnectionStore::forInstall($instanceId, 'monday');
         }
 
         // No instance context: a standalone or self-hosted install asking about its

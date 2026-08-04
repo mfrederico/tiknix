@@ -221,7 +221,7 @@ class Brokerinfo extends Control {
             Flight::jsonError('No access to that project.', 403); return;
         }
 
-        $conn = \app\ConnectionStore::forInstance($instanceId, $connector);
+        $conn = \app\ConnectionStore::forInstall($instanceId, $connector);
         if (!$conn) { Flight::jsonError('No enabled ' . $connector . ' connection for that project.', 404); return; }
 
         $token = \app\ConnectionStore::token($conn);

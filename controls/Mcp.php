@@ -1202,11 +1202,12 @@ class Mcp extends BaseControls\Control {
         }
 
         $env  = $this->normalizeBrokerEnv($arguments['environment'] ?? 'production');
-        // Query only on columns guaranteed to exist; check revoked state in PHP so a
-        // never-populated revoked_at column can't make this silently return nothing.
-        $conn = Bean::findOne('connections',
-            'instance_id = ? AND connector_type = ? AND environment = ? AND enabled = 1',
-            [$instanceId, $connectorKey, $env]);
+        // ConnectionStore now does what the comment here used to insist on: it
+        // queries only columns guaranteed to exist and judges revoked state in PHP,
+        // because RedBean answers a query naming an absent column with NOTHING
+        // rather than an error — which would make a good connection disappear on an
+        // instance whose table predates revoked_at.
+        $conn = \app\ConnectionStore::forInstance($instanceId, $connectorKey, $env);
         if (!$conn || !$conn->id) {
             throw new \Exception("No enabled {$connectorKey} connection for environment '{$env}'.");
         }

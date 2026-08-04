@@ -147,10 +147,10 @@ class Storebroker extends Control {
         foreach (ConnectorRegistry::all() as $c) {
             if (($c->meta()['category'] ?? '') !== 'Payments') continue;
             foreach (['production', 'development'] as $tryEnv) {
-                $conn = Bean::findOne('connections',
-                    'member_id = ? AND instance_id = ? AND environment = ? AND connector_type = ? AND enabled = 1',
-                    [$memberId, $instanceId, $tryEnv, $c->key()]);
-                if ($conn && $conn->id && empty($conn->revokedAt)) return [$conn, $c];
+                // ConnectionStore owns the scoping AND the revoked check that was
+                // being done by hand on the next line.
+                $conn = \app\ConnectionStore::forInstance($instanceId, $c->key(), $tryEnv, $memberId);
+                if ($conn) return [$conn, $c];
             }
         }
         return [null, null];

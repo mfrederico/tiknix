@@ -38,8 +38,14 @@ class ConnectionStore {
     ): ?\RedBeanPHP\OODBBean {
         if ($instanceId <= 0 || $type === '') return null;
 
-        $where  = 'instance_id = ? AND connector_type = ? AND enabled = 1 '
-                . 'AND (revoked_at IS NULL OR revoked_at = 0)';
+        // revoked_at is NOT in the WHERE, and that is deliberate. RedBean's fluid
+        // mode answers a query naming a column the table does not have by returning
+        // NOTHING — not by raising — so on an instance whose connections table
+        // predates revoked_at, a perfectly good connection silently disappears.
+        // controls/Mcp.php carried a comment warning about exactly this; it was
+        // right, and this helper had the bug it described. Query only the columns
+        // every version of the table has, and judge revocation in PHP.
+        $where  = 'instance_id = ? AND connector_type = ? AND enabled = 1';
         $params = [$instanceId, $type];
 
         if ($env !== null)      { $where .= ' AND environment = ?'; $params[] = $env; }
@@ -53,12 +59,21 @@ class ConnectionStore {
         // changes nothing; for the ones that do not — "the connection for this
         // instance" — it is the difference between publishing to the real store and
         // publishing to a test one.
-        $c = Bean::findOne(
+        $rows = Bean::find(
             'connections',
             $where . " ORDER BY CASE WHEN environment = 'production' THEN 0 ELSE 1 END, id DESC",
             $params
         );
-        return ($c && $c->id) ? $c : null;
+
+        // First non-revoked, in that order. Reading the property rather than the
+        // column means a table without it simply reports nothing revoked, which is
+        // the correct answer for a schema that has no concept of revocation.
+        foreach ($rows as $c) {
+            if (!$c->id) continue;
+            if (!empty($c->revokedAt)) continue;
+            return $c;
+        }
+        return null;
     }
 
     /**

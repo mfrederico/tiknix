@@ -1217,17 +1217,29 @@ class Mcp extends BaseControls\Control {
             throw new \Exception(
                 "No enabled, unrevoked {$connectorKey} connection for environment '{$env}'.");
         }
-        // Binding (defense-in-depth): the connection MUST belong to the key's instance.
-        if ((int)$conn->instanceId !== $instanceId) {
-            throw new \Exception('Connection/instance binding mismatch.');
-        }
+        // The binding check that used to sit here compared $conn->instanceId, a column
+        // that no longer exists: a per-instance store records no instance_id because
+        // the FILE is the scope. It read as 0, never matched, and threw
+        // "Connection/instance binding mismatch" on every broker tool call.
+        //
+        // Nothing is lost by removing it. forInstall() resolved instance $instanceId's
+        // directory and opened the database inside it, so a row that came back IS that
+        // instance's by construction — the guarantee moved from a WHERE clause to the
+        // filesystem, which is the stronger of the two.
         // Optional per-connection allowlist on the key (empty = all this instance's).
         $allowed = json_decode((string)($key->connectionIds ?? '[]'), true) ?: [];
         if (!empty($allowed) && !in_array((int)$conn->id, array_map('intval', $allowed), true)) {
             throw new \Exception('Broker key is not scoped to this connection.');
         }
 
-        $token = EncryptionService::decrypt($conn->accessToken);
+        // The instance's key, not core's. EncryptionService::decrypt() uses THIS
+        // install's key, and this token was sealed with the instance's — so it could
+        // only ever fail. forInstall() already decrypted it while the right key was in
+        // scope and carried it on the bean; that is the whole reason plainToken exists.
+        $token = (string) ($conn->plainToken ?? '');
+        if ($token === '') {
+            throw new \Exception("The {$connectorKey} connection could not be decrypted for this instance.");
+        }
         try {
             $data = $connector->callBrokerTool($toolName, $conn, $token, $arguments);
         } finally {

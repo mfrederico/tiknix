@@ -142,6 +142,78 @@ The common cause is one rule that is easy to miss and now stated explicitly:
 Anything that mutates goes inside `ConnectionStore::withInstall($id, fn)`, which
 holds the right database selected for the whole unit of work.
 
+### Why it survived a whole day: nothing errored
+
+The GitHub writer kept writing core's table for a day after the move, and no part
+of the system objected. Walk it through:
+
+1. `githubConn()` read the instance's store correctly and found nothing.
+2. The caller read that `null` as **"not connected yet"** and dispensed a new bean.
+3. The bean was stored against whatever database was open — core's.
+4. The route answered `GitHub connected`.
+
+Every step behaved reasonably. The bug lives entirely in step 2: `null` was made to
+mean two different things — *"this install has no such connection"* and *"I could
+not tell you"* — and the code picked the cheerful reading. A store that had thrown
+"the instance's connections file has never been written" would have failed the
+request in front of the person doing it, on the first attempt, instead of quietly
+issuing a credential to the wrong file.
+
+> **This is the case against fallbacks, in one page.** A fallback converts a
+> question the system cannot answer into an answer it cannot support. It does not
+> reduce the number of failures; it moves them somewhere nobody is looking and
+> strips the timestamp off them.
+
+The same shape produced the other three: a sealed key decrypted with the wrong key
+returned `''` instead of throwing, an absent `instance_id` compared as `0`, an
+absent table returned `[]`. Four bugs, one habit.
+
+## The direction is backwards (decided 2026-08-04)
+
+Storage moved to the instance; the **control surface did not**. Core still fronts
+the hub, the OAuth callback, the webhooks and the MCP server, and then reaches
+across the boundary into instance files. Everything awkward here is a symptom of
+that one thing:
+
+- `forInstall()` / `putForInstall()` / `withInstall()` exist only so core can
+  operate on someone else's file.
+- The repo→instance lookup exists only because a webhook lands on core, which then
+  has to work out whose it was.
+- The read-one-write-another bugs are all core running code that belongs to an
+  instance.
+
+**The instance is the front door.** `<slug>.tiknix.com` is served by wildcard DNS
++ nginx for any valid `/var/www/html/default/<slug>.tiknix/`, and every instance is
+a full clone — so the same code, running there, is already correct. `app_url()`
+reads that install's `app.baseurl`; `mcptools/Introspector.php` roots itself at
+`dirname(__DIR__)`; `BaseTool` already resolves `{instanceRoot}/data/workbench.db`.
+None of it needs a change to be right. It needs to run in the right place.
+
+### Phases
+
+| | What | Depends on |
+|---|---|---|
+| 1 | Webhooks land on `<slug>.tiknix.com`. The domain IS the tenant scope, so the repo→instance lookup is deleted, not repointed. HMAC verifies against that instance's own secret. | nothing |
+| 1.5 | `.mcp.json` points at `<slug>.tiknix.com`. Correctness, not tidiness — the introspection tools root themselves in the install they run in, so a project pointed at core gets **core's** controllers and models. `project_root` and `project.root` are two different keys and neither is ever set. | nothing |
+| 2 | Secret-key connectors (monday, stripe, rsync/ssh) attach on the instance's own hub via `for()`/`put()`. No instance id in the flow at all. | 1 |
+| 3 | OAuth: core keeps the registered callback as a **thin landing pad** — reads `state`, resolves the instance, pushes the token in over `POST /connectorapi/connect` with that instance's broker key, stores nothing. Same door on-disk or self-hosted. | 2 |
+
+Phase 3 needs one new thing: `Connectorapi::connect` currently accepts only
+`auth_type: api_key` and re-validates via `validateApiKey()`. OAuth needs a sibling
+taking a pre-validated payload. Broker-key auth keeps it from being an open
+token-injection route, so build it deliberately rather than loosening `connect()`.
+
+**What retires:** `putForInstall()` (superseded by the HTTP push), `withInstall()`
+(only needed while core writes across the boundary), and the non-secret mirror,
+which is never built — it was scaffolding to make the wrong direction survivable.
+`forInstall()` narrows to the publish drivers, where core legitimately acts for an
+instance because core does the deploying.
+
+**On deploy**, a tenant changes three values: webhook URL, OAuth callback,
+`.mcp.json` baseurl. Under the old shape self-hosting was not a re-setup, it was
+impossible — the connectors, hooks and MCP all pointed at infrastructure the
+tenant did not own.
+
 ## Still on core's table
 
 These have **not** moved, and now read an empty table, so they report "not

@@ -99,9 +99,12 @@ class Brokerinfo extends Control {
         }
         try {
             $payload = $connector->validateApiKey($raw);
-            // The key's instance owns it — same routing as the OAuth callback.
+            // The key's instance owns it — same routing as the OAuth callback, and
+            // since Phase 3 the same delivery: pushed to that install's own
+            // /connectorapi/receive rather than written into its file from here, so
+            // this works for an instance core does not share a disk with.
             $payload['auth_type'] = 'api_key';
-            $id = ConnectionStore::putForInstall($iid, $type, $env, $payload);
+            $id = \app\ConnectorPush::push($iid, $type, $env, $payload);
         } catch (\Throwable $e) {
             Flight::jsonError($e->getMessage(), 400); return;
         }

@@ -217,22 +217,29 @@ class ConnectionStore {
         }
     }
 
-    /** Store a connection into an INSTANCE's own file, with that instance's key. */
+    /**
+     * Retired (Phase 3). Store a connection into an INSTANCE's own file.
+     *
+     * It reached across the boundary: core opened another install's data/ and wrote
+     * it. That is only possible while the two share a disk, so the same connect
+     * against a self-hosted instance found no directory and returned 0 — and 0 was
+     * indistinguishable from "stored, but I did not get an id". Its own guards were
+     * the shape this codebase keeps being bitten by: two silent `return 0`s where
+     * the honest answer was "that instance is not on this host".
+     *
+     * Its replacement is a PUSH, not a write: \app\ConnectorPush::push() delivers
+     * the credential to that install's own /connectorapi/receive with that
+     * install's broker key. One door, on-disk or self-hosted, which is what makes
+     * ejection real rather than nominal.
+     *
+     * Throwing rather than deleting: a caller that reappears gets told what to do
+     * instead of a fatal about an undefined method.
+     */
     public static function putForInstall(int $instanceId, string $type, string $env, array $payload): int {
-        $inst = Bean::load('instance', $instanceId);
-        if (!$inst->id) return 0;
-
-        $dir = $inst->box()->dir();
-        if ($dir === '' || !is_dir($dir)) return 0;
-
-        // Not withInstall(): put() opens the store itself, and nesting withOwnDb
-        // would restore the caller's database halfway through the outer one.
-        self::useInstall($dir);
-        try {
-            return self::put($type, $env, $payload);
-        } finally {
-            self::useOwnInstall();
-        }
+        throw new \RuntimeException(
+            'ConnectionStore::putForInstall is retired — core no longer writes another '
+          . "install's connections file. Use \\app\\ConnectorPush::push(). "
+          . 'See CONNECTIONS_PER_INSTANCE.md.');
     }
 
     /**
@@ -464,11 +471,12 @@ class ConnectionStore {
      */
     public static function upsert(string $type, int $memberId, int $instanceId, string $env, array $payload, string $authType = 'oauth'): int {
         // Retired. This wrote core's shared table, which is the one place a
-        // credential can land and then not travel with its instance. Use
-        // put() for this install or putForInstall($instanceId, ...) for another.
+        // credential can land and then not travel with its instance. Use put() for
+        // this install, or \app\ConnectorPush::push($instanceId, ...) for another.
         throw new \RuntimeException(
             'ConnectionStore::upsert is retired — connectors live with their instance '
-          . 'now. Use put() or putForInstall(). See CONNECTIONS_PER_INSTANCE.md.');
+          . 'now. Use put(), or \\app\\ConnectorPush::push() for another install. '
+          . 'See CONNECTIONS_PER_INSTANCE.md.');
 
         $eid = (string) ($payload['external_eid'] ?? '');
 

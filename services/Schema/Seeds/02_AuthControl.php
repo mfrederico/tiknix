@@ -112,6 +112,16 @@ $defaults = [
     ['brokerinfo', 'connectkey', 101, 'Instance-driven api_key connect (broker key)'],
     ['brokerinfo', 'disconnect', 101, 'Instance-driven disconnect (broker key)'],
     ['brokerinfo', 'connectintent', 101, 'Instance-driven OAuth connect handoff (broker key)'],
+    // The inverse door: core (or a sidecar) calling THIS install about its own
+    // connectors, authenticated by this install's conf/broker.ini key. PUBLIC means
+    // reachable, not unprotected — Connectorapi::authed() closes it when no key is
+    // configured. Without these rows the first request invents one at the ADMIN
+    // default and every push 303s to /auth/login, which the caller cannot tell from
+    // "that instance has no such connector".
+    ['connectorapi', 'list', 101, 'Instance connector API: list (self-auth via broker key)'],
+    ['connectorapi', 'connect', 101, 'Instance connector API: connect a pasted key (self-auth via broker key)'],
+    ['connectorapi', 'receive', 101, 'Instance connector API: receive a pre-validated credential (self-auth via broker key)'],
+    ['connectorapi', 'disconnect', 101, 'Instance connector API: disconnect (self-auth via broker key)'],
     // The instance-side read-only Integrations view (runs IN the instance).
     ['integrations', 'index', 100, 'Integrations/automations view (owner on control plane; ADMIN enforced in-controller inside an instance)'],
     ['connections', 'index', 100, 'Integrations hub (owner-scoped)'],
@@ -152,19 +162,26 @@ $defaults = [
     ['permissions', 'scan', 1, 'Scan for new permissions'],
 ];
 
+// Applied through PermissionCache::seedRule, which does the one thing a plain
+// "skip if it exists" cannot: CORRECT a row the framework invented.
+//
+// The old loop continued past every existing row, so a route that got an
+// auto-generated ADMIN rule before it was seeded — which happens the first time
+// ANYTHING touches it, including a delivery or a curl while testing — kept that
+// rule forever, and adding the right line here changed nothing. That is exactly
+// what happened to webhook::github and webhook::telegram across the whole fleet:
+// both were seeded at 101 and both stayed at 50 on every install that had already
+// been hit. seedRule overrules ONLY rows still carrying the auto-generated marker,
+// so a level somebody deliberately set is reported as `kept` and left alone.
+$_acCounts = ['added' => 0, 'corrected' => 0, 'kept' => 0, 'unchanged' => 0];
 foreach ($defaults as [$control, $method, $level, $desc]) {
-    $existing = \app\Bean::findOne('authcontrol', 'control = ? AND method = ?', [$control, $method]);
-    if ($existing) {
-        continue;
+    $r = \app\PermissionCache::seedRule($control, $method, $level, $desc);
+    $_acCounts[$r] = ($_acCounts[$r] ?? 0) + 1;
+    if ($r === 'kept') {
+        echo "  authcontrol: kept a hand-set level for {$control}::{$method} (seed wanted {$level})\n";
     }
-    $ac = R::dispense('authcontrol');
-    $ac->control     = $control;
-    $ac->method      = $method;
-    $ac->level       = $level;
-    $ac->description = $desc;
-    $ac->created_at  = date('Y-m-d H:i:s');
-    R::store($ac);
 }
+echo '  authcontrol: ' . json_encode($_acCounts) . "\n";
 
 // Schema is 100% bean-derived — no hand-declared indexes/constraints. RedBean
 // has no bean-native way to express the composite UNIQUE (control, method) or a

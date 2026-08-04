@@ -180,25 +180,33 @@ class Connections extends Control {
             $this->jsonError('GitHub rejected the token/repo: ' . $e->getMessage(), 400); return;
         }
 
-        // One GitHub connection per instance — upsert into THAT INSTANCE's store.
-        // This wrote core's table until 2026-08-04, encrypted with core's key: the
-        // connector did not travel, and a self-hosted copy of the instance had no
-        // GitHub connection at all.
+        // One GitHub connection per instance — PUSHED into that instance's own store
+        // (Phase 3). This wrote core's table until 2026-08-04, encrypted with core's
+        // key, then wrote the instance's file directly, which only worked while core
+        // shared a disk with it. It now goes through the instance's own
+        // /connectorapi/receive, so core holds nothing and a self-hosted instance is
+        // served by the same call.
         $prev     = $this->githubConn((int)$inst->id);
         $prevMeta = json_decode((string) ($prev->metadataJson ?? '{}'), true) ?: [];
 
-        $connId = ConnectionStore::putForInstall((int)$inst->id, 'github', 'production', [
-            'external_eid'    => $fullName,
-            'external_name'   => $fullName,
-            'external_url'    => 'https://github.com/' . $owner . '/' . $repo,
-            'connection_name' => $fullName,
-            'token_type'      => 'Bearer',
-            'auth_type'       => $authType,
-            'access_token'    => $pat,
-            'metadata'        => ['owner' => $owner, 'repo' => $repo, 'defaultBranch' => $defaultBranch,
-                'autoPublish' => $auto, 'resolvesTo' => array_values($prevMeta['resolvesTo'] ?? [])],
-        ]);
-        if ($connId <= 0) { $this->jsonError('GitHub was authorized but the connection could not be stored.', 500); return; }
+        try {
+            $connId = \app\ConnectorPush::push((int)$inst->id, 'github', 'production', [
+                'external_eid'    => $fullName,
+                'external_name'   => $fullName,
+                'external_url'    => 'https://github.com/' . $owner . '/' . $repo,
+                'connection_name' => $fullName,
+                'token_type'      => 'Bearer',
+                'auth_type'       => $authType,
+                'access_token'    => $pat,
+                'metadata'        => ['owner' => $owner, 'repo' => $repo, 'defaultBranch' => $defaultBranch,
+                    'autoPublish' => $auto, 'resolvesTo' => array_values($prevMeta['resolvesTo'] ?? [])],
+            ]);
+        } catch (\Throwable $e) {
+            // The reason, not a shrug: "could not be stored" sends people looking at
+            // GitHub when the answer is a broker key or an unreachable instance.
+            $this->jsonError('GitHub was authorized but the connection could not be stored: ' . $e->getMessage(), 502);
+            return;
+        }
         if ($useOauth) unset($_SESSION['gh_oauth']);
 
         $this->jsonSuccess([
@@ -1234,11 +1242,21 @@ class Connections extends Control {
      * whoever happened to attach it. Keeping an owner would reintroduce the
      * question of whose connection this is, which is the question the move exists
      * to stop asking.
+     *
+     * Phase 3: it is PUSHED, not written. putForInstall opened the instance's file
+     * from here, which only works while core shares a disk with it — the same
+     * connect against a self-hosted instance wrote nothing and said nothing. The
+     * push goes through that install's own /connectorapi/receive with its own
+     * broker key, so core stores nothing and the door is the same either way.
+     *
+     * Throws rather than returning 0. Both callers already sit inside a try/catch
+     * that reports the message to the person connecting, which is where a failed
+     * connect belongs — not in a 0 that reads as "stored, id unknown".
      */
     private function upsertConnection(string $type, array $claims, array $payload, string $authType = 'oauth'): int {
         $payload['auth_type'] = $authType;
 
-        return \app\ConnectionStore::putForInstall(
+        return \app\ConnectorPush::push(
             (int) $claims['instance_id'],
             $type,
             $this->normalizeEnv($claims['environment'] ?? 'production'),

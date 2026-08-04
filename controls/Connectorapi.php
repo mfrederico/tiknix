@@ -19,6 +19,17 @@
  * is exactly the claim being made here. It is not a session and not CSRF-guarded:
  * these are server-to-server.
  *
+ * The routes:
+ *
+ *   GET|POST /connectorapi/list        metadata only — connector, account, status
+ *   POST     /connectorapi/connect     {connector, key} — validated HERE, then stored
+ *   POST     /connectorapi/receive     {connector, payload} — validated by the CALLER
+ *   POST     /connectorapi/disconnect  {id}
+ *
+ * `receive` is the landing point for core's OAuth callback (lib/ConnectorPush.php):
+ * core owns the app registration, so it runs the handshake and pushes the result in
+ * here rather than writing this install's file across a disk it may not share.
+ *
  * WHAT IT WILL NOT DO: hand back a token. `list` returns metadata only —
  * connector, environment, account name, status. A caller that wants to USE a
  * connection asks this install to use it on their behalf, or shares its disk. A
@@ -34,6 +45,19 @@ use \Flight as Flight;
 use app\BaseControls\Control;
 
 class Connectorapi extends Control {
+
+    /** The environments a connection may be filed under. */
+    private const ENVIRONMENTS = ['production', 'development', 'staging'];
+
+    /**
+     * The auth types receive() will take on trust.
+     *
+     * `oauth` and `token` come from core's GitHub/registry flows; `api_key` from a key
+     * core validated against the provider before pushing. ConnectionStore::AUTH_SEALED
+     * is absent on purpose — those rows are sealed by SshKey and ownToken() will not
+     * open them, so accepting one would store something permanently unreadable.
+     */
+    private const RECEIVABLE_AUTH = ['oauth', 'api_key', 'token'];
 
     /** GET|POST /connectorapi/list — this install's connections, metadata only. */
     public function list($params = []): void {
@@ -81,7 +105,7 @@ class Connectorapi extends Control {
         // with ?? but read $body['environment'] raw in the true branch, so omitting
         // the key — which every caller does — was an undefined-key error and a 500.
         $env = (string) ($body['environment'] ?? 'production');
-        if (!in_array($env, ['production', 'development', 'staging'], true)) $env = 'production';
+        if (!in_array($env, self::ENVIRONMENTS, true)) $env = 'production';
         $raw  = trim((string) ($body['key'] ?? ''));
 
         if ($type === '' || $raw === '') { Flight::jsonError('connector and key are required.', 400); return; }
@@ -110,6 +134,87 @@ class Connectorapi extends Control {
             'environment' => $env,
             'account'     => (string) ($payload['external_name'] ?? $payload['external_eid'] ?? ''),
         ], ucfirst($type) . ' connected.');
+    }
+
+    /**
+     * POST /connectorapi/receive — take a credential somebody else already validated.
+     *
+     * The OAuth sibling of connect(), and deliberately a SEPARATE route rather than a
+     * looser connect(). connect() re-validates a pasted key against the provider before
+     * it stores anything; an OAuth token cannot be obtained that way at all, because the
+     * client secret and the provider-allowlisted redirect URI belong to core. Core runs
+     * the handshake and hands the result here.
+     *
+     * Body: {connector, environment, payload}. `payload` is the connector's own
+     * exchangeCode()/validateApiKey() output, passed through whole — access_token,
+     * token_type, scopes, external_eid/name/url, connection_name, and metadata, which
+     * is where a connector puts its expiry. Cherry-picking fields here would silently
+     * drop whatever a connector adds next.
+     *
+     * THIS IS THE ONE NEW ATTACK SURFACE in the per-instance design: every other route
+     * either proves a credential against its provider or hands out no secret at all,
+     * and this one takes a token on trust. So it is gated on more than reachability:
+     *
+     *  - the broker key for THIS install, constant-time compared (authed(), as with
+     *    every route here). No key configured means closed.
+     *  - POST only. A credential must not be deliverable by following a link.
+     *  - auth_type from a fixed allowlist. Notably NOT ssh_sealed: those rows are
+     *    sealed by SshKey at the point of use and ownToken() refuses to open them, so
+     *    a pushed row claiming it would read as connected and never produce a token.
+     *  - a non-empty access_token, and a connector key of a sane shape.
+     *  - every acceptance logged with connector, account and caller.
+     *
+     * Registry membership is deliberately NOT a gate. github is not a registry
+     * connector — core drives that handshake itself — so requiring one would reject the
+     * commonest push with a message ("unknown connector") that reads like a config
+     * problem rather than a rule.
+     */
+    public function receive($params = []): void {
+        if (!$this->authed()) return;
+
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST') {
+            Flight::jsonError('POST only.', 405); return;
+        }
+
+        $body = $this->jsonBody();
+        $type = strtolower(trim((string) ($body['connector'] ?? '')));
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,31}$/', $type)) {
+            Flight::jsonError('connector is required and must be a plain connector key.', 400); return;
+        }
+
+        $env = (string) ($body['environment'] ?? '');
+        if (!in_array($env, self::ENVIRONMENTS, true)) {
+            Flight::jsonError('environment must be one of: ' . implode(', ', self::ENVIRONMENTS) . '.', 400); return;
+        }
+
+        $payload = $body['payload'] ?? null;
+        if (!is_array($payload)) { Flight::jsonError('payload must be an object.', 400); return; }
+
+        $authType = strtolower(trim((string) ($payload['auth_type'] ?? '')));
+        if (!in_array($authType, self::RECEIVABLE_AUTH, true)) {
+            Flight::jsonError('payload.auth_type must be one of: ' . implode(', ', self::RECEIVABLE_AUTH) . '.', 400); return;
+        }
+        if ((string) ($payload['access_token'] ?? '') === '') {
+            Flight::jsonError('payload.access_token is required.', 400); return;
+        }
+        $payload['auth_type'] = $authType;
+
+        $id = ConnectionStore::put($type, $env, $payload);
+        if ($id <= 0) { Flight::jsonError('The connection could not be stored on this install.', 500); return; }
+
+        $account = (string) ($payload['external_name'] ?? $payload['external_eid'] ?? '');
+        Flight::get('log')?->info('connectorapi: accepted a pushed connection', [
+            'connector' => $type, 'environment' => $env, 'auth_type' => $authType,
+            'account' => $account, 'id' => $id,
+            'from' => (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+        ]);
+
+        Flight::jsonSuccess([
+            'id'          => $id,
+            'connector'   => $type,
+            'environment' => $env,
+            'account'     => $account,
+        ], ucfirst($type) . ' stored on this install.');
     }
 
     /** POST /connectorapi/disconnect — body {id}. Removes one of this install's rows. */

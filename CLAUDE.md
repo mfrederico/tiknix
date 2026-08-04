@@ -1,5 +1,27 @@
 # Tiknix Development Standards
 
+## Top Rules
+
+1. **Check logs first** when something misbehaves: `tail -50 log/app-$(date +%Y-%m-%d).log`
+2. Use the CLI tool for DB ops: `php scripts/clitool.php --help` (see [CLI Tool](#cli-tool))
+3. **No explicit routes** — `Flight::defaultRoute()` auto-routes `/controller/method`
+4. Use the `Bean::` wrapper (`lib/Bean.php`), never `R::` directly (except bootstrap + schema seeds)
+5. String external IDs use the `_eid` suffix, never `_id` (reserved for RedBeanPHP integer FKs)
+
+## CLI Tool
+
+```bash
+php scripts/clitool.php --list                       # Tables + row counts
+php scripts/clitool.php --describe=member            # Columns and types
+php scripts/clitool.php --sql='SELECT ...'           # Read-only query
+php scripts/clitool.php --exec='UPDATE ...' --yes    # Write query (guarded)
+php scripts/clitool.php --build                      # Run services/Schema/Seeds
+php scripts/clitool.php --bean=TYPE --getall [--where='col = ?' --data=VAL]
+php scripts/clitool.php --adduser=EMAIL --password=PW --level=50
+php scripts/clitool.php --user=IDENT --reset-2fa     # The 2FA lockout fix
+php scripts/clitool.php --scaffold=all --bean=product  # Generate model/controller/view/api
+```
+
 ## Git Commit Rules
 
 - Do NOT add Claude Code footer or co-author lines to commits
@@ -46,8 +68,9 @@ model. When decomposing a plan, record what each task builds on in its `reuses` 
 (e.g. `["controller/Lead","lib/Mailer"]`).
 
 Data & permissions ship as seeds, never as direct DB writes: a new route needs an
-`authcontrol` row, and starter/seed data goes in an idempotent `database/seeds/*.php`
-(via the `\app\Bean` wrapper) — reuse an existing `<controller>::* = <level>` pattern.
+`authcontrol` row, and starter/seed data goes in an idempotent numbered seeder
+`services/Schema/Seeds/NN_Name.php` (run by `WorkspaceSchemaBuilder::build()`, i.e.
+`php scripts/clitool.php --build`) — reuse an existing `<controller>::* = <level>` pattern.
 
 **Set permission rows with `PermissionCache::seedRule()`, not by hand.** A route gets an
 auto-generated row at the ADMIN default the first time ANYTHING touches it — including a
@@ -136,6 +159,35 @@ $bean->firstName = 'John';            // Column: first_name
 $bean->createdAt = date('Y-m-d');     // Column: created_at
 $bean->memberId = 5;                  // Column: member_id
 ```
+
+### External IDs and non-FK pointers (CRITICAL)
+
+The `_id` suffix is RESERVED for RedBeanPHP integer foreign keys. RedBean reads any
+`<something>_id` column as a relation to bean type `<something>` and emits a real FK in
+fluid mode. Two suffixes exist to stay out of its way:
+
+| Suffix | Meaning | Example |
+|--------|---------|---------|
+| `_eid` | **String external ID** — what the far end calls this thing | `external_eid` (Shopify domain, Stripe acct, Telegram user id) |
+| `_ref` | **Plain integer pointer** where a real FK is wrong | `connection_ref`, `member_ref`, `external_identity_ref` |
+
+```php
+// WRONG — RedBean tries to make this an integer FK to a bean type 'shopify'
+$conn->shopify_id = 'acme-store.myshopify.com';
+
+// CORRECT — string ids from another system always end in _eid
+$conn->external_eid = 'acme-store.myshopify.com';
+```
+
+Use `_ref` (not `_id`) when the target is a real row but a FOREIGN KEY would be harmful:
+- The bean type is **plural** (`connections`), so `connection_id` would point at a bean
+  type `connection` that does not exist — see `services/Schema/Seeds/04_ExternalIdentity.php`
+  and `lib/Mentions.php` (`thread_ref`, `message_ref`).
+- The parent is **hard deleted** (`Bean::trash`), and SQLite's default `NO ACTION` would
+  make that delete fail forever — e.g. `externalidentity.member_ref`.
+
+A `_ref` column gets no automatic index. Declare it explicitly in the migration
+(`database/migrate-external-identity.php` is the worked example).
 
 ### FUSE Models
 
@@ -370,7 +422,8 @@ Lower number = higher privilege. Check with `Flight::hasLevel(LEVELS['ADMIN'])`.
 /views          - PHP view templates
 /lib            - Core libraries
 /models         - RedBeanPHP FUSE models
-/routes         - Custom route definitions
+/routes         - Route bootstraps (default.php just calls Flight::defaultRoute())
+/services       - Business logic, connectors, Schema/Seeds
 /conf           - Configuration files
 ```
 
@@ -515,6 +568,16 @@ This clears and reloads the permission cache without requiring a PHP-FPM restart
 - After manually editing authcontrol records in the database
 - When permission changes don't seem to take effect
 - After deleting duplicate/conflicting authcontrol entries
+
+## Gotchas
+
+- `json_encode([])` emits `[]`, not `{}` — use `(object)[]` when the client expects an object
+- `Bean::getAll()` / `getRow()` return **arrays**; views written against beans expect
+  objects — convert before rendering
+- PHP 8 strict types: cast query-string ints explicitly, e.g. `$page = (int)($page ?? 1)`
+- Escape all view output: `<?= htmlspecialchars($var) ?>`
+- No silent defaults in layouts — let an undefined view variable error, so a
+  controller/view mismatch surfaces immediately instead of rendering blank
 
 ## See Also
 

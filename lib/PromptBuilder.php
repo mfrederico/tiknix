@@ -93,6 +93,54 @@ class PromptBuilder {
     /**
      * Build prompt for new feature
      */
+    /**
+     * The material a task points AT: files on disk and links to read.
+     *
+     * One method rather than a block repeated per task type, because they were
+     * already drifting — related_files appeared in the feature prompt and nowhere
+     * else, so a bugfix task carrying a design mockup never mentioned it.
+     *
+     * Attachments are named with their real path inside the instance, because the
+     * agent runs there and can open them. That is the whole reason monday files are
+     * pulled into the instance rather than kept beside the sidecar: a path the
+     * agent cannot reach is worse than no path, since it reads as an instruction to
+     * look at something and then fails.
+     */
+    private static function references(array $task): string {
+        $out = '';
+
+        $files = $task['related_files'] ?? [];
+        if (is_string($files)) $files = json_decode($files, true) ?: [];
+        $files = array_values(array_filter(array_map('strval', (array) $files), fn($f) => trim($f) !== ''));
+
+        if ($files) {
+            $out .= "## Files To Read First\n";
+            // Split by kind: a path under secure/ is an attachment somebody added
+            // for this task, and saying so stops it reading like application code
+            // that has strayed into an odd directory.
+            $code = $att = [];
+            foreach ($files as $f) {
+                if (str_starts_with($f, 'secure/')) $att[] = $f;
+                else                                $code[] = $f;
+            }
+            foreach ($code as $f) $out .= "- `{$f}`\n";
+            foreach ($att as $f) $out .= "- `{$f}` (attached to this task — a design, mockup or screenshot)\n";
+            $out .= "\n";
+        }
+
+        $urls = $task['reference_urls'] ?? [];
+        if (is_string($urls)) $urls = json_decode($urls, true) ?: [];
+        $urls = array_values(array_filter(array_map('strval', (array) $urls), fn($u) => trim($u) !== ''));
+
+        if ($urls) {
+            $out .= "## Reference Links\n";
+            foreach ($urls as $u) $out .= "- {$u}\n";
+            $out .= "\n";
+        }
+
+        return $out;
+    }
+
     private static function buildFeaturePrompt(array $task): string {
         $prompt = "# Feature Implementation Task\n\n";
         $prompt .= "## Task: " . ($task['title'] ?? 'Implement new feature') . "\n\n";
@@ -108,16 +156,19 @@ class PromptBuilder {
             $prompt .= $task['acceptance_criteria'] . "\n\n";
         }
 
-        if (!empty($task['related_files'])) {
-            $prompt .= "## Related Files\n";
-            $prompt .= "Start by examining these files:\n";
-            foreach ($task['related_files'] as $file) {
-                $prompt .= "- `{$file}`\n";
-            }
-            $prompt .= "\n";
+        $prompt .= self::references($task);
+
+        // A person's own instructions come BEFORE the generic list, and are labelled
+        // as taking precedence, because they exist to override it. Below the boiler
+        // plate they read as a footnote to it, which is backwards: the seven steps
+        // are what to do absent any guidance, and this IS the guidance.
+        if (!empty($task['instructions'])) {
+            $prompt .= "## Instructions From The Task Owner\n";
+            $prompt .= "These take precedence over the general steps below.\n\n";
+            $prompt .= $task['instructions'] . "\n\n";
         }
 
-        $prompt .= "## Instructions\n";
+        $prompt .= "## General Steps\n";
         $prompt .= "1. Analyze the codebase to understand existing patterns and architecture\n";
         $prompt .= "2. Plan the implementation approach\n";
         $prompt .= "3. Implement the feature following existing conventions\n";

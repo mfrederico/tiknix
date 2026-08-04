@@ -49,8 +49,21 @@ class GitService {
      * @param int $taskId Task ID
      * @return string Absolute path to workspace
      */
-    public static function getWorkspacePath(int $memberId, int $taskId): string {
-        return self::getProjectsBasePath() . "/{$memberId}/{$taskId}";
+    public static function getWorkspacePath(int $memberId, int $taskId, string $instanceTag = ''): string {
+        // The instance belongs in the path. Task ids are per-instance — each
+        // project has its own workbench.db and its own id 1 — so member+task alone
+        // is NOT unique, and three projects' "task 26" all resolved to the same
+        // directory. Observed: mileage cloned instance/mileage into
+        // projects/1/26, and two minutes later bidsurge cloned instance/bidsurge
+        // over the top of it. The second run is then working in the first one's
+        // tree, against the wrong repository, with no indication anything is wrong.
+        //
+        // Empty tag keeps the old path, so workspaces created before this stay
+        // reachable: a task remembers its own project_path, and moving the layout
+        // under a running build would strand it.
+        $tag = preg_replace('/[^A-Za-z0-9._-]/', '', $instanceTag);
+        return self::getProjectsBasePath()
+             . "/{$memberId}" . ($tag !== '' ? "/{$tag}" : '') . "/{$taskId}";
     }
 
     /**
@@ -63,8 +76,8 @@ class GitService {
      * @return string Path to cloned workspace
      * @throws \Exception on failure
      */
-    public function cloneToWorkspace(int $memberId, int $taskId, ?string $remoteUrl = null, string $baseBranch = 'main'): string {
-        $workspacePath = self::getWorkspacePath($memberId, $taskId);
+    public function cloneToWorkspace(int $memberId, int $taskId, ?string $remoteUrl = null, string $baseBranch = 'main', string $instanceTag = ''): string {
+        $workspacePath = self::getWorkspacePath($memberId, $taskId, $instanceTag);
 
         // Get remote URL from main repo if not provided
         if (!$remoteUrl) {

@@ -92,8 +92,28 @@ class PortManager {
      * @param int $memberId Member ID
      * @return array Port info with 'port', 'available', 'fallback' keys
      */
-    public static function getTaskPortInfo(int $memberId): array {
-        $assignedPort = self::getPortForMember($memberId);
+    /**
+     * A port for one TASK, not one member.
+     *
+     * getPortForMember gives every task the same number — member 1 always gets
+     * 8002 — so two tasks running at once are both told to use it and the second
+     * server cannot bind. The availability check does not save it either: the port
+     * is chosen when the run STARTS and the server is not started until the agent
+     * gets there, so at assignment time it is free for everybody.
+     *
+     * Keyed on the project scope as well as the id, because task ids are
+     * per-project and "task 26" exists in several of them — the same reason the
+     * workspace path and the tmux session name both carry the slug.
+     */
+    public static function getPortForTask(string $scope, int $taskId): int {
+        $h = crc32($scope . ':' . $taskId);
+        return self::BASE_PORT + ($h % self::PORT_RANGE) + 1;
+    }
+
+    public static function getTaskPortInfo(int $memberId, string $scope = '', int $taskId = 0): array {
+        $assignedPort = $taskId > 0
+            ? self::getPortForTask($scope, $taskId)
+            : self::getPortForMember($memberId);
         $available = self::isPortAvailable($assignedPort);
 
         $result = [

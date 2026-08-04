@@ -832,32 +832,48 @@ class Connections extends Control {
         Flight::jsonSuccess([], 'Telegram will no longer deliver here.');
     }
 
+    /**
+     * POST /connections/githubwebhook — register this install's push hook.
+     *
+     * INSTALL-LOCAL, and it has to be. The hook secret is encrypted with this
+     * install's key and decrypted by this install's /webhook/github handler; core
+     * doing it on an instance's behalf would seal the secret with core's key and
+     * hand the instance something it cannot open. So there is no instance id here
+     * any more -- you register the hook from the install it belongs to, which is
+     * also the install whose domain the hook points at.
+     */
     public function githubwebhook($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
-        if (!$inst) { Flight::jsonError('Instance not found.', 404); return; }
 
-        $conn = Bean::findOne('connections',
-            "member_id = ? AND instance_id = ? AND connector_type = 'github' AND enabled = 1",
-            [(int) $this->member->id, (int) $inst->id]);
-        if (!$conn || !$conn->id) { Flight::jsonError('Connect a GitHub repo to this instance first.', 400); return; }
+        $conn = ConnectionStore::for('github');
+        if (!$conn) { Flight::jsonError('Connect a GitHub repo to this install first.', 400); return; }
 
         $meta  = json_decode((string) ($conn->metadataJson ?: '{}'), true) ?: [];
         $owner = (string) ($meta['owner'] ?? ''); $repo = (string) ($meta['repo'] ?? '');
         if ($owner === '' || $repo === '') { Flight::jsonError('This GitHub connection has no owner/repo.', 400); return; }
 
+        // This install's own base url -- on an instance that is <slug>.tiknix.com,
+        // which is the whole point: the delivery arrives already scoped.
         $callback = app_url('/webhook/github');
         try {
-            $pat = (string) EncryptionService::decrypt((string) $conn->accessToken);
+            $pat = ConnectionStore::ownToken($conn);
+            if ($pat === '') { Flight::jsonError('The GitHub token could not be decrypted on this install.', 500); return; }
             $gh  = new GitHubService($pat, $owner, $repo);
             $secret   = bin2hex(random_bytes(20));
             $existing = $gh->findWebhook($callback);
             if ($existing) { $gh->updateWebhook((int) $existing['id'], $callback, $secret); }
             else           { $gh->createWebhook($callback, $secret, ['push']); }
-            $conn->webhookSecret = EncryptionService::encrypt($secret);
-            $conn->updatedAt = date('Y-m-d H:i:s');
-            Bean::store($conn);
+
+            ConnectionStore::withOwnDb(function () use ($conn, $secret) {
+                $row = Bean::load('connections', (int) $conn->id);
+                if (!$row->id) return false;
+                $row->webhookSecret = EncryptionService::encrypt($secret);
+                $row->updatedAt     = date('Y-m-d H:i:s');
+                Bean::store($row);
+                return true;
+            }, false, true);
+
             Flight::jsonSuccess(['callback' => $callback, 'updated' => (bool) $existing],
                 $existing ? 'Deploy webhook updated.' : 'Deploy webhook created.');
         } catch (\Throwable $e) {

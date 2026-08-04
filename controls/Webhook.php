@@ -175,12 +175,17 @@ class Webhook extends Control {
     /**
      * GitHub push/PR webhook → fire the instance's matching deploy pipelines.
      *
+     * DELIVERED TO THE INSTANCE, at https://<slug>.tiknix.com/webhook/github. The
+     * domain is the tenant scope, which is why this handler does no instance
+     * resolution: it reads its own connection, verifies against its own secret and
+     * fires its own pipelines. Nothing here can see another tenant's data, because
+     * it is not running in a process that has any.
+     *
      * Self-authenticating (PUBLIC route, HMAC only): verifies X-Hub-Signature-256
-     * against the per-connection webhook secret, maps repository.full_name → the
-     * GitHub connection (metadataJson.owner/repo) → its instance, then fires every
-     * pipeline whose trigger.github matches the event+branch. Dedupes on the delivery
-     * id and applies a short per-instance cooldown so a push flood can't fork-bomb.
-     * Route: webhook::github = 101.
+     * against this install's webhook secret, checks the delivered repo matches the
+     * one this install is connected to, then fires every pipeline whose
+     * trigger.github matches the event+branch. Dedupes on the delivery id and applies
+     * a short cooldown so a push flood can't fork-bomb. Route: webhook::github = 101.
      */
     public function github(): void {
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { \Flight::json(['error' => 'POST only'], 405); return; }
@@ -197,14 +202,34 @@ class Webhook extends Control {
         if ($repo === '' || strpos($repo, '/') === false) { \Flight::json(['accepted' => false, 'reason' => 'no repository'], 200); return; }
         [$owner, $name] = explode('/', $repo, 2);
 
-        // Map repo → the GitHub connection (its instance is the boundary).
-        $conn = null;
-        foreach (Bean::find('connections', "connector_type = 'github' AND enabled = 1") as $c) {
-            $meta = json_decode((string) ($c->metadataJson ?: '{}'), true) ?: [];
-            if (strcasecmp((string) ($meta['owner'] ?? ''), $owner) === 0
-                && strcasecmp((string) ($meta['repo'] ?? ''), $name) === 0) { $conn = $c; break; }
+        // THIS install's GitHub connection. The hook is delivered to
+        // <slug>.tiknix.com, so the domain already answered "whose is this?" before
+        // the request arrived -- there is no repo->instance lookup to do, and the
+        // scan that used to live here read every tenant's connection to find out.
+        $conn = \app\ConnectionStore::for('github');
+        if (!$conn) {
+            // Loud on purpose. Reached most likely by a hook still pointed at core
+            // from before the move, and "no GitHub connection on this install" is a
+            // fact worth saying rather than a silent 200 that looks like success.
+            $this->logger?->warning('Webhook/github: no GitHub connection on this install', ['repo' => $repo]);
+            \Flight::json(['accepted' => false, 'reason' => 'no GitHub connection on this install'], 200);
+            return;
         }
-        if (!$conn) { \Flight::json(['accepted' => false, 'reason' => 'no instance connected to this repo'], 200); return; }
+
+        // The repo match survives as a GUARD, not as a lookup: this install has one
+        // GitHub connection, and a delivery for a different repo means the hook is
+        // wired to the wrong place. Silently firing that instance's pipelines from
+        // another repo's push is the failure worth refusing.
+        $meta = json_decode((string) ($conn->metadataJson ?: '{}'), true) ?: [];
+        if (strcasecmp((string) ($meta['owner'] ?? ''), $owner) !== 0
+            || strcasecmp((string) ($meta['repo'] ?? ''), $name) !== 0) {
+            $this->logger?->warning('Webhook/github: delivery for a repo this install is not connected to', [
+                'delivered' => $repo,
+                'connected' => (string) ($meta['owner'] ?? '') . '/' . (string) ($meta['repo'] ?? ''),
+            ]);
+            \Flight::json(['accepted' => false, 'reason' => 'this install is not connected to ' . $repo], 200);
+            return;
+        }
 
         // HMAC verify — MANDATORY (public endpoint, no dev bypass).
         $secret = '';
@@ -219,11 +244,12 @@ class Webhook extends Control {
 
         // Dedupe redeliveries; cooldown floods (risk #1).
         if ($this->seenDelivery($delivery)) { \Flight::json(['accepted' => true, 'duplicate' => true], 200); return; }
-        if ($this->webhookCooldown((int) $conn->instanceId)) { \Flight::json(['accepted' => true, 'throttled' => true], 200); return; }
+        if ($this->webhookCooldown()) { \Flight::json(['accepted' => true, 'throttled' => true], 200); return; }
 
-        $inst = \RedBeanPHP\R::load('instance', (int) $conn->instanceId);
-        if (!$inst->id) { \Flight::json(['accepted' => false, 'reason' => 'instance gone'], 200); return; }
-        $dir    = $inst->dir();
+        // The install this code is running in IS the instance -- no instance row to
+        // load and no directory to resolve. That lookup only existed because the
+        // delivery landed on core and core had to find its way back here.
+        $dir    = dirname(__DIR__);
         $branch = (string) preg_replace('#^refs/heads/#', '', (string) ($payload['ref'] ?? ''));
         $sha    = (string) ($payload['after'] ?? ($payload['head_commit']['id'] ?? ($payload['pull_request']['head']['sha'] ?? '')));
         $context = [
@@ -248,9 +274,12 @@ class Webhook extends Control {
         return false;
     }
 
-    /** True if this instance fired a webhook within the cooldown window (blunts push floods). */
-    private function webhookCooldown(int $instanceId, int $seconds = 5): bool {
-        $key  = 'gh-' . $instanceId;
+    /**
+     * True if this install fired a webhook within the cooldown window (blunts push
+     * floods). No instance id: one install is one instance, so there is one window.
+     */
+    private function webhookCooldown(int $seconds = 5): bool {
+        $key  = 'gh';
         $rate = Bean::findOne('webhookrate', 'rkey = ?', [$key]);
         $now  = time();
         if ($rate && $rate->id && ($now - (int) $rate->lastAt) < $seconds) return true;
@@ -398,9 +427,14 @@ class Webhook extends Control {
             return;
         }
 
+        // This install's own store. The id addresses a row in THIS instance's file,
+        // so an id from another tenant simply is not there -- the scoping that used
+        // to be absent from this lookup is now a property of which file is open.
         $op   = $this->routeParams['operation'] ?? null;
         $cid  = (int) (is_object($op) ? ($op->name ?? 0) : 0);
-        $conn = $cid > 0 ? Bean::load('connections', $cid) : null;
+        $conn = $cid > 0
+            ? \app\ConnectionStore::withOwnDb(fn() => Bean::load('connections', $cid), null)
+            : null;
 
         if (!$conn || !$conn->id || (string) $conn->connectorType !== 'telegram') {
             $this->logger?->warning('Telegram webhook: no such connection', ['id' => $cid]);

@@ -4,6 +4,24 @@
 yet; the current code still stores every connection in core's `connections` table
 scoped by `instance_id`.
 
+## The model, stated plainly
+
+**Core owns core's connectors. Every instance owns its own.** Core is an install
+like any other — it has connectors for its own use, and that is all it has. It
+does not hold connectors on behalf of anybody else.
+
+That is a stronger claim than "move the storage", and it deletes a concept rather
+than relocating one: `connections.instance_id` stops meaning anything. Today a
+row says "this connection belongs to instance 82"; afterwards, the *file it is
+in* says that, and every install asks the same question — "what are my
+connections?" — with no id to pass and no id to get wrong.
+
+Which means `ConnectionStore::forInstance($instanceId, $type, ...)` becomes
+`ConnectionStore::for($type, ...)`. The instance-scoping work done this week —
+required argument, production-first ordering, the tenant-mixup it was written to
+prevent — all becomes unnecessary, because there is nothing to mix up. Keep the
+signature until the readers move, then drop the parameter.
+
 ## What changes
 
 A connection becomes the instance's, not the platform's:

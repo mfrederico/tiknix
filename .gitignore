@@ -76,3 +76,9 @@ public/store/
 # through, and the one value that must never travel is in here.
 secure/
 conf/*.key
+
+# Live-database copies the upgrade procedure parks aside before a merge and
+# restores after (scripts/upgrade-instances.php). Transient by design, and copies
+# of customer data — a `git add -A` during a conflict resolution committed three
+# of them into instance repos before this rule existed.
+*.preupgrade

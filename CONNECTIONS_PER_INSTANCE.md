@@ -266,24 +266,19 @@ instance because core does the deploying.
 impossible — the connectors, hooks and MCP all pointed at infrastructure the
 tenant did not own.
 
-## Still on core's table
+## Nothing is on core's table (Phases 1 and 2 done)
 
-These have **not** moved, and now read an empty table, so they report "not
-connected" instead of failing:
+Every reader and writer now names a store. The claim that this was true once
+before was wrong, so here is how to check rather than trust it:
 
-| Where | What it does |
-|---|---|
-| `controls/Webhook.php:202` | maps a pushed repo → its instance |
-| `controls/Webhook.php:403` | telegram webhook by connection id |
-| `controls/Integrations.php:58` | an instance's integrations list |
-| `controls/Connections.php` 565, 773, 814, 841, 883, 1168-1223 | hub display, telegram, enable/disable/revoke |
+```bash
+grep -n "Bean::\(find\|findOne\|findAll\|load\|dispense\|count\|trash\)([^)]*'connections'" \
+  controls/*.php lib/*.php lib/**/*.php scripts/*.php | grep -v ConnectionStore.php
+```
 
-`Webhook.php:202` is the one that needs a decision rather than a repoint. It maps
-**repo → instance** by scanning every GitHub connection, and per-instance stores
-leave core with no such index — the lookup is global but the data no longer is.
-Opening every instance's database per webhook would work and does not scale.
+Every hit must sit inside a `withOwnDb()` / `withInstall()` closure. A hit at the
+top level of a method is the bug this document exists about.
 
-The answer is the **non-secret mirror**: core keeps `instance_id`, connector,
-`external_eid` and status — never a token — written whenever an instance's store
-is written. That also gives the hub something to render without opening ten files,
-which is the other half of this same gap.
+The **repo → instance mirror is not built and is not needed**. Phase 1 made the
+delivery land on `<slug>.tiknix.com`, so the domain answers the routing question
+before the request arrives and the global lookup has nothing left to do.

@@ -134,6 +134,12 @@ $defaults = [
     // Public webhook (101) — authenticates itself via Mailgun HMAC
     ['webhook', 'mailgun', 101, 'Mailgun inbound mail + delivery-event webhook'],
     ['webhook', 'github', 101, 'GitHub push webhook → deploy pipelines (self-auth via HMAC)'],
+    // Was missing, and the gap is the interesting part: with no seeded row the first
+    // request to this route makes one at the ADMIN default, so the route locks itself
+    // the moment anything touches it — a delivery, or a curl while testing. Every
+    // instance in the fleet had webhook::github invented at level 50 that way, which
+    // 303s Telegram and GitHub instead of answering them.
+    ['webhook', 'telegram', 101, 'Telegram inbound webhook (per-connection secret token)'],
 
     // Public MCP endpoints (101) — auth handled by the controller
     ['mcp', '*', 101, 'MCP server endpoints'],

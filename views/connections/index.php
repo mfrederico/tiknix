@@ -283,11 +283,16 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
 <script>
 (function(){
   const csrf = <?= json_encode(csrf_token()) ?>;
+  // Which instance's store these actions act on. Declared HERE, at the top of the
+  // IIFE, because the per-connection handlers below need it too — it used to live
+  // inside the hosting-card `if`, so disconnect/webhooksecret/publishfeed threw
+  // ReferenceError and died before their fetch, which looks exactly like a button
+  // that does nothing: no request, no server log, no error on screen.
+  const iid = <?= (int) ($instance->id ?? 0) ?>;
 
   // ---- Hosting card -------------------------------------------------------
   const lxcCard = document.getElementById('lxc-card');
   if (lxcCard && document.getElementById('lxc-state')) {
-    const iid   = <?= (int) ($instance->id ?? 0) ?>;
     const state = document.getElementById('lxc-state'),
           dep   = document.getElementById('lxc-deploy'),
           ref   = document.getElementById('lxc-refresh'),

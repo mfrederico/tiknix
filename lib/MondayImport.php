@@ -156,6 +156,15 @@ class MondayImport {
             $state             = strtolower(trim((string) ($it['state'] ?? 'active')));
             $it['archived']    = $state !== '' && $state !== 'active';
             $it['done']        = $it['archived'] || self::isClosed($it['status']);
+
+            // Each subitem judged the same way, so the picker can count what would
+            // actually come in rather than how many exist.
+            foreach (($it['subitems'] ?? []) as &$sub) {
+                [$sub['status']] = self::pickStatus($sub['statuses'] ?? []);
+                $ss = strtolower(trim((string) ($sub['state'] ?? 'active')));
+                $sub['closed'] = ($ss !== '' && $ss !== 'active') || self::isClosed($sub['status']);
+            }
+            unset($sub);
         }
         unset($it);
 
@@ -266,7 +275,7 @@ class MondayImport {
         if (!$conn) throw new \RuntimeException('No monday.com connection for this instance.');
 
         $existing = self::importedEids(array_column($items, 'id'));
-        $created = 0; $skipped = 0; $ids = [];
+        $created = 0; $skipped = 0; $subs = 0; $ids = [];
 
         foreach ($items as $it) {
             $eid = (string) ($it['id'] ?? '');
@@ -299,10 +308,13 @@ class MondayImport {
                 return (int) Bean::store($task);
             }, 0);
 
-            if ($id > 0) { $created++; $ids[] = $id; }
+            if ($id > 0) {
+                $created++; $ids[] = $id;
+                $subs += self::importSubitems($it, $id, $conn, $instanceId, $instanceTag, $memberId, $existing);
+            }
         }
 
-        return ['created' => $created, 'skipped' => $skipped, 'task_ids' => $ids];
+        return ['created' => $created, 'skipped' => $skipped, 'subitems' => $subs, 'task_ids' => $ids];
     }
 
     /**
@@ -480,6 +492,73 @@ class MondayImport {
         }
 
         return $out;
+    }
+
+    /**
+     * A monday item's subitems, imported as CHILD tasks of the one just created.
+     *
+     * This is the whole reason to look at them. The workbench model is one parent
+     * task that a planner then decomposes — but where monday already HAS the
+     * breakdown, that breakdown is the real one. "2_UX / UI Design Elements" on a
+     * live board carries eight subitems: Global Header & Footer, Homepage
+     * Development, Brand Landing Page Templates and so on. Asking a planner to
+     * invent a decomposition alongside those would discard work somebody did and
+     * substitute a guess for it.
+     *
+     * Closed subitems are skipped for the same reason closed items are not
+     * offered: a finished piece of a live phase is not work to build. Each keeps
+     * its own monday_eid, so re-importing the parent will not duplicate them and
+     * the refresh pass tracks each one separately.
+     */
+    private static function importSubitems(array $it, int $parentTaskId, \RedBeanPHP\OODBBean $conn,
+                                           int $instanceId, string $instanceTag, int $memberId,
+                                           array $alreadyImported): int {
+        $subs = $it['subitems'] ?? [];
+        if (!$subs) return 0;
+
+        $made = 0;
+        foreach ($subs as $sub) {
+            $eid = (string) ($sub['id'] ?? '');
+            if ($eid === '' || isset($alreadyImported[$eid])) continue;
+
+            $state = strtolower(trim((string) ($sub['state'] ?? 'active')));
+            if ($state !== '' && $state !== 'active') continue;          // archived / deleted
+            [$subStatus] = self::pickStatus($sub['statuses'] ?? []);
+            if (self::isClosed($subStatus)) continue;                     // Done / Cancelled
+
+            $id = self::withWorkbench(function () use ($sub, $eid, $it, $parentTaskId, $conn,
+                                                       $instanceId, $instanceTag, $memberId) {
+                $now  = date('Y-m-d H:i:s');
+                $task = Bean::dispense('workbenchtask');
+
+                $task->title       = (string) ($sub['name'] ?? 'Untitled subitem');
+                // The parent names the phase this belongs to. Without it a subitem
+                // called "Timeline & Milestones" is unattributable on the board.
+                $task->description = trim((string) ($sub['name'] ?? '')) . "\n\n"
+                                   . 'Part of: ' . trim((string) ($it['name'] ?? ''))
+                                   . (($it['group'] ?? '') !== '' ? ' (' . $it['group'] . ')' : '');
+                $task->taskType    = 'feature';
+                $task->priority    = self::priority((string) ($it['fields']['Priority'] ?? ''));
+                $task->status      = 'pending';
+                $task->instanceId  = $instanceId;
+                $task->instanceTag = $instanceTag;
+                $task->memberId    = $memberId;
+                $task->parentTaskId = $parentTaskId;
+
+                $task->mondayEid      = $eid;
+                $task->mondayBoardEid = (string) ($it['board_id'] ?? '');
+                $task->connectionRef  = (int) $conn->id;
+                $task->postedBackAt   = null;
+
+                $task->createdAt = $now;
+                $task->updatedAt = $now;
+                return (int) Bean::store($task);
+            }, 0);
+
+            if ($id > 0) $made++;
+        }
+
+        return $made;
     }
 
     /**

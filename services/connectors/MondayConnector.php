@@ -186,6 +186,13 @@ class MondayConnector extends AbstractConnector {
                             url
                             group { id title }
                             column_values { id text type }
+                            subitems {
+                                id
+                                name
+                                state
+                                board { id }
+                                column_values { id text type }
+                            }
                         }
                     }
                 }
@@ -214,6 +221,8 @@ class MondayConnector extends AbstractConnector {
             $titles[$id] = trim((string) ($c['title'] ?? ''));
             if ((string) ($c['type'] ?? '') === 'status') $statusCols[$id] = $titles[$id];
         }
+
+        $subTitles = $this->subitemColumnTitles($token, $page['items'] ?? []);
 
         foreach (($page['items'] ?? []) as $it) {
             // Keyed by TITLE, falling back to the id when a column has no title.
@@ -252,10 +261,75 @@ class MondayConnector extends AbstractConnector {
                 'updated_at' => (string) ($it['updated_at'] ?? ''),
                 'fields'     => $fields,
                 'statuses'   => $statuses,
+                'subitems'   => self::shapeSubitems($it['subitems'] ?? [], $subTitles),
             ];
         }
 
         return ['items' => $items, 'cursor' => (string) ($page['cursor'] ?? '')];
+    }
+
+    /**
+     * Subitems, flattened to what an importer needs.
+     *
+     * Status comes from the column TYPE alone here, with no title to go on: a
+     * subitem's columns belong to the hidden subitem board, and fetching that
+     * board's titles would repeat the lookup for every subitem on the page. One
+     * status column is unambiguous and is used; more than one is not, and returns
+     * blank rather than a guess — the same rule the parent items follow, for the
+     * same reason.
+     */
+    private static function shapeSubitems(array $subs, array $subTitles = []): array {
+        $out = [];
+        foreach ($subs as $sub) {
+            // Title-keyed, exactly like a parent item's — see items(). A subitem
+            // board carries Status AND Priority, both of type `status`, so without
+            // the titles the only honest answer is "cannot tell", and a subitem
+            // marked Done would import as open work.
+            $statuses = [];
+            foreach (($sub['column_values'] ?? []) as $cv) {
+                if ((string) ($cv['type'] ?? '') !== 'status') continue;
+                $id  = (string) $cv['id'];
+                $key = ($subTitles[$id] ?? '') !== '' ? $subTitles[$id] : $id;
+                $statuses[$key] = trim((string) ($cv['text'] ?? ''));
+            }
+
+            $out[] = [
+                'id'       => (string) ($sub['id'] ?? ''),
+                'name'     => (string) ($sub['name'] ?? ''),
+                'state'    => (string) ($sub['state'] ?? ''),
+                'statuses' => $statuses,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Column titles for the SUBITEM board, fetched once per page.
+     *
+     * Every subitem of a board lives on the same hidden "Subitems of X" board, so
+     * this is one extra query rather than the per-subitem `board { columns }`
+     * traversal — which on a page carrying 86 subitems would repeat the same
+     * lookup 86 times for one answer.
+     */
+    private function subitemColumnTitles(string $token, array $items): array {
+        $boardId = '';
+        foreach ($items as $it) {
+            foreach (($it['subitems'] ?? []) as $sub) {
+                $boardId = (string) ($sub['board']['id'] ?? '');
+                if ($boardId !== '') break 2;
+            }
+        }
+        if ($boardId === '') return [];
+
+        $data = $this->query($token, '
+            query ($ids: [ID!]) { boards (ids: $ids) { columns { id title type } } }',
+            ['ids' => [$boardId]]);
+
+        $titles = [];
+        foreach (($data['boards'][0]['columns'] ?? []) as $c) {
+            $titles[(string) ($c['id'] ?? '')] = trim((string) ($c['title'] ?? ''));
+        }
+        return $titles;
     }
 
     /**

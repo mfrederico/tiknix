@@ -44,8 +44,22 @@ class ClaudeRunner {
         $this->memberLevel = $memberLevel;
         $this->projectPath = $projectPath;
 
-        // Use TmuxManager to build session name
-        $this->sessionName = TmuxManager::buildTaskSessionName($memberId, $taskId, $teamId);
+        // Use TmuxManager to build session name.
+        //
+        // The project slug comes out of the workspace path, which GitService now
+        // scopes by instance (projects/<member>/<slug>.tiknix/<task>). Taking it
+        // from there rather than adding a constructor argument means every existing
+        // caller gets the scoping for free — and the two can never disagree about
+        // which project a session belongs to, because they read the same string.
+        // Just the slug, not the whole instance tag: the directory is named
+        // "mileage.tiknix" and the session already begins with tiknix-, so the app
+        // namespace would say it twice — tiknix-mileage-tiknix-1-task-26.
+        $slug = '';
+        if ($projectPath) {
+            $parent = basename(dirname(rtrim($projectPath, '/')));
+            if ($parent !== '' && !ctype_digit($parent)) $slug = explode('.', $parent)[0];
+        }
+        $this->sessionName = TmuxManager::buildTaskSessionName($memberId, $taskId, $teamId, $slug);
 
         // Work directory based on ownership
         if ($teamId) {

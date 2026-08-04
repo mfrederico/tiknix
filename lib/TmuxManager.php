@@ -389,11 +389,32 @@ class TmuxManager {
      * @param int|null $teamId Team ID (null for personal tasks)
      * @return string Session name
      */
-    public static function buildTaskSessionName(int $memberId, int $taskId, ?int $teamId = null): string {
+    public static function buildTaskSessionName(int $memberId, int $taskId, ?int $teamId = null, string $slug = ''): string {
+        // tiknix-<slug>-<member>-task-<id>, e.g. tiknix-mileage-1-task-26.
+        //
+        // The slug is here because task ids are PER-PROJECT: "task 26" exists in
+        // every project, and without the slug they all built the same name. A run
+        // on mileage then blocked a run on bidsurge with "a session for this task
+        // is already active" — naming a session belonging to a project the person
+        // was not looking at — and one orphaned session blocked every project's
+        // task 26 at once.
+        //
+        // It leads, rather than trailing, so `tmux ls` groups by project and a
+        // human can see whose session is whose at a glance.
+        //
+        // The tiknix- prefix STAYS: listTiknixSessions() filters on it and
+        // cleanupOrphaned() depends on that, so dropping it would stop orphans
+        // being reaped — which is the failure that produced this bug's symptom.
+        //
+        // The member stays too: parseSessionName reports it and
+        // ClaudeRunner::findByTaskId rebuilds a runner from it.
+        $slug = trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $slug), '-');
+        $where = $slug !== '' ? "{$slug}-" : '';
+
         if ($teamId) {
-            return "tiknix-team-{$teamId}-task-{$taskId}";
+            return "tiknix-{$where}team-{$teamId}-task-{$taskId}";
         }
-        return "tiknix-{$memberId}-task-{$taskId}";
+        return "tiknix-{$where}{$memberId}-task-{$taskId}";
     }
 
     /**
@@ -413,23 +434,28 @@ class TmuxManager {
             ];
         }
 
-        // Team task: tiknix-team-{team_id}-task-{task_id}
-        if (preg_match('/^tiknix-team-(\d+)-task-(\d+)$/', $sessionName, $m)) {
+        // Team task: tiknix-[slug-]team-{team_id}-task-{task_id}
+        // The slug is optional so sessions created before it was added still parse
+        // — an unparseable name is a session cleanupOrphaned() cannot reap, which
+        // would turn one stale run into a permanent block on that task id.
+        if (preg_match('/^tiknix-(?:(?<slug>[A-Za-z0-9-]+?)-)?team-(?<team>\d+)-task-(?<task>\d+)$/', $sessionName, $m)) {
             return [
                 'type' => 'task',
                 'member_id' => null,
-                'task_id' => (int)$m[2],
-                'team_id' => (int)$m[1]
+                'task_id' => (int)$m['task'],
+                'team_id' => (int)$m['team'],
+                'slug' => $m['slug'] ?? '',
             ];
         }
 
-        // Personal task: tiknix-{member_id}-task-{task_id}
-        if (preg_match('/^tiknix-(\d+)-task-(\d+)$/', $sessionName, $m)) {
+        // Personal task: tiknix-[slug-]{member_id}-task-{task_id}
+        if (preg_match('/^tiknix-(?:(?<slug>[A-Za-z0-9-]*[A-Za-z][A-Za-z0-9-]*)-)?(?<member>\d+)-task-(?<task>\d+)$/', $sessionName, $m)) {
             return [
                 'type' => 'task',
-                'member_id' => (int)$m[1],
-                'task_id' => (int)$m[2],
-                'team_id' => null
+                'member_id' => (int)$m['member'],
+                'task_id' => (int)$m['task'],
+                'team_id' => null,
+                'slug' => $m['slug'] ?? '',
             ];
         }
 

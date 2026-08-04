@@ -2420,8 +2420,20 @@ class Mcp extends BaseControls\Control {
      * @return string Full MCP endpoint URL
      */
     private static function buildMcpUrl(?string $baseUrl = null): string {
+        // NO FALLBACK. This used to default to app_url() -- whichever install ran the
+        // generator -- so core writing a config for an instance would point that
+        // project's agent at https://tiknix.com/mcp/message, and therefore at CORE's
+        // tree, models and workbench.db. The agent would work perfectly and describe
+        // the wrong codebase.
+        //
+        // "Whose MCP is this?" is not a question with a sensible default. A caller
+        // that cannot answer it has a bug, and should hear about it here rather than
+        // ship a plausible config that silently introspects somebody else.
         if (!$baseUrl) {
-            $baseUrl = app_url();
+            throw new \InvalidArgumentException(
+                'buildMcpUrl requires an explicit base url: pass the INSTANCE\'s baseurl, '
+                . 'never this install\'s. A generated MCP config with the wrong host points '
+                . 'an agent at the wrong codebase.');
         }
 
         $baseUrl = rtrim($baseUrl, '/');

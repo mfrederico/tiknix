@@ -402,10 +402,15 @@ class MondayConnector extends AbstractConnector {
         if (!$itemIds) return [];
 
         $out = [];
+        // limit is NOT optional. items(ids:) defaults to 25 and silently returns the
+        // first 25 of however many you asked for -- no error, no warning, just a
+        // shorter list. A refresh over 28 tasks got 25 back and reported the other
+        // three as "no longer visible in monday", which is a live task told it was
+        // deleted. Chunked to match the limit so the two can never disagree.
         foreach (array_chunk($itemIds, 100) as $chunk) {
             $data = $this->query($token, '
-                query ($ids: [ID!]) {
-                    items (ids: $ids) {
+                query ($ids: [ID!], $limit: Int!) {
+                    items (ids: $ids, limit: $limit) {
                         id
                         name
                         state
@@ -414,7 +419,7 @@ class MondayConnector extends AbstractConnector {
                         board { id name columns { id title type } }
                         column_values { id text type }
                     }
-                }', ['ids' => $chunk]);
+                }', ['ids' => $chunk, 'limit' => count($chunk)]);
 
             foreach (($data['items'] ?? []) as $it) {
                 $statusCols = [];

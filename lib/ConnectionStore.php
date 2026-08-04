@@ -45,7 +45,19 @@ class ConnectionStore {
         if ($env !== null)      { $where .= ' AND environment = ?'; $params[] = $env; }
         if ($memberId !== null) { $where .= ' AND member_id = ?';   $params[] = $memberId; }
 
-        $c = Bean::findOne('connections', $where . ' ORDER BY id DESC', $params);
+        // Production first when no environment was asked for, then newest.
+        //
+        // Ordering by id alone looked harmless and was not: an instance with both a
+        // production and a staging connection gets the staging one, because staging
+        // was created second. For the callers that DO name an environment this
+        // changes nothing; for the ones that do not — "the connection for this
+        // instance" — it is the difference between publishing to the real store and
+        // publishing to a test one.
+        $c = Bean::findOne(
+            'connections',
+            $where . " ORDER BY CASE WHEN environment = 'production' THEN 0 ELSE 1 END, id DESC",
+            $params
+        );
         return ($c && $c->id) ? $c : null;
     }
 

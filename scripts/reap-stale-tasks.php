@@ -134,6 +134,17 @@ foreach (array_keys($live) as $name) {
     // reading. They are reaped when their task is cleaned up, not from here.
     if (strpos($name, 'tiknix-serve-') === 0) continue;
 
+    // PLANNERS are not tasks and are claimed by nothing in workbenchtask:
+    // PlanRunner names its session tiknix-<member>-plan-<slug>, and a decompose
+    // legitimately runs for many minutes before it writes anything. This sweep
+    // would have found no task claiming it and killed it mid-plan — which is the
+    // exact failure it exists to clean up after, caused by the cleaner.
+    //
+    // Same for the plan orchestrator and its per-task builders, which the suffix
+    // rule above only catches for the orchestrator itself.
+    if (preg_match('/^tiknix-\d+-plan-/', $name)) continue;
+    if (preg_match('/^tiknix-plan\d+/', $name)) continue;
+
     $say('  ' . ($apply ? 'KILLED  ' : 'would kill ') . $name . ' (no running task claims it)');
     if ($apply) exec('tmux kill-session -t ' . escapeshellarg($name) . ' 2>/dev/null');
     $killed++;

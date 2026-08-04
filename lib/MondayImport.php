@@ -138,11 +138,33 @@ class MondayImport {
             $it['task_id']     = $imported[$it['id']] ?? null;
             // Surfaced separately so a picker can grey out finished work without
             // having to know which column title means "done" on this board.
-            $it['done']        = strcasecmp(trim((string) ($it['fields']['Status'] ?? '')), 'done') === 0;
+            $it['status']      = trim((string) ($it['fields']['Status'] ?? ''));
+            $it['done']        = self::isClosed($it['status']);
         }
         unset($it);
 
         return $page;
+    }
+
+    /**
+     * Statuses that mean "there is no work to build here".
+     *
+     * Both spellings of cancelled, because monday takes whatever the board owner
+     * typed and a British board would otherwise import its abandoned work — which
+     * is what happened before this existed: only "Done" was recognised, so
+     * Cancelled items looked like open work and the select-all ticked them.
+     *
+     * Cancelled is a STRONGER signal than done: finished work might reasonably be
+     * imported for reference, whereas work somebody called off is work nobody
+     * decided to do. Both are excluded from the bulk select and both stay
+     * individually tickable, because "ignore by default" is a different promise
+     * from "refuse", and only the first one is ours to make.
+     */
+    private const CLOSED_STATUSES = ['done', 'cancelled', 'canceled'];
+
+    /** True when a monday status means the item is not work to build. */
+    public static function isClosed(string $status): bool {
+        return in_array(strtolower(trim($status)), self::CLOSED_STATUSES, true);
     }
 
     /** monday item id => workbench task id, for the ones already here. */

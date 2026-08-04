@@ -56,14 +56,34 @@ or keep a non-secret mirror (connector type, external name, enabled, revoked) wi
 the token living only in the instance. The mirror is probably right — the hub
 needs to *list*, not to *use*.
 
-## Migration
+## Migration: there isn't one
 
-7 live connections in core today (github ×2, shopify ×3, stripe, rsync, monday),
-across instances 6, 62, 65, 82. Each must be decrypted with core's key,
-re-encrypted with the target instance's new key, written to its
-`data/connections.db`, verified by a real API call, and only then removed from
-core. Not a bulk script — one instance at a time, with the connector exercised
-before the core row goes.
+Decided 2026-08-04: **people re-apply their connectors.** Nothing is carried
+across.
+
+This is the decision that makes the whole change safe, and it is worth
+understanding why rather than treating it as a shortcut. Migrating would have
+meant, per connection: decrypt with core's key, re-encrypt with the instance's
+new key, write, verify against the live API, then delete from core — with a
+window in the middle where a credential exists in neither place, or in both.
+Seven of those, across four instances, holding a customer's Stripe and Shopify
+and monday tokens. Re-applying is a few minutes of somebody's time and has no
+such window.
+
+What that means in practice:
+
+- Core's existing rows are **left alone**, not deleted. They stop being read once
+  the readers point at the instance file. Clearing them out is a separate,
+  unhurried job once every instance has reconnected.
+- Every connector stops working at the moment the readers switch, until its owner
+  reconnects. That is user-visible and needs saying out loud before the switch —
+  it is not a silent degradation.
+- The instance's `data/connections.db` and its key are created on first connect,
+  so an instance nobody reconnects simply has no connections, which is the
+  honest state rather than a broken one.
+
+Order that follows from this: build the storage and the key, switch the readers,
+tell people to reconnect. No data moves at any point.
 
 ## What already fits
 

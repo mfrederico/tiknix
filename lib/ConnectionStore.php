@@ -28,9 +28,41 @@ class ConnectionStore {
     /** Named RedBean connection for this install's own connections file. */
     private const OWN_KEY = 'ownconn';
 
+    /**
+     * The install whose connections these calls act on.
+     *
+     * Empty means "the install this code is running in", which is the answer for
+     * core and for an instance running its own code. A SIDECAR is the exception:
+     * it acts on behalf of a project, so it must name that project's directory —
+     * exactly as it already points RedBean at that project's workbench.db. Without
+     * this, a sidecar would read its own connections and find none, which looks
+     * identical to "the customer never connected anything".
+     */
+    private static string $root = '';
+
+    /** Act on this install's directory (its root, containing conf/ and data/). */
+    public static function useInstall(string $installRoot): void {
+        self::$root = rtrim($installRoot, '/');
+        // A different install means a different file and a different key.
+        \RedBeanPHP\R::hasDatabase(self::OWN_KEY) && \RedBeanPHP\R::selectDatabase('default');
+        self::$openedFor = '';
+    }
+
+    /** Back to the install this code lives in. */
+    public static function useOwnInstall(): void {
+        self::$root = '';
+        self::$openedFor = '';
+    }
+
+    private static string $openedFor = '';
+
+    private static function root(): string {
+        return self::$root !== '' ? self::$root : dirname(__DIR__);
+    }
+
     /** Where the credentials live. Gitignored, like data/workbench.db. */
     public static function ownDbPath(): string {
-        return dirname(__DIR__) . '/data/connections.db';
+        return self::root() . '/data/connections.db';
     }
 
     /**
@@ -45,7 +77,7 @@ class ConnectionStore {
      * is that an instance can read its own connections without core.
      */
     public static function ownKey(): string {
-        $file = dirname(__DIR__) . '/conf/connections.key';
+        $file = self::root() . '/conf/connections.key';
 
         if (is_file($file)) {
             $k = trim((string) file_get_contents($file));
@@ -79,10 +111,11 @@ class ConnectionStore {
 
         $restore = \RedBeanPHP\R::hasDatabase('default') ? 'default' : null;
         try {
-            if (!\RedBeanPHP\R::hasDatabase(self::OWN_KEY)) {
-                \RedBeanPHP\R::addDatabase(self::OWN_KEY, 'sqlite:' . $db);
-            }
-            \RedBeanPHP\R::selectDatabase(self::OWN_KEY);
+            // One named connection per install path: reusing the name across installs
+            // would silently keep the first database open.
+            $conn = self::OWN_KEY . '_' . substr(sha1($db), 0, 8);
+            if (!\RedBeanPHP\R::hasDatabase($conn)) \RedBeanPHP\R::addDatabase($conn, 'sqlite:' . $db);
+            \RedBeanPHP\R::selectDatabase($conn);
             \RedBeanPHP\R::freeze(false);   // fluid: the table appears on first store
             return $fn();
         } catch (\Throwable $e) {

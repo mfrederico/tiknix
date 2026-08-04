@@ -17,6 +17,54 @@ class EncryptionService {
      *
      * @throws \Exception If encryption fails
      */
+    /**
+     * Encrypt with a key the caller supplies, rather than the install's app_key.
+     *
+     * Connections are moving to a per-instance store with a per-instance key
+     * (CONNECTIONS_PER_INSTANCE.md), so the key can no longer always be the global
+     * one. Same construction as encrypt() — XSalsa20-Poly1305 with a random
+     * 24-byte nonce prefixed to the ciphertext — so the two are interchangeable
+     * given the same key, and nothing already encrypted needs re-encrypting.
+     *
+     * @param string $hexKey 64 hex characters (32 bytes)
+     */
+    public static function encryptWith(string $plaintext, string $hexKey): string {
+        $key   = self::binKey($hexKey);
+        $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+        $out   = base64_encode($nonce . sodium_crypto_secretbox($plaintext, $nonce, $key));
+        sodium_memzero($key);
+        return $out;
+    }
+
+    /** Decrypt something produced by encryptWith() with the same key. */
+    public static function decryptWith(string $encrypted, string $hexKey): string {
+        $key     = self::binKey($hexKey);
+        $decoded = base64_decode($encrypted, true);
+
+        if ($decoded === false) throw new \Exception('Invalid encrypted data: base64 decode failed');
+        if (strlen($decoded) < SODIUM_CRYPTO_SECRETBOX_NONCEBYTES + SODIUM_CRYPTO_SECRETBOX_MACBYTES + 1) {
+            throw new \Exception('Invalid encrypted data: too short');
+        }
+
+        $nonce = substr($decoded, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+        $plain = sodium_crypto_secretbox_open(
+            substr($decoded, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES), $nonce, $key);
+        sodium_memzero($key);
+
+        // Wrong key and tampered data are indistinguishable here, and should be:
+        // secretbox authenticates, so "it did not open" is the only honest answer.
+        if ($plain === false) throw new \Exception('Decryption failed: wrong key or corrupt data');
+        return $plain;
+    }
+
+    /** Validate and unhex a caller-supplied key. Same rules as the global one. */
+    private static function binKey(string $hexKey): string {
+        if (strlen($hexKey) !== 64 || !ctype_xdigit($hexKey)) {
+            throw new \Exception('Invalid encryption key: expected 64 hex characters (32 bytes).');
+        }
+        return hex2bin($hexKey);
+    }
+
     public static function encrypt(string $plaintext): string {
         $key = self::getKey();
 

@@ -70,3 +70,8 @@ package-lock.json
 .mcp_url
 public/uploads/
 public/store/
+
+# Per-install connection encryption key (lib/ConnectionStore::ownKey).
+# conf/*.ini above does not cover it, and this is the one value that must
+# never travel: with it, every stored connector credential opens.
+conf/*.key

@@ -15,6 +15,163 @@ use app\Bean;
 
 class ConnectionStore {
 
+    // ---- this install's own connections ------------------------------------------
+    //
+    // Core owns core's connectors; every instance owns its own. There is no
+    // instance_id here because there is nothing to scope: the FILE is the scope,
+    // and every install asks the same question — "what are my connections?" — with
+    // no id to pass and none to get wrong. See CONNECTIONS_PER_INSTANCE.md.
+    //
+    // Additive for now. The readers still use forInstance() against core's table;
+    // this is the storage they move onto.
+
+    /** Named RedBean connection for this install's own connections file. */
+    private const OWN_KEY = 'ownconn';
+
+    /** Where the credentials live. Gitignored, like data/workbench.db. */
+    public static function ownDbPath(): string {
+        return dirname(__DIR__) . '/data/connections.db';
+    }
+
+    /**
+     * This install's encryption key, minted on first use.
+     *
+     * Its own file rather than a line in config.ini, for two reasons. config.ini
+     * holds things people paste into support threads, and this is the one value
+     * that must never travel. And a separate file can be 0600 and owned narrowly
+     * without changing the permissions of everything else.
+     *
+     * NOT the global [security] app_key: that key is core's, and the whole point
+     * is that an instance can read its own connections without core.
+     */
+    public static function ownKey(): string {
+        $file = dirname(__DIR__) . '/conf/connections.key';
+
+        if (is_file($file)) {
+            $k = trim((string) file_get_contents($file));
+            if (strlen($k) === 64 && ctype_xdigit($k)) return $k;
+            throw new \Exception('conf/connections.key is malformed. Move it aside and '
+                               . 'reconnect this install\'s connectors to mint a new one.');
+        }
+
+        $key = EncryptionService::generateKey();
+
+        // Written before it is used, and the write is checked: a key that failed to
+        // persist would encrypt everything in this request and decrypt nothing ever
+        // again.
+        if (@file_put_contents($file, $key . "\n", LOCK_EX) === false) {
+            throw new \Exception('Could not write conf/connections.key — connections cannot be stored.');
+        }
+        @chmod($file, 0600);
+
+        \Flight::get('log')?->info('ConnectionStore: minted this install\'s connection key');
+        return $key;
+    }
+
+    /**
+     * Run against this install's own connections db, restoring the caller's
+     * connection afterwards. Mirrors app\CoreDb::with.
+     */
+    public static function withOwnDb(callable $fn, $onError = null) {
+        $db = self::ownDbPath();
+        $dir = dirname($db);
+        if (!is_dir($dir)) @mkdir($dir, 0755, true);
+
+        $restore = \RedBeanPHP\R::hasDatabase('default') ? 'default' : null;
+        try {
+            if (!\RedBeanPHP\R::hasDatabase(self::OWN_KEY)) {
+                \RedBeanPHP\R::addDatabase(self::OWN_KEY, 'sqlite:' . $db);
+            }
+            \RedBeanPHP\R::selectDatabase(self::OWN_KEY);
+            \RedBeanPHP\R::freeze(false);   // fluid: the table appears on first store
+            return $fn();
+        } catch (\Throwable $e) {
+            \Flight::get('log')?->error('ConnectionStore: own-db operation failed',
+                ['err' => $e->getMessage()]);
+            return $onError;
+        } finally {
+            if ($restore) \RedBeanPHP\R::selectDatabase($restore);
+        }
+    }
+
+    /**
+     * This install's connection for a connector, or null.
+     *
+     * The successor to forInstance(). No instance id, no member id: everything in
+     * the file belongs to this install already.
+     */
+    public static function for(string $type, ?string $env = null): ?\RedBeanPHP\OODBBean {
+        if ($type === '') return null;
+
+        return self::withOwnDb(function () use ($type, $env) {
+            $where  = 'connector_type = ? AND enabled = 1';
+            $params = [$type];
+            if ($env !== null) { $where .= ' AND environment = ?'; $params[] = $env; }
+
+            // Production first when unspecified, then newest — same rule as
+            // forInstance, and for the same reason: an install with both a
+            // production and a staging connection must not silently get staging.
+            $rows = Bean::find('connections',
+                $where . " ORDER BY CASE WHEN environment = 'production' THEN 0 ELSE 1 END, id DESC",
+                $params);
+
+            foreach ($rows as $c) {
+                if ($c->id && empty($c->revokedAt)) return $c;
+            }
+            return null;
+        }, null);
+    }
+
+    /** The usable credential for one of this install's own connections. */
+    public static function ownToken(?\RedBeanPHP\OODBBean $conn): string {
+        $raw = (string) ($conn->accessToken ?? '');
+        if ($raw === '') return '';
+
+        try {
+            return EncryptionService::decryptWith($raw, self::ownKey());
+        } catch (\Throwable $e) {
+            \Flight::get('log')?->error('ConnectionStore: could not decrypt an own connection', [
+                'connection' => (int) ($conn->id ?? 0), 'err' => $e->getMessage(),
+            ]);
+            return '';
+        }
+    }
+
+    /**
+     * Store one of this install's own connections, encrypted with its own key.
+     *
+     * One row per (connector, environment, external account) — the same key as
+     * upsert() minus member and instance, which mean nothing in a file that
+     * belongs to one install.
+     */
+    public static function put(string $type, string $env, array $payload): int {
+        $key = self::ownKey();   // minted (and its write checked) before anything is stored
+
+        return (int) self::withOwnDb(function () use ($type, $env, $payload, $key) {
+            $eid = (string) ($payload['external_eid'] ?? '');
+
+            $conn = Bean::findOne('connections',
+                'connector_type = ? AND environment = ? AND external_eid = ?', [$type, $env, $eid]);
+            if (!$conn || !$conn->id) $conn = Bean::dispense('connections');
+
+            $conn->connectorType = $type;
+            $conn->environment   = $env;
+            $conn->externalEid   = $eid;
+            $conn->externalName  = (string) ($payload['external_name'] ?? '');
+            $conn->externalUrl   = (string) ($payload['external_url'] ?? '');
+            $conn->tokenType     = (string) ($payload['token_type'] ?? '');
+            $conn->scopes        = (string) ($payload['scopes'] ?? '');
+            $conn->authType      = (string) ($payload['auth_type'] ?? 'api_key');
+            $conn->accessToken   = EncryptionService::encryptWith((string) ($payload['access_token'] ?? ''), $key);
+            $conn->enabled       = 1;
+            $conn->revokedAt     = null;
+            $conn->updatedAt     = date('Y-m-d H:i:s');
+            if (!$conn->createdAt) $conn->createdAt = $conn->updatedAt;
+
+            return (int) Bean::store($conn);
+        }, 0);
+    }
+
     /**
      * The connection for an instance, or null.
      *

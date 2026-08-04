@@ -29,7 +29,12 @@ class Mcptools extends Control {
                 'member_id' => $this->member->id, 'member_level' => $this->member->level,
                 'feature'   => 'mcp',
             ]);
-            \Flight::response()->status(403);
+            // http_response_code, not Flight::response()->status(): status() sets
+            // the code on Flight's response OBJECT, and renderView echoes straight
+            // out before exit bypasses Flight::send() — so the 403 was never
+            // flushed and PHP emitted its default 200. The page said Forbidden and
+            // the status line said OK, which is the version a monitor believes.
+            http_response_code(403);
             \Flight::renderView('error/403', ['title' => '403 - Forbidden']);
             exit;
         }

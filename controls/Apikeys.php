@@ -47,7 +47,7 @@ class Apikeys extends Control {
                 'feature'   => 'mcp',
                 'path'      => Flight::request()->url,
             ]);
-            Flight::response()->status(403);
+            http_response_code(403);   // see Mcptools: status() alone is not flushed before exit
             Flight::renderView('error/403', ['title' => '403 - Forbidden']);
             exit;
         }

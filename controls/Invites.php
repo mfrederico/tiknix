@@ -37,7 +37,7 @@ class Invites extends Control {
             $this->logger->warning('Ungranted member attempted to reach invitations', [
                 'member_id' => $this->member->id, 'member_level' => $this->member->level,
             ]);
-            Flight::response()->status(403);
+            http_response_code(403);   // see Mcptools: status() alone is not flushed before exit
             Flight::renderView('error/403', ['title' => '403 - Forbidden']);
             exit;
         }

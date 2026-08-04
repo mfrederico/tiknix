@@ -46,7 +46,7 @@ class Agentsetup extends Control {
         $this->logger->warning('Ungranted member attempted to reach Agent Setup', [
             'member_id' => $this->member->id, 'member_level' => $this->member->level, 'feature' => 'mcp',
         ]);
-        Flight::response()->status(403);
+        http_response_code(403);   // see Mcptools: status() alone is not flushed
         Flight::renderView('error/403', ['title' => '403 - Forbidden']);
     }
 

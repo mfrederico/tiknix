@@ -223,6 +223,33 @@ pass the instance's, and treat a missing one as an error rather than a fallback.
 | 2 | Secret-key connectors (monday, stripe, rsync/ssh) attach on the instance's own hub via `for()`/`put()`. No instance id in the flow at all. | 1 |
 | 3 | OAuth: core keeps the registered callback as a **thin landing pad** — reads `state`, resolves the instance, pushes the token in over `POST /connectorapi/connect` with that instance's broker key, stores nothing. Same door on-disk or self-hosted. | 2 |
 
+### Decided 2026-08-04: how an instance gets its own identity
+
+Provisioning mints the root member **M2M, before any human visits**, and attaches
+the `tk_` MCP key to it. The agent starts building immediately; a key that only
+exists after someone loads a page does not exist when the agent needs it.
+
+The provision-to-claim window is closed with `status`, not with a password:
+
+- Provision writes the root member as **`status = 'system'`**. `canHoldSession()`
+  already admits `'system'` and `canAuthenticate()` already requires `'active'`, so
+  the key works machine-to-machine from the first second while **interactive login
+  is refused**. No new mechanism.
+- First-run **claims** that row rather than creating a second one: flip to
+  `'active'` and write the human's email/username/password onto it. The `apikey`
+  row is separate and survives the claim.
+
+**First visitor wins, and that is safe here** — `<slug>` carries a random hash, so
+the URL is a capability. Verified: tiknix serves a **wildcard** `*.tiknix.com`
+certificate, so per-instance hostnames are never published to Certificate
+Transparency logs. **If anyone ever moves to per-subdomain certs, this breaks** —
+every slug would appear in CT within minutes of issue and the claim URL would stop
+being secret. Re-gate the claim before making that change.
+
+One thing to confirm when building it: the API-key auth path must admit
+`'system'`. If it was tightened to `status = 'active'` during the auth-hardening
+pass, the placeholder's key is rejected and the scheme fails closed and silently.
+
 Phase 3 needs one new thing: `Connectorapi::connect` currently accepts only
 `auth_type: api_key` and re-validates via `validateApiKey()`. OAuth needs a sibling
 taking a pre-validated payload. Broker-key auth keeps it from being an open

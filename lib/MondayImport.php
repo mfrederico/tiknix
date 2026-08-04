@@ -139,7 +139,23 @@ class MondayImport {
             // Surfaced separately so a picker can grey out finished work without
             // having to know which column title means "done" on this board.
             [$it['status'], $it['status_column']] = self::pickStatus($it['statuses'] ?? []);
-            $it['done']        = self::isClosed($it['status']);
+
+            // Two different questions, and both have to say "build this".
+            //
+            // `state` is monday's own lifecycle field — active / archived / deleted
+            // — not free text, so it is the more trustworthy of the two. It reads
+            // `active` for everything today because items_page excludes the others
+            // by default, which makes this guard dead code and worth having anyway:
+            // the day that default changes, or a query_params is added to page
+            // through an archive, archived work would otherwise arrive looking
+            // exactly like open work.
+            //
+            // The status COLUMN is the one that needed the work: it is whatever a
+            // board owner typed, which is why it takes a type lookup to find and
+            // word matching to read.
+            $state             = strtolower(trim((string) ($it['state'] ?? 'active')));
+            $it['archived']    = $state !== '' && $state !== 'active';
+            $it['done']        = $it['archived'] || self::isClosed($it['status']);
         }
         unset($it);
 

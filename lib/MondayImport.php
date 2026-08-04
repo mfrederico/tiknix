@@ -138,7 +138,7 @@ class MondayImport {
             $it['task_id']     = $imported[$it['id']] ?? null;
             // Surfaced separately so a picker can grey out finished work without
             // having to know which column title means "done" on this board.
-            $it['status']      = trim((string) ($it['fields']['Status'] ?? ''));
+            [$it['status'], $it['status_column']] = self::pickStatus($it['statuses'] ?? []);
             $it['done']        = self::isClosed($it['status']);
         }
         unset($it);
@@ -160,11 +160,63 @@ class MondayImport {
      * individually tickable, because "ignore by default" is a different promise
      * from "refuse", and only the first one is ours to make.
      */
-    private const CLOSED_STATUSES = ['done', 'cancelled', 'canceled'];
+    private const CLOSED_STATUSES = ['done', 'complete', 'completed', 'finished',
+                                     'cancelled', 'canceled', 'closed'];
 
-    /** True when a monday status means the item is not work to build. */
+    /**
+     * Which of an item's status-type columns is THE status, and its value.
+     *
+     * There is no "status" field in monday's API — only columns of type `status`,
+     * and a board has several. The Manufacturing Transfer board has two, `Status`
+     * and `Priority`, so taking the first status-typed column would read a priority
+     * of "High" as the state of the work. Taking the column titled "Status" is no
+     * better on its own: a board is free to call it State, Progress or Phase.
+     *
+     * So: a title that looks like a state wins; failing that, a lone status column
+     * is unambiguous and is used; and when there are several with no recognisable
+     * title we return NOTHING rather than pick one. An item whose status we cannot
+     * identify is treated as open, which errs toward offering work rather than
+     * hiding it — the reverse would silently drop items off the picker with no way
+     * to tell why.
+     *
+     * @return array{0:string,1:string} [value, column title]
+     */
+    private static function pickStatus(array $statuses): array {
+        if (!$statuses) return ['', ''];
+
+        foreach (['status', 'state', 'progress', 'stage', 'phase'] as $want) {
+            foreach ($statuses as $title => $value) {
+                if (strcasecmp(trim((string) $title), $want) === 0) return [(string) $value, (string) $title];
+            }
+        }
+
+        if (count($statuses) === 1) {
+            $title = (string) array_key_first($statuses);
+            return [(string) $statuses[$title], $title];
+        }
+
+        return ['', ''];   // several, none named like a state — do not guess
+    }
+
+    /**
+     * True when a monday status means the item is not work to build.
+     *
+     * Matched as a WHOLE WORD anywhere in the value, not as the whole value,
+     * because boards write compounds: this account's Creative Pipeline uses
+     * "Completed/Live" for seventeen items, and an exact-match list read every one
+     * of them as open work. The word boundary keeps "Not Started" from matching on
+     * a stray substring.
+     *
+     * A leading negation disqualifies it outright — "Not Complete" contains
+     * "complete" and means the opposite. Cheap to check, and the failure it
+     * prevents is offering to build finished work or hiding live work.
+     */
     public static function isClosed(string $status): bool {
-        return in_array(strtolower(trim($status)), self::CLOSED_STATUSES, true);
+        $s = strtolower(trim($status));
+        if ($s === '') return false;
+        if (preg_match('/\b(not|un|isn\'t|no)\b/', $s)) return false;
+
+        return (bool) preg_match('/\b(' . implode('|', self::CLOSED_STATUSES) . ')\b/', $s);
     }
 
     /** monday item id => workbench task id, for the ones already here. */

@@ -203,8 +203,16 @@ class MondayConnector extends AbstractConnector {
 
         // column id -> human title, e.g. color_mm50ntd4 -> "Status".
         $titles = [];
+        // The status-TYPE columns, id => title. A board has more than one: the
+        // Manufacturing Transfer board carries `Status` and `Priority`, both type
+        // `status`, so "the status column" cannot be found by type alone — and it
+        // cannot be found by the title "Status" either, because a board is free to
+        // call it State or Progress. Both facts are kept and the caller decides.
+        $statusCols = [];
         foreach (($board['columns'] ?? []) as $c) {
-            $titles[(string) ($c['id'] ?? '')] = trim((string) ($c['title'] ?? ''));
+            $id = (string) ($c['id'] ?? '');
+            $titles[$id] = trim((string) ($c['title'] ?? ''));
+            if ((string) ($c['type'] ?? '') === 'status') $statusCols[$id] = $titles[$id];
         }
 
         foreach (($page['items'] ?? []) as $it) {
@@ -212,12 +220,26 @@ class MondayConnector extends AbstractConnector {
             // On a real board these are status, priority, dates and people rather
             // than prose — there is often no description column at all, so the item
             // name plus its group is the substance and these are the context.
+            // EVERY status column the board has, including the ones this item left
+            // blank. `fields` drops empties because a blank is not context worth
+            // showing, but dropping them here changed what the set MEANS: an item
+            // with no Status but a Priority of "High" arrived looking like it had
+            // exactly one status column, and "High" was read as the state of the
+            // work. The set has to describe the BOARD, not this row's fill-in.
+            $statuses = array_fill_keys(array_values(array_filter($statusCols)), '');
+
             $fields = [];
             foreach (($it['column_values'] ?? []) as $cv) {
+                $id   = (string) $cv['id'];
+                $key  = ($titles[$id] ?? '') !== '' ? $titles[$id] : $id;
                 $text = trim((string) ($cv['text'] ?? ''));
+
+                // Carried separately with its column title, because `fields` is
+                // title-keyed and a title is whatever somebody typed. The type is
+                // the only part monday guarantees.
+                if (isset($statusCols[$id])) $statuses[$key] = $text;
+
                 if ($text === '') continue;
-                $id  = (string) $cv['id'];
-                $key = ($titles[$id] ?? '') !== '' ? $titles[$id] : $id;
                 $fields[$key] = $text;
             }
 
@@ -229,6 +251,7 @@ class MondayConnector extends AbstractConnector {
                 'url'        => (string) ($it['url'] ?? ''),
                 'updated_at' => (string) ($it['updated_at'] ?? ''),
                 'fields'     => $fields,
+                'statuses'   => $statuses,
             ];
         }
 

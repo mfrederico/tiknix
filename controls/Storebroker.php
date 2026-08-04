@@ -149,7 +149,7 @@ class Storebroker extends Control {
             foreach (['production', 'development'] as $tryEnv) {
                 // ConnectionStore owns the scoping AND the revoked check that was
                 // being done by hand on the next line.
-                $conn = \app\ConnectionStore::forInstance($instanceId, $c->key(), $tryEnv, $memberId);
+                $conn = \app\ConnectionStore::forInstall($instanceId, $c->key(), $tryEnv);
                 if ($conn) return [$conn, $c];
             }
         }

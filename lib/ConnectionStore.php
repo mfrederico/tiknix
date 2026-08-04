@@ -155,6 +155,58 @@ class ConnectionStore {
         }, null);
     }
 
+    /**
+     * An INSTANCE's connection, read from that instance's own store.
+     *
+     * The real replacement for forInstance(). Core is a control plane: MCP tool
+     * calls, publish drivers and the Connections hub all run here but act for an
+     * instance, so "this install's file" is the wrong file for them — they need
+     * the instance's.
+     *
+     * The token is decrypted here, while the instance's key is still the one in
+     * scope, and carried on the bean as `plainToken`. Decrypting later would need
+     * the caller to know whose key to use, which is exactly the knowledge this
+     * class exists to hold. It is never stored: nothing calls store() on this bean.
+     */
+    public static function forInstall(int $instanceId, string $type, ?string $env = null): ?\RedBeanPHP\OODBBean {
+        if ($instanceId <= 0 || $type === '') return null;
+
+        $inst = Bean::load('instance', $instanceId);
+        if (!$inst->id) return null;
+
+        $dir = $inst->box()->dir();
+        if ($dir === '' || !is_dir($dir)) {
+            \Flight::get('log')?->warning('ConnectionStore: instance has no directory on this host',
+                ['instance' => $instanceId, 'dir' => $dir]);
+            return null;
+        }
+
+        self::useInstall($dir);
+        try {
+            $conn = self::for($type, $env);
+            if ($conn) $conn->plainToken = self::ownToken($conn);
+            return $conn;
+        } finally {
+            self::useOwnInstall();
+        }
+    }
+
+    /** Store a connection into an INSTANCE's own file, with that instance's key. */
+    public static function putForInstall(int $instanceId, string $type, string $env, array $payload): int {
+        $inst = Bean::load('instance', $instanceId);
+        if (!$inst->id) return 0;
+
+        $dir = $inst->box()->dir();
+        if ($dir === '' || !is_dir($dir)) return 0;
+
+        self::useInstall($dir);
+        try {
+            return self::put($type, $env, $payload);
+        } finally {
+            self::useOwnInstall();
+        }
+    }
+
     /** The usable credential for one of this install's own connections. */
     public static function ownToken(?\RedBeanPHP\OODBBean $conn): string {
         $raw = (string) ($conn->accessToken ?? '');
@@ -279,6 +331,11 @@ class ConnectionStore {
      * send a secret-shaped string to a third party.
      */
     public static function token(?\RedBeanPHP\OODBBean $conn): string {
+        // forInstall() already decrypted this with the instance's key, which is the
+        // only key that could have opened it.
+        $carried = (string) ($conn->plainToken ?? '');
+        if ($carried !== '') return $carried;
+
         $raw = (string) ($conn->accessToken ?? '');
         if ($raw === '') return '';
 

@@ -158,6 +158,6 @@ class GithubPrDriver implements PublishDriver {
     private static function connection(object $inst) {
         // ConnectionStore owns the scoping rule, and excludes revoked rows — which
         // is what the two guards below were doing by hand.
-        return \app\ConnectionStore::forInstance((int) $inst->id, 'github');
+        return \app\ConnectionStore::forInstall((int) $inst->id, 'github');
     }
 }

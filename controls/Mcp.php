@@ -1207,7 +1207,7 @@ class Mcp extends BaseControls\Control {
         // because RedBean answers a query naming an absent column with NOTHING
         // rather than an error — which would make a good connection disappear on an
         // instance whose table predates revoked_at.
-        $conn = \app\ConnectionStore::forInstance($instanceId, $connectorKey, $env);
+        $conn = \app\ConnectionStore::forInstall($instanceId, $connectorKey, $env);
         if (!$conn || !$conn->id) {
             // forInstance() already excludes disabled and revoked rows, so the
             // separate "was revoked" throw that used to sit here is unreachable. Its

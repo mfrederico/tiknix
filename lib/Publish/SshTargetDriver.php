@@ -156,7 +156,7 @@ abstract class SshTargetDriver implements PublishDriver {
      */
     protected static function keyConnection(object $inst, string $driverKey, bool $create = true) {
         // Scoping (and enabled/revoked) via ConnectionStore -- see its docblock.
-        $conn = \app\ConnectionStore::forInstance((int) $inst->id, $driverKey);
+        $conn = \app\ConnectionStore::forInstall((int) $inst->id, $driverKey);
         if ($conn) return $conn;
         if (!$create) return null;
 

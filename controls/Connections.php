@@ -62,7 +62,7 @@ class Connections extends Control {
 
     /** The enabled GitHub connection bound to member + instance, or null. */
     private function githubConn(int $instanceId) {
-        return \app\ConnectionStore::forInstance($instanceId, 'github', null, (int)$this->member->id);
+        return \app\ConnectionStore::forInstall($instanceId, 'github');
     }
 
     private function connSummary($conn): array {

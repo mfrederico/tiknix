@@ -62,9 +62,7 @@ class Connections extends Control {
 
     /** The enabled GitHub connection bound to member + instance, or null. */
     private function githubConn(int $instanceId) {
-        return Bean::findOne('connections',
-            'member_id = ? AND instance_id = ? AND connector_type = ? AND enabled = 1',
-            [(int)$this->member->id, $instanceId, 'github']);
+        return \app\ConnectionStore::forInstance($instanceId, 'github', null, (int)$this->member->id);
     }
 
     private function connSummary($conn): array {

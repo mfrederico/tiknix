@@ -155,9 +155,9 @@ abstract class SshTargetDriver implements PublishDriver {
      * instance itself via its broker key, not a logged-in person.
      */
     protected static function keyConnection(object $inst, string $driverKey, bool $create = true) {
-        $conn = Bean::findOne('connections',
-            'instance_id = ? AND connector_type = ?', [(int) $inst->id, $driverKey]);
-        if ($conn && $conn->id) return $conn;
+        // Scoping (and enabled/revoked) via ConnectionStore -- see its docblock.
+        $conn = \app\ConnectionStore::forInstance((int) $inst->id, $driverKey);
+        if ($conn) return $conn;
         if (!$create) return null;
 
         $kp = SshKey::generate('tiknix-publish:' . $inst->slug . ':' . $driverKey);

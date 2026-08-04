@@ -71,7 +71,8 @@ package-lock.json
 public/uploads/
 public/store/
 
-# Per-install connection encryption key (lib/ConnectionStore::ownKey).
-# conf/*.ini above does not cover it, and this is the one value that must
-# never travel: with it, every stored connector credential opens.
+# Secrets and non-web-served files. A DIRECTORY rule on purpose: the previous
+# conf/*.key glob ignored a .key and would have let a .pem, .json or .txt
+# through, and the one value that must never travel is in here.
+secure/
 conf/*.key

@@ -77,7 +77,19 @@ class ConnectionStore {
      * is that an instance can read its own connections without core.
      */
     public static function ownKey(): string {
-        $file = self::root() . '/conf/connections.key';
+        $dir  = self::root() . '/secure';
+        $file = $dir . '/connections.key';
+
+        // secure/, not conf/. conf/ is a grab-bag whose directory is world-readable,
+        // and it could only be protected in git by an extension glob — conf/*.key
+        // ignored a .key and would have let a .pem or a .json straight through. A
+        // directory rule cannot be slipped past by naming a file differently.
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0700, true);
+        }
+        // 0700 whether we made it or found it: instances already have a secure/ for
+        // uploads, and it is world-readable, which is not good enough for this.
+        @chmod($dir, 0700);
 
         if (is_file($file)) {
             $k = trim((string) file_get_contents($file));

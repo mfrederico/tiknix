@@ -90,6 +90,16 @@ abstract class AbstractConnector implements ConnectorInterface {
         curl_setopt_array($ch, $co);
         $body   = curl_exec($ch);
         $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        return [$status, is_string($body) ? $body : ''];
+
+        // The transport error, THIRD so existing [$status, $body] callers are
+        // unaffected. Without it every failure before a response — DNS, TLS,
+        // connect refused, timeout — arrives as the same bare "HTTP 0", and the
+        // caller reports "sent no usable answer" for four unrelated causes with
+        // nothing to tell them apart. curl already knows which; this stops
+        // throwing that away.
+        $err = curl_errno($ch) ? curl_strerror(curl_errno($ch)) . ': ' . curl_error($ch) : '';
+
+        // No curl_close(): deprecated in PHP 8.5 and it throws in a web handler.
+        return [$status, is_string($body) ? $body : '', $err];
     }
 }

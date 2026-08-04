@@ -275,7 +275,7 @@ class MondayImport {
         if (!$conn) throw new \RuntimeException('No monday.com connection for this instance.');
 
         $existing = self::importedEids(array_column($items, 'id'));
-        $created = 0; $skipped = 0; $subs = 0; $ids = [];
+        $created = 0; $skipped = 0; $subs = 0; $files = 0; $ids = [];
 
         foreach ($items as $it) {
             $eid = (string) ($it['id'] ?? '');
@@ -310,11 +310,13 @@ class MondayImport {
 
             if ($id > 0) {
                 $created++; $ids[] = $id;
-                $subs += self::importSubitems($it, $id, $conn, $instanceId, $instanceTag, $memberId, $existing);
+                $files += self::storeAssets($it, $id, $instanceId);
+                $subs  += self::importSubitems($it, $id, $conn, $instanceId, $instanceTag, $memberId, $existing);
             }
         }
 
-        return ['created' => $created, 'skipped' => $skipped, 'subitems' => $subs, 'task_ids' => $ids];
+        return ['created' => $created, 'skipped' => $skipped, 'subitems' => $subs,
+                'files' => $files, 'task_ids' => $ids];
     }
 
     /**
@@ -353,7 +355,7 @@ class MondayImport {
         $tasks = self::withWorkbench(
             fn() => Bean::find('workbenchtask', "monday_eid IS NOT NULL AND monday_eid != '' ORDER BY id"), []);
         if (!$tasks) return ['checked' => 0, 'closed' => 0, 'reopened' => 0, 'missing' => 0,
-                             'updated' => 0, 'flagged' => [], 'changes' => []];
+                             'updated' => 0, 'files' => 0, 'flagged' => [], 'changes' => []];
 
         $byEid = [];
         foreach ($tasks as $t) $byEid[(string) $t->mondayEid] = $t;
@@ -361,7 +363,7 @@ class MondayImport {
         $live = self::connector()->itemsById(self::token($conn), array_keys($byEid));
 
         $out = ['checked' => 0, 'closed' => 0, 'reopened' => 0, 'missing' => 0,
-                'updated' => 0, 'flagged' => [], 'changes' => []];
+                'updated' => 0, 'files' => 0, 'flagged' => [], 'changes' => []];
         $now = date('Y-m-d H:i:s');
 
         foreach ($byEid as $eid => $task) {
@@ -421,6 +423,12 @@ class MondayImport {
                     $out['updated']++;
                     $out['changes'][] = ['task_id' => (int) $task->id, 'title' => $title, 'fields' => $diff];
                 }
+
+                // Attachments too, so tasks imported before this existed get their
+                // design files, and a file added to a board later arrives without
+                // anybody re-importing. Idempotent by size, so this is a stat() per
+                // asset on a run where nothing changed rather than a re-download.
+                $out['files'] += self::storeAssets($seen, (int) $task->id, $instanceId);
             }
 
             self::withWorkbench(function () use ($task, $status, $closed, $missing, $now, $seen, $diff) {
@@ -449,6 +457,154 @@ class MondayImport {
         }
 
         return $out;
+    }
+
+    /**
+     * What is worth pulling down. HTML is the specification on these boards — one
+     * item attaches a 1.7MB mockup and says "recreate this" — and images are the
+     * screenshots beside it. Everything else stays a reference in the brief.
+     *
+     * An allowlist rather than a blocklist: a board is a place people put whatever
+     * they have, and the failure of guessing wrong is a build agent handed a 40MB
+     * video or a customer spreadsheet nobody meant to copy.
+     */
+    private const PULLABLE = ['html', 'htm', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+
+    /** Per file. Large enough for a real page mockup, small enough to notice. */
+    private const MAX_ASSET_BYTES = 25 * 1024 * 1024;
+
+    /**
+     * Download an item's attachments into the instance, under the task.
+     *
+     * Into secure/, which is 0700 and gitignored: these are a customer's design
+     * files, and public/ would put them on the open web under a guessable path.
+     *
+     * Files are named <assetId>-<name> because names collide — this very item
+     * carries two different screenshots both called image-from-clipboard.png, and
+     * writing by name alone would silently leave one of them.
+     *
+     * Idempotent by size: an asset already on disk at its full length is skipped,
+     * so a sync over a board does not re-download every mockup each run. Paths are
+     * plain and relative, which is what keeps this working when secure/ becomes a
+     * FUSE mount onto S3 rather than local disk.
+     *
+     * @return array{stored:string[],skipped:int,failed:array}
+     */
+    public static function pullAssets(array $it, int $taskId, string $installDir, ?int $instanceId = null): array {
+        $out = ['stored' => [], 'skipped' => 0, 'failed' => []];
+
+        $wanted = [];
+        foreach (($it['assets'] ?? []) as $id => $name) {
+            $ext = strtolower(pathinfo((string) $name, PATHINFO_EXTENSION));
+            if ($ext !== '' && in_array($ext, self::PULLABLE, true)) $wanted[(string) $id] = (string) $name;
+        }
+        if (!$wanted) return $out;
+
+        $conn = self::connection($instanceId);
+        if (!$conn) throw new \RuntimeException('No monday.com connection for this instance.');
+
+        $dir = rtrim($installDir, '/') . '/secure/monday/task-' . $taskId;
+        if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Could not create ' . $dir);
+        }
+        @chmod(dirname($dir), 0700);
+
+        // public_url is signed for about an hour, so it is fetched NOW rather than
+        // read from anything stored. Only for assets actually being downloaded.
+        $meta = self::connector()->assets(self::token($conn), array_keys($wanted));
+
+        foreach ($wanted as $id => $name) {
+            $info = $meta[$id] ?? null;
+            if (!$info || ($info['public_url'] ?? '') === '') {
+                $out['failed'][] = $name . ' (monday returned no download url)';
+                continue;
+            }
+
+            if ((int) $info['size'] > self::MAX_ASSET_BYTES) {
+                $out['failed'][] = $name . ' (' . round($info['size'] / 1048576, 1) . 'MB, over the limit)';
+                continue;
+            }
+
+            $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $name !== '' ? $name : ('asset-' . $id));
+            $path = $dir . '/' . $id . '-' . $safe;
+            $rel  = 'secure/monday/task-' . $taskId . '/' . $id . '-' . $safe;
+
+            if (is_file($path) && (int) filesize($path) === (int) $info['size']) {
+                $out['skipped']++;
+                $out['stored'][] = $rel;   // still ours, still listed
+                continue;
+            }
+
+            $bytes = self::fetchUrl($info['public_url']);
+            if ($bytes === null) { $out['failed'][] = $name . ' (download failed)'; continue; }
+
+            // Written to a temp name and moved, so a half-written file is never
+            // mistaken for a complete one by the size check above.
+            $tmp = $path . '.part';
+            if (@file_put_contents($tmp, $bytes) === false || !@rename($tmp, $path)) {
+                @unlink($tmp);
+                $out['failed'][] = $name . ' (could not be written)';
+                continue;
+            }
+            @chmod($path, 0600);
+            $out['stored'][] = $rel;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Pull an item's attachments and record them on the task. Returns how many.
+     *
+     * Never throws at the caller: a design file that will not download is a worse
+     * brief, not a failed import, and losing the whole task because one 1.7MB
+     * mockup timed out would be the wrong trade. It logs instead, so the reason is
+     * recoverable rather than guessed at.
+     */
+    private static function storeAssets(array $it, int $taskId, ?int $instanceId): int {
+        if (self::$installDir === '' || empty($it['assets'])) return 0;
+
+        try {
+            $r = self::pullAssets($it, $taskId, self::$installDir, $instanceId);
+        } catch (\Throwable $e) {
+            \Flight::get('log')?->error('MondayImport: attachments could not be pulled',
+                ['task' => $taskId, 'err' => $e->getMessage()]);
+            return 0;
+        }
+
+        foreach ($r['failed'] as $f) {
+            \Flight::get('log')?->warning('MondayImport: attachment skipped',
+                ['task' => $taskId, 'file' => $f]);
+        }
+        if (!$r['stored']) return 0;
+
+        self::withWorkbench(function () use ($taskId, $r) {
+            $row = Bean::load('workbenchtask', $taskId);
+            if (!$row->id) return false;
+            // Merged with whatever is already listed, and de-duplicated: a person
+            // may have added paths of their own, and a sync must not wipe them.
+            $have = json_decode((string) ($row->relatedFiles ?: '[]'), true) ?: [];
+            $row->relatedFiles = json_encode(array_values(array_unique(array_merge($have, $r['stored']))));
+            Bean::store($row);
+            return true;
+        }, false);
+
+        return count($r['stored']) - $r['skipped'];
+    }
+
+    /** A plain GET that returns null rather than a half-answer. */
+    private static function fetchUrl(string $url): ?string {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT        => 120,
+            CURLOPT_CONNECTTIMEOUT => 15,
+        ]);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        // No curl_close: it is deprecated in PHP 8.5 and throws in a web handler.
+        return ($code === 200 && is_string($body) && $body !== '') ? $body : null;
     }
 
     /**
@@ -686,6 +842,20 @@ class MondayImport {
     public static function setWorkbenchDb(string $path): void {
         self::$workbenchDb = $path;
         self::$useCurrent  = false;
+    }
+
+    /**
+     * Where this instance lives on disk, so attachments can be written under it.
+     *
+     * Unset means attachments are NOT downloaded — import and sync still work, and
+     * the brief still names every file with its asset id. That is the right
+     * default for a caller that has not said where files may be written: guessing
+     * a directory to put a customer's design files in is not a guess worth making.
+     */
+    private static string $installDir = '';
+
+    public static function setInstallDir(string $dir): void {
+        self::$installDir = rtrim($dir, '/');
     }
 
     private static function withWorkbench(callable $fn, $onError = null) {

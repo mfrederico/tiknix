@@ -276,6 +276,11 @@ class MondayConnector extends AbstractConnector {
                 'fields'     => $fields,
                 'statuses'   => $statuses,
                 'description'=> self::blocksToText($it['description']['blocks'] ?? []),
+                // id => filename, read from the blocks before they are flattened to
+                // text. A caller that wants the FILES cannot get them back out of a
+                // rendered brief, and re-fetching the item to find them again would
+                // be a second round trip for something already in hand.
+                'assets'     => $this->assetsInBlocks($it['description']['blocks'] ?? []),
                 'subitems'   => self::shapeSubitems($it['subitems'] ?? [], $subTitles),
             ];
         }
@@ -515,7 +520,12 @@ class MondayConnector extends AbstractConnector {
         // shorter list. A refresh over 28 tasks got 25 back and reported the other
         // three as "no longer visible in monday", which is a live task told it was
         // deleted. Chunked to match the limit so the two can never disagree.
-        foreach (array_chunk($itemIds, 100) as $chunk) {
+        //
+        // 25 per request, not 100. Pulling description blocks made this query far
+        // heavier -- 28 items measured at 6.8s -- so a chunk of 100 would sit right
+        // on the 25s timeout in query(), and the first symptom of crossing it is
+        // "monday.com sent no usable answer (HTTP 0)" partway through a sync.
+        foreach (array_chunk($itemIds, 25) as $chunk) {
             $data = $this->query($token, '
                 query ($ids: [ID!], $limit: Int!) {
                     items (ids: $ids, limit: $limit) {
@@ -577,6 +587,7 @@ class MondayConnector extends AbstractConnector {
                     'fields'      => $fields,
                     'statuses'    => $statuses,
                     'description' => self::blocksToText($it['description']['blocks'] ?? []),
+                    'assets'      => $this->assetsInBlocks($it['description']['blocks'] ?? []),
                     'parent_name' => (string) ($it['parent_item']['name'] ?? ''),
                 ];
             }
@@ -751,7 +762,7 @@ class MondayConnector extends AbstractConnector {
             'variables' => $variables ?: null,
         ], fn($v) => $v !== null));
 
-        [$status, $raw] = $this->http('POST', self::ENDPOINT, [
+        $opts = [
             'headers' => [
                 'Content-Type: application/json',
                 'Authorization: ' . $token,
@@ -759,11 +770,34 @@ class MondayConnector extends AbstractConnector {
             ],
             'body'    => $body,
             'timeout' => 25,
-        ]);
+        ];
+
+        // Retried ONCE, and only for a transport failure — never for a GraphQL
+        // error, which would repeat a bad query and charge for it twice.
+        //
+        // Observed against a real account: the first request of a pair succeeds in
+        // about 6s and the one straight after it hangs for the full timeout with
+        // zero bytes received. That is throttling arriving as silence rather than
+        // as 429, so backing off briefly is the answer and asking for less is not.
+        [$status, $raw, $transportError] = $this->http('POST', self::ENDPOINT, $opts);
+
+        if ($transportError !== '' && $raw === '') {
+            usleep(2500000);
+            [$status, $raw, $retryError] = $this->http('POST', self::ENDPOINT, $opts);
+            // Keep the FIRST reason if the retry also fails: it is the one that
+            // describes the condition, and "timed out, then timed out" says less
+            // than "timed out" with the attempt count implied.
+            if ($raw === '') $transportError .= ' (retried once' . ($retryError !== '' ? '; same' : '') . ')';
+            else             $transportError = '';
+        }
 
         $json = json_decode($raw ?: '', true);
         if (!is_array($json)) {
-            throw new \Exception('monday.com sent no usable answer (HTTP ' . $status . ').');
+            // Say WHICH failure. "HTTP 0" alone covers a timeout, a refused
+            // connection, a DNS miss and a TLS problem, and they want different
+            // things done about them — a timeout means ask for less at a time.
+            throw new \Exception('monday.com sent no usable answer (HTTP ' . $status . ')'
+                . ($transportError !== '' ? ': ' . $transportError : '') . '.');
         }
 
         if (!empty($json['errors'])) {

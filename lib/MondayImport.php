@@ -339,7 +339,7 @@ class MondayImport {
         $byEid = [];
         foreach ($tasks as $t) $byEid[(string) $t->mondayEid] = $t;
 
-        $live = self::connector()->itemStates(self::token($conn), array_keys($byEid));
+        $live = self::connector()->itemsById(self::token($conn), array_keys($byEid));
 
         $out = ['checked' => 0, 'closed' => 0, 'reopened' => 0, 'missing' => 0, 'flagged' => []];
         $now = date('Y-m-d H:i:s');
@@ -395,6 +395,88 @@ class MondayImport {
                 Bean::store($row);
                 return true;
             }, false);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Re-pull imported tasks whose monday item has changed since.
+     *
+     * The refresh pass answers "is this still open"; this answers "does it still
+     * say the same thing". An item gets renamed, or a Timeline or Owner is filled
+     * in after somebody imported the phase, and the task keeps a brief that is
+     * quietly out of date.
+     *
+     * ONLY the fields this class generated are rewritten — title, the brief, and
+     * the priority derived from monday's column. A task's status, its comments,
+     * its branch and anything a person did to it are untouched: those are the
+     * work, and monday knows nothing about them.
+     *
+     * Tasks that have not changed are left completely alone rather than restamped,
+     * so `updated_at` keeps meaning something and a re-import over a whole board
+     * does not look like a board-wide edit.
+     *
+     * @param int[]|null $taskIds  null = every imported task for this instance
+     * @return array{checked:int,updated:int,unchanged:int,missing:int,changes:array}
+     */
+    public static function reimport(?array $taskIds = null, ?int $instanceId = null): array {
+        $conn = self::connection($instanceId);
+        if (!$conn) throw new \RuntimeException('No monday.com connection for this instance.');
+
+        $tasks = self::withWorkbench(function () use ($taskIds) {
+            $where  = "monday_eid IS NOT NULL AND monday_eid != ''";
+            $params = [];
+            if ($taskIds) {
+                $ids = array_values(array_filter(array_map('intval', $taskIds)));
+                if (!$ids) return [];
+                // array_values above is not cosmetic: find() returns id-KEYED arrays
+                // and an id-keyed array in an IN() binding maps keys to parameter
+                // POSITIONS. See CLAUDE.md.
+                $where .= ' AND id IN (' . Bean::genSlots($ids) . ')';
+                $params = $ids;
+            }
+            return Bean::find('workbenchtask', $where . ' ORDER BY id', $params);
+        }, []);
+
+        if (!$tasks) return ['checked' => 0, 'updated' => 0, 'unchanged' => 0, 'missing' => 0, 'changes' => []];
+
+        $byEid = [];
+        foreach ($tasks as $t) $byEid[(string) $t->mondayEid] = $t;
+        $live = self::connector()->itemsById(self::token($conn), array_keys($byEid));
+
+        $out = ['checked' => 0, 'updated' => 0, 'unchanged' => 0, 'missing' => 0, 'changes' => []];
+
+        foreach ($byEid as $eid => $task) {
+            $out['checked']++;
+            $it = $live[$eid] ?? null;
+            if ($it === null) { $out['missing']++; continue; }
+
+            $title = (string) ($it['name'] ?? '');
+            $brief = self::brief($it);
+            $prio  = self::priority((string) ($it['fields']['Priority'] ?? ''));
+
+            $diff = [];
+            if ($title !== '' && $title !== (string) $task->title)          $diff[] = 'title';
+            if ($brief !== (string) $task->description)                      $diff[] = 'brief';
+            if ($prio !== (int) $task->priority)                             $diff[] = 'priority';
+
+            if (!$diff) { $out['unchanged']++; continue; }
+
+            self::withWorkbench(function () use ($task, $title, $brief, $prio, $it) {
+                $row = Bean::load('workbenchtask', (int) $task->id);
+                if (!$row->id) return false;
+                if ($title !== '') $row->title = $title;
+                $row->description = $brief;
+                $row->priority    = $prio;
+                if (($it['url'] ?? '') !== '') $row->mondayUrl = (string) $it['url'];
+                $row->updatedAt   = date('Y-m-d H:i:s');
+                Bean::store($row);
+                return true;
+            }, false);
+
+            $out['updated']++;
+            $out['changes'][] = ['task_id' => (int) $task->id, 'title' => $title, 'fields' => $diff];
         }
 
         return $out;

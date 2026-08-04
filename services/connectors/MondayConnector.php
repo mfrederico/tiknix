@@ -259,9 +259,12 @@ class MondayConnector extends AbstractConnector {
     }
 
     /**
-     * The current state of many items at once, id => [status columns, state].
+     * Many items at once by id, in the same shape items() returns.
      *
-     * For re-checking work already imported. One call rather than one per task,
+     * For re-checking and re-pulling work already imported: the refresh pass wants
+     * `state` and `statuses`, a re-import wants `name` and `fields`, and both are
+     * in the one reply — so this fetches the whole item rather than making the two
+     * callers issue two different queries against the same ids. One call rather than one per task,
      * because monday charges a complexity budget per query and a board's worth of
      * single lookups exhausts it — "Complexity budget exhausted, reset in 45
      * seconds" is a real reply and a slow way to learn this.
@@ -270,7 +273,7 @@ class MondayConnector extends AbstractConnector {
      * and empty. The caller has to tell "deleted from monday" apart from "still
      * there, no status set", and a zero value cannot carry that difference.
      */
-    public function itemStates(string $token, array $itemIds): array {
+    public function itemsById(string $token, array $itemIds): array {
         $itemIds = array_values(array_filter(array_map('strval', $itemIds), fn($s) => $s !== ''));
         if (!$itemIds) return [];
 
@@ -282,6 +285,8 @@ class MondayConnector extends AbstractConnector {
                         id
                         name
                         state
+                        url
+                        group { id title }
                         board { id name columns { id title type } }
                         column_values { id text type }
                     }
@@ -296,10 +301,19 @@ class MondayConnector extends AbstractConnector {
                 }
                 // Seeded from the BOARD's columns so a blank status stays visible as
                 // a blank rather than vanishing — see items() for why that matters.
+                $titles = [];
+                foreach (($it['board']['columns'] ?? []) as $c) {
+                    $titles[(string) ($c['id'] ?? '')] = trim((string) ($c['title'] ?? ''));
+                }
+
                 $statuses = array_fill_keys(array_values(array_filter($statusCols)), '');
+                $fields   = [];
                 foreach (($it['column_values'] ?? []) as $cv) {
-                    $id = (string) $cv['id'];
-                    if (isset($statusCols[$id])) $statuses[$statusCols[$id]] = trim((string) ($cv['text'] ?? ''));
+                    $id   = (string) $cv['id'];
+                    $key  = ($titles[$id] ?? '') !== '' ? $titles[$id] : $id;
+                    $text = trim((string) ($cv['text'] ?? ''));
+                    if (isset($statusCols[$id])) $statuses[$key] = $text;
+                    if ($text !== '') $fields[$key] = $text;
                 }
 
                 $out[(string) $it['id']] = [
@@ -307,6 +321,10 @@ class MondayConnector extends AbstractConnector {
                     'name'     => (string) ($it['name'] ?? ''),
                     'state'    => (string) ($it['state'] ?? ''),
                     'board'    => (string) ($it['board']['name'] ?? ''),
+                    'board_id' => (string) ($it['board']['id'] ?? ''),
+                    'group'    => (string) ($it['group']['title'] ?? ''),
+                    'url'      => (string) ($it['url'] ?? ''),
+                    'fields'   => $fields,
                     'statuses' => $statuses,
                 ];
             }

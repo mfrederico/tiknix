@@ -1209,10 +1209,13 @@ class Mcp extends BaseControls\Control {
         // instance whose table predates revoked_at.
         $conn = \app\ConnectionStore::forInstance($instanceId, $connectorKey, $env);
         if (!$conn || !$conn->id) {
-            throw new \Exception("No enabled {$connectorKey} connection for environment '{$env}'.");
-        }
-        if (!empty($conn->revokedAt)) {
-            throw new \Exception("The {$connectorKey} connection for environment '{$env}' was revoked.");
+            // forInstance() already excludes disabled and revoked rows, so the
+            // separate "was revoked" throw that used to sit here is unreachable. Its
+            // meaning is folded into this message instead of being dropped: without
+            // the word, a revoked connection reads as one that was never set up, and
+            // those want different things done about them.
+            throw new \Exception(
+                "No enabled, unrevoked {$connectorKey} connection for environment '{$env}'.");
         }
         // Binding (defense-in-depth): the connection MUST belong to the key's instance.
         if ((int)$conn->instanceId !== $instanceId) {

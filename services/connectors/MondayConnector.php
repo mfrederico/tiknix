@@ -258,6 +258,63 @@ class MondayConnector extends AbstractConnector {
         return ['items' => $items, 'cursor' => (string) ($page['cursor'] ?? '')];
     }
 
+    /**
+     * The current state of many items at once, id => [status columns, state].
+     *
+     * For re-checking work already imported. One call rather than one per task,
+     * because monday charges a complexity budget per query and a board's worth of
+     * single lookups exhausts it — "Complexity budget exhausted, reset in 45
+     * seconds" is a real reply and a slow way to learn this.
+     *
+     * An id monday does not return is ABSENT from the result rather than present
+     * and empty. The caller has to tell "deleted from monday" apart from "still
+     * there, no status set", and a zero value cannot carry that difference.
+     */
+    public function itemStates(string $token, array $itemIds): array {
+        $itemIds = array_values(array_filter(array_map('strval', $itemIds), fn($s) => $s !== ''));
+        if (!$itemIds) return [];
+
+        $out = [];
+        foreach (array_chunk($itemIds, 100) as $chunk) {
+            $data = $this->query($token, '
+                query ($ids: [ID!]) {
+                    items (ids: $ids) {
+                        id
+                        name
+                        state
+                        board { id name columns { id title type } }
+                        column_values { id text type }
+                    }
+                }', ['ids' => $chunk]);
+
+            foreach (($data['items'] ?? []) as $it) {
+                $statusCols = [];
+                foreach (($it['board']['columns'] ?? []) as $c) {
+                    if ((string) ($c['type'] ?? '') === 'status') {
+                        $statusCols[(string) $c['id']] = trim((string) ($c['title'] ?? ''));
+                    }
+                }
+                // Seeded from the BOARD's columns so a blank status stays visible as
+                // a blank rather than vanishing — see items() for why that matters.
+                $statuses = array_fill_keys(array_values(array_filter($statusCols)), '');
+                foreach (($it['column_values'] ?? []) as $cv) {
+                    $id = (string) $cv['id'];
+                    if (isset($statusCols[$id])) $statuses[$statusCols[$id]] = trim((string) ($cv['text'] ?? ''));
+                }
+
+                $out[(string) $it['id']] = [
+                    'id'       => (string) $it['id'],
+                    'name'     => (string) ($it['name'] ?? ''),
+                    'state'    => (string) ($it['state'] ?? ''),
+                    'board'    => (string) ($it['board']['name'] ?? ''),
+                    'statuses' => $statuses,
+                ];
+            }
+        }
+
+        return $out;
+    }
+
     /** One item in full, for the moment somebody picks it to work on. */
     public function item(string $token, string $itemId): ?array {
         $data = $this->query($token, '

@@ -306,6 +306,101 @@ class MondayImport {
     }
 
     /**
+     * Re-check imported tasks against monday, and FLAG what has changed.
+     *
+     * The picker stops closed work being imported; nothing until now noticed work
+     * that closed AFTER it was imported, which is the common case — a board moves
+     * on while a task sits in the queue.
+     *
+     * It flags and never deletes, deliberately. Declining to import something is a
+     * small promise; removing a task somebody may already have worked on because a
+     * board changed is a much larger one, and it is not ours to make. The flag is
+     * what a person acts on.
+     *
+     * Three outcomes are recorded, and they are kept distinct because they want
+     * different reactions:
+     *   closed  — monday says done/cancelled/archived; probably drop it
+     *   open    — was flagged, has since reopened; the flag is cleared
+     *   missing — the item is no longer in monday at all (deleted, or the token
+     *             lost access to that board). NOT treated as closed: "I cannot see
+     *             it" and "it is finished" are different, and only one of them is
+     *             a reason to stop work.
+     *
+     * @return array{checked:int,closed:int,reopened:int,missing:int,flagged:array}
+     */
+    public static function refresh(?int $instanceId = null): array {
+        $conn = self::connection($instanceId);
+        if (!$conn) throw new \RuntimeException('No monday.com connection for this instance.');
+
+        $tasks = self::withWorkbench(
+            fn() => Bean::find('workbenchtask', "monday_eid IS NOT NULL AND monday_eid != '' ORDER BY id"), []);
+        if (!$tasks) return ['checked' => 0, 'closed' => 0, 'reopened' => 0, 'missing' => 0, 'flagged' => []];
+
+        $byEid = [];
+        foreach ($tasks as $t) $byEid[(string) $t->mondayEid] = $t;
+
+        $live = self::connector()->itemStates(self::token($conn), array_keys($byEid));
+
+        $out = ['checked' => 0, 'closed' => 0, 'reopened' => 0, 'missing' => 0, 'flagged' => []];
+        $now = date('Y-m-d H:i:s');
+
+        foreach ($byEid as $eid => $task) {
+            $out['checked']++;
+            $seen = $live[$eid] ?? null;
+
+            if ($seen === null) {
+                // Not returned at all: the token lost sight of it. Different from
+                // deleted, which monday DOES return, tagged state=deleted.
+                $status = ''; $state = ''; $closed = false; $missing = true;
+                $out['missing']++;
+            } else {
+                [$status] = self::pickStatus($seen['statuses'] ?? []);
+                $state    = strtolower(trim((string) ($seen['state'] ?? 'active')));
+                $closed   = ($state !== '' && $state !== 'active') || self::isClosed($status);
+                $missing  = false;
+            }
+
+            $was = (int) ($task->mondayClosed ?? 0) === 1;
+            if ($closed && !$was)      $out['closed']++;
+            elseif (!$closed && $was)  $out['reopened']++;
+
+            if ($closed || $missing) {
+                // The REASON, not the leftover status text. A deleted item keeps
+                // whatever status it had when it went — reporting "Ready to Start"
+                // for something in monday's recycle bin is a true field and a
+                // false answer.
+                if ($missing) {
+                    $reason = 'no longer visible to this connection';
+                } elseif ($state !== '' && $state !== 'active') {
+                    $reason = $state . ' in monday';
+                } else {
+                    $reason = $status ?: 'closed';
+                }
+
+                $out['flagged'][] = [
+                    'task_id' => (int) $task->id,
+                    'title'   => (string) $task->title,
+                    'status'  => $reason,
+                    'missing' => $missing,
+                ];
+            }
+
+            self::withWorkbench(function () use ($task, $status, $closed, $missing, $now) {
+                $row = Bean::load('workbenchtask', (int) $task->id);
+                if (!$row->id) return false;
+                $row->mondayStatus    = $status;
+                $row->mondayClosed    = $closed ? 1 : 0;
+                $row->mondayMissing   = $missing ? 1 : 0;
+                $row->mondayCheckedAt = $now;
+                Bean::store($row);
+                return true;
+            }, false);
+        }
+
+        return $out;
+    }
+
+    /**
      * What the planner is actually given.
      *
      * Deliberately plain. The item name IS the brief on these boards, so this

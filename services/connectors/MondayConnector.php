@@ -300,7 +300,20 @@ class MondayConnector extends AbstractConnector {
             if (trim($raw) === '') continue;
 
             $decoded = json_decode($raw, true);
-            if (!is_array($decoded) || !isset($decoded['deltaFormat'])) {
+
+            // A description is not only prose. monday mixes `file` and `image`
+            // blocks in among the text, and reading only deltaFormat dropped them
+            // without trace — one item here says "We will be using design provided
+            // by Ivan below to recreate this landing page" and the thing below it
+            // was a 1.7MB HTML mockup that never reached the brief. A planner told
+            // to work from a design it cannot see is worse off than one told there
+            // is a design it has not been given.
+            if (is_array($decoded) && !isset($decoded['deltaFormat'])) {
+                foreach (self::blockAttachments($decoded) as $att) $out[] = $att;
+                continue;
+            }
+
+            if (!is_array($decoded)) {
                 $out[] = trim(strip_tags($raw));
                 continue;
             }
@@ -315,6 +328,101 @@ class MondayConnector extends AbstractConnector {
 
         // Blocks are paragraphs; a newline between them keeps a list a list.
         return trim(implode("\n", $out));
+    }
+
+    /**
+     * A file or image block, described in one line.
+     *
+     * The assetId is kept in the text on purpose: it is the only handle monday
+     * gives for fetching the thing later (assets(ids:) -> public_url), so a brief
+     * that names it can be acted on, and one that says "see attached" cannot.
+     */
+    private static function blockAttachments(array $decoded): array {
+        $out = [];
+
+        // A `file` block carries a files[] array; an `image` block is one url.
+        $files = $decoded['files'] ?? null;
+        if (is_array($files)) {
+            foreach ($files as $f) {
+                $name = (string) ($f['name'] ?? $f['fileName'] ?? basename((string) ($f['url'] ?? '')));
+                $id   = (string) ($f['assetId'] ?? '');
+                if ($name === '' && $id === '') continue;
+                $out[] = '[attachment: ' . ($name !== '' ? $name : 'file')
+                       . ($id !== '' ? ' — monday asset ' . $id : '') . ']';
+            }
+            return $out;
+        }
+
+        if (!empty($decoded['assetId']) || !empty($decoded['url'])) {
+            $id   = (string) ($decoded['assetId'] ?? '');
+            $name = basename(parse_url((string) ($decoded['url'] ?? ''), PHP_URL_PATH) ?: '') ?: 'image';
+            $out[] = '[image: ' . $name . ($id !== '' ? ' — monday asset ' . $id : '') . ']';
+        }
+
+        return $out;
+    }
+
+    /**
+     * Every asset referenced by a description, id => name.
+     *
+     * Discovery is the awkward part of monday attachments: these files are not on
+     * the item's `assets`, not in a file COLUMN, and not on an update. They exist
+     * only as assetIds inside description blocks, so the only way to find them is
+     * to read the blocks. assets(ids:) then turns an id into a public_url that
+     * downloads without a token.
+     */
+    public function assetsInBlocks(array $blocks): array {
+        $ids = [];
+        foreach ($blocks as $b) {
+            $decoded = json_decode((string) ($b['content'] ?? ''), true);
+            if (!is_array($decoded)) continue;
+
+            foreach ((array) ($decoded['files'] ?? []) as $f) {
+                if (!empty($f['assetId'])) $ids[(string) $f['assetId']] =
+                    (string) ($f['name'] ?? $f['fileName'] ?? basename((string) ($f['url'] ?? '')));
+            }
+            if (!empty($decoded['assetId'])) {
+                $ids[(string) $decoded['assetId']] =
+                    basename(parse_url((string) ($decoded['url'] ?? ''), PHP_URL_PATH) ?: '') ?: 'image';
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * Asset metadata by id, including the public_url that downloads without auth.
+     *
+     * public_url is SHORT-LIVED — monday signs it for about an hour — so it is
+     * fetched when a download is about to happen rather than stored. A stored one
+     * is a link that works in testing and 403s a week later.
+     */
+    public function assets(string $token, array $assetIds): array {
+        $assetIds = array_values(array_filter(array_map('strval', $assetIds), fn($s) => $s !== ''));
+        if (!$assetIds) return [];
+
+        $out = [];
+        foreach (array_chunk($assetIds, 100) as $chunk) {
+            $data = $this->query($token, '
+                query ($ids: [ID!]!) {
+                    assets (ids: $ids) {
+                        id name file_extension file_size created_at public_url
+                        uploaded_by { name }
+                    }
+                }', ['ids' => $chunk]);
+
+            foreach (($data['assets'] ?? []) as $as) {
+                $out[(string) $as['id']] = [
+                    'id'         => (string) $as['id'],
+                    'name'       => (string) ($as['name'] ?? ''),
+                    'extension'  => ltrim((string) ($as['file_extension'] ?? ''), '.'),
+                    'size'       => (int) ($as['file_size'] ?? 0),
+                    'created_at' => (string) ($as['created_at'] ?? ''),
+                    'public_url' => (string) ($as['public_url'] ?? ''),
+                    'uploaded_by'=> (string) ($as['uploaded_by']['name'] ?? ''),
+                ];
+            }
+        }
+        return $out;
     }
 
     /**

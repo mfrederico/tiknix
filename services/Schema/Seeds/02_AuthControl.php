@@ -93,7 +93,17 @@ $defaults = [
     // Admin (50)
     ['admin', '*', 50, 'Admin panel access'],
     ['translations', '*', 50, 'Translations editor (i18n)'],
-    ['aibuilder', '*', 50, 'AI Builder'],
+    // MEMBER (100), not ADMIN — members are team members, and the level is not what
+    // decides who builds. The real gate is the `workbench` Feature flag (min_level 100,
+    // switched on per person from editMember), so ADMIN here would only mean "you must
+    // administer everything to be granted one tool", which is the coupling Feature
+    // exists to break.
+    //
+    // Core no longer has this controller at all — AI Builder became the workbench
+    // sidecar — so on core this row governs nothing. It stays for the instances still
+    // carrying controls/Aibuilder.php: dropping it would leave their route with no rule,
+    // and the first request would invent one at the ADMIN default.
+    ['aibuilder', '*', 100, 'AI Builder (feature-gated by `workbench`; sidecar on core)'],
     ['permissions', '*', 50, 'Permission management'],
     ['contact', 'admin', 50, 'View contact messages'],
     ['contact', 'view', 50, 'View single message'],

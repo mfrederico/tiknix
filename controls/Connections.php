@@ -1093,14 +1093,29 @@ class Connections extends Control {
      * (member, instance, connector, environment, store) so a builder can hold
      * distinct dev / staging / production stores side by side.
      */
+    /**
+     * Store a completed connect against the instance it was started for.
+     *
+     * The routing was never the missing piece: the OAuth `state` has carried
+     * instance_id since it was written (see the issue() calls above), so the
+     * callback has always known whose connection this is. What was wrong is where
+     * it put it — ConnectionStore::upsert writes core's shared table, so a
+     * credential connected through this hub landed somewhere it could not travel
+     * from. It goes to that instance's own store now.
+     *
+     * member_id is dropped, not lost: a connection belongs to the instance,
+     * whoever happened to attach it. Keeping an owner would reintroduce the
+     * question of whose connection this is, which is the question the move exists
+     * to stop asking.
+     */
     private function upsertConnection(string $type, array $claims, array $payload, string $authType = 'oauth'): int {
-        return \app\ConnectionStore::upsert(
+        $payload['auth_type'] = $authType;
+
+        return \app\ConnectionStore::putForInstall(
+            (int) $claims['instance_id'],
             $type,
-            (int)$claims['member_id'],
-            (int)$claims['instance_id'],
             $this->normalizeEnv($claims['environment'] ?? 'production'),
-            $payload,
-            $authType
+            $payload
         );
     }
 

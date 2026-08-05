@@ -17,7 +17,9 @@ $root = dirname(__DIR__);
 require_once $root . '/vendor/autoload.php';
 
 // Tools this server exposes (deterministic, no auth needed — read-only introspection).
-$ALLOW = ['codebase_map', 'describe', 'whatprovides', 'submit_plan'];
+// Shared with mcp-fastmcp.php: the two are meant to be interchangeable, and two
+// hand-written copies of the same list is how that stops being true.
+$ALLOW = \app\mcptools\StdioAllowList::names();
 $loader = new \app\mcptools\ToolLoader($root . '/mcptools');
 
 $send   = function (array $msg) { fwrite(STDOUT, json_encode($msg) . "\n"); };

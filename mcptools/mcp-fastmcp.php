@@ -105,14 +105,20 @@ if (!class_exists(Fastmcphp::class)) {
 // Register tiknix's local tools via the shared builder (same registration path
 // the HTTP Mcp gateway uses). Scoped to the read-only introspection + plan tools
 // — the same allow-list as mcp-stdio.php, so the two servers are interchangeable.
+//
+// The list lives in mcptools/StdioAllowList.php so the two stdio servers cannot
+// drift from each other: they had the same four names written out twice, and a
+// tool added to one would silently not appear in the other.
 try {
     $loader = new ToolLoader($root . '/mcptools');
     $mcp = LocalMcpServer::build($loader, [
         'name'    => 'tiknix-introspect',
         'version' => '0.1.0',
         'instructions' => 'Deterministic, read-only introspection of this tiknix codebase. '
-            . 'Call codebase_map first to orient, then describe(name) / whatprovides(concept) to drill down.',
-    ], ['codebase_map', 'describe', 'whatprovides', 'submit_plan']);
+            . 'Call reuse_digest FIRST when adding a feature — it is the inventory of what '
+            . 'already exists. codebase_map orients; describe(name) / whatprovides(concept) '
+            . 'drill down; check_redbean / check_flightphp / validate_php verify the result.',
+    ], \app\mcptools\StdioAllowList::names());
 } catch (\Throwable $t) {
     // Registration reads mcptools/ from disk, so one broken tool file kills the server
     // before it ever speaks — indistinguishable from "never started" to a client.

@@ -66,43 +66,80 @@ Note what is NOT portable: `McpGatewayToolService` is myctobot's own jira/github
 tools. tiknix's equivalent already exists as `mcptools/*Tool`, which the
 controller already delegates to (9 call sites). That half is done.
 
-## The blocker, and it is first
+## There is no dependency blocker
 
-tiknix vendors from packagist:
+An earlier draft of this plan said there was one. That was wrong, from a bad
+`find` filter that showed a partial listing of the vendored package and was read
+as "the auth interfaces are missing". Checked properly:
 
-```json
-"fastmcphp/fastmcphp": "^0.1"
+- tiknix has **v0.1.1** vendored, ref `9db083acab13`.
+- `/var/www/html/default/fastmcphp` is at **the same commit**. There is nothing
+  local that is not published; `dev-main` and `v0.1.1` are that commit.
+- The vendored copy already ships everything the later phases need:
+
+```
+Server/Auth/        AuthProviderInterface, AuthorizationInterface,
+                    AuthorizationContext, AuthResult, AuthRequest, AuthenticatedUser
+Server/Middleware/  AuthenticationMiddleware
+Server/Session/     ApcuSessionStore, SessionStoreInterface
+Server/Transport/   Http, Sse, Stdio, TransportInterface
 ```
 
-myctobot uses a path repository against a local checkout:
+So no path repository, no upstreaming, no version bump. `composer require` has
+already happened. `ApcuSessionStore` is a bonus: this app already runs APCu for
+PermissionCache.
 
-```json
-"repositories": [{ "type": "path", "url": "../fastmcphp" }],
-"fastmcphp/fastmcphp": "@dev"
+One thing stays true — `HttpTransport` needs `react/http`, which is not installed
+and is only a `suggest`. That does not matter, because `/mcp/message` should keep
+being served by PHP-FPM behind nginx. What gets adopted is `Protocol\JsonRpc`,
+the auth interfaces and the session store, NOT the transport. react/http is an
+event-loop daemon on its own port and would sit outside the session, authcontrol
+and the cached database adapter.
+
+## The 23-tool gap, which is worse than the refactor
+
+Asked directly, the two servers do not agree about what exists:
+
+```
+HTTP  (controls/Mcp.php)        27 tools
+stdio (mcptools/mcp-fastmcp.php) 4 tools — codebase_map, describe,
+                                           submit_plan, whatprovides
 ```
 
-`/var/www/html/default/fastmcphp` exists, on `main`, last commit
-*"Make stdio usable as a lightweight dependency"*. So **"augment fastmcphp" is
-available to myctobot today and not to tiknix.** Nothing else in this plan can
-start until that is settled, and it is a real decision rather than a step:
+`mcptools/` holds **21 Tool classes**. The stdio server registers four of them.
 
-- **path repo** — fastest, and both products track one checkout. But tiknix
-  deploys to instances and containers that will not have `../fastmcphp` on disk.
-- **upstream and tag** — slower, works everywhere, and is the honest answer if
-  fastmcphp is meant to be a library rather than a shared working copy.
+That is not a tidiness problem. `.mcp.json` points the JAILED AI BUILDER AGENT at
+the stdio server, so the agent that builds instances cannot call:
 
-The second is almost certainly right for tiknix, because a per-instance clone
-that cannot `composer install` is a broken instance.
+- `reuse_digest` — which CLAUDE.md declares **MANDATORY** before adding any
+  controller, model or service ("call reuse_digest FIRST when adding a feature")
+- `check_redbean`, `check_flightphp`, `validate_php`, `full_validation` — the
+  standards checks this project cares most about
+- every pipeline tool, and every task tool (`get_task`, `update_task`,
+  `complete_task`, `add_task_log`)
+
+An agent instructed to call a tool it cannot see will either invent the answer or
+skip the step. That is a plausible cause of real behaviour, not a hypothetical.
+
+**So the unification is phase 1, ahead of the extraction**, and it is worth doing
+on its own merits even if none of the rest happens. One registry both transports
+read — the tool classes already exist and both servers already delegate to
+`app\mcptools\*Tool::execute()`; only the LIST is built twice.
+
+Worth checking as part of it: whether the four exposed over stdio are a
+deliberate minimal set (the file calls itself "codebase introspection") or simply
+the four that existed when it was written. The HTTP list has grown to 27 and this
+one has not, which suggests the second.
 
 ## Phases
 
 Each is independently shippable and leaves the server working.
 
-**0. Decide the dependency.** Path repo or upstream tag (above). Nothing starts
-until this is answered, because it decides whether the later phases can even be
-installed on an instance.
+**1. One tool registry, both transports.** Above. Cheapest, highest value, and
+independent of everything else: the stdio server exposes 4 of 21 tools and the
+builder agent is the one using it. Do this even if the rest is never done.
 
-**1. Extract the client, change nothing else.** Move `tryStartServer`,
+**2. Extract the client, change nothing else.** Move `tryStartServer`,
 `fetchBackendTools`, `initializeMcpSession`, `getServerTools` and `proxyToolCall`
 into `lib/McpClient.php` (or port myctobot's `McpClientService` wholesale and
 adapt). The controller calls the service; behaviour is identical. ~570 lines
@@ -110,29 +147,26 @@ leave the controller and nothing else moves. **This phase alone is most of the
 size win and carries almost no risk**, because the registry has no rows — the
 code being moved is not currently executed by anyone.
 
-**2. Auth as a provider.** Adapt the api-key and broker-key checks into
+**3. Auth as a provider.** Adapt the api-key and broker-key checks into
 `AuthProviderInterface`, following `McpGatewayAuthProvider`. This is the phase
 that touches live traffic: every `tools/call` goes through it, and the broker key
 carries `instance_id`, which is what scopes a call to one project's connectors.
 Get it wrong and a caller acts as the wrong instance. Wants its own review.
 
-**3. Accounting behind an interface.** `mcplog`, `mcpusage`, `mcpsession` and
+**4. Accounting behind an interface.** `mcplog`, `mcpusage`, `mcpsession` and
 `sendErrorWithLog` (269 lines, the largest method in the file) become a logging
 service the controller and the client both call. Much of that method's size is
 error shaping repeated per failure mode.
 
-**4. Reconsider the registry.** With the client extracted and the controller
+**5. Reconsider the registry.** With the client extracted and the controller
 readable, decide whether the backend-server feature stays. It is easier to judge
 a 300-line service than 570 lines woven through a controller — and if it goes,
 it goes cleanly.
 
 ## What must not break
 
-**Both transports must agree about what exists.** `mcptools/mcp-fastmcp.php`
-(stdio) and `controls/Mcp.php` (HTTP) both expose the same tools by delegating to
-`app\mcptools\*Tool::execute()`, but each builds its own `tools/list`. They can
-drift today, and a refactor is exactly when that happens. Worth making one shared
-list both read from **as part of phase 1**, not after.
+**The transports have already drifted** — 27 tools against 4. That is phase 1
+rather than a caveat; see above.
 
 **`/mcp/message` answers customer traffic.** 509 log rows and 308 usage rows say
 so. Every phase needs the endpoint exercised before and after —
@@ -152,7 +186,8 @@ intact.
 
 ## Honest estimate
 
-Phase 1 is a move, and the moved code has no live callers: low risk, most of the
+Phase 1 (the tool registry) is small and fixes a live functional gap. Phase 2 is
+a move, and the moved code has no live callers: low risk, most of the size
 reduction. Phases 2 and 3 touch every request and deserve separate sessions with
 the diff read. A plausible end state is a controller in the **400–600 line** range
 with the capability intact — the same result myctobot already has — rather than

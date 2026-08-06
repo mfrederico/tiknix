@@ -96,6 +96,16 @@ $defaults = [
 
     // Admin (50)
     ['admin', '*', 50, 'Admin panel access'],
+    // Settings splits by blast radius, NOT by convenience. The curated toggle
+    // page is ADMIN; the raw INI editor is ROOT because conf/config.ini holds
+    // [security] app_key — the EncryptionService key — and changing it makes
+    // every value encrypted under the old key unreadable.
+    ['settings', 'index', 50, 'Settings — curated toggles'],
+    ['settings', 'save', 50, 'Settings — save curated toggles'],
+    ['settings', 'ini', 1, 'Raw INI editor — file list'],
+    ['settings', 'iniedit', 1, 'Raw INI editor — edit a file'],
+    ['settings', 'saveini', 1, 'Raw INI editor — save a file'],
+    ['settings', 'initemplate', 1, 'Raw INI editor — create from template'],
     ['translations', '*', 50, 'Translations editor (i18n)'],
     ['permissions', '*', 50, 'Permission management'],
     ['contact', 'admin', 50, 'View contact messages'],

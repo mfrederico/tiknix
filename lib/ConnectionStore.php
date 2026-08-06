@@ -210,7 +210,17 @@ class ConnectionStore {
         self::useInstall($dir);
         try {
             $conn = self::for($type, $env);
-            if ($conn) $conn->plainToken = self::ownToken($conn);
+            if ($conn) {
+                $conn->plainToken = self::ownToken($conn);
+                // Carried for the same reason as plainToken: a connector whose access
+                // token expires needs the refresh token to mint a new one, and only
+                // here is the instance's key in scope to decrypt it.
+                $conn->plainRefreshToken = self::ownSecret($conn, 'refreshToken');
+                // Where the refreshed token has to be written back to. The broker runs
+                // in core, so without this it would re-seal a rotated token with the
+                // WRONG key and lock the connection out permanently.
+                $conn->installDir = $dir;
+            }
             return $conn;
         } finally {
             self::useOwnInstall();
@@ -304,6 +314,73 @@ class ConnectionStore {
         return $secret === '' ? '' : EncryptionService::encryptWith($secret, $key);
     }
 
+    /**
+     * Decrypt any sealed field on a connection with THIS install's key.
+     *
+     * ownToken() is the access-token case; refresh tokens need the same treatment
+     * and there is no reason for two copies of the logic.
+     */
+    public static function ownSecret(?\RedBeanPHP\OODBBean $conn, string $field): string {
+        $raw = (string) ($conn->$field ?? '');
+        if ($raw === '') return '';
+        if ((string) ($conn->authType ?? '') === self::AUTH_SEALED) return '';
+
+        try {
+            return EncryptionService::decryptWith($raw, self::ownKey());
+        } catch (\Throwable $e) {
+            \Flight::get('log')?->error('ConnectionStore: could not decrypt a connection secret', [
+                'connection' => (int) ($conn->id ?? 0), 'field' => $field, 'err' => $e->getMessage(),
+            ]);
+            return '';
+        }
+    }
+
+    /**
+     * Write a refreshed token back into the instance's own store.
+     *
+     * The broker runs in CORE, so it cannot simply store() the bean it was handed:
+     * that would seal the new token with core's key into a file the instance reads
+     * with its own, and the connection would be permanently unreadable. Switching
+     * to the instance's database first is the whole point of this method.
+     */
+    public static function refreshStored(string $installDir, int $connId, array $tok): bool {
+        if ($installDir === '' || $connId <= 0) return false;
+
+        self::useInstall($installDir);
+        try {
+            // withOwnDb, not a bare Bean::load. Selecting the install's directory is
+            // only half of it — the connections file is a SEPARATE RedBean database,
+            // so loading without switching to it reads the app's tables, finds no
+            // such row, and reports a clean failure to write a token that was
+            // perfectly good.
+            return (bool) self::withOwnDb(function () use ($connId, $tok) {
+                $key  = self::ownKey();
+                $conn = Bean::load('connections', $connId);
+                if (!$conn->id) return false;
+
+                $conn->accessToken = self::sealOrEmpty((string) ($tok['access_token'] ?? ''), $key);
+                if (!empty($tok['refresh_token'])) {
+                    // Only when a new one came back. Providers that rotate send one;
+                    // those that do not send nothing, and blanking it would break the
+                    // connection at the NEXT expiry rather than immediately — the
+                    // worst kind of failure to diagnose.
+                    $conn->refreshToken = self::sealOrEmpty((string) $tok['refresh_token'], $key);
+                }
+                if (!empty($tok['expires_at'])) $conn->expiresAt = (int) $tok['expires_at'];
+                $conn->updatedAt = date('Y-m-d H:i:s');
+                Bean::store($conn);
+                return true;
+            }, false, false);
+        } catch (\Throwable $e) {
+            \Flight::get('log')?->error('ConnectionStore: could not store a refreshed token', [
+                'connection' => $connId, 'err' => $e->getMessage(),
+            ]);
+            return false;
+        } finally {
+            self::useOwnInstall();
+        }
+    }
+
     public static function ownToken(?\RedBeanPHP\OODBBean $conn): string {
         $raw = (string) ($conn->accessToken ?? '');
         if ($raw === '') return '';
@@ -361,6 +438,20 @@ class ConnectionStore {
                 $conn->metadataJson = is_string($payload['metadata'])
                     ? $payload['metadata']
                     : json_encode($payload['metadata'] ?: []);
+            }
+
+            // Refresh state, for providers whose access token expires. The refresh
+            // token is a credential in its own right — it MINTS access tokens — so it
+            // is sealed with the same key and never stored in the clear.
+            //
+            // Only written when supplied: a refresh that returns a new access token
+            // but no new refresh token (the common case) must not blank the one on
+            // the row, or the connection dies at the next expiry.
+            if (array_key_exists('refresh_token', $payload)) {
+                $conn->refreshToken = self::sealOrEmpty((string) $payload['refresh_token'], $key);
+            }
+            if (array_key_exists('expires_at', $payload)) {
+                $conn->expiresAt = (int) $payload['expires_at'] ?: null;
             }
 
             $conn->enabled       = 1;

@@ -1247,6 +1247,36 @@ class Mcp extends BaseControls\Control {
             // made a working connection unusable and blamed encryption for it.
             throw new \Exception("The {$connectorKey} connection could not be decrypted for this instance.");
         }
+        // Refresh an access token that is expiring, BEFORE using it.
+        //
+        // refreshToken() has been on the connector interface all along with nothing
+        // calling it, which was harmless only because every connector here held a
+        // token that never expires. QuickBooks tokens last one hour: without this a
+        // connection works beautifully for an hour and then fails forever, and the
+        // symptom (401) points at the credential rather than at the clock.
+        // A minute of headroom, so a token cannot expire midway through the call it
+        // was just checked for. The skew belongs to the broker, not to any one
+        // connector -- this path is shared by all of them.
+        $refreshSkew = 60;
+        $expiresAt   = (int) ($conn->expiresAt ?? 0);
+        if ($expiresAt > 0 && $expiresAt - $refreshSkew <= time()) {
+            try {
+                $fresh = $connector->refreshToken($conn, $token);
+                if (is_array($fresh) && !empty($fresh['access_token'])) {
+                    \app\ConnectionStore::refreshStored(
+                        (string) ($conn->installDir ?? ''), (int) $conn->id, $fresh
+                    );
+                    $token = (string) $fresh['access_token'];
+                }
+            } catch (\Throwable $e) {
+                // Loud, and specific: a refresh that fails is usually a revoked or
+                // expired refresh token, which needs a person to reconnect. Falling
+                // through to use the stale token would produce a bare 401 instead.
+                throw new \Exception("The {$connectorKey} connection could not be refreshed: "
+                    . $e->getMessage() . ' Reconnect it.');
+            }
+        }
+
         try {
             $data = $connector->callBrokerTool($toolName, $conn, $token, $arguments);
         } finally {

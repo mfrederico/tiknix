@@ -470,12 +470,23 @@ function validatePhpCode(string $content): array
     $blockingIssues = [];
     $warningIssues = [];
 
-    // Skip if not PHP
-    if (strpos($content, '<?php') === false && strpos($content, '<?=') === false) {
-        // Check if it contains PHP-like RedBean code even without <?php tag
-        if (strpos($content, 'R::') === false && strpos($content, 'Bean::') === false) {
-            return [[], []];
-        }
+    // No open-tag test here, on purpose.
+    //
+    // This used to return early for any content without <?php or <?= unless it
+    // also mentioned R:: or Bean::. An Edit passes new_string — a HUNK, which
+    // almost never carries an open tag — so in practice every security check was
+    // skipped for nearly every edit, and the validator only really ran on a Write
+    // of a whole file. Editing shell-exec with $_GET into an existing file passed
+    // silently; writing the same file wholesale was blocked.
+    //
+    // The tag test was also the wrong question to ask. main() has already
+    // established this is a .php file by its path before calling us, so the
+    // content IS PHP by definition — a fragment of it is still PHP.
+    //
+    // Nothing to say about nothing, though: an empty hunk (a pure deletion) has
+    // no code to judge.
+    if (trim($content) === '') {
+        return [[], []];
     }
 
     // RedBeanPHP Convention Issues

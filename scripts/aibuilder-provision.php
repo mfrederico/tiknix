@@ -46,6 +46,10 @@ if ($sub === '' || !preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $sub)) {
 if ($admin === '') $admin = "$sub@tiknix.local";
 if ($name === '')  $name  = ucfirst($sub);
 
+// The jailed agent's MCP bearer key is looked up by name so re-provisioning finds
+// the one it already minted instead of rotating it out from under a live session.
+const AGENT_KEY_NAME = 'AI Builder agent (MCP)';
+
 $dbRel  = "database/$sub.db";
 $dbPath = "$ROOT/$dbRel";
 // Self-locating: the instance dir basename IS the full host (<sub>.<app>), so a
@@ -194,25 +198,62 @@ R::exec('INSERT OR IGNORE INTO authcontrol (control, method, level, description,
          VALUES (?, ?, ?, ?, ?)',
         ['aibuilder', '*', 50, 'AI Builder', date('Y-m-d H:i:s')]);
 
+// Mint the agent's own MCP key, on the admin member, while the DB is still open.
+// The jailed agent reaches its instance's MCP over HTTP and needs a bearer token
+// to do anything beyond discovery, so the key has to exist BEFORE the first
+// session — a key minted by hand later is a step somebody forgets, and the
+// symptom is an agent that can list tools and call none of them.
+//
+// Raw SQL for the same reason as the statements above: the app is not booted.
+$agentToken = 'tk_' . bin2hex(random_bytes(32));
+$existing = R::getCell('SELECT token FROM apikey WHERE name = ? AND is_active = 1', [AGENT_KEY_NAME]);
+if ($existing) {
+    // Re-provisioning an existing instance must not rotate a token the agent (or
+    // anything else) is already configured with.
+    $agentToken = $existing;
+    echo "  agent MCP key → reused existing\n";
+} else {
+    // Columns limited to what sql/schema.sql actually creates. `key_class` exists
+    // on older instances only because RedBean's fluid mode added it later; naming
+    // it here fatals on a fresh database. `scopes` is a JSON ARRAY everywhere it
+    // is read (json_decode(...) ?: []), so a bare 'mcp:*' string would decode to
+    // null and silently leave the key with no scopes at all.
+    R::exec('INSERT INTO apikey (member_id, name, token, scopes, is_active, usage_count, created_at)
+             SELECT id, ?, ?, ?, 1, 0, ? FROM member WHERE username = ?',
+            [AGENT_KEY_NAME, $agentToken, json_encode(['mcp:*']), date('Y-m-d H:i:s'), 'admin']);
+    echo "  agent MCP key → minted on the admin member\n";
+}
+
 R::close();
 
 // --- 4) wire the in-jail MCP servers for the agent --------------------------
-// stdio (not HTTP): the jail blocks loopback, so the agent launches these as
-// subprocesses. .mcp.json is gitignored, so we write it per provision.
-//   - tiknix:     codebase introspection (codebase_map / whatprovides / describe)
+// .mcp.json is gitignored, so we write it per provision.
+//   - tiknix:     the instance's own MCP, over HTTP
 //   - playwright: drive a headless browser to test its own layout/design work
-// Prefer the fastmcphp-backed server when fastmcphp is vendored (it handles the
-// JSON-RPC framing + schema encoding); fall back to the dependency-free
-// hand-rolled server otherwise. Selection is by presence, so instances light up
-// automatically once fastmcphp lands as a dev dependency — no re-provision.
-$tiknixMcp = is_dir("$ROOT/vendor/fastmcphp") ? 'mcptools/mcp-fastmcp.php' : 'mcptools/mcp-stdio.php';
+//
+// tiknix is HTTP, NOT stdio, and that is deliberate. Over HTTP the agent gets the
+// instance's full tool set (tasks, pipelines, introspection — 27 tools) instead of
+// the 9-tool stdio allow-list, and the server keeps working when the instance
+// migrates to another host or moves behind a load balancer. A stdio server is
+// pinned to this filesystem and dies the moment the instance is not local.
+//
+// This requires that the jail can reach the instance host: jail-run.sh omits
+// --unshare-net ON PURPOSE (see the note there). If you ever add a private netns,
+// this transport breaks quietly — the agent still starts and just has no tools.
+//
+// playwright stays stdio: it is a browser the agent launches, not a service.
 @file_put_contents("$ROOT/.mcp.json", json_encode([
     'mcpServers' => [
-        'tiknix'     => ['command' => 'php', 'args' => [$tiknixMcp]],
+        'tiknix' => [
+            'type'    => 'http',
+            'url'     => "$baseUrl/mcp/message",
+            'headers' => ['Authorization' => 'Bearer ' . $agentToken],
+        ],
         'playwright' => ['command' => 'npx', 'args' => ['-y', '@playwright/mcp@latest', '--headless', '--isolated']],
     ],
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-echo "  wrote .mcp.json (tiknix introspection [{$tiknixMcp}] + playwright browser MCP)\n";
+@chmod("$ROOT/.mcp.json", 0600);   // it carries a bearer token
+echo "  wrote .mcp.json (tiknix MCP over HTTP at $baseUrl/mcp/message + playwright)\n";
 
 // --- 5) seed Hyperlift deploy files (Dockerfile + entrypoint) ---------------
 // So a freshly provisioned instance is publishable to Spaceship Hyperlift (or any

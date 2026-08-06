@@ -2,6 +2,12 @@
     "slug": "shopify-test",
     "name": "shopify-test",
     "description": "Test shopify",
+    "sources": {
+        "shop": {
+            "connector": "shopify",
+            "environment": "production"
+        }
+    },
     "expose_as_tool": false,
     "expose_as_api": false,
     "trigger": [],
@@ -16,8 +22,7 @@
             "name": "greet",
             "type": "connection",
             "config": {
-                "connector": "shopify",
-                "environment": "production",
+                "source": "shop",
                 "tool": "graphql",
                 "arguments": {
                     "query": "query ShopName {\n\tshop {\n\t\tname\n    email\n    plan {\n      publicDisplayName\n    }\n\t}\n}"

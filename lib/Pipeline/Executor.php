@@ -151,7 +151,7 @@ class Executor {
             $name = (string) $step['name'];
             $lastName = $name;
 
-            $res = $this->runStep($step, $bag, $runMeta, (int) $run->id);
+            $res = $this->runStep(self::applySource($step, $def), $bag, $runMeta, (int) $run->id);
 
             // await_input: persist state, pause, stop.
             if (!empty($res['await'])) {
@@ -212,6 +212,34 @@ class Executor {
         Bean::store($run);
         return ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid, 'status' => $status,
                 'steps_done' => $done, 'error' => $error, 'output' => $bag[$lastName]['output'] ?? null];
+    }
+
+    /**
+     * Fold a named source from the pipeline's `sources` block into a step's config.
+     *
+     * A pipeline declares WHERE its data comes from once, at the top:
+     *
+     *   "sources": { "shop": {"connector":"shopify","environment":"production",
+     *                         "account":"{context.store|}"} }
+     *
+     * and a step just says which one it wants: {"source":"shop"}. Before this, every
+     * step repeated the connector, the environment and the account, so a pipeline's
+     * data source was something you worked out by reading all of its steps — and
+     * pointing one at a different store meant editing each of them, correctly.
+     *
+     * The step's OWN keys win, so a step can still override one field of a shared
+     * source. An unknown source name is left alone here and refused by validate(),
+     * where the message can name the sources that do exist.
+     */
+    private static function applySource(array $step, array $def): array {
+        $name = (string) ($step['config']['source'] ?? '');
+        if ($name === '') return $step;
+
+        $src = $def['sources'][$name] ?? null;
+        if (!is_array($src)) return $step;
+
+        $step['config'] = ((array) $step['config']) + $src;
+        return $step;
     }
 
     /** Resolve variables, dispatch to the step type, persist the step-run. */

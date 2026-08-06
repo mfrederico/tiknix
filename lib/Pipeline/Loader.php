@@ -71,6 +71,44 @@ class Loader {
             $type = (string) ($s['type'] ?? '');
             if (!StepRegistry::get($type)) $errors[] = "step '$n': unknown type '$type'";
         }
+        // A step that reaches OUT must say where to.
+        //
+        // A pipeline whose data source is implicit is a pipeline nobody can audit:
+        // you cannot tell what it touches without reading every step, and a
+        // connection step with no connector used to fail deep inside the broker with
+        // a message about the broker rather than about the pipeline. Declaring the
+        // source is cheap; discovering it at 3am is not.
+        //
+        // Either form counts — a named source from the `sources` block, or the
+        // connector inline on the step. What is refused is neither.
+        $sources = is_array($def['sources'] ?? null) ? $def['sources'] : [];
+        foreach ($sources as $sname => $src) {
+            if (!preg_match('/^[a-z0-9_]+$/i', (string) $sname)) {
+                $errors[] = "source '$sname': invalid name";
+            } elseif (!is_array($src) || (trim((string) ($src['connector'] ?? '')) === '')) {
+                $errors[] = "source '$sname': needs a connector";
+            }
+        }
+        foreach ($steps as $s) {
+            $type = (string) ($s['type'] ?? '');
+            if ($type !== 'connection' && $type !== 'query') continue;
+            $n   = (string) ($s['name'] ?? '?');
+            $cfg = (array) ($s['config'] ?? []);
+            $ref = trim((string) ($cfg['source'] ?? ''));
+
+            if ($ref !== '') {
+                if (!isset($sources[$ref])) {
+                    $errors[] = "step '$n': source '$ref' is not declared"
+                              . ($sources ? ' — declared: ' . implode(', ', array_keys($sources)) : ' (this pipeline declares no sources)');
+                }
+                continue;
+            }
+            // `query` defaults to the connector it is named for; `connection` cannot.
+            if ($type === 'connection' && trim((string) ($cfg['connector'] ?? '')) === '') {
+                $errors[] = "step '$n': no data source — name one from `sources`, or set `connector` on the step";
+            }
+        }
+
         // Validate goto targets resolve to a real step name.
         foreach ($steps as $s) {
             foreach (['on_success', 'on_fail'] as $k) {

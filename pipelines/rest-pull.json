@@ -1,7 +1,13 @@
 {
     "slug": "rest-pull",
-    "name": "REST API → local table",
+    "name": "REST API \u2192 local table",
     "description": "A worked example of pulling from any REST API: call an endpoint on a 'rest' connection, reshape the results, and store them. Point it at your own API by editing the path and the field map.",
+    "sources": {
+        "api": {
+            "connector": "rest",
+            "environment": "production"
+        }
+    },
     "max_steps": 4000,
     "expose_as_tool": false,
     "expose_as_api": false,
@@ -23,8 +29,7 @@
             "name": "fetch",
             "type": "connection",
             "config": {
-                "connector": "rest",
-                "environment": "production",
+                "source": "api",
                 "tool": "request",
                 "arguments": {
                     "method": "GET",
@@ -64,7 +69,9 @@
             "config": {
                 "table": "restpullrow",
                 "rows": "{map_rows.output}",
-                "key": ["source_eid"]
+                "key": [
+                    "source_eid"
+                ]
             },
             "on_success": "exit",
             "on_fail": "exit"

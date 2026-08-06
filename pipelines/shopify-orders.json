@@ -2,6 +2,13 @@
     "slug": "shopify-orders",
     "name": "Shopify orders \u2192 local table",
     "description": "Pull every order from the connected Shopify store, page by page, and store them locally. Re-running updates rather than duplicating. Also stores one row per line item.",
+    "sources": {
+        "shop": {
+            "connector": "shopify",
+            "environment": "production",
+            "account": "{context.store|}"
+        }
+    },
     "max_steps": 4000,
     "expose_as_tool": false,
     "expose_as_api": false,
@@ -28,9 +35,7 @@
             "name": "fetch",
             "type": "connection",
             "config": {
-                "connector": "shopify",
-                "environment": "production",
-                "account": "{context.store|}",
+                "source": "shop",
                 "tool": "graphql",
                 "arguments": {
                     "query": "query Orders($first: Int!, $after: String, $q: String) {\n  orders(first: $first, after: $after, query: $q, sortKey: CREATED_AT) {\n    pageInfo { hasNextPage endCursor }\n    edges {\n      node {\n        id\n        name\n        createdAt\n        displayFinancialStatus\n        displayFulfillmentStatus\n        totalPriceSet { shopMoney { amount currencyCode } }\n        customer { email }\n        lineItems(first: 100) {\n          edges { node { title quantity sku originalTotalSet { shopMoney { amount } } } }\n        }\n      }\n    }\n  }\n}",

@@ -2,6 +2,13 @@
     "slug": "shopify-inventory",
     "name": "Shopify inventory \u2192 local tables",
     "description": "Pull every product from the connected Shopify store, page by page, and store products plus one row per variant with its stock level. Re-running updates rather than duplicating.",
+    "sources": {
+        "shop": {
+            "connector": "shopify",
+            "environment": "production",
+            "account": "{context.store|}"
+        }
+    },
     "max_steps": 4000,
     "expose_as_tool": false,
     "expose_as_api": false,
@@ -28,9 +35,7 @@
             "name": "fetch",
             "type": "connection",
             "config": {
-                "connector": "shopify",
-                "environment": "production",
-                "account": "{context.store|}",
+                "source": "shop",
                 "tool": "graphql",
                 "arguments": {
                     "query": "query Products($first: Int!, $after: String, $q: String) {\n  products(first: $first, after: $after, query: $q) {\n    pageInfo { hasNextPage endCursor }\n    edges {\n      node {\n        id\n        title\n        handle\n        status\n        vendor\n        productType\n        totalInventory\n        updatedAt\n        variants(first: 100) {\n          edges { node { id title sku price inventoryQuantity } }\n        }\n      }\n    }\n  }\n}",

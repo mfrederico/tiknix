@@ -90,7 +90,7 @@ class MondayConnector extends AbstractConnector {
      * token is a worse failure than one extra API call — the person would be
      * looking at a token that works, being told it does not.
      */
-    public function validateApiKey(string $key): array {
+    public function validateApiKey(string $key, array $opts = []): array {
         $token = trim($key);
         if ($token === '') {
             throw new \Exception('Paste your monday.com API token.');

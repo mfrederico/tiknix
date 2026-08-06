@@ -45,7 +45,7 @@ class StripeConnector extends AbstractConnector {
      * normalize it into the exchangeCode() payload shape. The key itself never
      * appears in any error message.
      */
-    public function validateApiKey(string $key): array {
+    public function validateApiKey(string $key, array $opts = []): array {
         $key = trim($key);
         if ($key === '') throw new \Exception('A Stripe secret or restricted key is required.');
 

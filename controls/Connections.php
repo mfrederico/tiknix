@@ -644,6 +644,10 @@ class Connections extends Control {
                 'connect_kind' => $auth === 'api_key' ? 'api_key' : ($conn->key() === 'shopify' ? 'shopify' : 'oauth'),
                 'configured'   => $conn->isConfigured(),
                 'features'     => $meta['features'] ?? [],
+                // The connect form reads key_label / key_placeholder / key_required /
+                // key_hint / fields from here, so a connector that needs more than a
+                // pasted key describes itself instead of the view special-casing it.
+                'meta'         => $meta,
                 'manage_url'   => null,
                 'connections'  => $byType[$conn->key()] ?? [],
             ];
@@ -757,7 +761,7 @@ class Connections extends Control {
         $type = strtolower(trim((string)$this->getParam('type', '')));
         $env  = $this->normalizeEnv($this->getParam('env', 'production'));
         $key  = trim((string)$this->getParam('key', ''));
-        if ($type === '' || $key === '') { $this->jsonError('Connector and key are required.', 400); return; }
+        if ($type === '') { $this->jsonError('Connector is required.', 400); return; }
 
         // Stored HERE, by this install, with this install's key. It used to POST the
         // raw credential to core's /brokerinfo/connectkey so core could write it back
@@ -765,14 +769,21 @@ class Connections extends Control {
         // the wire, to reach a database on local disk.
         $connector = \app\services\connectors\ConnectorRegistry::get($type);
         if (!$connector) { $this->jsonError('Unknown connector: ' . $type, 400); return; }
-        if (($connector->meta()['auth_type'] ?? 'oauth') !== 'api_key') {
+        $meta = $connector->meta();
+        if (($meta['auth_type'] ?? 'oauth') !== 'api_key') {
             $this->jsonError(ucfirst($type) . ' does not connect with a pasted key.', 400); return;
+        }
+        // A key is required unless the connector says otherwise. The REST connector
+        // can point at a public API, where demanding a secret would be demanding
+        // something that does not exist.
+        if ($key === '' && ($meta['key_required'] ?? true)) {
+            $this->jsonError('A key is required for ' . ucfirst($type) . '.', 400); return;
         }
 
         try {
             // The provider's own words on failure -- "Not Authenticated" and "token
             // expired" want different things done about them.
-            $payload = $connector->validateApiKey($key);
+            $payload = $connector->validateApiKey($key, $this->declaredFields($connector));
             $payload['auth_type'] = 'api_key';
             $id = ConnectionStore::put($type, $env, $payload);
         } catch (\Throwable $e) {
@@ -1034,6 +1045,28 @@ class Connections extends Control {
         ], 'Broker key minted — copy it now; it is shown only once.');
     }
 
+    /**
+     * The non-secret extra fields a connector declared in meta()['fields'], read
+     * from this request.
+     *
+     * Allowlisted BY THE CONNECTOR: only names it declared are read, so the form
+     * cannot be used to push arbitrary keys into a connector's hands. Values are
+     * passed through as submitted — validating them is the connector's job, since
+     * only it knows what a legal base URL or auth style is for its own API.
+     *
+     * Secrets do not come through here. The key travels in its own parameter and
+     * these values end up in the connection's metadata, which is stored unencrypted.
+     */
+    private function declaredFields($connector): array {
+        $out = [];
+        foreach ((array) ($connector->meta()['fields'] ?? []) as $f) {
+            $name = (string) ($f['name'] ?? '');
+            if ($name === '') continue;
+            $out[$name] = trim((string) $this->getParam($name, (string) ($f['default'] ?? '')));
+        }
+        return $out;
+    }
+
     /** Constrain a free-text environment to the known set; default production. */
     private function normalizeEnv($env): string {
         $env = strtolower(trim((string)$env));
@@ -1288,7 +1321,7 @@ class Connections extends Control {
         $env = $this->normalizeEnv($this->getParam('env', 'production'));
         $key = trim((string)$this->getParam('key', ''));
         try {
-            $payload = $connector->validateApiKey($key);
+            $payload = $connector->validateApiKey($key, $this->declaredFields($connector));
             $this->upsertConnection($type, [
                 'member_id'   => (int)$this->member->id,
                 'instance_id' => (int)$inst->id,

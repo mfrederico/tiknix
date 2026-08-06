@@ -234,9 +234,43 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
                   <?= csrf_field() ?>
                   <input type="hidden" name="id" value="<?= $iid ?>">
                   <input type="hidden" name="type" value="<?= htmlspecialchars($card['key']) ?>">
+                  <?php
+                    // Driven by the connector's meta(), not hardcoded. This form used to
+                    // show Stripe's "sk_live_…" placeholder for EVERY api_key connector,
+                    // so the Monday and Telegram cards told you to paste a Stripe key.
+                    // A connector now says what it wants.
+                    $cm     = $card['meta'] ?? [];
+                    $keyLbl = $cm['key_label']       ?? ($card['label'] . ' secret key');
+                    $keyPh  = $cm['key_placeholder'] ?? '';
+                    $keyReq = $cm['key_required']    ?? true;
+                  ?>
+                  <?php foreach (($cm['fields'] ?? []) as $f): ?>
+                    <div class="col-12">
+                      <label class="form-label small mb-1"><?= htmlspecialchars($f['label'] ?? $f['name']) ?></label>
+                      <?php if (($f['type'] ?? 'text') === 'select'): ?>
+                        <select name="<?= htmlspecialchars($f['name']) ?>" class="form-select form-select-sm">
+                          <?php foreach (($f['options'] ?? []) as $ov => $ol): ?>
+                            <option value="<?= htmlspecialchars((string)$ov) ?>"<?= (string)$ov === (string)($f['default'] ?? '') ? ' selected' : '' ?>><?= htmlspecialchars((string)$ol) ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      <?php else: ?>
+                        <input type="<?= htmlspecialchars($f['type'] ?? 'text') ?>" name="<?= htmlspecialchars($f['name']) ?>"
+                               class="form-control form-control-sm"
+                               placeholder="<?= htmlspecialchars($f['placeholder'] ?? '') ?>"
+                               value="<?= htmlspecialchars((string)($f['default'] ?? '')) ?>"
+                               <?= !empty($f['required']) ? 'required' : '' ?>>
+                      <?php endif; ?>
+                      <?php if (!empty($f['help'])): ?>
+                        <div class="form-text small"><?= htmlspecialchars($f['help']) ?></div>
+                      <?php endif; ?>
+                    </div>
+                  <?php endforeach; ?>
                   <div class="col-12">
-                    <label class="form-label small mb-1"><?= $connected ? 'Connect another' : 'Connect' ?> — <?= htmlspecialchars($card['label']) ?> secret key</label>
-                    <input type="password" name="key" class="form-control form-control-sm" placeholder="sk_live_… or rk_live_…" autocomplete="off" required>
+                    <label class="form-label small mb-1"><?= $connected ? 'Connect another' : 'Connect' ?> — <?= htmlspecialchars($keyLbl) ?></label>
+                    <input type="password" name="key" class="form-control form-control-sm" placeholder="<?= htmlspecialchars($keyPh) ?>" autocomplete="off" <?= $keyReq ? 'required' : '' ?>>
+                    <?php if (!empty($cm['key_hint'])): ?>
+                      <div class="form-text small"><?= htmlspecialchars($cm['key_hint']) ?></div>
+                    <?php endif; ?>
                   </div>
                   <div class="col-7">
                     <select name="env" class="form-select form-select-sm">

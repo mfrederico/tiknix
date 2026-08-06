@@ -28,7 +28,7 @@ abstract class AbstractConnector implements ConnectorInterface {
     }
 
     /** Connectors are OAuth-only by default; api_key connectors override this. */
-    public function validateApiKey(string $key): array {
+    public function validateApiKey(string $key, array $opts = []): array {
         throw new \Exception('Connector "' . $this->key() . '" does not support API-key auth.');
     }
 

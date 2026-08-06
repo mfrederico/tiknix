@@ -85,7 +85,7 @@ class TelegramConnector extends AbstractConnector {
      *
      * @return array the payload Connections::upsertConnection stores
      */
-    public function validateApiKey(string $key): array {
+    public function validateApiKey(string $key, array $opts = []): array {
         $token = trim($key);
         if ($token === '') {
             throw new \Exception('Paste the bot token @BotFather gave you.');

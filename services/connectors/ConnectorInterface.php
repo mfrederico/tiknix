@@ -49,11 +49,17 @@ interface ConnectorInterface {
      *     'external_name', 'external_url', 'metadata' => [] ]
      * Only meaningful for connectors whose meta()['auth_type'] === 'api_key'.
      *
-     * @param string $key the pasted secret/restricted key (in-process only)
+     * @param string $key  the pasted secret/restricted key (in-process only)
+     * @param array  $opts extra NON-SECRET fields the connector declared in
+     *                     meta()['fields'] and the connect form collected — e.g.
+     *                     the REST connector's base_url and auth style. A key alone
+     *                     is enough to reach Stripe or Monday because the host is
+     *                     fixed; a generic API has no fixed host, so the connector
+     *                     needs somewhere to be told. Secrets stay in $key.
      * @throws \Exception when the connector does not support API-key auth or the
      *                    provider rejects the key
      */
-    public function validateApiKey(string $key): array;
+    public function validateApiKey(string $key, array $opts = []): array;
 
     /**
      * The read/data tools this connector exposes over the MCP broker, as MCP tool

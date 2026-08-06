@@ -49,6 +49,20 @@ if ($workspaceRoot) {
     $workspaceRoot = rtrim(realpath($workspaceRoot) ?: $workspaceRoot, '/');
 }
 
+// Are we running INSIDE the bubblewrap jail? jail-run.sh mounts a tmpfs at
+// /aibhome and exports AIBUILDER_INSTANCE; neither exists on the host.
+//
+// This matters because not every agent is jailed. ClaudeRunner::jailFor() returns
+// no jail for an isolated task workspace (no dot in the basename, or outside
+// /var/www/html/default, or no public/index.php) — those run on the HOST, where
+// this hook is the only boundary there is. So rules are not deleted for being
+// redundant under bwrap; they are scoped, and only skipped where the jail really
+// does enforce them.
+// An EMPTY value is not "jailed": getenv() returns '' for a variable that exists
+// but is blank, and `!== false` would have quietly treated the host as a jail and
+// switched off every rule scoped to it.
+$inJail = is_dir('/aibhome') || (string) getenv('AIBUILDER_INSTANCE') !== '';
+
 // Security log file
 $securityLogPath = $projectDir . '/log/security.log';
 
@@ -73,12 +87,107 @@ try {
 
     // Load all active rules, ordered by priority
     $rules = Bean::find('securitycontrol', 'is_active = 1 ORDER BY priority ASC');
+
+    // Inside the jail, drop the rules bwrap already enforces. /root, /boot, /sys,
+    // /home and /var/log are not bind-mounted at all, and a jailed process holds
+    // CapEff=0 with NoNewPrivs=1 and no block devices — so reboot/shutdown/sudo/
+    // mkfs/dd-to-device cannot succeed regardless. Keeping them only produces
+    // false positives on commands that MENTION the word.
+    // A rule with no scope (older row, hand-added) is treated as 'always'.
+    if ($inJail) {
+        $rules = array_filter($rules, static function ($r) {
+            return (string) ($r->scope ?? 'always') !== 'unjailed';
+        });
+    }
 } catch (Exception $e) {
     fwrite(STDERR, "WARNING: Failed to load security rules: " . $e->getMessage() . "\n");
     exit(0); // Allow on error - fail open (could change to fail closed with exit(2))
 }
 
 // === HELPER FUNCTIONS ===
+
+/**
+ * Strip quoted spans from a command so rules match ACTIONS, not MENTIONS.
+ *
+ * `grep -nE "reboot|shutdown" file` is a search, not a restart, and blocking it
+ * taught nobody anything except to distrust the hook. The same goes for a commit
+ * message, a comment, or a sed expression that happens to name a blocked word.
+ *
+ * Quoted text is removed rather than kept, and the payload of a nested shell is
+ * pulled back out separately by nestedShellPayloads() — so `sh -c "reboot"` is
+ * still caught, while `echo "reboot"` is not.
+ */
+function unquotedView(string $s): string {
+    $s = preg_replace('/"(?:\\\\.|[^"\\\\])*"/', ' ', $s) ?? $s;
+    $s = preg_replace("/'[^']*'/", ' ', $s) ?? $s;
+    return preg_replace('/(^|\s)#.*$/m', ' ', $s) ?? $s;   // trailing comments
+}
+
+/**
+ * Quoted payloads handed to a nested shell (sh -c '…', bash -c "…", eval).
+ * These ARE commands, so they have to be checked as commands.
+ */
+function nestedShellPayloads(string $command): array {
+    $out = [];
+    $re = '/\b(?:ba|z|da|k|a)?sh\s+(?:-[a-zA-Z]+\s+)*-c\s+("(?:\\\\.|[^"\\\\])*"|\'[^\']*\')/';
+    if (preg_match_all($re, $command, $m)) {
+        foreach ($m[1] as $q) { $out[] = substr($q, 1, -1); }
+    }
+    if (preg_match_all('/\beval\s+("(?:\\\\.|[^"\\\\])*"|\'[^\']*\')/', $command, $m)) {
+        foreach ($m[1] as $q) { $out[] = substr($q, 1, -1); }
+    }
+    return $out;
+}
+
+/**
+ * Every string that should be matched as a command: the visible command with
+ * quoted arguments removed, plus each nested shell payload (recursively).
+ */
+function commandSubjects(string $command, int $depth = 0): array {
+    $subjects = [unquotedView($command)];
+    if ($depth < 3) {
+        foreach (nestedShellPayloads($command) as $payload) {
+            foreach (commandSubjects($payload, $depth + 1) as $s) { $subjects[] = $s; }
+        }
+    }
+    return $subjects;
+}
+
+/**
+ * Targets a command would WRITE to — redirect destinations and the operands of
+ * write verbs — including relative ones.
+ *
+ * The path scan only ever looked at absolute paths (`#(?:^|\s)(/[^\s]+)#`), so
+ * `echo x > .claude/guard.php` sailed past every protect rule. Inside the jail
+ * that is the gap that matters most: bwrap mounts the instance READ-WRITE, so the
+ * protect rules on .claude, scripts/hooks, conf/ and lib/ are the only thing
+ * stopping an agent from editing the guardrails that constrain it.
+ *
+ * Only write POSITIONS are collected, not every token, so naming a protected file
+ * in a read (`grep x .claude/settings.json`) stays allowed.
+ */
+function writeTargets(string $subject): array {
+    $targets = [];
+
+    // Redirections: > file, >> file (but not 2>&1 style fd dups).
+    if (preg_match_all('/>>?\s*([^\s|;&<>()]+)/', $subject, $m)) {
+        foreach ($m[1] as $t) { if ($t !== '' && $t[0] !== '&') { $targets[] = $t; } }
+    }
+
+    // Operands of commands that modify files in place.
+    $verbs = 'rm|mv|cp|tee|truncate|chmod|chown|chgrp|ln|install|shred|dd';
+    foreach (preg_split('/(?:\|\||&&|[|;\n])/', $subject) as $segment) {
+        $segment = trim($segment);
+        if ($segment === '') continue;
+        if (!preg_match('/^\s*(?:sudo\s+)?(' . $verbs . '|sed\s+-i\S*)\b(.*)$/s', $segment, $mm)) continue;
+        foreach (preg_split('/\s+/', trim($mm[2])) as $tok) {
+            if ($tok === '' || $tok[0] === '-') continue;   // skip flags
+            $targets[] = $tok;
+        }
+    }
+
+    return $targets;
+}
 
 /**
  * Check if a pattern matches a path/command
@@ -195,9 +304,16 @@ function checkPath(string $path, array $rules, int $memberLevel, bool $isWrite):
  * Check command against rules
  */
 function checkCommand(string $command, array $rules, int $memberLevel): array {
+    $subjects = commandSubjects($command);
+
     foreach ($rules as $rule) {
         if ($rule->target !== 'command') continue;
-        if (!patternMatches($rule->pattern, $command)) continue;
+
+        $hit = false;
+        foreach ($subjects as $subject) {
+            if (patternMatches($rule->pattern, $subject)) { $hit = true; break; }
+        }
+        if (!$hit) continue;
 
         switch ($rule->action) {
             case 'block':
@@ -307,8 +423,25 @@ switch ($toolName) {
                 blockTool("Cannot execute command: {$result['reason']}");
             }
 
-            // Also check for file paths in the command
-            if (preg_match_all('#(?:^|\s)(/[^\s]+)#', $command, $matches)) {
+            // Also check for file paths in the command. Same rule as above: a path
+            // inside a quoted argument is a mention (a grep pattern, a message, a
+            // doc string), not an access — scan the unquoted view plus any nested
+            // shell payload, so `sh -c "cat /etc/shadow"` is still seen.
+            $subjects     = commandSubjects($command);
+            $pathScanText = implode(' ', $subjects);
+
+            // Writes first, and checked AS writes (isWrite = true) so `protect`
+            // rules actually engage — reading a protected file stays fine.
+            foreach ($subjects as $subject) {
+                foreach (writeTargets($subject) as $target) {
+                    $result = checkPath($target, $rulesArray, $memberLevel, true);
+                    if (!$result['allowed']) {
+                        blockTool("Command writes to a protected path: {$result['reason']}");
+                    }
+                }
+            }
+
+            if (preg_match_all('#(?:^|\s)(/[^\s]+)#', $pathScanText, $matches)) {
                 foreach ($matches[1] as $path) {
                     // Skip common safe paths
                     if (in_array($path, ['/dev/null', '/dev/stdout', '/dev/stderr'])) {

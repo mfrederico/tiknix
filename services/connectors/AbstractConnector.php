@@ -71,25 +71,76 @@ abstract class AbstractConnector implements ConnectorInterface {
         return null;
     }
 
+    /** Attempts (including the first) when a provider asks us to slow down. */
+    protected const RATE_LIMIT_ATTEMPTS = 3;
+
+    /** Never sleep longer than this for one retry, whatever Retry-After claims. */
+    protected const RATE_LIMIT_MAX_WAIT = 30;
+
     /**
-     * Minimal cURL request. Returns [httpStatus, body].
-     * @param array $opts ['headers' => string[], 'body' => string]
+     * Minimal cURL request. Returns [httpStatus, body, transportError].
+     *
+     * BEING POLITE. A pipeline paginating a large store is the heaviest thing this
+     * codebase does to somebody else's API, and the difference between a good
+     * citizen and a bad one is entirely in what happens on a 429. Retrying
+     * immediately, or not at all, are both rude — the first hammers a provider that
+     * just asked for room, the second turns a routine throttle into a failed sync.
+     *
+     * So: when a provider says 429 (or 503, which is the same request under load),
+     * wait as long as it ASKED for via Retry-After and try again, a bounded number
+     * of times. Retry-After is honoured rather than guessed at, because the provider
+     * knows when its window resets and we do not.
+     *
+     * Writes are retried ONLY on 429. A 429 means the request was refused before
+     * doing anything; a 503 may well have been processed before the response was
+     * lost, and replaying a POST that already created an invoice is a worse outcome
+     * than failing loudly.
+     *
+     * @param array $opts ['headers' => string[], 'body' => string, 'timeout' => int]
      */
     protected function http(string $method, string $url, array $opts = []): array {
-        $method = strtoupper($method);
+        $method     = strtoupper($method);
+        $idempotent = in_array($method, ['GET', 'HEAD', 'OPTIONS'], true);
+
+        for ($attempt = 1; ; $attempt++) {
+            [$status, $body, $err, $headers] = $this->httpOnce($method, $url, $opts);
+
+            $throttled = $status === 429 || ($status === 503 && $idempotent);
+            if (!$throttled || $attempt >= static::RATE_LIMIT_ATTEMPTS) {
+                return [$status, $body, $err];
+            }
+
+            $wait = self::retryAfter($headers, $attempt);
+            \Flight::get('log')?->info('Connector backing off at a provider\'s request', [
+                'connector' => $this->key(), 'status' => $status,
+                'attempt' => $attempt, 'wait_seconds' => $wait, 'host' => parse_url($url, PHP_URL_HOST),
+            ]);
+            sleep($wait);
+        }
+    }
+
+    /** One request, with response headers captured so Retry-After can be read. */
+    private function httpOnce(string $method, string $url, array $opts): array {
         $ch = curl_init($url);
+
+        $headers = [];
         $co = [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => (int) ($opts['timeout'] ?? 20),
             CURLOPT_HTTPHEADER     => $opts['headers'] ?? [],
             CURLOPT_CUSTOMREQUEST  => $method,   // supports GET/POST/PUT/PATCH/DELETE
+            CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$headers) {
+                $p = strpos($line, ':');
+                if ($p > 0) $headers[strtolower(trim(substr($line, 0, $p)))] = trim(substr($line, $p + 1));
+                return strlen($line);
+            },
         ];
         if ($method !== 'GET' && $method !== 'HEAD' && isset($opts['body'])) {
             $co[CURLOPT_POSTFIELDS] = $opts['body'];
         }
         curl_setopt_array($ch, $co);
         $body   = curl_exec($ch);
-        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
         // The transport error, THIRD so existing [$status, $body] callers are
         // unaffected. Without it every failure before a response — DNS, TLS,
@@ -100,6 +151,33 @@ abstract class AbstractConnector implements ConnectorInterface {
         $err = curl_errno($ch) ? curl_strerror(curl_errno($ch)) . ': ' . curl_error($ch) : '';
 
         // No curl_close(): deprecated in PHP 8.5 and it throws in a web handler.
-        return [$status, is_string($body) ? $body : '', $err];
+        return [$status, is_string($body) ? $body : '', $err, $headers];
+    }
+
+    /**
+     * How long to wait, in seconds.
+     *
+     * Retry-After comes in two forms and both appear in the wild: a number of
+     * seconds, or an HTTP date. Some providers instead send only a reset timestamp
+     * (GitHub's x-ratelimit-reset), which is worth reading for the same reason.
+     * With nothing to go on, back off exponentially rather than retrying at the
+     * same rate that just got refused.
+     */
+    private static function retryAfter(array $headers, int $attempt): int {
+        $raw = trim((string) ($headers['retry-after'] ?? ''));
+
+        if ($raw !== '' && ctype_digit($raw)) {
+            $wait = (int) $raw;
+        } elseif ($raw !== '' && ($ts = strtotime($raw)) !== false) {
+            $wait = $ts - time();
+        } elseif (!empty($headers['x-ratelimit-reset']) && ctype_digit((string) $headers['x-ratelimit-reset'])) {
+            $wait = (int) $headers['x-ratelimit-reset'] - time();
+        } else {
+            $wait = 2 ** $attempt;                       // 2s, 4s
+        }
+
+        // Clamped both ways: never a busy-loop, never a step that hangs for the
+        // twenty minutes a provider might technically be entitled to ask for.
+        return max(1, min($wait, static::RATE_LIMIT_MAX_WAIT));
     }
 }

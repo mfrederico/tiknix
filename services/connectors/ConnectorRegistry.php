@@ -116,13 +116,32 @@ class ConnectorRegistry {
 
     /** Why this manifest cannot be used, or '' when it is fine. */
     private static function validate(array $m): string {
-        $style = strtolower((string) ($m['auth']['style'] ?? 'bearer'));
-        $valid = ['bearer', 'header', 'basic', 'query', 'none'];
-        if (!in_array($style, $valid, true)) {
-            return "auth.style '{$style}' is not one of " . implode(', ', $valid) . '.';
-        }
-        if (($style === 'header' || $style === 'query') && trim((string) ($m['auth']['name'] ?? '')) === '') {
-            return "auth.style '{$style}' needs auth.name (the header or parameter name).";
+        $oauth = $m['oauth'] ?? null;
+
+        if (is_array($oauth)) {
+            // Half an OAuth block is worse than none: the card would offer a Connect
+            // button that goes nowhere, or accept a callback it cannot complete.
+            foreach (['authorize_url', 'token_url'] as $req) {
+                if (trim((string) ($oauth[$req] ?? '')) === '') {
+                    return "oauth.{$req} is required when an oauth block is present.";
+                }
+                if (!preg_match('#^https://#i', (string) $oauth[$req])) {
+                    return "oauth.{$req} must be an https URL — an authorization code must not cross the network in the clear.";
+                }
+            }
+            $ca = strtolower((string) ($oauth['client_auth'] ?? 'body'));
+            if (!in_array($ca, ['body', 'basic'], true)) {
+                return "oauth.client_auth '{$ca}' is not 'body' or 'basic'.";
+            }
+        } else {
+            $style = strtolower((string) ($m['auth']['style'] ?? 'bearer'));
+            $valid = ['bearer', 'header', 'basic', 'query', 'none'];
+            if (!in_array($style, $valid, true)) {
+                return "auth.style '{$style}' is not one of " . implode(', ', $valid) . '.';
+            }
+            if (($style === 'header' || $style === 'query') && trim((string) ($m['auth']['name'] ?? '')) === '') {
+                return "auth.style '{$style}' needs auth.name (the header or parameter name).";
+            }
         }
 
         $base = trim((string) ($m['base_url'] ?? ''));

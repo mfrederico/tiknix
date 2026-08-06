@@ -42,7 +42,49 @@ class ManifestConnector extends RestConnector {
 
     public function key(): string { return (string) $this->m['key']; }
 
+    /** Does this manifest describe an OAuth provider rather than a pasted key? */
+    private function isOauth(): bool {
+        return !empty($this->m['oauth']['authorize_url']) && !empty($this->m['oauth']['token_url']);
+    }
+
+    /**
+     * The [oauth] section, from conf/<config_key>.ini.
+     *
+     * config_key exists because credentials are per PROVIDER, not per card: GitHub
+     * already had conf/github.ini with a client id and secret long before this
+     * manifest, and making the operator paste the same pair into
+     * conf/github_oauth.ini would be a second copy to keep in step.
+     */
+    protected function oauth(): array {
+        $file = dirname(__DIR__, 2) . '/conf/' . $this->configKey() . '.ini';
+        $c = @parse_ini_file($file, true) ?: [];
+        return $c['oauth'] ?? [];
+    }
+
+    private function configKey(): string {
+        $k = trim((string) ($this->m['config_key'] ?? ''));
+        // Never let a manifest name an arbitrary path: this becomes a filename.
+        return preg_match('/^[a-z][a-z0-9_]*$/', $k) ? $k : $this->key();
+    }
+
+    /**
+     * OAuth needs credentials only the operator has, so an OAuth manifest is inert
+     * until its ini carries them. Saying so is the difference between a card that
+     * explains itself and one that fails at the redirect.
+     *
+     * NOT parent::isConfigured() — RestConnector answers an unconditional true
+     * (an api-key connector needs no platform credentials), so deferring to it
+     * reported every OAuth manifest as ready to use with no client id at all.
+     */
+    public function isConfigured(): bool {
+        if (!$this->isOauth()) return true;
+        $o = $this->oauth();
+        return !empty($o['client_id']) && !empty($o['client_secret']);
+    }
+
     public function meta(): array {
+        if ($this->isOauth()) return $this->oauthMeta();
+
         $auth = $this->m['auth'] ?? [];
         $style = (string) ($auth['style'] ?? 'bearer');
 
@@ -116,5 +158,164 @@ class ManifestConnector extends RestConnector {
         }
 
         return parent::validateApiKey($key, $merged);
+    }
+
+    // ---------------------------------------------------------------- OAuth
+
+    private function oauthMeta(): array {
+        return [
+            'label'     => (string) ($this->m['label'] ?? $this->key()),
+            'auth_type' => 'oauth',
+            'blurb'     => (string) ($this->m['blurb'] ?? ''),
+            'category'  => (string) ($this->m['category'] ?? 'Data'),
+            'icon'      => (string) ($this->m['icon'] ?? 'plug'),
+            'color'     => (string) ($this->m['color'] ?? 'secondary'),
+            'features'  => (array)  ($this->m['features'] ?? []),
+            'manifest'  => true,
+        ];
+    }
+
+    public function defaultScopes(): string {
+        return (string) ($this->oauth()['scope'] ?? $this->m['oauth']['scope'] ?? '');
+    }
+
+    public function authorizeUrl(array $ctx): string {
+        if (!$this->isOauth()) return parent::authorizeUrl($ctx);
+
+        $o = $this->oauth();
+        $q = [
+            'client_id'     => (string) ($o['client_id'] ?? ''),
+            'response_type' => 'code',
+            'redirect_uri'  => (string) ($ctx['redirect_uri'] ?? ''),
+            'state'         => (string) ($ctx['state'] ?? ''),
+        ];
+        $scope = (string) ($ctx['scopes'] ?? $this->defaultScopes());
+        if ($scope !== '') $q['scope'] = $scope;
+
+        // Extra fixed parameters some providers require (Google's access_type, an
+        // Intuit-style prompt). Declared rather than special-cased per provider.
+        foreach ((array) ($this->m['oauth']['extra_params'] ?? []) as $k => $v) $q[(string) $k] = (string) $v;
+
+        return (string) $this->m['oauth']['authorize_url'] . '?' . http_build_query($q);
+    }
+
+    public function exchangeCode(array $ctx): array {
+        if (!$this->isOauth()) return parent::exchangeCode($ctx);
+
+        $params = $ctx['params'] ?? [];
+        if (!empty($params['error'])) {
+            throw new \Exception($this->m['label'] . ' authorization failed: '
+                . (string) ($params['error_description'] ?? $params['error']));
+        }
+        $code = trim((string) ($params['code'] ?? ''));
+        if ($code === '') throw new \Exception($this->m['label'] . ' returned no authorization code.');
+
+        $o  = $this->oauth();
+        $oc = $this->m['oauth'];
+
+        $form = [
+            'grant_type'   => 'authorization_code',
+            'code'         => $code,
+            'redirect_uri' => (string) ($ctx['redirect_uri'] ?? ''),
+        ];
+        $headers = ['Accept: application/json', 'Content-Type: application/x-www-form-urlencoded'];
+
+        // Two conventions, both common: credentials in the form body, or as HTTP
+        // Basic. Declared per manifest because guessing wrong is a 401 with no clue
+        // which half was wrong.
+        if (($oc['client_auth'] ?? 'body') === 'basic') {
+            $headers[] = 'Authorization: Basic ' . base64_encode(($o['client_id'] ?? '') . ':' . ($o['client_secret'] ?? ''));
+        } else {
+            $form['client_id']     = (string) ($o['client_id'] ?? '');
+            $form['client_secret'] = (string) ($o['client_secret'] ?? '');
+        }
+
+        [$status, $raw, $err] = $this->http('POST', (string) $oc['token_url'], [
+            'headers' => $headers, 'body' => http_build_query($form), 'timeout' => 20,
+        ]);
+        if ($err !== '') throw new \Exception('Could not reach ' . $this->m['label'] . ': ' . $err);
+
+        $j = json_decode($raw, true);
+        if (!is_array($j)) {
+            // GitHub answers form-encoded unless asked for JSON, and a provider that
+            // ignores the Accept header would otherwise look like a broken response.
+            parse_str($raw, $j);
+        }
+        if ($status < 200 || $status >= 300 || !empty($j['error'])) {
+            throw new \Exception($this->m['label'] . ' rejected the authorization: '
+                . (string) ($j['error_description'] ?? $j['error'] ?? ('HTTP ' . $status)));
+        }
+
+        $access = (string) ($j['access_token'] ?? '');
+        if ($access === '') throw new \Exception($this->m['label'] . ' returned no access token.');
+
+        $identity = $this->identity($access);
+
+        $payload = [
+            'access_token'  => $access,
+            'token_type'    => (string) ($j['token_type'] ?? 'Bearer'),
+            'scopes'        => (string) ($j['scope'] ?? $this->defaultScopes()),
+            'external_eid'  => $identity['eid'] ?: (string) parse_url((string) $this->m['base_url'], PHP_URL_HOST),
+            'external_name' => $identity['name'] ?: (string) $this->m['label'],
+            'external_url'  => (string) ($this->m['account_url'] ?? $this->m['base_url'] ?? ''),
+            'metadata'      => [
+                'base_url'  => rtrim((string) ($this->m['base_url'] ?? ''), '/'),
+                'auth'      => 'bearer',
+                'auth_name' => '',
+                'username'  => '',
+                'test_path' => (string) ($this->m['test_path'] ?? ''),
+            ],
+        ];
+
+        // Only when the provider actually expires tokens. Writing expires_at
+        // unconditionally would make the broker try to refresh a token that never
+        // needs it, using a refresh token that does not exist.
+        if (!empty($j['refresh_token'])) $payload['refresh_token'] = (string) $j['refresh_token'];
+        if (!empty($j['expires_in']))    $payload['expires_at']    = time() + (int) $j['expires_in'];
+
+        if (!empty($this->m['spec_url'])) {
+            $payload['metadata']['spec'] = self::importSpec((string) $this->m['spec_url'], 'bearer', '', '', $access);
+            $payload['metadata']['spec_url'] = (string) $this->m['spec_url'];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Ask the provider who just authorized, so the connection has a name a person
+     * recognizes rather than an opaque id.
+     *
+     * Best effort by design: a label is not worth failing an otherwise good
+     * authorization over, and providers differ on whether an identity endpoint even
+     * exists.
+     */
+    private function identity(string $token): array {
+        $spec = $this->m['oauth']['identity'] ?? null;
+        if (!is_array($spec) || empty($spec['path'])) return ['eid' => '', 'name' => ''];
+
+        try {
+            $r = $this->callBrokerTool('request', $this->pseudoConn(), $token, ['path' => (string) $spec['path']]);
+            $body = is_array($r['body'] ?? null) ? $r['body'] : [];
+            return [
+                'eid'  => (string) (\app\Pipeline\Vars::lookup((string) ($spec['eid'] ?? 'id'), $body) ?? ''),
+                'name' => (string) (\app\Pipeline\Vars::lookup((string) ($spec['name'] ?? 'name'), $body) ?? ''),
+            ];
+        } catch (\Throwable $e) {
+            return ['eid' => '', 'name' => ''];
+        }
+    }
+
+    /**
+     * A stand-in connection for calls made BEFORE one exists — the identity probe
+     * during exchangeCode. It carries only what callBrokerTool reads: the base URL
+     * and auth style from the manifest.
+     */
+    private function pseudoConn(): object {
+        $c = new \stdClass();
+        $c->metadataJson = json_encode([
+            'base_url'  => rtrim((string) ($this->m['base_url'] ?? ''), '/'),
+            'auth'      => 'bearer', 'auth_name' => '', 'username' => '',
+        ]);
+        return $c;
     }
 }

@@ -1,0 +1,18 @@
+{
+    "key": "hubspot",
+    "label": "HubSpot",
+    "blurb": "Pull contacts, companies and deals from your HubSpot CRM with a private app token.",
+    "category": "CRM",
+    "icon": "people",
+    "color": "warning",
+    "features": ["Contacts", "Companies", "Deals"],
+    "base_url": "https://api.hubapi.com",
+    "test_path": "/crm/v3/objects/contacts?limit=1",
+    "account_url": "https://app.hubspot.com",
+    "auth": {
+        "style": "bearer",
+        "key_label": "Private app token",
+        "key_placeholder": "pat-na1-…",
+        "key_hint": "HubSpot → Settings → Integrations → Private Apps → create an app with the crm.objects.* read scopes, then copy its access token."
+    }
+}

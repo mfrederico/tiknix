@@ -225,7 +225,7 @@ class RestConnector extends AbstractConnector {
      * what a pipeline needs is the operation list, and that is small enough to sit
      * on the connection where the broker can reach it with no filesystem coupling.
      */
-    private static function importSpec(string $specUrl, string $auth, string $name, string $user, string $key): array {
+    protected static function importSpec(string $specUrl, string $auth, string $name, string $user, string $key): array {
         self::assertPublicHost($specUrl);
 
         $headers = self::authHeaders($auth, $name, $user, $key);

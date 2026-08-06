@@ -1,0 +1,28 @@
+{
+    "key": "github_oauth",
+    "config_key": "github",
+    "label": "GitHub (OAuth)",
+    "blurb": "Sign in with GitHub instead of pasting a token \u2014 repositories, issues and user data, with the scopes you approve.",
+    "category": "Developer",
+    "icon": "github",
+    "color": "dark",
+    "features": [
+        "Repos",
+        "Issues",
+        "No token to paste"
+    ],
+    "base_url": "https://api.github.com",
+    "test_path": "/user",
+    "account_url": "https://github.com/settings/applications",
+    "oauth": {
+        "authorize_url": "https://github.com/login/oauth/authorize",
+        "token_url": "https://github.com/login/oauth/access_token",
+        "scope": "read:user repo",
+        "client_auth": "body",
+        "identity": {
+            "path": "/user",
+            "eid": "id",
+            "name": "login"
+        }
+    }
+}

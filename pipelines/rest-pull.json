@@ -1,0 +1,73 @@
+{
+    "slug": "rest-pull",
+    "name": "REST API → local table",
+    "description": "A worked example of pulling from any REST API: call an endpoint on a 'rest' connection, reshape the results, and store them. Point it at your own API by editing the path and the field map.",
+    "max_steps": 4000,
+    "expose_as_tool": false,
+    "expose_as_api": false,
+    "trigger": [],
+    "context_schema": {
+        "path": {
+            "type": "string",
+            "required": false,
+            "description": "Endpoint path on the connection's API. Defaults to /search/repositories for the GitHub example."
+        },
+        "per_page": {
+            "type": "integer",
+            "required": false,
+            "description": "Results per page. Defaults to 20."
+        }
+    },
+    "steps": [
+        {
+            "name": "fetch",
+            "type": "connection",
+            "config": {
+                "connector": "rest",
+                "environment": "production",
+                "tool": "request",
+                "arguments": {
+                    "method": "GET",
+                    "path": "{context.path|/search/repositories}",
+                    "query": {
+                        "q": "language:php stars:>10000",
+                        "per_page": "{context.per_page|20}",
+                        "sort": "stars"
+                    }
+                }
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        },
+        {
+            "name": "map_rows",
+            "type": "transform",
+            "config": {
+                "mode": "map",
+                "input": "{fetch.output.body.items}",
+                "fields": {
+                    "source_eid": "id",
+                    "full_name": "full_name",
+                    "description": "description",
+                    "stars": "stargazers_count",
+                    "language": "language",
+                    "url": "html_url",
+                    "owner": "owner.login"
+                }
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        },
+        {
+            "name": "store",
+            "type": "upsert",
+            "config": {
+                "table": "restpullrow",
+                "rows": "{map_rows.output}",
+                "key": ["source_eid"]
+            },
+            "on_success": "exit",
+            "on_fail": "exit"
+        }
+    ]
+}

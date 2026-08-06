@@ -1237,7 +1237,14 @@ class Mcp extends BaseControls\Control {
         // only ever fail. forInstall() already decrypted it while the right key was in
         // scope and carried it on the bean; that is the whole reason plainToken exists.
         $token = (string) ($conn->plainToken ?? '');
-        if ($token === '') {
+        if ($token === '' && (string) ($conn->accessToken ?? '') !== '') {
+            // Ciphertext on the row but nothing decrypted out of it: the key is
+            // wrong or the value is corrupt, and that must stay loud.
+            //
+            // An empty token with NO ciphertext is a different thing entirely — a
+            // connection to a public API that has no secret to hold (the REST
+            // connector's "none" auth style). Treating that as a decryption failure
+            // made a working connection unusable and blamed encryption for it.
             throw new \Exception("The {$connectorKey} connection could not be decrypted for this instance.");
         }
         try {

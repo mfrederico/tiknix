@@ -293,6 +293,17 @@ class ConnectionStore {
      * connection that was working perfectly — and a log that cries wolf is worse than
      * no log, because it is the one people learn to scroll past.
      */
+    /**
+     * Seal a secret, or store nothing when there is none.
+     *
+     * The distinction is load-bearing: empty ciphertext means "this connection has
+     * no secret" (a public API), while ciphertext that decrypts to nothing means
+     * the key is wrong. Encrypting '' would collapse the two.
+     */
+    private static function sealOrEmpty(string $secret, string $key): string {
+        return $secret === '' ? '' : EncryptionService::encryptWith($secret, $key);
+    }
+
     public static function ownToken(?\RedBeanPHP\OODBBean $conn): string {
         $raw = (string) ($conn->accessToken ?? '');
         if ($raw === '') return '';
@@ -333,7 +344,14 @@ class ConnectionStore {
             $conn->tokenType     = (string) ($payload['token_type'] ?? '');
             $conn->scopes        = (string) ($payload['scopes'] ?? '');
             $conn->authType      = (string) ($payload['auth_type'] ?? 'api_key');
-            $conn->accessToken   = EncryptionService::encryptWith((string) ($payload['access_token'] ?? ''), $key);
+            // An absent secret is stored as nothing, not as encrypted emptiness.
+            // secretbox turns '' into a perfectly good nonce+MAC, so encrypting it
+            // makes a connection that HAS no secret indistinguishable from one whose
+            // secret will not decrypt — and the broker, which reads an empty
+            // plaintext as a decryption failure, refused a working public-API
+            // connection on those grounds. Empty ciphertext now means exactly one
+            // thing: there is no secret here.
+            $conn->accessToken   = self::sealOrEmpty((string) ($payload['access_token'] ?? ''), $key);
 
             // Connector-specific detail: github's owner/repo/defaultBranch, a publish
             // driver's public key and fingerprint. Dropping it made put() unusable for
@@ -491,7 +509,9 @@ class ConnectionStore {
         $conn->instanceId     = $instanceId;
         $conn->environment    = $env;
         $conn->authType       = $authType;
-        $conn->accessToken    = EncryptionService::encrypt((string) ($payload['access_token'] ?? ''));
+        // Same reasoning as putForInstall(): no secret is stored as no ciphertext.
+        $tok = (string) ($payload['access_token'] ?? '');
+        $conn->accessToken    = $tok === '' ? '' : EncryptionService::encrypt($tok);
         $conn->tokenType      = (string) ($payload['token_type'] ?? 'Bearer');
         $conn->scopes         = (string) ($payload['scopes'] ?? '');
         $conn->externalEid    = $eid;

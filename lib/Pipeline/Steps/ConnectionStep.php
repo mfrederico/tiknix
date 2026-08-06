@@ -65,11 +65,54 @@ class ConnectionStep implements StepInterface {
         $text = $rpc['result']['content'][0]['text'] ?? (is_string($resp) ? $resp : '');
         $parsed = json_decode((string) $text, true);
         $isError = !empty($rpc['result']['isError']);
+        $httpOk  = $httpStatus >= 200 && $httpStatus < 300;
+
+        // A GraphQL API answers HTTP 200 and puts the failure in the BODY, so status
+        // alone says a rejected query succeeded. Left unchecked the run carries on:
+        // the next step maps over data that is not there, produces nothing, stores
+        // nothing, and the pipeline reports success having synced zero rows.
+        // Observed against a real store — "Variable $first of type Int! was provided
+        // invalid value" came back as a completed step.
+        $apiError = self::payloadError($parsed);
+
+        $ok = !$isError && $httpOk && $apiError === '';
+        $stderr = $isError ? (string) $text : ($apiError !== '' ? $apiError : '');
+
         return [
-            'ok'     => !$isError && $httpStatus >= 200 && $httpStatus < 300,
+            'ok'     => $ok,
             'output' => $parsed !== null ? $parsed : $text,
-            'stdout' => (string) $text, 'stderr' => $isError ? (string) $text : '', 'exit' => $isError ? 1 : 0,
+            'stdout' => (string) $text, 'stderr' => $stderr, 'exit' => $ok ? 0 : 1,
         ];
+    }
+
+    /**
+     * An error the API reported inside a 200 body, or '' when the payload is clean.
+     *
+     * Only TOP-LEVEL keys are inspected. GraphQL's spec puts request-level failures in
+     * `errors`; a mutation's own `userErrors` are nested and are domain data, not a
+     * transport failure, so they stay the pipeline author's business.
+     */
+    private static function payloadError($parsed): string {
+        if (!is_array($parsed)) return '';
+
+        // GraphQL: { "errors": [ {message, locations, ...}, ... ] }
+        if (!empty($parsed['errors']) && is_array($parsed['errors'])) {
+            $msgs = [];
+            foreach ($parsed['errors'] as $e) {
+                if (is_array($e)) { $msgs[] = (string) ($e['message'] ?? json_encode($e, JSON_UNESCAPED_SLASHES)); }
+                else { $msgs[] = (string) $e; }
+            }
+            return 'API error: ' . implode('; ', array_slice($msgs, 0, 5));
+        }
+
+        // REST convention: { "error": {...} } or { "error": "message" }.
+        if (isset($parsed['error']) && !empty($parsed['error'])) {
+            $e = $parsed['error'];
+            if (is_array($e)) return 'API error: ' . (string) ($e['message'] ?? json_encode($e, JSON_UNESCAPED_SLASHES));
+            return 'API error: ' . (string) $e;
+        }
+
+        return '';
     }
 
     private function err(string $m): array {

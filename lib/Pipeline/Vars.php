@@ -36,15 +36,47 @@ class Vars {
         // A string that is EXACTLY one token returns the raw typed value (so
         // {fetch.output.rows} stays an array, not a JSON string), which matters for
         // steps that want structured input. Mixed strings interpolate + stringify.
-        if (preg_match('/^\{([a-zA-Z0-9_.\-]+)\}$/', $value, $m)) {
+        if (preg_match('/^\{([a-zA-Z0-9_.\-]+)(?:\|([^}]*))?\}$/', $value, $m)) {
             $v = self::lookup($m[1], $bag);
-            return $v === null ? $value : $v;
+            if ($v !== null) return $v;
+            return isset($m[2]) ? self::literal($m[2]) : $value;
         }
-        return preg_replace_callback('/\{([a-zA-Z0-9_.\-]+)\}/', function ($m) use ($bag) {
+        return preg_replace_callback('/\{([a-zA-Z0-9_.\-]+)(?:\|([^}]*))?\}/', function ($m) use ($bag) {
             $v = self::lookup($m[1], $bag);
-            if ($v === null) return $m[0];                       // leave unknown tokens literal
+            if ($v === null) {
+                // An unknown token stays literal so a typo is VISIBLE rather than
+                // silently becoming empty — unless the author wrote a fallback.
+                if (!isset($m[2])) return $m[0];
+                $v = self::literal($m[2]);
+            }
+            if ($v === null) return '';
             return is_scalar($v) ? (string) $v : json_encode($v, JSON_UNESCAPED_SLASHES);
         }, $value);
+    }
+
+    /**
+     * Coerce a written fallback to a typed value.
+     *
+     * The fallback in {token|fallback} is authored text, so the words null / true /
+     * false and bare numbers mean what they say. This is what makes cursor
+     * pagination expressible: page one has no cursor yet, and a GraphQL API wants a
+     * real null there — the empty string is a different thing and most APIs reject
+     * it. Writing {cursor.output|null} says "null until a page has been fetched",
+     * which is true, rather than leaving the literal token to be sent as a cursor.
+     *
+     * A fallback only applies when the author wrote one. An unresolved token with
+     * no fallback still comes through literally, so a mistyped step name stays
+     * loud instead of quietly becoming empty.
+     */
+    private static function literal(string $raw) {
+        $t = trim($raw);
+        if ($t === '') return '';
+        $low = strtolower($t);
+        if ($low === 'null')  return null;
+        if ($low === 'true')  return true;
+        if ($low === 'false') return false;
+        if (is_numeric($t))   return $t + 0;
+        return $raw;
     }
 
     /** Dot-path lookup into the bag; returns null when any segment is missing. */

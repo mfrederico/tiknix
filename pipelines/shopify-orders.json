@@ -1,0 +1,135 @@
+{
+    "slug": "shopify-orders",
+    "name": "Shopify orders → local table",
+    "description": "Pull every order from the connected Shopify store, page by page, and store them locally. Re-running updates rather than duplicating. Also stores one row per line item.",
+    "expose_as_tool": false,
+    "expose_as_api": false,
+    "trigger": [],
+    "context_schema": {
+        "query": {
+            "type": "string",
+            "required": false,
+            "description": "Optional Shopify search filter, e.g. \"created_at:>2026-01-01\" or \"financial_status:paid\". Empty pulls everything."
+        },
+        "page_size": {
+            "type": "integer",
+            "required": false,
+            "description": "Orders per page, 1-250. Defaults to 50."
+        }
+    },
+    "steps": [
+        {
+            "name": "fetch",
+            "type": "connection",
+            "config": {
+                "connector": "shopify",
+                "environment": "production",
+                "tool": "graphql",
+                "arguments": {
+                    "query": "query Orders($first: Int!, $after: String, $q: String) {\n  orders(first: $first, after: $after, query: $q, sortKey: CREATED_AT) {\n    pageInfo { hasNextPage endCursor }\n    edges {\n      node {\n        id\n        name\n        createdAt\n        displayFinancialStatus\n        displayFulfillmentStatus\n        totalPriceSet { shopMoney { amount currencyCode } }\n        customer { email }\n        lineItems(first: 100) {\n          edges { node { title quantity sku originalTotalSet { shopMoney { amount } } } }\n        }\n      }\n    }\n  }\n}",
+                    "variables": {
+                        "first": "{context.page_size|50}",
+                        "after": "{cursor.output|null}",
+                        "q": "{context.query|}"
+                    }
+                }
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        },
+        {
+            "name": "map_orders",
+            "type": "transform",
+            "config": {
+                "mode": "map",
+                "input": "{fetch.output.data.orders.edges}",
+                "fields": {
+                    "order_eid": "node.id",
+                    "order_name": "node.name",
+                    "created_at_shop": "node.createdAt",
+                    "financial_status": "node.displayFinancialStatus",
+                    "fulfillment_status": "node.displayFulfillmentStatus",
+                    "total": "node.totalPriceSet.shopMoney.amount",
+                    "currency": "node.totalPriceSet.shopMoney.currencyCode",
+                    "customer_email": "node.customer.email"
+                }
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        },
+        {
+            "name": "store_orders",
+            "type": "upsert",
+            "config": {
+                "table": "shopifyorder",
+                "rows": "{map_orders.output}",
+                "key": ["order_eid"]
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        },
+        {
+            "name": "map_items",
+            "type": "transform",
+            "config": {
+                "mode": "flatten",
+                "input": "{fetch.output.data.orders.edges}",
+                "path": "node.lineItems.edges",
+                "keep": {
+                    "order_eid": "node.id",
+                    "order_name": "node.name"
+                },
+                "fields": {
+                    "title": "node.title",
+                    "sku": "node.sku",
+                    "quantity": "node.quantity",
+                    "line_total": "node.originalTotalSet.shopMoney.amount"
+                }
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        },
+        {
+            "name": "store_items",
+            "type": "upsert",
+            "config": {
+                "table": "shopifyorderitem",
+                "rows": "{map_items.output}",
+                "key": ["order_eid", "sku", "title"]
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        },
+        {
+            "name": "cursor",
+            "type": "transform",
+            "config": {
+                "mode": "jsonpath",
+                "input": "{fetch.output}",
+                "path": "data.orders.pageInfo.endCursor"
+            },
+            "on_success": "next",
+            "on_fail": "exit"
+        },
+        {
+            "name": "more_pages",
+            "type": "branch",
+            "config": {
+                "left": "{fetch.output.data.orders.pageInfo.hasNextPage}",
+                "op": "truthy"
+            },
+            "on_success": "goto:fetch",
+            "on_fail": "next"
+        },
+        {
+            "name": "done",
+            "type": "transform",
+            "config": {
+                "mode": "template",
+                "input": "Sync complete."
+            },
+            "on_success": "exit",
+            "on_fail": "exit"
+        }
+    ]
+}

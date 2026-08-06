@@ -134,16 +134,59 @@ foreach (array_keys($live) as $name) {
     // reading. They are reaped when their task is cleaned up, not from here.
     if (strpos($name, 'tiknix-serve-') === 0) continue;
 
-    // PLANNERS are not tasks and are claimed by nothing in workbenchtask:
-    // PlanRunner names its session tiknix-<member>-plan-<slug>, and a decompose
-    // legitimately runs for many minutes before it writes anything. This sweep
-    // would have found no task claiming it and killed it mid-plan — which is the
-    // exact failure it exists to clean up after, caused by the cleaner.
-    //
-    // Same for the plan orchestrator and its per-task builders, which the suffix
-    // rule above only catches for the orchestrator itself.
-    if (preg_match('/^tiknix-\d+-plan-/', $name)) continue;
+    // Plan orchestrators and their per-task builders: never touched from here.
+    // They own tasks of their own and are managed by the orchestrator's own
+    // lifecycle.
     if (preg_match('/^tiknix-plan\d+/', $name)) continue;
+
+    // PLANNERS get a rule of their own rather than a blanket skip.
+    //
+    // PlanRunner names its session tiknix-<member>-plan-<slug>, and nothing in
+    // workbenchtask claims it — a plan is not a task. A blanket skip was the safe
+    // first move, because a decompose legitimately runs for many minutes before
+    // it writes anything and killing one mid-plan would be the cleaner causing
+    // the exact failure it exists to clean up after.
+    //
+    // But a blanket skip leaves the opposite hole: PlanRunner::running() gates a
+    // new decompose on TmuxManager::exists(), with no timeout. So a planner that
+    // dies WITHOUT its script reaching the exit line — killed pane, host restart,
+    // OOM — locks that instance out of decomposing forever, and nothing would
+    // ever clear it.
+    //
+    // The test is not age. It is whether the jailed agent is still there: the
+    // runner script wraps `bwrap … claude -p`, so a planner with no bwrap child
+    // is a shell sitting on a corpse. Age alone would kill live work — an
+    // observed decompose took 3 minutes, but a large goal can run far longer, and
+    // guessing a number is how a cleaner starts eating real runs.
+    if (preg_match('/^tiknix-\d+-plan-(.+)$/', $name, $pm)) {
+        $planSlug = $pm[1];
+        $alive = 0;
+        // pgrep -f against the instance directory: the bwrap command line names
+        // it, and it is the one string that distinguishes THIS planner's agent
+        // from another instance's.
+        exec('pgrep -fa ' . escapeshellarg('bwrap') . ' 2>/dev/null', $bw);
+        foreach ($bw as $line) {
+            if (strpos($line, '/' . $planSlug . '.') !== false) { $alive++; break; }
+        }
+        if ($alive) continue;                       // still working — leave it
+
+        $age = 0;
+        exec('tmux display-message -p -t ' . escapeshellarg($name)
+             . ' "#{session_created}" 2>/dev/null', $cr);
+        if (!empty($cr[0]) && ctype_digit(trim($cr[0]))) $age = time() - (int) trim($cr[0]);
+
+        // A grace period on top, because a planner is briefly alive before bwrap
+        // starts and briefly alive after it exits while the script ingests the
+        // plan — killing it in either window would lose the plan it just wrote.
+        if ($age < max($grace, 120)) continue;
+
+        $say('  ' . ($apply ? 'KILLED  ' : 'would kill ') . $name
+            . ' (planner: no jailed agent, idle ' . (int) round($age / 60) . 'm — the lock it holds'
+            . ' blocks every future decompose for this instance)');
+        if ($apply) exec('tmux kill-session -t ' . escapeshellarg($name) . ' 2>/dev/null');
+        $killed++;
+        continue;
+    }
 
     $say('  ' . ($apply ? 'KILLED  ' : 'would kill ') . $name . ' (no running task claims it)');
     if ($apply) exec('tmux kill-session -t ' . escapeshellarg($name) . ' 2>/dev/null');

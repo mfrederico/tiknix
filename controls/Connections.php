@@ -662,6 +662,10 @@ class Connections extends Control {
             'instance'       => $inst,
             'instances'      => $instances,
             'cards'          => $cards,
+            // A manifest that will not load must SAY so here. A declarative connector
+            // that simply fails to appear is indistinguishable from one nobody added,
+            // and the file is the only place the mistake is visible.
+            'connectorErrors' => ConnectorRegistry::errors(),
             // Where this instance runs. Belongs on the hub, not on the GitHub connector's
             // page: binding a domain should not require connecting a repo first.
             'publishDrivers' => \app\Publish\PublishRegistry::hosting(),

@@ -1,0 +1,17 @@
+{
+    "key": "github_api",
+    "label": "GitHub REST API",
+    "blurb": "Read repositories, issues and users through GitHub's REST API with a personal access token.",
+    "category": "Developer",
+    "icon": "github",
+    "color": "dark",
+    "features": ["Repos", "Issues", "Search"],
+    "base_url": "https://api.github.com",
+    "test_path": "/rate_limit",
+    "auth": {
+        "style": "bearer",
+        "key_label": "Personal access token",
+        "key_placeholder": "github_pat_… or ghp_…",
+        "key_hint": "GitHub → Settings → Developer settings → Personal access tokens. A fine-grained token with read access is enough."
+    }
+}

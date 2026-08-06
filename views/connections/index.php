@@ -98,6 +98,15 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
     </div>
   <?php endif; ?>
 
+  <?php if (!empty($connectorErrors)): ?>
+    <div class="alert alert-warning mt-3">
+      <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Some connector manifests were not loaded</div>
+      <ul class="mb-0 small">
+        <?php foreach ($connectorErrors as $ce): ?><li><?= htmlspecialchars($ce) ?></li><?php endforeach; ?>
+      </ul>
+    </div>
+  <?php endif; ?>
+
   <?php foreach ($cats as $cat): ?>
     <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em"><?= htmlspecialchars($cat) ?></h2>
     <div class="row g-3">

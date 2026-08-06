@@ -1,0 +1,12 @@
+{
+    "key": "openmeteo",
+    "label": "Open-Meteo",
+    "blurb": "Free weather forecasts and historical climate data. No account or key needed — useful for testing a pipeline end to end.",
+    "category": "Data",
+    "icon": "cloud-sun",
+    "color": "info",
+    "features": ["Forecast", "Historical", "No key"],
+    "base_url": "https://api.open-meteo.com",
+    "test_path": "/v1/forecast?latitude=52.52&longitude=13.41&current=temperature_2m",
+    "auth": { "style": "none" }
+}

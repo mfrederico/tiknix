@@ -108,7 +108,10 @@ foreach ($targets as $slug => $dir) {
     if (is_file("$core/composer.lock")) {
         @copy("$core/composer.lock", "$dir/composer.lock");
     }
-    [$cc, $cout] = run($dir, 'COMPOSER_ALLOW_SUPERUSER=1 composer install --no-interaction', 400);
+    // `env VAR=x cmd`, not `VAR=x cmd`: run() prefixes `timeout N`, and timeout
+    // execs its argument directly rather than through a shell, so a leading
+    // assignment is read as the program name.
+    [$cc, $cout] = run($dir, 'env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-interaction', 400);
     if ($cc !== 0) $notes[] = 'composer install failed: ' . substr(trim($cout), -120);
 
     // ---- VERIFY. The point of the script: re-read, do not trust.

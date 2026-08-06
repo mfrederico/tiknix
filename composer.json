@@ -31,9 +31,10 @@
         "nyholm/psr7": "^1.5",
         "pragmarx/google2fa": "^8.0",
         "symfony/http-client": "^6.0",
+        "symfony/yaml": "^8.1",
+        "tiknix/sidecar-kit": "^0.1.0",
         "translatify/translatify": "^0.1",
-        "vlucas/phpdotenv": "^5.5",
-        "tiknix/sidecar-kit": "^0.1.0"
+        "vlucas/phpdotenv": "^5.5"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.5",

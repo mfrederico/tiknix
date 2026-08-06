@@ -608,6 +608,10 @@ class Connections extends Control {
                     'webhookSet'  => (string)($c->webhookSecret ?? '') !== '',
                     'webhookHint' => '',   // core cannot open the instance's app key
                     'keyHint'     => $keyHint,
+                    // How many endpoints an imported API description brought in.
+                    // Only the COUNT crosses into the view — the operation list runs
+                    // to hundreds of KB and the page has no use for it.
+                    'specOps'     => (int) (json_decode((string)($c->metadataJson ?? ''), true)['spec']['total'] ?? 0),
                 ];
             }
             return $out;

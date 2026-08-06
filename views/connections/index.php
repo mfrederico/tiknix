@@ -141,6 +141,9 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
                         <div class="small">
                           <span class="badge bg-<?= $envBadge[$env] ?? 'secondary' ?>-subtle text-<?= $envBadge[$env] ?? 'secondary' ?>-emphasis border me-1"><?= $env === 'production' ? 'Live site' : 'Development' ?></span>
                           <?= htmlspecialchars($cn['name'] ?? $cn['eid'] ?? '') ?>
+                          <?php if (!empty($cn['specOps'])): ?>
+                            <span class="badge bg-info-subtle text-info-emphasis border ms-1" title="Imported from this API's OpenAPI/Swagger description — pipelines can call these by name."><?= (int)$cn['specOps'] ?> endpoints</span>
+                          <?php endif; ?>
                           <?php if (!empty($cn['keyHint'])): ?>
                             <span class="text-body-secondary">· key <code>…<?= htmlspecialchars($cn['keyHint']) ?></code></span>
                           <?php endif; ?>

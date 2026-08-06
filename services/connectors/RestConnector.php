@@ -86,6 +86,9 @@ class RestConnector extends AbstractConnector {
                 ['name' => 'test_path', 'label' => 'Test path', 'type' => 'text',
                  'placeholder' => '/me',
                  'help' => 'Optional — a read-only endpoint used once to prove the credential works before saving.'],
+                ['name' => 'spec_url', 'label' => 'OpenAPI / Swagger URL', 'type' => 'url',
+                 'placeholder' => 'https://api.example.com/openapi.json',
+                 'help' => 'Optional — import the API description so pipelines can pick endpoints by name instead of typing paths. JSON or YAML.'],
                 ['name' => 'label', 'label' => 'Name this connection', 'type' => 'text',
                  'placeholder' => 'Acme production API'],
             ],
@@ -179,6 +182,27 @@ class RestConnector extends AbstractConnector {
         $host  = (string) parse_url($base, PHP_URL_HOST);
         $label = trim((string) ($opts['label'] ?? '')) ?: $host;
 
+        $metadata = [
+            'base_url'  => $base,
+            'auth'      => $auth,
+            'auth_name' => $name,
+            'username'  => $user,
+            'test_path' => $testPath,
+        ];
+
+        // An imported description is a convenience, so a broken one must not cost
+        // the user a working connection: the import throws with its own reason and
+        // the caller sees THAT, rather than a connection that silently has no
+        // endpoint list and no explanation.
+        $specUrl = trim((string) ($opts['spec_url'] ?? ''));
+        if ($specUrl !== '') {
+            $metadata['spec'] = self::importSpec($specUrl, $auth, $name, $user, $key);
+            $metadata['spec_url'] = $specUrl;
+            if ($label === $host && !empty($metadata['spec']['title'])) {
+                $label = (string) $metadata['spec']['title'];
+            }
+        }
+
         return [
             'access_token'  => $key,          // '' for a public API; stored encrypted either way
             'token_type'    => $auth === 'bearer' ? 'Bearer' : $auth,
@@ -186,40 +210,87 @@ class RestConnector extends AbstractConnector {
             'external_eid'  => $host,
             'external_name' => $label,
             'external_url'  => $base,
-            'metadata'      => [
-                'base_url'  => $base,
-                'auth'      => $auth,
-                'auth_name' => $name,
-                'username'  => $user,
-                'test_path' => $testPath,
+            'metadata'      => $metadata,
+        ];
+    }
+
+    /**
+     * Fetch and digest an OpenAPI/Swagger document.
+     *
+     * The URL is user-supplied and fetched BY US, so it goes through exactly the
+     * same host guard as an API call — a spec_url is otherwise a tidy way to ask
+     * the server to fetch an internal address on your behalf.
+     *
+     * Only the digest is returned. The raw document routinely runs to megabytes;
+     * what a pipeline needs is the operation list, and that is small enough to sit
+     * on the connection where the broker can reach it with no filesystem coupling.
+     */
+    private static function importSpec(string $specUrl, string $auth, string $name, string $user, string $key): array {
+        self::assertPublicHost($specUrl);
+
+        $headers = self::authHeaders($auth, $name, $user, $key);
+        $headers[] = 'Accept: application/json, application/yaml, text/yaml, */*';
+        $headers[] = self::USER_AGENT;
+
+        $c = new self();
+        [$status, $body, $err] = $c->http('GET', self::applyQueryAuth($specUrl, $auth, $name, $key), [
+            'headers' => $headers, 'timeout' => 30,
+        ]);
+
+        if ($err !== '')                  throw new \Exception('Could not fetch the specification: ' . $err);
+        if ($status < 200 || $status >= 300) throw new \Exception('The specification URL returned HTTP ' . $status . '.');
+
+        $digest = \app\services\Config\OpenApiSpec::parse($body);
+
+        // Resolve relative servers ("/api/v3") against where the spec came from.
+        $digest['servers'] = \app\services\Config\OpenApiSpec::absoluteServers($digest['servers'], $specUrl);
+        $digest['imported_at'] = date('Y-m-d H:i:s');
+
+        return $digest;
+    }
+
+    public function brokerTools(): array {
+        return [
+            [
+                'name'        => 'request',
+                'description' => 'Call any endpoint on this connection\'s API. The base URL and credential are held by the connection; supply a path, or an operation name if a specification was imported.',
+                'inputSchema' => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'method'    => ['type' => 'string', 'description' => 'GET, POST, PUT, PATCH or DELETE. Defaults to GET. Ignored when operation is given.'],
+                        'path'      => ['type' => 'string', 'description' => 'Path appended to the base URL, e.g. /customers/42.'],
+                        'operation' => ['type' => 'string', 'description' => 'An operation id from the imported specification, e.g. getPetById. Supply this INSTEAD of method and path.'],
+                        'params'    => ['type' => 'object', 'description' => 'Values for the operation\'s path and query parameters, by name.'],
+                        'query'     => ['type' => 'object', 'description' => 'Extra query-string parameters.'],
+                        'body'      => ['description' => 'Optional request body. An object is sent as JSON.'],
+                        'headers'   => ['type' => 'object', 'description' => 'Optional extra headers. Authentication is added for you.'],
+                    ],
+                ],
+            ],
+            [
+                'name'        => 'operations',
+                'description' => 'List the endpoints from this connection\'s imported OpenAPI/Swagger specification, so you can call one by name instead of guessing a path.',
+                'inputSchema' => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'search' => ['type' => 'string', 'description' => 'Optional filter on id, path, summary or tag.'],
+                        'limit'  => ['type' => 'integer', 'description' => 'Maximum operations to return. Defaults to 100.'],
+                    ],
+                ],
             ],
         ];
     }
 
-    public function brokerTools(): array {
-        return [[
-            'name'        => 'request',
-            'description' => 'Call any endpoint on this connection\'s API. The base URL and credential are held by the connection; supply only the path.',
-            'inputSchema' => [
-                'type'       => 'object',
-                'properties' => [
-                    'method'  => ['type' => 'string', 'description' => 'GET, POST, PUT, PATCH or DELETE. Defaults to GET.'],
-                    'path'    => ['type' => 'string', 'description' => 'Path appended to the base URL, e.g. /customers/42.'],
-                    'query'   => ['type' => 'object', 'description' => 'Optional query-string parameters.'],
-                    'body'    => ['description' => 'Optional request body. An object is sent as JSON.'],
-                    'headers' => ['type' => 'object', 'description' => 'Optional extra headers. Authentication is added for you.'],
-                ],
-                'required'   => ['path'],
-            ],
-        ]];
-    }
-
     public function callBrokerTool(string $tool, $conn, string $token, array $args): array {
+        $meta = json_decode((string) ($conn->metadataJson ?? ''), true) ?: [];
+
+        if ($tool === 'operations') {
+            return self::listOperations($meta, $args);
+        }
         if ($tool !== 'request') {
             throw new \Exception("Unknown rest tool '{$tool}'.");
         }
 
-        $meta = json_decode((string) ($conn->metadataJson ?? ''), true) ?: [];
         $base = self::normalizeBase((string) ($meta['base_url'] ?? ''));
         if ($base === '') {
             throw new \Exception('This connection has no base URL recorded — reconnect it.');
@@ -228,12 +299,29 @@ class RestConnector extends AbstractConnector {
         $name = (string) ($meta['auth_name'] ?? '');
         $user = (string) ($meta['username'] ?? '');
 
-        $method = strtoupper(trim((string) ($args['method'] ?? 'GET')));
+        $method    = strtoupper(trim((string) ($args['method'] ?? 'GET')));
+        $path      = (string) ($args['path'] ?? '');
+        $extraQuery = (array) ($args['query'] ?? []);
+
+        // Calling by operation name: the specification supplies the method and the
+        // path template, and params fill it in. Placeholders are substituted here
+        // rather than by the author, so /pets/{petId} can never go out literally.
+        $opId = trim((string) ($args['operation'] ?? ''));
+        if ($opId !== '') {
+            $op = self::findOperation($meta, $opId);
+            [$path, $q] = \app\services\Config\OpenApiSpec::fill($op, (array) ($args['params'] ?? []));
+            $method = $op['method'];
+            $extraQuery = $q + $extraQuery;
+        } elseif ($path === '') {
+            throw new \Exception('Supply either a path or an operation name.');
+        }
+
         if (!in_array($method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'], true)) {
             throw new \Exception("Unsupported method '{$method}'.");
         }
 
-        $url = self::joinUrl($base, (string) ($args['path'] ?? ''));
+        $args['query'] = $extraQuery;
+        $url = self::joinUrl($base, $path);
 
         // The path must not be able to leave the connection's own host. Anything
         // else would let a pipeline borrow this credential to reach a different
@@ -287,6 +375,59 @@ class RestConnector extends AbstractConnector {
             'ok'     => $status >= 200 && $status < 300,
             'body'   => $decoded !== null ? $decoded : $body,
         ];
+    }
+
+    // -------------------------------------------------------- imported spec
+
+    /** The operation list, filtered — what a pipeline author browses. */
+    private static function listOperations(array $meta, array $args): array {
+        $spec = $meta['spec'] ?? null;
+        if (!is_array($spec) || empty($spec['operations'])) {
+            throw new \Exception('No API specification has been imported for this connection. Reconnect it with an OpenAPI or Swagger URL.');
+        }
+
+        $search = strtolower(trim((string) ($args['search'] ?? '')));
+        $limit  = max(1, min(500, (int) ($args['limit'] ?? 100)));
+
+        $hits = [];
+        foreach ($spec['operations'] as $op) {
+            if ($search !== '') {
+                $hay = strtolower($op['id'] . ' ' . $op['path'] . ' ' . $op['summary'] . ' ' . implode(' ', $op['tags']));
+                if (strpos($hay, $search) === false) continue;
+            }
+            $hits[] = $op;
+        }
+
+        $total = count($hits);
+        return [
+            'title'      => (string) ($spec['title'] ?? ''),
+            'total'      => $total,
+            // Say so when the list was cut, rather than letting a truncated answer
+            // read like the whole API.
+            'returned'   => min($total, $limit),
+            'truncated'  => $total > $limit,
+            'operations' => array_slice($hits, 0, $limit),
+        ];
+    }
+
+    /** Look up one operation by id, or say what is available. */
+    private static function findOperation(array $meta, string $id): array {
+        $ops = $meta['spec']['operations'] ?? null;
+        if (!is_array($ops) || !$ops) {
+            throw new \Exception("This connection has no imported specification, so it cannot resolve the operation '{$id}'. Supply a path instead.");
+        }
+        foreach ($ops as $op) {
+            if (strcasecmp((string) $op['id'], $id) === 0) return $op;
+        }
+        // Offer the near misses — an operation id is easy to mistype and a bare
+        // "not found" leaves the author guessing at hundreds of possibilities.
+        $near = [];
+        foreach ($ops as $op) {
+            if (stripos((string) $op['id'], $id) !== false) $near[] = $op['id'];
+            if (count($near) >= 5) break;
+        }
+        throw new \Exception("No operation '{$id}' in this connection's specification."
+            . ($near ? ' Did you mean: ' . implode(', ', $near) . '?' : ' Call the operations tool to list them.'));
     }
 
     // ------------------------------------------------------------------ helpers

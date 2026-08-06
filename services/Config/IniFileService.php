@@ -15,7 +15,7 @@
  *   [section] ; {"obfuscate": ["client_secret", "provision_secret"]}
  *   api_version = "2026-04" ; {"type":"string", "min":7, "max":7, "format":"####-##"}
  *
- * The trailing `; { ... }` is parsed as JSON and exposed as ->meta on the
+ * The trailing ; { ... } is parsed as JSON and exposed as ->meta on the
  * section/key. Format wildcards: "#" → digit, "A" → letter — compiled to
  * a PCRE regex by validateValue() at save time.
  *
@@ -60,7 +60,7 @@ class IniFileService {
     }
 
     /**
-     * Is this basename a `.example.ini` template? Templates are read-only
+     * Is this basename a .example.ini template? Templates are read-only
      * scaffolds — editor offers a "create from template" flow that copies
      * them into a real config file with the .example portion stripped.
      */
@@ -69,7 +69,7 @@ class IniFileService {
     }
 
     /**
-     * Strip the `.example` segment to get the "real" filename a template
+     * Strip the .example segment to get the "real" filename a template
      * should produce, e.g. mcp.example.ini → mcp.ini.
      */
     public static function actualFilenameForExample(string $basename): string {
@@ -271,7 +271,7 @@ class IniFileService {
      *   ]
      *
      * Validation: each value runs through validateValue() against the meta
-     * declared in the file (or new meta if `keyMeta` updates it in the same
+     * declared in the file (or new meta if keyMeta updates it in the same
      * pass). Returns ['ok' => bool, 'errors' => [...]]. On ok, writes the
      * file atomically (temp + rename).
      */
@@ -421,7 +421,7 @@ class IniFileService {
 
     /**
      * Quote-aware split for "value [; metaOrComment]". Handles values that
-     * contain a literal `;` inside double quotes (e.g. scopes lists).
+     * contain a literal ; inside double quotes (e.g. scopes lists).
      */
     private static function splitValueAndComment(string $valuePart): array {
         $inQuote = false;

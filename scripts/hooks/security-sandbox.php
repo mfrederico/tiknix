@@ -59,7 +59,7 @@ if ($workspaceRoot) {
 // redundant under bwrap; they are scoped, and only skipped where the jail really
 // does enforce them.
 // An EMPTY value is not "jailed": getenv() returns '' for a variable that exists
-// but is blank, and `!== false` would have quietly treated the host as a jail and
+// but is blank, and !== false would have quietly treated the host as a jail and
 // switched off every rule scoped to it.
 $inJail = is_dir('/aibhome') || (string) getenv('AIBUILDER_INSTANCE') !== '';
 
@@ -109,13 +109,13 @@ try {
 /**
  * Strip quoted spans from a command so rules match ACTIONS, not MENTIONS.
  *
- * `grep -nE "reboot|shutdown" file` is a search, not a restart, and blocking it
+ * grep -nE "reboot|shutdown" file is a search, not a restart, and blocking it
  * taught nobody anything except to distrust the hook. The same goes for a commit
  * message, a comment, or a sed expression that happens to name a blocked word.
  *
  * Quoted text is removed rather than kept, and the payload of a nested shell is
- * pulled back out separately by nestedShellPayloads() — so `sh -c "reboot"` is
- * still caught, while `echo "reboot"` is not.
+ * pulled back out separately by nestedShellPayloads() — so sh -c "reboot" is
+ * still caught, while echo "reboot" is not.
  */
 function unquotedView(string $s): string {
     $s = preg_replace('/"(?:\\\\.|[^"\\\\])*"/', ' ', $s) ?? $s;
@@ -157,14 +157,14 @@ function commandSubjects(string $command, int $depth = 0): array {
  * Targets a command would WRITE to — redirect destinations and the operands of
  * write verbs — including relative ones.
  *
- * The path scan only ever looked at absolute paths (`#(?:^|\s)(/[^\s]+)#`), so
- * `echo x > .claude/guard.php` sailed past every protect rule. Inside the jail
+ * The path scan only ever looked at absolute paths (#(?:^|\s)(/[^\s]+)#), so
+ * echo x > .claude/guard.php sailed past every protect rule. Inside the jail
  * that is the gap that matters most: bwrap mounts the instance READ-WRITE, so the
  * protect rules on .claude, scripts/hooks, conf/ and lib/ are the only thing
  * stopping an agent from editing the guardrails that constrain it.
  *
  * Only write POSITIONS are collected, not every token, so naming a protected file
- * in a read (`grep x .claude/settings.json`) stays allowed.
+ * in a read (grep x .claude/settings.json) stays allowed.
  */
 function writeTargets(string $subject): array {
     $targets = [];
@@ -426,11 +426,11 @@ switch ($toolName) {
             // Also check for file paths in the command. Same rule as above: a path
             // inside a quoted argument is a mention (a grep pattern, a message, a
             // doc string), not an access — scan the unquoted view plus any nested
-            // shell payload, so `sh -c "cat /etc/shadow"` is still seen.
+            // shell payload, so sh -c "cat /etc/shadow" is still seen.
             $subjects     = commandSubjects($command);
             $pathScanText = implode(' ', $subjects);
 
-            // Writes first, and checked AS writes (isWrite = true) so `protect`
+            // Writes first, and checked AS writes (isWrite = true) so protect
             // rules actually engage — reading a protected file stays fine.
             foreach ($subjects as $subject) {
                 foreach (writeTargets($subject) as $target) {

@@ -99,7 +99,7 @@ echo "  wrote $cfgRel + conf/config.ini (db: $dbRel, minted [pipeline] trigger_s
 // so config.* is skipped. Per-instance secrets are then (re)written on demand — e.g.
 // the broker key on first connect via BrokerService::ensureInstanceConfig.
 // mailgun is intentionally NOT reset: instances currently send transactional email
-// (password resets, pipeline `notify` steps) through the shared platform mailer, so
+// (password resets, pipeline notify steps) through the shared platform mailer, so
 // wiping it would break email. Revisit if mail moves behind the broker like stores.
 $keepShared = ['config', 'mailgun'];
 foreach (glob("$ROOT/conf/*.example.ini") ?: [] as $tpl) {
@@ -213,9 +213,9 @@ if ($existing) {
     $agentToken = $existing;
     echo "  agent MCP key → reused existing\n";
 } else {
-    // Columns limited to what sql/schema.sql actually creates. `key_class` exists
+    // Columns limited to what sql/schema.sql actually creates. key_class exists
     // on older instances only because RedBean's fluid mode added it later; naming
-    // it here fatals on a fresh database. `scopes` is a JSON ARRAY everywhere it
+    // it here fatals on a fresh database. scopes is a JSON ARRAY everywhere it
     // is read (json_decode(...) ?: []), so a bare 'mcp:*' string would decode to
     // null and silently leave the key with no scopes at all.
     R::exec('INSERT INTO apikey (member_id, name, token, scopes, is_active, usage_count, created_at)

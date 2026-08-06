@@ -194,7 +194,7 @@ class TwoFactorAuth {
         }
 
         // NOTE: there used to be a second arm here — anyone who had run a workbench
-        // task, OR held a `teammember` row with can_run_tasks = 1, was pulled into
+        // task, OR held a teammember row with can_run_tasks = 1, was pulled into
         // 2FA scope as 'workbench'.
         //
         // It outlived what it guarded. The workbench moved out to the

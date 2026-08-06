@@ -50,7 +50,7 @@ R::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
     level INTEGER, description TEXT, priority INTEGER,
     is_active INTEGER, created_at NUMERIC)');
 
-// 1b) `scope` says WHERE a rule is worth enforcing:
+// 1b) scope says WHERE a rule is worth enforcing:
 //       always   — enforce everywhere
 //       unjailed — only outside the bubblewrap jail, which already enforces it
 //     The hook reads it; a row without one is treated as 'always'.
@@ -77,7 +77,7 @@ $defaults = [
     ['Block /proc',            'path', 'block', '/proc',    10, 1, 'unjailed'],
     ['Block /sys',             'path', 'block', '/sys',     10, 1, 'unjailed'],
     ['Block /var/log',         'path', 'block', '/var/log', 10, 1, 'unjailed'],
-    // level 10, not 100. The bypass test is `memberLevel <= rule->level`, so a
+    // level 10, not 100. The bypass test is memberLevel <= rule->level, so a
     // level of 100 let EVERY caller through (only PUBLIC=101 was ever stopped) —
     // the rule read as "admin only" and behaved as "nobody". 10 matches the other
     // system blocks: host tooling running as ROOT still passes, task agents do not.
@@ -117,7 +117,7 @@ $defaults = [
     ['Protect CLAUDE.md',      'path', 'protect', 'CLAUDE.md',              50, 50, 'always'],
 ];
 
-// The `allow` rules that used to live here are GONE, and deliberately so. Both
+// The allow rules that used to live here are GONE, and deliberately so. Both
 // checkPath() and checkCommand() end with "no rule matched -> allow", and rules are
 // evaluated priority ASC — every allow sat at 100/200, after every block (1/10) and
 // protect (50). An allow could therefore only ever fire for something that was
@@ -158,7 +158,7 @@ foreach ($defaults as [$name, $target, $action, $pattern, $level, $priority, $sc
 
 // A rule that is not in $defaults is NOT deleted. This seeder owns the canonical
 // set; it does not own the database. Hosts carry hand-tuned rules that matter and
-// that no default can predict — core has an `Allow nginx lua` for
+// that no default can predict — core has an Allow nginx lua for
 // /home/ubuntu/capricorn at priority 5, which sits AHEAD of the blocks at 10 and is
 // the only reason host tooling can read the capricorn scripts at all.
 //

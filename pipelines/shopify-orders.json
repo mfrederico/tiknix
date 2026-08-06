@@ -16,6 +16,11 @@
             "type": "integer",
             "required": false,
             "description": "Orders per page, 1-250. Defaults to 250 (Shopify's maximum) \u2014 fewer pages means fewer steps against the pipeline's step budget."
+        },
+        "store": {
+            "type": "string",
+            "required": false,
+            "description": "Which connected store, when more than one Shopify store is connected \u2014 the shop domain, e.g. acme.myshopify.com. Leave empty when there is only one."
         }
     },
     "steps": [
@@ -25,6 +30,7 @@
             "config": {
                 "connector": "shopify",
                 "environment": "production",
+                "account": "{context.store|}",
                 "tool": "graphql",
                 "arguments": {
                     "query": "query Orders($first: Int!, $after: String, $q: String) {\n  orders(first: $first, after: $after, query: $q, sortKey: CREATED_AT) {\n    pageInfo { hasNextPage endCursor }\n    edges {\n      node {\n        id\n        name\n        createdAt\n        displayFinancialStatus\n        displayFulfillmentStatus\n        totalPriceSet { shopMoney { amount currencyCode } }\n        customer { email }\n        lineItems(first: 100) {\n          edges { node { title quantity sku originalTotalSet { shopMoney { amount } } } }\n        }\n      }\n    }\n  }\n}",

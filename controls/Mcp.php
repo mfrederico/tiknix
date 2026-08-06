@@ -1202,12 +1202,18 @@ class Mcp extends BaseControls\Control {
         }
 
         $env  = $this->normalizeBrokerEnv($arguments['environment'] ?? 'production');
+
+        // WHICH account, when an instance has several of the same connector — two
+        // Shopify stores, a live and a test Stripe. Passed straight through so the
+        // store can refuse an ambiguous request instead of picking the newest row.
+        $account = trim((string) ($arguments['account'] ?? ''));
+
         // ConnectionStore now does what the comment here used to insist on: it
         // queries only columns guaranteed to exist and judges revoked state in PHP,
         // because RedBean answers a query naming an absent column with NOTHING
         // rather than an error — which would make a good connection disappear on an
         // instance whose table predates revoked_at.
-        $conn = \app\ConnectionStore::forInstall($instanceId, $connectorKey, $env);
+        $conn = \app\ConnectionStore::forInstall($instanceId, $connectorKey, $env, $account !== '' ? $account : null);
         if (!$conn || !$conn->id) {
             // forInstance() already excludes disabled and revoked rows, so the
             // separate "was revoked" throw that used to sit here is unreachable. Its

@@ -22,6 +22,8 @@ class ConnectionStep implements StepInterface {
                 ['name' => 'tool',        'label' => 'Tool',      'type' => 'text', 'required' => true, 'help' => 'The request tool: "request" (Stripe/REST — args method,path,body) or "graphql" (Shopify — args query,variables). Named tools (list_products…) still work.'],
                 ['name' => 'arguments',   'label' => 'Arguments', 'type' => 'keyval', 'help' => 'REST: {method, path, body}. GraphQL: {query, variables}. Values may reference {context.x}.'],
                 ['name' => 'environment', 'label' => 'Environment', 'type' => 'select', 'options' => ['production', 'development'], 'help' => 'Which connection environment; default production.'],
+                ['name' => 'account',     'label' => 'Account',     'type' => 'text',
+                 'help'  => 'Which connected account, when there is more than one of this connector — the shop domain, account id or the name you gave it. Required only when it would otherwise be ambiguous; the run says which are connected.'],
                 ['name' => 'timeout',     'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — seconds; default 30.'],
             ],
         ];
@@ -43,6 +45,9 @@ class ConnectionStep implements StepInterface {
         // in development must be reached with environment:"development".
         $brokerArgs = (array) ($config['arguments'] ?? []);
         if (!empty($config['environment'])) $brokerArgs['environment'] = (string) $config['environment'];
+        // Which connected account. Sits beside environment because it answers the
+        // same kind of question — not "what am I calling" but "whose".
+        if (!empty($config['account'])) $brokerArgs['account'] = (string) $config['account'];
         $payload = json_encode([
             'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
             'params'  => ['name' => $connector . ':' . $tool, 'arguments' => (object) $brokerArgs],

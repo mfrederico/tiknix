@@ -159,10 +159,24 @@ class ConnectionStore {
      * The successor to forInstance(). No instance id, no member id: everything in
      * the file belongs to this install already.
      */
-    public static function for(string $type, ?string $env = null): ?\RedBeanPHP\OODBBean {
+    /**
+     * @param string|null $account WHICH connection, when an install has more than
+     *        one of the same connector — matched against the account id the provider
+     *        gave us (a Shopify shop domain, a Stripe acct_), the display name, or
+     *        the connection's own id.
+     *
+     * @throws \RuntimeException when the answer is ambiguous, or when a named
+     *         account is not connected. Both are questions this code cannot answer,
+     *         and answering them anyway is how a pipeline reads the wrong shop.
+     */
+    public static function for(string $type, ?string $env = null, ?string $account = null): ?\RedBeanPHP\OODBBean {
         if ($type === '') return null;
 
-        return self::withOwnDb(function () use ($type, $env) {
+        // The QUERY runs inside withOwnDb; the DECISION does not. withOwnDb catches
+        // Throwable and returns its fallback, so an ambiguity thrown in there would
+        // be swallowed and re-reported as "no connection" — sending someone to
+        // reconnect a connector that was already connected twice.
+        $live = self::withOwnDb(function () use ($type, $env) {
             $where  = 'connector_type = ? AND enabled = 1';
             $params = [$type];
             if ($env !== null) { $where .= ' AND environment = ?'; $params[] = $env; }
@@ -174,11 +188,56 @@ class ConnectionStore {
                 $where . " ORDER BY CASE WHEN environment = 'production' THEN 0 ELSE 1 END, id DESC",
                 $params);
 
+            $out = [];
             foreach ($rows as $c) {
-                if ($c->id && empty($c->revokedAt)) return $c;
+                if ($c->id && empty($c->revokedAt)) $out[] = $c;
             }
-            return null;
-        }, null);
+            return $out;
+        }, []);
+
+        if (!$live) return null;
+
+        if ($account !== null && $account !== '') {
+            foreach ($live as $c) if (self::matchesAccount($c, $account)) return $c;
+            throw new \RuntimeException(
+                "No {$type} connection matching '{$account}'. Connected: " . self::describe($live) . '.'
+            );
+        }
+
+        // ONE is unambiguous. More than one, with no account named, is a question
+        // this code cannot answer — so it asks.
+        //
+        // It used to take the newest row. A pipeline against two Shopify stores
+        // therefore pulled from whichever was connected last, and silently changed
+        // which one the day a third was added. Nothing in the run said so; the
+        // orders were simply the wrong shop's.
+        if (count($live) > 1) {
+            throw new \RuntimeException(
+                'This install has ' . count($live) . " {$type} connections and the step did not say which: "
+                . self::describe($live) . '. Name one with "account".'
+            );
+        }
+
+        return $live[0];
+    }
+
+    /** Does this connection answer to the name a step used? */
+    private static function matchesAccount(\RedBeanPHP\OODBBean $c, string $account): bool {
+        $account = strtolower(trim($account));
+        foreach ([$c->externalEid, $c->externalName, $c->connectionName, $c->id] as $candidate) {
+            if ($candidate !== null && strtolower(trim((string) $candidate)) === $account) return true;
+        }
+        return false;
+    }
+
+    /** The connected accounts, for an error that can actually be acted on. */
+    private static function describe(array $conns): string {
+        $out = [];
+        foreach ($conns as $c) {
+            $name = (string) ($c->externalEid ?: $c->externalName ?: $c->connectionName ?: $c->id);
+            $out[] = $name . ' (' . (string) $c->environment . ')';
+        }
+        return implode(', ', $out);
     }
 
     /**
@@ -194,7 +253,7 @@ class ConnectionStore {
      * the caller to know whose key to use, which is exactly the knowledge this
      * class exists to hold. It is never stored: nothing calls store() on this bean.
      */
-    public static function forInstall(int $instanceId, string $type, ?string $env = null): ?\RedBeanPHP\OODBBean {
+    public static function forInstall(int $instanceId, string $type, ?string $env = null, ?string $account = null): ?\RedBeanPHP\OODBBean {
         if ($instanceId <= 0 || $type === '') return null;
 
         $inst = Bean::load('instance', $instanceId);
@@ -209,7 +268,7 @@ class ConnectionStore {
 
         self::useInstall($dir);
         try {
-            $conn = self::for($type, $env);
+            $conn = self::for($type, $env, $account);
             if ($conn) {
                 $conn->plainToken = self::ownToken($conn);
                 // Carried for the same reason as plainToken: a connector whose access

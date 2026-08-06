@@ -114,30 +114,58 @@ block / wildcard vhost. The instance is a full tiknix app with its own DB.
 - **KNOWN: the terminal disconnects and needs a page refresh.** Two faults that
   compound, neither fixed yet (noted 2026-08-05):
 
-  1. `aibuilder-terminal/server.js` sets `SESSION_MAX_MS` (default **8 hours**)
-     as a `setTimeout` when the daemon spawns, and never resets it:
+  1. `aibuilder-terminal/server.js` reaps sessions by `max-lifetime` while a
+     client is attached, and it fires **much sooner than `SESSION_MAX_MS`**.
+
+     Two things are going on, and the second is the one that bites.
+
+     **It measures age, not idleness.** `SESSION_MAX_MS` (default 8h) is set once
+     when the daemon spawns and never reset:
 
      ```js
      s.maxTimer = setTimeout(() => reap(key, 'max-lifetime'), SESSION_MAX_MS);
      ```
 
-     It fires whether or not a client is attached and whether or not the agent is
-     mid-task. The bridge log shows it plainly:
+     and `reap()` only refuses to run when someone is attached *for the idle
+     reason*:
 
+     ```js
+     if (s.clients.size > 0 && why === 'idle') return;   // no such guard for max-lifetime
      ```
-     [session mileage.tiknix] attach member=1 clients=1
-     [session mileage.tiknix] reaping (max-lifetime)     <- killed while attached
+
+     A hard cap is wanted — it stops a forgotten jail living forever — but it
+     should mean "8 hours of nobody using this", so the timer wants refreshing on
+     activity (attach, input, output). The 15-minute `SESSION_IDLE_MS` reaper is
+     already correct: it only fires with `clients` empty.
+
+     **The timer leaks across session replacement**, which is why disconnects
+     arrive nowhere near the 8-hour mark. Timers are cleared in the daemon's exit
+     handler, but only if that daemon is still the current one:
+
+     ```js
+     daemon.on('exit', () => {
+       const cur = sessions.get(key);
+       if (cur && cur.daemon === daemon) {     // <- false once replaced
+         clearTimers(cur); sessions.delete(key);
+       }
+     });
      ```
 
-     A hard cap is *wanted* — it stops a forgotten jail living forever. What is
-     wrong is that it measures total age rather than idleness. The fix is to
-     refresh the timer on activity (attach, input, output) so it becomes "8 hours
-     of nobody using this", which is the thing the cap is actually for. The
-     separate 15-minute `SESSION_IDLE_MS` reaper is correct as written: it only
-     runs when `clients` is empty.
+     `ensureSession()` replaces the session object as soon as the old daemon has
+     an `exitCode`, without clearing its timers first. If the replacement happens
+     before the old `exit` event is processed, the orphaned `maxTimer` survives
+     with no owner — and when it fires it calls `reap(key)`, which kills
+     **whatever session holds that key at that moment**, however young.
 
-     `SESSION_MAX_MS` is already env-configurable via the pm2 config, so raising
-     it is a stopgap that needs no code.
+     The bridge process has been up since 28 Jul, so orphans accumulate: each one
+     fires 8 hours after *its* session started and takes out an unrelated current
+     one. Observed as a tight `daemon started → attach → reaping (max-lifetime)`
+     loop in the bridge log.
+
+     Fix both: clear timers in `ensureSession()` before replacing a session (not
+     only in the exit handler), and refresh `maxTimer` on activity. Raising
+     `SESSION_MAX_MS` via the pm2 env is NOT a workaround for the leak — it only
+     lengthens the fuse on each orphan.
 
   2. The browser never reconnects. In `workbench.tiknix/views/aibuilder/index.php`
      the entire close handling is:

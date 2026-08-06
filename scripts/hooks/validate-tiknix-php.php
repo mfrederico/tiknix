@@ -232,7 +232,6 @@ function findCommandInjectionRisks(string $content): array
         ['/shell_exec\s*\([^)]*\$_(?:GET|POST|REQUEST)/', 'User input in shell_exec() - Use escapeshellarg()'],
         ['/system\s*\([^)]*\$_(?:GET|POST|REQUEST)/', 'User input in system() - Use escapeshellarg()'],
         ['/passthru\s*\([^)]*\$_(?:GET|POST|REQUEST)/', 'User input in passthru() - Use escapeshellarg()'],
-        ['/`[^`]*\$_(?:GET|POST|REQUEST)/', 'User input in backtick operator - Avoid or use escapeshellarg()'],
         ['/proc_open\s*\([^)]*\$_(?:GET|POST|REQUEST)/', 'User input in proc_open() - Use escapeshellarg()'],
     ];
 
@@ -242,7 +241,74 @@ function findCommandInjectionRisks(string $content): array
         }
     }
 
+    if (backtickExecUsesUserInput($content)) {
+        $issues[] = 'COMMAND INJECTION RISK: User input in backtick operator - Avoid or use escapeshellarg()';
+    }
+
     return $issues;
+}
+
+/**
+ * Does the file actually SHELL OUT via backticks with request data inside?
+ *
+ * This used to be a regex over the raw text:
+ *
+ *     /`[^`]*\$_(?:GET|POST|REQUEST)/
+ *
+ * which matched a backtick ANYWHERE followed later by $_POST with no backtick
+ * in between — hundreds of lines apart, in a different function, in a comment.
+ * A docblock that quoted a config key in markdown backticks was therefore an
+ * injection risk, and the write was BLOCKED. It matched the character, not the
+ * code.
+ *
+ * PHP's own tokenizer knows the difference. Real backtick execution emits bare
+ * '`' tokens; the same character inside a comment or a string literal never
+ * does. So the only thing left to ask is whether a superglobal appears between
+ * an opening and closing backtick.
+ *
+ * Fails CLOSED: if the content will not tokenize (a partial write, a syntax
+ * error), fall back to the old regex. A validator that goes quiet on input it
+ * cannot parse is worse than one that occasionally over-reports.
+ */
+function backtickExecUsesUserInput(string $content): bool
+{
+    if (strpos($content, '`') === false) {
+        return false;   // nothing to weigh up
+    }
+
+    // An Edit hands us new_string — a FRAGMENT with no open tag. Without one the
+    // tokenizer calls the whole thing T_INLINE_HTML, every backtick disappears
+    // into it, and real shell-exec in an edited hunk sails through. Prepend a tag
+    // when the content does not already carry one.
+    $source = preg_match('/^\s*<\?(php|=)?/', $content) ? $content : "<?php\n" . $content;
+
+    try {
+        $tokens = @token_get_all($source, TOKEN_PARSE);
+    } catch (\Throwable $e) {
+        return (bool) preg_match('/`[^`]*\$_(?:GET|POST|REQUEST)/', $content);
+    }
+    if (!$tokens) {
+        return (bool) preg_match('/`[^`]*\$_(?:GET|POST|REQUEST)/', $content);
+    }
+
+    $inShell = false;
+    foreach ($tokens as $token) {
+        // A bare '`' is the shell-exec delimiter. Comments and string literals
+        // arrive as T_COMMENT / T_DOC_COMMENT / T_CONSTANT_ENCAPSED_STRING with
+        // the character safely inside their text, never as a token of their own.
+        if ($token === '`') {
+            $inShell = !$inShell;
+            continue;
+        }
+        if (!$inShell || !is_array($token)) {
+            continue;
+        }
+        if ($token[0] === T_VARIABLE && preg_match('/^\$_(GET|POST|REQUEST)$/', $token[1])) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**

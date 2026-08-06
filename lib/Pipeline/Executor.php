@@ -20,7 +20,8 @@ use RedBeanPHP\R;
 
 class Executor {
 
-    public const MAX_STEPS = 500;   // loop backstop for goto cycles
+    public const MAX_STEPS = 500;            // default loop backstop for goto cycles
+    public const MAX_STEPS_CEILING = 20000;  // the most a pipeline may ask for
 
     private string $root;
 
@@ -127,8 +128,25 @@ class Executor {
 
         $status = 'completed'; $error = ''; $done = (int) $run->stepsDone; $guard = 0; $lastName = '';
 
+        // The backstop is per-pipeline, because how many steps is "too many" depends
+        // on the job. MAX_STEPS still guards anything that does not say otherwise; a
+        // pull that paginates a large store declares what it needs. Bounded either
+        // way — an unbounded loop is the thing this exists to stop.
+        $maxSteps = (int) ($def['max_steps'] ?? self::MAX_STEPS);
+        $maxSteps = max(1, min($maxSteps, self::MAX_STEPS_CEILING));
+
         while ($i < count($steps)) {
-            if (++$guard > self::MAX_STEPS) { $status = 'failed'; $error = 'step budget exceeded (goto cycle?)'; break; }
+            if (++$guard > $maxSteps) {
+                // Say which of the two causes it probably is. A runaway goto and a
+                // paginating pull look identical from here, and "goto cycle?" sends
+                // someone hunting a bug that is not there when the real answer is
+                // that the store simply has more records than the budget allows.
+                $status = 'failed';
+                $error  = "step budget exceeded after {$maxSteps} steps at step '{$lastName}'"
+                        . ' — either a goto cycle, or a paginating pull that needs a bigger page size'
+                        . ' or a higher "max_steps" on the pipeline';
+                break;
+            }
             $step = $steps[$i];
             $name = (string) $step['name'];
             $lastName = $name;

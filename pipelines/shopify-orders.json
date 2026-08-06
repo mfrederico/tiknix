@@ -1,7 +1,8 @@
 {
     "slug": "shopify-orders",
-    "name": "Shopify orders → local table",
+    "name": "Shopify orders \u2192 local table",
     "description": "Pull every order from the connected Shopify store, page by page, and store them locally. Re-running updates rather than duplicating. Also stores one row per line item.",
+    "max_steps": 4000,
     "expose_as_tool": false,
     "expose_as_api": false,
     "trigger": [],
@@ -14,7 +15,7 @@
         "page_size": {
             "type": "integer",
             "required": false,
-            "description": "Orders per page, 1-250. Defaults to 50."
+            "description": "Orders per page, 1-250. Defaults to 250 (Shopify's maximum) \u2014 fewer pages means fewer steps against the pipeline's step budget."
         }
     },
     "steps": [
@@ -28,7 +29,7 @@
                 "arguments": {
                     "query": "query Orders($first: Int!, $after: String, $q: String) {\n  orders(first: $first, after: $after, query: $q, sortKey: CREATED_AT) {\n    pageInfo { hasNextPage endCursor }\n    edges {\n      node {\n        id\n        name\n        createdAt\n        displayFinancialStatus\n        displayFulfillmentStatus\n        totalPriceSet { shopMoney { amount currencyCode } }\n        customer { email }\n        lineItems(first: 100) {\n          edges { node { title quantity sku originalTotalSet { shopMoney { amount } } } }\n        }\n      }\n    }\n  }\n}",
                     "variables": {
-                        "first": "{context.page_size|50}",
+                        "first": "{context.page_size|250}",
                         "after": "{cursor.output|null}",
                         "q": "{context.query|}"
                     }
@@ -63,7 +64,9 @@
             "config": {
                 "table": "shopifyorder",
                 "rows": "{map_orders.output}",
-                "key": ["order_eid"]
+                "key": [
+                    "order_eid"
+                ]
             },
             "on_success": "next",
             "on_fail": "exit"
@@ -95,7 +98,11 @@
             "config": {
                 "table": "shopifyorderitem",
                 "rows": "{map_items.output}",
-                "key": ["order_eid", "sku", "title"]
+                "key": [
+                    "order_eid",
+                    "sku",
+                    "title"
+                ]
             },
             "on_success": "next",
             "on_fail": "exit"

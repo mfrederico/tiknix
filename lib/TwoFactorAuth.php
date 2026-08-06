@@ -193,31 +193,22 @@ class TwoFactorAuth {
             return 'admin';
         }
 
-        // Users who have run workbench tasks require 2FA
-        if (self::hasWorkbenchAccess($member)) {
-            return 'workbench';
-        }
+        // NOTE: there used to be a second arm here — anyone who had run a workbench
+        // task, OR held a `teammember` row with can_run_tasks = 1, was pulled into
+        // 2FA scope as 'workbench'.
+        //
+        // It outlived what it guarded. The workbench moved out to the
+        // workbench.tiknix sidecar and controls/Workbench.php exists in neither core
+        // nor any instance, so the capability that flag describes is not served from
+        // here any more. What remained was an ordinary level-100 member being asked
+        // to set up 2FA — for a feature this app no longer has — purely because of a
+        // column on a row nobody had revisited. Observed on mileage: a member with
+        // zero workbench tasks, prompted on every login because of can_run_tasks.
+        //
+        // If the sidecar wants 2FA for task runners, that belongs in the sidecar,
+        // where the tasks and the session actually live.
 
         return null;
-    }
-
-    /**
-     * Check if user has workbench access (has run tasks or is team member who can run tasks)
-     */
-    private static function hasWorkbenchAccess(object $member): bool {
-        // Check if user has created any workbench tasks
-        $taskCount = Bean::count('workbenchtask', 'created_by = ?', [$member->id]);
-        if ($taskCount > 0) {
-            return true;
-        }
-
-        // Check if user is a team member with task running permissions
-        $teamMembership = Bean::findOne('teammember', 'member_id = ? AND can_run_tasks = 1', [$member->id]);
-        if ($teamMembership) {
-            return true;
-        }
-
-        return false;
     }
 
     /**

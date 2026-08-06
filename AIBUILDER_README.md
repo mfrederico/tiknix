@@ -111,6 +111,49 @@ block / wildcard vhost. The instance is a full tiknix app with its own DB.
 
 ## Operational notes
 
+- **KNOWN: the terminal disconnects and needs a page refresh.** Two faults that
+  compound, neither fixed yet (noted 2026-08-05):
+
+  1. `aibuilder-terminal/server.js` sets `SESSION_MAX_MS` (default **8 hours**)
+     as a `setTimeout` when the daemon spawns, and never resets it:
+
+     ```js
+     s.maxTimer = setTimeout(() => reap(key, 'max-lifetime'), SESSION_MAX_MS);
+     ```
+
+     It fires whether or not a client is attached and whether or not the agent is
+     mid-task. The bridge log shows it plainly:
+
+     ```
+     [session mileage.tiknix] attach member=1 clients=1
+     [session mileage.tiknix] reaping (max-lifetime)     <- killed while attached
+     ```
+
+     A hard cap is *wanted* — it stops a forgotten jail living forever. What is
+     wrong is that it measures total age rather than idleness. The fix is to
+     refresh the timer on activity (attach, input, output) so it becomes "8 hours
+     of nobody using this", which is the thing the cap is actually for. The
+     separate 15-minute `SESSION_IDLE_MS` reaper is correct as written: it only
+     runs when `clients` is empty.
+
+     `SESSION_MAX_MS` is already env-configurable via the pm2 config, so raising
+     it is a stopgap that needs no code.
+
+  2. The browser never reconnects. In `workbench.tiknix/views/aibuilder/index.php`
+     the entire close handling is:
+
+     ```js
+     termWs.onclose = () => setStatus('terminal disconnected');
+     ```
+
+     No retry, no backoff. So *any* close — the reap above, a network blip, a
+     bridge restart — is permanent until the page is reloaded. Reconnecting with
+     backoff would turn a refresh into a two-second gap and would cover far more
+     than this one cause.
+
+  nginx is not involved: `/aibuilder/ws` has `proxy_read_timeout 86400` and the
+  correct upgrade headers, so it will hold the socket for a day.
+
 - Engines: `claude` (Claude Code) or `qwen` (qwen-code on an OpenAI-compatible
   backend, default Ollama :cloud). Per-instance via `<instance>/.aibuilder/engine`.
 - Optional hardening: drop jailed sessions to a dedicated uid via

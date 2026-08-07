@@ -33,6 +33,8 @@
 
 if (php_sapi_name() !== 'cli') { die("cli only\n"); }
 
+use app\Bean;
+
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../bootstrap.php';
 $app = new \app\Bootstrap();
@@ -61,20 +63,21 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
     $slug = basename(dirname(dirname($db)));
 
     try {
-        $pdo = new PDO('sqlite:' . $db, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        // One named connection per file. Bean:: rather than raw PDO (CLAUDE.md): a
+        // task is a bean, so releasing one goes through the model and its hooks
+        // instead of an UPDATE that bypasses them.
+        $conn = 'reap_' . substr(sha1($db), 0, 8);
+        if (!Bean::hasDatabase($conn)) Bean::addDatabase($conn, 'sqlite:' . $db);
+        Bean::selectDatabase($conn);
 
         // A project that has never run a task has no workbenchtask table at all —
         // the schema is fluid, so it appears on first store. That is a normal
         // state, not a fault, and reporting it as one every five minutes is how a
-        // cron mail becomes something nobody opens.
-        $has = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workbenchtask'")->fetchColumn();
-        if (!$has) continue;
-
-        // Only columns guaranteed to exist. tmux_session and test_server_session
-        // are also fluid — absent until something first writes one — so they are
-        // read from the row rather than named in the SELECT.
-        $rows = $pdo->query("SELECT * FROM workbenchtask
-                              WHERE status IN ('running','queued')")->fetchAll(PDO::FETCH_ASSOC);
+        // cron mail becomes something nobody opens. Fluid mode answers a query
+        // against an absent table with nothing rather than an error, so an empty
+        // result here means both "no such table" and "nothing running" — which
+        // want the same thing done about them.
+        $rows = Bean::find('workbenchtask', 'status IN (?,?)', ['running', 'queued']);
     } catch (Throwable $e) {
         // A database that exists but cannot be read IS worth shouting about: its
         // stale tasks will never be reaped and silence would hide that forever.
@@ -86,18 +89,16 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
     // this the sweep below sees tiknix-serve-1-26, finds no task in
     // `tmux_session` claiming it, and kills somebody's live preview.
     try {
-        foreach ($pdo->query("SELECT test_server_session FROM workbenchtask
-                               WHERE test_server_session IS NOT NULL AND test_server_session != ''")
-                     ->fetchAll(PDO::FETCH_COLUMN) as $s) {
-            $claimed[trim((string) $s)] = true;
+        foreach (Bean::find('workbenchtask', 'test_server_session IS NOT NULL AND test_server_session != ?', ['']) as $s) {
+            $claimed[trim((string) $s->testServerSession)] = true;
         }
     } catch (Throwable $e) { /* column not created yet: nothing to claim */ }
 
     foreach ($rows as $t) {
-        $session = trim((string) ($t['tmux_session'] ?? ''));
+        $session = trim((string) ($t->tmuxSession ?? ''));
         if ($session !== '') $claimed[$session] = true;
 
-        $age = $t['started_at'] ? (time() - strtotime((string) $t['started_at'])) : PHP_INT_MAX;
+        $age = $t->startedAt ? (time() - strtotime((string) $t->startedAt)) : PHP_INT_MAX;
         if ($age < $grace) continue;
 
         // A task with no session recorded and no agent is stale too: that is the
@@ -106,20 +107,25 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
 
         $why = $session === '' ? 'never recorded a session' : "session {$session} is gone";
         $say(sprintf('  %-24s task %-4s %s (%s, %s)',
-            $slug, $t['id'], $apply ? 'RELEASED' : 'would release', $why,
-            $t['started_at'] ?: 'no start time'));
+            $slug, (int) $t->id, $apply ? 'RELEASED' : 'would release', $why,
+            $t->startedAt ?: 'no start time'));
 
         if ($apply) {
-            $st = $pdo->prepare("UPDATE workbenchtask
-                                    SET status = 'awaiting',
-                                        progress_message = 'The agent is no longer running. Nothing was lost — check its last output.',
-                                        tmux_session = NULL,
-                                        updated_at = ?
-                                  WHERE id = ? AND status IN ('running','queued')");
-            $st->execute([date('Y-m-d H:i:s'), (int) $t['id']]);
+            // The bean, not an UPDATE. The status guard the old statement carried in
+            // its WHERE clause is unnecessary here: this bean was read inside this
+            // same sweep and nothing else writes it between.
+            $t->status          = 'awaiting';
+            $t->progressMessage = 'The agent is no longer running. Nothing was lost — check its last output.';
+            $t->tmuxSession     = null;
+            $t->updatedAt       = date('Y-m-d H:i:s');
+            Bean::store($t);
         }
         $released++;
     }
+
+    // Back to the app's own database before the next instance, so a failure part
+    // way through cannot leave a later read pointed at the wrong file.
+    Bean::selectDatabase('default');
 }
 
 // The other direction: a tiknix session nobody is waiting on.

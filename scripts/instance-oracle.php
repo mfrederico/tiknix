@@ -26,6 +26,8 @@ if (php_sapi_name() !== 'cli') {
 require_once __DIR__ . '/../bootstrap.php';
 new app\Bootstrap('conf/config.ini');
 
+use app\Bean;
+
 use \RedBeanPHP\R;
 use \app\TaskAccessControl;
 use \app\ProvisionService;
@@ -48,9 +50,9 @@ $call = function (object $obj, string $method, array $args) {
 $tac  = new TaskAccessControl();
 $prov = new ProvisionService();
 
-$instances = array_map('intval', R::getCol('SELECT id FROM instance ORDER BY id'));
-$members   = array_map('intval', R::getCol('SELECT id FROM member ORDER BY id'));
-$slugs     = array_map('strval', R::getCol('SELECT slug FROM instance ORDER BY id'));
+$instances = array_map('intval', Bean::getCol('SELECT id FROM instance ORDER BY id'));
+$members   = array_map('intval', Bean::getCol('SELECT id FROM member ORDER BY id'));
+$slugs     = array_map('strval', Bean::getCol('SELECT slug FROM instance ORDER BY id'));
 
 $snapshot = [
     'taken_at'  => date('c'),
@@ -74,7 +76,7 @@ foreach ($members as $m) {
 }
 
 // --- paths: every implementation, per instance ----------------------------------------
-foreach (R::findAll('instance', 'ORDER BY id') as $inst) {
+foreach (Bean::findAll('instance', 'ORDER BY id') as $inst) {
     $slug = (string) $inst->slug;
     $snapshot['paths'][$slug] = [
         'model_dir'  => $inst->dir(),

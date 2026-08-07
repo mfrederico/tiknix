@@ -36,6 +36,9 @@ $only = (string) ($opt['slug'] ?? '');
 
 $dirs = glob('/var/www/html/default/*.tiknix') ?: [];
 $totalBad = 0; $totalFixed = 0; $scanned = 0;
+// Instance directories that actually had a row changed — the ones whose permission
+// cache is now stale and has to be rebuilt below.
+$repaired = [];
 
 foreach ($dirs as $dir) {
     $slug = preg_replace('/\.tiknix$/', '', basename($dir));
@@ -73,6 +76,7 @@ foreach ($dirs as $dir) {
                 $up = $pdo->prepare('UPDATE authcontrol SET level = ? WHERE id = ?');
                 $up->execute([PUBLIC_LEVEL, $b['id']]);
                 $totalFixed++;
+                $repaired[$dir] = true;
             }
         }
     }
@@ -80,7 +84,30 @@ foreach ($dirs as $dir) {
 
 echo "\nscanned {$scanned} instance database(s); {$totalBad} bad row(s)"
    . ($fix ? ", {$totalFixed} fixed.\n" : ". Re-run with --fix to apply.\n");
-if ($fix && $totalFixed) {
-    echo "Each repaired instance needs its permission cache reset:\n";
-    echo "  php <instance-dir>/scripts/resetcache.php\n";
+
+// RESET THE CACHE OURSELVES, rather than printing a reminder.
+//
+// These rows are written with raw SQL on purpose: the FUSE hook that would
+// normally invalidate the cache (Model_Authcontrol::after_update) reaches for the
+// APP's logger and cache, and this script is core acting on another install's
+// database — the wrong app entirely. So the hook cannot run here, and the cache
+// has to be rebuilt some other way.
+//
+// It used to print "now run resetcache.php" and stop. Until somebody did, the
+// repaired instance carried on enforcing the OLD level while the script reported
+// rows fixed — a repair that says it worked and changes nothing a visitor can see
+// is worse than one that fails. Each instance's own resetcache.php is run, in that
+// instance, which is where its cache lives.
+if ($fix && $repaired) {
+    echo "\nrebuilding permission caches:\n";
+    foreach (array_keys($repaired) as $dir) {
+        $script = $dir . '/scripts/resetcache.php';
+        if (!is_file($script)) {
+            printf("  %-28s ! no resetcache.php — reset it by hand\n", basename($dir));
+            continue;
+        }
+        exec('cd ' . escapeshellarg($dir) . ' && php ' . escapeshellarg($script) . ' 2>&1', $out, $code);
+        printf("  %-28s %s\n", basename($dir), $code === 0 ? 'cache rebuilt' : 'FAILED: ' . trim(implode(' ', array_slice($out, -2))));
+        $out = [];
+    }
 }

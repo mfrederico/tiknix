@@ -32,6 +32,7 @@ if (php_sapi_name() !== 'cli') { die("cli only\n"); }
 require __DIR__ . '/../vendor/autoload.php';
 
 use RedBeanPHP\R;
+use app\Bean;
 use app\PromptLog;
 
 $opt    = getopt('', ['dry-run']);
@@ -42,7 +43,7 @@ R::setup('sqlite:' . $coreDb);
 R::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "cannot open core db: $coreDb\n"); exit(1); }
 
-$instances = R::getAll('SELECT id, slug, app, member_id FROM instance ORDER BY id');
+$instances = Bean::getAll('SELECT id, slug, app, member_id FROM instance ORDER BY id');
 printf("%d instance(s) in the registry%s\n\n", count($instances), $dryRun ? '  [DRY RUN — nothing will be written]' : '');
 
 $totals = ['linked' => 0, 'loose' => 0, 'skipped' => 0, 'uids' => 0, 'failed' => 0];
@@ -59,37 +60,36 @@ foreach ($instances as $inst) {
     // ---- Source 1: goals stored on plans -----------------------------------------
     if (is_file($tasksDb)) {
         try {
-            $w = new PDO('sqlite:' . $tasksDb);
-            $w->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $cols = $w->query('SELECT name FROM pragma_table_info("workbenchtask")')->fetchAll(PDO::FETCH_COLUMN);
-            if (in_array('plan_goal', $cols, true)) {
-                $hasUid = in_array('plan_uid', $cols, true);
-                $rows = $w->query(
-                    'SELECT id, title, plan_goal, created_at' . ($hasUid ? ', plan_uid' : '') . '
-                       FROM workbenchtask
-                      WHERE parent_task_id IS NULL AND plan_goal IS NOT NULL AND plan_goal != ""
-                      ORDER BY id'
-                )->fetchAll(PDO::FETCH_ASSOC);
+            // The instance's workbench.db as a named connection, so this stays on
+            // Bean:: (CLAUDE.md) instead of a second PDO handle. One key per file:
+            // reusing a key across databases quietly keeps the first one open.
+            $wkey = 'wb_' . substr(sha1($tasksDb), 0, 8);
+            if (!Bean::hasDatabase($wkey)) Bean::addDatabase($wkey, 'sqlite:' . $tasksDb);
+            Bean::selectDatabase($wkey);
 
+            // No pragma probe and no ALTER TABLE. Fluid mode answers a query naming
+            // an absent column with nothing rather than an error, so a database with
+            // no plan_goal simply yields no rows — and plan_uid appears on store when
+            // one is first written. The old version had to check for both columns and
+            // add one by hand.
+            $rows = Bean::find('workbenchtask',
+                'parent_task_id IS NULL AND plan_goal IS NOT NULL AND plan_goal != ? ORDER BY id', ['']);
+            {
                 foreach ($rows as $r) {
                     // Give older plans the durable handle they were minted without, so the
                     // link survives this file being rebuilt.
-                    $uid = $hasUid ? trim((string) ($r['plan_uid'] ?? '')) : '';
+                    $uid = trim((string) ($r->planUid ?? ''));
                     if ($uid === '') {
                         $uid = bin2hex(random_bytes(8));
-                        if (!$dryRun) {
-                            if (!$hasUid) { $w->exec('ALTER TABLE workbenchtask ADD COLUMN plan_uid TEXT'); $hasUid = true; }
-                            $st = $w->prepare('UPDATE workbenchtask SET plan_uid = ? WHERE id = ?');
-                            $st->execute([$uid, (int) $r['id']]);
-                        }
+                        if (!$dryRun) { $r->planUid = $uid; Bean::store($r); }
                         $totals['uids']++;
                     }
                     $found[] = [
-                        'body'       => (string) $r['plan_goal'],
-                        'title'      => (string) $r['title'],
-                        'created_at' => (string) ($r['created_at'] ?: date('Y-m-d H:i:s')),
+                        'body'       => (string) $r->planGoal,
+                        'title'      => (string) $r->title,
+                        'created_at' => (string) ($r->createdAt ?: date('Y-m-d H:i:s')),
                         'plan_uid'   => $uid,
-                        'plan_id'    => (int) $r['id'],
+                        'plan_id'    => (int) $r->id,
                         'ext_key'    => 'plan:' . $tag . ':' . $uid,
                         'kind'       => 'linked',
                     ];
@@ -98,6 +98,12 @@ foreach ($instances as $inst) {
         } catch (Throwable $e) {
             fwrite(STDERR, "  ! $tag: could not read its tasks db: " . $e->getMessage() . "\n");
             $totals['failed']++;
+        } finally {
+            // BACK TO CORE, always. Everything below this block — source 2, and every
+            // promptlog row written later — belongs in core's database. Leaving the
+            // instance's connection selected would silently file all of it in the
+            // wrong place, and a `finally` covers the throw as well as the fall-through.
+            Bean::selectDatabase('default');
         }
     }
 
@@ -129,7 +135,7 @@ foreach ($instances as $inst) {
     echo "$tag (member $memberId)\n";
     foreach ($found as $f) {
         // Idempotency: skip anything already carrying this extKey.
-        $exists = (int) R::count('promptlog', 'member_id = ? AND ext_key = ?', [$memberId, $f['ext_key']]);
+        $exists = (int) Bean::count('promptlog', 'member_id = ? AND ext_key = ?', [$memberId, $f['ext_key']]);
         if ($exists > 0) { $totals['skipped']++; echo "   = already logged: " . firstLine($f['body']) . "\n"; continue; }
 
         if ($dryRun) {
@@ -161,7 +167,7 @@ printf(
     "linked to a plan: %d\nrecovered unlinked: %d\nalready present: %d\nplan uids minted: %d\nfailed: %d\n",
     $totals['linked'], $totals['loose'], $totals['skipped'], $totals['uids'], $totals['failed']
 );
-if ($totals['failed'] > 0) { R::close(); exit(1); }
+if ($totals['failed'] > 0) { Bean::close(); exit(1); }
 R::close();
 
 function firstLine(string $s): string {

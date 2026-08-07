@@ -95,7 +95,14 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
     } catch (Throwable $e) { /* column not created yet: nothing to claim */ }
 
     foreach ($rows as $t) {
-        $session = trim((string) ($t->tmuxSession ?? ''));
+        // BOTH columns. A task started from the board records tmux_session; a
+        // subtask launched by PlanExecutor records agent_session, and reading only
+        // the first made every plan-built subtask look like it had "never recorded
+        // a session". This script runs from cron every five minutes with --apply,
+        // so it released live plan builds the moment they passed the grace period
+        // — including three on floorplan, two of which were then mistaken for
+        // tasks waiting on a person.
+        $session = trim((string) ($t->tmuxSession ?: $t->agentSession ?: ''));
         if ($session !== '') $claimed[$session] = true;
 
         $age = $t->startedAt ? (time() - strtotime((string) $t->startedAt)) : PHP_INT_MAX;
@@ -117,6 +124,7 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
             $t->status          = 'awaiting';
             $t->progressMessage = 'The agent is no longer running. Nothing was lost — check its last output.';
             $t->tmuxSession     = null;
+            $t->agentSession    = null;
             $t->updatedAt       = date('Y-m-d H:i:s');
             Bean::store($t);
         }
@@ -138,7 +146,7 @@ foreach (array_keys($live) as $name) {
     // you are done looking at it, not when the agent finishes. Killing one
     // because no task is currently `running` would close a preview somebody is
     // reading. They are reaped when their task is cleaned up, not from here.
-    if (strpos($name, 'tiknix-serve-') === 0) continue;
+    if (strpos($name, '-serve-') !== false) continue;
 
     // Plan orchestrators and their per-task builders: never touched from here.
     // They own tasks of their own and are managed by the orchestrator's own

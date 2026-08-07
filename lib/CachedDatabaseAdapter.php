@@ -38,28 +38,45 @@ class CachedDatabaseAdapter extends DBAdapter {
     public function __construct($database) {
         parent::__construct($database);
 
-        // Unique prefix per SITE **and per DATABASE**.
+        // THE CACHE NAMESPACE IS THE DATABASE. Nothing else.
         //
-        // The database used to be missing from this, and the key is otherwise just the
-        // SQL text — so any request that touched two databases got cross-database hits on
-        // identical SQL. That is not hypothetical: every sidecar request talks to core's
-        // db and an instance's, and RedBean's own "which tables exist?" lookup is
-        // byte-identical between them. It answered from the wrong database, RedBean
-        // concluded a table was missing, and issued CREATE TABLE — surfacing as
-        // "table `piperun` already exists" when running a pipeline in an instance.
+        // The key must contain the database, because the rest of the key is just SQL
+        // text: any request touching two databases otherwise got cross-database hits on
+        // identical SQL. Not hypothetical — every sidecar request talks to core's db and
+        // an instance's, and RedBean's own "which tables exist?" lookup is byte-identical
+        // between them. It answered from the wrong database, RedBean concluded a table
+        // was missing, and issued CREATE TABLE: "table piperun already exists". The same
+        // collision could return one database's ROWS for another's query, which is worse
+        // than an error message.
         //
-        // The same collision could return one database's ROWS for another's query, which
-        // is a good deal worse than an error message.
-        // If the database cannot be identified we do NOT fall back to a shared
-        // namespace — that is precisely the bug this key exists to prevent, and it would
-        // reappear silently. Caching is switched OFF for this adapter instead and the
-        // reason is logged at ERROR: a cold cache is a performance problem, and one
-        // database answering another's query is a correctness one.
+        // It must contain NOTHING ELSE. The prefix used to mix in HTTP_HOST and __DIR__,
+        // which SPLIT one database into several private namespaces — one per site, one
+        // per codebase reading it. Rows do not change depending on who asks, so the split
+        // bought no safety; what it did was break invalidation between them. A sidecar
+        // (workbench.tiknix.com) writing a row into core's db stamped the new table
+        // version under ITS prefix while core read under core's, so core kept serving the
+        // list it had cached before the write. That is the bug isCrossHostTable() exists
+        // to paper over, one table at a time, and the bug core's Firehose would hit
+        // reading an instance's db through core's lib. Keyed on the DSN alone, any writer
+        // invalidates for every reader.
+        //
+        // The DSN is safe to use alone because every R::setup / addDatabase call in this
+        // codebase passes an ABSOLUTE path (verified: sqlite:/var/www/html/default/...),
+        // so one DSN means exactly one file.
+        //
+        // If the database cannot be identified there is NO namespace and NO fallback.
+        // Not a shared one — that is the collision above, reappearing silently. Not an
+        // invented random one either: caching is off, but invalidateTable() is public and
+        // called from controllers, and neither it nor getTableVersion() consults
+        // $enabled. A made-up prefix therefore wrote rdb_<random>_tv_* into a 32MB APCu
+        // segment on every request — entries nothing can ever read, that clearAllCache()
+        // and getCacheStats() cannot even see, because both iterate by prefix.
+        //
+        // An empty prefix is the honest answer, and cacheUsable() below turns it into a
+        // hard off switch for every APCu path at once.
         $dbId = self::databaseIdentity($database);
         $this->identityFailed = ($dbId === '');
-        $siteId = md5(__DIR__ . '_' . ($_SERVER['HTTP_HOST'] ?? 'cli') . '_'
-                      . ($this->identityFailed ? 'unidentified-' . bin2hex(random_bytes(8)) : $dbId));
-        $this->cachePrefix = "rdb_{$siteId}_";
+        $this->cachePrefix = $this->identityFailed ? '' : 'rdb_' . md5($dbId) . '_';
 
         // Get config if available
         if (class_exists('Flight')) {
@@ -265,7 +282,7 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Store result in cache with table tracking
      */
     private function storeInCache($key, $sql, $bindings, $result, $ttl = null) {
-        if (!$this->hasAPCu()) {
+        if (!$this->cacheUsable()) {
             return false;
         }
 
@@ -294,7 +311,7 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Get result from cache with validation
      */
     private function getFromCache($key) {
-        if (!$this->hasAPCu()) {
+        if (!$this->cacheUsable()) {
             return false;
         }
 
@@ -319,7 +336,7 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Get or create table version
      */
     private function getTableVersion($table) {
-        if (!$this->hasAPCu()) {
+        if (!$this->cacheUsable()) {
             return time();
         }
 
@@ -338,7 +355,7 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Invalidate cache for a table
      */
     public function invalidateTable($table) {
-        if (!$this->hasAPCu()) {
+        if (!$this->cacheUsable()) {
             return;
         }
 
@@ -434,20 +451,27 @@ class CachedDatabaseAdapter extends DBAdapter {
      * bean type per process.
      */
     /**
-     * Tables that a DIFFERENT host's process writes into this database.
+     * Tables written by a process that CANNOT invalidate this cache.
      *
-     * The cache prefix deliberately includes HTTP_HOST, so each site namespaces its own
-     * entries. That also means a sidecar (workbench.tiknix.com) writing a row into core's
-     * db CANNOT invalidate core's cached SELECT for it: invalidateTable() stamps a version
-     * under the writer's prefix, and core is reading under its own. The row is committed
-     * and correct; core just keeps serving the list it cached before the write.
+     * This used to be described as a cross-HOST problem, blamed on HTTP_HOST being part
+     * of the cache prefix. That was only half true and the prefix no longer carries the
+     * host, so web-to-web invalidation now works everywhere. The half that is REAL, and
+     * unfixable from here, is the process boundary:
      *
-     * For `promptlog` that failure is precisely the complaint the feature exists to fix —
-     * you write a prompt and it appears to have vanished. So these reads are never cached.
-     * The cost is nothing: one small member-scoped table read on one page.
+     *   APCu memory is per-SAPI. A CLI process does not share php-fpm's segment — proven
+     *   by writing a key in CLI and failing to read it over HTTP, and vice versa. So a
+     *   CLI writer cannot stamp a new table version that an fpm reader will ever see, no
+     *   matter what the key looks like. (CLI does not read from cache either —
+     *   apc.enable_cli is Off, so hasAPCu() is false there — which is why CLI itself
+     *   never serves anything stale.)
      *
-     * Add a table here only when it is written by one host and read by another. Anything
-     * written and read by the same site invalidates correctly and should stay cached.
+     * `promptlog` qualifies because scripts/plan-ingest.php links a plan to its prompt
+     * from the CLI while the Prompts page reads it over HTTP. Caching it means you write
+     * a prompt and it appears to have vanished — precisely the complaint the feature
+     * exists to fix. The cost of not caching is nothing: one small member-scoped read.
+     *
+     * Add a table here when a CLI process writes it and a web request reads it. A table
+     * written and read only by web requests invalidates correctly and should stay cached.
      */
     private function isCrossHostTable($sql): bool {
         foreach ($this->extractTables($sql) as $t) {
@@ -473,6 +497,25 @@ class CachedDatabaseAdapter extends DBAdapter {
     }
 
     /**
+     * May this adapter touch APCu at all?
+     *
+     * Two conditions, and the second is the one that used to be missing. Without a
+     * database identity there is no namespace to write under, and EVERY APCu path has to
+     * stop — not just the read/write ones that check $enabled. getTableVersion() and the
+     * public invalidateTable() do not consult $enabled, so they would happily stamp keys
+     * under an empty or invented prefix forever.
+     *
+     * In CLI, apc.enable_cli must also be on. It is Off here, which is deliberate and
+     * load-bearing: CLI has its own APCu segment (proven — a key written in CLI is
+     * invisible over HTTP and vice versa), so a CLI process could never see an fpm entry
+     * anyway. Returning false means CLI reads are always fresh from the database.
+     */
+    private function cacheUsable() {
+        if ($this->identityFailed || $this->cachePrefix === '') return false;
+        return $this->hasAPCu();
+    }
+
+    /**
      * Check if APCu is available and properly enabled
      * Note: In CLI mode, apc.enable_cli must also be enabled
      */
@@ -486,7 +529,7 @@ class CachedDatabaseAdapter extends DBAdapter {
      * Clear all cache
      */
     public function clearAllCache() {
-        if (!$this->hasAPCu()) {
+        if (!$this->cacheUsable()) {
             return;
         }
 
@@ -518,7 +561,7 @@ class CachedDatabaseAdapter extends DBAdapter {
                 round($this->hits / ($this->hits + $this->misses) * 100, 2) : 0
         ];
 
-        if ($this->hasAPCu()) {
+        if ($this->cacheUsable()) {
             try {
                 $pattern = '/^' . preg_quote($this->cachePrefix, '/') . '/';
                 $iterator = new \APCUIterator($pattern);

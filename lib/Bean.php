@@ -207,8 +207,93 @@ class Bean {
      * @param string|null $pass Password
      * @param bool $frozen Freeze mode
      */
-    public static function addDatabase(string $key, string $dsn, ?string $user = null, ?string $pass = null, bool $frozen = false) {
-        return R::addDatabase($key, $dsn, $user, $pass, $frozen);
+    public static function addDatabase(string $key, string $dsn, ?string $user = null, ?string $pass = null, bool $frozen = false, bool $cached = true) {
+        $result = R::addDatabase($key, $dsn, $user, $pass, $frozen);
+        if ($cached) self::attachQueryCache($key);
+        return $result;
+    }
+
+    /**
+     * Give a SECONDARY connection the same query cache the default one has.
+     *
+     * bootstrap.php wraps only the 'default' toolbox, so every connection opened with
+     * addDatabase ran on the plain adapter: uncached reads, and writes that invalidated
+     * nothing. That is most of the sidecar and pipeline surface.
+     *
+     * PASS $cached = false WHEN A CLI PROCESS WRITES THE DATABASE AND A WEB REQUEST READS
+     * IT. APCu memory is per-SAPI — a CLI process cannot see php-fpm's segment or stamp a
+     * version it will read (proven: a key written in CLI is invisible over HTTP, and the
+     * reverse). So for those databases a cached web read can sit stale until the TTL
+     * lapses, with the writer having no way to say otherwise. The per-instance
+     * workbench.db is exactly that shape — the build board is written by
+     * plan-orchestrate/plan-ingest on the CLI and read over HTTP — so it opts out. This is
+     * the one limitation Redis would remove, since every process would share a namespace.
+     *
+     * Never fatal, and never silent: a connection that cannot be wrapped keeps working
+     * uncached and says so at WARNING. It is a performance regression, not a correctness
+     * one, and pretending otherwise would hide it.
+     */
+    private static function attachQueryCache(string $key): void {
+        try {
+            if (!class_exists('Flight') || !\Flight::get('cache.query_cache')) return;
+            if (!class_exists('\app\CachedDatabaseAdapter')) return;
+
+            $old = R::getToolBoxByKey($key);
+            if (!$old) return;
+
+            $adapter = $old->getDatabaseAdapter();
+            if ($adapter instanceof CachedDatabaseAdapter) return;   // already wrapped
+
+            $cached = new CachedDatabaseAdapter($adapter->getDatabase());
+            $writer = $old->getWriter();
+
+            // Bean CRUD (find/load/store/trash) goes through the WRITER's own adapter,
+            // not the toolbox's, so without this rebind writes on this connection would
+            // never invalidate what reads on it had cached. Same reflection the default
+            // connection needs in bootstrap.php, and guarded the same way: a RedBean
+            // internals change must degrade to "uncached", never to a fatal.
+            try {
+                $rp = new \ReflectionProperty($writer, 'adapter');
+                $rp->setAccessible(true);
+                $rp->setValue($writer, $cached);
+            } catch (\Throwable $e) {
+                self::warn("query cache: could not rebind the writer for '{$key}' ("
+                    . $e->getMessage() . ') — connection left UNCACHED rather than half-cached');
+                return;
+            }
+
+            R::addToolBoxWithKey($key, new \RedBeanPHP\ToolBox($old->getRedBean(), $cached, $writer));
+            self::$cacheAdapters[$key] = $cached;
+        } catch (\Throwable $e) {
+            self::warn("query cache: could not wrap connection '{$key}' (" . $e->getMessage() . ') — left uncached');
+        }
+    }
+
+    /** Cached adapters by connection key, so a caller can invalidate the RIGHT database. */
+    private static array $cacheAdapters = [];
+
+    /**
+     * The query-cache adapter for a connection, or null when that connection is uncached.
+     *
+     * Callers that bust a table MUST use this rather than the single
+     * Flight::get('cachedDatabaseAdapter') handle, which is always the DEFAULT connection.
+     * Busting 'workbenchtask' on the default adapter stamps a version in core's namespace
+     * for a table that lives in workbench.db — it invalidates nothing and reads as though
+     * it did.
+     */
+    public static function cacheAdapter(?string $key = null): ?CachedDatabaseAdapter {
+        if ($key === null || $key === 'default') {
+            $ad = class_exists('Flight') ? \Flight::get('cachedDatabaseAdapter') : null;
+            return $ad instanceof CachedDatabaseAdapter ? $ad : null;
+        }
+        return self::$cacheAdapters[$key] ?? null;
+    }
+
+    private static function warn(string $msg): void {
+        try {
+            if (class_exists('Flight') && \Flight::has('log')) { \Flight::get('log')->warning($msg); return; }
+        } catch (\Throwable $e) { /* fall through to error_log */ }
+        error_log($msg);
     }
 
     /**

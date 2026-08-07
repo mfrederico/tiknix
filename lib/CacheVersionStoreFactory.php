@@ -20,8 +20,8 @@ final class CacheVersionStoreFactory {
             return new RedisVersionStore(
                 (string) $get('cache.redis_host', '127.0.0.1'),
                 (int)    $get('cache.redis_port', 6379),
-                (int)    $get('cache.redis_db', 0),
-                (string) $get('cache.redis_auth', '')
+                (int)    $get('cache.redis_database', 0),
+                (string) $get('cache.redis_password', '')
             );
         }
         return new ApcuVersionStore();

@@ -16,11 +16,24 @@ class RedisVersionStore implements CacheVersionStore {
     /** Version keys outlive payloads by a wide margin; see version() for why that matters. */
     private const TTL = 604800;   // 7 days
 
-    private static $conn = null;
-    private static bool $tried = false;
-    private static string $failure = '';
-
-    private bool $dead = false;
+    /**
+     * Connections POOLED BY TARGET, not one static for the whole class.
+     *
+     * They were flat statics, so the first instance to connect owned them and every later
+     * instance reused that socket whatever host/port/db it had been given. A store aimed
+     * at a dead port therefore reported reachable=true and described an endpoint it was
+     * not talking to — which is exactly the lie the admin panel exists to prevent, and it
+     * only surfaced because the failure path got tested. Keyed by target, each
+     * configuration gets its own connection and its own failure state.
+     *
+     * Still shared per target, so a request touching core's db and two instance databases
+     * opens one socket rather than three.
+     *
+     * @var array<string,\Redis|null>
+     */
+    private static array $pool = [];
+    /** @var array<string,string> last error per target, for stats() and the log line */
+    private static array $failures = [];
 
     public function __construct(
         private string $host = '127.0.0.1',
@@ -29,17 +42,18 @@ class RedisVersionStore implements CacheVersionStore {
         private string $auth = ''
     ) {}
 
+    /** Identity of the server+db this instance was configured for. */
+    private function target(): string {
+        return $this->host . ':' . $this->port . '/' . $this->db;
+    }
+
     private function conn() {
-        if (self::$tried) {
-            $this->dead = (self::$conn === null);
-            return self::$conn;
-        }
-        self::$tried = true;
+        $t = $this->target();
+        if (array_key_exists($t, self::$pool)) return self::$pool[$t];
 
         if (!class_exists('\Redis')) {
-            self::$failure = 'the php redis extension is not loaded';
-            $this->dead = true;
-            return null;
+            self::$failures[$t] = 'the php redis extension is not loaded';
+            return self::$pool[$t] = null;
         }
         try {
             $r = new \Redis();
@@ -49,40 +63,38 @@ class RedisVersionStore implements CacheVersionStore {
             }
             if ($this->auth !== '') $r->auth($this->auth);
             if ($this->db > 0) $r->select($this->db);
-            self::$conn = $r;
+            return self::$pool[$t] = $r;
         } catch (\Throwable $e) {
-            self::$failure = $e->getMessage();
-            self::$conn = null;
-            $this->dead = true;
+            self::$failures[$t] = $e->getMessage();
+            return self::$pool[$t] = null;
         }
-        return self::$conn;
     }
 
     public function usable(): bool {
-        $c = $this->conn();
-        if ($c === null) {
+        if ($this->conn() === null) {
             self::reportOnce('CacheVersionStore: cannot reach the version store at '
-                . $this->host . ':' . $this->port . ' (' . self::$failure . ') — QUERY CACHING '
-                . 'DISABLED. Not falling back to APCu versions: those are invisible to other '
-                . 'processes, so a CLI write would stop invalidating web reads without anything '
-                . 'saying so.');
+                . $this->target() . ' (' . (self::$failures[$this->target()] ?? 'unknown')
+                . ') — QUERY CACHING DISABLED. Not falling back to APCu versions: those are '
+                . 'invisible to other processes, so a CLI write would stop invalidating web '
+                . 'reads without anything saying so.');
             return false;
         }
         return true;
     }
 
     public function version(string $key): string {
-        if (!$this->usable()) return '';
+        $c = $this->conn();
+        if ($c === null || !$this->usable()) return '';
         try {
-            $v = self::$conn->get($key);
+            $v = $c->get($key);
             if ($v === false || $v === null || $v === '') {
                 // Mint a UNIQUE generation, never a counter starting at 1. A version key
                 // that expires and restarts at a value a stale payload already recorded
                 // would read as a HIT and serve pre-write rows. The 7-day TTL is far
                 // longer than any payload TTL, so this is belt and braces.
                 $v = ApcuVersionStore::mint();
-                self::$conn->set($key, $v, ['nx', 'ex' => self::TTL]);
-                $got = self::$conn->get($key);
+                $c->set($key, $v, ['nx', 'ex' => self::TTL]);
+                $got = $c->get($key);
                 if (is_string($got) && $got !== '') $v = $got;   // lost the race: take the winner
             }
             return (string) $v;
@@ -92,9 +104,10 @@ class RedisVersionStore implements CacheVersionStore {
     }
 
     public function bump(string $key): void {
-        if (!$this->usable()) return;
+        $c = $this->conn();
+        if ($c === null || !$this->usable()) return;
         try {
-            self::$conn->set($key, ApcuVersionStore::mint(), ['ex' => self::TTL]);
+            $c->set($key, ApcuVersionStore::mint(), ['ex' => self::TTL]);
         } catch (\Throwable $e) {
             $this->die($e);
         }
@@ -102,10 +115,10 @@ class RedisVersionStore implements CacheVersionStore {
 
     /** A store that fails mid-request stops being used, loudly, for the rest of it. */
     private function die(\Throwable $e): string {
-        self::$conn = null;
-        self::$failure = $e->getMessage();
-        $this->dead = true;
-        self::reportOnce('CacheVersionStore: version store failed mid-request ('
+        $t = $this->target();
+        self::$pool[$t] = null;              // this target only — not every target
+        self::$failures[$t] = $e->getMessage();
+        self::reportOnce('CacheVersionStore: version store at ' . $t . ' failed mid-request ('
             . $e->getMessage() . ') — query caching disabled for the rest of this request.');
         return '';
     }
@@ -115,6 +128,31 @@ class RedisVersionStore implements CacheVersionStore {
 
     public function describe(): string {
         return 'redis/valkey ' . $this->host . ':' . $this->port . ' db' . $this->db;
+    }
+
+    public function stats(): array {
+        $c = $this->conn();
+        $reachable = ($c !== null) && $this->usable();
+        $keys = null; $server = '';
+        if ($reachable) {
+            try {
+                $keys = $c->dbSize();
+                $info = $c->info('server');
+                $server = $info['valkey_version'] ?? $info['redis_version'] ?? '';
+            } catch (\Throwable $e) { /* stats are cosmetic; never break the page */ }
+        }
+        return [
+            'driver'    => 'valkey',
+            'endpoint'  => $this->host . ':' . $this->port . ' db' . $this->db
+                         . ($server !== '' ? ' (v' . $server . ')' : ''),
+            'reachable' => $reachable,
+            'shared'    => true,
+            'keys'      => $keys,
+            'note'      => $reachable
+                ? 'Shared by every process, so CLI writes invalidate web reads.'
+                : 'UNREACHABLE - query caching is currently DISABLED (see the log). It does '
+                . 'not fall back to apcu, because that would hide cross-process staleness.',
+        ];
     }
 
     private static array $reported = [];

@@ -602,6 +602,12 @@ class CachedDatabaseAdapter extends DBAdapter {
         return $stats;
     }
 
+    /** The version store this adapter uses, for the admin page. */
+    public function versionStore(): CacheVersionStore { return $this->versions; }
+
+    /** True when this adapter knows which database it fronts (and may therefore cache). */
+    public function identified(): bool { return !$this->identityFailed; }
+
     /**
      * Enable/disable caching
      */

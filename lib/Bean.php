@@ -289,6 +289,39 @@ class Bean {
         return self::$cacheAdapters[$key] ?? null;
     }
 
+    /**
+     * EVERY cached connection this request has opened, keyed by connection name.
+     *
+     * The admin page used to read the single Flight handle, which is always 'default' — so
+     * it reported core's own database and silently omitted every secondary connection,
+     * and its "clear query cache" button cleared one prefix out of several while saying it
+     * had cleared the cache.
+     *
+     * @return array<string,CachedDatabaseAdapter>
+     */
+    public static function cacheAdapters(): array {
+        $all = self::$cacheAdapters;
+        $default = self::cacheAdapter('default');
+        if ($default) $all = ['default' => $default] + $all;
+        return $all;
+    }
+
+    /**
+     * Drop cached rows on every cached connection. Returns the connections it cleared.
+     *
+     * Version keys are deliberately left alone: they are markers, not data, they carry
+     * their own expiry, and bumping them frees nothing. Removing the PAYLOADS is what
+     * both frees memory and forces the next read to go to the database.
+     */
+    public static function flushQueryCache(): array {
+        $cleared = [];
+        foreach (self::cacheAdapters() as $key => $ad) {
+            try { $ad->clearAllCache(); $cleared[] = $key; }
+            catch (\Throwable $e) { self::warn("query cache: could not clear '{$key}' — " . $e->getMessage()); }
+        }
+        return $cleared;
+    }
+
     private static function warn(string $msg): void {
         try {
             if (class_exists('Flight') && \Flight::has('log')) { \Flight::get('log')->warning($msg); return; }

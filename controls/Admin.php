@@ -588,9 +588,11 @@ class Admin extends Control {
                     \app\PermissionCache::clear();
 
                     // Clear query cache if available
-                    $cachedAdapter = Flight::get('cachedDatabaseAdapter');
-                    if ($cachedAdapter instanceof \app\CachedDatabaseAdapter) {
-                        $cachedAdapter->clearAllCache();
+                    // Every cached connection, not just the default one — see
+                    // Bean::flushQueryCache. Clearing one prefix while reporting "cache
+                    // cleared" left secondary connections serving rows.
+                    $flushed = \app\Bean::flushQueryCache();
+                    if ($flushed) {
                         $this->flash('success', 'Permission and query caches cleared successfully');
                     } else {
                         $this->flash('success', 'Permission cache cleared successfully');
@@ -601,9 +603,11 @@ class Admin extends Control {
 
                 case 'clear_query':
                     // Clear only query cache
-                    $cachedAdapter = Flight::get('cachedDatabaseAdapter');
-                    if ($cachedAdapter instanceof \app\CachedDatabaseAdapter) {
-                        $cachedAdapter->clearAllCache();
+                    // Every cached connection, not just the default one — see
+                    // Bean::flushQueryCache. Clearing one prefix while reporting "cache
+                    // cleared" left secondary connections serving rows.
+                    $flushed = \app\Bean::flushQueryCache();
+                    if ($flushed) {
                         $this->flash('success', 'Query cache cleared successfully');
                     } else {
                         $this->flash('error', 'Query cache not available');
@@ -629,15 +633,26 @@ class Admin extends Control {
         $this->viewData['cache_stats'] = \app\PermissionCache::getStats();
         $this->viewData['permissions'] = \app\PermissionCache::getAll();
 
-        // Get query cache statistics from CachedDatabaseAdapter
-        // Note: Bean::getDatabaseAdapter() may not return CachedDatabaseAdapter after Bean::selectDatabase() calls
-        // So we check Flight storage first
-        $cachedAdapter = Flight::get('cachedDatabaseAdapter');
-        if ($cachedAdapter instanceof \app\CachedDatabaseAdapter) {
-            $this->viewData['query_cache_stats'] = $cachedAdapter->getCacheStats();
-        } else {
-            $this->viewData['query_cache_stats'] = null;
+        // Query cache: EVERY cached connection, not just the default one.
+        //
+        // This read Flight::get('cachedDatabaseAdapter'), which is always core's own
+        // database. Once secondary connections gained the cache, the page showed one of
+        // them and silently omitted the rest — so a connection could be caching, or
+        // failing to, with nothing on screen either way.
+        $connections = [];
+        foreach (\app\Bean::cacheAdapters() as $key => $ad) {
+            $connections[$key] = $ad->getCacheStats() + ['identified' => $ad->identified()];
         }
+        $this->viewData['query_cache_connections'] = $connections;
+
+        // Kept so the existing summary card still renders: the default connection.
+        $this->viewData['query_cache_stats'] = $connections['default'] ?? null;
+
+        // The version store decides whether ANY of the above is trustworthy. When it stops
+        // answering, caching disables itself and logs at ERROR — correct, but previously
+        // invisible here, so the page kept showing a healthy hit rate for a cache that was
+        // not running.
+        $this->viewData['version_store'] = \app\CacheVersionStoreFactory::fromConfig()->stats();
 
         // Get OPcache stats if available
         if (function_exists('opcache_get_status')) {

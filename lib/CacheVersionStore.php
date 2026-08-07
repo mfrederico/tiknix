@@ -47,4 +47,14 @@ interface CacheVersionStore {
 
     /** Human-readable, for the cache stats panel. */
     public function describe(): string;
+
+    /**
+     * What the admin page needs to show: driver, endpoint, reachable, shared, key count.
+     *
+     * "reachable" is the one that matters. When the store stops answering, caching turns
+     * itself off and logs at ERROR - correct, but invisible on a dashboard that only ever
+     * showed hit rates. A page reporting yesterday's hit rate for a cache that is not
+     * running is worse than one reporting nothing.
+     */
+    public function stats(): array;
 }

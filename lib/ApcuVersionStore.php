@@ -34,6 +34,27 @@ class ApcuVersionStore implements CacheVersionStore {
 
     public function describe(): string { return 'apcu'; }
 
+    public function stats(): array {
+        $keys = null;
+        if ($this->usable()) {
+            try {
+                $n = 0;
+                foreach (new \APCUIterator('/_tv_/') as $ignored) $n++;
+                $keys = $n;
+            } catch (\Throwable $e) { $keys = null; }
+        }
+        return [
+            'driver'    => 'apcu',
+            'endpoint'  => 'in-process shared memory',
+            'reachable' => $this->usable(),
+            'shared'    => false,
+            'keys'      => $keys,
+            'note'      => 'One process family only. A CLI writer cannot invalidate a web '
+                         . 'reader, so anything written by cron or an orchestrator may be '
+                         . 'served up to the TTL stale.',
+        ];
+    }
+
     /**
      * A generation value that can never repeat.
      *

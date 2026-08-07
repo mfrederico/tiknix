@@ -26,6 +26,95 @@
         </div>
     </div>
 
+    <!-- Version store: whether the numbers below can be trusted at all -->
+    <?php if (!empty($version_store)): ?>
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-<?= $version_store['reachable'] ? ($version_store['shared'] ? 'success' : 'secondary') : 'danger' ?>">
+                <div class="card-header <?= $version_store['reachable'] ? ($version_store['shared'] ? 'bg-success' : 'bg-secondary') : 'bg-danger' ?> text-white d-flex justify-content-between">
+                    <h5 class="mb-0">Cache Invalidation Store</h5>
+                    <span><?= $version_store['reachable'] ? 'reachable' : 'UNREACHABLE — caching is OFF' ?></span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <p class="mb-1"><strong>Driver</strong></p>
+                            <p><?= htmlspecialchars((string) $version_store['driver']) ?></p>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-1"><strong>Endpoint</strong></p>
+                            <p><?= htmlspecialchars((string) $version_store['endpoint']) ?></p>
+                        </div>
+                        <div class="col-md-2">
+                            <p class="mb-1"><strong>Shared across processes</strong></p>
+                            <p>
+                                <span class="badge bg-<?= $version_store['shared'] ? 'success' : 'warning text-dark' ?>">
+                                    <?= $version_store['shared'] ? 'yes' : 'no' ?>
+                                </span>
+                            </p>
+                        </div>
+                        <div class="col-md-3">
+                            <p class="mb-1"><strong>Version keys</strong></p>
+                            <p><?= $version_store['keys'] === null ? '—' : number_format((int) $version_store['keys']) ?></p>
+                        </div>
+                    </div>
+                    <p class="text-muted mb-0"><small><?= htmlspecialchars((string) $version_store['note']) ?></small></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Per-connection query cache. The default connection is core's own database;
+         the rest are opened with Bean::addDatabase (instance DBs, connections.db, …). -->
+    <?php if (!empty($query_cache_connections)): ?>
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Query Cache by Connection</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Connection</th><th>Status</th><th class="text-end">Hit rate</th>
+                                <th class="text-end">Hits</th><th class="text-end">Misses</th>
+                                <th class="text-end">Entries</th><th class="text-end">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($query_cache_connections as $name => $c): ?>
+                            <tr>
+                                <td><code><?= htmlspecialchars((string) $name) ?></code></td>
+                                <td>
+                                    <?php if (!$c['identified']): ?>
+                                        <span class="badge bg-danger">unidentified DB — not caching</span>
+                                    <?php elseif (!empty($c['enabled'])): ?>
+                                        <span class="badge bg-success">enabled</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-secondary">disabled</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="text-end"><?= number_format((float) ($c['hit_rate'] ?? 0), 1) ?>%</td>
+                                <td class="text-end"><?= number_format((int) ($c['hits'] ?? 0)) ?></td>
+                                <td class="text-end"><?= number_format((int) ($c['misses'] ?? 0)) ?></td>
+                                <td class="text-end"><?= number_format((int) ($c['cached_queries'] ?? 0)) ?></td>
+                                <td class="text-end"><?= number_format((float) ($c['cache_size_kb'] ?? 0), 1) ?> KB</td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-footer text-muted">
+                    <small>Counters are per request, so they reflect this page load only. Entries and
+                    size are the live totals for that connection.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="row">
         <!-- Query Cache Stats -->
         <?php if (isset($query_cache_stats) && $query_cache_stats): ?>

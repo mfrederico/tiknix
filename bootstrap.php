@@ -114,7 +114,22 @@ class Bootstrap {
 		$config = $this->config;
 
         $config['logLevel'] = $this->config['logging']['level'] ?? 'DEBUG';
-        $config['logFile']  = $this->config['logging']['file'] ?? 'log/app.log';
+
+        // ANCHORED TO THE INSTALL, never to the working directory.
+        //
+        // [logging] file is a relative path in every config we ship ("log/app.log"), and a
+        // relative path resolves against the CWD. public/index.php does chdir(BASE_PATH)
+        // so normal requests were fine — but anything else that boots the app from inside
+        // public/ (an agent's one-off script, a debug probe) leaves the CWD at public/,
+        // and the logger then writes public/log/app-<date>.log: application logs INSIDE
+        // THE WEB ROOT. Two instances had one, and it was only not downloadable because
+        // an nginx rule happens to block .log — a sibling file with any other extension
+        // is served (verified: a .txt in that directory returned 200).
+        //
+        // __DIR__ is the install root by construction, so the path no longer depends on
+        // who called us or from where. An absolute path in the config is honoured as-is.
+        $logFile = $this->config['logging']['file'] ?? 'log/app.log';
+        $config['logFile'] = ($logFile[0] ?? '') === '/' ? $logFile : __DIR__ . '/' . ltrim($logFile, './');
 
         // Containers log to stderr (Hyperlift/Docker capture the stream; the
         // container FS is ephemeral so a logfile is lost). Toggled by the LOG_STDERR

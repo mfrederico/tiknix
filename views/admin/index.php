@@ -104,6 +104,19 @@
                     <p class="mb-1">Edit UI translations and manage locales (i18n)</p>
                 </a>
 
+                <?php /* ROOT only, matching the authcontrol rows for settings::ini*. These
+                         files hold database credentials and API secrets, so the entry is
+                         hidden rather than shown-and-refused for an ADMIN. */ ?>
+                <?php if (Flight::hasLevel(LEVELS['ROOT'])): ?>
+                <a href="/settings/ini" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1"><i class="bi bi-file-earmark-code"></i> Configuration Files</h5>
+                        <small class="text-danger">root only</small>
+                    </div>
+                    <p class="mb-1">Edit <code>conf/*.ini</code> directly — app, database, mail, cache, security</p>
+                </a>
+                <?php endif; ?>
+
                 <a href="/security" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1"><i class="bi bi-shield-lock"></i> Security Sandbox Rules</h5>

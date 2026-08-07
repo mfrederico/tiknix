@@ -184,7 +184,7 @@ foreach (array_keys($live) as $name) {
     // Plan orchestrators and their per-task builders: never touched from here.
     // They own tasks of their own and are managed by the orchestrator's own
     // lifecycle.
-    if (preg_match('/^tiknix-plan\d+/', $name)) continue;
+    if (\app\TmuxManager::isPlanSession($name)) continue;
 
     // PLANNERS get a rule of their own rather than a blanket skip.
     //

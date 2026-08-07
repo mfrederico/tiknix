@@ -270,7 +270,7 @@ class Webhook extends Control {
         if ($delivery === '') return false;
         if (($ex = Bean::findOne('webhookdelivery', 'delivery = ?', [$delivery])) && $ex->id) return true;
         $d = Bean::dispense('webhookdelivery'); $d->delivery = $delivery; $d->createdAt = date('Y-m-d H:i:s'); Bean::store($d);
-        try { \RedBeanPHP\R::exec('DELETE FROM webhookdelivery WHERE created_at < ?', [date('Y-m-d H:i:s', time() - 86400)]); } catch (\Throwable $e) {}
+        try { Bean::exec('DELETE FROM webhookdelivery WHERE created_at < ?', [date('Y-m-d H:i:s', time() - 86400)]); } catch (\Throwable $e) {}
         return false;
     }
 

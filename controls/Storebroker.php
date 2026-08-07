@@ -20,9 +20,9 @@ namespace app;
 
 use \Flight as Flight;
 use app\BaseControls\Control;
+use app\Bean;
 use app\Sidecar\Token;
 use app\services\connectors\ConnectorRegistry;
-use RedBeanPHP\R;
 
 class Storebroker extends Control {
 
@@ -43,7 +43,7 @@ class Storebroker extends Control {
         if ($instanceId <= 0 || !$items || !$successUrl || !$cancelUrl) { Flight::jsonError('Malformed checkout request.', 400); return; }
 
         // Resolve the instance + its owner HERE (never trust client-supplied ownership).
-        $inst = R::load('instance', $instanceId);
+        $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) { Flight::jsonError('Store not found.', 404); return; }
         $ownerId = (int) $inst->memberId;
 
@@ -110,7 +110,7 @@ class Storebroker extends Control {
         $sig = (string) ($this->getParam('sig') ?: '');
         if ($instanceId <= 0 || $raw === '') { Flight::jsonError('Malformed.', 400); return; }
 
-        $inst = R::load('instance', $instanceId);
+        $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) { Flight::jsonError('Store not found.', 404); return; }
         [$conn, $connector] = $this->resolveInstancePayment((int) $inst->memberId, $instanceId);
         if (!$conn || !$connector) { Flight::json(['paid' => false, 'reason' => 'no-connection']); return; }

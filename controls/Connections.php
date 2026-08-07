@@ -39,7 +39,6 @@ use app\GitHubPublisher;
 use app\OAuthStateService;
 use app\BrokerService;
 use app\services\connectors\ConnectorRegistry;
-use RedBeanPHP\R;
 
 class Connections extends Control {
 
@@ -53,7 +52,7 @@ class Connections extends Control {
     private function ownedInstance($id) {
         $id = (int)$id;
         if (!$id) return null;
-        $inst = R::load('instance', $id);
+        $inst = Bean::load('instance', $id);
         if (!$inst->id) return null;
         if ((int)$inst->memberId !== (int)$this->member->id) return null;
         if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
@@ -550,7 +549,7 @@ class Connections extends Control {
         // Inside an instance there is no owner/instance picker — show the read-only
         // list of what this app is connected to (metadata via the broker).
         if (!builder_tools_enabled()) { $this->instanceConnections(); return; }
-        $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
+        $instances = Bean::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
 
         // An explicit ?id= wins (deep links from the builder), then the project the
         // member selected. NOT "most recently created" — that guess meant Connections
@@ -1152,7 +1151,7 @@ class Connections extends Control {
         }
         $iid = (int)($claims['instance_id'] ?? 0);
         $mid = (int)($claims['member_id'] ?? 0);
-        $inst = R::load('instance', $iid);
+        $inst = Bean::load('instance', $iid);
         if (!$inst->id || (int)$inst->memberId !== $mid) { $this->handoffError('That instance was not found.'); return; }
 
         // Re-sign as the OAuth state, carrying the handoff marker + return_url so the
@@ -1211,7 +1210,7 @@ class Connections extends Control {
         // that state + the instance's broker-minted intent (no core login); the
         // control-plane mode additionally binds to the logged-in owner's session.
         if ($handoff) {
-            $inst = R::load('instance', $iid);
+            $inst = Bean::load('instance', $iid);
             if (!$inst->id || (int)$inst->memberId !== $mid) {
                 $this->handoffError('You no longer own that instance.'); return;
             }

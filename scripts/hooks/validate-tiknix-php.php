@@ -4,14 +4,137 @@
  * Tiknix PHP Code Validator Hook
  *
  * Validates PHP code against Tiknix/RedBeanPHP/FlightPHP coding standards:
- * 1. Bean type names must be all lowercase (no underscores) for R::dispense
- * 2. R::exec should almost NEVER be used - only in extreme situations
- * 3. Prefer RedBeanPHP associations (ownBeanList/sharedBeanList) over manual FK management
- * 4. Use with()/withCondition() for ordering and filtering associations
- * 5. Security scanning (OWASP Top 10 patterns)
+ * 1. Bean:: is THE database mechanism - raw R:: is blocked wherever Bean:: wraps it
+ * 2. Bean type names must be all lowercase (no underscores) for R::dispense
+ * 3. exec() should almost NEVER be used - only in extreme situations
+ * 4. Prefer RedBeanPHP associations (ownBeanList/sharedBeanList) over manual FK management
+ * 5. Use with()/withCondition() for ordering and filtering associations
+ * 6. Security scanning (OWASP Top 10 patterns)
  *
  * Usage: This script reads JSON from stdin and outputs JSON to stdout
  */
+
+/**
+ * The Bean:: surface, from lib/Bean.php. A raw R:: call to any of these has a
+ * wrapper that should have been used instead; anything NOT here (getWriter, nuke,
+ * testConnection, setup, close) has no Bean:: equivalent and is left alone, because
+ * blocking a call with no alternative just makes the hook something to work around.
+ */
+const BEAN_WRAPPED = [
+    'dispense', 'load', 'store', 'trash', 'trashAll',
+    'findOne', 'find', 'findAll', 'count',
+    'exec', 'getAll', 'getRow', 'getCol', 'getCell',
+    'begin', 'commit', 'rollback',
+    'freeze', 'inspect', 'addDatabase', 'selectDatabase', 'hasDatabase',
+    'currentDatabaseKey', 'getDatabaseAdapter', 'normalize', 'genSlots',
+];
+
+/**
+ * Where raw R:: is legitimate, per CLAUDE.md.
+ *
+ * bootstrap.php owns the connection lifecycle, the schema seeds build the schema
+ * before the ORM layer means anything, and lib/Bean.php IS the wrapper - it has
+ * nothing to delegate to but R.
+ */
+function rawRedbeanAllowed(string $filePath): bool
+{
+    $path = str_replace('\\', '/', $filePath);
+    if (basename($path) === 'bootstrap.php') return true;
+    if (basename($path) === 'Bean.php' && strpos($path, '/lib/') !== false) return true;
+    if (strpos($path, '/services/Schema/Seeds/') !== false) return true;
+    return false;
+}
+
+/**
+ * Content the tokenizer will accept, whether it arrived as a whole file or a hunk.
+ *
+ * An Edit hands us new_string - a FRAGMENT with no open tag - so one has to be added
+ * or the tokenizer calls the whole thing T_INLINE_HTML and every check that reads
+ * tokens sees nothing.
+ *
+ * The shebang is the case that made this its own function. Every CLI script here
+ * starts with a shebang line ABOVE its open tag, so the naive "does it start with
+ * <?php" test said no and prepended a second one. Two open tags is a parse error,
+ * TOKEN_PARSE throws, and both callers fall back to scanning raw text - which is
+ * exactly the prose-matching behaviour they exist to avoid. Every scripts/*.php file
+ * was silently on the fallback path.
+ */
+function phpParsable(string $content): string
+{
+    if (preg_match('/^(#![^\n]*\n)?\s*<\?(php|=)?/', $content)) return $content;
+    return "<?php\n" . $content;
+}
+
+/**
+ * Code with comments and string literals removed, for checks that must not fire on
+ * prose.
+ *
+ * The backtick check below learned this the hard way: a docblock that merely NAMED
+ * something got treated as if it did it, and the write was blocked. A comment saying
+ * "never call R::store here" is advice, and an MCP tool description that quotes
+ * "R::exec usage" is documentation - neither is a database call. PHP's tokenizer is
+ * the only thing that reliably tells one from the other.
+ *
+ * Falls back to the raw content when the fragment will not tokenize, which
+ * over-reports rather than going quiet.
+ */
+function phpCodeOnly(string $content): string
+{
+    $source = phpParsable($content);
+
+    try {
+        $tokens = @token_get_all($source, TOKEN_PARSE);
+    } catch (\Throwable $e) {
+        return $content;
+    }
+    if (!$tokens) return $content;
+
+    $skip = [T_COMMENT, T_DOC_COMMENT, T_CONSTANT_ENCAPSED_STRING, T_INLINE_HTML, T_ENCAPSED_AND_WHITESPACE];
+    $out  = '';
+    foreach ($tokens as $token) {
+        if (is_array($token)) {
+            if (in_array($token[0], $skip, true)) { $out .= ' '; continue; }
+            $out .= $token[1];
+            continue;
+        }
+        $out .= $token;
+    }
+    return $out;
+}
+
+/**
+ * Find raw R:: calls that have a Bean:: wrapper.
+ *
+ * Bean:: is not a style preference: it routes every read and write through the
+ * cached adapter, so a raw R:: read can serve rows a Bean:: write has already
+ * invalidated - a staleness bug with nothing on screen or in the log to explain it.
+ * It also normalizes the bean type, which is what makes dispense('api_key') work.
+ *
+ * Matches the fully-qualified form too: the char before R only has to be a
+ * non-identifier, so RedBeanPHP\R::store is caught while PlanRunner::start is not.
+ *
+ * @return array List of blocking issues
+ */
+function findRawRedbeanCalls(string $content, string $filePath): array
+{
+    if (rawRedbeanAllowed($filePath)) return [];
+
+    $issues = [];
+    $seen   = [];
+    if (preg_match_all('/(?<![A-Za-z0-9_])R::([a-zA-Z]+)/', phpCodeOnly($content), $matches)) {
+        foreach ($matches[1] as $method) {
+            if (!in_array($method, BEAN_WRAPPED, true)) continue;   // no wrapper to use
+            if (isset($seen[$method])) continue;
+            $seen[$method] = true;
+            $issues[] = "R::{$method}() bypasses the Bean wrapper. Use Bean::{$method}() instead "
+                . "(add: use app\\Bean;). Raw R:: skips the cached adapter's read-caching and "
+                . "write-busting, and skips bean-type normalization. Raw R:: is allowed ONLY in "
+                . "bootstrap.php (connection lifecycle) and services/Schema/Seeds/*.php.";
+        }
+    }
+
+    return $issues;
+}
 
 /**
  * Find R::dispense with invalid bean type names - these WILL FAIL at runtime!
@@ -49,7 +172,12 @@ function findUnderscoreTableNames(string $content): array
 }
 
 /**
- * Find problematic use of R::exec and flag it for review.
+ * Find problematic use of exec() and flag it for review.
+ *
+ * BOTH prefixes. Bean::exec is the wrapper for R::exec, so it bypasses FUSE models
+ * in exactly the same way - checking only R:: meant that converting a file to the
+ * mandated Bean:: silenced the warning about the thing that was actually wrong,
+ * turning a standards fix into a way to hide an INSERT that should have been a bean.
  *
  * @param string $content PHP code to check
  * @return array List of warning issues
@@ -58,8 +186,8 @@ function findExecUsage(string $content): array
 {
     $issues = [];
 
-    // Match R::exec with any SQL statement
-    if (preg_match_all("/R::exec\s*\(\s*['\"]([^'\"]+)['\"]/", $content, $matches)) {
+    // Match R::exec / Bean::exec with any SQL statement
+    if (preg_match_all("/(?:R|Bean)::exec\s*\(\s*['\"]([^'\"]+)['\"]/", $content, $matches)) {
         foreach ($matches[1] as $sql) {
             $sqlUpper = strtoupper(trim($sql));
 
@@ -69,22 +197,22 @@ function findExecUsage(string $content): array
             }
 
             if (strpos($sqlUpper, 'INSERT') === 0) {
-                $issues[] = "R::exec() used for INSERT. This bypasses FUSE models! Use Bean::dispense() + Bean::store() instead.";
+                $issues[] = "exec() used for INSERT. This bypasses FUSE models! Use Bean::dispense() + Bean::store() instead.";
             } elseif (strpos($sqlUpper, 'UPDATE') === 0) {
                 // Check if it's a simple update that should use beans
                 if (strpos($sqlUpper, 'WHERE') !== false && (strpos($sql, '= ?') !== false || strpos($sql, '=?') !== false)) {
                     if (strpos($sql, '+ 1') === false && strpos($sql, '- 1') === false && strpos($sqlUpper, 'NOW()') === false) {
-                        $issues[] = "R::exec() used for UPDATE. This bypasses FUSE models! Use Bean::load() + Bean::store() instead.";
+                        $issues[] = "exec() used for UPDATE. This bypasses FUSE models! Use Bean::load() + Bean::store() instead.";
                     } else {
-                        $issues[] = "R::exec() for UPDATE detected. Verify this is truly necessary and cannot be done with beans.";
+                        $issues[] = "exec() for UPDATE detected. Verify this is truly necessary and cannot be done with beans.";
                     }
                 } else {
-                    $issues[] = "R::exec() for UPDATE detected. Verify this is truly necessary and cannot be done with beans.";
+                    $issues[] = "exec() for UPDATE detected. Verify this is truly necessary and cannot be done with beans.";
                 }
             } elseif (strpos($sqlUpper, 'DELETE') === 0) {
-                $issues[] = "R::exec() used for DELETE. This bypasses FUSE models! Use Bean::trash() instead.";
+                $issues[] = "exec() used for DELETE. This bypasses FUSE models! Use Bean::trash() instead.";
             } else {
-                $issues[] = "R::exec() detected. R::exec should ONLY be used in extreme situations. Can this use bean methods instead?";
+                $issues[] = "exec() detected. Bean::exec should ONLY be used in extreme situations. Can this use bean methods instead?";
             }
         }
     }
@@ -177,8 +305,8 @@ function findSqlInjectionRisks(string $content): array
     $issues = [];
 
     $patterns = [
-        ['/R::exec\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/', 'Direct variable in R::exec() - Use parameterized queries: R::exec($sql, [$param])'],
-        ['/R::getAll\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/', 'Direct variable in R::getAll() - Use parameterized queries'],
+        ['/(?:R|Bean)::exec\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/', 'Direct variable in exec() - Use parameterized queries: Bean::exec($sql, [$param])'],
+        ['/(?:R|Bean)::(?:getAll|getRow|getCol|getCell)\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/', 'Direct variable in a raw SELECT - Use parameterized queries'],
         ['/->query\s*\(\s*["\'][^"\']*\$/', 'Direct variable in query() - Use parameterized queries'],
         ['/->exec\s*\(\s*["\'][^"\']*\$/', 'Direct variable in exec() - Use parameterized queries'],
     ];
@@ -278,9 +406,9 @@ function backtickExecUsesUserInput(string $content): bool
 
     // An Edit hands us new_string — a FRAGMENT with no open tag. Without one the
     // tokenizer calls the whole thing T_INLINE_HTML, every backtick disappears
-    // into it, and real shell-exec in an edited hunk sails through. Prepend a tag
-    // when the content does not already carry one.
-    $source = preg_match('/^\s*<\?(php|=)?/', $content) ? $content : "<?php\n" . $content;
+    // into it, and real shell-exec in an edited hunk sails through. phpParsable
+    // adds the tag, and knows not to add a second one above a shebang.
+    $source = phpParsable($content);
 
     try {
         $tokens = @token_get_all($source, TOKEN_PARSE);
@@ -462,10 +590,11 @@ function findSecurityIssues(string $content): array
 /**
  * Run all validations on PHP content.
  *
- * @param string $content PHP code to check
+ * @param string $content  PHP code to check
+ * @param string $filePath the file being written, so the R:: allowlist can apply
  * @return array [blocking_issues, warning_issues]
  */
-function validatePhpCode(string $content): array
+function validatePhpCode(string $content, string $filePath = ''): array
 {
     $blockingIssues = [];
     $warningIssues = [];
@@ -490,8 +619,9 @@ function validatePhpCode(string $content): array
     }
 
     // RedBeanPHP Convention Issues
-    // Blocking - these will cause runtime errors
+    // Blocking - these will cause runtime errors, or silent staleness
     $blockingIssues = array_merge($blockingIssues, findUnderscoreTableNames($content));
+    $blockingIssues = array_merge($blockingIssues, findRawRedbeanCalls($content, $filePath));
 
     // Warning - suggestions for better practices
     $warningIssues = array_merge($warningIssues, findExecUsage($content));
@@ -546,7 +676,7 @@ function main(): void
         }
 
         // Run validations
-        [$blockingIssues, $warningIssues] = validatePhpCode($content);
+        [$blockingIssues, $warningIssues] = validatePhpCode($content, $filePath);
 
         // Blocking issues - will prevent the operation
         if (!empty($blockingIssues)) {

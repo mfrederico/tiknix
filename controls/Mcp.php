@@ -178,7 +178,7 @@ class Mcp extends BaseControls\Control {
             ]
         ],
         'check_redbean' => [
-            'description' => 'Check PHP code for RedBeanPHP convention violations (bean naming, associations, R::exec usage).',
+            'description' => 'Check PHP code for RedBeanPHP convention violations (raw R:: instead of the Bean wrapper, bean naming, associations, exec usage).',
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [

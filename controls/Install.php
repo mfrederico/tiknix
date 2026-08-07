@@ -18,7 +18,6 @@ namespace app;
 use \Flight as Flight;
 use app\BaseControls\Control;
 use app\Bean;
-use RedBeanPHP\R;
 
 class Install extends Control {
 
@@ -32,7 +31,7 @@ class Install extends Control {
      * dropping/reseeding the database drops the site back into /install.
      */
     public static function isInstalled(): bool {
-        $admin = R::findOne('member', 'level = 1 AND password != ? AND password != ?',
+        $admin = Bean::findOne('member', 'level = 1 AND password != ? AND password != ?',
                             [self::DEFAULT_HASH, '']);
         return (bool)($admin && $admin->id);
     }
@@ -66,7 +65,7 @@ class Install extends Control {
         // Upgrade the seeded default admin into the real one (or create it if the
         // seed is missing). Keyed on ROOT + default hash so a seeded 'admin' is
         // found regardless of the username the operator is choosing now.
-        $admin = R::findOne('member', 'level = 1 AND password = ? ORDER BY id ASC', [self::DEFAULT_HASH]);
+        $admin = Bean::findOne('member', 'level = 1 AND password = ? ORDER BY id ASC', [self::DEFAULT_HASH]);
         if (!$admin || !$admin->id) { $admin = Bean::dispense('member'); $admin->createdAt = date('Y-m-d H:i:s'); $admin->loginCount = 0; }
         $admin->username  = $username;
         $admin->email     = $email;

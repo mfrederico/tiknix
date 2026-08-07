@@ -188,7 +188,9 @@ class PlanExecutor {
         }
         $inner = 'cd ' . $wtRel . ' && ' . $inner;
 
-        $session = 'tiknix-plan' . $this->planId . '-task' . (int)$t->id;
+        // Project-scoped: plan ids AND subtask ids both come from this instance's own
+        // workbench.db, so the unscoped name collided across every project at once.
+        $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int)$t->id, $this->slug);
         $script  = $this->buildRunnerScript($inner, $wtAbs, $session);
         $scriptFile = $wtAbs . '/.aibuilder/run-agent.sh';
         file_put_contents($scriptFile, $script);

@@ -9,7 +9,6 @@ namespace app;
 use \Flight as Flight;
 use \app\Bean;
 use \app\LeadSpamCheck;
-use \RedBeanPHP\R;
 use app\BaseControls\Control;
 
 class Leads extends Control {
@@ -42,7 +41,7 @@ class Leads extends Control {
     /**
      * The leads list is admin data where a deleted row MUST disappear at once.
      * The query cache doesn't reliably observe a cross-request DELETE (writes can
-     * run on a non-cached adapter after R::selectDatabase swaps), leaving stale
+     * run on a non-cached adapter after Bean::selectDatabase swaps), leaving stale
      * rows on screen. Bust the lead table version before every read and after
      * every write so the view is always authoritative.
      */
@@ -57,7 +56,7 @@ class Leads extends Control {
         // Count how many stored leads trip the bot-name heuristic so the view can
         // offer a one-click "purge flagged" action. Names only — cheap scan.
         $flagged = 0;
-        foreach (R::getAll('SELECT first_name, last_name FROM lead') as $r) {
+        foreach (Bean::getAll('SELECT first_name, last_name FROM lead') as $r) {
             if (LeadSpamCheck::isSuspicious($r['first_name'] ?? '', $r['last_name'] ?? '')) $flagged++;
         }
 

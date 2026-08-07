@@ -30,8 +30,16 @@ class Security extends Control {
      * Switch to security database
      */
     private function useSecurityDb(): void {
-        // Add security database if not already added
-        if (!in_array('security', \RedBeanPHP\R::$toolboxes ?? [])) {
+        // Add security database if not already added.
+        //
+        // Bean::hasDatabase, not in_array over R::$toolboxes. That array is KEYED by
+        // connection name and holds toolbox OBJECTS, so searching its values for the
+        // string 'security' never matched — the guard was always false. It only
+        // looked harmless because most requests call this once: R::addDatabase THROWS
+        // "A database has already been specified for this key", so the second call in
+        // a single request took the page down. hasDatabase is the wrapper for exactly
+        // this isset check.
+        if (!Bean::hasDatabase('security')) {
             Bean::addDatabase('security', 'sqlite:' . $this->securityDbPath);
         }
         Bean::selectDatabase('security');
@@ -40,7 +48,7 @@ class Security extends Control {
         // never hit "no such table". Cheap, idempotent, once per request.
         static $ensured = false;
         if (!$ensured) {
-            \RedBeanPHP\R::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
+            Bean::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT, target TEXT, action TEXT, pattern TEXT,
                 level INTEGER, description TEXT, priority INTEGER,

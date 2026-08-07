@@ -25,14 +25,44 @@ namespace app;
 
 class PlanOrchestrator {
 
-    /** tmux session name for a plan's orchestrator. Single source for every caller. */
-    public static function sessionName(int $planId): string {
-        return 'tiknix-plan' . $planId . '-orchestrator';
+    /**
+     * tmux session name for a plan's orchestrator. Single source for every caller.
+     *
+     * The slug is what keeps two projects' plan 26 apart — see
+     * TmuxManager::buildPlanSessionName for why that matters. It is optional only so
+     * a caller that genuinely has no instance in hand still gets the legacy name
+     * rather than a broken one; every caller that CAN name the project MUST.
+     */
+    public static function sessionName(int $planId, string $slug = ''): string {
+        return TmuxManager::buildPlanSessionName($planId, $slug);
+    }
+
+    /**
+     * The live session for this plan, scoped or legacy, or '' when nothing is running.
+     *
+     * Both shapes are checked because an orchestrator started before the rename is
+     * still running under the old name, and treating it as absent would launch a
+     * SECOND orchestrator against the same plan: two tickers reaping and merging the
+     * same worktrees. The legacy probe costs one tmux call and stops being reachable
+     * on its own as those sessions end.
+     */
+    public static function liveSession(int $planId, string $slug = ''): string {
+        $scoped = self::sessionName($planId, $slug);
+        if (TmuxManager::exists($scoped)) return $scoped;
+        $legacy = TmuxManager::legacyPlanSessionName($planId);
+        if ($legacy !== $scoped && TmuxManager::exists($legacy)) return $legacy;
+        return '';
     }
 
     /** Is this plan's orchestrator alive right now? */
-    public static function running(int $planId): bool {
-        return TmuxManager::exists(self::sessionName($planId));
+    public static function running(int $planId, string $slug = ''): bool {
+        return self::liveSession($planId, $slug) !== '';
+    }
+
+    /** Stop this plan's orchestrator, whichever name it is running under. */
+    public static function stop(int $planId, string $slug = ''): bool {
+        $live = self::liveSession($planId, $slug);
+        return $live !== '' ? TmuxManager::kill($live) : false;
     }
 
     /**
@@ -62,8 +92,10 @@ class PlanOrchestrator {
         $planId = (int) $planId;
         if ($planId <= 0) { self::fail('orchestrator launch without a plan id', []); return false; }
 
-        $session = self::sessionName($planId);
-        if (TmuxManager::exists($session)) return true;   // already building
+        // Already building — under either name. Checked before the scoped name is
+        // built so a pre-rename orchestrator is not joined by a second one.
+        if (self::running($planId, $slug)) return true;
+        $session = self::sessionName($planId, $slug);
 
         $dir = rtrim($instanceDir, '/');
         if (!is_dir($dir)) {

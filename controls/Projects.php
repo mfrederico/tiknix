@@ -11,7 +11,7 @@
 namespace app;
 
 use \Flight as Flight;
-use RedBeanPHP\R;
+use app\Bean;
 
 class Projects extends BaseControls\Control {
 
@@ -261,17 +261,26 @@ class Projects extends BaseControls\Control {
         return ['when' => $parts[0] ?? '', 'who' => $parts[1] ?? '', 'subject' => $parts[2] ?? ''];
     }
 
-    /** Teams this project is shared with, for the "who else is on this" link. */
+    /**
+     * Teams this project is shared with, for the "who else is on this" link.
+     *
+     * The association, not a query against the link table. instance_team is the m2m
+     * table RedBean maintains for sharedTeamList, and its name is NOT a bean type —
+     * Bean::normalize strips the underscore, so Bean::find('instance_team') would ask
+     * for a table called instanceteam, which does not exist. Fluid mode answers a
+     * missing table with an empty result rather than an error, so that conversion
+     * would have emptied every project's team list with nothing on screen or in the
+     * log to say why. Reading the association sidesteps the whole question, and it is
+     * what ProvisionService already uses to write the same link.
+     */
     private function teams(object $inst): array {
-        $out  = [];
-        $rows = R::find('instance_team', 'instance_id = ?', [(int) $inst->id]);
-        foreach ($rows as $row) {
-            $team = R::load('team', (int) $row->teamId);
+        $out = [];
+        foreach ($inst->sharedTeamList as $team) {
             if (!$team->id) continue;
             $out[] = [
                 'id'      => (int) $team->id,
                 'name'    => (string) ($team->name ?: 'Team ' . $team->id),
-                'members' => (int) R::count('teammember', 'team_id = ?', [(int) $team->id]),
+                'members' => (int) Bean::count('teammember', 'team_id = ?', [(int) $team->id]),
             ];
         }
         return $out;

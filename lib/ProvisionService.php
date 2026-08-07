@@ -313,7 +313,12 @@ class ProvisionService {
             $killed = 0; $wiped = 0;
             foreach ($tasks as $t) {
                 $sessions = [(string) $t->agentSession, (string) $t->tmuxSession];
-                if (empty($t->parentTaskId)) $sessions[] = 'tiknix-plan' . (int) $t->id . '-orchestrator';
+                // Both names: this instance is being torn down, so an orchestrator
+                // still running under the pre-rename name must die with it.
+                if (empty($t->parentTaskId)) {
+                    $sessions[] = PlanOrchestrator::sessionName((int) $t->id, $slug);
+                    $sessions[] = TmuxManager::legacyPlanSessionName((int) $t->id);
+                }
                 foreach (array_unique(array_filter($sessions)) as $s) {
                     if (TmuxManager::exists($s)) { TmuxManager::kill($s); $killed++; }
                 }

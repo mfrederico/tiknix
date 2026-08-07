@@ -630,7 +630,7 @@ class Admin extends Control {
         $this->viewData['permissions'] = \app\PermissionCache::getAll();
 
         // Get query cache statistics from CachedDatabaseAdapter
-        // Note: Bean::getDatabaseAdapter() may not return CachedDatabaseAdapter after R::selectDatabase() calls
+        // Note: Bean::getDatabaseAdapter() may not return CachedDatabaseAdapter after Bean::selectDatabase() calls
         // So we check Flight storage first
         $cachedAdapter = Flight::get('cachedDatabaseAdapter');
         if ($cachedAdapter instanceof \app\CachedDatabaseAdapter) {

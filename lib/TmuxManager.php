@@ -7,7 +7,11 @@
  *
  * Session Types:
  * - Claude tasks: tiknix-{member_id}-task-{task_id} or tiknix-team-{team_id}-task-{task_id}
- * - Test servers: tiknix-serve-{member_id}-{task_id}
+ * - Test servers: tiknix-{slug}-{member_id}-serve-{task_id}
+ *
+ * Every name carries the PROJECT SLUG, because task ids are per-instance: each
+ * project's workbench.db counts from 1, so an unscoped name refers to that id in
+ * every project at once.
  */
 
 namespace app;
@@ -293,7 +297,10 @@ class TmuxManager {
     public static function listServerSessions(): array {
         $all = self::listTiknixSessions();
         return array_filter($all, function($s) {
-            return strpos($s['name'], 'tiknix-serve-') === 0;
+            // '-serve-' anywhere, not a 'tiknix-serve-' prefix: the slug now leads,
+            // so a prefix test would silently match nothing and every preview would
+            // look like it had already stopped.
+            return strpos($s['name'], '-serve-') !== false;
         });
     }
 
@@ -377,8 +384,25 @@ class TmuxManager {
      * @param int $taskId Task ID
      * @return string Session name
      */
-    public static function buildServerSessionName(int $memberId, int $taskId): string {
-        return "tiknix-serve-{$memberId}-{$taskId}";
+    public static function buildServerSessionName(int $memberId, int $taskId, string $slug = ''): string {
+        // SCOPED BY PROJECT, for the same reason buildTaskSessionName is.
+        //
+        // Task ids are per-instance — every project's workbench.db counts from 1 —
+        // so tiknix-serve-1-16 named member 1's task 16 in EVERY project at once.
+        // Four of the instances checked have a task #16. Starting a preview for one
+        // project while another's task 16 was serving would find the existing
+        // session and hand back somebody else's site, on somebody else's port,
+        // with nothing announcing the swap.
+        //
+        // Ports were given a scope earlier (PortManager::getPortForTask) and task
+        // sessions were given a slug; this namer was missed, so it kept the bug
+        // both of those were fixed for.
+        //
+        // Shape matches the task namer — tiknix-{slug}-{member}-{kind}-{id} — so
+        // `tmux ls` groups by project and the kind reads in the same place every
+        // time. The tiknix- prefix stays: listTiknixSessions() filters on it.
+        $where = self::slugPart($slug);
+        return "tiknix-{$where}{$memberId}-serve-{$taskId}";
     }
 
     /**
@@ -408,8 +432,7 @@ class TmuxManager {
         //
         // The member stays too: parseSessionName reports it and
         // ClaudeRunner::findByTaskId rebuilds a runner from it.
-        $slug = trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $slug), '-');
-        $where = $slug !== '' ? "{$slug}-" : '';
+        $where = self::slugPart($slug);
 
         if ($teamId) {
             return "tiknix-{$where}team-{$teamId}-task-{$taskId}";
@@ -424,7 +447,16 @@ class TmuxManager {
      * @return array|null Parsed info [type, member_id, task_id, team_id] or null
      */
     public static function parseSessionName(string $sessionName): ?array {
-        // Test server: tiknix-serve-{member_id}-{task_id}
+        // Test server: tiknix-{slug}-{member_id}-serve-{task_id}, and the older
+        // tiknix-serve-{member}-{task} for sessions started before the rename.
+        if (preg_match('/^tiknix-(?:(.+)-)?(\d+)-serve-(\d+)$/', $sessionName, $mm)) {
+            return [
+                'type' => 'server',
+                'slug' => $mm[1] ?? '',
+                'member_id' => (int) $mm[2],
+                'task_id' => (int) $mm[3],
+            ];
+        }
         if (preg_match('/^tiknix-serve-(\d+)-(\d+)$/', $sessionName, $m)) {
             return [
                 'type' => 'server',
@@ -460,5 +492,56 @@ class TmuxManager {
         }
 
         return null;
+    }
+
+    /**
+     * Orchestrator session for a plan: tiknix-{slug}-plan{id}-orchestrator.
+     *
+     * SCOPED BY PROJECT, for the third time in this file and for the same reason.
+     * Plan ids are subtask ids, and subtask ids come from the INSTANCE's own
+     * data/workbench.db — every project counts from 1. So tiknix-plan26-orchestrator
+     * named plan 26 in every project at once: starting a build on one project while
+     * another project's plan 26 was building found the existing session and reported
+     * "this plan is already running" about a plan the person was not looking at, and
+     * deleting either plan killed the other one's orchestrator.
+     *
+     * The slug leads so tmux ls groups by project, matching buildTaskSessionName and
+     * buildServerSessionName. The tiknix- prefix stays: listTiknixSessions filters on
+     * it, and reap-stale-tasks.php skips plan sessions by matching this shape.
+     */
+    public static function buildPlanSessionName(int $planId, string $slug = ''): string {
+        return 'tiknix-' . self::slugPart($slug) . 'plan' . $planId . '-orchestrator';
+    }
+
+    /** Per-subtask build agent under a plan: tiknix-{slug}-plan{id}-task{taskId}. */
+    public static function buildPlanTaskSessionName(int $planId, int $taskId, string $slug = ''): string {
+        return 'tiknix-' . self::slugPart($slug) . 'plan' . $planId . '-task' . $taskId;
+    }
+
+    /** Legacy unscoped names, still recognised so pre-rename rows keep working. */
+    public static function legacyPlanSessionName(int $planId): string {
+        return 'tiknix-plan' . $planId . '-orchestrator';
+    }
+
+    /**
+     * Is this session name owned by the plan executor (orchestrator or build agent)?
+     *
+     * Matches the scoped shape AND the legacy unscoped one, because agent_session is
+     * PERSISTED on the task row: rows written before the rename still carry
+     * tiknix-plan26-task76, and callers use this to decide that a task is plan-managed
+     * rather than ClaudeRunner-managed. Failing to recognise an old name there would
+     * hand a live subtask to the poller that force-fails sessions it cannot find.
+     */
+    public static function isPlanSession(string $sessionName): bool {
+        return (bool) preg_match(
+            '/^tiknix-(?:[A-Za-z0-9-]+-)?plan\d+-(?:orchestrator|task\d+)$/',
+            $sessionName
+        );
+    }
+
+    /** Shared slug segment for every scoped session name (empty slug yields ''). */
+    private static function slugPart(string $slug): string {
+        $slug = trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $slug), '-');
+        return $slug !== '' ? $slug . '-' : '';
     }
 }

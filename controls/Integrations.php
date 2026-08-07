@@ -19,8 +19,8 @@
 namespace app;
 
 use \Flight as Flight;
-use \RedBeanPHP\R;
 use app\BaseControls\Control;
+use app\Bean;
 
 class Integrations extends Control {
 
@@ -38,7 +38,7 @@ class Integrations extends Control {
 
     /** Control-plane hub — the selected project's automations. */
     private function controlPlane(): void {
-        $instances = R::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
+        $instances = Bean::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
 
         // An explicit ?id= wins (deep links), then the project the member selected. NOT
         // "most recently created" — that guess showed one project's automations while
@@ -129,7 +129,7 @@ class Integrations extends Control {
     private function ownedInstance($id) {
         $id = (int)$id;
         if (!$id) return null;
-        $inst = R::load('instance', $id);
+        $inst = Bean::load('instance', $id);
         if (!$inst->id || (int)$inst->memberId !== (int)$this->member->id) return null;
         if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;

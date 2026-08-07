@@ -23,8 +23,8 @@ namespace app;
 
 use \Flight as Flight;
 use app\BaseControls\Control;
+use app\Bean;
 use app\Publish\PublishRegistry;
-use RedBeanPHP\R;
 
 class Publish extends Control {
 
@@ -35,7 +35,7 @@ class Publish extends Control {
 
         $instanceId = (int) ($key->instanceId ?? 0);
         if ($instanceId <= 0) { Flight::jsonError('Broker key is not bound to an instance.', 403); return; }
-        $inst = R::load('instance', $instanceId);
+        $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) { Flight::jsonError('Instance not found.', 404); return; }
 
         $body   = $this->jsonBody();
@@ -51,7 +51,7 @@ class Publish extends Control {
         // driver demands. Without this, one door would let any member provision a
         // container just by naming a different target, bypassing the ADMIN gate the
         // Connections hub has always had on exactly that action.
-        $owner = R::load('member', (int) $inst->memberId);
+        $owner = Bean::load('member', (int) $inst->memberId);
         $level = (int) ($owner->level ?? LEVELS['PUBLIC']);
         $need  = $driver::minLevel($op);
         if (!$owner->id || $level > $need) {

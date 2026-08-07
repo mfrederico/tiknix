@@ -15,7 +15,10 @@
 if (php_sapi_name() !== 'cli') { die("cli only\n"); }
 require __DIR__ . '/../vendor/autoload.php';
 
+// R:: is the connection lifecycle ONLY (setup/testConnection/close) — it has no Bean::
+// wrapper. Every read and write below goes through Bean:: so it uses the cached adapter.
 use RedBeanPHP\R;
+use app\Bean;
 use app\PlanExecutor;
 
 $o = getopt('', ['plan:', 'slug:', 'dir:', 'model::', 'level::', 'db::']);
@@ -43,15 +46,15 @@ if ($db === '') $db = $dir . '/data/workbench.db';
 if (!is_file($db)) { fwrite(STDERR, "no tasks db at $db\n"); exit(1); }
 
 R::setup('sqlite:' . $db);
-R::freeze(false);
+Bean::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "cannot open db: $db\n"); exit(1); }
 
-$parent = R::load('workbenchtask', $planId);
+$parent = Bean::load('workbenchtask', $planId);
 if (!$parent->id) { fwrite(STDERR, "no plan #$planId\n"); exit(1); }
 $parent->planStatus = 'building';
 $parent->status     = 'running';   // keep the plain status column in sync for the Workbench list
 $parent->updatedAt  = date('Y-m-d H:i:s');
-R::store($parent);
+Bean::store($parent);
 
 echo "[orchestrator] plan #$planId ($slug) starting " . date('c') . "\n";
 
@@ -81,7 +84,7 @@ if (empty($res['stalled'])) {
 // 'resolved' is deliberately NOT counted here: a subtask that changed nothing because
 // nothing needed changing is a finished subtask, not a failure.
 $failedCount = (int) ($res['counts']['failed'] ?? 0) + (int) ($res['counts']['conflict'] ?? 0);
-$parent = R::load('workbenchtask', $planId);
+$parent = Bean::load('workbenchtask', $planId);
 if (!empty($res['stalled'])) {
     $parent->planStatus = 'stalled';                 // could not proceed
     $parent->status     = 'failed';
@@ -110,7 +113,7 @@ if (!empty($res['stalled'])) {
     $parent->status     = 'completed';
 }
 $parent->updatedAt  = date('Y-m-d H:i:s');
-R::store($parent);
+Bean::store($parent);
 
 echo "[orchestrator] plan #$planId finished status={$parent->planStatus} " . date('c') . "\n";
 
@@ -130,11 +133,11 @@ try {
     // tasks db we have been driving, so the notification carries the detail instead of
     // pointing at a log the reader has to go and find.
     $failures = [];
-    foreach (R::find('workbenchtask', 'parent_task_id = ? AND status IN (?, ?) ORDER BY id',
+    foreach (Bean::find('workbenchtask', 'parent_task_id = ? AND status IN (?, ?) ORDER BY id',
                      [$planId, 'failed', 'conflict']) as $ft) {
         $why = '';
         try {
-            $log = R::findOne('tasklog', 'task_id = ? ORDER BY id DESC', [(int) $ft->id]);
+            $log = Bean::findOne('tasklog', 'task_id = ? ORDER BY id DESC', [(int) $ft->id]);
             if ($log && $log->id) $why = (string) ($log->content ?? '');
         } catch (\Throwable $e) { /* no logs for this task */ }
         $failures[] = ['title' => (string) $ft->title, 'why' => $why];

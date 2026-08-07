@@ -182,7 +182,7 @@ class Brokerinfo extends Control {
 
     /** Return $url only if it's https on the instance's OWN configured host, else ''. */
     private function safeInstanceUrl(string $url, int $instanceId): string {
-        $inst = \RedBeanPHP\R::load('instance', $instanceId);
+        $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) return '';
         $p = parse_url($url);
         if (($p['scheme'] ?? '') !== 'https' || empty($p['host'])) return '';

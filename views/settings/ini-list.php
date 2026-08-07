@@ -131,7 +131,7 @@ $templates = $files['templates'] ?? [];
                                 <i class="bi bi-chevron-right"></i>
                             <?php else: ?>
                                 <form method="POST" action="/settings/initemplate" class="ini-create-form d-none">
-                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
+                                    <?= csrf_field() ?>
                                     <input type="hidden" name="file" value="<?= htmlspecialchars($t['name'], ENT_QUOTES, 'UTF-8') ?>">
                                 </form>
                                 <i class="bi bi-plus-lg text-success"></i>

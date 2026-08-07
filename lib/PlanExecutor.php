@@ -98,6 +98,40 @@ class PlanExecutor {
     }
 
     /**
+     * Can this plan make progress right now, and if not, what is stopping it?
+     *
+     * Read-only: launches nothing, writes nothing, starts no session. It exists so a
+     * caller can answer that question BEFORE spawning an orchestrator. Without it,
+     * pressing Build on a plan whose remaining subtasks are all blocked started a
+     * detached orchestrator that ticked once, found nothing launchable, wrote "stalled"
+     * and exited — so the page refreshed to the same stalled plan with no error and no
+     * explanation, which is indistinguishable from the button not working.
+     *
+     * @return array{ready:int,running:int,blocked:array,roots:string[]}
+     */
+    public function progressCheck(): array {
+        $tasks = $this->subtasks();
+        $byId  = [];
+        foreach ($tasks as $t) $byId[(int) $t->id] = $t;
+
+        $ready = 0; $running = 0;
+        foreach ($tasks as $t) {
+            $status = (string) $t->status;
+            if ($status === 'running') { $running++; continue; }
+            if ($status !== 'pending') continue;
+            if ($this->depsMerged($t, $byId)) $ready++;
+        }
+
+        $blocked = $this->blockers($tasks, $byId);
+        return [
+            'ready'   => $ready,
+            'running' => $running,
+            'blocked' => $blocked,
+            'roots'   => self::rootCauses($blocked),
+        ];
+    }
+
+    /**
      * Post-build: apply the DB seed scripts the plan introduced (database/seeds/*.php)
      * against the LIVE instance, then rebuild the permission cache. Plan branches never
      * carry the binary DB (reapTask discards it), so DB / permission changes are

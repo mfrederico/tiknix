@@ -124,6 +124,24 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
         $session = trim((string) ($t->tmuxSession ?: $t->agentSession ?: ''));
         if ($session !== '') $claimed[$session] = true;
 
+        // A PLAN PARENT IS NOT A TASK, and its liveness is not in these columns.
+        //
+        // plan-orchestrate.php sets the parent to `running` while it drives the build,
+        // but the parent never stores a session name — the orchestrator runs as
+        // tiknix-<slug>-plan<id>-orchestrator, which lives nowhere on this row. So the
+        // check below read an empty session as "never recorded one", and released every
+        // actively-building plan five minutes after it started, into `awaiting` — a
+        // status the executor never launches and nothing ever moves. That is how a plan
+        // that was building fine ended up looking like it was waiting on a person, and
+        // it happened again on every rebuild.
+        //
+        // Ask the orchestrator instead. Claiming its session also stops the sweep at the
+        // bottom of this script from killing it.
+        if (empty($t->parentTaskId)) {
+            $orch = \app\PlanOrchestrator::liveSession((int) $t->id, $slug);
+            if ($orch !== '') { $claimed[$orch] = true; continue; }   // building — leave it alone
+        }
+
         $age = $t->startedAt ? (time() - strtotime((string) $t->startedAt)) : PHP_INT_MAX;
         if ($age < $grace) continue;
 
@@ -151,11 +169,34 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
             // behind a task that can never leave `awaiting` — which is exactly how
             // five subtasks on floorplan froze behind two.
             $isSubtask = !empty($t->parentTaskId);
+            $isPlan    = !$isSubtask && (string) $t->planStatus !== '';
 
-            $t->status          = $isSubtask ? 'pending' : 'awaiting';
-            $t->progressMessage = $isSubtask
-                ? 'The run ended without finishing. Nothing is waiting on you — it will start again on the next build.'
-                : 'The run ended without a reply. Nothing is waiting on you — check the branch, or run it again.';
+            if ($isPlan) {
+                // A PLAN whose orchestrator is gone (checked above) did not finish. Mark
+                // it stalled, which is a state Build accepts, so the operator can restart
+                // it. Never `awaiting`: the plan is not asking anything, and awaiting is
+                // the status nothing moves.
+                $t->status          = 'failed';
+                $t->planStatus      = 'stalled';
+                $t->progressMessage = 'The build orchestrator stopped before the plan finished. '
+                                    . 'Press Build to resume — the subtasks that already merged are kept.';
+            } else {
+                // AWAITING MEANS "YOUR TURN", so it may only be used when there is
+                // something to turn to. A released run has no live console to attach to
+                // and asked no question — the operator opens it, finds the task and
+                // nothing else, and has no way to tell this from a genuine prompt.
+                //
+                // A PLAN SUBTASK goes back to `pending` instead. Nothing is waiting on a
+                // person, and pending is the one status the orchestrator will relaunch,
+                // so the plan heals itself on the next build rather than deadlocking
+                // behind a task that can never leave `awaiting` — which is exactly how
+                // five subtasks on floorplan froze behind two.
+                $t->status          = $isSubtask ? 'pending' : 'awaiting';
+                $t->progressMessage = $isSubtask
+                    ? 'The run ended without finishing. Nothing is waiting on you — it will start again on the next build.'
+                    : 'The run ended without a reply. Nothing is waiting on you — check the branch, or run it again.';
+            }
+
             $t->tmuxSession     = null;
             $t->agentSession    = null;
             $t->updatedAt       = date('Y-m-d H:i:s');

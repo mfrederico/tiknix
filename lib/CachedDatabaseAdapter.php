@@ -29,8 +29,10 @@ class CachedDatabaseAdapter extends DBAdapter {
     private $hits = 0;
     private $misses = 0;
 
-    // Table version tracking
-    private $tableVersions = [];
+    // Where the per-table generation counters live. APCu keeps them inside one process
+    // family; redis/valkey shares them with every process on the box, which is what lets a
+    // CLI writer invalidate a web reader. See lib/CacheVersionStore.php.
+    private CacheVersionStore $versions;
 
     /**
      * Constructor - wraps existing adapter
@@ -74,6 +76,8 @@ class CachedDatabaseAdapter extends DBAdapter {
         //
         // An empty prefix is the honest answer, and cacheUsable() below turns it into a
         // hard off switch for every APCu path at once.
+        $this->versions = CacheVersionStoreFactory::fromConfig();
+
         $dbId = self::databaseIdentity($database);
         $this->identityFailed = ($dbId === '');
         $this->cachePrefix = $this->identityFailed ? '' : 'rdb_' . md5($dbId) . '_';
@@ -339,31 +343,19 @@ class CachedDatabaseAdapter extends DBAdapter {
         if (!$this->cacheUsable()) {
             return time();
         }
-
-        $key = $this->cachePrefix . 'tv_' . $table;
-        $version = apcu_fetch($key, $success);
-
-        if (!$success) {
-            $version = time() . '_' . mt_rand();
-            apcu_store($key, $version, 86400); // 24 hours
-        }
-
-        return $version;
+        return $this->versions->version($this->cachePrefix . 'tv_' . $table);
     }
 
     /**
      * Invalidate cache for a table
      */
     public function invalidateTable($table) {
-        if (!$this->cacheUsable()) {
+        // versionsUsable, not cacheUsable: a CLI writer holds no payload cache of its own
+        // but still has to bump the generation the web workers read.
+        if (!$this->versionsUsable()) {
             return;
         }
-
-        // Update table version
-        $key = $this->cachePrefix . 'tv_' . $table;
-        $newVersion = time() . '_' . mt_rand();
-        apcu_store($key, $newVersion, 86400);
-
+        $this->versions->bump($this->cachePrefix . 'tv_' . $table);
         $this->log("Cache invalidated for table: $table");
     }
 
@@ -474,6 +466,13 @@ class CachedDatabaseAdapter extends DBAdapter {
      * written and read only by web requests invalidates correctly and should stay cached.
      */
     private function isCrossHostTable($sql): bool {
+        // A SHARED version store removes the reason for this list entirely: a CLI writer
+        // can bump a generation every web worker reads, so these tables invalidate like
+        // any other and there is nothing to exclude. The list is not deleted, because
+        // version_store is configurable and reverting it to apcu must bring the guard
+        // back with it rather than leaving a stale-read bug behind.
+        if ($this->versions->isShared()) return false;
+
         foreach ($this->extractTables($sql) as $t) {
             if (strtolower($t) === 'promptlog') return true;
         }
@@ -511,8 +510,24 @@ class CachedDatabaseAdapter extends DBAdapter {
      * anyway. Returning false means CLI reads are always fresh from the database.
      */
     private function cacheUsable() {
+        // Storing or serving a PAYLOAD needs both: APCu to hold it, and a readable version
+        // to say whether it is still true.
+        return $this->versionsUsable() && $this->hasAPCu();
+    }
+
+    /**
+     * May this adapter touch the VERSION store? Deliberately NOT gated on APCu.
+     *
+     * This distinction is the entire point of moving versions out of APCu. Invalidation
+     * has to work in processes that never cache anything themselves — a CLI orchestrator
+     * writing a task row caches nothing (apc.enable_cli is Off) but MUST still tell the web
+     * workers that the table moved. Gating this on hasAPCu() made the bump a no-op in
+     * exactly the process the shared store exists to serve, leaving the feature looking
+     * wired up and doing nothing.
+     */
+    private function versionsUsable() {
         if ($this->identityFailed || $this->cachePrefix === '') return false;
-        return $this->hasAPCu();
+        return $this->versions->usable();
     }
 
     /**

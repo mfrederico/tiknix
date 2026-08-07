@@ -90,7 +90,11 @@ class PlanExecutor {
         $stalled  = (!$done && $counts['running'] === 0 && $counts['pending'] > 0
                      && !$this->anyLaunchable($fresh, $byId));
 
-        return ['done' => $done || $stalled, 'stalled' => $stalled, 'counts' => $counts, 'total' => $total];
+        return ['done' => $done || $stalled, 'stalled' => $stalled, 'counts' => $counts, 'total' => $total,
+                // WHY it stalled, not just that it did. Computed here because this is
+                // the only place that knows both the dependency graph and the rule
+                // for what satisfies a dependency.
+                'blocked' => $stalled ? $this->blockers($fresh, $byId) : []];
     }
 
     /**
@@ -393,6 +397,76 @@ class PlanExecutor {
             if (!$dep || !in_array((string) $dep->status, ['merged', 'resolved'], true)) return false;
         }
         return true;
+    }
+
+    /**
+     * Every pending task that cannot start, and the dependency stopping it.
+     *
+     * A stalled plan used to report the single word "stalled" and nothing else, so
+     * the only way to learn WHY was to read the dependency JSON of every pending
+     * task by hand against the status of every other. Observed on floorplan: seven
+     * tasks frozen by one merge conflict and two tasks awaiting a person, with
+     * nothing on screen naming any of the three.
+     *
+     * depsMerged() accepts merged and resolved. Everything else — failed, conflict,
+     * awaiting, or a dependency that does not exist — is a dead end for whatever
+     * sits downstream of it, which is exactly what this reports.
+     *
+     * @return array<int,array{task:int,title:string,blockers:string[]}>
+     */
+    private function blockers(array $tasks, array $byId): array {
+        $ok  = ['merged', 'resolved'];
+        $out = [];
+
+        foreach ($tasks as $t) {
+            if ((string) $t->status !== 'pending') continue;
+
+            $why = [];
+            foreach ($this->deps($t) as $depId) {
+                $dep = $byId[$depId] ?? null;
+                if (!$dep) {
+                    $why[] = "#{$depId} (no such task in this plan)";
+                    continue;
+                }
+                $st = (string) $dep->status;
+                if (in_array($st, $ok, true)) continue;
+                $why[] = sprintf('#%d %s — %s', (int) $dep->id, $st,
+                    self::shorten((string) $dep->title));
+            }
+            if ($why) {
+                $out[] = ['task' => (int) $t->id, 'title' => self::shorten((string) $t->title), 'blockers' => $why];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * The ROOT causes: blockers that are not themselves waiting on something else.
+     *
+     * A cascade reads as a wall of blocked tasks when only one or two of them are
+     * actionable — fixing the root frees the chain. This is what belongs in a
+     * one-line status.
+     */
+    public static function rootCauses(array $blocked): array {
+        $blockedIds = [];
+        foreach ($blocked as $b) $blockedIds[$b['task']] = true;
+
+        $roots = [];
+        foreach ($blocked as $b) {
+            foreach ($b['blockers'] as $why) {
+                if (!preg_match('/^#(\d+)\s+(\S+)/', $why, $m)) continue;
+                // A pending blocker is itself blocked — not a root cause, just a
+                // link in the chain.
+                if ($m[2] === 'pending' && isset($blockedIds[(int) $m[1]])) continue;
+                $roots[$why] = true;
+            }
+        }
+        return array_keys($roots);
+    }
+
+    private static function shorten(string $s): string {
+        $s = trim(preg_replace('/\s+/', ' ', $s));
+        return mb_strlen($s) > 48 ? mb_substr($s, 0, 47) . '…' : $s;
     }
 
     private function anyLaunchable(array $tasks, array $byId): bool {

@@ -85,6 +85,23 @@ $parent = R::load('workbenchtask', $planId);
 if (!empty($res['stalled'])) {
     $parent->planStatus = 'stalled';                 // could not proceed
     $parent->status     = 'failed';
+
+    // WRITE DOWN WHY. "stalled" on its own sent someone reading the dependency
+    // JSON of every pending task against the status of every other to work out
+    // what had happened — the answer was one merge conflict and two subtasks
+    // waiting on a person, and nothing on screen named any of them.
+    $blocked = (array) ($res['blocked'] ?? []);
+    $roots   = \app\PlanExecutor::rootCauses($blocked);
+    $parent->progressMessage = $roots
+        ? 'Stalled: ' . count($blocked) . ' subtask(s) cannot start. Fix ' . implode('; ', $roots) . '.'
+        : 'Stalled: ' . count($blocked) . ' subtask(s) cannot start and no cause could be identified.';
+    // The full chain, for the task list rather than the one-line status.
+    $parent->blockedJson = json_encode($blocked, JSON_UNESCAPED_SLASHES);
+
+    echo "[orchestrator] STALLED: {$parent->progressMessage}\n";
+    foreach ($blocked as $b) {
+        echo "[orchestrator]   #{$b['task']} {$b['title']} <- " . implode(', ', $b['blockers']) . "\n";
+    }
 } elseif ($failedCount > 0) {
     $parent->planStatus = 'attention';               // ran to the end, but not all of it landed
     $parent->status     = 'failed';

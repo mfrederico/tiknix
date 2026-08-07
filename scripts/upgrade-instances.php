@@ -244,7 +244,28 @@ foreach ($instances as $slug => $meta) {
     foreach ($dbs as $db => $bak) { @copy($bak, $db); @unlink($bak); }
     say('   ' . $verb);
 
-    // 5. The classmap MUST be regenerated — see the header.
+    // 5. Dependencies, then the classmap.
+    //
+    // The lock is replaced with core's BEFORE installing. An instance's own lock
+    // predates any package core has newly required, and `composer install` against
+    // a stale lock does not install it — it prints a warning and carries on. That
+    // is how ten instances merged the OpenAPI importer and none of them could parse
+    // YAML: the merge said ok, composer said ok, and the feature was simply absent.
+    if (is_file($coreDir . '/composer.lock')) @copy($coreDir . '/composer.lock', $dir . '/composer.lock');
+    $ci = sh('env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-interaction -q', $dir);
+    say('   composer: ' . ($ci['ok'] ? 'installed' : 'FAILED — ' . substr($ci['out'], 0, 120)));
+
+    // Then CHECK, rather than trusting the exit code: every package core requires
+    // has to be on disk. This is the assertion that would have caught the silent
+    // skip above.
+    $missing = [];
+    foreach (array_keys((array) (json_decode((string) @file_get_contents($coreDir . '/composer.json'), true)['require'] ?? [])) as $pkg) {
+        if (strpos($pkg, '/') === false) continue;              // php, ext-*
+        if (!is_dir($dir . '/vendor/' . $pkg)) $missing[] = $pkg;
+    }
+    if ($missing) say('   ! MISSING vendor: ' . implode(', ', $missing));
+
+    // The classmap MUST be regenerated — see the header.
     $ca = sh('composer dump-autoload -q --no-interaction', $dir);
     say('   autoload: ' . ($ca['ok'] ? 'regenerated' : 'FAILED — ' . substr($ca['out'], 0, 120)));
 

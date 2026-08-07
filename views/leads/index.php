@@ -37,6 +37,7 @@
                                         <th>Last Name</th>
                                         <th>Email</th>
                                         <th>Signed Up</th>
+                                        <th data-dt-noorder data-dt-nosearch>Account</th>
                                         <th data-dt-noorder data-dt-nosearch data-dt-class="text-end">Actions</th>
                                     </tr>
                                 </thead>
@@ -125,6 +126,39 @@ document.addEventListener('DOMContentLoaded', function () {
         if (el && el._dtApi) { el._dtApi.ajax.reload(null, false); }
         else { window.location.reload(); }
     }
+
+    // Invite a lead to create an account. The button is also the resend: the server
+    // re-sends an outstanding invitation rather than issuing a second one.
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.lead-invite-btn');
+        if (!btn) return;
+        var email = btn.getAttribute('data-email') || 'this lead';
+        if (!confirm('Email an invitation to ' + email + '?\n\nThey will be able to create an account with this address.')) return;
+        btn.disabled = true;
+        var original = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        fetch('/leads/invite', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRF-TOKEN': CSRF,
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: new URLSearchParams({ _csrf_token: CSRF, id: btn.getAttribute('data-id') }).toString()
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            // A created-but-unemailed invite is a partial success, not a failure — the
+            // link works, so show it rather than reporting the whole thing as broken.
+            alert((j && (j.message || j.error)) || 'Could not send the invitation.');
+            if (j && j.success) { reloadTable(); }
+            else { btn.disabled = false; btn.innerHTML = original; }
+        })
+        .catch(function () {
+            btn.disabled = false; btn.innerHTML = original;
+            alert('Could not send the invitation.');
+        });
+    });
 
     // Single-row delete
     document.addEventListener('click', function (e) {

@@ -116,6 +116,7 @@ $defaults = [
     ['lead', 'export', 50, 'Export leads CSV'],
     ['leads', 'data', 50, 'Leads DataTable AJAX feed'],
     ['leads', 'delete', 50, 'Delete a lead / purge bot-flagged leads'],
+    ['leads', 'invite', 50, 'Invite a lead to create an account'],
     // The Integrations hub is MEMBER (100) — instance owners manage their OWN instance's
     // connectors + pipelines + durable objects (Connections::index is ownedInstance-scoped).
     // An instance asks core "what am I connected to?" with its own broker key (metadata only).

@@ -5,7 +5,7 @@ class CheckRedbeanTool extends BaseTool {
 
     public static string $name = 'check_redbean';
 
-    public static string $description = 'Check PHP code for RedBeanPHP convention violations (bean naming, associations, R::exec usage).';
+    public static string $description = 'Check PHP code for RedBeanPHP convention violations (raw R:: instead of the Bean wrapper, bean naming, associations, exec usage).';
 
     public static array $inputSchema = [
         'type' => 'object',

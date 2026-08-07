@@ -15,7 +15,6 @@
 require __DIR__ . '/../bootstrap.php';
 
 use app\Bean;
-use RedBeanPHP\R;
 
 // Boot the app (registers the autoloader + connects RedBean via the constructor).
 new app\Bootstrap(__DIR__ . '/../conf/config.ini');
@@ -53,7 +52,7 @@ foreach ($srcIds as $srcId) {
         $a->threadId = $targetId;
         Bean::store($a);
     }
-    R::trash($src);
+    Bean::trash($src);
     echo "merged thread {$srcId} -> {$targetId} ({$moved} messages)\n";
 }
 

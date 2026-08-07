@@ -11,6 +11,8 @@
 
 namespace app\mcptools;
 
+use app\Bean;
+
 abstract class BaseTool {
 
     /**
@@ -82,9 +84,9 @@ abstract class BaseTool {
         if (\is_control_plane()) return;                       // core: ambient core db (unchanged)
         $db = dirname(__DIR__) . '/data/workbench.db';         // {instanceRoot}/data/workbench.db
         if (!is_file($db)) return;                             // no sidecar-owned tasks here
-        if (!\RedBeanPHP\R::hasDatabase('ws')) \RedBeanPHP\R::addDatabase('ws', 'sqlite:' . $db);
-        \RedBeanPHP\R::selectDatabase('ws');
-        \RedBeanPHP\R::freeze(false);
+        if (!Bean::hasDatabase('ws')) Bean::addDatabase('ws', 'sqlite:' . $db);
+        Bean::selectDatabase('ws');
+        Bean::freeze(false);
     }
 
     /**

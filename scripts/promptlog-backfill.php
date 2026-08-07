@@ -40,7 +40,7 @@ $dryRun = isset($opt['dry-run']);
 
 $coreDb = dirname(__DIR__) . '/database/tiknix.db';
 R::setup('sqlite:' . $coreDb);
-R::freeze(false);
+Bean::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "cannot open core db: $coreDb\n"); exit(1); }
 
 $instances = Bean::getAll('SELECT id, slug, app, member_id FROM instance ORDER BY id');

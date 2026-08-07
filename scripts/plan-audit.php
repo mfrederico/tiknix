@@ -29,9 +29,10 @@ require_once __DIR__ . '/../bootstrap.php';
 use RedBeanPHP\R;
 use app\AuditRunner;
 use app\AuditReporter;
+use app\Bean;
 
 $app = new app\Bootstrap('conf/config.ini');
-R::freeze(false);   // audit stamps fluid columns (auditStatus/auditAt/auditFailures)
+Bean::freeze(false);   // audit stamps fluid columns (auditStatus/auditAt/auditFailures)
 
 $o = getopt('', ['plan:', 'slug:', 'dir:', 'level::']);
 $planId = (int)($o['plan'] ?? 0);
@@ -54,7 +55,7 @@ if (!filter_var($aib['audit']['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN)) {
 
 // TASKS come from whatever bootstrap selected — the instance's own workbench.db when
 // the orchestrator exported TIKNIX_WORKBENCH_DB, which it always does.
-$plan = R::load('workbenchtask', $planId);
+$plan = Bean::load('workbenchtask', $planId);
 if (!$plan->id) { fwrite(STDERR, "no plan #$planId\n"); exit(1); }
 
 // The instance REGISTRY, however, only exists in CORE's database. Looking it up in
@@ -63,11 +64,11 @@ if (!$plan->id) { fwrite(STDERR, "no plan #$planId\n"); exit(1); }
 // on "no instance <slug>" before it started. Same two-database discipline as plan-ingest.
 // The bean keeps its values in memory, so reading $inst->app / ->memberId below still
 // works after we switch back; only a lazy relation would need the connection again.
-$taskDbKey = (getenv('TIKNIX_WORKBENCH_DB') && R::hasDatabase('ws')) ? 'ws' : 'default';
-if (!R::hasDatabase('coreReg')) R::addDatabase('coreReg', 'sqlite:' . dirname(__DIR__) . '/database/tiknix.db');
-R::selectDatabase('coreReg');
-$inst = R::findOne('instance', 'slug = ?', [$slug]);
-R::selectDatabase($taskDbKey);
+$taskDbKey = (getenv('TIKNIX_WORKBENCH_DB') && Bean::hasDatabase('ws')) ? 'ws' : 'default';
+if (!Bean::hasDatabase('coreReg')) Bean::addDatabase('coreReg', 'sqlite:' . dirname(__DIR__) . '/database/tiknix.db');
+Bean::selectDatabase('coreReg');
+$inst = Bean::findOne('instance', 'slug = ?', [$slug]);
+Bean::selectDatabase($taskDbKey);
 if (!$inst || !$inst->id) { fwrite(STDERR, "no instance $slug in core's registry\n"); exit(1); }
 
 $appNs   = (string)($inst->app ?: 'tiknix');
@@ -125,7 +126,7 @@ register_shutdown_function(function () use ($dir, $creds, &$teardownDone) {
 
 // --- 2) Build the "what changed" checklist from the plan's subtasks -----------
 $checklist = [];
-foreach (R::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [$planId]) as $s) {
+foreach (Bean::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [$planId]) as $s) {
     $ref   = $s->planRef ?: ('#' . $s->id);
     $files = json_decode((string)($s->relatedFiles ?? ''), true);
     $line  = "[{$ref}] " . trim((string)$s->title);
@@ -160,7 +161,7 @@ if (!is_file($manifestFile)) {
     $plan->auditStatus = 'failed';
     $plan->auditAt = date('Y-m-d H:i:s');
     $plan->auditFailures = -1;   // sentinel: agent produced nothing
-    R::store($plan);
+    Bean::store($plan);
     deleteTestUsers($dir, $creds);
     exit(1);
 }
@@ -195,11 +196,11 @@ function sweepOneDeferred($inst, string $dir, int $level): int {
     $tag = (string)$inst->slug . '.' . (string)($inst->app ?: 'tiknix');
     if (!filter_var($inst->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN)) return 0;
     // Idle only: no task for this instance currently running/building.
-    if ((int)R::getCell("SELECT COUNT(*) FROM workbenchtask WHERE instance_tag = ? AND status IN ('running','building')", [$tag]) > 0) {
+    if ((int)Bean::getCell("SELECT COUNT(*) FROM workbenchtask WHERE instance_tag = ? AND status IN ('running','building')", [$tag]) > 0) {
         alog('idle-sweep skipped — instance still has an active build');
         return 0;
     }
-    $err = R::findOne('detectederror',
+    $err = Bean::findOne('detectederror',
         "instance_tag = ? AND status IN ('deferred','reopened') ORDER BY id ASC", [$tag]);
     if (!$err || !$err->id) return 0;
 
@@ -221,14 +222,14 @@ function sweepOneDeferred($inst, string $dir, int $level): int {
         $r = \app\PlanIngestor::ingest($inst, $plan, (int)$inst->memberId, '', (string)($inst->app ?: 'tiknix'));
         $planId = (int)($r['parent']['id'] ?? 0);
         if (!$planId) return 0;
-        $parent = R::load('workbenchtask', $planId);
+        $parent = Bean::load('workbenchtask', $planId);
         $parent->planStatus      = 'building';
         $parent->status          = 'running';
         $parent->source          = 'detected_error';
         $parent->detectederrorId = (int)$err->id;
         $parent->auditCycle      = (int)($ctx['audit_cycle'] ?? 0);   // preserve chain depth for the cap
         $parent->updatedAt       = date('Y-m-d H:i:s');
-        R::store($parent);
+        Bean::store($parent);
 
         // Spawn the detached orchestrator (mirrors Firehose::startOrchestrator).
         // Escalate the final cap-cycle fix to opus; earlier cycles stay on sonnet.
@@ -241,7 +242,7 @@ function sweepOneDeferred($inst, string $dir, int $level): int {
         }
         $err->taskId = $planId;
         $err->status = 'building';
-        R::store($err);
+        Bean::store($err);
         alog("idle-sweep launched deferred fix plan #$planId for: " . mb_substr((string)$err->message, 0, 60));
         return $planId;
     } catch (\Throwable $e) {

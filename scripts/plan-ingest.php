@@ -20,6 +20,7 @@ require __DIR__ . '/../vendor/autoload.php';
 use RedBeanPHP\R;
 use app\PlanIngestor;
 use app\PlanOrchestrator;
+use app\Bean;
 
 $o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::', 'autobuild::', 'level::', 'prompt::']);
 $slug   = (string)($o['slug'] ?? '');
@@ -73,21 +74,21 @@ if (count($pending) > 1) {
 }
 
 R::setup('sqlite:' . $registryDb);
-R::freeze(false);
+Bean::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "[ingest] cannot open registry db: $registryDb\n"); exit(1); }
 
 $tasksDir = dirname($tasksDb);
 if (!is_dir($tasksDir) && !@mkdir($tasksDir, 0775, true)) {
     fwrite(STDERR, "[ingest] cannot create $tasksDir for the tasks db\n"); exit(1);
 }
-R::addDatabase('tasks', 'sqlite:' . $tasksDb);
+Bean::addDatabase('tasks', 'sqlite:' . $tasksDb);
 
 // Resolve by slug (+app to disambiguate), then AUTHORIZE: the member must OWN the
 // instance or be on a team it's shared with — a team member decomposing a shared
 // workspace produces a plan.json here too. Mirrors Workbench::decompose /
 // TaskAccessControl::canAccessInstance so ingest matches the UI's access policy.
-$inst = R::findOne('instance', 'slug = ? AND app = ?', [$slug, $app]);
-if (!$inst || !$inst->id) { $inst = R::findOne('instance', 'slug = ?', [$slug]); }
+$inst = Bean::findOne('instance', 'slug = ? AND app = ?', [$slug, $app]);
+if (!$inst || !$inst->id) { $inst = Bean::findOne('instance', 'slug = ?', [$slug]); }
 if (!$inst || !$inst->id) { fwrite(STDERR, "[ingest] no instance '$slug'\n"); exit(1); }
 if (!(new \app\TaskAccessControl())->canAccessInstance($member, (int)$inst->id)) {
     fwrite(STDERR, "[ingest] member $member has no access to instance '$slug'\n"); exit(1);
@@ -95,8 +96,8 @@ if (!(new \app\TaskAccessControl())->canAccessInstance($member, (int)$inst->id))
 
 // Registry work is done. Everything from here writes TASKS, so switch to the instance's
 // own workbench.db — the file its board reads.
-R::selectDatabase('tasks');
-R::freeze(false);   // fluid: the task tables auto-create on first store
+Bean::selectDatabase('tasks');
+Bean::freeze(false);   // fluid: the task tables auto-create on first store
 
 // Atomic claim: if the browser poll already ingested it, skip cleanly.
 $claim = PlanIngestor::claim($planFile);
@@ -113,7 +114,7 @@ if (!PlanIngestor::isValidPlan($plan)) {
 // also the honest record: the failed plan stays on the board next to its replacement.
 $replanOf = 0;
 try {
-    $prev = R::findOne('workbenchtask',
+    $prev = Bean::findOne('workbenchtask',
         'parent_task_id IS NULL AND replan_requested_at IS NOT NULL ORDER BY id DESC');
     if ($prev && $prev->id) $replanOf = (int) $prev->id;
 } catch (\Throwable $e) { /* column absent until the first remediation */ }
@@ -131,10 +132,10 @@ try {
     $res = PlanIngestor::ingest($inst, $plan, $member, '', $app);
     $planId = (int) $res['parent']['id'];
 
-    $parentBean = R::load('workbenchtask', $planId);
+    $parentBean = Bean::load('workbenchtask', $planId);
     if ($goalText !== '') {
         $parentBean->planGoal = $goalText;
-        R::store($parentBean);
+        Bean::store($parentBean);
     }
     // Close the loop in the member's prompt log: the goal they typed now names the plan it
     // became. Linked by planUid, not by row id — see PlanIngestor for why.
@@ -155,11 +156,11 @@ try {
         }
     }
     if ($replanOf > 0) {
-        $newParent = R::load('workbenchtask', $planId);
+        $newParent = Bean::load('workbenchtask', $planId);
         $newParent->replanOf = $replanOf;
-        R::store($newParent);
-        $old = R::load('workbenchtask', $replanOf);
-        if ($old->id) { $old->replanRequestedAt = null; R::store($old); }   // consumed
+        Bean::store($newParent);
+        $old = Bean::load('workbenchtask', $replanOf);
+        if ($old->id) { $old->replanRequestedAt = null; Bean::store($old); }   // consumed
         echo "[ingest] linked as a re-plan of #{$replanOf}\n";
     }
 } catch (\Throwable $e) {
@@ -177,19 +178,19 @@ if ($supersede) {
     $parents = [];
     $removed = 0;
     foreach ($supersede as $tid) {
-        $t = R::load('workbenchtask', $tid);
+        $t = Bean::load('workbenchtask', $tid);
         if (!$t->id || (int)$t->memberId !== $member) continue;
         if ($t->parentTaskId) $parents[(int)$t->parentTaskId] = true;
         $t->xownTasklogList; $t->xownTasksnapshotList; $t->xownTaskcommentList; // cascade children
-        R::trash($t);
+        Bean::trash($t);
         $removed++;
     }
     foreach (array_keys($parents) as $pid) {
-        if ((int)R::count('workbenchtask', 'parent_task_id = ?', [$pid]) === 0) {
-            $p = R::load('workbenchtask', $pid);
+        if ((int)Bean::count('workbenchtask', 'parent_task_id = ?', [$pid]) === 0) {
+            $p = Bean::load('workbenchtask', $pid);
             if ($p->id && empty($p->parentTaskId) && (int)$p->memberId === $member) {
                 $p->xownTasklogList; $p->xownTasksnapshotList; $p->xownTaskcommentList;
-                R::trash($p);
+                Bean::trash($p);
             }
         }
     }
@@ -206,18 +207,18 @@ if ($supersede) {
 // ---------------------------------------------------------------------------
 if ($autoBuild) {
     $planId = (int) $res['parent']['id'];
-    $parent = R::load('workbenchtask', $planId);
+    $parent = Bean::load('workbenchtask', $planId);
     $parent->planStatus = 'approved';
     $parent->autoBuild  = 1;      // the board can say "this one was set to build itself"
     $parent->updatedAt  = date('Y-m-d H:i:s');
-    R::store($parent);
+    Bean::store($parent);
 
     // Pass $tasksDb EXPLICITLY. It is the path this script resolved and wrote the plan
     // to; handing the launcher an env var instead would let the orchestrator write task
     // state somewhere other than where the plan it is building actually lives.
     $started = PlanOrchestrator::launch($planId, $slug, $dir, $level, 'sonnet', $tasksDb);
 
-    $note = R::dispense('tasklog');
+    $note = Bean::dispense('tasklog');
     $note->taskId     = $planId;
     $note->memberId   = $member;
     $note->logLevel   = $started ? 'info' : 'error';
@@ -226,13 +227,13 @@ if ($autoBuild) {
         ? 'Auto-approved and started building (straight-through was requested at decompose).'
         : 'Auto-approved, but the orchestrator could not be started — press Build to run it. See planner.log.';
     $note->createdAt  = date('Y-m-d H:i:s');
-    R::store($note);
+    Bean::store($note);
 
     if ($started) {
         $parent->planStatus = 'building';
         $parent->status     = 'running';
         $parent->updatedAt  = date('Y-m-d H:i:s');
-        R::store($parent);
+        Bean::store($parent);
         echo "[ingest] auto-approved plan #{$planId} and started the build\n";
     } else {
         // Loud: the member asked for a build and there isn't one. Non-zero exit so the

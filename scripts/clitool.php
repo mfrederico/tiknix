@@ -75,10 +75,10 @@ function bail(string $s): void { err("error: $s"); exit(1); }
 /** Resolve a member by id / email / username. */
 function findMember(string $ident): ?object {
     if (ctype_digit($ident)) {
-        $m = R::load('member', (int)$ident);
+        $m = Bean::load('member', (int)$ident);
         if ($m && $m->id) return $m;
     }
-    $m = R::findOne('member', 'email = ? OR username = ?', [$ident, $ident]);
+    $m = Bean::findOne('member', 'email = ? OR username = ?', [$ident, $ident]);
     return ($m && $m->id) ? $m : null;
 }
 
@@ -89,7 +89,7 @@ function levelLabel(int $level): string {
 // --- Boot -------------------------------------------------------------------
 $app = new \app\Bootstrap(); // connects (DB_DSN-aware)
 if (!R::testConnection()) bail('database connection failed');
-$dbType = R::getDatabaseAdapter()->getDatabase()->getDatabaseType();
+$dbType = Bean::getDatabaseAdapter()->getDatabase()->getDatabaseType();
 if ($VERBOSE) out("# connected ({$dbType})");
 
 if (empty($opt) || isset($opt['help'])) { showHelp(); exit(0); }
@@ -99,8 +99,8 @@ if (isset($opt['build'])) {
     if (isset($opt['fresh'])) {
         if (!$YES && !$DRYRUN) bail('--fresh drops ALL tables. Re-run with --yes to confirm.');
         out('# --fresh: dropping existing tables');
-        if (!$DRYRUN) foreach (R::inspect() as $t) {
-            try { R::exec('DROP TABLE IF EXISTS ' . $t); out("  dropped {$t}"); }
+        if (!$DRYRUN) foreach (Bean::inspect() as $t) {
+            try { Bean::exec('DROP TABLE IF EXISTS ' . $t); out("  dropped {$t}"); }
             catch (\Exception $e) { err("  warn dropping {$t}: " . $e->getMessage()); }
         }
     }
@@ -113,12 +113,12 @@ if (isset($opt['build'])) {
 
 // --- Introspection: --list --------------------------------------------------
 if (isset($opt['list'])) {
-    $tables = R::inspect();
+    $tables = Bean::inspect();
     if (!$tables) { out('(no tables)'); exit(0); }
     out(sprintf('%-30s %8s', 'TABLE', 'ROWS'));
     out(str_repeat('-', 39));
     foreach ($tables as $t) {
-        $n = R::count($t);
+        $n = Bean::count($t);
         out(sprintf('%-30s %8d', $t, $n));
     }
     exit(0);
@@ -127,7 +127,7 @@ if (isset($opt['list'])) {
 // --- Introspection: --describe=TABLE ---------------------------------------
 if (isset($opt['describe'])) {
     $table = $opt['describe'];
-    $cols = R::inspect($table);
+    $cols = Bean::inspect($table);
     if (!$cols) bail("table '{$table}' not found (or empty)");
     out("TABLE {$table}");
     out(str_repeat('-', 40));
@@ -137,7 +137,7 @@ if (isset($opt['describe'])) {
 
 // --- Ad-hoc read: --sql -----------------------------------------------------
 if (isset($opt['sql'])) {
-    $rows = R::getAll($opt['sql']);
+    $rows = Bean::getAll($opt['sql']);
     if (!$rows) { out('(0 rows)'); exit(0); }
     $headers = array_keys($rows[0]);
     out(implode("\t", $headers));
@@ -150,14 +150,14 @@ if (isset($opt['sql'])) {
 if (isset($opt['exec'])) {
     if (!$YES && !$DRYRUN) bail('--exec runs a write query. Re-run with --yes to confirm.');
     if ($DRYRUN) { out('# dry-run: would exec: ' . $opt['exec']); exit(0); }
-    $affected = R::exec($opt['exec']);
+    $affected = Bean::exec($opt['exec']);
     out("# ok ({$affected} row(s) affected)");
     exit(0);
 }
 
 // --- Members: --list-users --------------------------------------------------
 if (isset($opt['list-users'])) {
-    $members = R::findAll('member', ' ORDER BY level ASC, id ASC ');
+    $members = Bean::findAll('member', ' ORDER BY level ASC, id ASC ');
     if (!$members) { out('(no members)'); exit(0); }
     out(sprintf('%-4s %-24s %-16s %-8s %-8s %-4s', 'ID', 'EMAIL', 'USERNAME', 'LEVEL', 'STATUS', '2FA'));
     out(str_repeat('-', 70));
@@ -179,7 +179,7 @@ if (isset($opt['adduser'])) {
     $level = isset($opt['level']) ? (int)$opt['level'] : 100;
     $username = trim((string)($opt['username'] ?? explode('@', $email)[0]));
 
-    $existing = R::findOne('member', 'email = ?', [$email]);
+    $existing = Bean::findOne('member', 'email = ?', [$email]);
     if ($existing && $existing->id) bail("member already exists (id {$existing->id}); use --user={$email} --set-password / --set-level");
 
     if ($DRYRUN) { out("# dry-run: would create {$email} ({$username}) level " . levelLabel($level)); exit(0); }
@@ -231,7 +231,7 @@ if (isset($opt['user'])) {
     }
     if (isset($opt['delete-user'])) {
         if (!$YES && !$DRYRUN) bail("deleting member {$m->email}. Re-run with --yes to confirm.");
-        if (!$DRYRUN) { R::trash($m); if (class_exists('\app\PermissionCache')) \app\PermissionCache::clear(); }
+        if (!$DRYRUN) { Bean::trash($m); if (class_exists('\app\PermissionCache')) \app\PermissionCache::clear(); }
         out("# " . ($DRYRUN ? 'would delete' : 'deleted') . " member {$m->email} (id {$m->id})");
         exit(0);
     }
@@ -269,7 +269,7 @@ if (isset($opt['scaffold'])) {
     // override with --level. Idempotent: leaves an existing control/* row as-is.
     if (!$DRYRUN && array_intersect(['controller', 'crud', 'api'], $partsList)) {
         $lvl = isset($opt['level']) ? (int)$opt['level'] : 100;
-        $existing = R::findOne('authcontrol', 'control = ? AND method = ?', [$bt, '*']);
+        $existing = Bean::findOne('authcontrol', 'control = ? AND method = ?', [$bt, '*']);
         if ($existing && $existing->id) {
             out("# authcontrol {$bt}/* already exists (level {$existing->level})");
         } else {
@@ -307,14 +307,14 @@ if (isset($opt['bean'])) {
     if (isset($opt['findone'])) {
         $where = (string)($opt['where'] ?? '1');
         $data  = isset($opt['data']) ? [$opt['data']] : [];
-        $bean = R::findOne($type, $where, $data);
+        $bean = Bean::findOne($type, $where, $data);
         out($bean ? json_encode($bean->export(), JSON_PRETTY_PRINT) : '(null)');
         exit(0);
     }
     // default: getall
     $where = (string)($opt['where'] ?? '1');
     $data  = isset($opt['data']) ? [$opt['data']] : [];
-    $beans = R::findAll($type, $where . $order . $limit, $data);
+    $beans = Bean::findAll($type, $where . $order . $limit, $data);
     $rows = array_map(fn($b) => $b->export(), $beans);
     out(json_encode(array_values($rows), JSON_PRETTY_PRINT));
     out('# ' . count($rows) . ' bean(s)');

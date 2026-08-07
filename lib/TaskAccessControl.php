@@ -16,7 +16,6 @@
 
 namespace app;
 
-use \RedBeanPHP\R as R;
 
 class TaskAccessControl {
 
@@ -52,9 +51,9 @@ class TaskAccessControl {
     private function isSharedInstanceTask(int $memberId, array $task): bool {
         $instanceId = (int)($task['instance_id'] ?? 0);
         if ($instanceId <= 0) return false;
-        if (!in_array('instance_team', R::inspect(), true)) return false;
+        if (!in_array('instance_team', Bean::inspect(), true)) return false;
 
-        return (int)R::getCell(
+        return (int)Bean::getCell(
             'SELECT COUNT(*) FROM instance_team it
                JOIN teammember tm ON tm.team_id = it.team_id
              WHERE it.instance_id = ? AND tm.member_id = ?', [$instanceId, $memberId]) > 0;
@@ -296,9 +295,9 @@ class TaskAccessControl {
         // visible too, even though the tasks themselves are personal (team_id NULL).
         $sharedInstanceIds = [];
         if (!empty($teamIds) && $this->columnExists('workbenchtask', 'instance_id')
-            && in_array('instance_team', \RedBeanPHP\R::inspect(), true)) {
+            && in_array('instance_team', Bean::inspect(), true)) {
             $tph = implode(',', array_fill(0, count($teamIds), '?'));
-            $sharedInstanceIds = array_map('intval', \RedBeanPHP\R::getCol(
+            $sharedInstanceIds = array_map('intval', Bean::getCol(
                 "SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ($tph)", $teamIds));
         }
 
@@ -407,16 +406,16 @@ class TaskAccessControl {
      * no tasks in it (or it has no tasks yet). `n` counts that instance's plans.
      */
     public function getInstanceTags(int $memberId): array {
-        if (!in_array('instance', \RedBeanPHP\R::inspect(), true)) return [];
+        if (!in_array('instance', Bean::inspect(), true)) return [];
         $ids = $this->getAccessibleInstanceIds($memberId);
         if (empty($ids)) return [];
         try {
             $hasIid = $this->columnExists('workbenchtask', 'instance_id');
             $ph = implode(',', array_fill(0, count($ids), '?'));
             $out = [];
-            foreach (\RedBeanPHP\R::find('instance', "id IN ($ph) ORDER BY slug ASC", $ids) as $inst) {
+            foreach (Bean::find('instance', "id IN ($ph) ORDER BY slug ASC", $ids) as $inst) {
                 $tag = (string)$inst->slug . '.' . ((string)($inst->app ?: 'tiknix'));
-                $n = $hasIid ? (int)\RedBeanPHP\R::getCell(
+                $n = $hasIid ? (int)Bean::getCell(
                     "SELECT COUNT(*) FROM workbenchtask WHERE instance_id = ? AND parent_task_id IS NULL",
                     [(int)$inst->id]) : 0;
                 $out[$tag] = [
@@ -438,7 +437,7 @@ class TaskAccessControl {
 
     /** True if $table has $col (fluid RedBean columns appear only once written). */
     private function columnExists(string $table, string $col): bool {
-        try { return array_key_exists($col, \RedBeanPHP\R::inspect($table)); }
+        try { return array_key_exists($col, Bean::inspect($table)); }
         catch (\Throwable $e) { return false; }
     }
 

@@ -74,9 +74,9 @@ class CoreDb {
 
         $restore = self::currentKey();
         try {
-            if (!R::hasDatabase(self::KEY)) R::addDatabase(self::KEY, 'sqlite:' . $core);
-            R::selectDatabase(self::KEY);
-            R::freeze(false);
+            if (!Bean::hasDatabase(self::KEY)) Bean::addDatabase(self::KEY, 'sqlite:' . $core);
+            Bean::selectDatabase(self::KEY);
+            Bean::freeze(false);
             return $fn();
         } catch (\Throwable $e) {
             self::$lastError = $e->getMessage();
@@ -84,7 +84,7 @@ class CoreDb {
             return $onError;
         } finally {
             if ($restore !== self::KEY) {
-                try { R::selectDatabase($restore); } catch (\Throwable $e) { /* nothing to restore to */ }
+                try { Bean::selectDatabase($restore); } catch (\Throwable $e) { /* nothing to restore to */ }
             }
         }
     }

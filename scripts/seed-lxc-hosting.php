@@ -26,7 +26,6 @@ require_once __DIR__ . '/../bootstrap.php';
 new app\Bootstrap('conf/config.ini');
 
 use app\Bean;
-use RedBeanPHP\R;
 
 $rows = [
     ['connections', 'lxcstatus',  100, 'Read this instance container state (safe to poll)'],
@@ -36,7 +35,7 @@ $rows = [
 
 $added = $kept = 0;
 foreach ($rows as [$control, $method, $level, $description]) {
-    $bean = R::findOne('authcontrol', 'control = ? AND method = ?', [$control, $method]);
+    $bean = Bean::findOne('authcontrol', 'control = ? AND method = ?', [$control, $method]);
     if ($bean && $bean->id) {
         if ((int) $bean->level !== $level) {
             echo "  NOTE {$control}::{$method} exists at level {$bean->level}, expected {$level} — left as-is\n";
@@ -52,7 +51,7 @@ foreach ($rows as [$control, $method, $level, $description]) {
     $bean->validcount  = 0;
     $bean->linkorder   = 0;
     $bean->createdAt   = date('Y-m-d H:i:s');
-    R::store($bean);
+    Bean::store($bean);
     $added++;
     echo "  ADD  {$control}::{$method} = {$level}\n";
 }

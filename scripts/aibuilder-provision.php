@@ -155,9 +155,10 @@ if (!is_file("$ROOT/vendor/autoload.php")) {
 require_once "$ROOT/vendor/autoload.php";
 
 use RedBeanPHP\R;
+use app\Bean;
 
 R::setup("sqlite:$dbPath");
-R::freeze(false);
+Bean::freeze(false);
 R::testConnection() or die("aibuilder-provision: db connection failed\n");
 
 $runSqlFile = function (string $file) {
@@ -170,7 +171,7 @@ $runSqlFile = function (string $file) {
     $statements = array_filter(array_map('trim', explode(';', $sql)));
     foreach ($statements as $stmt) {
         if ($stmt === '') continue;
-        try { R::exec($stmt); }
+        try { Bean::exec($stmt); }
         catch (\Exception $e) {
             if (strpos($e->getMessage(), 'already exists') === false &&
                 strpos($e->getMessage(), 'UNIQUE constraint') === false) {
@@ -189,12 +190,12 @@ $runSqlFile("$ROOT/sql/workbench_schema.sql");
 // RedBean FUSE hooks like Model_Authcontrol::after_update() can't run — they
 // reach for the app logger/cache and fatal. schema.sql seeds its data the same
 // raw way. The in-instance app rebuilds its permission cache on first request.
-R::exec('UPDATE member SET email = ?, updated_at = ? WHERE username = ?',
+Bean::exec('UPDATE member SET email = ?, updated_at = ? WHERE username = ?',
         [$admin, date('Y-m-d H:i:s'), 'admin']);
 echo "  admin email → $admin (password: admin123 — change after first login)\n";
 
 // The AI Builder lives inside every instance too; make it reachable at ADMIN.
-R::exec('INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_at)
+Bean::exec('INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_at)
          VALUES (?, ?, ?, ?, ?)',
         ['aibuilder', '*', 50, 'AI Builder', date('Y-m-d H:i:s')]);
 
@@ -206,7 +207,7 @@ R::exec('INSERT OR IGNORE INTO authcontrol (control, method, level, description,
 //
 // Raw SQL for the same reason as the statements above: the app is not booted.
 $agentToken = 'tk_' . bin2hex(random_bytes(32));
-$existing = R::getCell('SELECT token FROM apikey WHERE name = ? AND is_active = 1', [AGENT_KEY_NAME]);
+$existing = Bean::getCell('SELECT token FROM apikey WHERE name = ? AND is_active = 1', [AGENT_KEY_NAME]);
 if ($existing) {
     // Re-provisioning an existing instance must not rotate a token the agent (or
     // anything else) is already configured with.
@@ -218,7 +219,7 @@ if ($existing) {
     // it here fatals on a fresh database. scopes is a JSON ARRAY everywhere it
     // is read (json_decode(...) ?: []), so a bare 'mcp:*' string would decode to
     // null and silently leave the key with no scopes at all.
-    R::exec('INSERT INTO apikey (member_id, name, token, scopes, is_active, usage_count, created_at)
+    Bean::exec('INSERT INTO apikey (member_id, name, token, scopes, is_active, usage_count, created_at)
              SELECT id, ?, ?, ?, 1, 0, ? FROM member WHERE username = ?',
             [AGENT_KEY_NAME, $agentToken, json_encode(['mcp:*']), date('Y-m-d H:i:s'), 'admin']);
     echo "  agent MCP key → minted on the admin member\n";

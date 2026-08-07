@@ -16,7 +16,6 @@
 namespace app\Pipeline;
 
 use app\Bean;
-use RedBeanPHP\R;
 
 class Executor {
 
@@ -42,7 +41,7 @@ class Executor {
 
     /** Background: execute a Dispatcher-created 'queued' run to completion. */
     public function resume(int $runId): array {
-        $run = R::load('piperun', $runId);
+        $run = Bean::load('piperun', $runId);
         if (!$run->id) throw new \RuntimeException("run $runId not found");
         $def = (new Loader($this->root))->get((string) $run->slug);
         if (!$def) { $run->status = 'failed'; $run->error = 'definition missing'; Bean::store($run); throw new \RuntimeException('definition missing'); }
@@ -54,7 +53,7 @@ class Executor {
 
     /** Resume a paused await_input run, injecting the supplied input under {input.*}. */
     public function continueRun(int $runId, array $input): array {
-        $run = R::load('piperun', $runId);
+        $run = Bean::load('piperun', $runId);
         if (!$run->id) throw new \RuntimeException("run $runId not found");
         if ($run->status !== 'paused') throw new \RuntimeException("run $runId is not awaiting input (status={$run->status})");
         $def = (new Loader($this->root))->get((string) $run->slug);
@@ -88,7 +87,7 @@ class Executor {
 
     /** Abort a paused debug run. */
     public function debugAbort(int $runId): array {
-        $run = R::load('piperun', $runId);
+        $run = Bean::load('piperun', $runId);
         if (!$run->id) throw new \RuntimeException("run $runId not found");
         $run->status = 'failed'; $run->error = 'aborted from debugger';
         $run->finishedAt = date('Y-m-d H:i:s'); Bean::store($run);
@@ -96,7 +95,7 @@ class Executor {
     }
 
     private function resumeDebug(int $runId, array $patch, bool $stepMode): array {
-        $run = R::load('piperun', $runId);
+        $run = Bean::load('piperun', $runId);
         if (!$run->id) throw new \RuntimeException("run $runId not found");
         if ($run->status !== 'paused') throw new \RuntimeException("run $runId is not at a breakpoint (status={$run->status})");
         $state = json_decode((string) $run->stateJson, true) ?: [];

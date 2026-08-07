@@ -34,7 +34,6 @@
  */
 namespace app;
 
-use RedBeanPHP\R;
 
 class ProxmoxDeploy {
 
@@ -261,7 +260,7 @@ class ProxmoxDeploy {
         $inst->ctIp      = $addr;
         $inst->ctDomain  = $domain;
         $inst->ctAliases = $aliases ? json_encode(array_values($aliases)) : null;
-        R::store($inst);
+        Bean::store($inst);
 
         return ['ok' => true, 'vmid' => $vmid, 'ip' => $addr, 'domain' => $domain,
                 'aliases' => $aliases, 'steps' => $steps];
@@ -614,7 +613,7 @@ class ProxmoxDeploy {
             }
         }
         $inst->ctAliases = $aliases ? json_encode(array_values($aliases)) : null;
-        R::store($inst);
+        Bean::store($inst);
 
         return ['ok' => true, 'aliases' => $aliases, 'steps' => $steps];
     }
@@ -723,7 +722,7 @@ class ProxmoxDeploy {
 
         $res = BrokerService::mint((int) $inst->id, (int) $inst->memberId, []);
         $inst->brokerKey = EncryptionService::encrypt($res['token']);
-        R::store($inst);
+        Bean::store($inst);
         self::syncCloneBroker($inst, (string) $res['token']);
         return ['endpoint' => $endpoint, 'key' => (string) $res['token']];
     }
@@ -753,7 +752,7 @@ class ProxmoxDeploy {
     private static function appKey(object $inst): string {
         if (empty($inst->appKey) || !preg_match('/^[0-9a-f]{64}$/', (string) $inst->appKey)) {
             $inst->appKey = bin2hex(random_bytes(32));
-            R::store($inst);
+            Bean::store($inst);
         }
         return (string) $inst->appKey;
     }

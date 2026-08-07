@@ -10,6 +10,7 @@ namespace app\Scaffold\Commands;
 
 use app\Scaffold\ScaffoldManager;
 use app\Scaffold\Context;
+use app\Bean;
 
 class WizardCommand {
 
@@ -425,7 +426,7 @@ class WizardCommand {
      */
     private function beanExists(string $beanName): bool {
         try {
-            $tables = \RedBeanPHP\R::inspect();
+            $tables = Bean::inspect();
             return in_array(strtolower($beanName), $tables);
         } catch (\Exception $e) {
             return false;

@@ -10,6 +10,7 @@ namespace app\Scaffold\Commands;
 
 use app\Scaffold\ScaffoldManager;
 use app\Scaffold\Context;
+use app\Bean;
 
 class ScaffoldCommand {
 
@@ -58,7 +59,7 @@ class ScaffoldCommand {
      */
     private function introspectTable(Context $ctx): void {
         try {
-            $columns = \RedBeanPHP\R::inspect($ctx->beanName);
+            $columns = Bean::inspect($ctx->beanName);
 
             if (empty($columns)) {
                 if ($this->manager->isVerbose()) {
@@ -152,7 +153,7 @@ class ScaffoldCommand {
 
                 // Check if it's a real table
                 try {
-                    $tables = \RedBeanPHP\R::inspect();
+                    $tables = Bean::inspect();
                     if (in_array($relatedBean, $tables)) {
                         $ctx->addRelationship('belongs-to', $relatedBean);
                         if ($this->manager->isVerbose()) {

@@ -14,17 +14,18 @@
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 use RedBeanPHP\R;
+use app\Bean;
 
 $securityDbPath = __DIR__ . '/security.db';
 
 // Connect to security database
 R::setup('sqlite:' . $securityDbPath);
-R::freeze(false); // Allow schema changes
+Bean::freeze(false); // Allow schema changes
 
 echo "Initializing security database at: {$securityDbPath}\n\n";
 
 // Create the securitycontrol table with initial schema
-$rule = R::dispense('securitycontrol');
+$rule = Bean::dispense('securitycontrol');
 $rule->name = 'Block /etc access';
 $rule->target = 'path';           // 'path' or 'command'
 $rule->action = 'block';          // 'block', 'allow', 'protect'
@@ -34,7 +35,7 @@ $rule->description = 'Block access to system configuration directory';
 $rule->priority = 100;            // Lower = higher priority
 $rule->isActive = 1;
 $rule->createdAt = date('Y-m-d H:i:s');
-R::store($rule);
+Bean::store($rule);
 
 // Add default security rules
 $defaultRules = [
@@ -83,7 +84,7 @@ $defaultRules = [
 ];
 
 foreach ($defaultRules as $r) {
-    $rule = R::dispense('securitycontrol');
+    $rule = Bean::dispense('securitycontrol');
     $rule->name = $r[0];
     $rule->target = $r[1];
     $rule->action = $r[2];
@@ -93,14 +94,14 @@ foreach ($defaultRules as $r) {
     $rule->priority = $r[6];
     $rule->isActive = 1;
     $rule->createdAt = date('Y-m-d H:i:s');
-    R::store($rule);
+    Bean::store($rule);
     echo "  + {$r[0]}\n";
 }
 
 // Set restrictive permissions on the security database
 chmod($securityDbPath, 0600);
 
-echo "\nSecurity database initialized with " . R::count('securitycontrol') . " rules.\n";
+echo "\nSecurity database initialized with " . Bean::count('securitycontrol') . " rules.\n";
 echo "File permissions set to 600 (owner read/write only).\n";
 
 R::close();

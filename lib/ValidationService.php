@@ -13,7 +13,62 @@ namespace app;
 
 class ValidationService {
 
+    /**
+     * The Bean:: surface, from lib/Bean.php. A raw R:: call to any of these has a
+     * wrapper that should have been used instead; anything not listed (setup, close,
+     * testConnection, getWriter, nuke) has no Bean:: equivalent and is left alone.
+     */
+    private const BEAN_WRAPPED = [
+        'dispense', 'load', 'store', 'trash', 'trashAll',
+        'findOne', 'find', 'findAll', 'count',
+        'exec', 'getAll', 'getRow', 'getCol', 'getCell',
+        'begin', 'commit', 'rollback',
+        'freeze', 'inspect', 'addDatabase', 'selectDatabase', 'hasDatabase',
+        'currentDatabaseKey', 'getDatabaseAdapter', 'normalize', 'genSlots',
+    ];
+
     private string $projectRoot;
+
+    /**
+     * Where raw R:: is legitimate, per CLAUDE.md.
+     *
+     * Callers here pass a path RELATIVE to the project root (fullValidation strips it),
+     * so the leading slash is added back before matching - without it "lib/Bean.php"
+     * and "services/Schema/Seeds/01_Member.php" both fall through the allowlist and the
+     * two files that MUST use raw R:: get reported as violations on every scan.
+     */
+    private function rawRedbeanAllowed(string $filePath): bool {
+        $path = '/' . ltrim(str_replace('\\', '/', $filePath), '/');
+        if (basename($path) === 'bootstrap.php') return true;
+        if (basename($path) === 'Bean.php' && strpos($path, '/lib/') !== false) return true;
+        return strpos($path, '/services/Schema/Seeds/') !== false;
+    }
+
+    /**
+     * Code with comments and string literals removed, so a docblock that NAMES a raw
+     * call is not mistaken for one. Lexed rather than parsed: token_get_all without
+     * TOKEN_PARSE never throws, so a fragment still classifies correctly.
+     */
+    private function codeOnly(string $code): string {
+        $source = preg_match('/^(#![^\n]*\n)?\s*<\?(php|=)?/', $code) ? $code : "<?php\n" . $code;
+        try {
+            $tokens = @token_get_all($source);
+        } catch (\Throwable $e) {
+            return $code;
+        }
+        if (!$tokens) return $code;
+
+        $skip = [T_COMMENT, T_DOC_COMMENT, T_CONSTANT_ENCAPSED_STRING, T_INLINE_HTML, T_ENCAPSED_AND_WHITESPACE];
+        $out  = '';
+        foreach ($tokens as $t) {
+            if (is_array($t)) {
+                $out .= in_array($t[0], $skip, true) ? ' ' : $t[1];
+                continue;
+            }
+            $out .= $t;
+        }
+        return $out;
+    }
 
     public function __construct(?string $projectRoot = null) {
         $this->projectRoot = $projectRoot ?? dirname(__DIR__);
@@ -164,8 +219,8 @@ class ValidationService {
 
         // Direct variable in SQL
         $patterns = [
-            '/R::exec\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/' => 'Direct variable in R::exec()',
-            '/R::getAll\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/' => 'Direct variable in R::getAll()',
+            '/(?:R|Bean)::exec\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/' => 'Direct variable in exec()',
+            '/(?:R|Bean)::(?:getAll|getRow|getCol|getCell)\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/' => 'Direct variable in a raw SELECT',
             '/query\s*\(\s*["\'][^"\']*\$[a-zA-Z_]/' => 'Direct variable in query()',
             '/\->exec\s*\(\s*["\'][^"\']*\$/' => 'Direct variable in exec()',
         ];
@@ -335,6 +390,29 @@ class ValidationService {
     public function checkRedBeanConventions(string $code, string $file = ''): array {
         $result = ['errors' => [], 'warnings' => []];
 
+        // Raw R:: where Bean:: wraps it. This is the check that matters most in this
+        // class: these tools are what a jailed build agent asks BEFORE it writes, so a
+        // validator that still teaches the old way is how raw R:: gets reintroduced
+        // faster than it can be swept out. Kept in step with
+        // scripts/hooks/validate-tiknix-php.php, which enforces the same rule on
+        // Write/Edit. Methods with no Bean:: equivalent (setup, close, testConnection)
+        // are deliberately not flagged - blocking a call with no alternative just
+        // teaches people to route around the validator.
+        if (!$this->rawRedbeanAllowed($file)) {
+            $seen = [];
+            if (preg_match_all('/(?<![A-Za-z0-9_])R::([a-zA-Z]+)/', $this->codeOnly($code), $mm)) {
+                foreach ($mm[1] as $method) {
+                    if (!in_array($method, self::BEAN_WRAPPED, true) || isset($seen[$method])) continue;
+                    $seen[$method] = true;
+                    $result['errors'][] = "[{$file}] R::{$method}() bypasses the Bean wrapper. "
+                        . "Use Bean::{$method}() instead (add: use app\\Bean;). Raw R:: skips the "
+                        . "cached adapter's read-caching and write-busting, and skips bean-type "
+                        . "normalization. Raw R:: is allowed ONLY in bootstrap.php and "
+                        . "services/Schema/Seeds/*.php.";
+                }
+            }
+        }
+
         // Check for R::dispense with invalid bean names
         if (preg_match_all('/R::dispense\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)/', $code, $matches, PREG_OFFSET_CAPTURE)) {
             foreach ($matches[1] as $match) {
@@ -350,9 +428,12 @@ class ValidationService {
         }
 
         // Check for R::exec used for simple CRUD
-        if (preg_match('/R::exec\s*\(\s*[\'"](?:INSERT|UPDATE|DELETE)\s/i', $code, $matches, PREG_OFFSET_CAPTURE)) {
+        // Bean::exec too: the wrapper bypasses FUSE models identically, so checking
+        // only R:: meant converting a file to the mandated Bean:: silenced the warning
+        // about the thing that was actually wrong.
+        if (preg_match('/(?:R|Bean)::exec\s*\(\s*[\'"](?:INSERT|UPDATE|DELETE)\s/i', $code, $matches, PREG_OFFSET_CAPTURE)) {
             $line = $this->getLineNumber($code, $matches[0][1]);
-            $result['warnings'][] = "[{$file}:{$line}] Consider using bean operations instead of R::exec() for CRUD";
+            $result['warnings'][] = "[{$file}:{$line}] Consider using bean operations instead of exec() for CRUD";
         }
 
         // Check for manual FK assignment

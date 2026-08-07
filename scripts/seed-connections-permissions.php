@@ -31,7 +31,6 @@ require_once __DIR__ . '/../bootstrap.php';
 new app\Bootstrap('conf/config.ini');
 
 use app\Bean;
-use RedBeanPHP\R;
 
 const LEVEL_MEMBER = 100;
 
@@ -48,7 +47,7 @@ $rows = [
 
 $added = $kept = 0;
 foreach ($rows as [$method, $description]) {
-    $bean = R::findOne('authcontrol', 'control = ? AND method = ?', ['connections', $method]);
+    $bean = Bean::findOne('authcontrol', 'control = ? AND method = ?', ['connections', $method]);
     if ($bean && $bean->id) {
         if ((int) $bean->level !== LEVEL_MEMBER) {
             echo "  NOTE connections::{$method} exists at level {$bean->level} — left as-is\n";
@@ -64,7 +63,7 @@ foreach ($rows as [$method, $description]) {
     $bean->validcount  = 0;
     $bean->linkorder   = 0;
     $bean->createdAt   = date('Y-m-d H:i:s');
-    R::store($bean);
+    Bean::store($bean);
     $added++;
     echo "  ADD  connections::{$method} = " . LEVEL_MEMBER . "\n";
 }

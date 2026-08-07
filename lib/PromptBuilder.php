@@ -409,7 +409,9 @@ Before completing this task, ensure:
 1. **PHP Syntax**: All PHP files pass syntax check (`php -l`)
 2. **Coding Standards**: Follow the project's RedBeanPHP and FlightPHP conventions
 3. **Security**: No SQL injection, XSS, or other OWASP Top 10 vulnerabilities
-4. **Bean Names**: Use lowercase for R::dispense() or the Bean:: wrapper
+4. **Database Access**: Always `Bean::` (`use app\Bean;`), never raw `R::` — the wrapper
+   normalizes the bean type and keeps the cached adapter's read-caching and write-busting
+   correct. Raw `R::` is allowed ONLY in `bootstrap.php` and `services/Schema/Seeds/*.php`.
 
 Use the following MCP tools for validation:
 - `tiknix:validate_php` - Check PHP syntax

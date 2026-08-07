@@ -11,6 +11,7 @@
 require_once __DIR__ . '/../bootstrap.php';
 
 use RedBeanPHP\R;
+use app\Bean;
 
 $app = new \app\Bootstrap();
 
@@ -24,7 +25,7 @@ try {
     R::testConnection();
     echo "✓ Database connection successful\n\n";
 
-    $dbType = R::getDatabaseAdapter()->getDatabase()->getDatabaseType();
+    $dbType = Bean::getDatabaseAdapter()->getDatabase()->getDatabaseType();
     echo "Database type: " . ucfirst($dbType) . "\n";
 
     if ($dbType === 'sqlite') {
@@ -37,9 +38,9 @@ try {
         if ($fresh) {
             echo "\n⚠️  Fresh install requested - clearing existing data...\n";
             // Get all tables
-            $tables = R::inspect();
+            $tables = Bean::inspect();
             foreach ($tables as $table) {
-                R::exec("DROP TABLE IF EXISTS $table");
+                Bean::exec("DROP TABLE IF EXISTS $table");
                 echo "  Dropped: $table\n";
             }
         }
@@ -58,7 +59,7 @@ try {
                 continue;
             }
             try {
-                R::exec($statement);
+                Bean::exec($statement);
                 $executed++;
             } catch (Exception $e) {
                 // Ignore "already exists" errors for CREATE TABLE IF NOT EXISTS

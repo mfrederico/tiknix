@@ -5,7 +5,7 @@
 
 namespace app\mcptools;
 
-use RedBeanPHP\R;
+use app\Bean;
 
 class PipelineRunGetTool extends BaseTool {
 
@@ -19,10 +19,10 @@ class PipelineRunGetTool extends BaseTool {
 
     public function execute(array $args): string {
         $runId = (int) ($args['run_id'] ?? 0);
-        $run = R::load('piperun', $runId);
+        $run = Bean::load('piperun', $runId);
         if (!$run->id) throw new \Exception("run $runId not found");
         $steps = [];
-        foreach (R::find('pipesteprun', 'run_id = ? ORDER BY id', [$runId]) as $sr) {
+        foreach (Bean::find('pipesteprun', 'run_id = ? ORDER BY id', [$runId]) as $sr) {
             $steps[] = [
                 'step'     => $sr->stepName,
                 'type'     => $sr->stepType,

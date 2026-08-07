@@ -26,7 +26,6 @@
  */
 namespace app;
 
-use RedBeanPHP\R;
 
 class PlanRemediator {
 
@@ -83,7 +82,7 @@ class PlanRemediator {
         // Mark the plan we are re-planning FROM, so the next ingest can link the new one
         // to it and this guard trips if the second attempt fails too.
         $parent->replanRequestedAt = date('Y-m-d H:i:s');
-        R::store($parent);
+        Bean::store($parent);
 
         return ['action' => 'replan',
                 'why' => count($failures) . ' subtask(s) failed after mechanical retries were exhausted',

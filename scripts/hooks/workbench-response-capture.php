@@ -59,7 +59,7 @@ try {
         if ($dbPath === '') {
             $dbPath = $mainProject . '/' . ($config['database']['path'] ?? 'database/tiknix.db');
         }
-        if (!R::hasDatabase('default')) {
+        if (!Bean::hasDatabase('default')) {
             R::setup('sqlite:' . $dbPath);
         }
     }

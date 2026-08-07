@@ -19,7 +19,6 @@
 namespace app\services\Schema;
 
 use \app\Bean;
-use \RedBeanPHP\R as R;
 use \Flight as Flight;
 
 class WorkspaceSchemaBuilder {
@@ -39,7 +38,7 @@ class WorkspaceSchemaBuilder {
         // Helper closures made available to each seed file's scope.
         $_tableCheck = function (string $table): bool {
             try {
-                return in_array(Bean::normalize($table), R::inspect(), true);
+                return in_array(Bean::normalize($table), Bean::inspect(), true);
             } catch (\Exception $e) {
                 return false;
             }
@@ -68,7 +67,7 @@ class WorkspaceSchemaBuilder {
         // Trash the schema-priming padding beans. Reverse order so children
         // (deferred after parents) trash first and FK constraints don't reject.
         foreach (array_reverse($this->deferred) as $bean) {
-            try { R::trash($bean); } catch (\Exception $e) { /* ignore */ }
+            try { Bean::trash($bean); } catch (\Exception $e) { /* ignore */ }
         }
 
         $logger?->info('SchemaBuilder: build complete', ['results' => $this->results]);

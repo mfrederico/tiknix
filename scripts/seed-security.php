@@ -15,8 +15,10 @@
  * NOT baked in — the "allow project dir" rule is computed from THIS instance's root.
  *
  * Idempotent: a rule already present (matched on target+pattern) is left as-is.
- * Uses raw R::exec on the security connection so it works even when the main app
- * connection is frozen (DB_FREEZE / production).
+ * Runs on its own security connection (R::setup below) so it works even when the main
+ * app connection is frozen (DB_FREEZE / production). The reads and writes go through
+ * Bean:: like everywhere else; only the connection lifecycle is raw, because that is
+ * the one thing Bean:: does not wrap.
  *
  * Usage:  php scripts/seed-security.php
  */
@@ -32,6 +34,7 @@ chdir(dirname(__DIR__));
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use RedBeanPHP\R;
+use app\Bean;
 
 $projectRoot    = dirname(__DIR__);
 $securityDbPath = $projectRoot . '/database/security.db';
@@ -44,7 +47,7 @@ if (!R::testConnection()) {
 }
 
 // 1) Ensure the table exists (matches the schema RedBean produces).
-R::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
+Bean::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT, target TEXT, action TEXT, pattern TEXT,
     level INTEGER, description TEXT, priority INTEGER,
@@ -55,11 +58,11 @@ R::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
 //       unjailed — only outside the bubblewrap jail, which already enforces it
 //     The hook reads it; a row without one is treated as 'always'.
 $hasScope = false;
-foreach (R::getAll('PRAGMA table_info(securitycontrol)') as $col) {
+foreach (Bean::getAll('PRAGMA table_info(securitycontrol)') as $col) {
     if (($col['name'] ?? '') === 'scope') { $hasScope = true; break; }
 }
 if (!$hasScope) {
-    R::exec("ALTER TABLE securitycontrol ADD COLUMN scope TEXT DEFAULT 'always'");
+    Bean::exec("ALTER TABLE securitycontrol ADD COLUMN scope TEXT DEFAULT 'always'");
 }
 
 // 2) The universal default ruleset.
@@ -133,10 +136,10 @@ $wanted = [];
 foreach ($defaults as [$name, $target, $action, $pattern, $level, $priority, $scope]) {
     $wanted["$target\0$pattern"] = true;
 
-    $row = R::getRow('SELECT id, action, level, priority, scope FROM securitycontrol
+    $row = Bean::getRow('SELECT id, action, level, priority, scope FROM securitycontrol
                        WHERE target = ? AND pattern = ?', [$target, $pattern]);
     if (!$row) {
-        R::exec('INSERT INTO securitycontrol (name, target, action, pattern, level, description, priority, is_active, scope, created_at)
+        Bean::exec('INSERT INTO securitycontrol (name, target, action, pattern, level, description, priority, is_active, scope, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
             [$name, $target, $action, $pattern, $level, $name, $priority, $scope, $now]);
         $added++;
@@ -148,7 +151,7 @@ foreach ($defaults as [$name, $target, $action, $pattern, $level, $priority, $sc
     // exactly why every instance was still carrying rules we now know are dead.
     if ((string) $row['action'] !== $action || (int) $row['level'] !== $level
         || (int) $row['priority'] !== $priority || (string) ($row['scope'] ?? '') !== $scope) {
-        R::exec('UPDATE securitycontrol SET action = ?, level = ?, priority = ?, scope = ?, is_active = 1 WHERE id = ?',
+        Bean::exec('UPDATE securitycontrol SET action = ?, level = ?, priority = ?, scope = ?, is_active = 1 WHERE id = ?',
             [$action, $level, $priority, $scope, $row['id']]);
         $updated++;
     } else {

@@ -22,7 +22,6 @@
 namespace app;
 
 use \Flight as Flight;
-use RedBeanPHP\R;
 
 class PlanNotifier {
 
@@ -126,9 +125,9 @@ class PlanNotifier {
         $preview = $title . ' — ' . $summary;
 
         // ---- core's db, as a second connection ---------------------------------
-        $restore = R::hasDatabase('default') ? 'default' : null;
-        if (!R::hasDatabase('plannotify')) R::addDatabase('plannotify', 'sqlite:' . $coreDb);
-        R::selectDatabase('plannotify');
+        $restore = Bean::hasDatabase('default') ? 'default' : null;
+        if (!Bean::hasDatabase('plannotify')) Bean::addDatabase('plannotify', 'sqlite:' . $coreDb);
+        Bean::selectDatabase('plannotify');
 
         try {
             $now = date('Y-m-d H:i:s');
@@ -203,7 +202,7 @@ class PlanNotifier {
         } catch (\Throwable $e) {
             return 'notify: FAILED — ' . $e->getMessage();
         } finally {
-            if ($restore) R::selectDatabase($restore);
+            if ($restore) Bean::selectDatabase($restore);
         }
     }
 }

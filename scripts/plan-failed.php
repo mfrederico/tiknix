@@ -21,6 +21,7 @@ if (php_sapi_name() !== 'cli') { die("cli only\n"); }
 require __DIR__ . '/../vendor/autoload.php';
 
 use RedBeanPHP\R;
+use app\Bean;
 
 $o        = getopt('', ['prompt:', 'dir:', 'exit::']);
 $promptId = (int) ($o['prompt'] ?? 0);
@@ -46,10 +47,10 @@ if ($why === '') $why = 'the planner exited ' . $exitCode . ' without producing 
 // stranger case of a clean exit with nothing to show for it.
 
 R::setup('sqlite:' . dirname(__DIR__) . '/database/tiknix.db');
-R::freeze(false);
+Bean::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "cannot open core db\n"); exit(1); }
 
-$row = R::load('promptlog', $promptId);
+$row = Bean::load('promptlog', $promptId);
 if (!$row->id) { fwrite(STDERR, "no prompt #$promptId\n"); exit(1); }
 
 // DID IT ACTUALLY FAIL?
@@ -87,7 +88,7 @@ $row->lastAttemptAt = date('Y-m-d H:i:s');
 // would retry it against whatever killed it, on a timer, which for a session limit means
 // burning the retry budget before the limit even resets.
 $row->queuedAt      = null;
-R::store($row);
+Bean::store($row);
 
 echo "[plan-failed] prompt #$promptId: " . mb_substr($why, 0, 160) . "\n";
 R::close();

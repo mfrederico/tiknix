@@ -30,12 +30,12 @@ if (php_sapi_name() !== 'cli') {
 require_once __DIR__ . '/../bootstrap.php';
 new app\Bootstrap('conf/config.ini');
 
-use \RedBeanPHP\R;
+use app\Bean;
 
 $confirm = in_array('--confirm', $argv, true);
 
 $tables = array_map(fn($r) => $r['name'],
-    R::getAll("SELECT name FROM sqlite_master WHERE type = 'table'"));
+    Bean::getAll("SELECT name FROM sqlite_master WHERE type = 'table'"));
 
 /** @return string one of: rename | done | absent | conflict */
 $state = function (string $from, string $to) use ($tables): string {
@@ -77,15 +77,15 @@ if (!$confirm) {
 
 // Literal statements, each guarded by its own check.
 if ($state('emailthread', 'thread') === 'rename') {
-    R::exec('ALTER TABLE `emailthread` RENAME TO `thread`');
+    Bean::exec('ALTER TABLE `emailthread` RENAME TO `thread`');
     echo "  renamed emailthread -> thread\n";
 }
 if ($state('notify', 'message') === 'rename') {
-    R::exec('ALTER TABLE `notify` RENAME TO `message`');
+    Bean::exec('ALTER TABLE `notify` RENAME TO `message`');
     echo "  renamed notify -> message\n";
 }
 if ($state('notifyattachment', 'messageattachment') === 'rename') {
-    R::exec('ALTER TABLE `notifyattachment` RENAME TO `messageattachment`');
+    Bean::exec('ALTER TABLE `notifyattachment` RENAME TO `messageattachment`');
     echo "  renamed notifyattachment -> messageattachment\n";
 }
 
@@ -93,17 +93,17 @@ if ($state('notifyattachment', 'messageattachment') === 'rename') {
 // mode recreates a column on write, so leaving it invites a stale second source of truth
 // for a badge that is now derived from threadmember.last_read_id.
 $after = array_map(fn($r) => $r['name'],
-    R::getAll("SELECT name FROM sqlite_master WHERE type = 'table'"));
+    Bean::getAll("SELECT name FROM sqlite_master WHERE type = 'table'"));
 if (in_array('thread', $after, true)) {
-    $cols = array_map(fn($c) => $c['name'], R::getAll('PRAGMA table_info(thread)'));
+    $cols = array_map(fn($c) => $c['name'], Bean::getAll('PRAGMA table_info(thread)'));
     if (in_array('unread_count', $cols, true)) {
-        R::exec('ALTER TABLE `thread` DROP COLUMN `unread_count`');
+        Bean::exec('ALTER TABLE `thread` DROP COLUMN `unread_count`');
         echo "  dropped thread.unread_count\n";
     }
 }
 
 $count = function (string $type): int {
-    try { return (int) R::count($type); } catch (\Throwable $e) { return 0; }
+    try { return (int) Bean::count($type); } catch (\Throwable $e) { return 0; }
 };
 printf("\nDone. thread=%d message=%d threadmember=%d\n",
     $count('thread'), $count('message'), $count('threadmember'));

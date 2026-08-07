@@ -15,7 +15,7 @@ if (php_sapi_name() !== 'cli') {
 // Load bootstrap
 require_once __DIR__ . '/../bootstrap.php';
 
-use \RedBeanPHP\R as R;
+use app\Bean;
 
 // Colors for output
 define('GREEN', "\033[0;32m");
@@ -32,23 +32,23 @@ try {
     echo "\nAdding Map feature permissions...\n\n";
 
     // Map USA page - public access
-    $entry1 = R::dispense('authcontrol');
+    $entry1 = Bean::dispense('authcontrol');
     $entry1->control = 'map';
     $entry1->method = 'usa';
     $entry1->level = 101;
     $entry1->description = 'USA Map - Public access';
     $entry1->createdAt = date('Y-m-d H:i:s');
-    R::store($entry1);
+    Bean::store($entry1);
     echo GREEN . "✓ Added: map::usa (level 101)" . NC . "\n";
 
     // State details AJAX endpoint - public access
-    $entry2 = R::dispense('authcontrol');
+    $entry2 = Bean::dispense('authcontrol');
     $entry2->control = 'map';
     $entry2->method = 'statedetails';
     $entry2->level = 101;
     $entry2->description = 'State Details API - Public access';
     $entry2->createdAt = date('Y-m-d H:i:s');
-    R::store($entry2);
+    Bean::store($entry2);
     echo GREEN . "✓ Added: map::statedetails (level 101)" . NC . "\n";
 
     echo "\n" . BLUE . "=== Migration Complete ===" . NC . "\n";

@@ -2,7 +2,6 @@
 
 namespace app;
 
-use RedBeanPHP\R;
 use app\EngineRegistry;
 
 /**
@@ -74,7 +73,7 @@ class PlanIngestor
         $tag = $inst->slug . '.' . $app;
         $now = date('Y-m-d H:i:s');
 
-        $parent = R::dispense('workbenchtask');
+        $parent = Bean::dispense('workbenchtask');
         $parent->title          = mb_substr((string)$plan['title'], 0, 200);
         $parent->description    = (string)($plan['summary'] ?? '');
         $parent->taskType       = 'feature';
@@ -102,7 +101,7 @@ class PlanIngestor
         // missing column, RedBean suppressed the error the way fluid mode does, and the
         // board showed "No Tasks Found" next to a counter reading ten.
         $parent->updatedAt      = $now;
-        R::store($parent);
+        Bean::store($parent);
 
         // Pass 1: create every subtask, remembering the planner's stable ref.
         $rows = [];
@@ -112,7 +111,7 @@ class PlanIngestor
             if (empty($st['title'])) continue;
             $i++;
             $ref = trim((string)($st['id'] ?? '')) ?: ('t' . $i);
-            $t = R::dispense('workbenchtask');
+            $t = Bean::dispense('workbenchtask');
             $t->title        = mb_substr((string)$st['title'], 0, 200);
             $t->description  = (string)($st['description'] ?? '');
             $t->taskType     = 'feature';
@@ -128,7 +127,7 @@ class PlanIngestor
             $t->memberId     = $memberId;
             $t->createdAt    = $now;
             $t->updatedAt    = $now;   // see the parent: the board sorts on this
-            R::store($t);
+            Bean::store($t);
             $refMap[$ref] = (int)$t->id;
             $rows[] = [$t, $st, $ref];
         }
@@ -145,7 +144,7 @@ class PlanIngestor
             }
             $deps = array_values(array_unique($deps));
             $t->dependsOn = json_encode($deps);
-            R::store($t);
+            Bean::store($t);
             $subs[] = [
                 'id' => (int)$t->id, 'ref' => $ref, 'title' => $t->title,
                 'priority' => (int)$t->priority, 'engine' => $t->engine, 'depends_on' => $deps,

@@ -8,7 +8,7 @@
 
 namespace app\Pipeline\Steps;
 
-use RedBeanPHP\R;
+use app\Bean;
 
 class DbQueryStep implements StepInterface {
 
@@ -32,10 +32,10 @@ class DbQueryStep implements StepInterface {
 
         try {
             if (!empty($config['write'])) {
-                $affected = R::exec($sql, $params);
+                $affected = Bean::exec($sql, $params);
                 return ['ok' => true, 'output' => ['affected' => (int) $affected], 'stdout' => "affected {$affected}", 'stderr' => '', 'exit' => 0];
             }
-            $rows = R::getAll($sql, $params);
+            $rows = Bean::getAll($sql, $params);
             return ['ok' => true, 'output' => ['rows' => $rows, 'count' => count($rows)],
                     'stdout' => json_encode($rows, JSON_UNESCAPED_SLASHES), 'stderr' => '', 'exit' => 0];
         } catch (\Throwable $e) {

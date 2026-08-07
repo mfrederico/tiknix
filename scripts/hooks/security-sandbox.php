@@ -83,7 +83,7 @@ use \app\Bean;
 
 try {
     R::setup('sqlite:' . $securityDbPath);
-    R::freeze(true); // Read-only mode
+    Bean::freeze(true); // Read-only mode
 
     // Load all active rules, ordered by priority
     $rules = Bean::find('securitycontrol', 'is_active = 1 ORDER BY priority ASC');

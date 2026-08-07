@@ -51,7 +51,7 @@ class ConnectionStore {
     public static function useInstall(string $installRoot): void {
         self::$root = rtrim($installRoot, '/');
         // A different install means a different file and a different key.
-        \RedBeanPHP\R::hasDatabase(self::OWN_KEY) && \RedBeanPHP\R::selectDatabase('default');
+        Bean::hasDatabase(self::OWN_KEY) && Bean::selectDatabase('default');
         self::$openedFor = '';
     }
 
@@ -135,21 +135,21 @@ class ConnectionStore {
         $dir = dirname($db);
         if (!is_dir($dir)) @mkdir($dir, 0755, true);
 
-        $restore = \RedBeanPHP\R::hasDatabase('default') ? 'default' : null;
+        $restore = Bean::hasDatabase('default') ? 'default' : null;
         try {
             // One named connection per install path: reusing the name across installs
             // would silently keep the first database open.
             $conn = self::OWN_KEY . '_' . substr(sha1($db), 0, 8);
-            if (!\RedBeanPHP\R::hasDatabase($conn)) \RedBeanPHP\R::addDatabase($conn, 'sqlite:' . $db);
-            \RedBeanPHP\R::selectDatabase($conn);
-            \RedBeanPHP\R::freeze(false);   // fluid: the table appears on first store
+            if (!Bean::hasDatabase($conn)) Bean::addDatabase($conn, 'sqlite:' . $db);
+            Bean::selectDatabase($conn);
+            Bean::freeze(false);   // fluid: the table appears on first store
             return $fn();
         } catch (\Throwable $e) {
             \Flight::get('log')?->error('ConnectionStore: own-db operation failed',
                 ['err' => $e->getMessage()]);
             return $onError;
         } finally {
-            if ($restore) \RedBeanPHP\R::selectDatabase($restore);
+            if ($restore) Bean::selectDatabase($restore);
         }
     }
 

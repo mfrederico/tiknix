@@ -9,7 +9,6 @@
 namespace app\Pipeline;
 
 use app\Bean;
-use RedBeanPHP\R;
 
 class ApiKey {
 
@@ -41,7 +40,7 @@ class ApiKey {
     /** All keys (never the raw value): id, prefix, label, member, timestamps, revoked. */
     public static function all(): array {
         $out = [];
-        foreach (R::findAll('pipeapikey', 'ORDER BY id DESC') as $r) {
+        foreach (Bean::findAll('pipeapikey', 'ORDER BY id DESC') as $r) {
             $out[] = [
                 'id' => (int) $r->id, 'prefix' => (string) $r->prefix, 'label' => (string) $r->label,
                 'member_id' => (int) $r->memberId, 'created_at' => (string) $r->createdAt,
@@ -52,7 +51,7 @@ class ApiKey {
     }
 
     public static function revoke(int $id): bool {
-        $r = R::load('pipeapikey', $id);
+        $r = Bean::load('pipeapikey', $id);
         if (!$r->id) return false;
         $r->revokedAt = date('Y-m-d H:i:s');
         Bean::store($r);

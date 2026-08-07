@@ -28,6 +28,7 @@ new app\Bootstrap('conf/config.ini');
 use \RedBeanPHP\R as R;
 use \app\Rooms;
 use \app\ThreadMembers;
+use app\Bean;
 
 $confirm = in_array('--confirm', $argv, true);
 
@@ -38,7 +39,7 @@ echo "Current state\n";
 $counts = [];
 foreach ($types as $t) {
     // count() on a type whose table does not exist yet is 0, not an error.
-    try { $counts[$t] = (int) R::count($t); } catch (\Throwable $e) { $counts[$t] = 0; }
+    try { $counts[$t] = (int) Bean::count($t); } catch (\Throwable $e) { $counts[$t] = 0; }
     printf("  %-16s %d\n", $t, $counts[$t]);
 }
 $total = array_sum($counts);
@@ -55,7 +56,7 @@ $dump = ['exported_at' => date('c')];
 foreach ($types as $t) {
     $rows = [];
     try {
-        foreach (R::findAll($t) as $bean) $rows[] = $bean->export();
+        foreach (Bean::findAll($t) as $bean) $rows[] = $bean->export();
     } catch (\Throwable $e) { /* no such table yet */ }
     $dump[$t] = $rows;
 }
@@ -73,7 +74,7 @@ foreach ($types as $t) {
         R::wipe($t);
         // Start ids at 1 again so a fresh system's ids read sensibly during a test.
         // The table name is a VALUE here, so it binds; harmless outside SQLite.
-        try { R::exec('DELETE FROM sqlite_sequence WHERE name = ?', [$t]); } catch (\Throwable $e) {}
+        try { Bean::exec('DELETE FROM sqlite_sequence WHERE name = ?', [$t]); } catch (\Throwable $e) {}
         printf("  %-16s cleared\n", $t);
     } catch (\Throwable $e) {
         printf("  %-16s FAILED: %s\n", $t, $e->getMessage());
@@ -82,7 +83,7 @@ foreach ($types as $t) {
 
 // --- reseed ------------------------------------------------------------------------
 echo "\nSeeding\n";
-$teams = R::findAll('team', 'ORDER BY id');
+$teams = Bean::findAll('team', 'ORDER BY id');
 if (!$teams) {
     echo "  no teams — nothing to seed. Create a team and every member of it gets a #general.\n";
 }
@@ -99,5 +100,5 @@ foreach ($teams as $team) {
 
 echo "\nDone.\n";
 printf("  threads %d · messages %d · participants %d · mentions %d · support %d\n",
-    R::count('thread'), R::count('message'), R::count('threadmember'),
-    R::count('mention'), R::count('contact'));
+    Bean::count('thread'), Bean::count('message'), Bean::count('threadmember'),
+    Bean::count('mention'), Bean::count('contact'));

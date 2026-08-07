@@ -110,7 +110,7 @@ class BeanCommand {
 
         // Validate match fields and data fields exist in table schema
         try {
-            $columns = \RedBeanPHP\R::inspect($beanName);
+            $columns = Bean::inspect($beanName);
             $columnNames = array_keys($columns);
 
             // Check match fields
@@ -433,7 +433,7 @@ class BeanCommand {
      */
     public function listTables(): void {
         try {
-            $tables = \RedBeanPHP\R::inspect();
+            $tables = Bean::inspect();
             sort($tables);
 
             // Analyze relationships
@@ -481,7 +481,7 @@ class BeanCommand {
 
         foreach ($tables as $table) {
             try {
-                $columns = \RedBeanPHP\R::inspect($table);
+                $columns = Bean::inspect($table);
 
                 // Check for foreign keys (columns ending in _id)
                 foreach ($columns as $column => $type) {

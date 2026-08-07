@@ -17,7 +17,7 @@
 
 namespace app\Pipeline;
 
-use RedBeanPHP\R;
+use app\Bean;
 
 class ObjectRunner {
 
@@ -30,7 +30,7 @@ class ObjectRunner {
     /** Deliver to object (slug,key). $trigger = 'message' | 'alarm'. */
     public function deliver(string $slug, string $key, array $message = [], string $trigger = 'message'): array {
         // SQLite instances: let writers wait on a busy DB instead of erroring (no-op elsewhere).
-        try { R::exec('PRAGMA busy_timeout = 5000'); } catch (\Throwable $e) {}
+        try { Bean::exec('PRAGMA busy_timeout = 5000'); } catch (\Throwable $e) {}
 
         $def = (new Loader($this->root))->get($slug);
         if (!$def) throw new \RuntimeException("no such pipeline '$slug'");

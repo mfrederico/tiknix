@@ -15,6 +15,7 @@ use app\Scaffold\Generators\ModelGenerator;
 use app\Scaffold\Generators\CrudControllerGenerator;
 use app\Scaffold\Generators\ApiControllerGenerator;
 use app\Scaffold\Generators\ViewGenerator;
+use app\Bean;
 
 class ScaffoldManager {
 
@@ -159,7 +160,7 @@ class ScaffoldManager {
      */
     public function listTables(): array {
         try {
-            $tables = \RedBeanPHP\R::inspect();
+            $tables = Bean::inspect();
             sort($tables);
             return $tables;
         } catch (\Exception $e) {

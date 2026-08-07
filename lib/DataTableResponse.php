@@ -38,7 +38,6 @@
 
 namespace app;
 
-use \RedBeanPHP\R as R;
 
 class DataTableResponse {
 
@@ -70,7 +69,7 @@ class DataTableResponse {
         if ($baseWhere !== '') { $where[] = '(' . $baseWhere . ')'; $params = $baseParams; }
 
         // Unfiltered total (base filter only) — DataTables' recordsTotal.
-        $recordsTotal = (int)R::getCell(
+        $recordsTotal = (int)Bean::getCell(
             'SELECT COUNT(*) FROM `' . $table . '`' . ($where ? ' WHERE ' . implode(' AND ', $where) : ''),
             $params
         );
@@ -105,7 +104,7 @@ class DataTableResponse {
         }
 
         $whereSql        = $where ? ' WHERE ' . implode(' AND ', $where) : '';
-        $recordsFiltered = (int)R::getCell('SELECT COUNT(*) FROM `' . $table . '`' . $whereSql, $params);
+        $recordsFiltered = (int)Bean::getCell('SELECT COUNT(*) FROM `' . $table . '`' . $whereSql, $params);
 
         // ORDER BY — index into the whitelisted spec; direction clamped.
         $orderSql = '';
@@ -122,7 +121,7 @@ class DataTableResponse {
         // Page slice (length = -1 means "all").
         $limitSql = $length >= 0 ? ' LIMIT ' . (int)$length . ' OFFSET ' . (int)$start : '';
 
-        $rows = R::getAll('SELECT * FROM `' . $table . '`' . $whereSql . $orderSql . $limitSql, $params);
+        $rows = Bean::getAll('SELECT * FROM `' . $table . '`' . $whereSql . $orderSql . $limitSql, $params);
 
         $data = [];
         foreach ($rows as $r) {

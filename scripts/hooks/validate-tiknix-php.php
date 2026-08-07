@@ -75,15 +75,21 @@ function phpParsable(string $content): string
  * "R::exec usage" is documentation - neither is a database call. PHP's tokenizer is
  * the only thing that reliably tells one from the other.
  *
- * Falls back to the raw content when the fragment will not tokenize, which
- * over-reports rather than going quiet.
+ * NO TOKEN_PARSE here, deliberately. TOKEN_PARSE validates syntax and THROWS on
+ * anything that is not a complete program - and an Edit hunk almost never is: a bare
+ * "public function foo()" at top level, a dangling closing brace, half a match arm.
+ * Every one of those fell through to the raw-content fallback, where a docblock that
+ * merely NAMES a raw call reads exactly like the call itself. This hook blocked its
+ * own author's edit that way, twice. Plain token_get_all is a LEXER, not a parser: it
+ * classifies comments and strings correctly inside a fragment and never throws, which
+ * is all this function needs. The try/catch stays as a backstop.
  */
 function phpCodeOnly(string $content): string
 {
     $source = phpParsable($content);
 
     try {
-        $tokens = @token_get_all($source, TOKEN_PARSE);
+        $tokens = @token_get_all($source);
     } catch (\Throwable $e) {
         return $content;
     }
@@ -394,9 +400,15 @@ function findCommandInjectionRisks(string $content): array
  * does. So the only thing left to ask is whether a superglobal appears between
  * an opening and closing backtick.
  *
- * Fails CLOSED: if the content will not tokenize (a partial write, a syntax
- * error), fall back to the old regex. A validator that goes quiet on input it
- * cannot parse is worse than one that occasionally over-reports.
+ * LEXED, not parsed. The first version of this asked TOKEN_PARSE, which validates
+ * syntax and throws on anything that is not a complete program — so every Edit hunk
+ * (a bare method, a dangling brace) fell straight back to the regex below, and the
+ * markdown-backtick false positive this function exists to prevent came back for the
+ * commonest case of all. Plain token_get_all still tells a shell-exec delimiter from
+ * a backtick inside a comment, and never throws.
+ *
+ * The regex fallback remains for content the lexer cannot handle at all: a validator
+ * that goes quiet on input it cannot read is worse than one that over-reports.
  */
 function backtickExecUsesUserInput(string $content): bool
 {
@@ -411,7 +423,7 @@ function backtickExecUsesUserInput(string $content): bool
     $source = phpParsable($content);
 
     try {
-        $tokens = @token_get_all($source, TOKEN_PARSE);
+        $tokens = @token_get_all($source);
     } catch (\Throwable $e) {
         return (bool) preg_match('/`[^`]*\$_(?:GET|POST|REQUEST)/', $content);
     }

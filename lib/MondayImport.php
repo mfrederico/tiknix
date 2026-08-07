@@ -25,7 +25,6 @@
 
 namespace app;
 
-use \RedBeanPHP\R;
 
 class MondayImport {
 
@@ -876,16 +875,16 @@ class MondayImport {
             return $onError;
         }
 
-        $restore = R::hasDatabase('default') ? 'default' : null;
+        $restore = Bean::hasDatabase('default') ? 'default' : null;
         try {
-            if (!R::hasDatabase(self::WB_KEY)) R::addDatabase(self::WB_KEY, 'sqlite:' . $db);
-            R::selectDatabase(self::WB_KEY);
+            if (!Bean::hasDatabase(self::WB_KEY)) Bean::addDatabase(self::WB_KEY, 'sqlite:' . $db);
+            Bean::selectDatabase(self::WB_KEY);
             return $fn();
         } catch (\Throwable $e) {
             \Flight::get('log')?->error('MondayImport: workbench db operation failed', ['err' => $e->getMessage()]);
             return $onError;
         } finally {
-            if ($restore) R::selectDatabase($restore);
+            if ($restore) Bean::selectDatabase($restore);
         }
     }
 }

@@ -25,7 +25,6 @@
  */
 namespace app;
 
-use RedBeanPHP\R;
 
 class GitHttp {
 
@@ -45,7 +44,7 @@ class GitHttp {
         if (!preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $slug) || strlen($slug) > 64) {
             return ['ok' => false, 'error' => 'Invalid instance slug', 'code' => 404];
         }
-        $inst = R::findOne('instance', 'slug = ?', [$slug]);
+        $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
         if (!$inst || !$inst->id)                  return ['ok' => false, 'error' => 'Unknown instance', 'code' => 404];
         if ((string) $inst->status !== 'active')   return ['ok' => false, 'error' => 'Instance is not active', 'code' => 403];
 
@@ -69,7 +68,7 @@ class GitHttp {
     public static function deployToken(object $inst): string {
         if (empty($inst->deployToken)) {
             $inst->deployToken = bin2hex(random_bytes(24));
-            R::store($inst);
+            Bean::store($inst);
         }
         return (string) $inst->deployToken;
     }

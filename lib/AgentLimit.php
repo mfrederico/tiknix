@@ -16,7 +16,6 @@
 
 namespace app;
 
-use RedBeanPHP\R;
 
 class AgentLimit {
 
@@ -89,28 +88,28 @@ class AgentLimit {
         if ($memberId <= 0) return;
         CoreDb::with(function () use ($memberId) {
             foreach ([self::KEY, self::MSG] as $k) {
-                $row = R::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $k]);
-                if ($row && $row->id) R::trash($row);
+                $row = Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $k]);
+                if ($row && $row->id) Bean::trash($row);
             }
             return null;
         });
     }
 
     private static function put(int $memberId, string $key, string $val): void {
-        $row = R::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
+        $row = Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
         if (!$row || !$row->id) {
-            $row = R::dispense('settings');
+            $row = Bean::dispense('settings');
             $row->memberId   = $memberId;
             $row->settingKey = $key;
             $row->createdAt  = date('Y-m-d H:i:s');
         }
         $row->settingValue = $val;
         $row->updatedAt    = date('Y-m-d H:i:s');
-        R::store($row);
+        Bean::store($row);
     }
 
     private static function get(int $memberId, string $key): string {
-        $row = R::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
+        $row = Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
         return $row && $row->id ? (string) $row->settingValue : '';
     }
 }

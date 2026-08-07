@@ -6,14 +6,14 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../bootstrap.php';
 
-use RedBeanPHP\R;
 use app\Bootstrap;
+use app\Bean;
 
 // Initialize the application
 $app = new Bootstrap();
 
 // Find admin user
-$admin = R::findOne('member', 'username = ?', ['admin']);
+$admin = Bean::findOne('member', 'username = ?', ['admin']);
 if ($admin) {
     // Generate a strong random password with a CSPRNG, using an unambiguous
     // alphabet (no 0/O/1/I/l) so it's easy to read off the terminal.
@@ -25,7 +25,7 @@ if ($admin) {
 
     $admin->password = password_hash($newPassword, PASSWORD_DEFAULT);
     $admin->updatedAt = date('Y-m-d H:i:s');
-    R::store($admin);
+    Bean::store($admin);
 
     echo "\n========================================\n";
     echo "Admin password has been reset.\n";

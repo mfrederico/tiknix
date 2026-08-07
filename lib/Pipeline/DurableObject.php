@@ -16,7 +16,6 @@
 namespace app\Pipeline;
 
 use app\Bean;
-use RedBeanPHP\R;
 
 class DurableObject {
 
@@ -61,7 +60,7 @@ class DurableObject {
     public function acquire(): bool {
         $now = time(); $stale = $now - self::LEASE_TTL; $token = bin2hex(random_bytes(8));
         try {
-            $aff = (int) R::exec(
+            $aff = (int) Bean::exec(
                 'UPDATE dobject SET locked_at = ?, lock_token = ? WHERE id = ? AND (locked_at = 0 OR locked_at < ?)',
                 [$now, $token, $this->id(), $stale]
             );
@@ -74,14 +73,14 @@ class DurableObject {
 
     public function release(): void {
         if ($this->lockToken === '') return;
-        R::exec('UPDATE dobject SET locked_at = 0, lock_token = ? WHERE id = ? AND lock_token = ?',
+        Bean::exec('UPDATE dobject SET locked_at = 0, lock_token = ? WHERE id = ? AND lock_token = ?',
             ['', $this->id(), $this->lockToken]);
         $this->lockToken = '';
     }
 
     /** Re-read fresh state from storage — call AFTER acquiring the lock (avoids a lost update). */
     public function reload(): void {
-        $b = R::load('dobject', $this->id());
+        $b = Bean::load('dobject', $this->id());
         if ($b->id) { $this->bean = $b; $this->state = json_decode((string) $b->stateJson, true) ?: []; }
     }
 

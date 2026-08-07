@@ -19,7 +19,6 @@
 
 namespace app;
 
-use \RedBeanPHP\R as R;
 use \app\Bean;
 
 class AuditReporter {
@@ -54,7 +53,7 @@ class AuditReporter {
 
         // Index subtasks by their planner ref so task_ref maps to a real task.
         $byRef = [];
-        foreach (R::find('workbenchtask', 'parent_task_id = ?', [(int)$plan->id]) as $s) {
+        foreach (Bean::find('workbenchtask', 'parent_task_id = ?', [(int)$plan->id]) as $s) {
             if ($s->planRef) $byRef[(string)$s->planRef] = $s;
         }
 
@@ -285,11 +284,11 @@ class AuditReporter {
     private static function recipients($inst): array {
         $out = [];
         try {
-            $owner = R::load('member', (int)$inst->memberId);
+            $owner = Bean::load('member', (int)$inst->memberId);
             if ($owner->id && $owner->email) $out[strtolower((string)$owner->email)] = $owner->displayName((string)$owner->email);
 
-            if (in_array('instance_team', R::inspect(), true)) {
-                $emails = R::getAll(
+            if (in_array('instance_team', Bean::inspect(), true)) {
+                $emails = Bean::getAll(
                     'SELECT DISTINCT m.email AS email, m.username AS username
                        FROM instance_team it
                        JOIN teammember tm ON tm.team_id = it.team_id

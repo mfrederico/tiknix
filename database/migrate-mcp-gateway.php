@@ -10,6 +10,7 @@
 require_once __DIR__ . '/../bootstrap.php';
 
 use RedBeanPHP\R;
+use app\Bean;
 
 $app = new \app\Bootstrap();
 
@@ -37,7 +38,7 @@ try {
     echo "Adding columns to mcpserver table...\n";
     foreach ($migrations as $sql => $description) {
         try {
-            R::exec($sql);
+            Bean::exec($sql);
             echo "  ✓ Added: $description\n";
         } catch (\Exception $e) {
             if (strpos($e->getMessage(), 'duplicate column') !== false ||
@@ -66,7 +67,7 @@ try {
         )
     ";
     try {
-        R::exec($createUsageTable);
+        Bean::exec($createUsageTable);
         echo "  ✓ Created mcpusage table\n";
     } catch (\Exception $e) {
         if (strpos($e->getMessage(), 'already exists') !== false) {
@@ -87,7 +88,7 @@ try {
 
     foreach ($indexes as $sql) {
         try {
-            R::exec($sql);
+            Bean::exec($sql);
             preg_match('/idx_\w+/', $sql, $matches);
             echo "  ✓ Created index: " . ($matches[0] ?? 'unknown') . "\n";
         } catch (\Exception $e) {

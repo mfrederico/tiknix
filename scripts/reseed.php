@@ -25,6 +25,7 @@ require_once __DIR__ . '/../bootstrap.php';
 
 use RedBeanPHP\R;
 use app\services\Schema\WorkspaceSchemaBuilder;
+use app\Bean;
 
 $fresh = in_array('--fresh', $argv, true);
 
@@ -35,13 +36,13 @@ if (!R::testConnection()) {
     exit(1);
 }
 
-$dbType = R::getDatabaseAdapter()->getDatabase()->getDatabaseType();
+$dbType = Bean::getDatabaseAdapter()->getDatabase()->getDatabaseType();
 echo "reseed: connected ({$dbType})\n";
 
 if ($fresh) {
     echo "reseed: --fresh — dropping existing tables\n";
-    foreach (R::inspect() as $table) {
-        try { R::exec("DROP TABLE IF EXISTS " . $table); echo "  dropped {$table}\n"; }
+    foreach (Bean::inspect() as $table) {
+        try { Bean::exec("DROP TABLE IF EXISTS " . $table); echo "  dropped {$table}\n"; }
         catch (\Exception $e) { fwrite(STDERR, "  warn dropping {$table}: " . $e->getMessage() . "\n"); }
     }
 }

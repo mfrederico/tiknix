@@ -29,6 +29,7 @@ require __DIR__ . '/../vendor/autoload.php';
 
 use RedBeanPHP\R;
 use app\PromptQueue;
+use app\Bean;
 
 $opt     = getopt('', ['dry-run', 'quiet']);
 $dryRun  = isset($opt['dry-run']);
@@ -36,13 +37,13 @@ $quiet   = isset($opt['quiet']);
 
 // The queue lives in core's registry, which is also this script's default connection.
 R::setup('sqlite:' . dirname(__DIR__) . '/database/tiknix.db');
-R::freeze(false);
+Bean::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "cannot open core db\n"); exit(1); }
 
 if ($dryRun) {
     // Show what WOULD be retried without touching anything — the queue is a thing that
     // starts frontier model runs unattended, so it should be inspectable before it does.
-    $rows = R::find('promptlog', 'queued_at IS NOT NULL ORDER BY queued_at ASC');
+    $rows = Bean::find('promptlog', 'queued_at IS NOT NULL ORDER BY queued_at ASC');
     if (!$rows) { echo "[" . date('c') . "] queue empty\n"; exit(0); }
     foreach ($rows as $r) {
         printf("  #%d %s attempts=%d queued=%s straight_through=%s\n",

@@ -17,7 +17,6 @@ if (php_sapi_name() !== 'cli') { http_response_code(403); exit("cli only\n"); }
 require_once __DIR__ . '/../bootstrap.php';
 
 use app\Bean;
-use RedBeanPHP\R;
 
 // bootstrap.php only defines the class; instantiating it wires up the DB connection.
 new app\Bootstrap('conf/config.ini');
@@ -31,7 +30,7 @@ $rows = [
 
 $added = $kept = 0;
 foreach ($rows as [$control, $method, $level, $description]) {
-    $bean = R::findOne('authcontrol', 'control = ? AND method = ?', [$control, $method]);
+    $bean = Bean::findOne('authcontrol', 'control = ? AND method = ?', [$control, $method]);
     if ($bean && $bean->id) {
         // Never silently widen an existing rule — report instead.
         if ((int) $bean->level !== $level) {
@@ -48,7 +47,7 @@ foreach ($rows as [$control, $method, $level, $description]) {
     $bean->validcount  = 0;
     $bean->linkorder   = 0;
     $bean->createdAt   = date('Y-m-d H:i:s');
-    R::store($bean);
+    Bean::store($bean);
     $added++;
     echo "  ADD  {$control}::{$method} = {$level}\n";
 }

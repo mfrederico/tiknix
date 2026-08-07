@@ -18,6 +18,11 @@ cache/
 
 # Logs
 log/*.log
+# Anchored patterns only match at the repo root, so the line above misses a log
+# directory anywhere else — public/log/ in particular, which an agent created and then
+# committed in two instances. A tracked log file is rewritten on every request, so it
+# reads as a permanent uncommitted change and BLOCKS the instance upgrade merge.
+**/log/*.log
 
 # Uploads live in public/uploads (web-served, under the docroot) and secure/uploads
 # (outside the docroot, NOT web-served). BOTH are tracked & published — the only

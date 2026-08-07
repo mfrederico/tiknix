@@ -78,6 +78,25 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
         // result here means both "no such table" and "nothing running" — which
         // want the same thing done about them.
         $rows = Bean::find('workbenchtask', 'status IN (?,?)', ['running', 'queued']);
+
+        // AWAITING TASKS CLAIM THEIR SESSION TOO.
+        //
+        // `awaiting` means Claude asked something and is holding at its prompt. The
+        // session IS the question — it is where the text lives and the only place an
+        // answer can be typed. It was not in the claim set, so the sweep below saw an
+        // unclaimed session and killed it, destroying the question maybe five minutes
+        // after it was asked. What the operator then found was a task marked
+        // "waiting for user input" with a dead console and nothing to reply to, and
+        // no way to tell that from a run that never asked anything.
+        //
+        // Claimed, not released: these tasks are NOT candidates for release below —
+        // a person really is expected to answer them.
+        foreach (Bean::find('workbenchtask', 'status = ?', ['awaiting']) as $a) {
+            foreach ([$a->tmuxSession, $a->agentSession] as $sess) {
+                $sess = trim((string) $sess);
+                if ($sess !== '') $claimed[$sess] = true;
+            }
+        }
     } catch (Throwable $e) {
         // A database that exists but cannot be read IS worth shouting about: its
         // stale tasks will never be reaped and silence would hide that forever.
@@ -121,8 +140,22 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
             // The bean, not an UPDATE. The status guard the old statement carried in
             // its WHERE clause is unnecessary here: this bean was read inside this
             // same sweep and nothing else writes it between.
-            $t->status          = 'awaiting';
-            $t->progressMessage = 'The agent is no longer running. Nothing was lost — check its last output.';
+            // AWAITING MEANS "YOUR TURN", so it may only be used when there is
+            // something to turn to. A released run has no live console to attach to
+            // and asked no question — the operator opens it, finds the task and
+            // nothing else, and has no way to tell this from a genuine prompt.
+            //
+            // A PLAN SUBTASK goes back to `pending` instead. Nothing is waiting on a
+            // person, and pending is the one status the orchestrator will relaunch,
+            // so the plan heals itself on the next build rather than deadlocking
+            // behind a task that can never leave `awaiting` — which is exactly how
+            // five subtasks on floorplan froze behind two.
+            $isSubtask = !empty($t->parentTaskId);
+
+            $t->status          = $isSubtask ? 'pending' : 'awaiting';
+            $t->progressMessage = $isSubtask
+                ? 'The run ended without finishing. Nothing is waiting on you — it will start again on the next build.'
+                : 'The run ended without a reply. Nothing is waiting on you — check the branch, or run it again.';
             $t->tmuxSession     = null;
             $t->agentSession    = null;
             $t->updatedAt       = date('Y-m-d H:i:s');

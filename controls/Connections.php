@@ -233,11 +233,36 @@ class Connections extends Control {
         return $c['client_id'] !== '' && $c['client_secret'] !== '';
     }
 
+    /**
+     * The host this request arrived on. NEVER a guess.
+     *
+     * This used to end in `?? 'localhost'`, which is the worst possible default for the
+     * one job these callers have: building an OAuth redirect_uri. A callback pointing at
+     * localhost is not allowlisted anywhere, so the provider rejects the whole flow and
+     * the operator sees a provider-side error with nothing in our log to explain it. An
+     * absent Host header means we genuinely cannot know the callback URL, and the honest
+     * answer to that is to stop, not to invent an address no provider will accept.
+     */
+    private function requestHost(): string {
+        $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        if ($host === '') {
+            $msg = 'OAuth callback URL requested with no Host header — cannot build a '
+                 . 'redirect_uri. Refusing rather than sending a provider an invented host.';
+            $this->logger->error($msg);
+            throw new \RuntimeException($msg);
+        }
+        return $host;
+    }
+
+    /** https when the request (or the proxy in front of it) says so. */
+    private function requestIsHttps(): bool {
+        return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    }
+
     private function redirectUri(): string {
-        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-        $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        return ($https ? 'https' : 'http') . '://' . $host . '/connections/callback/github';
+        return ($this->requestIsHttps() ? 'https' : 'http') . '://' . $this->requestHost()
+             . '/connections/callback/github';
     }
 
     /** Exchange an OAuth code for an access token. Returns token or null. */
@@ -1082,10 +1107,8 @@ class Connections extends Control {
 
     /** The exact, provider-allowlisted callback URL for a connector on this host. */
     private function connectorRedirectUri(string $type): string {
-        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-        $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        return ($https ? 'https' : 'http') . '://' . $host . '/connections/callback/' . $type;
+        return ($this->requestIsHttps() ? 'https' : 'http') . '://' . $this->requestHost()
+             . '/connections/callback/' . $type;
     }
 
     /** GET /connections/connect/<type>?id=&env=&shop= — start a registry connector's OAuth. */

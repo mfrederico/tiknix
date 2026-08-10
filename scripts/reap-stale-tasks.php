@@ -60,7 +60,16 @@ $say('  ' . count($live) . ' live tmux session(s)');
 $released = 0; $killed = 0; $claimed = [];
 
 foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) {
-    $slug = basename(dirname(dirname($db)));
+    // THE DIRECTORY IS <slug>.<app>; THE SLUG IS NOT THE DIRECTORY.
+    //
+    // Session names are built from the bare instance slug, so reading the directory
+    // name whole gave "mileage.tiknix" where every session says "mileage", and the
+    // orchestrator probe below looked for tiknix-mileage-tiknix-plan72-orchestrator —
+    // a name nothing ever creates. It therefore answered "the orchestrator is gone"
+    // for every plan on every instance, and this sweep marked each actively-building
+    // plan failed/stalled five minutes after it started. The glob is *.tiknix, so the
+    // suffix to drop is exact rather than guessed.
+    $slug = preg_replace('/\.tiknix$/', '', basename(dirname(dirname($db))));
 
     try {
         // One named connection per file. Bean:: rather than raw PDO (CLAUDE.md): a

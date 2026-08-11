@@ -100,22 +100,36 @@ class ClaudeRunner {
     }
 
     /**
-     * Get the internal URL for hooks to call back to the MCP endpoint
-     * Checks .mcp_url file (written by serve.sh) or defaults to localhost:8080
+     * The URL this task's progress hooks call back on.
+     *
+     * @throws \RuntimeException when the task's data is project-owned but the project
+     *                           cannot say where it lives
      */
     private function getHookUrl(string $projectRoot): string {
         // Sidecar regime: the AI Projects sidecar set TIKNIX_WORKBENCH_DB, so this task's
         // data lives in the INSTANCE's workbench.db — point progress hooks at the INSTANCE's
         // OWN /mcp/message (its baseurl + its .mcp_token, both already in the workspace) so
-        // add_task_log writes to that workbench.db. This also drops the localhost:8080 core
-        // coupling entirely (good for eject/de-co-location). INERT for core (env unset).
+        // add_task_log writes to that workbench.db. INERT for core (env unset).
         if (getenv('TIKNIX_WORKBENCH_DB')) {
             $cfg  = @parse_ini_file($this->getProjectPath() . '/conf/config.ini', true) ?: [];
             $base = rtrim((string) ($cfg['app']['baseurl'] ?? ''), '/');
             if ($base !== '') return $base . '/mcp/message';
+
+            // AND STOP IF IT IS NOT THERE. Falling past this point sent a project's
+            // progress hooks down the .mcp_url / localhost:8080 path below, and on a
+            // co-located box localhost:8080 IS core — so add_task_log would write to the
+            // control plane's tables under an id that means something else there. The env
+            // var already told us these tasks are not core's; a missing baseurl makes the
+            // destination unknowable, not defaultable.
+            $msg = 'Task data for this run lives in a project workbench.db (TIKNIX_WORKBENCH_DB '
+                 . 'is set) but the project has no [app] baseurl, so its progress hooks have '
+                 . 'nowhere to report. Refusing rather than posting them to core.';
+            \Flight::get('log')->error($msg, ['project' => $this->getProjectPath()]);
+            throw new \RuntimeException($msg);
         }
 
-        // Check if serve.sh wrote a .mcp_url file
+        // CORE's own tasks from here down: core's hooks calling core's own MCP, which is
+        // what localhost:8080 legitimately is.
         $mcpUrlFile = $projectRoot . '/.mcp_url';
         if (file_exists($mcpUrlFile)) {
             $url = trim(file_get_contents($mcpUrlFile));
@@ -124,8 +138,7 @@ class ClaudeRunner {
             }
         }
 
-        // Default to localhost:8080 for production (nginx -> php-fpm)
-        return 'http://localhost:8080/mcp/message';
+        return 'http://localhost:8080/mcp/message';   // nginx -> php-fpm, this install
     }
 
     /**

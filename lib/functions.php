@@ -32,13 +32,37 @@ function csrf_token(): string {
  * Apex defaults to "tiknix.com" (the slug.tiknix.com convention); override with
  * [app] control_plane_host in config. Fail-safe: an unknown host is treated as
  * the control plane so the root is never accidentally locked out of its tools.
+ *
+ * That fail-safe is right for gating TOOLS and wrong for choosing a DATABASE, so the
+ * underlying three-state answer is exposed separately — see control_plane_state().
  */
 function is_control_plane(): bool {
+    return control_plane_state() !== 'project';   // unknown -> root keeps its tools
+}
+
+/**
+ * WHICH INSTALL IS THIS: 'core' | 'project' | 'unknown'.
+ *
+ * is_control_plane() collapses this to a bool and answers "unknown" as "core", because it
+ * was written to gate tooling and locking the root out of its own tools is the worse
+ * error there.
+ *
+ * Callers that pick a DATABASE must not accept that collapse. An install whose
+ * app.baseurl is empty or unparseable cannot say who it is, and answering "core" sends a
+ * project's task reads and writes into the control plane's tables — the same silent
+ * cross-database wrong-answer that let a build agent be handed another project's task 1.
+ * There the honest answer is to stop, so they ask for the third state and refuse on it.
+ *
+ * @return 'core'|'project'|'unknown'
+ */
+function control_plane_state(): string {
     $root = strtolower(trim((string)(\Flight::get('app.control_plane_host') ?? '')));
     if ($root === '') $root = 'tiknix.com';
+
     $host = strtolower((string)(parse_url((string)\Flight::get('app.baseurl'), PHP_URL_HOST) ?: ''));
-    if ($host === '') return true;   // unknown host -> never lock out the root
-    return $host === $root;
+    if ($host === '') return 'unknown';
+
+    return $host === $root ? 'core' : 'project';
 }
 
 /**

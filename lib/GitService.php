@@ -115,8 +115,8 @@ class GitService {
         // Update repoPath to the new workspace
         $this->repoPath = $workspacePath;
 
-        // Copy main project's .claude folder and ensure .mcp.json exists
-        $this->copyClaudeFolder($workspacePath);
+        // The PROJECT's .claude, not this install's — $remoteUrl is the repo we just cloned.
+        $this->copyClaudeFolder($workspacePath, $remoteUrl);
         Mcp::ensureMcpConfig($workspacePath); // API key set later if needed
 
         $this->log("Workspace created at: {$workspacePath}");
@@ -135,16 +135,39 @@ class GitService {
     }
 
     /**
-     * Copy main project's .claude folder to workspace
+     * Copy the .claude folder into a fresh workspace — the CLONED PROJECT'S, not ours.
      *
-     * Ensures workspace has current hooks configuration.
-     * Hooks use TIKNIX_PROJECT_ROOT env var to find the main project.
+     * This read dirname(__DIR__)/.claude, which is whichever install is running the code.
+     * The AI Projects sidecar loads core's autoloader, so every workspace got CORE's
+     * .claude regardless of which project it was a clone of. Two consequences, both seen
+     * on a real worktree:
+     *
+     *   - the project's own .claude/guard.php never arrived. That is the in-jail scope
+     *     guard, and its first protected pattern is `.claude/` itself — so the file whose
+     *     job is to stop an agent editing the guardrails was the one silently omitted.
+     *   - core's settings.json arrived instead, pointing at core's hooks.
+     *
+     * A project ships the .claude written FOR it, so that is the one a clone of it gets.
+     * Falling back to this install's is still better than none (an agent with no hooks is
+     * worse than one with the wrong project's), but it is logged rather than assumed.
      *
      * @param string $workspacePath Path to the workspace
+     * @param string $sourceRepo    What we cloned FROM — a local path for a project clone
      */
-    private function copyClaudeFolder(string $workspacePath): void {
+    private function copyClaudeFolder(string $workspacePath, string $sourceRepo = ''): void {
         $workspaceClaudeDir = $workspacePath . '/.claude';
-        $mainClaudeDir = dirname(__DIR__) . '/.claude';
+
+        $sourceRepo    = trim($sourceRepo);
+        $mainClaudeDir = '';
+        if ($sourceRepo !== '' && is_dir($sourceRepo . '/.claude')) {
+            $mainClaudeDir = $sourceRepo . '/.claude';           // the project's own
+        } else {
+            $mainClaudeDir = dirname(__DIR__) . '/.claude';      // this install's
+            if ($sourceRepo !== '') {
+                $this->log("WARNING: {$sourceRepo} has no .claude — falling back to this "
+                         . "install's hooks, so the project's own guard is NOT in effect");
+            }
+        }
 
         if (!is_dir($mainClaudeDir)) {
             return;
@@ -165,7 +188,7 @@ class GitService {
                 copy($file, $dest);
             }
         }
-        $this->log("Copied .claude from main project");
+        $this->log("Copied .claude from {$mainClaudeDir}");
     }
 
     /**

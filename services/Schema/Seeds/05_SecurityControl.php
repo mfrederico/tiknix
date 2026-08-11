@@ -2,19 +2,9 @@
 /**
  * 05_SecurityControl.php — the path rules every install enforces.
  *
- * WHY THIS FILE EXISTS
- *
- * There were two path guards. `scripts/hooks/security-sandbox.php` reads these rows: it
- * is level-aware, editable from the admin UI, and registered in the one tracked
- * .claude/settings.json, so it runs on core and on every clone. `.claude/guard.php` was
- * the other — a hardcoded PCRE list with no level awareness that existed only in the
- * instances somebody had copied it into. Two guards, overlapping on `.claude` and
- * `conf/`, disagreeing everywhere else, and no way to change either one for everybody.
- *
- * The rules table was never seeded, so `database/security.db` is untracked and built per
- * install. That is the actual reason guard.php was carried around by hand: there was no
- * mechanism to ship a rule. This is that mechanism, and with it guard.php has nothing
- * left that this cannot say — plus a level, which guard.php could never express.
+ * `database/security.db` is untracked and built per install, so a rule added on core
+ * reaches nobody. This is how a rule ships: seeded here, enforced by
+ * scripts/hooks/security-sandbox.php, which is level-aware and editable from the admin UI.
  *
  * IDEMPOTENT AND NON-DESTRUCTIVE. Matches on pattern, and only fills in what is missing.
  * A rule an operator has edited or switched off stays edited or off: re-running the build
@@ -40,11 +30,8 @@ R::exec('CREATE TABLE IF NOT EXISTS securitycontrol (
 )');
 
 /**
- * Everything guard.php protected that the rules table did not already cover.
- *
- * `.claude`, `/conf/`, `/lib/`, `scripts/hooks` and `CLAUDE.md` are already rows at
- * level 50 — those were the overlap. What follows is the remainder, at the same level,
- * so an ADMIN can still work on them and a build agent cannot.
+ * Level 50 throughout: an ADMIN can still work on these, a build agent cannot.
+ * `.claude`, `/conf/`, `/lib/`, `scripts/hooks` and `CLAUDE.md` are already rows.
  */
 $rules = [
     [

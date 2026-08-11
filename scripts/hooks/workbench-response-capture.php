@@ -52,9 +52,7 @@ try {
         // Task data lives in the INSTANCE'S workbench.db under the sidecar regime, and
         // the agent's environment already carries that path. Falling straight through to
         // core's db means loading a workbenchtask id that means something else there —
-        // the same mistake plan-ingest and plan-orchestrate both made. (This hook is not
-        // currently registered by provisioning; only cli/setup-hooks.sh installs it. It is
-        // corrected here so it cannot be wired up wrong later.)
+        // the same mistake plan-ingest and plan-orchestrate both made.
         $dbPath = trim((string) (getenv('TIKNIX_WORKBENCH_DB') ?: ''));
         if ($dbPath === '') {
             $dbPath = $mainProject . '/' . ($config['database']['path'] ?? 'database/tiknix.db');

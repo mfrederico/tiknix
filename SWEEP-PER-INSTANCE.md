@@ -68,40 +68,31 @@ Two things to keep an eye on, neither a live defect:
 - `PipeFiles::post()`'s refusal message names only `trigger_secret` when a missing
   `baseurl` triggers it equally. Right behaviour, misleading text.
 
-### Open — ranked
+### Also fixed
 
-**1. `is_control_plane()` fails open to core, and now gates a database choice.**
-`lib/functions.php:36`. An empty `app.baseurl` returns `true`, so a project with a
-missing or malformed baseurl identifies as the control plane. `BaseTool.php:86`
-early-returns on that, meaning such a project reads and writes **core's** task data.
-The fail-safe was written when this only gated tool availability; it now decides which
-database you are in. Hits all three hardness properties.
+| Surface | Finding | Commit |
+|---|---|---|
+| S6 | `is_control_plane()` answered "unknown" as "core", and that gated a DATABASE choice — a project with an empty `app.baseurl` read and wrote the control plane's tasks. Split into `control_plane_state()` (`core\|project\|unknown`); the bool keeps its fail-safe for tool gating, `selectWorkbenchDb()` refuses on `unknown`. | `96d3d6e` |
+| S8 | `ClaudeRunner::getHookUrl()` fell past the project branch to `.mcp_url` then `localhost:8080` — core, on a co-located box — whenever a project-owned task had no baseurl. Refuses instead. | `96d3d6e` |
+| S7 | `GitService::copyClaudeFolder()` read whichever install ran the code (always core, since sidecars load core's autoloader). | `96d3d6e`, then `bd24bc1` |
+| S7 | Agent worktrees had no `database/security.db`, so the sandbox hook took its "not found → exit 0" path with every path rule off. Now resolves via `TIKNIX_PROJECT_ROOT` → the script's own install → cwd, and FAILS CLOSED when it finds none. | `e86e3f8` |
+| S7 | Two path guards (`.claude/guard.php` hardcoded and level-blind; `security-sandbox.php` DB-driven). Folded into one — the four patterns unique to guard.php are now seeded rules at level 50. | `bd24bc1` |
+| S5 | Every `allow` rule was shadowed by the general `/home` block at priority 1, so the capricorn, production and memory-dir exceptions had never once fired. Allows now evaluate before blocks. | `650e26e` |
+| S10 | Five copies of the `<slug>.<app>` rule across the sidecars → `Model_Instance::dirFrom`, which refuses an empty slug rather than naming `ROOT/.tiknix`. | `e86e3f8` + per-sidecar |
+| S1 | Provisioning (`capricorn f822367`) overwrote core's tracked `.claude/settings.json` with a reduced per-instance variant and force-added it — the origin of the whole divergence. Removed; `.claude` is inherited. | capricorn `f822367` |
 
-**2. `ClaudeRunner::getHookUrl()` falls back to `http://localhost:8080/mcp/message`.**
-`lib/ClaudeRunner.php:128`. On this box that is core. Reached whenever
-`TIKNIX_WORKBENCH_DB` is unset and no `.mcp_url` exists — the same silent core
-redirection just fixed for `.mcp.json`, on the progress-hook path.
+`workbench-response-capture.php` **is** registered — core's `.claude/settings.json` carries
+it as the `Stop` hook, so it reaches every project. Its header claimed otherwise; corrected.
 
-**3. `GitService::copyClaudeFolder()` copies CORE's `.claude`.**
-`lib/GitService.php:145` — `dirname(__DIR__) . '/.claude'`. Agent worktrees therefore
-lose the project's own `guard.php` (which protects billing, vendor, `.claude` itself)
-and get core's hook set instead. Confirmed on mtmoses's worktree.
+### Open
 
-**4. Agent worktrees have no `database/security.db`.**
-`scripts/hooks/security-sandbox.php` exits 0 when the file is missing — "allow on error,
-fail open" — so in a worktree every path rule is off. That is how `lib/Mailer.php` and
-`conf/config.example.ini` were editable there.
+Nothing from this sweep. All eleven projects carry the canonical `.claude`, the seeded
+rules, and one instance-path rule; bookingscheduler's Leads conflict is resolved and it is
+current with core.
 
-**5. `workbench-response-capture.php` may not be installed.**
-Its own header says provisioning does not register it; only `cli/setup-hooks.sh` does.
-Correct about the database, possibly never invoked. Verify per project.
-
-### Blocked on write access
-
-Findings 1, 2 and 3 all live under `lib/`, which security rule 14 (`Protect core libs`,
-`protect`, level 50) makes read-only for this session — it runs at the default level 100.
-The fixes are specified above and ready; they need `TIKNIX_MEMBER_LEVEL=50` in the
-environment (via `.claude/settings.json` `env`, or one session launched with it).
+Remaining surfaces are cheap to re-check whenever something moves: rerun the greps in the
+table above and confirm no new `?? 'tiknix.com'`, `?: 'localhost'`, `dirname(__DIR__)`
+path resolution, or second copy of a rule has appeared.
 
 ### Not defects (checked, deliberate)
 

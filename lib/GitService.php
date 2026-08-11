@@ -137,14 +137,8 @@ class GitService {
      * Copy .claude into a fresh workspace.
      *
      * ONE .claude, core's, tracked in git. Instances are clones of core, so they inherit
-     * it by merge like any other tracked file — there is no second copy to keep in step
-     * and nothing to reconcile at run time.
-     *
-     * This is deliberately a plain copy. It briefly grew a union of "this install's" and
-     * "the project's" settings, because provisioning had replaced the tracked file on each
-     * instance with a reduced one and the two halves each held hooks the other lacked.
-     * That merge was an edge case invented to paper over a divergence that should not
-     * exist: the fix is one canonical file, not code that reconciles two.
+     * it by merge like any other tracked file — there is no second copy to keep in step,
+     * which is why this is a plain copy and not a merge of anything.
      *
      * @param string $workspacePath Path to the workspace
      */

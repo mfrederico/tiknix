@@ -203,15 +203,26 @@ class ClaudeRunner {
     }
 
     /**
-     * Return the jail-run.sh path if $workspace is a jailable capricorn instance
-     * (<sub>.<app> under /var/www/html/default with public/index.php), else ''.
+     * Return the jail-run.sh path when $workspace can be jailed, else ''.
+     *
+     * Jailable = a tiknix app root under /var/www/html/default whose identity jail-run.sh
+     * can resolve: either the instance itself (<sub>.<app>) or a TASK WORKSPACE beneath
+     * one (…/projects/<member>/<sub>.<app>/<taskId>), which carries the identity on its
+     * parent.
+     *
+     * Task workspaces used to be excluded here, by requiring a dot in the leaf name — so
+     * every board-run agent ran unjailed, as the operator's own uid, with permission
+     * prompts off, while the wrapper it generated announced itself as jailed.
      */
     private function jailFor(string $workspace): string {
         $root = '/var/www/html/default';
         $real = realpath($workspace) ?: $workspace;
-        if (strpos(basename($real), '.') === false) return '';
         if (strpos($real, $root . '/') !== 0) return '';
         if (!is_file("$real/public/index.php")) return '';
+        // jail-run.sh needs <sub>.<app> from the leaf or its parent; anything else it
+        // cannot name, and it refuses rather than guessing.
+        if (strpos(basename($real), '.') === false
+            && strpos(basename(dirname($real)), '.') === false) return '';
         $cfg = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
         $binDir = rtrim($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin', '/');
         $script = "$binDir/jail-run.sh";
@@ -242,12 +253,21 @@ class ClaudeRunner {
         // Run jailed (bwrap) on an instance; else direct (an isolated clone, hook-sandboxed).
         // In the jail path the `-- <args>` are appended to jail-run.sh's own
         // `claude --permission-mode bypassPermissions` wrapper, so pass --model through here.
+        // INSIDE THE JAIL, CORE IS NOT MOUNTED. jail-run.sh binds the workspace and its
+        // vendor and nothing else, so a TIKNIX_PROJECT_ROOT pointing at core names a
+        // directory the agent cannot see — and the PreToolUse hooks are launched from
+        // exactly that path. The workspace is a full clone and ships its own
+        // scripts/hooks, so it is the right root there. Unjailed, core stays correct.
         if ($jail !== '') {
+            $projectRootForAgent = $workspaceRoot;
             $jailArgs = '--debug';
             if ($this->modelOverride) $jailArgs .= ' --model ' . escapeshellarg($this->modelOverride);
+            $runComment = '# Run the agent under bwrap — the jail is the security boundary';
             $runBlock = "echo \"  [jailed: " . addslashes($jail) . "]\"\n"
                       . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . ' -- ' . $jailArgs . "\nEXIT_CODE=\$?";
         } else {
+            $projectRootForAgent = $mainProjectRoot;
+            $runComment = '# Run the agent directly — NOT jailed; the PreToolUse hooks are the only guard';
             $runBlock = 'cd ' . escapeshellarg($workspaceRoot) . "\n{$claudeCmd}\nEXIT_CODE=\$?";
         }
 
@@ -275,7 +295,7 @@ export TIKNIX_MEMBER_ID={$this->memberId}
 export TIKNIX_AGENT_STATE={$agentStateArg}
 export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
 export TIKNIX_SESSION_NAME="{$sessionName}"
-export TIKNIX_PROJECT_ROOT="{$mainProjectRoot}"
+export TIKNIX_PROJECT_ROOT="{$projectRootForAgent}"
 export TIKNIX_WORKSPACE="{$workspaceRoot}"
 export TIKNIX_HOOK_URL="{$hookUrl}"
 {$wsExport}
@@ -332,7 +352,7 @@ auto_accept_permissions() {
 auto_accept_permissions &
 WATCHER_PID=\$!
 
-# Run the agent (jailed via bwrap when the workspace is an instance)
+{$runComment}
 {$runBlock}
 
 # Kill the watcher if still running

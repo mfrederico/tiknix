@@ -93,15 +93,27 @@ foreach ($dbCandidates as $root => $candidate) {
 }
 
 if ($securityDbPath === '') {
-    // FAIL CLOSED. The previous behaviour was exit(0) — "no rules found, so allow
-    // everything" — which is the one outcome a security control must never have: it is
-    // indistinguishable from a clean pass, and it is silent. Blocking is loud, is
-    // recoverable in one command, and errs toward the safe side.
+    // WHO IS THE BOUNDARY HERE?
+    //
+    // INSIDE THE JAIL bwrap is. It binds the workspace and its vendor and nothing else:
+    // other tenants, host secrets and /etc are not in the namespace at all, so they
+    // cannot be reached whatever these rules say. A jailed workspace legitimately ships
+    // no security.db, and refusing every tool for its absence would stop the agent doing
+    // the work it was jailed in order to be allowed to do.
+    //
+    // UNJAILED nothing else is holding the line — the agent runs as a real uid on the
+    // host with permission prompts off — so these rules are the only guard, and their
+    // absence is a broken install rather than a deliberate one. Fail closed: "no rules
+    // loaded, so permit everything" is indistinguishable from a clean pass, and silent.
+    if ($inJail) {
+        exit(0);
+    }
     fwrite(STDERR,
         "SECURITY BLOCK: no security.db found (looked in: "
-        . implode(', ', array_keys($dbCandidates)) . "). Refusing every tool rather than "
-        . "running with all path rules disabled. Fix: restore database/security.db in the "
-        . "install, or point TIKNIX_PROJECT_ROOT at one that has it.\n");
+        . implode(', ', array_keys($dbCandidates)) . ") and this session is NOT jailed, so "
+        . "nothing else constrains it. Refusing every tool rather than running with all "
+        . "path rules disabled. Fix: restore database/security.db in the install, or point "
+        . "TIKNIX_PROJECT_ROOT at one that has it.\n");
     exit(2);
 }
 

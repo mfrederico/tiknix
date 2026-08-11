@@ -423,25 +423,54 @@ BASH;
         $promptFile = $this->workDir . '/prompt.txt';
         file_put_contents($promptFile, $prompt);
 
-        // Use TmuxManager to load buffer and paste
-        if (!TmuxManager::sendTextViaBuffer($this->sessionName, $prompt, 'tiknix-prompt')) {
-            // Fallback to send-keys for shorter prompts
-            return $this->sendMessage($prompt);
+        // CHECK THAT IT ARRIVED, do not assume it did.
+        //
+        // The paste goes into a terminal that may not be accepting input yet. Every
+        // earlier attempt at this problem guessed harder — a 500ms sleep, then 2s in the
+        // caller, then polling for the footer, which Claude draws BEFORE the input box is
+        // live. Each guess failed the same way and left the agent parked at an empty
+        // prompt while the task read `running`, which is invisible until somebody opens
+        // the console. So: paste, look at the pane, and paste again if it is still empty.
+        for ($attempt = 1; $attempt <= self::PROMPT_ATTEMPTS; $attempt++) {
+            if (!TmuxManager::sendTextViaBuffer($this->sessionName, $prompt, 'tiknix-prompt')) {
+                return $this->sendMessage($prompt);   // buffer paste unavailable
+            }
+            usleep(300000);
+
+            if ($this->promptLanded()) {
+                TmuxManager::sendKeys($this->sessionName, 'Enter');
+                usleep(50000);
+                TmuxManager::sendKeys($this->sessionName, 'Enter');   // some builds want a confirm
+                return true;
+            }
+
+            if (!$this->exists()) return false;       // session died while we waited
+            sleep(2);                                 // still starting up — try again
         }
 
-        // Small delay to ensure paste completes
-        usleep(100000); // 100ms
+        Flight::get('log')->error('Prompt never reached the agent', [
+            'session' => $this->sessionName,
+            'task'    => $this->taskId,
+            'attempts'=> self::PROMPT_ATTEMPTS,
+        ]);
+        return false;
+    }
 
-        // Send Enter to submit the prompt to Claude
-        if (!TmuxManager::sendKeys($this->sessionName, 'Enter')) {
-            return false;
-        }
+    /** How many times to paste before giving up and saying so. */
+    private const PROMPT_ATTEMPTS = 8;
 
-        // Send a second Enter in case Claude needs confirmation
-        usleep(50000); // 50ms
-        TmuxManager::sendKeys($this->sessionName, 'Enter');
-
-        return true;
+    /**
+     * Did the paste actually land in the input box?
+     *
+     * An empty box still shows Claude's placeholder ("Try ..."); once text is in it the
+     * placeholder is gone, and a long paste collapses to a "paste again to expand" hint.
+     * Either of those means the terminal took the input.
+     */
+    private function promptLanded(): bool {
+        $pane = TmuxManager::capture($this->sessionName, 20);
+        if ($pane === '') return false;
+        if (stripos($pane, 'paste again to expand') !== false) return true;
+        return stripos($pane, 'Try "') === false && stripos($pane, "Try '") === false;
     }
 
     /**

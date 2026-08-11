@@ -115,8 +115,7 @@ class GitService {
         // Update repoPath to the new workspace
         $this->repoPath = $workspacePath;
 
-        // The PROJECT's .claude, not this install's — $remoteUrl is the repo we just cloned.
-        $this->copyClaudeFolder($workspacePath, $remoteUrl);
+        $this->copyClaudeFolder($workspacePath);
         Mcp::ensureMcpConfig($workspacePath); // API key set later if needed
 
         $this->log("Workspace created at: {$workspacePath}");
@@ -135,48 +134,26 @@ class GitService {
     }
 
     /**
-     * Build the workspace's .claude from BOTH installs — this one and the cloned project.
+     * Copy .claude into a fresh workspace.
      *
-     * It used to take dirname(__DIR__)/.claude alone, i.e. whichever install runs the
-     * code. The AI Projects sidecar loads core's autoloader, so every workspace got CORE's
-     * .claude whatever project it was a clone of, and the project's own guard.php never
-     * arrived — the in-jail scope guard whose first protected pattern is `.claude/`
-     * itself. The file whose job is to stop an agent editing the guardrails was the one
-     * silently omitted.
+     * ONE .claude, core's, tracked in git. Instances are clones of core, so they inherit
+     * it by merge like any other tracked file — there is no second copy to keep in step
+     * and nothing to reconcile at run time.
      *
-     * Taking the PROJECT's alone is equally wrong, and worse in a quieter way: only some
-     * projects carry a Stop hook, and that hook is what moves a finished task out of
-     * `running` and records what the agent said. A workspace built from a project without
-     * one produces tasks that never report finishing — which is the failure that started
-     * this whole thread, reintroduced from the other direction.
-     *
-     * They are answering different questions and both answers are needed:
-     *
-     *   this install's  — how the RUNNER observes the task (progress, completion,
-     *                     validation). Infrastructure; not the project's business.
-     *   the project's   — what the agent may TOUCH inside its own tree (guard.php).
-     *
-     * So: this install's files as the base, the project's laid over the top, and the hook
-     * arrays UNIONED rather than replaced — deduplicated on the command string, since the
-     * same hook registered twice would run twice.
+     * This is deliberately a plain copy. It briefly grew a union of "this install's" and
+     * "the project's" settings, because provisioning had replaced the tracked file on each
+     * instance with a reduced one and the two halves each held hooks the other lacked.
+     * That merge was an edge case invented to paper over a divergence that should not
+     * exist: the fix is one canonical file, not code that reconciles two.
      *
      * @param string $workspacePath Path to the workspace
-     * @param string $sourceRepo    What we cloned FROM — a local path for a project clone
      */
-    private function copyClaudeFolder(string $workspacePath, string $sourceRepo = ''): void {
+    private function copyClaudeFolder(string $workspacePath): void {
+        $claudeDir          = dirname(__DIR__) . '/.claude';
         $workspaceClaudeDir = $workspacePath . '/.claude';
-        $runnerClaudeDir    = dirname(__DIR__) . '/.claude';          // this install's
-        $sourceRepo         = trim($sourceRepo);
-        $projectClaudeDir   = ($sourceRepo !== '' && is_dir($sourceRepo . '/.claude'))
-            ? $sourceRepo . '/.claude'
-            : '';
 
-        if (!is_dir($runnerClaudeDir) && $projectClaudeDir === '') {
+        if (!is_dir($claudeDir)) {
             return;
-        }
-        if ($sourceRepo !== '' && $projectClaudeDir === '') {
-            $this->log("NOTE: {$sourceRepo} ships no .claude — the workspace gets only this "
-                     . "install's hooks, so no project-specific guard is in effect");
         }
 
         if (is_dir($workspaceClaudeDir)) {
@@ -184,75 +161,14 @@ class GitService {
         } elseif (is_link($workspaceClaudeDir)) {
             unlink($workspaceClaudeDir);
         }
+
         mkdir($workspaceClaudeDir, 0755, true);
-
-        // Base then overlay. settings.json is handled separately below — copying it here
-        // would let the project's replace the runner's wholesale, dropping the Stop hook.
-        foreach ([$runnerClaudeDir, $projectClaudeDir] as $dir) {
-            if ($dir === '' || !is_dir($dir)) continue;
-            foreach (glob($dir . '/*') as $file) {
-                if (!is_file($file) || basename($file) === 'settings.json') continue;
-                copy($file, $workspaceClaudeDir . '/' . basename($file));
-            }
+        foreach (glob($claudeDir . '/*') as $file) {
+            if (is_file($file)) copy($file, $workspaceClaudeDir . '/' . basename($file));
         }
-
-        $merged = $this->mergeClaudeSettings(
-            $runnerClaudeDir . '/settings.json',
-            $projectClaudeDir === '' ? '' : $projectClaudeDir . '/settings.json'
-        );
-        if ($merged !== null) {
-            file_put_contents($workspaceClaudeDir . '/settings.json',
-                json_encode($merged, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-        }
-
-        $this->log('Built .claude from ' . $runnerClaudeDir
-                 . ($projectClaudeDir !== '' ? " + {$projectClaudeDir}" : ''));
+        $this->log("Copied .claude from {$claudeDir}");
     }
 
-    /**
-     * Union two .claude settings files, hook entries deduplicated on their command string.
-     *
-     * The runner's file is the base (it carries the hooks the task lifecycle depends on);
-     * the project's adds its own. Neither may silently drop the other's — see
-     * copyClaudeFolder() for what each is responsible for.
-     *
-     * @return array|null the merged settings, or null when neither file is readable
-     */
-    private function mergeClaudeSettings(string $runnerFile, string $projectFile): ?array {
-        $read = static function (string $f): ?array {
-            if ($f === '' || !is_file($f)) return null;
-            $j = json_decode((string) @file_get_contents($f), true);
-            return is_array($j) ? $j : null;
-        };
-
-        $base    = $read($runnerFile);
-        $project = $read($projectFile);
-        if ($base === null && $project === null) return null;
-        if ($base === null)    return $project;
-        if ($project === null) return $base;
-
-        // Non-hook keys: the project's win, so a project can still set its own options.
-        $merged = array_merge($base, $project);
-        $merged['hooks'] = $base['hooks'] ?? [];
-
-        foreach (($project['hooks'] ?? []) as $event => $matchers) {
-            if (!is_array($matchers)) continue;
-            $seen = [];
-            foreach (($merged['hooks'][$event] ?? []) as $existing) {
-                foreach (($existing['hooks'] ?? []) as $h) {
-                    if (isset($h['command'])) $seen[(string) $h['command']] = true;
-                }
-            }
-            foreach ($matchers as $entry) {
-                $commands = array_column($entry['hooks'] ?? [], 'command');
-                // Already registered by the runner: skip, or the hook fires twice.
-                if ($commands && !array_diff($commands, array_keys($seen))) continue;
-                $merged['hooks'][$event][] = $entry;
-            }
-        }
-
-        return $merged;
-    }
 
     /**
      * Remove a directory recursively

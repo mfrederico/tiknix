@@ -97,9 +97,36 @@ of a sweep rather than trusting the code read.
 | **A conflicted subtask had no recovery.** The failure card rendered only for `failed`, hiding both the merge output and the plan-aware Fix & retry; the Run button also excluded `conflict`. Plan 72 sat stalled behind task 76 for a day with Edit as the only action. | workbench `e25e2b1` |
 | **The prompt was pasted after a guessed 500ms.** `spawn()` slept a flat half-second "for Claude to initialize" then pasted the task prompt into the pane. Under bwrap the UI is not up by then, the paste goes nowhere, and the task reads `running` while nothing runs. Now polls for the interactive footer. | `cc38208` |
 
+### S4 and S9 — the two surfaces the first pass never actually ran
+
+Both had findings fixed by accident earlier; neither had been swept.
+
+**S9 (scripts that loop over projects) — a real bug.** `core.tiknix` is a SYMLINK to the
+control plane and has a `data/workbench.db` of its own, so `glob('default/*.tiknix')`
+matches it. All three loopers included it: the reaper would release and reap CORE's tasks,
+`repair-selfauth-permissions` would rewrite permission rows in CORE's database, and
+`add-playwright-mcp --all` would overwrite core's `.mcp.json`. None excluded it, and none
+could by name. All three now call `Model_Instance::isProvisionedInstance()`. `478f1f0`
+
+**S4 (path resolution from the install root) — clean.** 69 sites; `dirname(__DIR__)` is
+correct wherever it means "this install", which is nearly all of them. The cross-project
+classes (`PlanExecutor`, `PlanRunner`, `PlanOrchestrator`, `Introspector`) all take an
+explicit directory. One blemish, not live: `AgentState.php:99` hardcodes
+`database/tiknix.db` under its own root, so on an instance the file is absent, the PDO
+throws into a `catch`, and credential adoption silently returns nothing. Only core
+launches agents today, so nothing depends on it.
+
 ### Open
 
 Not defects, but the same family — worth a decision rather than a fix:
+
+- **Jailing made `pkill -f` lethal to the agent that runs it.** `jail-run.sh` binds
+  `--ro-bind /opt/google/chrome /opt/google/chrome`, so the string `chrome` is in the
+  jail's argv. Task 76's agent ran `pkill -9 -f chrome` to tidy up browsers, matched the
+  bwrap process itself, and SIGKILLed its own jail mid-work (exit 137) — losing nothing
+  only because the work was recoverable from the worktree. Before jailing, the runner was
+  a bare `claude` with no `chrome` in its command line. Durable fix is `bwrap --args FD`,
+  which keeps bind paths out of argv entirely.
 
 - **`plan_status` and `status` are two columns for one concept.** `Model_Workbenchtask::isPlan()`/`displayStatus()` now answer "which lifecycle is this row on" in one place, but every reader still has to ask. Collapsing to one column touches the orchestrator, the reaper, the Build gate and the board.
 - **`securitycontrol.scope` could take an `agent` value.** With agent-level = operator-level, a path rule cannot separate the two. An `agent` scope keyed on `TIKNIX_TASK_ID` would, without level games.

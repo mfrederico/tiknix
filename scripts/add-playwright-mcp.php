@@ -5,8 +5,10 @@
  *
  * Usage:
  *   php scripts/add-playwright-mcp.php <slug|instanceDir>
- *   php scripts/add-playwright-mcp.php --all        # every *.tiknix under /var/www/html/default
+ *   php scripts/add-playwright-mcp.php --all        # every provisioned instance
  */
+
+require_once __DIR__ . '/../vendor/autoload.php';   // Model_Instance (classmapped)
 
 function addPlaywright(string $file): string {
     if (!is_file($file)) return "skip: no .mcp.json at $file";
@@ -27,6 +29,9 @@ if ($arg === '') { fwrite(STDERR, "usage: php scripts/add-playwright-mcp.php <sl
 
 if ($arg === '--all') {
     foreach (glob('/var/www/html/default/*.tiknix', GLOB_ONLYDIR) ?: [] as $dir) {
+        // The glob matches core.tiknix, a SYMLINK to the control plane — --all means
+        // every provisioned instance, not core's own .mcp.json.
+        if (!\Model_Instance::isProvisionedInstance($dir)) continue;
         echo addPlaywright($dir . '/.mcp.json') . "\n";
     }
     exit(0);

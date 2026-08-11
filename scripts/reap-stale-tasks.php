@@ -60,6 +60,11 @@ $say('  ' . count($live) . ' live tmux session(s)');
 $released = 0; $killed = 0; $claimed = [];
 
 foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) {
+    // The glob matches core.tiknix, which is a SYMLINK to the control plane and has a
+    // data/workbench.db of its own — so this sweep would release and reap core's tasks
+    // believing they belonged to a customer project. Decide by structure, never by name.
+    if (!\Model_Instance::isProvisionedInstance(dirname(dirname($db)))) continue;
+
     // THE DIRECTORY IS <slug>.<app>; THE SLUG IS NOT THE DIRECTORY.
     //
     // Session names are built from the bare instance slug, so reading the directory

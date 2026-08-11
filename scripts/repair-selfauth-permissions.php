@@ -23,6 +23,8 @@
 
 if (php_sapi_name() !== 'cli') { http_response_code(403); exit("cli only\n"); }
 
+require_once __DIR__ . '/../vendor/autoload.php';   // Model_Instance (classmapped)
+
 /** control => methods that authenticate themselves and must be reachable. */
 const SELF_AUTHED = [
     'pipeline' => ['trigger', 'api', 'status', 'debug', 'debugstep', 'object', 'objecttick', 'mintkey'],
@@ -41,6 +43,11 @@ $totalBad = 0; $totalFixed = 0; $scanned = 0;
 $repaired = [];
 
 foreach ($dirs as $dir) {
+    // core.tiknix is a SYMLINK to the control plane, and the glob above matches it —
+    // so this would rewrite permission rows in CORE's database as if it were a customer
+    // project. Structure, not name: see Model_Instance::isProvisionedInstance().
+    if (!\Model_Instance::isProvisionedInstance($dir)) continue;
+
     $slug = preg_replace('/\.tiknix$/', '', basename($dir));
     if ($only !== '' && $slug !== $only) continue;
 

@@ -83,6 +83,35 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
     }
 
     /**
+     * Is $dir a PROVISIONED INSTANCE, or something else that merely sits under ROOT?
+     *
+     * Anything scanning glob(ROOT . '/*.tiknix') has to answer this, and answering it by
+     * NAME is wrong: core.tiknix is a symlink to the control plane itself, so a scanner
+     * that trusts the directory name will happily rotate core's keys or reap core's
+     * tasks believing it is tidying a customer project. Naming conventions also break the
+     * moment somebody adds an alias.
+     *
+     * Two structural facts define one, both already used by scripts/upgrade-instances.php:
+     *   - its git origin IS core (realpath, so a symlinked path collapses to the truth)
+     *   - it sits on an `instance/<slug>` branch, which only provisioning creates
+     *
+     * Neither can be faked by what the directory is called.
+     */
+    public static function isProvisionedInstance(string $dir): bool {
+        $real = realpath($dir);
+        if ($real === false || !is_dir($real . '/.git')) return false;
+        if ($real === realpath(self::ROOT . '/tiknix')) return false;      // the control plane
+
+        $run = static function (string $cmd) use ($real): string {
+            $out = @shell_exec('cd ' . escapeshellarg($real) . ' && ' . $cmd . ' 2>/dev/null');
+            return trim((string) $out);
+        };
+
+        if (realpath($run('git remote get-url origin')) !== realpath(self::ROOT . '/tiknix')) return false;
+        return strpos($run('git rev-parse --abbrev-ref HEAD'), 'instance/') === 0;
+    }
+
+    /**
      * The instance's own workbench database — where its plans and tasks live.
      *
      * Built inline in several places, always as dir() . '/data/workbench.db'. It is the

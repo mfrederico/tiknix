@@ -79,14 +79,62 @@ abstract class BaseTool {
      *
      * INERT on the control plane (core keeps its tasks in the ambient core db) and when no
      * workbench.db exists yet. Call at the TOP of execute() in any workbench task tool.
+     *
+     * @return bool TRUE when this process is answering for ONE project's own workbench.db.
      */
-    protected function selectWorkbenchDb(): void {
-        if (\is_control_plane()) return;                       // core: ambient core db (unchanged)
+    protected function selectWorkbenchDb(): bool {
+        if (\is_control_plane()) return false;                 // core: ambient core db (unchanged)
         $db = dirname(__DIR__) . '/data/workbench.db';         // {instanceRoot}/data/workbench.db
-        if (!is_file($db)) return;                             // no sidecar-owned tasks here
+        if (!is_file($db)) return false;                       // no sidecar-owned tasks here
         if (!Bean::hasDatabase('ws')) Bean::addDatabase('ws', 'sqlite:' . $db);
         Bean::selectDatabase('ws');
         Bean::freeze(false);
+        return true;
+    }
+
+    /**
+     * May this caller act on $task? Answered differently on a project than on core.
+     *
+     * ON CORE the question is "which of the many members' tasks is this one" — one database
+     * holds every project's tasks, so ownership is the only thing separating them, and
+     * TaskAccessControl decides.
+     *
+     * ON A PROJECT the question is already answered before it is asked. The database this
+     * task came from holds THAT project's tasks and nothing else, and the API key that
+     * opened the door exists only in THAT project's apikey table. Both are per-project, so
+     * arriving here with the task in hand IS the authorisation.
+     *
+     * Asking TaskAccessControl anyway compares a member id from one database against a
+     * member table in another. Task rows are stamped with the CONTROL PLANE's member id
+     * (mtmoses is 25 on tiknix.com), while an agent authenticating to the project resolves
+     * against the project's own members (ids 1 and 2). Those numbers mean different people,
+     * so the comparison is not strict — it is meaningless, and it fails whichever way you
+     * point it: core's id against the project's members denies every task, and the project's
+     * agent key against a core id denies them too.
+     */
+    protected function mayUseTask(bool $projectScoped, $task, string $mode = 'view'): bool {
+        if ($projectScoped) return true;
+        $ac = new \app\TaskAccessControl();
+        return $mode === 'edit'
+            ? $ac->canEdit((int) $this->member->id, $task)
+            : $ac->canView((int) $this->member->id, $task);
+    }
+
+    /**
+     * The tasks this caller may list. On a project that is every task in its own
+     * workbench.db — see mayUseTask() for why ownership cannot be asked there.
+     */
+    protected function visibleTasks(bool $projectScoped, array $filters): array {
+        $ac = new \app\TaskAccessControl();
+        if (!$projectScoped) return $ac->getVisibleTasks((int) $this->member->id, $filters);
+
+        $where = []; $params = [];
+        foreach (['status' => 'status', 'team_id' => 'team_id'] as $k => $col) {
+            if (!isset($filters[$k]) || $filters[$k] === null) continue;
+            $where[] = "{$col} = ?"; $params[] = $filters[$k];
+        }
+        $sql = ($where ? implode(' AND ', $where) . ' ' : '') . 'ORDER BY id DESC';
+        return array_values(Bean::find('workbenchtask', $sql, $params));
     }
 
     /**

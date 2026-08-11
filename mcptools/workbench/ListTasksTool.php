@@ -31,7 +31,7 @@ class ListTasksTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
-        $this->selectWorkbenchDb();   // instance: read task data from the sidecar's workbench.db
+        $projectScoped = $this->selectWorkbenchDb();   // project: read from ITS OWN workbench.db
 
         if (!$this->member) {
             throw new \Exception("Authentication required");
@@ -41,7 +41,6 @@ class ListTasksTool extends BaseTool {
         $teamId = isset($args['team_id']) ? (int)$args['team_id'] : null;
         $limit = min((int)($args['limit'] ?? 20), 100);
 
-        $accessControl = new \app\TaskAccessControl();
         $filters = [];
         if ($status) {
             $filters['status'] = $status;
@@ -49,7 +48,7 @@ class ListTasksTool extends BaseTool {
         if ($teamId !== null) {
             $filters['team_id'] = $teamId;
         }
-        $tasks = $accessControl->getVisibleTasks((int)$this->member->id, $filters);
+        $tasks = $this->visibleTasks($projectScoped, $filters);
 
         // Apply limit
         $tasks = array_slice($tasks, 0, $limit);

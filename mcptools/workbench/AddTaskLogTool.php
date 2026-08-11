@@ -39,7 +39,7 @@ class AddTaskLogTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
-        $this->selectWorkbenchDb();   // instance: write task data to the sidecar's workbench.db
+        $projectScoped = $this->selectWorkbenchDb();   // project: write to ITS OWN workbench.db
         if (!$this->member) {
             throw new \Exception("Authentication required");
         }
@@ -58,8 +58,7 @@ class AddTaskLogTool extends BaseTool {
             throw new \Exception("Task not found: {$taskId}");
         }
 
-        $accessControl = new \app\TaskAccessControl();
-        if (!$accessControl->canView((int)$this->member->id, $task)) {
+        if (!$this->mayUseTask($projectScoped, $task)) {
             throw new \Exception("Access denied to task {$taskId}");
         }
 

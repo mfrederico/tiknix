@@ -35,7 +35,7 @@ class CompleteTaskTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
-        $this->selectWorkbenchDb();   // instance: write task data to the sidecar's workbench.db
+        $projectScoped = $this->selectWorkbenchDb();   // project: write to ITS OWN workbench.db
         if (!$this->member) {
             throw new \Exception("Authentication required");
         }
@@ -50,8 +50,7 @@ class CompleteTaskTool extends BaseTool {
             throw new \Exception("Task not found: {$taskId}");
         }
 
-        $accessControl = new \app\TaskAccessControl();
-        if (!$accessControl->canEdit((int)$this->member->id, $task)) {
+        if (!$this->mayUseTask($projectScoped, $task, 'edit')) {
             throw new \Exception("No permission to complete task {$taskId}");
         }
 

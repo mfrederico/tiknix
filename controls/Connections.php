@@ -1068,12 +1068,14 @@ class Connections extends Control {
         }, []);
 
         $res = BrokerService::mint((int)$inst->id, (int)$this->member->id, array_keys($keys));
-        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-        $host  = $_SERVER['HTTP_HOST'] ?? 'tiknix.com';
+        // requestHost(), not `?? 'tiknix.com'`. This hands the caller a CREDENTIAL and the
+        // address to spend it at; inventing the address means handing someone a working key
+        // pointed at an install that is not theirs. The sibling builder above was already
+        // converted to refuse on a missing Host header — this one was missed.
         $this->jsonSuccess([
             'token'    => $res['token'],
-            'endpoint' => ($https ? 'https' : 'http') . '://' . $host . '/mcp/message',
+            'endpoint' => ($this->requestIsHttps() ? 'https' : 'http') . '://'
+                        . $this->requestHost() . '/mcp/message',
         ], 'Broker key minted — copy it now; it is shown only once.');
     }
 

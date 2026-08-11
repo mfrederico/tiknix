@@ -31,6 +31,8 @@ class ListTasksTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
+        $this->selectWorkbenchDb();   // instance: read task data from the sidecar's workbench.db
+
         if (!$this->member) {
             throw new \Exception("Authentication required");
         }

@@ -191,15 +191,46 @@ class ClaudeRunner {
         // Use TmuxManager to create the session
         TmuxManager::create($this->sessionName, $scriptFile, $workspaceRoot);
 
-        // Wait for Claude to initialize
-        usleep(500000); // 500ms delay
-
         // Verify session was created
         if (!$this->exists()) {
             throw new Exception("Session created but not found: {$this->sessionName}");
         }
 
+        // WAIT FOR THE UI, DO NOT GUESS AT IT.
+        //
+        // This was a flat usleep(500000) "wait for Claude to initialize". The prompt is
+        // pasted into the pane immediately afterwards, so if the UI is not up yet the
+        // paste goes nowhere and the agent sits at an empty prompt for ever — the task
+        // reads `running` while nothing runs. 500ms was already optimistic; under bwrap,
+        // namespace setup and node startup blow straight past it, which is how the first
+        // jailed run came up idle.
+        $this->waitUntilReady();
+
         return true;
+    }
+
+    /**
+     * Block until the agent's UI is accepting input, or the timeout expires.
+     *
+     * Readiness is observed, not assumed: the pane is polled for the footer Claude Code
+     * draws once it is interactive. Returns false on timeout so the caller can say the
+     * agent never came up rather than pasting into nothing.
+     */
+    private function waitUntilReady(int $timeoutSeconds = 90): bool {
+        $deadline = time() + $timeoutSeconds;
+
+        while (time() < $deadline) {
+            $pane = TmuxManager::capture($this->sessionName, 40);
+            // Either marker means the input box is drawn and focused.
+            if (stripos($pane, 'bypass permissions') !== false
+                || strpos($pane, '❯') !== false) {
+                return true;
+            }
+            if (!$this->exists()) return false;   // died during startup
+            usleep(500000);
+        }
+
+        return false;
     }
 
     /**

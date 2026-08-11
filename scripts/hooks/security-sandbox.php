@@ -114,8 +114,24 @@ try {
     R::setup('sqlite:' . $securityDbPath);
     Bean::freeze(true); // Read-only mode
 
-    // Load all active rules, ordered by priority
-    $rules = Bean::find('securitycontrol', 'is_active = 1 ORDER BY priority ASC');
+    // AN `allow` IS AN EXCEPTION, SO IT MUST BE READ BEFORE THE RULE IT EXCEPTS.
+    //
+    // checkPath()/checkCommand() return on the FIRST matching rule, and this was ordered
+    // by priority alone. Every `allow` in the table carves a specific path out of a
+    // broader `block` — and all of them sat behind it, so not one had ever fired:
+    //
+    //   /home/ubuntu/capricorn        (allow, level 50, priority 5)   shadowed by
+    //   /home/ubuntu/production/tiknix(allow, level 100, priority 100) shadowed by
+    //   .claude/projects/*/memory/    (allow, priority 12)             shadowed by
+    //                                  /home (block, level 15, priority 1)
+    //
+    // Somebody wrote each of those deliberately and none of them worked. Ordering allows
+    // first makes the exception mechanism function by construction, instead of depending
+    // on whoever adds the next one to also guess a lower priority number than every block
+    // it needs to beat. Allows still carry their own level, so this widens nothing on its
+    // own: it only lets a rule that was always meant to apply actually apply.
+    $rules = Bean::find('securitycontrol',
+        "is_active = 1 ORDER BY CASE action WHEN 'allow' THEN 0 ELSE 1 END, priority ASC");
 
     // Inside the jail, drop the rules bwrap already enforces. /root, /boot, /sys,
     // /home and /var/log are not bind-mounted at all, and a jailed process holds

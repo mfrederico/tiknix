@@ -219,6 +219,16 @@ class Admin extends Control {
             }
         }
         
+        // ASK, don't read the cache and hope somebody filled it.
+        //
+        // firstBuildAt is stamped LAZILY by Invite::hasBuilt(), which scans each project's
+        // own workbench.db. This page rendered the bare column instead of calling it, so a
+        // member who had built read "Hasn't built anything yet — their invitations stay
+        // locked" until they happened to open /invites themselves and stamp it. That is
+        // the exact question an admin comes to this page to answer, reported backwards.
+        \app\Invite::hasBuilt((int) $member->id);
+        $member = Bean::load('member', (int) $member->id);   // re-read: hasBuilt may have stamped
+
         $this->viewData['title'] = 'Edit Member';
         $this->viewData['editMember'] = $member;
 

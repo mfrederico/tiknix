@@ -250,6 +250,13 @@ class Auth extends BaseControls\Control {
             $member->level     = LEVELS['MEMBER'];
             $member->status    = 'active';
             $member->createdAt = date('Y-m-d H:i:s');
+            // ACCEPTING AN INVITE IS A LOGIN. The line below signs them straight in, so
+            // the same two columns dologin() and GoogleAuth stamp have to be stamped here
+            // too. They were not, and an invited member therefore read "Last login: Never,
+            // Logins: 0" on /admin/editMember for as long as that first session lasted —
+            // about a real person who was signed in and building at that moment.
+            $member->lastLogin  = date('Y-m-d H:i:s');
+            $member->loginCount = 1;
             $id = (int) Bean::store($member);
 
             \app\Invite::markAccepted($inv, $id);

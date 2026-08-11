@@ -86,12 +86,12 @@
         </a>
         <div class="badge">Pricing</div>
         <h1>Simple, honest pricing.</h1>
-        <p class="lede">One price, everything included. Build as many apps as you like &mdash; you pay per builder instance.</p>
+        <p class="lede">One price, everything included. Build as many apps as you like &mdash; you pay per builder.</p>
 
         <div class="price-card highlight">
             <div class="plan-name">Builder instance</div>
-            <div class="price"><span class="amount">$10</span><span class="period"> / month</span></div>
-            <div class="price-sub">per builder instance</div>
+            <div class="price"><span class="amount">$499</span><span class="period"> / 3 month trial</span></div>
+            <div class="price-sub">per builder</div>
             <ul class="features">
                 <li>Your own isolated instance &mdash; app, database &amp; web server</li>
                 <li>AI agent harness with built-in primitives</li>

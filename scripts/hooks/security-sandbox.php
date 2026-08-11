@@ -68,16 +68,45 @@ $securityLogPath = $projectDir . '/log/security.log';
 
 // === DATABASE CONNECTION ===
 
-$securityDbPath = $projectDir . '/database/security.db';
-
-if (!file_exists($securityDbPath)) {
-    // No security database - allow by default but log warning
-    fwrite(STDERR, "WARNING: Security database not found at {$securityDbPath}\n");
-    exit(0);
+// WHERE THE RULES LIVE IS NOT WHERE THE AGENT IS WORKING.
+//
+// This read $projectDir alone, i.e. CLAUDE_PROJECT_DIR. In an agent run that is the
+// WORKTREE (…/projects/<member>/<slug>.tiknix/<task>), a fresh clone that carries no
+// database/security.db — so every run took the "not found" branch below and exited 0
+// with EVERY PATH RULE OFF. That is why lib/ and conf/*.example.ini were writable inside
+// a worktree while being protected everywhere else.
+//
+// Ask the installs that actually ship the file, most specific first: the workspace root
+// the launcher names, then the install this very script lives in (it cannot be running
+// otherwise), then the working directory as a last resort.
+$dbCandidates = [];
+foreach ([$workspaceRoot, dirname(dirname(__DIR__)), $projectDir] as $root) {
+    $root = rtrim((string) $root, '/');
+    if ($root === '') continue;
+    $dbCandidates[$root] = $root . '/database/security.db';
 }
 
-// Load RedBeanPHP
-require_once $projectDir . '/vendor/autoload.php';
+$securityDbPath = '';
+$installRoot    = '';
+foreach ($dbCandidates as $root => $candidate) {
+    if (file_exists($candidate)) { $securityDbPath = $candidate; $installRoot = $root; break; }
+}
+
+if ($securityDbPath === '') {
+    // FAIL CLOSED. The previous behaviour was exit(0) — "no rules found, so allow
+    // everything" — which is the one outcome a security control must never have: it is
+    // indistinguishable from a clean pass, and it is silent. Blocking is loud, is
+    // recoverable in one command, and errs toward the safe side.
+    fwrite(STDERR,
+        "SECURITY BLOCK: no security.db found (looked in: "
+        . implode(', ', array_keys($dbCandidates)) . "). Refusing every tool rather than "
+        . "running with all path rules disabled. Fix: restore database/security.db in the "
+        . "install, or point TIKNIX_PROJECT_ROOT at one that has it.\n");
+    exit(2);
+}
+
+// Load RedBeanPHP from the install that owns the rules, not from the worktree.
+require_once $installRoot . '/vendor/autoload.php';
 use RedBeanPHP\R;
 use \app\Bean;
 

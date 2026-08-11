@@ -29,7 +29,39 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
 
     /** Absolute on-disk path to this instance directory. */
     public function dir(): string {
-        return self::ROOT . '/' . $this->bean->slug . '.' . ($this->bean->app ?: self::DEFAULT_APP);
+        return self::dirFrom((string) $this->bean->slug, (string) $this->bean->app);
+    }
+
+    /**
+     * The path rule itself: slug + app namespace -> directory. No database, no bean.
+     *
+     * Exists for callers holding a plain ARRAY rather than a bean — which is every
+     * sidecar. Each of workbench, pipelines, publisher, explorer and shop had grown its
+     * own private copy of this two-line rule, five copies that have to agree forever and
+     * that nothing tests. They agree today; the reaper's copy of a neighbouring rule did
+     * not, and read "mileage.tiknix" where every other caller said "mileage", so it
+     * reported every live build as dead for months.
+     *
+     * Sidecars derived the parent from dirname(sidecar.core_root), which resolves to the
+     * same place as ROOT. Same answer, one definition.
+     */
+    public static function dirFrom(string $slug, string $app = ''): string {
+        $slug = trim($slug);
+        if ($slug === '') {
+            // NO EMPTY SLUG. It would build ROOT . '/.tiknix' — a string shaped exactly
+            // like a project directory that is not one, handed to callers who go on to
+            // read config, open databases and run git in it. That is the failure this
+            // whole consolidation is about: not a crash, a confident wrong answer.
+            throw new \InvalidArgumentException(
+                'Model_Instance::dirFrom requires a slug; an empty one names ' . self::ROOT
+                . '/.<app>, which is not a project. The caller does not know which instance '
+                . 'it means and must say so rather than be given a path.');
+        }
+        // The app namespace DOES have a legitimate default — a row carrying none is a
+        // tiknix app, which is the convention DEFAULT_APP exists to state. The slug has no
+        // such convention: absent means unknown, and unknown has no path.
+        $app = trim($app) !== '' ? trim($app) : self::DEFAULT_APP;
+        return self::ROOT . '/' . $slug . '.' . $app;
     }
 
     /**
@@ -47,7 +79,7 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
     public static function dirForSlug(string $slug, string $fallbackApp = self::DEFAULT_APP): string {
         $bean = \app\Bean::findOne('instance', 'slug = ?', [$slug]);
         $app  = ($bean && $bean->id && $bean->app) ? (string) $bean->app : $fallbackApp;
-        return self::ROOT . '/' . $slug . '.' . ($app ?: self::DEFAULT_APP);
+        return self::dirFrom($slug, $app);
     }
 
     /**

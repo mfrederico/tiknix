@@ -423,41 +423,74 @@ BASH;
         $promptFile = $this->workDir . '/prompt.txt';
         file_put_contents($promptFile, $prompt);
 
-        // CHECK THAT IT ARRIVED, do not assume it did.
+        // THE ONLY OUTCOME THAT MATTERS IS THAT THE AGENT STARTED WORKING.
         //
-        // The paste goes into a terminal that may not be accepting input yet. Every
-        // earlier attempt at this problem guessed harder — a 500ms sleep, then 2s in the
-        // caller, then polling for the footer, which Claude draws BEFORE the input box is
-        // live. Each guess failed the same way and left the agent parked at an empty
-        // prompt while the task read `running`, which is invisible until somebody opens
-        // the console. So: paste, look at the pane, and paste again if it is still empty.
-        for ($attempt = 1; $attempt <= self::PROMPT_ATTEMPTS; $attempt++) {
-            if (!TmuxManager::sendTextViaBuffer($this->sessionName, $prompt, 'tiknix-prompt')) {
-                return $this->sendMessage($prompt);   // buffer paste unavailable
-            }
-            usleep(300000);
-
-            if ($this->promptLanded()) {
-                TmuxManager::sendKeys($this->sessionName, 'Enter');
-                usleep(50000);
-                TmuxManager::sendKeys($this->sessionName, 'Enter');   // some builds want a confirm
-                return true;
-            }
-
-            if (!$this->exists()) return false;       // session died while we waited
-            sleep(2);                                 // still starting up — try again
+        // Four attempts at this problem guessed at a step instead of checking the result:
+        // a 500ms sleep in spawn(), then 2s in the caller, then polling for the footer
+        // (drawn before the box is live), then confirming the paste ARRIVED. The last one
+        // is why task 2 on infinia read `running` for three days having never begun — the
+        // text was sitting in the input box, unsubmitted, and the log said prompt_sent.
+        //
+        // Text in a box is not a running agent. Two observable states, checked separately:
+        // it landed, and then it went.
+        if (!$this->pasteUntilLanded($prompt)) {
+            if (!$this->exists()) return false;
+            Flight::get('log')->error('Prompt never reached the agent', [
+                'session' => $this->sessionName, 'task' => $this->taskId,
+                'attempts' => self::PROMPT_ATTEMPTS,
+            ]);
+            return false;
         }
 
-        Flight::get('log')->error('Prompt never reached the agent', [
-            'session' => $this->sessionName,
-            'task'    => $this->taskId,
-            'attempts'=> self::PROMPT_ATTEMPTS,
+        if ($this->submitUntilStarted()) return true;
+
+        Flight::get('log')->error('Prompt landed but the agent never started', [
+            'session' => $this->sessionName, 'task' => $this->taskId,
+            'attempts' => self::SUBMIT_ATTEMPTS,
         ]);
         return false;
     }
 
     /** How many times to paste before giving up and saying so. */
     private const PROMPT_ATTEMPTS = 8;
+
+    /** How many times to press Enter before giving up and saying so. */
+    private const SUBMIT_ATTEMPTS = 6;
+
+    /** Paste until the text is visibly in the input box. */
+    private function pasteUntilLanded(string $prompt): bool {
+        for ($attempt = 1; $attempt <= self::PROMPT_ATTEMPTS; $attempt++) {
+            if (!TmuxManager::sendTextViaBuffer($this->sessionName, $prompt, 'tiknix-prompt')) {
+                return $this->sendMessage($prompt);   // buffer paste unavailable
+            }
+            usleep(300000);
+            if ($this->promptLanded()) return true;
+            if (!$this->exists()) return false;       // session died while we waited
+            sleep(2);                                 // still starting up — try again
+        }
+        return false;
+    }
+
+    /**
+     * Press Enter until the agent is observably working.
+     *
+     * ONE Enter is not reliably enough. The original code already suspected this and sent
+     * a second "in case Claude needs confirmation" — but both went out ~50ms apart, faster
+     * than a UI still painting its startup notices can accept either. Task 2 was revived by
+     * hand with exactly this: Enter, look, Enter again.
+     */
+    private function submitUntilStarted(): bool {
+        for ($attempt = 1; $attempt <= self::SUBMIT_ATTEMPTS; $attempt++) {
+            TmuxManager::sendKeys($this->sessionName, 'Enter');
+
+            for ($wait = 0; $wait < 6; $wait++) {     // ~3s of looking, per press
+                usleep(500000);
+                if ($this->agentStarted()) return true;
+            }
+            if (!$this->exists()) return false;
+        }
+        return false;
+    }
 
     /**
      * Did the paste actually land in the input box?
@@ -471,6 +504,29 @@ BASH;
         if ($pane === '') return false;
         if (stripos($pane, 'paste again to expand') !== false) return true;
         return stripos($pane, 'Try "') === false && stripos($pane, "Try '") === false;
+    }
+
+    /**
+     * Did the submit take — is the agent working on the prompt?
+     *
+     * Two signals, both observed rather than inferred:
+     *
+     *   "esc to interrupt" is drawn only while a turn is in flight. It is the direct
+     *   evidence, and the thing that appeared by hand when task 2 was finally revived.
+     *
+     *   The box emptying is the indirect evidence. We only get here once the paste has
+     *   landed, so if the placeholder is back the text was consumed — the turn started and
+     *   finished faster than we looked.
+     *
+     * Tool-result markers were tried as a third and dropped: on a turn that answers in
+     * prose they never appear at all, not even 120 lines back, so they produce false
+     * negatives on a perfectly healthy agent.
+     */
+    private function agentStarted(): bool {
+        $pane = TmuxManager::capture($this->sessionName, 30);
+        if ($pane === '') return false;
+        if (stripos($pane, 'esc to interrupt') !== false) return true;
+        return !$this->promptLanded();     // placeholder back = our text was taken
     }
 
     /**

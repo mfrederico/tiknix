@@ -115,10 +115,51 @@ class AgentState {
 
     /** Is this member signed in for this engine (after migration would have run)? */
     public static function signedIn(int $memberId, string $engine, string $instanceDir): bool {
-        if ($memberId > 0 && is_file(self::memberDir($memberId, $engine) . '/.credentials.json')) return true;
-        if (is_file(self::projectDir($instanceDir, $engine) . '/.credentials.json')) return true;
+        if ($memberId > 0 && self::credentialsUsable(self::memberDir($memberId, $engine) . '/.credentials.json', $engine)) return true;
+        if (self::credentialsUsable(self::projectDir($instanceDir, $engine) . '/.credentials.json', $engine)) return true;
         // Not signed in HERE, but adoptable from another of their projects — which
         // resolve() will do on the next run, so the honest answer is yes.
-        return $memberId > 0 && self::adoptableFrom($memberId, $engine, $instanceDir) !== '';
+        if ($memberId <= 0) return false;
+        $adopt = self::adoptableFrom($memberId, $engine, $instanceDir);
+        return $adopt !== '' && self::credentialsUsable($adopt . '/.credentials.json', $engine);
+    }
+
+    /**
+     * Does this credentials file still buy an agent a session?
+     *
+     * "The file exists" was the whole test, and existence is not the question the callers
+     * are asking. Workbench::decompose() calls signedIn() specifically to "say it BEFORE
+     * spending five minutes failing at it" — and on surgeew it said yes to a file whose
+     * accessToken and refreshToken were both EMPTY STRINGS with expiresAt 0. The planner
+     * launched, died two seconds later on "OAuth session expired and could not be
+     * refreshed", and the goal looked to its author like it had vanished.
+     *
+     * Claude's format is the one we can read: a live accessToken, or a refreshToken that
+     * has not itself expired, means a session is obtainable. Both empty or both past means
+     * it is not, and saying so costs the user one /login instead of a silent failure.
+     *
+     * ONLY CLAIMS "NO" WHEN IT CAN PROVE IT. Another engine's file, or a shape this does
+     * not recognise, still counts as signed in — refusing on an unfamiliar format would
+     * block work over ignorance, which is the opposite of the point.
+     */
+    private static function credentialsUsable(string $file, string $engine): bool {
+        if (!is_file($file)) return false;
+        if (strtolower($engine) !== 'claude') return true;      // not our format to judge
+
+        $json = json_decode((string) @file_get_contents($file), true);
+        $oauth = is_array($json) ? ($json['claudeAiOauth'] ?? null) : null;
+        if (!is_array($oauth)) return true;                     // unrecognised: do not guess
+
+        $nowMs = time() * 1000;
+        $live = static function (?string $token, $expiresAt) use ($nowMs): bool {
+            if ($token === null || trim($token) === '') return false;
+            $exp = (int) $expiresAt;
+            return $exp === 0 ? false : $exp > $nowMs;           // 0 = never issued/cleared
+        };
+
+        // Either an access token that has not expired, or a refresh token that can still
+        // fetch one. Both gone is the state that produced this method.
+        return $live($oauth['accessToken'] ?? null, $oauth['expiresAt'] ?? 0)
+            || $live($oauth['refreshToken'] ?? null, $oauth['refreshTokenExpiresAt'] ?? 0);
     }
 }

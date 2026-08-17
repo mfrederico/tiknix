@@ -39,7 +39,16 @@ $why = '';
 $log = $dir . '/.aibuilder/planner.log';
 if (is_file($log)) {
     $lines = array_slice(array_filter(array_map('trim', file($log, FILE_IGNORE_NEW_LINES) ?: [])), -12);
-    $lines = array_values(array_filter($lines, fn($l) => strncmp($l, '[planner]', 9) !== 0));
+    // Drop OUR bookkeeping — both the [planner] markers and the jail's startup banner.
+    // The banner is three lines, and the reason is only the last three lines that remain,
+    // so leaving it in silently evicts the engine's actual last words. That is how prompt
+    // #236 reported "'pkill -f <pattern>' matches full command lines…" to a user whose
+    // planner had in fact died on an expired OAuth session.
+    $ours  = ['[planner]', 'jail-run:'];
+    $lines = array_values(array_filter($lines, static function ($l) use ($ours) {
+        foreach ($ours as $p) { if (strncmp($l, $p, strlen($p)) === 0) return false; }
+        return true;
+    }));
     $why   = trim(implode(' | ', array_slice($lines, -3)));
 }
 if ($why === '') $why = 'the planner exited ' . $exitCode . ' without producing a plan (no output captured)';

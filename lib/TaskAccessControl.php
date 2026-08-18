@@ -252,14 +252,15 @@ class TaskAccessControl {
      * @return array Array of team IDs
      */
     public function getMemberTeamIds(int $memberId): array {
-        $memberships = Bean::find('teammember', 'member_id = ?', [$memberId]);
-        // Bean::find keys results by bean id — array_values() drops those keys so the
-        // list is sequentially keyed. Non-sequential integer keys are a footgun: passed
-        // into an "IN (?,?)" binding, RedBean maps each key to a positional parameter
-        // index, producing "column index out of range".
-        return array_values(array_map(function($m) {
-            return (int)$m->teamId;
-        }, $memberships));
+        // `teammember` is control-plane data, like instance_team — see registryCol().
+        // Read against the project's workbench.db it returns nothing, which reads as
+        // "this person is in no teams" and quietly collapses every team-based check
+        // downstream.
+        return $this->registryCol(
+            'SELECT DISTINCT team_id FROM teammember WHERE member_id = ?',
+            [$memberId],
+            'teammember'
+        );
     }
 
     /**
@@ -294,11 +295,8 @@ class TaskAccessControl {
         // Instances shared (many-to-many) with the member's teams — their tasks are
         // visible too, even though the tasks themselves are personal (team_id NULL).
         $sharedInstanceIds = [];
-        if (!empty($teamIds) && $this->columnExists('workbenchtask', 'instance_id')
-            && in_array('instance_team', Bean::inspect(), true)) {
-            $tph = implode(',', array_fill(0, count($teamIds), '?'));
-            $sharedInstanceIds = array_map('intval', Bean::getCol(
-                "SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ($tph)", $teamIds));
+        if (!empty($teamIds) && $this->columnExists('workbenchtask', 'instance_id')) {
+            $sharedInstanceIds = $this->teamSharedInstanceIds($teamIds);
         }
 
         // Visibility: personal tasks OR team tasks OR tasks of a team-shared instance.
@@ -433,6 +431,80 @@ class TaskAccessControl {
         } catch (\Throwable $e) {
             return [];
         }
+    }
+
+    /**
+     * Instances shared into any of $teamIds — READ FROM THE CONTROL PLANE.
+     *
+     * `instance_team` is control-plane data and exists only in core's registry. This used
+     * to query it on whatever connection happened to be current and skip the lookup when
+     * the table was absent:
+     *
+     *     if (... && in_array('instance_team', Bean::inspect(), true)) { ...lookup... }
+     *
+     * On the board that connection is the project's own data/workbench.db, which has no
+     * such table — so the guard was always false, the clause was silently dropped, and
+     * every teammate saw only their own tasks. Measured on pd, an instance shared into
+     * team 2: its owner saw 9 tasks, a team admin saw 3, and another team member saw 0.
+     * The guard was written to avoid an error and it removed the feature instead.
+     *
+     * So: use the current connection when it really is the registry, otherwise the
+     * sidecar's read-only handle to core. Failing to answer is LOGGED, never returned as
+     * an empty list — "nobody shared anything with you" and "I could not find out" look
+     * identical on screen, and that is precisely how this hid.
+     */
+    private function teamSharedInstanceIds(array $teamIds): array {
+        $tph = implode(',', array_fill(0, count($teamIds), '?'));
+        return $this->registryCol(
+            "SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ($tph)",
+            $teamIds,
+            'instance_team'
+        );
+    }
+
+    /**
+     * Run a one-column query against THE CONTROL PLANE, wherever this is running.
+     *
+     * Teams and instance sharing (`teammember`, `instance_team`) are control-plane data
+     * and exist only in core's registry. On the board the live connection is the
+     * project's own data/workbench.db, which has neither — and both lookups used to run
+     * on whatever was current, returning nothing:
+     *
+     *   getMemberTeamIds()  -> []  ("you are in no teams")
+     *   instance_team       -> []  ("nothing is shared with you")
+     *
+     * Two empty lists that read as facts, so every team check downstream collapsed and a
+     * teammate saw only their own work. Measured on pd, shared into team 2: the owner saw
+     * 9 tasks, a team admin 3, another team member 0.
+     *
+     * Current connection first (core, or an instance acting as its own registry), then
+     * the sidecar's read-only handle to core. Never silently empty: if neither answers,
+     * that is logged, because "nothing is shared with you" and "I could not find out"
+     * look identical on screen and that is exactly how this hid.
+     */
+    private function registryCol(string $sql, array $params, string $table): array {
+        try {
+            if (in_array($table, Bean::inspect(), true)) {
+                return array_map('intval', Bean::getCol($sql, array_values($params)));
+            }
+        } catch (\Throwable $e) { /* fall through to the control plane */ }
+
+        if (class_exists('\app\Sidecar\Kernel')) {
+            try {
+                $pdo = \app\Sidecar\Kernel::coreDb();
+                if ($pdo instanceof \PDO) {
+                    $st = $pdo->prepare($sql);
+                    $st->execute(array_values($params));
+                    return array_map('intval', $st->fetchAll(\PDO::FETCH_COLUMN) ?: []);
+                }
+            } catch (\Throwable $e) { /* reported below */ }
+        }
+
+        \Flight::get('log')->warning(
+            "Could not read {$table} from the control plane — team visibility will look empty",
+            ['sql' => $sql]
+        );
+        return [];
     }
 
     /** True if $table has $col (fluid RedBean columns appear only once written). */

@@ -509,24 +509,26 @@ BASH;
     /**
      * Did the submit take — is the agent working on the prompt?
      *
-     * Two signals, both observed rather than inferred:
+     * ONE signal: "esc to interrupt", which Claude draws only while a turn is in flight.
      *
-     *   "esc to interrupt" is drawn only while a turn is in flight. It is the direct
-     *   evidence, and the thing that appeared by hand when task 2 was finally revived.
+     * An empty box was briefly treated as a second signal — the reasoning being that we
+     * only get here after the paste landed, so the placeholder returning meant the text
+     * was consumed. That is not what an empty box means. It means the box is empty, which
+     * is equally true when a startup notice repaints over the paste and throws it away.
+     * pd task 4 was reported started on exactly that inference and sat idle at its prompt;
+     * the failure it was meant to catch is the one it caused.
      *
-     *   The box emptying is the indirect evidence. We only get here once the paste has
-     *   landed, so if the placeholder is back the text was consumed — the turn started and
-     *   finished faster than we looked.
+     * Tool-result markers were tried too and dropped: a turn answering in prose shows none
+     * even 120 lines back, so they false-negative a healthy agent.
      *
-     * Tool-result markers were tried as a third and dropped: on a turn that answers in
-     * prose they never appear at all, not even 120 lines back, so they produce false
-     * negatives on a perfectly healthy agent.
+     * The cost of one signal is a turn that finishes inside the poll window looking like it
+     * never began — we then press Enter into an idle agent, which submits nothing. A stray
+     * keystroke is a cheaper mistake than a task that claims to be running and is not.
      */
     private function agentStarted(): bool {
         $pane = TmuxManager::capture($this->sessionName, 30);
         if ($pane === '') return false;
-        if (stripos($pane, 'esc to interrupt') !== false) return true;
-        return !$this->promptLanded();     // placeholder back = our text was taken
+        return stripos($pane, 'esc to interrupt') !== false;
     }
 
     /**

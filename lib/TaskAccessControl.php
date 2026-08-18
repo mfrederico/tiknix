@@ -299,10 +299,22 @@ class TaskAccessControl {
             $sharedInstanceIds = $this->teamSharedInstanceIds($teamIds);
         }
 
-        // Visibility: personal tasks OR team tasks OR tasks of a team-shared instance.
-        $vis = ["member_id = ? AND team_id IS NULL"];
+        // NAME NO COLUMN THAT MAY NOT EXIST YET.
+        //
+        // RedBean is fluid: a column appears the first time something writes it. A project
+        // whose tasks have never been assigned to a team has NO team_id column at all —
+        // and "team_id IS NULL" against a missing column is an SQL error, not an empty
+        // result. The whole query dies and every caller sees an empty board.
+        //
+        // That is not hypothetical: surgeew's first plan ingested five subtasks and then
+        // NOBODY could see it, not even the member who submitted it, because its fresh
+        // workbenchtask table had id/title/status/instance_id but no team_id. instance_id
+        // was already guarded this way; team_id was not.
+        $hasTeam = $this->columnExists('workbenchtask', 'team_id');
+
+        $vis = [$hasTeam ? "member_id = ? AND team_id IS NULL" : "member_id = ?"];
         $params[] = $memberId;
-        if (!empty($teamIds)) {
+        if ($hasTeam && !empty($teamIds)) {
             $vis[] = "team_id IN (" . implode(',', array_fill(0, count($teamIds), '?')) . ")";
             $params = array_merge($params, $teamIds);
         }

@@ -23,15 +23,24 @@ if (!$_tableCheck('member')) {
     $s->last_name   = str_repeat('x', 100);
     $s->bio         = str_repeat('x', 2000);
     $s->avatar_url  = str_repeat('x', 500);
-    // NOTE: google_id is intentionally omitted. RedBean treats *_id columns as
-    // integer foreign keys, so padding it with a string fails on strict MySQL.
-    // It's a nullable OAuth field; the column is created on first Google login.
+    // The Google subject id, under the _eid convention: it is a string id issued by
+    // another system, and the _id suffix is reserved for RedBean's integer FKs. Named
+    // google_id it could not be sized here at all — RedBean would have read it as a
+    // foreign key to a bean type 'google' and a padded string would fail on strict
+    // MySQL — which is exactly how it ended up in the same unsized state as
+    // display_name below.
+    $s->google_eid  = str_repeat('x', 128);
     $s->reset_token = str_repeat('x', 128);
-    $s->reset_expires = date('Y-m-d H:i:s');
-    $s->last_login  = date('Y-m-d H:i:s');
+    // Dates are PADDED, not written as dates. RedBean's SQLite writer pattern-matches
+    // 'Y-m-d H:i:s' and types the column NUMERIC — and NUMERIC still has somewhere to
+    // widen to, which is the whole hazard described below. Padding makes them TEXT,
+    // the widest type the writer has, so no later value can ever force a rebuild.
+    // SQLite stores dates as text regardless: it has no date storage class at all.
+    $s->reset_expires = str_repeat('x', 40);
+    $s->last_login  = str_repeat('x', 40);
     $s->login_count = 0;
-    $s->created_at  = date('Y-m-d H:i:s');
-    $s->updated_at  = date('Y-m-d H:i:s');
+    $s->created_at  = str_repeat('x', 40);
+    $s->updated_at  = str_repeat('x', 40);
 
     // EVERY TEXT COLUMN MUST BE SIZED HERE, OR IT IS BORN FROM ITS FIRST VALUE.
     //
@@ -49,10 +58,7 @@ if (!$_tableCheck('member')) {
     // applying MySQL reasoning to a database that does not work that way. Sizing the
     // column here means it is never asked to.
     $s->display_name         = str_repeat('x', 200);
-    // Padded, not a bare date. A plain 'Y-m-d H:i:s' makes RedBean pick NUMERIC here even
-    // though every other date column on this table is TEXT — and NUMERIC is one odd value
-    // away from the same widen-and-rebuild that cost mileage its member table. Sizing it
-    // as text puts it with created_at, updated_at, last_login and reset_expires.
+    // Padded for the same reason as the other dates above.
     $s->invited_at           = str_repeat('x', 40);
     // Genuinely numeric flags — sized so the column exists with the right affinity from
     // the start rather than being invented by the first writer.
@@ -60,7 +66,6 @@ if (!$_tableCheck('member')) {
     $s->is_active            = 1;
     $s->email_verified       = 0;
     $s->invited_by           = 0;
-    // google_id stays out on purpose — see the note above.
     R::store($s);
     $_defer($s);
 }

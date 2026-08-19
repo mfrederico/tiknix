@@ -456,7 +456,7 @@ class Auth extends BaseControls\Control {
             if ($member) {
                 // Block password reset for OAuth-only users (they have no password set)
                 // They should add a password from Account Settings while logged in
-                if ($member->googleId && !$member->password) {
+                if ($member->googleEid && !$member->password) {
                     $this->logger->info('OAuth user attempted password reset', ['email' => $email]);
                     // Still show generic message to prevent email enumeration
                     $this->flash('success', 'If the email exists, a reset link has been sent');

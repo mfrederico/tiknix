@@ -197,7 +197,7 @@ class GoogleAuth {
     /**
      * Signing in with Google must not be a way around a suspension.
      *
-     * Applied to BOTH lookups below. The google_id one matters most: somebody who has
+     * Applied to BOTH lookups below. The google_eid one matters most: somebody who has
      * signed in this way before is found there and returned early, so a check only on
      * the email path would miss exactly the people most likely to have an account.
      *
@@ -216,11 +216,11 @@ class GoogleAuth {
     }
 
     public static function findOrCreateMember(array $googleUser): object {
-        $googleId = $googleUser['id'];
+        $googleEid = $googleUser['id'];
         $email = $googleUser['email'];
 
         // Try to find by Google ID first
-        $member = Bean::findOne('member', 'google_id = ?', [$googleId]);
+        $member = Bean::findOne('member', 'google_eid = ?', [$googleEid]);
         self::refuseUnlessActive($member);
 
         if ($member) {
@@ -243,7 +243,7 @@ class GoogleAuth {
 
         if ($member) {
             // Link Google ID to existing account
-            $member->googleId = $googleId;
+            $member->googleEid = $googleEid;
             $member->lastLogin = date('Y-m-d H:i:s');
             $member->loginCount = ($member->loginCount ?? 0) + 1;
 
@@ -255,7 +255,7 @@ class GoogleAuth {
 
             Flight::get('log')->info('Linked Google account to existing member', [
                 'member_id' => $member->id,
-                'google_id' => $googleId
+                'google_eid' => $googleEid
             ]);
 
             return $member;
@@ -263,7 +263,7 @@ class GoogleAuth {
 
         // Create new member
         $member = Bean::dispense('member');
-        $member->googleId = $googleId;
+        $member->googleEid = $googleEid;
         $member->email = $email;
         $member->username = self::generateUsername($googleUser);
         $member->displayName = $googleUser['name'] ?? '';
@@ -283,7 +283,7 @@ class GoogleAuth {
         Flight::get('log')->info('New member created via Google OAuth', [
             'member_id' => $id,
             'email' => $email,
-            'google_id' => $googleId
+            'google_eid' => $googleEid
         ]);
 
         return $member;
@@ -324,12 +324,12 @@ class GoogleAuth {
     public static function getMemberGoogleInfo(int $memberId): ?array {
         $member = Bean::load('member', $memberId);
 
-        if (!$member || empty($member->googleId)) {
+        if (!$member || empty($member->googleEid)) {
             return null;
         }
 
         return [
-            'googleId' => $member->googleId,
+            'googleEid' => $member->googleEid,
             'email' => $member->email,
             'displayName' => $member->displayName,
             'avatarUrl' => $member->avatarUrl

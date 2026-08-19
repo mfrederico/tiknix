@@ -32,6 +32,35 @@ if (!$_tableCheck('member')) {
     $s->login_count = 0;
     $s->created_at  = date('Y-m-d H:i:s');
     $s->updated_at  = date('Y-m-d H:i:s');
+
+    // EVERY TEXT COLUMN MUST BE SIZED HERE, OR IT IS BORN FROM ITS FIRST VALUE.
+    //
+    // A column missing from this pass is created later by whatever writes it first, and
+    // RedBean types it from that value. display_name was absent, something numeric landed
+    // in it, and it became INTEGER. The first member to type a real name made RedBean
+    // widen INTEGER -> TEXT; SQLite cannot ALTER a column, so RedBean rebuilt the table —
+    // and the rebuild died on the reserved index name SQLite generates for the inline
+    // UNIQUE columns, AFTER the DROP and BEFORE the rows were copied back. Six accounts on
+    // mileage.tiknix.com became zero, and because SYSTEM_ADMIN_ID is an id rather than a
+    // level, AUTOINCREMENT handed the next login id 1 and made an ordinary member root.
+    //
+    // The widen was not even needed: SQLite has type AFFINITY, not enforcement, and would
+    // have stored the name in an INTEGER column quite happily. The rebuild was RedBean
+    // applying MySQL reasoning to a database that does not work that way. Sizing the
+    // column here means it is never asked to.
+    $s->display_name         = str_repeat('x', 200);
+    // Padded, not a bare date. A plain 'Y-m-d H:i:s' makes RedBean pick NUMERIC here even
+    // though every other date column on this table is TEXT — and NUMERIC is one odd value
+    // away from the same widen-and-rebuild that cost mileage its member table. Sizing it
+    // as text puts it with created_at, updated_at, last_login and reset_expires.
+    $s->invited_at           = str_repeat('x', 40);
+    // Genuinely numeric flags — sized so the column exists with the right affinity from
+    // the start rather than being invented by the first writer.
+    $s->needs_password_setup = 0;
+    $s->is_active            = 1;
+    $s->email_verified       = 0;
+    $s->invited_by           = 0;
+    // google_id stays out on purpose — see the note above.
     R::store($s);
     $_defer($s);
 }

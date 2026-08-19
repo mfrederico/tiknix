@@ -80,7 +80,13 @@ abstract class Control {
            person. 'title' and 'csrf' are absent from this list on purpose — overriding
            those is ordinary and means exactly what it says. */
         foreach (['member', 'isLoggedIn'] as $reserved) {
-            if (array_key_exists($reserved, $data)) {
+            /* Only a REPLACEMENT is refused. Several controllers build their page data by
+               mutating $this->viewData and handing the whole thing back to render() —
+               Admin::index does — so the key is present but the value is the identity this
+               constructor already seeded. That is re-passing the viewer, not shadowing
+               them, and refusing it took /admin down. Compare identity, not presence. */
+            if (array_key_exists($reserved, $data)
+                && $data[$reserved] !== ($this->viewData[$reserved] ?? null)) {
                 throw new \RuntimeException(sprintf(
                     "%s passed reserved view key '%s' to render('%s'). That key carries "
                   . "the signed-in viewer for the whole app shell. Name the page's own "

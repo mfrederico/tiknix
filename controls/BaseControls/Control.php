@@ -63,9 +63,36 @@ abstract class Control {
      * Render a view with the sandwich layout (header/footer)
      */
     protected function render($template, $data = [], $layout = true) {
+        /* 'member' and 'isLoggedIn' mean ONE thing everywhere: who is looking at this
+           page. They are seeded from the session above, and array_merge lets page data
+           win — so a controller that reuses either name silently replaces the viewer's
+           identity for the whole render.
+
+           That is not hypothetical. Contact::view passed the person who SENT a message
+           under 'member'; contact 8 was sent by a guest, so the value was null, and the
+           app shell 500'd trying to read the viewer out of it. Renaming that one caller
+           fixes that one page. Refusing the key here is what stops the next one, and
+           says so at the moment the code is written rather than when a particular row
+           reaches a particular page.
+
+           Refused, not quietly dropped: a controller passing 'member' believes it is
+           sending something, and ignoring it would render a page describing the wrong
+           person. 'title' and 'csrf' are absent from this list on purpose — overriding
+           those is ordinary and means exactly what it says. */
+        foreach (['member', 'isLoggedIn'] as $reserved) {
+            if (array_key_exists($reserved, $data)) {
+                throw new \RuntimeException(sprintf(
+                    "%s passed reserved view key '%s' to render('%s'). That key carries "
+                  . "the signed-in viewer for the whole app shell. Name the page's own "
+                  . "value something else (e.g. contactMember, profileMember).",
+                    static::class, $reserved, $template
+                ));
+            }
+        }
+
         // Merge with default view data
         $data = array_merge($this->viewData, $data);
-        
+
         // Log the render action
         $this->logger->debug("Rendering view: {$template}");
         

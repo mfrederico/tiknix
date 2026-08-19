@@ -335,10 +335,12 @@ class Contact extends BaseControls\Control {
             Bean::store($message);
         }
 
-        // Get member info if linked
-        $member = null;
+        // The account that submitted this message, if any — NOT the admin reading it.
+        // Named apart from 'member' on purpose: that key carries the signed-in viewer
+        // for the whole app shell, and overwriting it here is what 500'd this page.
+        $contactMember = null;
         if ($message->memberId) {
-            $member = Bean::load('member', $message->memberId);
+            $contactMember = Bean::load('member', $message->memberId);
         }
         
         // Get responses via association with ordering
@@ -347,7 +349,7 @@ class Contact extends BaseControls\Control {
         $this->render('contact/view', [
             'title' => 'View Message',
             'message' => $message,
-            'member' => $member,
+            'contactMember' => $contactMember,
             'responses' => $responses
         ]);
     }

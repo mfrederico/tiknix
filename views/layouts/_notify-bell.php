@@ -20,11 +20,12 @@
  * on tnx/<this member>/# and nothing else — so it is no more sensitive than the
  * session cookie already sitting in the same document.
  */
-// member_id() rather than a bare $__mid ?? 0: this partial is only ever reached
-// inside header.php's signed-in branch, so a missing id is a broken include and
-// not a guest. Falling back to 0 would quietly turn live delivery off and leave
-// nothing to find later.
-$__mqtt = \app\Mqtt::browserCredentials(member_id($member, 'notify bell'));
+// $__mid, which header.php resolved from Flight::getMember() and already validated
+// with member_id(). This used to call member_id($member) itself — but $member is the
+// controller's view data, not the viewer, so any page that passed its own 'member'
+// key 500'd here. The identity check stays exactly where it was, in one place, on a
+// value no controller can shadow.
+$__mqtt = \app\Mqtt::browserCredentials($__mid);
 ?>
 <?php if ($__mqtt): ?>
 <script src="/js/tnx-live.js"></script>

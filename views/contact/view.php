@@ -43,11 +43,11 @@
                         <?= date('F j, Y \a\t g:i A', strtotime($message->created_at)) ?>
                     </div>
 
-                    <?php if ($member && $member->id): ?>
+                    <?php if ($contactMember && $contactMember->id): ?>
                     <div class="mb-3">
                         <strong>Member:</strong>
-                        <a href="/admin/members/edit?id=<?= $member->id ?>">
-                            <?= htmlspecialchars(($member->username) ?? '') ?>
+                        <a href="/admin/members/edit?id=<?= $contactMember->id ?>">
+                            <?= htmlspecialchars(($contactMember->username) ?? '') ?>
                         </a>
                     </div>
                     <?php endif; ?>

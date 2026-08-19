@@ -12,12 +12,20 @@ $__loggedIn = $isLoggedIn ?? false;
    waiting for the first person to move a check outside that guard. */
 $__uname = 'User'; $__level = LEVELS['PUBLIC'];
 $__mid   = 0;
-if ($__loggedIn && $member) {
-    $__uname = (string)($member['username'] ?? 'User');
+/* Resolved from Flight::getMember(), NOT from the $member view variable.
+   'member' is view DATA, and a controller owns its view data: Contact::view legitimately
+   passes the person who submitted the message under that name, which is null when a guest
+   submitted it. The shell then rendered a signed-in chrome around somebody else's identity
+   — and the notify bell, which guards on $__loggedIn alone, called member_id(null) and
+   500'd the page. Reading the session identity from the same call Control uses means no
+   controller can shadow the shell's idea of who is looking at it. */
+$__me = \Flight::getMember();
+if ($__loggedIn) {
+    $__uname = (string)($__me['username'] ?? 'User');
     // No defaults past this point: inside this branch the member is signed in, so a
     // missing id or level is a broken session and should say so rather than be guessed.
-    $__mid   = member_id($member, 'layout header');
-    $__level = (int)$member['level'];
+    $__mid   = member_id($__me, 'layout header');
+    $__level = (int)$__me['level'];
 }
 $__initials = strtoupper(mb_substr($__uname, 0, 2)) ?: 'U';
 $__isAdmin = $__level <= LEVELS['ADMIN'];

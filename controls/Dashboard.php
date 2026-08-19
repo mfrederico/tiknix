@@ -18,14 +18,14 @@ class Dashboard extends BaseControls\Control {
         // Require login
         if (!$this->requireLogin()) return;
         
-        $member = $_SESSION['member'] ?? null;
-        
-        // Get some basic stats for the dashboard
+        // No 'member' key: Control already supplies the signed-in member, refreshed from
+        // the database. This passed $_SESSION['member'] instead — a snapshot taken at
+        // login, so a level or email changed since showed the old value here and the new
+        // one everywhere else.
         $stats = $this->getStats();
-        
+
         $this->render('dashboard/index', [
             'title' => 'Dashboard',
-            'member' => $member,
             'stats' => $stats
         ]);
     }

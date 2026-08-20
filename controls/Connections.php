@@ -779,6 +779,24 @@ class Connections extends Control {
         $type = strtolower(trim((string)$this->getParam('type', '')));
         $env  = $this->normalizeEnv($this->getParam('env', 'production'));
         $shop = trim((string)$this->getParam('shop', ''));
+
+        /* A custom app belonging to THIS project is run here, not handed to core.
+           The handoff exists only because a project holds no provider app credentials —
+           conf/<connector>.ini is scrubbed empty at provision so a customer's project can
+           never hold tiknix's shared secret. Their OWN app is a different thing: it is
+           theirs, this install may hold it, and Shopify redirects straight back to this
+           domain. Running it locally removes the handoff's hardest part — a secret that
+           would otherwise have to survive a browser redirect between two hosts. */
+        $customApp = [
+            'client_id'     => trim((string)$this->getParam('app_key', '')),
+            'client_secret' => trim((string)$this->getParam('app_secret', '')),
+        ];
+        if ($customApp['client_id'] !== '' || $customApp['client_secret'] !== '') {
+            $this->localConnectorConnect($type, $env, $shop, $customApp,
+                trim((string)$this->getParam('app_scopes', '')));
+            return;
+        }
+
         $returnUrl = app_url('/connections');
         $r = \app\InstanceAutomations::connectIntent($root, $type, $env, $shop, $returnUrl);
         if (!empty($r['error'])) { $this->flash('error', $r['error']); Flight::redirect('/connections'); return; }
@@ -1264,6 +1282,58 @@ class Connections extends Control {
            . '<h3>Connection could not start</h3><p style="color:#5b6470">' . htmlspecialchars($msg) . '</p></body>';
     }
 
+    /**
+     * Start an OAuth dance THIS install owns, against the project's own provider app.
+     *
+     * No instance id and no push target: this install IS the project, so the token it
+     * receives belongs in its own connections store. The redirect_uri is built from the
+     * request host — this project's domain — so the merchant must have registered that
+     * callback in their custom app. That is not a workaround; it is the reason this can be
+     * local at all, and the reason the shared tiknix app cannot be (only core's callback
+     * is registered against that one).
+     */
+    private function localConnectorConnect(string $type, string $env, string $shop, array $customApp, string $wantScopes): void {
+        $connector = ConnectorRegistry::get($type);
+        if (!$connector) { $this->flash('error', 'Unsupported connector.'); Flight::redirect('/connections'); return; }
+
+        $ok = method_exists($connector, 'isConfiguredFor')
+            ? $connector->isConfiguredFor(['app' => $customApp])
+            : false;
+        if (!$ok) {
+            $this->flash('error', 'That custom app is incomplete — both an API key and an API secret are required.');
+            Flight::redirect('/connections'); return;
+        }
+
+        $state = OAuthStateService::issue([
+            'provider'    => $type,
+            'member_id'   => (int)$this->member->id,
+            'instance_id' => 0,        // no other install is involved
+            'environment' => $env,
+            'shop'        => $shop,
+            'local'       => true,     // this install runs the dance AND keeps the result
+        ]);
+        $_SESSION['oauth_state_hash'] = hash('sha256', $state);
+        unset($_SESSION['oauth_custom_app'], $_SESSION['oauth_scopes']);
+        $_SESSION['oauth_custom_app'] = ['for' => hash('sha256', $state)] + $customApp;
+        if ($wantScopes !== '') {
+            $_SESSION['oauth_scopes'] = ['for' => hash('sha256', $state), 'scopes' => $wantScopes];
+        }
+
+        try {
+            $url = $connector->authorizeUrl([
+                'state'        => $state,
+                'redirect_uri' => $this->connectorRedirectUri($type),
+                'shop'         => $shop,
+                'app'          => $customApp,
+                'scopes'       => $wantScopes,
+            ]);
+        } catch (\Throwable $e) {
+            $this->flash('error', $e->getMessage());
+            Flight::redirect('/connections'); return;
+        }
+        Flight::redirect($url);
+    }
+
     /** GET /connections/callback/<type> — registry connector OAuth redirect target. */
     private function connectorCallback(string $type): void {
         $connector = ConnectorRegistry::get($type);
@@ -1288,12 +1358,27 @@ class Connections extends Control {
         // Identity ALWAYS comes from the signed state. Handoff mode authenticates by
         // that state + the instance's broker-minted intent (no core login); the
         // control-plane mode additionally binds to the logged-in owner's session.
+        $local = !empty($claims['local']);
+
         if ($handoff) {
             $inst = Bean::load('instance', $iid);
             if (!$inst->id || (int)$inst->memberId !== $mid) {
                 $this->handoffError('You no longer own that instance.'); return;
             }
             $returnUrl = (string)($claims['return_url'] ?? '');
+        } elseif ($local) {
+            // This install IS the project, so there is no instance row to own and nothing
+            // to look up. The state was signed with THIS install's key, which is what
+            // makes it unforgeable here; the session hash above already proved the
+            // callback landed in the browser that started it. Identity is still the
+            // signed member, not the session's — the same rule as every other mode.
+            if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
+            if ($mid !== (int)$this->member->id) {
+                $this->flash('error', 'This authorization was started by a different account.');
+                Flight::redirect('/connections'); return;
+            }
+            $inst = null;
+            $returnUrl = '/connections';
         } else {
             if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
             if ($mid !== (int)$this->member->id) {
@@ -1357,18 +1442,24 @@ class Connections extends Control {
             error_log('[connections] ' . $type . ' callback failed: ' . $e->getMessage());
             if ($handoff) { $this->redirectBack($returnUrl, ['connect_error' => $type]); return; }
             $this->flash('error', ucfirst($type) . ' connection failed: ' . $e->getMessage());
-            Flight::redirect('/connections?id=' . $iid); return;
+            Flight::redirect($local ? '/connections' : '/connections?id=' . $iid); return;
         }
-        // Wire the instance so its app can reach this store immediately — no keys
-        // for the user to handle. Best-effort: never fail the connect over this.
-        try {
-            BrokerService::ensureInstanceConfig($iid, $mid, $this->instanceDir($inst->slug));
-        } catch (\Throwable $e) {
-            error_log('[connections] store wiring failed for instance ' . $iid . ': ' . $e->getMessage());
+        /* Wire the instance so its app can reach this store immediately — no keys for the
+           user to handle. Best-effort: never fail the connect over this.
+
+           Skipped when the project ran its own dance: the broker exists to let a project
+           reach a store whose token core is holding, and here the token is already in this
+           install's own store. There is no custody to arrange. */
+        if (!$local) {
+            try {
+                BrokerService::ensureInstanceConfig($iid, $mid, $this->instanceDir($inst->slug));
+            } catch (\Throwable $e) {
+                error_log('[connections] store wiring failed for instance ' . $iid . ': ' . $e->getMessage());
+            }
         }
         if ($handoff) { $this->redirectBack($returnUrl, ['connected' => $type]); return; }
         $this->flash('success', ucfirst($type) . ' store connected.');
-        Flight::redirect('/connections?id=' . $iid);
+        Flight::redirect($local ? '/connections' : '/connections?id=' . $iid);
     }
 
     /** Redirect to a handoff return_url with a status query param (or core as a fallback). */
@@ -1412,13 +1503,18 @@ class Connections extends Control {
      */
     private function upsertConnection(string $type, array $claims, array $payload, string $authType = 'oauth'): int {
         $payload['auth_type'] = $authType;
+        $env = $this->normalizeEnv($claims['environment'] ?? 'production');
 
-        return \app\ConnectorPush::push(
-            (int) $claims['instance_id'],
-            $type,
-            $this->normalizeEnv($claims['environment'] ?? 'production'),
-            $payload
-        );
+        /* A project that ran its own dance keeps the result. There is nothing to push:
+           this install already owns the connections store the token belongs in, and
+           ConnectorPush would try to deliver it to this very host over HTTP using a
+           broker key issued for talking to core. Storing directly is not a shortcut —
+           it is the only correct destination. */
+        if (!empty($claims['local'])) {
+            return \app\ConnectionStore::put($type, $env, $payload);
+        }
+
+        return \app\ConnectorPush::push((int) $claims['instance_id'], $type, $env, $payload);
     }
 
     /**

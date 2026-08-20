@@ -105,6 +105,43 @@ $flash = $_SESSION['flash'] ?? []; unset($_SESSION['flash']);
                   <?php if ($key === 'shopify'): ?>
                     <div class="col-12"><label class="form-label small mb-1">Store address</label>
                       <input type="text" name="shop" class="form-control form-control-sm" placeholder="your-store.myshopify.com" required></div>
+                    <?php
+                      /* The callback the merchant must register in their custom app. Shown
+                         rather than described: it is this project's own domain, it differs
+                         per project, and a mismatch is rejected by Shopify with an error
+                         that does not say which URL it expected. */
+                      $__scheme = (($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http';
+                      $__cb = $__scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . '/connections/callback/shopify';
+                    ?>
+                    <div class="col-12">
+                      <details>
+                        <summary class="small text-secondary" style="cursor:pointer">Use this store's own custom app</summary>
+                        <div class="row g-2 mt-1">
+                          <div class="col-12">
+                            <p class="small text-secondary mb-2">
+                              Leave blank to connect through the shared tiknix app. Fill these in to authorise
+                              against the merchant's own Shopify custom app — their scopes, their billing — and
+                              this project runs the sign-in itself, so the credentials stay here and never reach
+                              the control plane.<br>
+                              Their app must list this exact callback URL: <code><?= htmlspecialchars($__cb) ?></code>
+                            </p>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label small mb-1">API key</label>
+                            <input type="text" name="app_key" class="form-control form-control-sm" autocomplete="off" placeholder="from their custom app">
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label small mb-1">API secret key</label>
+                            <input type="password" name="app_secret" class="form-control form-control-sm" autocomplete="new-password" placeholder="stored encrypted">
+                          </div>
+                          <div class="col-12">
+                            <label class="form-label small mb-1">Scopes <span class="text-secondary">(optional)</span></label>
+                            <input type="text" name="app_scopes" class="form-control form-control-sm" autocomplete="off" placeholder="read_products,read_orders">
+                            <div class="form-text small">Blank uses the default. Asking for scopes their app was not configured with makes Shopify reject the whole authorisation.</div>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
                   <?php endif; ?>
                   <div class="col-7"><select name="env" class="form-select form-select-sm">
                     <?php foreach ($environments as $e): ?><option value="<?= htmlspecialchars($e) ?>"<?= $e === 'production' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live' : ucfirst($e) ?></option><?php endforeach; ?>

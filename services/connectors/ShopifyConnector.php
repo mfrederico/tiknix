@@ -1,11 +1,17 @@
 <?php
 /**
- * ShopifyConnector — Shopify OAuth (control-plane custody).
+ * ShopifyConnector — Shopify OAuth.
  *
- * The access token returned here is a PERMANENT offline token (Shopify offline
- * tokens do not expire). It is stored ENCRYPTED in the connections table on the
- * control plane and is never written into a builder instance — instances reach
- * Shopify only through the MCP broker.
+ * The access token returned here is a PERMANENT offline token (Shopify offline tokens do
+ * not expire) and is always stored ENCRYPTED, sealed with the key of whichever install
+ * holds it.
+ *
+ * Custody follows the APP, which is the whole point of appFor() on the base class. A store
+ * connected through the shared platform app is held by the control plane and reached over
+ * the MCP broker. A store connected through the MERCHANT'S OWN custom app is held by the
+ * project itself: it is their credential, their callback on their own domain, and the
+ * dance never touches core. Per-connection is the model; conf/shopify.ini is the fallback
+ * for a merchant who has not made an app.
  */
 
 namespace app\services\connectors;
@@ -14,91 +20,8 @@ class ShopifyConnector extends AbstractConnector {
 
     public function key(): string { return 'shopify'; }
 
-    /**
-     * The Shopify app to authenticate AS, for this one store.
-     *
-     * A merchant may run a custom app of their own — their Partner/admin app, their
-     * scopes, their billing relationship — and want this store authorised against it
-     * rather than against tiknix's shared app. When they supply one, every leg of the
-     * dance has to use it: the authorize redirect, the HMAC check on the callback, and
-     * the token exchange. Mixing them is not a degraded mode, it is a broken one —
-     * tiknix's client_id with a merchant's secret fails HMAC, and the failure reads as
-     * "Shopify rejected us" rather than "you mixed two apps".
-     *
-     * So the pair is taken TOGETHER or not at all. A half-supplied pair is refused
-     * rather than quietly completed from the ini, because silently pairing a merchant's
-     * key with tiknix's secret is precisely the confusing failure above.
-     *
-     * Falling back to the shared app is a deliberate product choice made in the UI, not
-     * an invented default: most stores have no custom app and should not need one.
-     *
-     * @param array $ctx  the connect/callback context; ['app' => ['client_id','client_secret']]
-     */
-    private function appFor(array $ctx): array {
-        $global = $this->oauth();
-        $custom = is_array($ctx['app'] ?? null) ? $ctx['app'] : [];
-        $id     = trim((string) ($custom['client_id'] ?? ''));
-        $secret = trim((string) ($custom['client_secret'] ?? ''));
 
-        if ($id === '' && $secret === '') return $global;                  // shared app
-        if ($id === '' || $secret === '') {
-            throw new \Exception('A custom Shopify app needs BOTH an API key and an API secret.');
-        }
-        return ['client_id' => $id, 'client_secret' => $secret] + $global; // keeps api_version/scopes
-    }
 
-    /**
-     * The scopes to REQUEST for this store.
-     *
-     * A merchant's custom app is configured with its own scope set, and asking for the
-     * shared app's list against it gets the whole authorisation rejected — so an app
-     * override without a scope override is only half useful.
-     *
-     * Empty means "not specified", not "ask for nothing": `$ctx['scopes'] ?? default`
-     * would have let an empty form field through as a literal empty scope parameter,
-     * which Shopify reads as a request for no access at all.
-     *
-     * Validated here rather than trusted, because this value is interpolated into the
-     * authorize URL the merchant is redirected to.
-     */
-    public function scopesFor(array $ctx): string {
-        $want = trim((string) ($ctx['scopes'] ?? ''));
-        if ($want === '') return $this->defaultScopes();
-
-        /* Trimmed PER TOKEN, not globally. Stripping all whitespace first turned
-           "read products" into "readproducts" — which passes any pattern check and is not
-           a scope that exists, so Shopify rejects the authorisation and the merchant is
-           told nothing useful. Space around a separator is a typo worth forgiving; a space
-           inside a scope name is a different scope. */
-        $parts = array_map('trim', explode(',', $want));
-        foreach ($parts as $p) {
-            if ($p === '' || !preg_match('/^[a-z_]+$/', $p)) {
-                throw new \Exception(
-                    'Scopes must be a comma-separated list of lowercase names like '
-                  . 'read_products,read_orders' . ($p === '' ? ' (an empty entry).' : " — \"$p\" is not one.")
-                );
-            }
-        }
-        return implode(',', $parts);
-    }
-
-    /**
-     * Does this connector have an app to authenticate as, given the context?
-     *
-     * isConfigured() on the base class asks only about the server-wide ini, which is the
-     * right question when there is one shared app and the wrong one the moment a
-     * merchant brings their own: a store with a valid custom app was being refused with
-     * "Shopify is not configured on this server" because the shared credentials happened
-     * to be blank.
-     */
-    public function isConfiguredFor(array $ctx): bool {
-        try {
-            $a = $this->appFor($ctx);
-        } catch (\Throwable $e) {
-            return false;
-        }
-        return !empty($a['client_id']) && !empty($a['client_secret']);
-    }
 
     public function meta(): array {
         return [
@@ -115,6 +38,9 @@ class ShopifyConnector extends AbstractConnector {
     public function apiVersion(): string {
         return (string)($this->oauth()['api_version'] ?? '2024-10');
     }
+
+    /** Shopify scopes are lowercase words with underscores — nothing else is real. */
+    protected function scopePattern(): string { return '/^[a-z_]+$/'; }
 
     public function defaultScopes(): string {
         return (string)($this->oauth()['scopes'] ?? 'read_products,read_orders,read_customers');

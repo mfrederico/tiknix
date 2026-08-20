@@ -27,6 +27,99 @@ abstract class AbstractConnector implements ConnectorInterface {
         return !empty($o['client_id']) && !empty($o['client_secret']);
     }
 
+    /** The server-wide scope list, when this connector has one. */
+    public function defaultScopes(): string {
+        return (string) ($this->oauth()['scopes'] ?? '');
+    }
+
+    /**
+     * The provider app to authenticate AS, for ONE connection.
+     *
+     * A customer's account belongs to the customer's project, and so does the app that
+     * reaches it: their client id, their scopes, their billing, their callback on their
+     * own domain. conf/<key>.ini is the fallback for a customer who has not made one —
+     * a convenience, not the model.
+     *
+     * Taken as a PAIR or not at all. Half of one is refused rather than completed from
+     * the ini, because pairing a customer's client id with the server's secret fails
+     * verification at the provider and reads as "they rejected us" instead of "you mixed
+     * two apps".
+     *
+     * @param array $ctx ['app' => ['client_id' => …, 'client_secret' => …]]
+     */
+    protected function appFor(array $ctx): array {
+        $global = $this->oauth();
+        $custom = is_array($ctx['app'] ?? null) ? $ctx['app'] : [];
+        $id     = trim((string) ($custom['client_id'] ?? ''));
+        $secret = trim((string) ($custom['client_secret'] ?? ''));
+
+        if ($id === '' && $secret === '') return $global;
+        if ($id === '' || $secret === '') {
+            throw new \Exception('A custom ' . ucfirst($this->key())
+                . ' app needs BOTH a client id/API key and a secret.');
+        }
+        return ['client_id' => $id, 'client_secret' => $secret] + $global;
+    }
+
+    /**
+     * Can this connector authenticate at all, given this context?
+     *
+     * isConfigured() asks only about the server-wide ini, which is the wrong question on a
+     * project: conf/<key>.ini is scrubbed empty at provision so a customer's project can
+     * never hold the platform's secret, so the answer there is always no. Asked per
+     * attempt, a customer's own app is a perfectly good yes.
+     */
+    public function isConfiguredFor(array $ctx): bool {
+        try {
+            $a = $this->appFor($ctx);
+        } catch (\Throwable $e) {
+            return false;
+        }
+        return !empty($a['client_id']) && !empty($a['client_secret']);
+    }
+
+    /**
+     * What ONE scope may look like for this provider. Overridden where the grammar is
+     * known: the permissive default has to admit GitHub's repo:status and Google's URL
+     * scopes, which means it also admits READ_PRODUCTS for Shopify — valid-looking, not a
+     * real scope, and rejected only later by the provider with nothing useful said. A
+     * connector that knows its own grammar should say so and fail here instead.
+     */
+    protected function scopePattern(): string {
+        return '/^[A-Za-z0-9_.:\-\/]+$/';
+    }
+
+    /**
+     * The scopes to REQUEST for one connection.
+     *
+     * A customer's app is configured with its own scope set, and asking for the server's
+     * list against it gets the whole authorisation rejected — so a per-connection app
+     * without per-connection scopes is only half useful.
+     *
+     * Empty means "not specified", not "ask for nothing": `$ctx['scopes'] ?? default`
+     * would pass an empty form field through as a literal empty scope parameter, which
+     * providers read as a request for no access at all.
+     *
+     * Validated PER TOKEN, because this is interpolated into the URL the customer is
+     * redirected to. Stripping whitespace globally first turns "read products" into
+     * "readproducts" — which passes any pattern, is not a scope that exists, and fails at
+     * the provider saying nothing useful. Space around a separator is a typo worth
+     * forgiving; a space inside a name is a different scope.
+     */
+    public function scopesFor(array $ctx): string {
+        $want = trim((string) ($ctx['scopes'] ?? ''));
+        if ($want === '') return $this->defaultScopes();
+
+        $parts = array_map('trim', explode(',', $want));
+        foreach ($parts as $p) {
+            if ($p === '' || !preg_match($this->scopePattern(), $p)) {
+                throw new \Exception('Scopes must be a comma-separated list'
+                    . ($p === '' ? ' without empty entries.' : " — \"$p\" is not a valid scope."));
+            }
+        }
+        return implode(',', $parts);
+    }
+
     /** Connectors are OAuth-only by default; api_key connectors override this. */
     public function validateApiKey(string $key, array $opts = []): array {
         throw new \Exception('Connector "' . $this->key() . '" does not support API-key auth.');

@@ -78,15 +78,58 @@
                         </div>
                     <?php endif; ?>
 
-                    <!-- Sharing an instance with a team lives in the AI Builder (workbench sidecar) -->
+                    <?php /* Sharing is decided HERE, on the team you are looking at. This used to
+                             say "open the AI Builder and use Share with teams" — another app, for a
+                             control it no longer shows, so there was no working path at all. Only
+                             projects you OWN are listed: sharing someone else's is not yours to do,
+                             and ProvisionService::share refuses it anyway. */ ?>
                     <?php if (!empty($myInstances)): ?>
                         <div class="border-top pt-3">
-                            <p class="small text-muted mb-0">
-                                To share one of your instances with this team, open it in the
-                                <a href="/sidecar/app/workbench">AI&nbsp;Builder</a> and use
-                                <strong>Share&nbsp;with&nbsp;teams</strong>.
-                            </p>
+                            <div class="small text-muted mb-2">Share your projects with this team</div>
+                            <?php foreach ($myInstances as $mine): $mid = (int) $mine->id; ?>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox"
+                                           id="shareproj<?= $mid ?>" data-share-project="<?= $mid ?>"
+                                           <?= in_array($mid, $sharedHereIds ?? [], true) ? 'checked' : '' ?>>
+                                    <label class="form-check-label small" for="shareproj<?= $mid ?>">
+                                        <?= htmlspecialchars((string) ($mine->displayName ?: $mine->slug)) ?>
+                                        <span class="text-muted">/<?= htmlspecialchars((string) $mine->slug) ?></span>
+                                    </label>
+                                </div>
+                            <?php endforeach; ?>
+                            <div class="small text-muted mt-2" id="shareProjectStatus" aria-live="polite"></div>
                         </div>
+                        <script>
+                        (function () {
+                          var csrf = <?= json_encode(function_exists('csrf_token') ? csrf_token() : '') ?>;
+                          var teamId = <?= (int) $team->id ?>;
+                          var status = document.getElementById('shareProjectStatus');
+                          document.querySelectorAll('[data-share-project]').forEach(function (box) {
+                            box.addEventListener('change', function () {
+                              var body = new FormData();
+                              body.append('_csrf_token', csrf);
+                              body.append('team_id', teamId);
+                              body.append('instance_id', box.getAttribute('data-share-project'));
+                              // Only sent when checked: the parameter's absence is what says "unshare".
+                              if (box.checked) body.append('shared', '1');
+                              box.disabled = true;
+                              fetch('/teams/shareproject', {method: 'POST', body: body, headers: {'X-CSRF-TOKEN': csrf}})
+                                .then(function (r) { return r.json(); })
+                                .then(function (j) {
+                                  if (!j || j.success === false) throw new Error((j && j.message) || 'Could not update sharing.');
+                                  status.textContent = j.message || 'Saved.';
+                                })
+                                .catch(function (e) {
+                                  // Put the box back where it was: leaving it showing the state we
+                                  // failed to save is how someone believes a project is shared.
+                                  box.checked = !box.checked;
+                                  status.textContent = e.message;
+                                })
+                                .finally(function () { box.disabled = false; });
+                            });
+                          });
+                        })();
+                        </script>
                     <?php endif; ?>
                 </div>
             </div>

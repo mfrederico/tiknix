@@ -973,4 +973,36 @@ class Teams extends Control {
 
         return $username;
     }
+
+    /**
+     * POST /teams/shareproject — share or unshare ONE of my projects with ONE team.
+     *
+     * The team page is where a person actually asks this question ("who can see this
+     * team's work?"), so the answer belongs here. It used to say "open the AI Builder and
+     * use Share with teams" — a different app, for a control the builder no longer
+     * surfaces, which left no working path at all.
+     *
+     * Authorisation is ProvisionService::share's, not a copy of it: you must OWN the
+     * project and BELONG to the team. Re-implementing either check here would be a second
+     * place for them to drift apart.
+     */
+    public function shareproject($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+
+        $res = (new \app\ProvisionService())->share((int) $this->member->id, [
+            'id'      => (int) $this->getParam('instance_id', 0),
+            'team_id' => (int) $this->getParam('team_id', 0),
+            // Absent means unshare. An unchecked box sends nothing at all, so the
+            // parameter's absence IS the instruction and must not be read as "no change".
+            'shared'  => (bool) $this->getParam('shared', false),
+        ]);
+
+        if (empty($res['ok'])) {
+            $this->jsonError((string) ($res['error'] ?? 'Could not update sharing.'),
+                (int) ($res['code'] ?? 400));
+            return;
+        }
+        $this->jsonSuccess($res, $res['shared'] ? 'Shared with the team.' : 'No longer shared.');
+    }
 }

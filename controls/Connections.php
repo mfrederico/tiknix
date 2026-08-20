@@ -752,6 +752,12 @@ class Connections extends Control {
                 'icon'       => (string) ($m['icon'] ?? 'plug'),
                 'auth_type'  => (string) ($m['auth_type'] ?? 'oauth'),
                 'configured' => (bool) $c->isConfigured(),
+                /* Can this connector be connected with a PER-CONNECTION app, even though
+                   this install holds none? On a project conf/<key>.ini is scrubbed empty
+                   on purpose, so isConfigured() is always false here — and treating that
+                   as "unavailable" hid the Shopify card completely, which is exactly the
+                   case a merchant's own app exists to serve. */
+                'custom_ok'  => method_exists($c, 'isConfiguredFor'),
             ];
         }
 

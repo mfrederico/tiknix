@@ -1,10 +1,13 @@
 <?php
 /**
  * Instance-side Connections (editable, admin-only). The instance's owner/admins wire
- * up external accounts here, ON the instance. Custody stays in core: OAuth connectors
- * redirect through the control plane (which holds the client secret and stores the
- * credential encrypted, tagged to this instance); api_key connectors POST the key to
- * core over the broker. The credential never lands on the instance.
+ * up external accounts here, ON the instance.
+ *
+ * Custody follows the APP. Connecting through the shared tiknix app redirects via the
+ * control plane, which holds that client secret and never lets it near a project.
+ * Connecting with the merchant's OWN app is the other way round: it is their credential,
+ * this install may hold it, so the whole dance runs here and the secret never travels to
+ * core at all. api_key connectors POST the key to core over the broker.
  *
  * Vars: $connections[], $brokerError, $connectors[], $connectorsError, $appName, $environments[]
  */
@@ -36,7 +39,7 @@ $flash = $_SESSION['flash'] ?? []; unset($_SESSION['flash']);
 
   <div class="alert alert-light border py-2 small mb-4">
     <i class="bi bi-shield-check me-1"></i>
-    Credentials are stored encrypted in the control plane and never touch this instance — it reaches them through the broker.
+    Credentials are stored encrypted. A store connected through the shared tiknix app is held in the control plane and reached over the broker; one connected with the merchant's own app is held right here, sealed with this install's key.
     What this app <em>exposes</em> is on the <a href="/integrations" style="text-decoration:underline">Integrations</a> page.
   </div>
 
@@ -85,7 +88,17 @@ $flash = $_SESSION['flash'] ?? []; unset($_SESSION['flash']);
                 </ul>
               <?php endif; ?>
 
-              <?php if (empty($conn['configured'])): ?>
+              <?php
+                /* "Not available on this server" is the end of the story only for a
+                   connector that can ONLY use a server-wide app. One that accepts a
+                   per-connection app is still connectable here — bring your own — and on
+                   a project that is the NORMAL case, because conf/<key>.ini is scrubbed
+                   empty at provision by design. Reading isConfigured() as "unavailable"
+                   hid the Shopify card completely, which is exactly the situation a
+                   merchant's own app exists to serve. */
+                $__byoOnly = empty($conn['configured']) && !empty($conn['custom_ok']) && $auth !== 'api_key';
+              ?>
+              <?php if (empty($conn['configured']) && ($auth === 'api_key' || empty($conn['custom_ok']))): ?>
                 <div class="form-text mt-2">Not available on this server.</div>
               <?php elseif ($auth === 'api_key'): ?>
                 <form data-connectkey class="row g-2 align-items-end mt-2">
@@ -114,25 +127,26 @@ $flash = $_SESSION['flash'] ?? []; unset($_SESSION['flash']);
                       $__cb = $__scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . '/connections/callback/shopify';
                     ?>
                     <div class="col-12">
-                      <details>
-                        <summary class="small text-secondary" style="cursor:pointer">Use this store's own custom app</summary>
+                      <details<?= $__byoOnly ? ' open' : '' ?>>
+                        <summary class="small text-secondary" style="cursor:pointer">
+                          <?= $__byoOnly ? "This store's own custom app (required here)" : "Use this store's own custom app" ?>
+                        </summary>
                         <div class="row g-2 mt-1">
                           <div class="col-12">
                             <p class="small text-secondary mb-2">
-                              Leave blank to connect through the shared tiknix app. Fill these in to authorise
-                              against the merchant's own Shopify custom app — their scopes, their billing — and
-                              this project runs the sign-in itself, so the credentials stay here and never reach
-                              the control plane.<br>
+                              <?= $__byoOnly ? 'This project holds no shared Shopify app — that is deliberate, so a customer\'s project can never hold tiknix\'s secret. Connect with the merchant\'s own custom app instead.' : 'Leave blank to connect through the shared tiknix app. Fill these in to authorise' ?>
+                              against the merchant's own Shopify custom app — their scopes, their billing. This project
+                              runs the sign-in itself, so the credentials stay here and never reach the control plane.<br>
                               Their app must list this exact callback URL: <code><?= htmlspecialchars($__cb) ?></code>
                             </p>
                           </div>
                           <div class="col-md-6">
                             <label class="form-label small mb-1">API key</label>
-                            <input type="text" name="app_key" class="form-control form-control-sm" autocomplete="off" placeholder="from their custom app">
+                            <input type="text" name="app_key" class="form-control form-control-sm" autocomplete="off" placeholder="from their custom app"<?= $__byoOnly ? ' required' : '' ?>>
                           </div>
                           <div class="col-md-6">
                             <label class="form-label small mb-1">API secret key</label>
-                            <input type="password" name="app_secret" class="form-control form-control-sm" autocomplete="new-password" placeholder="stored encrypted">
+                            <input type="password" name="app_secret" class="form-control form-control-sm" autocomplete="new-password" placeholder="stored encrypted"<?= $__byoOnly ? ' required' : '' ?>>
                           </div>
                           <div class="col-12">
                             <label class="form-label small mb-1">Scopes <span class="text-secondary">(optional)</span></label>

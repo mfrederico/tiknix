@@ -1247,6 +1247,21 @@ class Connections extends Control {
         $connector = ConnectorRegistry::get($type);
         if (!$connector || !$connector->isConfigured()) { $this->handoffError('That connector is unavailable.'); return; }
 
+        /* A connector that only ever uses the customer's own app has nothing to hand off.
+           The whole point of this route is borrowing the platform's app because the project
+           holds none — and for these there IS no platform app to borrow. Refused here, with
+           somewhere to go, rather than proceeding on isConfigured() (true on core, where
+           conf/<key>.ini still has legacy credentials) and dying later inside appFor with a
+           message about a missing API key that names nothing the user can act on.
+
+           When the last connector stops needing this route, the route goes with it. */
+        if (method_exists($connector, 'requiresOwnApp') && $connector->requiresOwnApp()) {
+            $this->handoffError(ucfirst($type) . ' connects through the merchant\'s own app, '
+                . 'so it is set up inside your project rather than here — open Connections in '
+                . 'the project and paste the app\'s API key and secret.');
+            return;
+        }
+
         $intent = (string)$this->getParam('intent', '');
         $claims = $intent !== '' ? OAuthStateService::verify($intent) : null;
         if (!$claims || (string)($claims['purpose'] ?? '') !== 'connect_handoff' || (string)($claims['provider'] ?? '') !== $type) {

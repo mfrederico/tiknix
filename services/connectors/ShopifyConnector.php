@@ -138,14 +138,84 @@ class ShopifyConnector extends AbstractConnector {
             if (!empty($sj['shop']['name'])) $name = (string)$sj['shop']['name'];
         }
 
+        /* Shopify offline tokens can now expire (3600s) and be refreshed. It is opt-in per
+           app, so most responses carry neither field and this stays empty — which is
+           exactly right: an absent refresh_token means a perpetual token, and inventing an
+           expiry for one would make a working store look due for renewal forever.
+           refreshStored() only writes these when present, so a refresh that returns no new
+           refresh_token cannot blank the one on the row. */
+        $refresh   = (string) ($j['refresh_token'] ?? '');
+        $expiresIn = (int) ($j['expires_in'] ?? 0);
+
         return [
             'access_token'  => $token,
+            'refresh_token' => $refresh,
+            'expires_at'    => $expiresIn > 0 ? time() + $expiresIn : 0,
             'token_type'    => 'Bearer',
             'scopes'        => $scopes,
             'external_eid'  => $shopParam,
             'external_name' => $name,
             'external_url'  => 'https://' . $shopParam,
             'metadata'      => ['shop' => $shopParam, 'api_version' => $this->apiVersion()],
+        ];
+    }
+
+    /**
+     * Renew an expiring offline token, entirely inside the install that holds it.
+     *
+     * Shopify offline tokens used to be perpetual; they can now expire after 3600s and be
+     * renewed by exchanging the refresh_token at the same token endpoint.
+     *
+     * A refresh authenticates AS THE APP THAT ISSUED THE TOKEN, which is why the merchant's
+     * client id and secret are stored on the connection. Without them this could not run at
+     * all for a customer's own app — and since every Shopify store is a customer's own app,
+     * that would mean no refresh anywhere. It is also why nothing here reaches for
+     * conf/shopify.ini: that app did not mint this token and cannot renew it.
+     *
+     * Returns null when there is nothing to do — no refresh token means a perpetual token,
+     * which is not an error and must not be reported as one.
+     *
+     * @param object $conn  the connection bean, from the store that owns it
+     */
+    public function refreshToken($conn, string $token): ?array {
+        $refresh = \app\ConnectionStore::ownSecret($conn, 'refreshToken');
+        if ($refresh === '') return null;          // perpetual token: nothing to renew
+
+        $app = \app\ConnectionStore::ownApp($conn);
+        if (!$app) {
+            // Loud, because it is unrecoverable without a human: the token will expire and
+            // only a fresh authorisation can replace it. Silence here would look like a
+            // store that simply stopped working.
+            throw new \Exception('This Shopify connection has no stored app credentials, '
+                . 'so its token cannot be refreshed — the store needs reconnecting.');
+        }
+
+        $shop = self::normalizeShopDomain((string) ($conn->externalEid ?? ''));
+        if ($shop === '') throw new \Exception('This Shopify connection has no valid store domain.');
+
+        [$status, $body] = $this->http('POST', 'https://' . $shop . '/admin/oauth/access_token', [
+            'headers' => ['Content-Type: application/x-www-form-urlencoded', 'Accept: application/json'],
+            'body'    => http_build_query([
+                'grant_type'    => 'refresh_token',
+                'client_id'     => $app['client_id'],
+                'client_secret' => $app['client_secret'],
+                'refresh_token' => $refresh,
+            ]),
+        ]);
+        $j = json_decode($body, true);
+        if ($status < 200 || $status >= 300 || empty($j['access_token'])) {
+            throw new \Exception('Shopify token refresh failed (HTTP ' . $status
+                . ') — the store may need reconnecting.');
+        }
+
+        $expiresIn = (int) ($j['expires_in'] ?? 0);
+        return [
+            'access_token'  => (string) $j['access_token'],
+            // Only when Shopify rotates it. refreshStored() skips empty values, so a
+            // response without one leaves the existing refresh token intact rather than
+            // erasing the only means of doing this again.
+            'refresh_token' => (string) ($j['refresh_token'] ?? ''),
+            'expires_at'    => $expiresIn > 0 ? time() + $expiresIn : 0,
         ];
     }
 

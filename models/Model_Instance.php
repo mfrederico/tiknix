@@ -173,4 +173,59 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
             [(int) $this->bean->id, $memberId]
         ) > 0;
     }
+
+    /** Is unattended auto-triage on for this instance? */
+    public function autoTriageOn(): bool {
+        return filter_var($this->bean->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * Turn unattended auto-triage on or off, recording who did it.
+     *
+     * This lives on the model rather than in the controller so the flag and its audit
+     * row cannot come apart. Flipping it decides that the control plane may launch
+     * headless agent builds against a client's repo with nobody watching — through
+     * Firehose on a new error AND through plan-audit's idle sweep on deferred ones —
+     * so the change is a billable act and has to stay answerable later.
+     *
+     * Writes nothing when the value is unchanged: a trail full of no-ops is a trail
+     * nobody reads. Returns true when something actually changed.
+     */
+    public function setAutoTriage(bool $on, int $byMemberId, string $note = ''): bool {
+        $was = $this->autoTriageOn();
+        if ($was === $on) return false;
+
+        $this->bean->autoTriage = $on ? 1 : 0;
+        \app\Bean::store($this->bean);
+
+        $row = \app\Bean::dispense('instanceaudit');
+        $row->instanceId = (int) $this->bean->id;
+        $row->memberId   = $byMemberId;
+        $row->field      = 'auto_triage';
+        $row->oldValue   = $was ? '1' : '0';
+        $row->newValue   = $on  ? '1' : '0';
+        $row->note       = mb_substr($note, 0, 500);
+        $row->createdAt  = date('Y-m-d H:i:s');
+        \app\Bean::store($row);
+
+        \Flight::get('log')?->info('auto_triage changed', [
+            'instance' => (string) $this->bean->slug,
+            'to'       => $on ? 'on' : 'off',
+            'by'       => $byMemberId,
+        ]);
+        return true;
+    }
+
+    /**
+     * The most recent change to a setting on this instance, or null.
+     *
+     * The "audit line" the admin page shows. Reading the newest row rather than keeping
+     * a separate current-state stamp is what stops the two disagreeing.
+     */
+    public function lastAudit(string $field = 'auto_triage'): ?object {
+        if (!in_array('instanceaudit', \app\Bean::inspect(), true)) return null;
+        $row = \app\Bean::findOne('instanceaudit',
+            'instance_id = ? AND field = ? ORDER BY id DESC', [(int) $this->bean->id, $field]);
+        return ($row && $row->id) ? $row : null;
+    }
 }

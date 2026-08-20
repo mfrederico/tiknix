@@ -83,6 +83,13 @@
                     <p class="mb-1">Configure access controls and permissions</p>
                 </a>
                 
+                <a href="/admin/instances" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">Instances — Unattended Builds</h5>
+                    </div>
+                    <p class="mb-1">Let the control plane build against a client's repo on its own. Off by default; every change is recorded.</p>
+                </a>
+
                 <a href="/admin/settings" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1">System Settings</h5>

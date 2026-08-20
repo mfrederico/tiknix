@@ -328,6 +328,15 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
                             <label class="form-label small mb-1">API secret key</label>
                             <input type="password" name="app_secret" class="form-control form-control-sm" autocomplete="new-password" placeholder="stored encrypted">
                           </div>
+                          <div class="col-12">
+                            <label class="form-label small mb-1">Scopes <span class="text-secondary">(optional)</span></label>
+                            <input type="text" name="app_scopes" class="form-control form-control-sm" autocomplete="off"
+                                   placeholder="read_products,read_orders">
+                            <div class="form-text small">
+                              Blank uses this server's default. A custom app has its own scope set — asking for
+                              scopes it was not configured with makes Shopify reject the whole authorisation.
+                            </div>
+                          </div>
                         </div>
                       </details>
                     </div>

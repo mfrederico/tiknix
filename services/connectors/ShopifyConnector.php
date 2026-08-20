@@ -48,6 +48,41 @@ class ShopifyConnector extends AbstractConnector {
     }
 
     /**
+     * The scopes to REQUEST for this store.
+     *
+     * A merchant's custom app is configured with its own scope set, and asking for the
+     * shared app's list against it gets the whole authorisation rejected — so an app
+     * override without a scope override is only half useful.
+     *
+     * Empty means "not specified", not "ask for nothing": `$ctx['scopes'] ?? default`
+     * would have let an empty form field through as a literal empty scope parameter,
+     * which Shopify reads as a request for no access at all.
+     *
+     * Validated here rather than trusted, because this value is interpolated into the
+     * authorize URL the merchant is redirected to.
+     */
+    public function scopesFor(array $ctx): string {
+        $want = trim((string) ($ctx['scopes'] ?? ''));
+        if ($want === '') return $this->defaultScopes();
+
+        /* Trimmed PER TOKEN, not globally. Stripping all whitespace first turned
+           "read products" into "readproducts" — which passes any pattern check and is not
+           a scope that exists, so Shopify rejects the authorisation and the merchant is
+           told nothing useful. Space around a separator is a typo worth forgiving; a space
+           inside a scope name is a different scope. */
+        $parts = array_map('trim', explode(',', $want));
+        foreach ($parts as $p) {
+            if ($p === '' || !preg_match('/^[a-z_]+$/', $p)) {
+                throw new \Exception(
+                    'Scopes must be a comma-separated list of lowercase names like '
+                  . 'read_products,read_orders' . ($p === '' ? ' (an empty entry).' : " — \"$p\" is not one.")
+                );
+            }
+        }
+        return implode(',', $parts);
+    }
+
+    /**
      * Does this connector have an app to authenticate as, given the context?
      *
      * isConfigured() on the base class asks only about the server-wide ini, which is the
@@ -106,7 +141,7 @@ class ShopifyConnector extends AbstractConnector {
         $o = $this->appFor($ctx);   // the merchant's custom app, or the shared one
         $q = http_build_query([
             'client_id'       => (string)($o['client_id'] ?? ''),
-            'scope'           => (string)($ctx['scopes'] ?? $this->defaultScopes()),
+            'scope'           => $this->scopesFor($ctx),
             'redirect_uri'    => (string)($ctx['redirect_uri'] ?? ''),
             'state'           => (string)($ctx['state'] ?? ''),
             'grant_options[]' => '', // offline (permanent) token
@@ -151,7 +186,10 @@ class ShopifyConnector extends AbstractConnector {
             throw new \Exception('Shopify token exchange failed (HTTP ' . $status . ').');
         }
         $token  = (string)$j['access_token'];
-        $scopes = (string)($j['scope'] ?? $this->defaultScopes());
+        // What Shopify actually GRANTED. Falls back to what we asked for on this attempt,
+        // not to the server default — with a custom app those differ, and recording the
+        // shared list against a store authorised under another app is simply wrong.
+        $scopes = (string)($j['scope'] ?? $this->scopesFor($ctx));
 
         // 4) Best-effort: fetch the shop's display name.
         $name = $shopParam;

@@ -540,6 +540,15 @@ class ConnectionStore {
                 }
             }
 
+            // The scopes this store was authorised WITH, as requested — deliberately not
+            // the same column as `scopes`, which records what the provider granted. One
+            // column holding both would make a partial grant look like the intent, and a
+            // re-auth would then ask for the reduced set and ratchet the store down.
+            // Not a secret, so stored in the clear.
+            if (array_key_exists('app_scopes', $payload)) {
+                $conn->appScopes = (string) $payload['app_scopes'];
+            }
+
             if (array_key_exists('refresh_token', $payload)) {
                 $conn->refreshToken = self::sealOrEmpty((string) $payload['refresh_token'], $key);
             }

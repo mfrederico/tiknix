@@ -1157,6 +1157,13 @@ class Connections extends Control {
         ];
         $hasCustom = $customApp['client_id'] !== '' || $customApp['client_secret'] !== '';
 
+        /* Scopes to REQUEST. A merchant's custom app carries its own scope set, and asking
+           for the shared app's list against it gets the whole authorisation rejected — so
+           an app override without a scope override is only half a feature. Blank means
+           "use the server default", which the connector resolves; it is not a secret, so
+           unlike the key and secret it can ride along in the open. */
+        $wantScopes = trim((string)$this->getParam('app_scopes', ''));
+
         // Configured-ness is per-attempt now: a store with its own app is connectable even
         // when the shared credentials are blank, and only the connector can judge that.
         $probe = $hasCustom ? ['app' => $customApp] : [];
@@ -1180,9 +1187,14 @@ class Connections extends Control {
         ]);
         // Double-submit: proves the callback lands in the same browser session.
         $_SESSION['oauth_state_hash'] = hash('sha256', $state);
-        unset($_SESSION['oauth_custom_app']);
+        // Cleared before either is set, so a previous attempt's app or scopes can never
+        // be picked up by this one's callback.
+        unset($_SESSION['oauth_custom_app'], $_SESSION['oauth_scopes']);
         if ($hasCustom) {
             $_SESSION['oauth_custom_app'] = ['for' => hash('sha256', $state)] + $customApp;
+        }
+        if ($wantScopes !== '') {
+            $_SESSION['oauth_scopes'] = ['for' => hash('sha256', $state), 'scopes' => $wantScopes];
         }
 
         try {
@@ -1191,6 +1203,7 @@ class Connections extends Control {
                 'redirect_uri' => $this->connectorRedirectUri($type),
                 'shop'         => $shop,
                 'app'          => $hasCustom ? $customApp : null,
+                'scopes'       => $wantScopes,
             ]);
         } catch (\Throwable $e) {
             $this->flash('error', $e->getMessage());
@@ -1306,6 +1319,17 @@ class Connections extends Control {
             $customApp = ['client_id' => (string)$stash['client_id'], 'client_secret' => (string)$stash['client_secret']];
         }
 
+        // The scopes this dance ASKED for, bound to the same state. Needed here because
+        // exchangeCode records what Shopify granted and falls back to what was requested
+        // when the response omits it — the server default would be the wrong answer for a
+        // store authorised under a custom app.
+        $wantScopes = '';
+        $sstash = $_SESSION['oauth_scopes'] ?? null;
+        unset($_SESSION['oauth_scopes']);
+        if (is_array($sstash) && hash_equals((string)($sstash['for'] ?? ''), hash('sha256', $state))) {
+            $wantScopes = (string)$sstash['scopes'];
+        }
+
         try {
             $payload = $connector->exchangeCode([
                 'params'       => $_GET,
@@ -1314,6 +1338,7 @@ class Connections extends Control {
                 // Same app as the authorize leg — the HMAC on this callback was computed
                 // with its secret, so anything else fails verification.
                 'app'          => $customApp,
+                'scopes'       => $wantScopes,
             ]);
             // Remember WHICH app this store belongs to, so a later re-auth or token
             // refresh goes back to the merchant's app rather than silently to the shared
@@ -1322,6 +1347,11 @@ class Connections extends Control {
                 $payload['app_key']    = $customApp['client_id'];
                 $payload['app_secret'] = $customApp['client_secret'];
             }
+            // Kept apart from payload['scopes'], which is what Shopify GRANTED. This is
+            // what we ASKED for, and a re-auth has to ask for the same thing again —
+            // requesting the granted set back would silently ratchet the store down to
+            // whatever a partial grant happened to allow last time.
+            if ($wantScopes !== '') $payload['app_scopes'] = $wantScopes;
             $this->upsertConnection($type, $claims, $payload);
         } catch (\Throwable $e) {
             error_log('[connections] ' . $type . ' callback failed: ' . $e->getMessage());

@@ -33,6 +33,19 @@ abstract class AbstractConnector implements ConnectorInterface {
     }
 
     /**
+     * Does this connector ONLY ever use the customer's own app?
+     *
+     * True means there is no platform app to fall back to and none should be invented.
+     * Shopify is the case: a store is always reached through the merchant's own custom
+     * app, so a shared credential is not a convenience here — it is a second way of doing
+     * the one thing, and the failure it produces (a store bound to an app the merchant
+     * does not control) is worse than being asked for a key.
+     */
+    public function requiresOwnApp(): bool {
+        return false;
+    }
+
+    /**
      * The provider app to authenticate AS, for ONE connection.
      *
      * A customer's account belongs to the customer's project, and so does the app that
@@ -47,19 +60,6 @@ abstract class AbstractConnector implements ConnectorInterface {
      *
      * @param array $ctx ['app' => ['client_id' => …, 'client_secret' => …]]
      */
-    /**
-     * Does this connector ONLY ever use the customer's own app?
-     *
-     * True means there is no platform app to fall back to and none should be invented.
-     * Shopify is the case: a store is always reached through the merchant's own custom
-     * app, so a shared credential is not a convenience here — it is a second way of doing
-     * the one thing, and the failure it produces (a store bound to an app the merchant
-     * does not control) is worse than being asked for a key.
-     */
-    public function requiresOwnApp(): bool {
-        return false;
-    }
-
     protected function appFor(array $ctx): array {
         $global = $this->oauth();
         $custom = is_array($ctx['app'] ?? null) ? $ctx['app'] : [];
@@ -95,6 +95,9 @@ abstract class AbstractConnector implements ConnectorInterface {
         return !empty($a['client_id']) && !empty($a['client_secret']);
     }
 
+    /** What this provider puts BETWEEN scopes. Shopify commas; GitHub and Google space. */
+    protected function scopeSeparator(): string { return ','; }
+
     /**
      * What ONE scope may look like for this provider. Overridden where the grammar is
      * known: the permissive default has to admit GitHub's repo:status and Google's URL
@@ -127,14 +130,20 @@ abstract class AbstractConnector implements ConnectorInterface {
         $want = trim((string) ($ctx['scopes'] ?? ''));
         if ($want === '') return $this->defaultScopes();
 
-        $parts = array_map('trim', explode(',', $want));
+        /* Split on EITHER separator. Providers disagree — Shopify comma-delimits, GitHub
+           space-delimits and its own docs show "repo read:user" — so a customer pasting the
+           list straight from the provider's documentation must not be told it is invalid.
+           Rejoined with the separator THIS provider expects, so accepting both on input
+           does not send a malformed list onward. */
+        $parts = preg_split('/[\s,]+/', $want, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (!$parts) throw new \Exception('No scopes given.');
         foreach ($parts as $p) {
             if ($p === '' || !preg_match($this->scopePattern(), $p)) {
-                throw new \Exception('Scopes must be a comma-separated list'
-                    . ($p === '' ? ' without empty entries.' : " — \"$p\" is not a valid scope."));
+                throw new \Exception('Scopes must be a list separated by commas or spaces'
+                    . " — \"$p\" is not a valid scope.");
             }
         }
-        return implode(',', $parts);
+        return implode($this->scopeSeparator(), $parts);
     }
 
     /** Connectors are OAuth-only by default; api_key connectors override this. */

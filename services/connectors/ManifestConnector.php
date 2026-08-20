@@ -175,6 +175,9 @@ class ManifestConnector extends RestConnector {
         ];
     }
 
+    /** Manifest providers (GitHub, Google, HubSpot) space-delimit; overridable per manifest. */
+    protected function scopeSeparator(): string { return (string) ($this->m['oauth']['scope_separator'] ?? ' '); }
+
     public function defaultScopes(): string {
         return (string) ($this->oauth()['scope'] ?? $this->m['oauth']['scope'] ?? '');
     }
@@ -182,14 +185,20 @@ class ManifestConnector extends RestConnector {
     public function authorizeUrl(array $ctx): string {
         if (!$this->isOauth()) return parent::authorizeUrl($ctx);
 
-        $o = $this->oauth();
+        // Per-CONNECTION app: the customer's own client id/secret when they brought one,
+        // the server-wide ini when they did not. Same resolution as the exchange leg below,
+        // because a redirect signed by one app and a token exchange authenticated as
+        // another fails at the provider saying only that the request was rejected.
+        $o = $this->appFor($ctx);
         $q = [
             'client_id'     => (string) ($o['client_id'] ?? ''),
             'response_type' => 'code',
             'redirect_uri'  => (string) ($ctx['redirect_uri'] ?? ''),
             'state'         => (string) ($ctx['state'] ?? ''),
         ];
-        $scope = (string) ($ctx['scopes'] ?? $this->defaultScopes());
+        // scopesFor(), not ?? — an empty form field is "not specified", and passing it
+        // through as a literal empty scope asks the provider for no access at all.
+        $scope = $this->scopesFor($ctx);
         if ($scope !== '') $q['scope'] = $scope;
 
         // Extra fixed parameters some providers require (Google's access_type, an
@@ -210,7 +219,7 @@ class ManifestConnector extends RestConnector {
         $code = trim((string) ($params['code'] ?? ''));
         if ($code === '') throw new \Exception($this->m['label'] . ' returned no authorization code.');
 
-        $o  = $this->oauth();
+        $o  = $this->appFor($ctx);   // the SAME app the authorize leg used
         $oc = $this->m['oauth'];
 
         $form = [

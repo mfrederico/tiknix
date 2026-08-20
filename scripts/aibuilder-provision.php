@@ -84,10 +84,49 @@ $trigger = bin2hex(random_bytes(32));
 $ini = preg_replace('/^\s*trigger_secret\s*=.*$/m', "trigger_secret = \"$trigger\"", $ini, 1, $n);
 if (!$n) $ini = rtrim($ini) . "\n\n[pipeline]\ntrigger_secret = \"$trigger\"\n";
 
+// Force this instance's OWN [firehose] identity. The template is the cloned source app's
+// config, so the tag is inherited — a fresh instance would report its errors under the
+// SOURCE's name, and the control plane matches that tag back to an instance to triage
+// against (controls/Firehose.php::autoTriage). Every error from the new instance would
+// have opened a fix task on somebody else's project. Same class of bug as the
+// trigger_secret above: an inherited per-instance identity that is syntactically valid
+// and points at the wrong tenant.
+//
+// ingest_url and api_key are deliberately KEPT from the template. Unlike the tag, those
+// are shared by design: every instance reports to the same control plane with the same
+// ingest key, which Firehose::report validates against core's [firehose] ingest_key.
+$fh      = @parse_ini_file($tplPath, true)['firehose'] ?? [];
+$fhUrl   = (string) ($fh['ingest_url'] ?? '');
+$fhKey   = (string) ($fh['api_key'] ?? '');
+$fhTag   = basename($ROOT);                  // <sub>.<app>, matching ErrorReporter::instanceTag
+$fhBlock = "[firehose]\n"
+         . "; Report uncaught errors to the control plane (lib/ErrorReporter.php).\n"
+         . "ingest_url = \"$fhUrl\"\n"
+         . "api_key = \"$fhKey\"\n"
+         . "instance = \"$fhTag\"\n"
+         . "role = live\n"
+         . "report = true\n";
+// Consume the header plus every following line that does NOT begin a new section.
+// The obvious [^\[]* is wrong: it halts at the first '[' ANYWHERE, including one inside
+// a comment, which leaves the tail of the old block in place — and the stale
+// instance = "<source>.tiknix" line with it, silently defeating this entire fix.
+$ini = preg_replace('/^\[firehose\][^\r\n]*(?:\R(?!\[)[^\r\n]*)*\R?/m', $fhBlock, $ini, 1, $nf);
+if (!$nf) $ini = rtrim($ini) . "\n\n" . $fhBlock;
+if ($fhUrl === '' || $fhKey === '') {
+    // Said out loud rather than left as a silent blank. ErrorReporter self-gates on an
+    // empty ingest_url, so this instance would run blind — which is precisely how a
+    // fleet ends up with nobody noticing a member table being wiped for a day.
+    fwrite(STDERR, "aibuilder-provision: WARNING - the source config has no [firehose] "
+         . "ingest_url/api_key, so '$fhTag' will NOT report errors to the control plane. "
+         . "Set them in the source app's conf/config.ini and re-provision, or patch this "
+         . "instance's conf/config.ini by hand.\n");
+}
+
 $cfgRel = "conf/config.$sub.ini";
 file_put_contents("$ROOT/$cfgRel", $ini);   // tracked by provision-instance.sh for rollback
 file_put_contents("$ROOT/conf/config.ini", $ini); // what the instance app actually boots on
-echo "  wrote $cfgRel + conf/config.ini (db: $dbRel, minted [pipeline] trigger_secret)\n";
+echo "  wrote $cfgRel + conf/config.ini (db: $dbRel, minted [pipeline] trigger_secret, "
+   . "firehose tag '$fhTag'" . ($fhUrl === '' ? ' — NOT REPORTING, see warning above' : '') . ")\n";
 
 // Scrub EVERY inherited secret conf/*.ini. The clone carries the source app's
 // untracked conf/*.ini (broker capability key, connector OAuth app secrets for

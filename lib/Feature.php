@@ -30,6 +30,16 @@ class Feature {
             'blurb'     => 'Visual data-model + call-graph explorer for your instances (heavy; runs as a sidecar). Members can reach it; each grant is per-member.',
             'min_level' => 100, // MEMBER and above — they own the instances it explores
         ],
+        'insights' => [
+            'label'     => 'Insights',
+            'blurb'     => 'Builder activity across every instance — who is building, how often, how well, and which builds are stuck. Runs as the insights.tiknix sidecar.',
+            // ADMIN, unlike the other sidecars. Those show a member their OWN instances;
+            // this one reports on everybody's activity, so being able to reach it is not
+            // the same question as being allowed to see it. The grant is only the door —
+            // Builders::admin() re-checks level on every request, so a demotion takes
+            // effect on the next click rather than the next login.
+            'min_level' => 50,
+        ],
         'shop' => [
             'label'     => 'Store',
             'blurb'     => 'A per-instance storefront + admin, with checkout via that instance\'s own Stripe. Runs as the shop.tiknix sidecar.',

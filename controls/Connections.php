@@ -1131,8 +1131,44 @@ class Connections extends Control {
         if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
         if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/sidecar/app/workbench'); return; }
 
+        // The connect form POSTs now, because the custom-app fields carry a secret and a
+        // GET would put it in the query string. A GET is still accepted for the plain
+        // no-custom-app case (existing links, the handoff flow), which carries nothing
+        // sensitive; anything with a body has to prove it came from our own form.
+        if (Flight::request()->method === 'POST' && !$this->validateCSRF()) return;
+
         $env  = $this->normalizeEnv($this->getParam('env', 'production'));
         $shop = trim((string)$this->getParam('shop', ''));
+
+        /* A merchant's OWN provider app, when they run one (a Shopify custom app). Both
+           halves or neither — the connector refuses a half pair rather than completing it
+           from the server ini, which would sign the redirect with one app's key and verify
+           the callback with another's secret.
+
+           Carried in the SESSION, never in the signed state: the state travels as a query
+           parameter through the merchant's browser and the provider's servers, and an app
+           secret does not belong in a URL, a log, or a Referer header. The callback already
+           requires this same session for its double-submit check, so this adds nothing new
+           to trust — and it is keyed by the state hash so a second connect attempt in
+           another tab cannot hand its credentials to this one's callback. */
+        $customApp = [
+            'client_id'     => trim((string)$this->getParam('app_key', '')),
+            'client_secret' => trim((string)$this->getParam('app_secret', '')),
+        ];
+        $hasCustom = $customApp['client_id'] !== '' || $customApp['client_secret'] !== '';
+
+        // Configured-ness is per-attempt now: a store with its own app is connectable even
+        // when the shared credentials are blank, and only the connector can judge that.
+        $probe = $hasCustom ? ['app' => $customApp] : [];
+        $ok = method_exists($connector, 'isConfiguredFor')
+            ? $connector->isConfiguredFor($probe)
+            : $connector->isConfigured();
+        if (!$ok) {
+            $this->flash('error', $hasCustom
+                ? 'That custom app is incomplete — both an API key and an API secret are required.'
+                : ucfirst($type) . ' is not configured on this server.');
+            Flight::redirect('/connections?id=' . (int)$inst->id); return;
+        }
 
         // The signed state is the ONLY source of identity at callback time.
         $state = OAuthStateService::issue([
@@ -1144,12 +1180,17 @@ class Connections extends Control {
         ]);
         // Double-submit: proves the callback lands in the same browser session.
         $_SESSION['oauth_state_hash'] = hash('sha256', $state);
+        unset($_SESSION['oauth_custom_app']);
+        if ($hasCustom) {
+            $_SESSION['oauth_custom_app'] = ['for' => hash('sha256', $state)] + $customApp;
+        }
 
         try {
             $url = $connector->authorizeUrl([
                 'state'        => $state,
                 'redirect_uri' => $this->connectorRedirectUri($type),
                 'shop'         => $shop,
+                'app'          => $hasCustom ? $customApp : null,
             ]);
         } catch (\Throwable $e) {
             $this->flash('error', $e->getMessage());
@@ -1254,12 +1295,33 @@ class Connections extends Control {
             $returnUrl = '/connections?id=' . $iid;
         }
 
+        /* The custom app this dance began under, if any. Bound to THIS state hash: a
+           second connect started in another tab must not have its credentials picked up
+           by this callback. Read before use and cleared either way, so a stale pair
+           cannot leak into a later, unrelated connect. */
+        $customApp = null;
+        $stash = $_SESSION['oauth_custom_app'] ?? null;
+        unset($_SESSION['oauth_custom_app']);
+        if (is_array($stash) && hash_equals((string)($stash['for'] ?? ''), hash('sha256', $state))) {
+            $customApp = ['client_id' => (string)$stash['client_id'], 'client_secret' => (string)$stash['client_secret']];
+        }
+
         try {
             $payload = $connector->exchangeCode([
                 'params'       => $_GET,
                 'claims'       => $claims,
                 'redirect_uri' => $this->connectorRedirectUri($type),
+                // Same app as the authorize leg — the HMAC on this callback was computed
+                // with its secret, so anything else fails verification.
+                'app'          => $customApp,
             ]);
+            // Remember WHICH app this store belongs to, so a later re-auth or token
+            // refresh goes back to the merchant's app rather than silently to the shared
+            // one — which would fail, and fail looking like the merchant's problem.
+            if ($customApp) {
+                $payload['app_key']    = $customApp['client_id'];
+                $payload['app_secret'] = $customApp['client_secret'];
+            }
             $this->upsertConnection($type, $claims, $payload);
         } catch (\Throwable $e) {
             error_log('[connections] ' . $type . ' callback failed: ' . $e->getMessage());

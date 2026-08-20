@@ -379,6 +379,26 @@ class ConnectionStore {
      * ownToken() is the access-token case; refresh tokens need the same treatment
      * and there is no reason for two copies of the logic.
      */
+    /**
+     * The merchant's own provider app for this connection, decrypted, or [].
+     *
+     * Shaped as the connector's $ctx['app'] so it can be handed straight to
+     * authorizeUrl()/exchangeCode(). Returns [] when the connection uses the shared
+     * app, which is the common case and not an error.
+     *
+     * Both halves or nothing: a connection carrying only one of them cannot
+     * authenticate, and completing the pair from the server-wide ini would pair a
+     * merchant's key with tiknix's secret — the failure that looks like Shopify
+     * rejecting the request rather than a mixed-up app.
+     */
+    public static function ownApp(?\RedBeanPHP\OODBBean $conn): array {
+        if (!$conn || !($conn->id ?? 0)) return [];
+        $id     = self::ownSecret($conn, 'appKey');
+        $secret = self::ownSecret($conn, 'appSecret');
+        if ($id === '' || $secret === '') return [];
+        return ['client_id' => $id, 'client_secret' => $secret];
+    }
+
     public static function ownSecret(?\RedBeanPHP\OODBBean $conn, string $field): string {
         $raw = (string) ($conn->$field ?? '');
         if ($raw === '') return '';
@@ -506,6 +526,20 @@ class ConnectionStore {
             // Only written when supplied: a refresh that returns a new access token
             // but no new refresh token (the common case) must not blank the one on
             // the row, or the connection dies at the next expiry.
+            // A merchant's OWN provider app (Shopify custom app: API key + secret), for
+            // stores authorised against their app rather than the shared tiknix one.
+            // Sealed with the same key as the tokens, because the secret mints tokens for
+            // that store just as surely as a refresh token does.
+            //
+            // Written only when supplied, for the same reason as refresh_token below: a
+            // later re-auth that does not resend them must not blank the pair and leave
+            // the connection unable to re-authorise against the app it belongs to.
+            foreach (['app_key' => 'appKey', 'app_secret' => 'appSecret'] as $in => $prop) {
+                if (array_key_exists($in, $payload)) {
+                    $conn->$prop = self::sealOrEmpty((string) $payload[$in], $key);
+                }
+            }
+
             if (array_key_exists('refresh_token', $payload)) {
                 $conn->refreshToken = self::sealOrEmpty((string) $payload['refresh_token'], $key);
             }

@@ -298,12 +298,38 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
                 </form>
 
               <?php else: // oauth / shopify ?>
-                <form method="get" action="/connections/connect/<?= htmlspecialchars($card['key']) ?>" class="row g-2 align-items-end mt-3">
+                <?php /* POST, not GET. The custom-app fields below carry an API SECRET, and a
+                         GET form puts it in the query string — the browser history, the access
+                         log, and the Referer sent to the next page. */ ?>
+                <form method="post" action="/connections/connect/<?= htmlspecialchars($card['key']) ?>" class="row g-2 align-items-end mt-3">
+                  <?= csrf_field() ?>
                   <input type="hidden" name="id" value="<?= $iid ?>">
                   <?php if ($card['connect_kind'] === 'shopify'): ?>
                     <div class="col-12">
                       <label class="form-label small mb-1">Store address</label>
                       <input type="text" name="shop" class="form-control form-control-sm" placeholder="your-store.myshopify.com" required>
+                    </div>
+                    <div class="col-12">
+                      <details>
+                        <summary class="small text-secondary" style="cursor:pointer">Use this store's own custom app</summary>
+                        <div class="row g-2 mt-1">
+                          <div class="col-12">
+                            <p class="small text-secondary mb-2">
+                              Leave blank to connect through the tiknix app, which is what most stores use.
+                              Fill these in to authorise against the merchant's own Shopify custom app instead —
+                              their scopes and their billing. Both fields are required together.
+                            </p>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label small mb-1">API key</label>
+                            <input type="text" name="app_key" class="form-control form-control-sm" autocomplete="off" placeholder="from their custom app">
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label small mb-1">API secret key</label>
+                            <input type="password" name="app_secret" class="form-control form-control-sm" autocomplete="new-password" placeholder="stored encrypted">
+                          </div>
+                        </div>
+                      </details>
                     </div>
                   <?php endif; ?>
                   <div class="col-7">

@@ -14,6 +14,57 @@ class ShopifyConnector extends AbstractConnector {
 
     public function key(): string { return 'shopify'; }
 
+    /**
+     * The Shopify app to authenticate AS, for this one store.
+     *
+     * A merchant may run a custom app of their own — their Partner/admin app, their
+     * scopes, their billing relationship — and want this store authorised against it
+     * rather than against tiknix's shared app. When they supply one, every leg of the
+     * dance has to use it: the authorize redirect, the HMAC check on the callback, and
+     * the token exchange. Mixing them is not a degraded mode, it is a broken one —
+     * tiknix's client_id with a merchant's secret fails HMAC, and the failure reads as
+     * "Shopify rejected us" rather than "you mixed two apps".
+     *
+     * So the pair is taken TOGETHER or not at all. A half-supplied pair is refused
+     * rather than quietly completed from the ini, because silently pairing a merchant's
+     * key with tiknix's secret is precisely the confusing failure above.
+     *
+     * Falling back to the shared app is a deliberate product choice made in the UI, not
+     * an invented default: most stores have no custom app and should not need one.
+     *
+     * @param array $ctx  the connect/callback context; ['app' => ['client_id','client_secret']]
+     */
+    private function appFor(array $ctx): array {
+        $global = $this->oauth();
+        $custom = is_array($ctx['app'] ?? null) ? $ctx['app'] : [];
+        $id     = trim((string) ($custom['client_id'] ?? ''));
+        $secret = trim((string) ($custom['client_secret'] ?? ''));
+
+        if ($id === '' && $secret === '') return $global;                  // shared app
+        if ($id === '' || $secret === '') {
+            throw new \Exception('A custom Shopify app needs BOTH an API key and an API secret.');
+        }
+        return ['client_id' => $id, 'client_secret' => $secret] + $global; // keeps api_version/scopes
+    }
+
+    /**
+     * Does this connector have an app to authenticate as, given the context?
+     *
+     * isConfigured() on the base class asks only about the server-wide ini, which is the
+     * right question when there is one shared app and the wrong one the moment a
+     * merchant brings their own: a store with a valid custom app was being refused with
+     * "Shopify is not configured on this server" because the shared credentials happened
+     * to be blank.
+     */
+    public function isConfiguredFor(array $ctx): bool {
+        try {
+            $a = $this->appFor($ctx);
+        } catch (\Throwable $e) {
+            return false;
+        }
+        return !empty($a['client_id']) && !empty($a['client_secret']);
+    }
+
     public function meta(): array {
         return [
             'label'     => 'Shopify',
@@ -52,7 +103,7 @@ class ShopifyConnector extends AbstractConnector {
     public function authorizeUrl(array $ctx): string {
         $shop = self::normalizeShopDomain((string)($ctx['shop'] ?? ''));
         if ($shop === '') throw new \Exception('A valid myshopify.com store domain is required.');
-        $o = $this->oauth();
+        $o = $this->appFor($ctx);   // the merchant's custom app, or the shared one
         $q = http_build_query([
             'client_id'       => (string)($o['client_id'] ?? ''),
             'scope'           => (string)($ctx['scopes'] ?? $this->defaultScopes()),
@@ -66,7 +117,10 @@ class ShopifyConnector extends AbstractConnector {
     public function exchangeCode(array $ctx): array {
         $params = $ctx['params'] ?? [];
         $claims = $ctx['claims'] ?? [];
-        $o      = $this->oauth();
+        // The SAME app the authorize leg used. The HMAC below is computed with this
+        // secret, so taking it from the ini here while the redirect went out under a
+        // merchant's client_id would fail verification every time.
+        $o      = $this->appFor($ctx);
         $secret = (string)($o['client_secret'] ?? '');
 
         // 1) Verify Shopify's own HMAC over the callback query (provider authenticity).

@@ -2,9 +2,15 @@
 /**
  * ShopifyConnector — Shopify OAuth.
  *
- * The access token returned here is a PERMANENT offline token (Shopify offline tokens do
- * not expire) and is always stored ENCRYPTED, sealed with the key of whichever install
- * holds it.
+ * Offline access tokens are NOT permanent. Shopify used to issue them without expiry and
+ * this file said so; they can now expire after 60 minutes and be renewed by exchanging a
+ * refresh_token. Both kinds are live at once — an app opts in — so the code must handle
+ * either and assume neither. An absent refresh_token means the old perpetual kind, which
+ * is why refreshToken() returns null there instead of treating it as a fault.
+ *
+ * The token is always stored ENCRYPTED, sealed with the key of whichever install holds it,
+ * and so is the refresh token: it mints access tokens, so it is a credential in its own
+ * right.
  *
  * Custody follows the APP, which is the whole point of appFor() on the base class. A store
  * connected through the shared platform app is held by the control plane and reached over

@@ -47,12 +47,29 @@ abstract class AbstractConnector implements ConnectorInterface {
      *
      * @param array $ctx ['app' => ['client_id' => …, 'client_secret' => …]]
      */
+    /**
+     * Does this connector ONLY ever use the customer's own app?
+     *
+     * True means there is no platform app to fall back to and none should be invented.
+     * Shopify is the case: a store is always reached through the merchant's own custom
+     * app, so a shared credential is not a convenience here — it is a second way of doing
+     * the one thing, and the failure it produces (a store bound to an app the merchant
+     * does not control) is worse than being asked for a key.
+     */
+    public function requiresOwnApp(): bool {
+        return false;
+    }
+
     protected function appFor(array $ctx): array {
         $global = $this->oauth();
         $custom = is_array($ctx['app'] ?? null) ? $ctx['app'] : [];
         $id     = trim((string) ($custom['client_id'] ?? ''));
         $secret = trim((string) ($custom['client_secret'] ?? ''));
 
+        if ($id === '' && $secret === '' && $this->requiresOwnApp()) {
+            throw new \Exception(ucfirst($this->key())
+                . ' connects through the merchant\'s own app — an API key and secret are required.');
+        }
         if ($id === '' && $secret === '') return $global;
         if ($id === '' || $secret === '') {
             throw new \Exception('A custom ' . ucfirst($this->key())

@@ -39,6 +39,17 @@ class ShopifyConnector extends AbstractConnector {
         return (string)($this->oauth()['api_version'] ?? '2024-10');
     }
 
+    /**
+     * A Shopify store is ALWAYS reached through the merchant's own custom app.
+     *
+     * There is no shared tiknix app in this flow and conf/shopify.ini is not a fallback:
+     * the merchant owns the app, the scopes, the billing and the callback on their own
+     * project's domain. Saying so here rather than leaving a silent fallback is the
+     * difference between "you need to paste a key" and a store quietly bound to an app
+     * the merchant cannot see, revoke, or refresh.
+     */
+    public function requiresOwnApp(): bool { return true; }
+
     /** Shopify scopes are lowercase words with underscores — nothing else is real. */
     protected function scopePattern(): string { return '/^[a-z_]+$/'; }
 

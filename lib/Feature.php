@@ -198,19 +198,41 @@ class Feature {
         } elseif ($row && $row->id) {
             Bean::trash($row);
         }
-        unset($_SESSION['member_features'][$memberId]); // bust the per-request cache
+        unset(self::$cache[$memberId]);   // this request only; nothing outlives it
     }
 
-    /** Stored value for member+flag, cached per member for the request/session. */
+    /**
+     * Every flag stored for a member, cached for THIS REQUEST only.
+     *
+     * @var array<int,array<string,string>>
+     */
+    private static array $cache = [];
+
+    /**
+     * Stored value for member+flag.
+     *
+     * The cache is a static, not $_SESSION, and that is the whole point. It used to live
+     * in the session while setEnabled() busted it with unset($_SESSION[...]) — which runs
+     * in the session of the ADMIN doing the granting, never in the session of the member
+     * being granted. So a member stayed on the feature set they had when they logged in:
+     * the grant was real, the database was right, every check against it returned true,
+     * and they still could not see the plugin. It cost a full investigation of the
+     * permission chain, the sidecar registry, the SSO secrets and the handoff before the
+     * stale copy turned out to be the only thing wrong.
+     *
+     * A per-request static is what the old comment already claimed this was, and it is
+     * correct for free: nothing survives the response, so there is no cross-session copy
+     * to invalidate. The cost is one indexed lookup per member per request.
+     */
     private static function stored(int $memberId, string $flag): ?string {
-        if (!isset($_SESSION['member_features'][$memberId])) {
+        if (!isset(self::$cache[$memberId])) {
             $cache = [];
             foreach (Bean::find('settings',
                 "member_id = ? AND setting_key LIKE 'feature.%'", [$memberId]) as $r) {
                 $cache[(string) $r->settingKey] = (string) $r->settingValue;
             }
-            $_SESSION['member_features'][$memberId] = $cache;
+            self::$cache[$memberId] = $cache;
         }
-        return $_SESSION['member_features'][$memberId][self::settingKey($flag)] ?? null;
+        return self::$cache[$memberId][self::settingKey($flag)] ?? null;
     }
 }

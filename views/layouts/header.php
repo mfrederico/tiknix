@@ -280,9 +280,11 @@ if ($__loggedIn) {
           /* Feature-gated like every other sidecar: offering Publish to someone without
              the flag would land them on a plugin they cannot launch.
 
-             If it is missing after granting the flag, the grant is real but the SESSION
-             cache is stale — Feature::stored() caches per member for the session, and
-             only Feature::setEnabled() busts it. Re-save the member (or re-login). */
+             This used to go missing after a grant: Feature::stored() cached the flags in
+             $_SESSION, and setEnabled() busted that copy in the GRANTING ADMIN's session
+             rather than the recipient's, so the member kept whatever they had at login.
+             The cache is a per-request static now — a grant lands on their next page
+             load, with no re-login and nothing to re-save. */
           if (\app\Feature::isEnabled('publisher', (int) (\Flight::getMember()->id ?? 0), $__level)): ?>
             <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm py-0 px-2" style="font-size:.72rem"
                title="Where and how this project goes live"><i class="bi bi-cloud-upload me-1"></i>Publish</a>

@@ -186,12 +186,22 @@ class PromptLog {
      * Reads on core's default connection — this is only ever called from core, where the
      * ORM is already pointed at the registry.
      */
-    public static function forMember(int $memberId, string $source = '', int $limit = 200): array {
+    /**
+     * @param string $instanceTag  Scope to ONE project ("<slug>.<app>"). Empty = every project.
+     *
+     * Scoping is the caller's choice rather than a default here, because this log genuinely
+     * has two readers: the prompts page, which is looking at the project you are working on
+     * and should not show another one's goals, and anything auditing a member's whole
+     * history. Silently applying either meaning to both is how the page ended up listing
+     * every project at once.
+     */
+    public static function forMember(int $memberId, string $source = '', int $limit = 200, string $instanceTag = ''): array {
         if ($memberId <= 0) return [];
-        return (array) self::withCore(function () use ($memberId, $source, $limit) {
+        return (array) self::withCore(function () use ($memberId, $source, $limit, $instanceTag) {
             $sql  = 'member_id = ?';
             $args = [$memberId];
             if ($source !== '' && isset(self::sources()[$source])) { $sql .= ' AND source = ?'; $args[] = $source; }
+            if ($instanceTag !== '') { $sql .= ' AND instance_tag = ?'; $args[] = $instanceTag; }
             $sql .= ' ORDER BY created_at DESC, id DESC LIMIT ' . max(1, min(1000, $limit));
             return array_values(Bean::find('promptlog', $sql, $args));
         }, []);
@@ -227,9 +237,10 @@ class PromptLog {
     }
 
     /** Per-source counts for the filter chips. */
-    public static function countsForMember(int $memberId): array {
+    /** Counts per source, scoped the same way as the list they label. */
+    public static function countsForMember(int $memberId, string $instanceTag = ''): array {
         $out = ['' => 0] + array_fill_keys(array_keys(self::sources()), 0);
-        foreach (self::forMember($memberId, '', 1000) as $row) {
+        foreach (self::forMember($memberId, '', 1000, $instanceTag) as $row) {
             $s = (string) $row->source;
             if (isset($out[$s])) $out[$s]++;
             $out['']++;

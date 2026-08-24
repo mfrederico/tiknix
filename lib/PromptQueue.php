@@ -47,6 +47,40 @@ class PromptQueue {
         }, false);
     }
 
+    /**
+     * What is waiting, for ONE member and optionally one project — oldest first, which is
+     * the order it will actually be retried in.
+     *
+     * Reads the same `queued_at IS NOT NULL` condition drain() does, deliberately: a queue
+     * page that decides for itself what "queued" means is one deploy away from showing a
+     * list nobody is working through.
+     *
+     * @return list<array{id:int,title:string,body:string,instance_tag:string,queued_at:string,attempts:int,auto_build:bool}>
+     */
+    public static function queued(int $memberId, string $instanceTag = ''): array {
+        if ($memberId <= 0) return [];
+        return (array) CoreDb::with(function () use ($memberId, $instanceTag) {
+            $sql  = 'queued_at IS NOT NULL AND member_id = ?';
+            $args = [$memberId];
+            if ($instanceTag !== '') { $sql .= ' AND instance_tag = ?'; $args[] = $instanceTag; }
+            $sql .= ' ORDER BY queued_at ASC';
+
+            $out = [];
+            foreach (Bean::find('promptlog', $sql, $args) as $r) {
+                $out[] = [
+                    'id'           => (int) $r->id,
+                    'title'        => (string) $r->title,
+                    'body'         => (string) $r->body,
+                    'instance_tag' => (string) $r->instanceTag,
+                    'queued_at'    => (string) $r->queuedAt,
+                    'attempts'     => (int) $r->queueAttempts,
+                    'auto_build'   => (bool) $r->autoBuild,
+                ];
+            }
+            return $out;
+        }, []);
+    }
+
     /** Stop retrying — the plan landed, it aged out, or it exhausted its attempts. */
     public static function dequeue(int $promptId): void {
         if ($promptId <= 0) return;

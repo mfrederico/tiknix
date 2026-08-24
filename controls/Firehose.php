@@ -187,20 +187,22 @@ class Firehose extends Control {
             return ['action' => 'skipped', 'reason' => 'no matching instance'];
         }
 
-        // Layer 2 — active-build guard: if an agent is already working this
-        // instance's repo, do NOT spawn a fix. Defer; the feed shows it and it
-        // can be launched once the instance goes idle.
-        if ($this->instanceHasActiveBuild($tag)) {
-            $err->status = 'deferred';
-            Bean::store($err);
-            return ['action' => 'deferred', 'reason' => 'instance has an active build'];
-        }
+        /* Layer 2 — active-build guard. It gates LAUNCHING a fix, not recording one.
+           An agent already working this repo must not have a second agent started
+           underneath it; a pending task is a note on a board and collides with nothing.
+           This used to return here without creating anything, so an error arriving while
+           a build happened to be running reached no board at all and waited for an idle
+           sweep that only runs when auto_triage is on — off everywhere by design. The
+           error was recorded, invisible, and forgotten.
+           It stayed theoretical only because the guard was counting core's task table and
+           always answered "idle". Fixing that made this reachable, so it is fixed too. */
+        $busy = $this->instanceHasActiveBuild($tag);
 
         // Auto-launch is per-instance opt-in (instance.auto_triage). When on, run
         // the fix through the existing headless plan orchestrator (worktree +
         // merge-back + auto-retry). When off, create a highlighted task the human
         // can Run. Layer 3 dedup already guarantees this fires once per signature.
-        if (filter_var($inst->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN)) {
+        if (!$busy && filter_var($inst->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN)) {
             $planId = $this->launchViaOrchestrator($err, $inst);
             if ($planId) {
                 $err->taskId = $planId;
@@ -222,7 +224,9 @@ class Firehose extends Control {
         $err->taskId = $task['id'];
         $err->status = 'triaged';
         Bean::store($err);
-        return ['action' => 'task_created', 'task_id' => $task['id']];
+        // 'busy' is reported so the ingest response still says why nothing was LAUNCHED,
+        // which is the part the guard actually decided. The task exists either way.
+        return ['action' => 'task_created', 'task_id' => $task['id'], 'busy' => $busy];
     }
 
     /**

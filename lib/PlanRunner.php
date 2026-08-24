@@ -66,7 +66,36 @@ class PlanRunner {
     public function goalFile(): string { return $this->abDir() . '/plan-goal.md'; }
 
     /** True while the planner tmux session is alive. */
-    public function running(): bool { return TmuxManager::exists($this->sessionName); }
+    public function running(): bool { return $this->activePlanner() !== null; }
+
+    /**
+     * Any planner working THIS PROJECT, whoever started it — or null.
+     *
+     * The lock has to be the project, not the member. The session name is
+     * "tiknix-{memberId}-plan-{slug}", but the planner's whole workspace —
+     * .aibuilder/plan.json, plan-request.md, planner.log — is per INSTANCE and shared by
+     * everyone with access to it. Checking only this member's session meant two people
+     * decomposing the same project both saw "nothing running": the second start then
+     * deleted the first's plan.json while their planner was still writing it, and the work
+     * did not fail, it simply never appeared.
+     *
+     * @return array{session:string,member_id:int,started:int}|null
+     */
+    public function activePlanner(): ?array {
+        foreach (TmuxManager::list('tiknix-') as $s) {
+            $name = is_array($s) ? (string) ($s['name'] ?? '') : (string) $s;
+            // tiknix-<memberId>-plan-<slug>. Anchored on the tail so a slug containing
+            // "-plan-" cannot make one project look like another.
+            if (!preg_match('/^tiknix-(\d+)-plan-(.+)$/', $name, $m)) continue;
+            if ($m[2] !== $this->slug) continue;
+            return [
+                'session'   => $name,
+                'member_id' => (int) $m[1],
+                'started'   => (int) @filemtime($this->logFile()) ?: 0,
+            ];
+        }
+        return null;
+    }
 
     /** True once the planner has produced a plan file for ingest. */
     /** True once the planner has produced a plan for ingest (any pending file). */
@@ -89,16 +118,61 @@ class PlanRunner {
         $this->supersedeIds = array_values(array_filter(array_map('intval', $supersedeIds)));
         $this->autoBuild    = $autoBuild;
         $this->promptId     = max(0, $promptId);
-        if ($this->running()) {
-            throw new \Exception('A planner is already running for this instance.');
-        }
         $ab = $this->abDir();
         if (!is_dir($ab) && !@mkdir($ab, 0775, true)) {
             throw new \Exception('Could not create .aibuilder dir.');
         }
-        // Fresh slate: drop a prior plan/log so status polling is unambiguous.
-        @unlink($this->planFile());
-        @unlink($this->logFile());
+
+        /* Take the start lock BEFORE deciding anything. running() is a tmux-session
+           existence check, so between asking and creating the session there was a window
+           in which a second request asked the same question, got the same answer, and both
+           proceeded — then both cleared the plan file below. Checking and acting are one
+           step now; the lock covers only the start, since the run itself is guarded by the
+           live session. */
+        $lockFile = $ab . '/planner.start.lock';
+        $lock = @fopen($lockFile, 'c');
+        if ($lock === false) throw new \Exception('Could not open the planner start lock.');
+        if (!flock($lock, LOCK_EX | LOCK_NB)) {
+            fclose($lock);
+            throw new \Exception('Another planner is starting for this project right now — try again in a moment.');
+        }
+
+        try {
+            $active = $this->activePlanner();
+            if ($active) {
+                // Name the holder. "Already running" beside a prompt marked "Never Ran"
+                // reads as a contradiction; both are true, and this says whose lock it is.
+                throw new \Exception(sprintf(
+                    'A planner is already running for %s (started by member %d) — try again when it finishes.',
+                    $this->slug, $active['member_id']
+                ));
+            }
+
+            /* A plan waiting to be reviewed is finished work, and this used to delete it.
+               The unlink ran before the session was even created, so a decompose that then
+               failed to start destroyed the previous plan for nothing. Refuse instead: the
+               plan is either ingested or discarded by a person, never by the next request. */
+            $waiting = PlanIngestor::pending($this->instanceDir);
+            if ($waiting) {
+                throw new \Exception(sprintf(
+                    'A plan for %s is already waiting to be reviewed — ingest or discard it before decomposing again.',
+                    $this->slug
+                ));
+            }
+
+            // Only the log is cleared, and only once nothing above objected. It is a
+            // transcript, not a result.
+            @unlink($this->logFile());
+            return $this->launch($goal, $ab, $lock);
+        } catch (\Throwable $e) {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            throw $e;
+        }
+    }
+
+    /** The half of start() that actually writes files and spawns tmux, under the lock. */
+    private function launch(string $goal, string $ab, $lock): string {
 
         file_put_contents($this->requestFile(), $this->buildPlanRequest($goal));
         file_put_contents($this->goalFile(), $goal);
@@ -110,7 +184,14 @@ class PlanRunner {
 
         TmuxManager::create($this->sessionName, $scriptFile, $this->instanceDir);
         usleep(400000);
-        if (!$this->running()) {
+
+        // The session is the lock from here on, so the start lock is released either way —
+        // holding it after a failed launch would block every retry.
+        $live = TmuxManager::exists($this->sessionName);
+        flock($lock, LOCK_UN);
+        fclose($lock);
+
+        if (!$live) {
             throw new \Exception('Planner session failed to start (see planner.log).');
         }
         return $this->sessionName;

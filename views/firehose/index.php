@@ -59,11 +59,28 @@ $badge = function (string $s): string {
                                 <td class="text-center"><span class="badge bg-light text-dark border"><?= (int)$e->hitCount ?></span></td>
                                 <td class="small text-nowrap"><?= htmlspecialchars((string)$e->lastSeenAt) ?></td>
                                 <td>
-                                    <?php if ($t): ?>
-                                        <a href="/sidecar/app/workbench" class="text-decoration-none">
+                                    <?php
+                                      /* Deep link to the actual task. target="_top" because this
+                                         is a link OUT of core's shell into the sidecar's own host —
+                                         without it the whole tiknix shell loads inside the frame.
+                                         Task ids are per-project autoincrements, so the id alone is
+                                         ambiguous; the project is what makes it resolvable, which is
+                                         why the slug is shown next to it. */
+                                      $wb = rtrim((string)(\app\Sidecar\Registry::get('workbench')['url'] ?? ''), '/');
+                                    ?>
+                                    <?php if ($t && $wb !== ''): ?>
+                                        <a href="<?= htmlspecialchars($wb) ?>/workbench/view?id=<?= (int)$t->id ?>"
+                                           target="_top" class="text-decoration-none"
+                                           title="task #<?= (int)$t->id ?> on <?= htmlspecialchars((string)$row['slug']) ?>">
                                             <i class="bi bi-wrench-adjustable"></i> task #<?= (int)$t->id ?>
                                             <span class="badge bg-<?= in_array($t->status, ['merged','completed','done']) ? 'success' : 'secondary' ?> ms-1"><?= htmlspecialchars((string)$t->status) ?></span>
                                         </a>
+                                    <?php elseif ((int)$e->taskId > 0): ?>
+                                        <?php /* Numbered but not found on that project's board — says so
+                                                 rather than rendering a link to nothing. */ ?>
+                                        <span class="text-muted small" title="task #<?= (int)$e->taskId ?> is not on <?= htmlspecialchars((string)$row['slug']) ?>'s board">
+                                            #<?= (int)$e->taskId ?> <em>not on board</em>
+                                        </span>
                                     <?php else: ?>
                                         <span class="text-muted small">—</span>
                                     <?php endif; ?>

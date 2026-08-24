@@ -42,10 +42,29 @@ class Firehose extends Control {
 
         $rows = Bean::find('detectederror',
             "ORDER BY CASE WHEN status = 'new' THEN 0 ELSE 1 END, last_seen_at DESC LIMIT 300");
+        /* The task is on the PROJECT's board, so it is read from there — the same file the
+           workbench sidecar opens. Reading core's table here showed a number for tasks that
+           no longer live on core and nothing at all for the ones that do. */
         $errors = [];
+        $boards = [];   // one handle per instance, not one per row
         foreach ($rows as $e) {
-            $task = $e->taskId ? Bean::load('workbenchtask', (int)$e->taskId) : null;
-            $errors[] = ['e' => $e, 'task' => ($task && $task->id) ? $task : null];
+            $task = null;
+            $slug = preg_replace('/\.[^.]+$/', '', (string)$e->instanceTag);
+            if ((int)$e->taskId > 0 && $slug !== '') {
+                if (!array_key_exists($slug, $boards)) {
+                    $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
+                    $boards[$slug] = ($inst && $inst->id) ? $this->instanceBoard($inst) : null;
+                }
+                if ($boards[$slug]) {
+                    try {
+                        $st = $boards[$slug]->prepare('SELECT id, status FROM workbenchtask WHERE id = ?');
+                        $st->execute([(int)$e->taskId]);
+                        $row = $st->fetch(\PDO::FETCH_ASSOC) ?: null;
+                        if ($row) $task = (object)['id' => (int)$row['id'], 'status' => (string)$row['status']];
+                    } catch (\Throwable $ex) { $task = null; }
+                }
+            }
+            $errors[] = ['e' => $e, 'task' => $task, 'slug' => $slug];
         }
 
         $this->viewData['title']  = 'Error Firehose';
@@ -193,43 +212,107 @@ class Firehose extends Control {
         }
 
         $task = $this->createTriageTask($err, $inst, $tag);
-        $err->taskId = (int)$task->id;
+        if (!$task) {
+            // Recorded, but nobody was told to fix it. Saying so beats a status of
+            // 'triaged' pointing at a task that was never created.
+            $err->status = 'untriaged';
+            Bean::store($err);
+            return ['action' => 'skipped', 'reason' => 'project has no task board yet'];
+        }
+        $err->taskId = $task['id'];
         $err->status = 'triaged';
         Bean::store($err);
-        return ['action' => 'task_created', 'task_id' => (int)$task->id];
+        return ['action' => 'task_created', 'task_id' => $task['id']];
     }
 
-    /** A standalone highlighted triage task (used when auto-launch is off/failed). */
-    private function createTriageTask($err, $inst, string $tag) {
+    /**
+     * The task board a project actually reads: its own data/workbench.db.
+     *
+     * Read-write PDO, or null when the project has no board yet (never built in) — which
+     * is a fact, not a fault, and the caller decides what to do about it.
+     */
+    private function instanceBoard($inst): ?\PDO {
+        $db = $inst->workbenchDb();
+        if (!is_file($db)) return null;
+        try {
+            $pdo = new \PDO('sqlite:' . $db);
+            $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $has = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='workbenchtask'")->fetchColumn();
+            return $has ? $pdo : null;
+        } catch (\Throwable $e) {
+            Flight::get('log')?->warning('Firehose: could not open a project task board', [
+                'db' => $db, 'err' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * A standalone highlighted triage task (used when auto-launch is off/failed).
+     *
+     * Written into the PROJECT's board, not core's. It used to dispense workbenchtask here,
+     * on the control plane — but the workbench sidecar reads each project's own
+     * data/workbench.db, so every fix task landed in a table that board never opens. The
+     * task existed, the firehose linked to it by number, and the number meant nothing on
+     * the page it sent you to.
+     *
+     * Column-aware because instance schemas have genuinely drifted — clones merge core at
+     * different times — so naming a column unconditionally fails on the older ones, and a
+     * failed insert here loses the only record that an error was triaged.
+     *
+     * @return array{id:int}|null  null when the project has no board to write to
+     */
+    private function createTriageTask($err, $inst, string $tag): ?array {
+        $pdo = $this->instanceBoard($inst);
+        if (!$pdo) {
+            Flight::get('log')?->warning('Firehose: project has no task board; error recorded but not triaged', [
+                'instance' => $tag, 'error' => (int)$err->id,
+            ]);
+            return null;
+        }
+
         $now  = date('Y-m-d H:i:s');
-        $task = Bean::dispense('workbenchtask');
-        $task->title           = 'Fix: ' . mb_substr((string)$err->message, 0, 120);
-        $task->description     = $this->triageBrief($err);
-        $task->taskType        = 'bug';
-        $task->priority        = 2;
-        $task->status          = 'pending';
-        $task->memberId        = (int)$inst->memberId;
-        $task->instanceId      = (int)$inst->id;
-        $task->instanceTag     = $tag;
-        $task->baseBranch      = '';               // resolves to instance/<slug> at run time
-        $task->authcontrolLevel= 1;
-        $task->source          = 'detected_error'; // powers the workbench highlight
-        $task->detectederrorId = (int)$err->id;
-        $task->auditCycle      = (int)(json_decode((string)$err->context, true)['audit_cycle'] ?? 0);
-        $task->createdAt       = $now;
-        $task->updatedAt       = $now;
-        Bean::store($task);
-        return $task;
+        $want = [
+            'title'            => 'Fix: ' . mb_substr((string)$err->message, 0, 120),
+            'description'      => $this->triageBrief($err),
+            'task_type'        => 'bug',
+            'priority'         => 2,
+            'status'           => 'pending',
+            'member_id'        => (int)$inst->memberId,
+            'instance_id'      => (int)$inst->id,
+            'instance_tag'     => $tag,
+            'base_branch'      => '',                // resolves to instance/<slug> at run time
+            'authcontrol_level'=> 1,
+            'source'           => 'detected_error',  // powers the workbench highlight
+            'detectederror_id' => (int)$err->id,
+            'audit_cycle'      => (int)(json_decode((string)$err->context, true)['audit_cycle'] ?? 0),
+            'created_at'       => $now,
+            'updated_at'       => $now,
+        ];
+        $have = array_column($pdo->query("SELECT name FROM pragma_table_info('workbenchtask')")->fetchAll(\PDO::FETCH_ASSOC), 'name');
+        $use  = array_intersect_key($want, array_flip($have));
+
+        $sql = 'INSERT INTO workbenchtask (' . implode(',', array_keys($use)) . ') VALUES ('
+             . implode(',', array_fill(0, count($use), '?')) . ')';
+        $pdo->prepare($sql)->execute(array_values($use));
+
+        return ['id' => (int)$pdo->lastInsertId()];
     }
 
     /** Layer 2: is an agent currently building/running against this instance? */
     private function instanceHasActiveBuild(string $tag): bool {
-        return (int)Bean::count(
-            'workbenchtask',
-            "instance_tag = ? AND status IN ('running', 'building')",
-            [$tag]
-        ) > 0;
+        /* The PROJECT's board. Counting core's table asked whether the control plane had
+           a running task for this tag — which it never does — so the guard that exists to
+           stop a fix colliding with an agent already on the repo always said "idle". */
+        $slug = preg_replace('/\.[^.]+$/', '', $tag);
+        $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
+        $pdo  = $inst && $inst->id ? $this->instanceBoard($inst) : null;
+        if (!$pdo) return false;
+        $st = $pdo->prepare("SELECT COUNT(*) FROM workbenchtask WHERE instance_tag = ? AND status IN ('running','building')");
+        $st->execute([$tag]);
+        return (int)$st->fetchColumn() > 0;
     }
+
 
     /** Markdown brief handed to the fix agent (and shown in the task view). */
     private function triageBrief($err): string {

@@ -163,16 +163,24 @@ class PlanRunner {
             // Only the log is cleared, and only once nothing above objected. It is a
             // transcript, not a result.
             @unlink($this->logFile());
-            return $this->launch($goal, $ab, $lock);
-        } catch (\Throwable $e) {
+            return $this->launch($goal, $ab);
+        } finally {
+            /* Exactly one release, on every path. This was a catch that released, plus a
+               release at the end of launch() — so a launch that failed closed the handle
+               and then threw into a catch that closed it again, and flock() on a closed
+               stream raised a TypeError that REPLACED the real error. The queue logged
+               "flock(): must be an open stream resource" and burned an attempt, with
+               nothing left saying the planner had failed to start. */
             flock($lock, LOCK_UN);
             fclose($lock);
-            throw $e;
         }
     }
 
-    /** The half of start() that actually writes files and spawns tmux, under the lock. */
-    private function launch(string $goal, string $ab, $lock): string {
+    /**
+     * The half of start() that writes files and spawns tmux. Does not touch the lock:
+     * start()'s finally owns it, and two owners is what broke this.
+     */
+    private function launch(string $goal, string $ab): string {
 
         file_put_contents($this->requestFile(), $this->buildPlanRequest($goal));
         file_put_contents($this->goalFile(), $goal);
@@ -185,13 +193,9 @@ class PlanRunner {
         TmuxManager::create($this->sessionName, $scriptFile, $this->instanceDir);
         usleep(400000);
 
-        // The session is the lock from here on, so the start lock is released either way —
-        // holding it after a failed launch would block every retry.
-        $live = TmuxManager::exists($this->sessionName);
-        flock($lock, LOCK_UN);
-        fclose($lock);
-
-        if (!$live) {
+        // The session is the lock from here on; start()'s finally releases the start lock
+        // whether this succeeds or throws.
+        if (!TmuxManager::exists($this->sessionName)) {
             throw new \Exception('Planner session failed to start (see planner.log).');
         }
         return $this->sessionName;

@@ -33,7 +33,45 @@ class Install extends Control {
     public static function isInstalled(): bool {
         $admin = Bean::findOne('member', 'level = 1 AND password != ? AND password != ?',
                             [self::DEFAULT_HASH, '']);
-        return (bool)($admin && $admin->id);
+        if ($admin && $admin->id) return true;
+
+        /* No root admin — but that is two very different situations, and answering "not
+           installed" to both is how mileage.tiknix.com lost its site.
+           Its member table was emptied by a RedBean table rebuild. isInstalled() then said
+           false, the app reopened this wizard, and the next person to arrive filled it in
+           and was created at level 1. They were an invited member editing their bio; the
+           site handed them root because it could not tell a wiped database from a new one.
+           An established install has history that the member table alone does not hold. If
+           any of it is here, this is a disaster to be shouted about, not a setup to run. */
+        return self::looksEstablished();
+    }
+
+    /**
+     * Has this database been lived in? Checked WITHOUT the member table, which is exactly
+     * the thing that may have been destroyed.
+     *
+     * Deliberately generous: any sign of prior life counts. A false positive locks an
+     * operator out of a wizard they can still reach by fixing the database; a false
+     * negative hands root to a stranger.
+     */
+    private static function looksEstablished(): bool {
+        foreach (['instance', 'authcontrol', 'settings', 'team', 'apikey', 'contact'] as $t) {
+            try {
+                if (!in_array($t, Bean::inspect(), true)) continue;
+                if ((int) Bean::count($t) > 0) {
+                    Flight::get('log')?->critical(
+                        'Install wizard refused: this database has history but no root admin. '
+                      . 'The member table is missing or empty — restore it rather than reinstalling.',
+                        ['evidence' => $t . ' has rows', 'members' => (int) Bean::count('member')]
+                    );
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                // A table that will not answer is not evidence either way; keep looking.
+                continue;
+            }
+        }
+        return false;
     }
 
     /** GET /install — the setup wizard (only while not installed). */

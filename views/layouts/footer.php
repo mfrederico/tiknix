@@ -2,10 +2,12 @@
       <footer class="d-flex justify-content-between flex-wrap gap-2 pt-4 mt-4 small text-secondary"
               style="border-top:1px solid var(--bs-border-color)">
         <span>&copy; <?= date('Y') ?> <?= htmlspecialchars($site_name ?? 'Tiknix') ?></span>
-        <span>Built with <i class="bi bi-heart-fill text-danger"></i> using
-          <a href="https://flightphp.com" class="link-secondary text-decoration-none" target="_blank" rel="noopener">Flight</a> &amp;
-          <a href="https://redbeanphp.com" class="link-secondary text-decoration-none" target="_blank" rel="noopener">RedBean</a>
-        </span>
+          <?php /* The credit every generated app carries. It named the frameworks underneath
+                   rather than the thing the customer actually built with — and it is on every
+                   page of every instance, so it is the platform's most-seen sentence. */ ?>
+          <span>Built with <i class="bi bi-heart-fill text-danger" aria-hidden="true"></i><span class="visually-hidden">love</span> using
+            <a href="https://tiknix.com" class="link-secondary text-decoration-none" target="_blank" rel="noopener">tiknix</a>
+          </span>
       </footer>
     </div><!-- /.ui-content -->
   </div><!-- /.ui-main -->

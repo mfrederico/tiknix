@@ -95,8 +95,42 @@ async function fhResolve(id, status, btn) {
         fd.append('_csrf_token', '<?= csrf_token() ?>');
         const r = await fetch('/firehose/resolve', { method: 'POST', body: fd, headers: { 'X-CSRF-TOKEN': '<?= csrf_token() ?>' } });
         const j = await r.json();
-        if (j && j.success) { location.reload(); }
+        if (j && j.success) { fhApply(id, status); }
         else { alert('Error: ' + (j && j.message || 'failed')); btn.disabled = false; }
     } catch (e) { alert('Error: ' + e.message); btn.disabled = false; }
+}
+
+/* Show the change on the row instead of reloading.
+   The write always worked; location.reload() just rebuilt an identical-looking page —
+   same row, same position, a badge most of the way across the table — so resolving read
+   as "nothing happened" and people clicked it again. Updating in place, and saying so,
+   is the difference between a silent success and a visible one. */
+function fhApply(id, status) {
+    const tr = document.querySelector('tr[data-id="' + id + '"]');
+    if (!tr) { location.reload(); return; }
+
+    const colour = { resolved: 'success', ignored: 'secondary', new: 'warning' }[status] || 'secondary';
+    const cell = tr.querySelector('td:first-child');
+    if (cell) cell.innerHTML = '<span class="badge bg-' + colour + '">' + status + '</span>';
+    tr.className = status === 'new' ? 'table-warning' : '';
+
+    // The actions have to match the new state, or Resolve still offers to resolve
+    // something already resolved.
+    const actions = tr.querySelector('td:last-child');
+    if (actions) {
+        actions.innerHTML = (status === 'resolved' || status === 'ignored')
+            ? '<button class="btn btn-sm btn-outline-warning" onclick="fhResolve(' + id + ',\'new\',this)">'
+              + '<i class="bi bi-arrow-counterclockwise"></i> Reopen</button>'
+            : '<button class="btn btn-sm btn-outline-success" onclick="fhResolve(' + id + ',\'resolved\',this)">'
+              + '<i class="bi bi-check2"></i> Resolve</button> '
+              + '<button class="btn btn-sm btn-outline-secondary" onclick="fhResolve(' + id + ',\'ignored\',this)">'
+              + '<i class="bi bi-eye-slash"></i> Ignore</button>';
+    }
+
+    // A brief highlight, so the eye is drawn to the row that changed rather than
+    // hunting for what moved.
+    tr.style.transition = 'background-color .25s';
+    tr.style.backgroundColor = 'rgba(25,135,84,.18)';
+    setTimeout(function () { tr.style.backgroundColor = ''; }, 900);
 }
 </script>

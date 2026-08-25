@@ -1,8 +1,31 @@
 <?php
 /**
- * TaskAccessControl - Ownership & Permission Service
+ * TaskAccessControl — Ownership & Permission Service
  *
- * Handles access control for workbench tasks and teams.
+ * TWO DIFFERENT QUESTIONS LIVE IN THIS FILE, and only one of them is still core's.
+ *
+ *   TEAMS (isTeamMember, getMemberTeams, getTeamRole, isTeamOwner/Admin, canManage*,
+ *   canInviteToTeam, canDeleteTeam) — CORE'S, and the only implementation anywhere. Teams
+ *   live in core's database. The workbench sidecar answers team questions by calling these
+ *   through CoreDb::with(), because Bean:: on a sidecar's ambient connection reaches the
+ *   instance's own workbench.db, which has no team table. It previously stubbed them to []
+ *   and false instead, which emptied the board's team filter and made assigning a task to
+ *   a team fail for everyone, members included.
+ *
+ *   TASKS (getVisibleTasks, getTaskCounts, canView/canEdit/canRun/canDelete/canComment,
+ *   getInstanceTags, *InstanceIds) — a per-TASK model, keyed on the task row's member_id
+ *   and team_id. It made sense when every task lived in one core table. Tasks are now
+ *   per-project files (data/workbench.db), so the sidecar answers this question completely
+ *   differently in WorkbenchAccess: the database file IS the boundary, and reaching the
+ *   project is what grants access to its tasks.
+ *
+ * Nothing in core calls the task half any more. It is kept because two pre-sidecar apps —
+ * unlockmylife and shipcannon — still run their own controls/Workbench.php against it. It
+ * is legacy, not shared: do NOT add callers, and do not assume it agrees with
+ * WorkbenchAccess, because the two answer "can this member see this task" by different
+ * rules. That ambiguity cost real time: the same bug was fixed here first and changed
+ * nothing on screen, because the board never calls this class.
+ *
  * Enforces the ownership model:
  * - Personal tasks (team_id = null): only visible/editable by owner
  * - Team tasks (team_id set): visible/editable by team members based on role

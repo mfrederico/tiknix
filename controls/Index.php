@@ -10,6 +10,18 @@ use \Flight as Flight;
 use \app\Bean;
 
 class Index extends BaseControls\Control {
+
+    /**
+     * The hidden field bots fill in and people never see.
+     *
+     * Named like something worth filling. Calling it "honeypot" would tell the one bot
+     * that reads field names to skip it, and the ones that don't read names were never
+     * going to be fooled by the label anyway.
+     */
+    private const HONEYPOT_FIELD = 'company_website';
+
+    /** Faster than this and nobody read the form, let alone typed into it. */
+    private const MIN_FILL_SECONDS = 3;
     
     /**
      * Home page
@@ -26,6 +38,12 @@ class Index extends BaseControls\Control {
         // site only. Provisioned instances are clones of this app, so gate those
         // surfaces off on any non-flagship host — an instance shows just the plain
         // "coming soon" page, with no confusion about which is the real Tiknix.
+        /* When the form was put in front of someone, so dolead() can tell a person typing
+           from a script posting. Session rather than a hidden field: a value in the form is
+           just another thing for the bot to replay, and this needs to be something it
+           cannot see or set. */
+        if (session_status() === PHP_SESSION_ACTIVE) $_SESSION['lead_form_shown'] = time();
+
         $flagship = self::isFlagship();
         $this->render('index/coming-soon', [
             'title' => 'Coming Soon',
@@ -90,6 +108,25 @@ class Index extends BaseControls\Control {
         $lastName  = trim($this->sanitize($this->getParam('last_name')));
         $email     = trim($this->sanitize($this->getParam('email'), 'email'));
 
+        /* Bot signals. CSRF cannot help here — a bot loads the page, takes a valid token
+           and posts it, which is exactly what the real traffic looked like: real harvested
+           addresses, generated names, one submission an hour around the clock to stay under
+           any rate limit.
+           Both checks are things a person cannot trip by accident. A hidden field a browser
+           never shows and a human never fills; and a form completed faster than anyone can
+           read it. Neither guesses at the CONTENT — no scoring of whether a name looks
+           foreign enough to be fake, which is a filter that eventually rejects a real
+           person and never tells them why. */
+        $spam = [];
+        if (trim((string) $this->getParam(self::HONEYPOT_FIELD, '')) !== '') {
+            $spam[] = 'honeypot';
+        }
+        $shown = (int) ($_SESSION['lead_form_shown'] ?? 0);
+        if ($shown > 0 && (time() - $shown) < self::MIN_FILL_SECONDS) {
+            $spam[] = 'submitted in ' . (time() - $shown) . 's';
+        }
+        unset($_SESSION['lead_form_shown']);   // one submission per render
+
         // Basic validation
         if ($firstName === '' || $lastName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $this->flash('error', 'Please enter your name and a valid email address.');
@@ -103,7 +140,24 @@ class Index extends BaseControls\Control {
             $lead->lastName  = $lastName;
             $lead->email     = $email;
             $lead->createdAt = date('Y-m-d H:i:s');
+            /* Recorded, not refused. A bot told "rejected" tries again differently until
+               something works; one told "thank you" stops thinking about you. Marking it
+               also keeps the evidence — a filter that silently deletes cannot be checked,
+               and the first question about any spam filter is what it caught by mistake. */
+            $lead->status     = $spam ? 'spam' : 'new';
+            $lead->spamReason = $spam ? implode(', ', $spam) : '';
+            // Stored because there was nothing to look at: no IP, no agent, no way to tell
+            // one source from many. Whatever comes next needs this to be measurable.
+            $lead->ipAddress = mb_substr((string) (Flight::request()->ip ?? ''), 0, 45);
+            $lead->userAgent = mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
             Bean::store($lead);
+
+            if ($spam) {
+                Flight::get('log')->info('Lead flagged as spam', [
+                    'email' => $email, 'reason' => implode(', ', $spam),
+                    'ip' => (string) $lead->ipAddress,
+                ]);
+            }
         } catch (\Throwable $e) {
             Flight::get('log')->error('Lead capture error: ' . $e->getMessage());
             $this->flash('error', 'Sorry, something went wrong. Please try again.');

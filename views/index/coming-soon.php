@@ -124,6 +124,10 @@
         form { margin-top: 0.5rem; }
         .field-row { display: flex; gap: 0.75rem; margin-bottom: 0.75rem; }
         .field-row input { flex: 1; }
+        /* Honeypot. Moved off-screen rather than display:none — some form-fillers skip
+           anything with display:none or visibility:hidden, and the point is that it looks
+           perfectly fillable to a machine while never occupying space for a person. */
+        .hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
         input {
             width: 100%;
             padding: 0.85rem 1rem;
@@ -281,6 +285,16 @@
                 <h2>Be the first to know when we launch</h2>
                 <form method="post" action="/index/dolead">
                     <?= csrf_field() ?>
+                    <?php /* Hidden from people, visible to form-fillers. NOT type="hidden" —
+                             bots skip those and browsers still submit them; this has to look
+                             like a field worth completing while never being shown or focused.
+                             aria-hidden and tabindex keep it out of screen readers and tab
+                             order, so it is invisible to assistive tech as well as to sight. */ ?>
+                    <div class="hp-field" aria-hidden="true">
+                        <label for="company_website">Company website</label>
+                        <input type="text" id="company_website" name="company_website"
+                               tabindex="-1" autocomplete="off">
+                    </div>
                     <div class="field-row">
                         <input type="text" name="first_name" placeholder="First name" required maxlength="100">
                         <input type="text" name="last_name" placeholder="Last name" required maxlength="100">

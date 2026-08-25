@@ -20,6 +20,18 @@ namespace app;
 class TaskAccessControl {
 
     /**
+     * Board tabs that cover more than one stored status.
+     *
+     * "Running" is what a person calls a task the agent is holding, whether the row says
+     * running or queued — which is why the badge already counted both. The filter did not,
+     * so the tab read "Running 1" and opened an empty list. Anything absent here filters on
+     * itself.
+     */
+    public const STATUS_BUCKETS = [
+        'running' => ['running', 'queued'],
+    ];
+
+    /**
      * Check if member can view a task
      *
      * @param int $memberId The member attempting access
@@ -324,10 +336,16 @@ class TaskAccessControl {
         }
         $conditions[] = implode(' OR ', array_map(fn($c) => "($c)", $vis));
 
-        // Apply filters
+        /* Apply filters. A tab is a BUCKET, not always a single stored status: the board's
+           "Running" badge counts running + queued, because from the outside both mean the
+           agent has the task. Filtering on the literal string alone made the badge say 1
+           and the list show nothing — the count and the filter were two different ideas of
+           the same word, and only the count was right.
+           Expanded here, next to the query, so the two cannot drift again. */
         if (!empty($filters['status'])) {
-            $conditions[] = "status = ?";
-            $params[] = $filters['status'];
+            $wanted = self::STATUS_BUCKETS[$filters['status']] ?? [$filters['status']];
+            $conditions[] = 'status IN (' . implode(',', array_fill(0, count($wanted), '?')) . ')';
+            foreach ($wanted as $w) $params[] = $w;
         }
 
         if (!empty($filters['task_type'])) {

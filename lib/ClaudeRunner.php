@@ -435,7 +435,7 @@ BASH;
         // it landed, and then it went.
         if (!$this->pasteUntilLanded($prompt)) {
             if (!$this->exists()) return false;
-            Flight::get('log')->error('Prompt never reached the agent', [
+            \Flight::get('log')->error('Prompt never reached the agent', [
                 'session' => $this->sessionName, 'task' => $this->taskId,
                 'attempts' => self::PROMPT_ATTEMPTS,
             ]);
@@ -444,7 +444,13 @@ BASH;
 
         if ($this->submitUntilStarted()) return true;
 
-        Flight::get('log')->error('Prompt landed but the agent never started', [
+        /* \Flight, not Flight. This file is in `namespace app;` and imports only Exception,
+           so a bare Flight:: resolves to app\Flight and fatals. Both of these sit on the
+           FAILURE path, so they never ran until a prompt genuinely failed to land — and
+           then the error logger crashed while logging the error, turning a recoverable
+           "the agent did not start" into a fatal that returned an HTML error page to a
+           fetch() expecting JSON. Line 127 had it right all along. */
+        \Flight::get('log')->error('Prompt landed but the agent never started', [
             'session' => $this->sessionName, 'task' => $this->taskId,
             'attempts' => self::SUBMIT_ATTEMPTS,
         ]);

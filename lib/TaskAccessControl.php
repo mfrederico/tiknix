@@ -19,12 +19,19 @@
  *   differently in WorkbenchAccess: the database file IS the boundary, and reaching the
  *   project is what grants access to its tasks.
  *
- * Nothing in core calls the task half any more. It is kept because two pre-sidecar apps —
- * unlockmylife and shipcannon — still run their own controls/Workbench.php against it. It
- * is legacy, not shared: do NOT add callers, and do not assume it agrees with
- * WorkbenchAccess, because the two answer "can this member see this task" by different
- * rules. That ambiguity cost real time: the same bug was fixed here first and changed
- * nothing on screen, because the board never calls this class.
+ * The task half is LIVE on core: mcptools/BaseTool (mayUseTask, visibleTasks) and
+ * scripts/instance-oracle both use it. It is not legacy and not duplication — it is the
+ * CORE-SIDE answer, and BaseTool::mayUseTask() already explains why a project cannot use
+ * it: task rows carry the CONTROL PLANE's member id, so asking this class about a task
+ * read from a project's own workbench.db compares an id from one database against a member
+ * table in another. That is not strict, it is meaningless, and it denies every task
+ * whichever way it is pointed.
+ *
+ * So the two classes are a BOUNDARY, not a duplication, and both are correct on their own
+ * side. What was missing was anything saying so — which is why the same bug was once fixed
+ * here first and changed nothing on screen, because the board never calls this class. When
+ * touching task visibility, decide first WHICH DATABASE the task came from; that answers
+ * which class you want.
  *
  * Enforces the ownership model:
  * - Personal tasks (team_id = null): only visible/editable by owner

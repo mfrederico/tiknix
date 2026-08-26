@@ -242,23 +242,28 @@ class Bootstrap {
             
             // Set freeze mode based on environment
             // DB_FREEZE env (true/false) overrides; otherwise freeze in production.
-            /* FROZEN BY DEFAULT. This used to freeze only in production, which meant never:
-               every environment here is "development" and DB_FREEZE is unset, so the guard
-               never once engaged. Fluid mode then treated any misspelled bean property as
-               schema to build — that is where `authcontrol` got ghost `controller` and
-               `operation` columns, NULL in all 171 rows, turning a wrong query into a
-               merely-empty one.
+            /* FLUID by default. Freezing was tried here and REVERTED — the note is the
+               point, so nobody tries it again without knowing the cost.
 
-               Schema growth still works: WorkspaceSchemaBuilder::build() thaws for the
-               duration of the seeds and restores the previous state afterwards, so
-               `clitool --build` behaves exactly as before. What no longer works is a
-               request inventing a column, which was never intended and never announced.
+               The goal was sound: fluid mode treats a misspelled bean property as schema to
+               build, which is how `authcontrol` grew ghost `controller`/`operation` columns
+               that were NULL in all 171 rows and turned a wrong query into a merely-empty
+               one. Freezing stops that.
 
-               DB_FREEZE=false still forces fluid for anyone who needs the old behaviour. */
+               It also stops features that create their tables LAZILY, and this codebase has
+               them: `threadmember` (Communications) has no seed anywhere — the table is
+               built by fluid mode on first use. Freezing turned that into a live
+               `no such table: threadmember` on an instance within minutes.
+
+               So the protection here is the audit writer below, not freezing: every
+               automatic schema change is logged with its call site, which makes a ghost
+               column findable without breaking lazy schema creation. Freezing only becomes
+               an option once every table has a seed; until then DB_FREEZE=true is available
+               per-environment for anyone who has verified their instance can take it. */
             $envFreeze = getenv('DB_FREEZE');
             $freeze    = ($envFreeze !== false)
                 ? filter_var($envFreeze, FILTER_VALIDATE_BOOLEAN)
-                : true;
+                : false;
             R::freeze($freeze);
 
             /* Fluid mode creates a column for any unknown bean property, silently — right

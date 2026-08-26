@@ -115,6 +115,36 @@ class AgentState {
 
     /** Is this member signed in for this engine (after migration would have run)? */
     public static function signedIn(int $memberId, string $engine, string $instanceDir): bool {
+        /* KEY-AUTHENTICATED ENGINES ANSWER A DIFFERENT QUESTION.
+         *
+         * Everything below looks for .credentials.json, which is an OAuth artifact. A
+         * provider that authenticates by API key never writes one, so this returned false
+         * for z.ai no matter how correctly it was set up — the board refused a decompose
+         * with "this project has not signed in to Claude" while the terminal was happily
+         * running on that very engine.
+         *
+         * For those engines, "signed in" means a key is reachable: the member's own key
+         * (their setting, the authoritative record), the token file the builder writes into
+         * the state dir the jail binds, or the operator's environment variable. Any one of
+         * the three is what jail-run.sh will find, so any one of the three is a yes.
+         */
+        $envVar = EngineRegistry::authTokenEnv($engine);
+        if ($envVar !== '') {
+            if ($memberId > 0) {
+                // Member settings live in CORE's database; a sidecar's default connection
+                // is the instance's own, so ask core directly. A failure here is "cannot
+                // tell", which must not read as "signed in" — fall through to the files.
+                $key = (string) CoreDb::with(
+                    fn() => MemberEnginePrefs::token($memberId, $engine),
+                    ''
+                );
+                if (trim($key) !== '') return true;
+                if (is_file(self::memberDir($memberId, $engine) . '/auth-token')) return true;
+            }
+            if (is_file(self::projectDir($instanceDir, $engine) . '/auth-token')) return true;
+            return trim((string) getenv($envVar)) !== '';
+        }
+
         if ($memberId > 0 && self::credentialsUsable(self::memberDir($memberId, $engine) . '/.credentials.json', $engine)) return true;
         if (self::credentialsUsable(self::projectDir($instanceDir, $engine) . '/.credentials.json', $engine)) return true;
         // Not signed in HERE, but adoptable from another of their projects — which

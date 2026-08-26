@@ -314,5 +314,13 @@ class AuditReporter {
     }
 
     private static function s($v): string { return trim((string)$v); }
-    private static function h($v): string { return htmlspecialchars((string)$v, ENT_QUOTES); }
+    /**
+     * Delegates to the global h() rather than escaping again here.
+     *
+     * This was its own htmlspecialchars() call, and it differed in a way that mattered: it
+     * passed no charset, so it inherited default_charset instead of pinning UTF-8. That is
+     * the mismatch that turns accented characters and emoji in an audit report into
+     * mojibake or blanks. Kept as a method so the nine call sites stay as they are.
+     */
+    private static function h($v): string { return h($v); }
 }

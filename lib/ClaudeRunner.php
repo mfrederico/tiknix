@@ -65,7 +65,19 @@ class ClaudeRunner {
            .aibuilder/engine and then the conf default. */
         try {
             $row = \app\Bean::load('workbenchtask', $taskId);
-            if ($row && $row->id) $this->setEngine((string) ($row->engine ?? ''));
+            if ($row && $row->id) {
+                $this->setEngine((string) ($row->engine ?? ''));
+                /* The model travels with the engine because they were chosen together, as
+                   one pair. Applied only when the engine came from the same row: a model
+                   without its engine is how you end up asking Anthropic for glm-5.3.
+                   A caller that has already set an override wins — conflict resolution
+                   picks a decorrelated tier deliberately (§5) and must not be undone by
+                   whatever the task was created with. */
+                $model = trim((string) ($row->model ?? ''));
+                if ($model !== '' && $this->engine !== null && $this->modelOverride === null) {
+                    $this->setModelOverride($model);
+                }
+            }
         } catch (\Throwable $e) {
             // No task table here (a bare workspace, a test harness). Not an error: the
             // instance default is a perfectly good answer.

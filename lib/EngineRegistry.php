@@ -106,6 +106,65 @@ class EngineRegistry {
         return $out;
     }
 
+    /**
+     * The pickable ENGINE+MODEL pairs, as one flat list.
+     *
+     * A person choosing "what should build this" is making one decision, not two. Offering
+     * an engine list and a model list separately lets someone pick engine=zai with
+     * model=opus — a combination that is syntactically fine, means nothing to the provider,
+     * and fails at run time as an unhelpful API error. The pair is the unit.
+     *
+     * Built from each engine's declared tiers rather than a hardcoded catalogue, so a new
+     * [engine.*] block appears here with no code change — which is the whole reason the
+     * registry reads from ini. Deduplicated by model, because an engine that runs the same
+     * model at several tiers (z.ai serves glm-5.3 for both opus and sonnet) should not
+     * offer it twice.
+     *
+     * Only AVAILABLE engines. An engine with no credential in the environment is registered
+     * and documented but must not be selectable — see [engine.zai] available.
+     *
+     * @return list<array{value:string,engine:string,model:string,label:string}>
+     */
+    public static function runMenu(): array {
+        $out = [];
+        foreach (self::all() as $name => $cfg) {
+            if (!self::available($name)) continue;
+            $seen = [];
+            // Order matters: the heavier tier first, because that is what someone reaching
+            // for a specific model usually wants named first.
+            foreach (['planner_model', 'worker_model', 'haiku_model'] as $tier) {
+                $model = trim((string) ($cfg[$tier] ?? ''));
+                if ($model === '' || isset($seen[$model])) continue;
+                $seen[$model] = true;
+                $out[] = [
+                    'value'  => $name . ':' . $model,
+                    'engine' => $name,
+                    'model'  => $model,
+                    'label'  => self::label($name) . ' — ' . $model,
+                ];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Split an "engine:model" choice back into its parts, or null if it is not one we offer.
+     *
+     * Validated against runMenu() rather than parsed, because this arrives from a form: an
+     * engine name becomes a shell assignment in jail-run.sh and a model becomes a --model
+     * flag, and neither should accept whatever was posted.
+     *
+     * @return array{engine:string,model:string}|null
+     */
+    public static function parseRunChoice(?string $value): ?array {
+        $value = trim((string) $value);
+        if ($value === '') return null;
+        foreach (self::runMenu() as $row) {
+            if ($row['value'] === $value) return ['engine' => $row['engine'], 'model' => $row['model']];
+        }
+        return null;
+    }
+
     /** True when $name is a registered engine. */
     public static function isValid(?string $name): bool {
         return $name !== null && $name !== '' && isset(self::all()[$name]);

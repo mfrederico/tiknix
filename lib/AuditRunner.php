@@ -124,7 +124,7 @@ class AuditRunner {
         // from the worker model). The auditor is instance-level (no per-task engine),
         // so resolve the default engine's auditor tier, letting the member who owns the
         // run override it. Default sonnet: the QA work is procedural browser driving.
-        $model = MemberEnginePrefs::model($this->memberId, EngineRegistry::defaultEngine(), 'auditor', 'sonnet');
+        $model = MemberEnginePrefs::model($this->memberId, EngineRegistry::defaultEngine(), 'auditor');
 
         $jail = $this->jailFor();
         if ($jail !== '') {

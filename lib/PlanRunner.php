@@ -239,7 +239,7 @@ class PlanRunner {
         $engine = EngineRegistry::isValid($this->engine) ? $this->engine : EngineRegistry::defaultEngine();
         // The member who triggered the decompose may override the planner (decomp) model
         // in their settings; absent an override this is the engine's registry planner tier.
-        $model  = MemberEnginePrefs::model($this->memberId, $engine, 'planner', 'opus');
+        $model  = MemberEnginePrefs::model($this->memberId, $engine, 'planner');
 
         $jail = $this->jailFor();
         if ($jail !== '') {
@@ -247,7 +247,14 @@ class PlanRunner {
             //   claude --permission-mode bypassPermissions <our args>
             // (see capricorn/bin/jail-run.sh:152), so we only add -p + model —
             // permissions are already bypassed and creds are the instance's own.
-            $runBlock = escapeshellarg($jail) . ' ' . escapeshellarg($ws)
+            //
+            // ENGINE decides which provider the jail points the CLI at, and it MUST be sent
+            // alongside --model: the model above comes from this engine's registry tier, so
+            // without it the jail ran on the default provider and handed it another
+            // provider's model id. ClaudeRunner already did this; the planner did not, which
+            // made "decompose on z.ai" a claude run asking Anthropic for glm-5.3.
+            $enginePrefix = 'ENGINE=' . escapeshellarg($engine) . ' ';
+            $runBlock = $enginePrefix . escapeshellarg($jail) . ' ' . escapeshellarg($ws)
                       . ' -- -p ' . escapeshellarg($shortPrompt) . ' --model ' . escapeshellarg($model);
         } else {
             $claude = 'claude -p ' . escapeshellarg($shortPrompt)
@@ -282,8 +289,12 @@ class PlanRunner {
         // plan to THAT db, not core's. INERT for core's own /workbench (env unset).
         // Credentials follow the PERSON, not the project (app\AgentState). jail-run.sh
         // binds whatever this names as the agent's ~/.claude.
+        // $engine, not $this->engine: the run above normalizes an unset/invalid engine to the
+        // registry default, and the credential store must be the one the CLI will actually
+        // use. Resolving them from different values binds a store for one provider while the
+        // agent talks to another — a login that appears to succeed and never takes effect.
         $agentStateArg = escapeshellarg(
-            AgentState::resolve($this->memberId, $this->engine, $this->instanceDir)
+            AgentState::resolve($this->memberId, $engine, $this->instanceDir)
         );
         $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')

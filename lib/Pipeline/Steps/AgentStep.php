@@ -36,7 +36,7 @@ class AgentStep implements StepInterface {
             return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => 'EngineRegistry unavailable', 'exit' => 1];
         }
         if ($engine === '' || !EngineRegistry::isValid($engine)) $engine = EngineRegistry::defaultEngine();
-        $model = (string) ($config['model'] ?? '') ?: EngineRegistry::model($engine, 'worker', 'sonnet');
+        $model = (string) ($config['model'] ?? '') ?: EngineRegistry::model($engine, 'worker');
 
         // Build the headless agent command; engines without a proven headless launcher
         // fall back to claude (best-effort), matching the AI Builder's own posture.

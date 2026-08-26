@@ -186,10 +186,30 @@ class EngineRegistry {
     }
 
     /** Resolve a model tier (planner|worker|auditor) for an engine. */
-    public static function model(string $engine, string $tier, string $fallback = 'sonnet'): string {
-        $e = self::all()[$engine] ?? self::all()['claude'] ?? [];
-        $m = (string)($e[$tier . '_model'] ?? '');
-        return $m !== '' ? $m : $fallback;
+    /**
+     * The model an engine uses for a tier. RAISES when it declares none.
+     *
+     * This used to fall back to 'sonnet', which is an ANTHROPIC id: ask a provider that has
+     * never heard of it and you get an auth-shaped or model-not-found error from somewhere
+     * deep in a build, with nothing pointing at the config line that was missing. qwen had
+     * no resolver_model for exactly this reason and nobody noticed.
+     *
+     * A tier with no model is a configuration error, so it reads as one. Every registered
+     * engine declares all four tiers; adding a new one means declaring them too.
+     */
+    public static function model(string $engine, string $tier): string {
+        $e = self::all()[$engine] ?? null;
+        if ($e === null) {
+            throw new \RuntimeException("EngineRegistry::model: no such engine '{$engine}'.");
+        }
+        $m = trim((string)($e[$tier . '_model'] ?? ''));
+        if ($m === '') {
+            throw new \RuntimeException(
+                "EngineRegistry::model: engine '{$engine}' declares no {$tier}_model. "
+                . "Add {$tier}_model to [engine.{$engine}] in conf/aibuilder.ini."
+            );
+        }
+        return $m;
     }
 
     /**

@@ -67,8 +67,8 @@ class MemberEnginePrefs {
      * The member's effective model for (engine, tier): their override if set + valid,
      * else the registry default for that engine/tier.
      */
-    public static function model(?int $memberId, string $engine, string $tier, string $fallback = 'sonnet'): string {
-        $default = EngineRegistry::model($engine, $tier, $fallback);
+    public static function model(?int $memberId, string $engine, string $tier): string {
+        $default = EngineRegistry::model($engine, $tier);
         if (!$memberId || !in_array($tier, self::TIERS, true)) return $default;
         $override = self::clean(self::stored(self::key($engine, $tier), $memberId));
         return $override !== '' ? $override : $default;
@@ -81,7 +81,7 @@ class MemberEnginePrefs {
     public static function effective(?int $memberId, string $engine): array {
         $out = [];
         foreach (self::TIERS as $tier) {
-            $default  = EngineRegistry::model($engine, $tier, 'sonnet');
+            $default  = EngineRegistry::model($engine, $tier);
             $override = $memberId ? self::clean(self::stored(self::key($engine, $tier), $memberId)) : '';
             $out[$tier] = [
                 'default'   => $default,
@@ -100,7 +100,7 @@ class MemberEnginePrefs {
     public static function set(int $memberId, string $engine, string $tier, ?string $model): void {
         if (!EngineRegistry::isValid($engine) || !in_array($tier, self::TIERS, true)) return;
         $clean   = self::clean($model);
-        $default = EngineRegistry::model($engine, $tier, 'sonnet');
+        $default = EngineRegistry::model($engine, $tier);
         Flight::setSetting(self::key($engine, $tier), ($clean === '' || $clean === $default) ? '' : $clean, $memberId);
     }
 

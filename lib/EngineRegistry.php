@@ -192,6 +192,29 @@ class EngineRegistry {
         return $m !== '' ? $m : $fallback;
     }
 
+    /**
+     * The environment variable this engine's API key is read from, or '' when it has none.
+     *
+     * Doubles as the "does this engine take a user-supplied key?" test, because the two are
+     * the same question: an engine declares auth_token_env exactly when it authenticates by
+     * key. Anthropic's own does not appear here — the CLI signs in with its own OAuth, which
+     * is why /login can never reach another provider.
+     */
+    public static function authTokenEnv(string $engine): string {
+        $e = self::all()[$engine] ?? null;
+        return $e === null ? '' : trim((string)($e['auth_token_env'] ?? ''));
+    }
+
+    /**
+     * Where a member goes to obtain this engine's API key, or '' when it declares none.
+     *
+     * Config, not a constant in code: the provider owns this URL and it is theirs to move.
+     */
+    public static function keyUrl(string $engine): string {
+        $e = self::all()[$engine] ?? null;
+        return $e === null ? '' : trim((string)($e['key_url'] ?? ''));
+    }
+
     /** True when this engine can be launched headless (`-p`) TODAY. */
     public static function supportsHeadless(string $engine): bool {
         $e = self::all()[$engine] ?? null;

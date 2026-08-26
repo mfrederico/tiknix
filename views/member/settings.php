@@ -108,6 +108,33 @@
                                 </div>
                                 <?php endforeach; ?>
                             </div>
+                            <?php
+                            /* This engine's API key, in this engine's pane. Only engines that
+                               authenticate by key have an entry — Anthropic's CLI signs in with
+                               its own OAuth, so its pane shows model tiers and nothing else. */
+                            $keyMeta = $ai_engine_keys[$engine] ?? null;
+                            if ($keyMeta): ?>
+                            <hr class="my-3">
+                            <label class="form-label small mb-1">
+                                <i class="bi bi-key me-1"></i>Your <?= htmlspecialchars($keyMeta['label']) ?> API key
+                            </label>
+                            <input type="password" class="form-control form-control-sm"
+                                   name="enginetoken[<?= htmlspecialchars($engine) ?>]"
+                                   value="<?= htmlspecialchars($keyMeta['masked']) ?>"
+                                   placeholder="<?= $keyMeta['masked'] === '' ? 'No key set' : '' ?>"
+                                   autocomplete="off" spellcheck="false">
+                            <div class="form-text small">
+                                <?php if ($keyMeta['masked'] !== ''): ?>
+                                    Stored encrypted. Leave as-is to keep it, overwrite to replace
+                                    it, or clear it to remove it.
+                                <?php else: ?>
+                                    This provider signs in with a key, not the terminal's
+                                    <code>/login</code>. Without one, builds fall back to the
+                                    server's <code><?= htmlspecialchars($keyMeta['env']) ?></code>,
+                                    if it is configured.
+                                <?php endif; ?>
+                            </div>
+                            <?php endif; ?>
                         </div>
                         <?php endforeach; ?>
                         <?php endif; ?>

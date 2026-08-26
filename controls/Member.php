@@ -167,9 +167,25 @@ class Member extends Control {
                         }
                     }
                 }
+                // Per-engine API keys: enginetoken[<engine>] = <key>. Same gate as the tier
+                // prefs — the POST handler is the gate, not the absence of a field.
+                //
+                // A submitted value that still looks like the mask we rendered means the
+                // field was left untouched, so it must NOT be saved: re-encrypting "sk-z…6789"
+                // would replace a working key with those literal characters. Only a real
+                // edit or a deliberate clear reaches setToken().
+                $tokens = $this->canUseBuilderPrefs() ? ($request->data->enginetoken ?? null) : null;
+                if (is_array($tokens)) {
+                    foreach ($tokens as $engine => $raw) {
+                        if (is_array($raw)) continue;
+                        $raw = trim((string) $raw);
+                        if (str_contains($raw, '…')) continue;   // untouched mask
+                        MemberEnginePrefs::setToken((int)$this->member->id, (string)$engine, $raw);
+                    }
+                }
                 // Save remaining generic settings
                 foreach ($request->data as $key => $value) {
-                    if (in_array($key, ['csrf_token', 'csrf_token_name', 'enginepref'], true)) continue;
+                    if (in_array($key, ['csrf_token', 'csrf_token_name', 'enginepref', 'enginetoken'], true)) continue;
                     Flight::setSetting($key, $value, $this->member->id);
                 }
                 $this->viewData['success'] = 'Settings saved successfully';
@@ -184,12 +200,25 @@ class Member extends Control {
         // nothing its members can reach, so offering it there is a control that does
         // nothing — and an invitation to change something they cannot see the effect of.
         $engines = [];
+        $engineKeys = [];
         if ($this->canUseBuilderPrefs()) {
             foreach (array_keys(EngineRegistry::menu()) as $eng) {
                 $engines[$eng] = MemberEnginePrefs::effective((int)$this->member->id, $eng);
+                // Only engines that authenticate by key get a field. Anthropic's CLI signs
+                // in with its own OAuth, so offering it a key box would invite people to
+                // paste a credential nothing reads.
+                $envVar = EngineRegistry::authTokenEnv($eng);
+                if ($envVar !== '') {
+                    $engineKeys[$eng] = [
+                        'label'  => EngineRegistry::label($eng),
+                        'env'    => $envVar,
+                        'masked' => MemberEnginePrefs::maskedToken((int)$this->member->id, $eng),
+                    ];
+                }
             }
         }
         $this->viewData['ai_engines'] = $engines;
+        $this->viewData['ai_engine_keys'] = $engineKeys;
 
         // Get user settings
         $this->viewData['settings'] = Bean::findAll('settings', 'member_id = ?', [$this->member->id]);

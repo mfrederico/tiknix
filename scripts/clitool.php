@@ -72,6 +72,64 @@ function out(string $s): void { fwrite(STDOUT, $s . "\n"); }
 function err(string $s): void { fwrite(STDERR, $s . "\n"); }
 function bail(string $s): void { err("error: $s"); exit(1); }
 
+/**
+ * The live PDO handle behind RedBean's current connection.
+ *
+ * Ad-hoc SQL must NOT go through Bean::getAll/exec. In fluid mode RedBean swallows
+ * "no such column" and returns an empty result, because it assumes it is mid-schema-build
+ * and the column will exist shortly. For a schema builder that is right. For a query you
+ * typed, it means a wrong column name reports "(0 rows)" and exit 0 — indistinguishable
+ * from a table that is genuinely empty, so a broken query reads as evidence about the data.
+ * (Cost so far: two wrong conclusions about a permission seed that had been working.)
+ *
+ * Freezing the ORM would also surface the error, but it is the wrong lever: freeze state is
+ * global and set from config, so toggling it here would clobber whatever the environment
+ * chose. Going straight to PDO changes nothing outside this one statement, and PDO is
+ * already in ERRMODE_EXCEPTION.
+ *
+ * Bean:: remains correct for every other command in this file: those go through the ORM
+ * ON PURPOSE, so FUSE models and hooks run.
+ */
+function rawPdo(): \PDO {
+    return Bean::getDatabaseAdapter()->getDatabase()->getPDO();
+}
+
+/**
+ * A SQL failure, plus the columns that DO exist when the driver names a missing one.
+ *
+ * "no such column: controller" is already better than a silent (0 rows), but the next
+ * thing anyone does is run --describe to find the real name. Print it here instead: the
+ * answer is one PRAGMA away, and guessing a second time costs another round trip.
+ *
+ * Best-effort by design — this runs while reporting an error, so if the table name cannot
+ * be parsed out or the PRAGMA fails, return the driver's message alone rather than
+ * replacing a real error with a failure to explain it.
+ */
+function sqlErrorHint(\Throwable $e, string $sql): string {
+    $msg = $e->getMessage();
+    if (!preg_match('/no such column:\s*([A-Za-z0-9_.]+)/i', $msg, $col)) return $msg;
+
+    // FROM/UPDATE/INTO <table> — the first table named is the one worth describing.
+    if (!preg_match('/\b(?:from|update|into)\s+["`\[]?([A-Za-z0-9_]+)/i', $sql, $tbl)) return $msg;
+
+    try {
+        $cols = Bean::getCol('SELECT name FROM pragma_table_info(?)', [$tbl[1]]);
+    } catch (\Throwable $ignored) {
+        return $msg;
+    }
+    if (!$cols) return $msg;
+
+    $wanted = strtolower($col[1]);
+    $near   = array_values(array_filter($cols, function ($c) use ($wanted) {
+        $c = strtolower($c);
+        return str_contains($c, $wanted) || str_contains($wanted, $c);
+    }));
+
+    return $msg . "\n"
+        . '  ' . $tbl[1] . ' has: ' . implode(', ', $cols)
+        . ($near ? "\n  did you mean: " . implode(', ', $near) : '');
+}
+
 /** Resolve a member by id / email / username. */
 function findMember(string $ident): ?object {
     if (ctype_digit($ident)) {
@@ -137,7 +195,12 @@ if (isset($opt['describe'])) {
 
 // --- Ad-hoc read: --sql -----------------------------------------------------
 if (isset($opt['sql'])) {
-    $rows = Bean::getAll($opt['sql']);
+    // Raw PDO, deliberately not Bean::getAll — see rawPdo().
+    try {
+        $rows = rawPdo()->query($opt['sql'])->fetchAll(\PDO::FETCH_ASSOC);
+    } catch (\Throwable $e) {
+        bail(sqlErrorHint($e, $opt['sql']));
+    }
     if (!$rows) { out('(0 rows)'); exit(0); }
     $headers = array_keys($rows[0]);
     out(implode("\t", $headers));
@@ -150,7 +213,14 @@ if (isset($opt['sql'])) {
 if (isset($opt['exec'])) {
     if (!$YES && !$DRYRUN) bail('--exec runs a write query. Re-run with --yes to confirm.');
     if ($DRYRUN) { out('# dry-run: would exec: ' . $opt['exec']); exit(0); }
-    $affected = Bean::exec($opt['exec']);
+    // Same reasoning as --sql, and it matters more here: an UPDATE naming a column that
+    // does not exist reported "ok (0 row(s) affected)", which reads as "nothing matched
+    // the WHERE clause" rather than "this statement was never valid".
+    try {
+        $affected = rawPdo()->exec($opt['exec']);
+    } catch (\Throwable $e) {
+        bail(sqlErrorHint($e, $opt['exec']));
+    }
     out("# ok ({$affected} row(s) affected)");
     exit(0);
 }

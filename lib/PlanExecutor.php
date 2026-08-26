@@ -735,6 +735,19 @@ commit and merge your work — you just make the code changes.
       require_once __DIR__ . '/../../bootstrap.php';
       \$app = new \\app\\Bootstrap();
   A wrong relative depth (e.g. '/../bootstrap.php') will fatal — the seed is two dirs deep.
+- **NO FALLBACKS. Fail loudly.** If something you need is missing — a config key, a
+  credential, a dependency, a column — raise, or log an ERROR that NAMES it. Do NOT return
+  a placeholder ('unknown', 'default', 0, ''), do NOT substitute the nearest working
+  alternative, and do NOT catch an exception just to keep going. A fallback turns a broken
+  thing into a plausible answer, and a plausible answer gets believed instead of fixed.
+  This is rule 6 in CLAUDE.md — read its "No Fallbacks" section before writing one.
+  Concretely: an endpoint whose config key is absent must SAY SO, not answer `status: ok`
+  with `"version": "unknown"`. That exact thing shipped from a build like this one, and the
+  generated code's own comment described the fallback as deliberate.
+  If a task needs a setting that does not exist yet, note it in your summary for a person to
+  add. You may not create it yourself: conf files are off-limits per the rule above, and
+  `conf/config.<slug>.ini` is NOT the file bootstrap loads — writing there looks like it
+  worked and changes nothing.
 MD;
     }
 

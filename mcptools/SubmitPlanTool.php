@@ -30,7 +30,13 @@ class SubmitPlanTool extends BaseTool {
                         'title'       => ['type' => 'string'],
                         'description' => ['type' => 'string', 'description' => 'What to build, in GitHub-flavored Markdown: a one-line summary, then `##` sub-headers, `-` bullet lists, and `inline code` for files/beans/routes — scannable header-first, then details.'],
                         'priority'    => ['type' => 'integer', 'description' => '1 (highest) .. 4 (lowest)'],
-                        'engine'      => ['type' => 'string', 'description' => 'Optional engine override for this task — omit to inherit the instance default. Assign a cheaper engine (e.g. qwen) for simple mechanical edits, the frontier engine (claude) for judgement work. Unregistered values fall back to the instance default.'],
+                        /* NAMES NO VENDOR. This used to read "the frontier engine (claude) for
+                           judgement work", so a planner running on another provider dutifully
+                           stamped every judgement task with claude — a decompose on z.ai
+                           produced a plan that would build on Anthropic, because the schema
+                           told it to. The registry knows which engines exist; the description
+                           asks for them by name instead of hardcoding one. */
+                        'engine'      => ['type' => 'string', 'description' => 'Optional engine override for this task. OMIT IT unless you have a specific reason: the task then runs on the project\'s own engine, which is the choice its owner already made, and the one you are running on now. Set it only to move a single task to a cheaper or more capable engine registered on this instance. Naming an engine you are not sure is registered makes the task run somewhere nobody chose; an unregistered value is ignored and the project\'s engine is used.'],
                         'files'       => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'likely files to touch'],
                         'depends_on'  => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'ids of tasks that MUST finish before this one (empty = can start immediately / run in parallel)'],
                         'reuses'      => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'existing primitives this task builds on, as "kind/name" (e.g. "controller/Lead", "model/member", "lib/Mailer"). Empty ONLY for genuinely new ground.'],

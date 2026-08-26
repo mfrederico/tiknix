@@ -278,6 +278,50 @@ function patternMatches(string $pattern, string $subject): bool {
 }
 
 /**
+ * Path-rule matching, aligned to path SEGMENTS rather than raw substrings.
+ *
+ * A plain substring match reads a path rule as "any path containing these characters",
+ * which is not what a path means. `/boot` matched `…/tiknix/bootstrap.php` and blocked
+ * edits to it; the same flaw has `/var/log` blocking `/var/logging/`, `/root` blocking
+ * `/rootkit-scan/`, and `/etc/passwd` blocking `/etc/passwd-backup-tool/`.
+ *
+ * Those are not harmless false positives. A guard that fires on files it was never meant
+ * to protect trains people to disable it, and a disabled guard protects nothing — so the
+ * over-broad match costs real security rather than adding any.
+ *
+ * A pattern matches when it appears at a segment boundary: the next character is `/` or
+ * the path ends there. `/boot` therefore matches `/boot` and `/boot/vmlinuz`, but not
+ * `/bootstrap.php`. Patterns beginning with `/` that name a bare directory (`/.ssh`) still
+ * match at any depth, which is how they were always intended to work.
+ *
+ * Regex patterns are handed straight to patternMatches() — an author writing a regex has
+ * said exactly what they mean, and second-guessing it here would be its own surprise.
+ */
+function pathPatternMatches(string $pattern, string $subject): bool {
+    $pattern = trim($pattern);
+    if ($pattern === '') return false;
+
+    // Regex rules keep their existing semantics.
+    $first = $pattern[0];
+    $last  = $pattern[strlen($pattern) - 1];
+    if (strlen($pattern) >= 3 && $first === $last && in_array($first, ['/', '#', '~', '@'], true)) {
+        return patternMatches($pattern, $subject);
+    }
+
+    $pattern = rtrim($pattern, '/');
+    if ($pattern === '') return false;
+
+    $len = strlen($pattern);
+    $at  = 0;
+    while (($at = strpos($subject, $pattern, $at)) !== false) {
+        $after = $subject[$at + $len] ?? '';        // '' = pattern ends the path
+        if ($after === '' || $after === '/') return true;
+        $at++;
+    }
+    return false;
+}
+
+/**
  * Normalize and resolve a path
  */
 function normalizePath(string $path): string {
@@ -318,7 +362,8 @@ function checkPath(string $path, array $rules, int $memberLevel, bool $isWrite):
 
     foreach ($rules as $rule) {
         if ($rule->target !== 'path') continue;
-        if (!patternMatches($rule->pattern, $path)) continue;
+        // Segment-aligned, not substring — see pathPatternMatches().
+        if (!pathPatternMatches($rule->pattern, $path)) continue;
 
         switch ($rule->action) {
             case 'block':

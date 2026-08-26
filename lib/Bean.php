@@ -374,6 +374,19 @@ class Bean {
     }
 
     /**
+     * Is the schema currently frozen?
+     *
+     * RedBean exposes this on the OODB only — there is no R::isFrozen() — so anything that
+     * needs to thaw temporarily had to reach through the facade to ask. Wrapped here so a
+     * caller can restore the PREVIOUS state instead of assuming one: code that thaws and
+     * then hard-sets frozen afterwards silently changes behaviour when it runs somewhere
+     * that was already thawed.
+     */
+    public static function isFrozen(): bool {
+        return (bool) R::getRedBean()->isFrozen();
+    }
+
+    /**
      * Begin a transaction
      */
     public static function begin() {

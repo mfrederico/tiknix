@@ -52,6 +52,22 @@ class WorkspaceSchemaBuilder {
 
         $logger = Flight::get('log');
 
+        /* THAW for the duration of the build, and only here.
+         *
+         * Building the schema is the one job that legitimately creates tables and columns,
+         * so it is the one place fluid mode belongs. Everywhere else it is a trap: an
+         * unknown bean property is treated as schema to build rather than a mistake, which
+         * is how `authcontrol` grew ghost `controller`/`operation` columns that stayed NULL
+         * in all 171 rows and made a wrong query merely empty instead of an error.
+         *
+         * The previous state is captured and restored rather than assumed, because this
+         * runs both from the CLI (frozen) and from a request, and leaving the connection
+         * thawed afterwards would hand every later query the behaviour we are removing.
+         */
+        $wasFrozen = Bean::isFrozen();
+        Bean::freeze(false);
+        try {
+
         foreach ($files as $file) {
             $name = basename($file);
             try {
@@ -71,6 +87,12 @@ class WorkspaceSchemaBuilder {
         }
 
         $logger?->info('SchemaBuilder: build complete', ['results' => $this->results]);
+
+        } finally {
+            // finally, not a trailing call: a seed that throws must not leave the
+            // connection thawed for whatever runs next.
+            Bean::freeze($wasFrozen);
+        }
         return $this->results;
     }
 }

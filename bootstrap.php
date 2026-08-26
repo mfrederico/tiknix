@@ -242,13 +242,50 @@ class Bootstrap {
             
             // Set freeze mode based on environment
             // DB_FREEZE env (true/false) overrides; otherwise freeze in production.
+            /* FROZEN BY DEFAULT. This used to freeze only in production, which meant never:
+               every environment here is "development" and DB_FREEZE is unset, so the guard
+               never once engaged. Fluid mode then treated any misspelled bean property as
+               schema to build — that is where `authcontrol` got ghost `controller` and
+               `operation` columns, NULL in all 171 rows, turning a wrong query into a
+               merely-empty one.
+
+               Schema growth still works: WorkspaceSchemaBuilder::build() thaws for the
+               duration of the seeds and restores the previous state afterwards, so
+               `clitool --build` behaves exactly as before. What no longer works is a
+               request inventing a column, which was never intended and never announced.
+
+               DB_FREEZE=false still forces fluid for anyone who needs the old behaviour. */
             $envFreeze = getenv('DB_FREEZE');
-            if ($envFreeze !== false) {
-                $freeze = filter_var($envFreeze, FILTER_VALIDATE_BOOLEAN);
-            } else {
-                $freeze = $this->config['app']['environment'] === 'production';
-            }
+            $freeze    = ($envFreeze !== false)
+                ? filter_var($envFreeze, FILTER_VALIDATE_BOOLEAN)
+                : true;
             R::freeze($freeze);
+
+            /* Fluid mode creates a column for any unknown bean property, silently — right
+               for a seed, wrong for a typo. And the guard above has never engaged: every
+               environment here is "development" and DB_FREEZE is unset, so nothing is ever
+               frozen. That is how `authcontrol` grew ghost `controller`/`operation` columns
+               that stayed NULL in every row and made a WRONG query look merely empty.
+
+               Freezing is not the answer — it would also stop the seeds and generated
+               features that legitimately grow the schema. So the change is made LOUD
+               instead: every automatic CREATE TABLE / ADD COLUMN / widen logs at ERROR with
+               the call site that caused it.
+
+               The OODB must be rebuilt, not reused: it holds its own writer reference, so
+               swapping only the ToolBox leaves the original writer in place and logs
+               nothing. SQLite only — another driver keeps its own writer rather than
+               silently losing the audit to a class that does not match it. */
+            if (R::getWriter() instanceof \RedBeanPHP\QueryWriter\SQLiteT) {
+                require_once __DIR__ . '/lib/SchemaAuditWriter.php';
+                $auditAdapter = R::getDatabaseAdapter();
+                $auditWriter  = new \app\SchemaAuditWriter($auditAdapter);
+                R::configureFacadeWithToolbox(new \RedBeanPHP\ToolBox(
+                    new \RedBeanPHP\OODB($auditWriter, $freeze),
+                    $auditAdapter,
+                    $auditWriter
+                ));
+            }
             
             // Enable query logging in debug mode
             if ($this->config['app']['debug'] ?? false) {

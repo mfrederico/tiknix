@@ -29,6 +29,17 @@ class ClaudeRunner {
     private ?string $modelOverride = null;
 
     /**
+     * Which ENGINE this run uses — the provider, not the model.
+     *
+     * The two are different choices and both reach the agent by different routes: the model
+     * is a CLI flag (--model), while the engine decides the endpoint, the credential and
+     * the state directory, all of which jail-run.sh resolves from $ENGINE before the CLI
+     * starts. Null means "whatever the instance is set to", which is the existing behaviour
+     * and stays the default.
+     */
+    private ?string $engine = null;
+
+    /**
      * Create a new ClaudeRunner instance
      *
      * @param int $taskId The task ID
@@ -43,6 +54,22 @@ class ClaudeRunner {
         $this->teamId = $teamId;
         $this->memberLevel = $memberLevel;
         $this->projectPath = $projectPath;
+
+        /* The task's own engine, resolved HERE rather than at the six places that construct
+           a runner. Asking every caller to remember setEngine() is asking for the one that
+           forgets, and that one would run on the default provider while the board showed
+           something else — a wrong answer with nothing on screen to contradict it.
+           Read from the task row on whatever connection is current, which in the sidecar is
+           the project's own workbench.db where the task lives. Unreadable or unset leaves it
+           null, which is the previous behaviour: jail-run.sh falls back to the instance's
+           .aibuilder/engine and then the conf default. */
+        try {
+            $row = \app\Bean::load('workbenchtask', $taskId);
+            if ($row && $row->id) $this->setEngine((string) ($row->engine ?? ''));
+        } catch (\Throwable $e) {
+            // No task table here (a bare workspace, a test harness). Not an error: the
+            // instance default is a perfectly good answer.
+        }
 
         // Use TmuxManager to build session name.
         //
@@ -83,6 +110,23 @@ class ClaudeRunner {
      */
     public function setModelOverride(?string $model): void {
         $this->modelOverride = ($model !== null && $model !== '') ? $model : null;
+    }
+
+    /**
+     * Run this session on a specific engine (provider), e.g. a task marked `zai`.
+     *
+     * Only reaches the agent when jailed, because jail-run.sh is what reads $ENGINE and
+     * turns it into an endpoint, a credential and a per-engine state dir. An unjailed run
+     * executes `claude` directly against whatever the ambient environment holds, so there
+     * is nothing to point elsewhere — setting this there would look like it worked and
+     * quietly run on the default provider.
+     *
+     * Validated against the registry rather than trusted: this value becomes a shell
+     * assignment, and an unknown engine should fail here rather than in bwrap.
+     */
+    public function setEngine(?string $engine): void {
+        $engine = trim((string) $engine);
+        $this->engine = ($engine !== '' && \app\EngineRegistry::isValid($engine)) ? $engine : null;
     }
 
     /**
@@ -294,8 +338,17 @@ class ClaudeRunner {
             $jailArgs = '--debug';
             if ($this->modelOverride) $jailArgs .= ' --model ' . escapeshellarg($this->modelOverride);
             $runComment = '# Run the agent under bwrap — the jail is the security boundary';
-            $runBlock = "echo \"  [jailed: " . addslashes($jail) . "]\"\n"
-                      . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . ' -- ' . $jailArgs . "\nEXIT_CODE=\$?";
+            /* ENGINE selects the PROVIDER, and jail-run.sh reads it first — ahead of the
+               instance's .aibuilder/engine file and the conf default — so a task marked for
+               one provider runs there without changing the project's setting for everyone
+               else. Omitted when unset, which leaves exactly the previous behaviour.
+               Printed in the banner too: "which provider ran this" is the first question
+               asked when comparing output between engines, and reconstructing it afterwards
+               from a session name is guesswork. */
+            $enginePrefix = $this->engine ? 'ENGINE=' . escapeshellarg($this->engine) . ' ' : '';
+            $engineNote   = $this->engine ? " engine=" . $this->engine : '';
+            $runBlock = "echo \"  [jailed: " . addslashes($jail) . addslashes($engineNote) . "]\"\n"
+                      . $enginePrefix . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . ' -- ' . $jailArgs . "\nEXIT_CODE=\$?";
         } else {
             $projectRootForAgent = $mainProjectRoot;
             $runComment = '# Run the agent directly — NOT jailed; the PreToolUse hooks are the only guard';

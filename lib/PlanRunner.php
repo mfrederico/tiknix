@@ -388,8 +388,9 @@ truth: it is what already exists right now. You do NOT need to call `codebase_ma
    - Tasks that touch the **same files**, or need another task's output, MUST be
      chained via `depends_on` so they run sequentially and don't collide on merge.
 
-4. **Pick an engine per task.** `claude` for anything requiring judgement;
-   `qwen` only for simple mechanical edits.
+4. **Leave `engine` unset.** Every task then runs on this project's engine — the one
+   you are running on now, and the one its owner chose. Set it only to move a single
+   task to a different registered engine, and say why in the description.
 
 5. **Account for data & permissions as seeds — never write the live DB directly.**
    A new route needs an `authcontrol` entry; new/seed data needs an idempotent

@@ -9,7 +9,7 @@
  *
  * Usage:
  *   php scripts/plan-orchestrate.php --plan=<id> --slug=<slug> --dir=<instanceDir> \
- *       [--model=sonnet] [--level=50] [--db=<sqlite path>]
+ *       [--level=50] [--db=<sqlite path>]
  */
 
 if (php_sapi_name() !== 'cli') { die("cli only\n"); }
@@ -21,11 +21,10 @@ use RedBeanPHP\R;
 use app\Bean;
 use app\PlanExecutor;
 
-$o = getopt('', ['plan:', 'slug:', 'dir:', 'model::', 'level::', 'db::']);
+$o = getopt('', ['plan:', 'slug:', 'dir:', 'level::', 'db::']);
 $planId = (int)($o['plan'] ?? 0);
 $slug   = (string)($o['slug'] ?? '');
 $dir    = rtrim((string)($o['dir'] ?? ''), '/');
-$model  = (string)($o['model'] ?? 'sonnet');
 $level  = (int)($o['level'] ?? 50);
 // The orchestrator touches ONLY task data, and task data lives in the instance's own
 // data/workbench.db — the file its board reads. Defaulting to core's db meant it loaded
@@ -58,7 +57,9 @@ Bean::store($parent);
 
 echo "[orchestrator] plan #$planId ($slug) starting " . date('c') . "\n";
 
-$ex = new PlanExecutor($planId, $slug, $dir, $level, $model);
+// No model argument: PlanExecutor resolves each task's model from that task's own
+// engine. A single --model could only be right when every task ran on one provider.
+$ex = new PlanExecutor($planId, $slug, $dir, $level);
 
 $maxTicks = 720;                 // ~2h ceiling at 10s/tick
 $res = ['done' => false, 'stalled' => false, 'counts' => [], 'total' => 0];

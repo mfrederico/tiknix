@@ -74,7 +74,6 @@ class PlanOrchestrator {
      * @param string      $slug        instance slug
      * @param string      $instanceDir absolute instance directory
      * @param int         $level       member level to run the plan's endpoints at
-     * @param string      $model       worker model for the orchestrator (claude-valid)
      * @param string|null $workbenchDb the instance's tasks db. Pass it EXPLICITLY when you
      *                                 know it (CLI callers that resolved it themselves);
      *                                 null falls back to the ambient TIKNIX_WORKBENCH_DB,
@@ -86,7 +85,6 @@ class PlanOrchestrator {
         string $slug,
         string $instanceDir,
         int $level = 50,
-        string $model = 'sonnet',
         ?string $workbenchDb = null
     ): bool {
         $planId = (int) $planId;
@@ -116,7 +114,6 @@ class PlanOrchestrator {
              . ' --plan=' . $planId
              . ' --slug=' . escapeshellarg($slug)
              . ' --dir='  . escapeshellarg($dir)
-             . ' --model=' . escapeshellarg($model)
              . ' --level=' . $level;
 
         $ab = $dir . '/.aibuilder';

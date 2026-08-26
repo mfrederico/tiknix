@@ -21,6 +21,7 @@
 namespace app;
 
 use app\EngineRegistry;
+use app\MemberEnginePrefs;
 
 class PlanExecutor {
 
@@ -31,14 +32,15 @@ class PlanExecutor {
     private string $slug;
     private string $instanceDir;
     private int $memberLevel;
-    private string $engineModel;       // worker model, e.g. "sonnet"
 
-    public function __construct(int $planId, string $slug, string $instanceDir, int $memberLevel = 50, string $engineModel = 'sonnet') {
+    /* No model parameter: the model is resolved per task from that task's engine
+       (launchTask). One model for a whole plan could only ever be right when every task
+       ran on the same provider. */
+    public function __construct(int $planId, string $slug, string $instanceDir, int $memberLevel = 50) {
         $this->planId      = $planId;
         $this->slug        = $slug;
         $this->instanceDir = rtrim($instanceDir, '/');
         $this->memberLevel = $memberLevel;
-        $this->engineModel = $engineModel;
     }
 
     // ---- public API --------------------------------------------------------
@@ -206,26 +208,39 @@ class PlanExecutor {
             @copy($this->instanceDir . '/.mcp.json', $wtAbs . '/.mcp.json');
         }
 
-        // Resolve the per-task engine through the registry (§7). If the requested
-        // engine has no proven headless launcher yet, we run claude with the worker
-        // model and log a warning — the honest version of the old always-claude path.
+        // Resolve the per-task engine through the registry (§7). An engine with no proven
+        // headless launcher fails the task below rather than quietly running elsewhere.
         $reqEngine = (string)($t->engine ?: EngineRegistry::defaultEngine());
         $prompt = 'Read .aibuilder/task.md and implement it fully in this working directory, following the codebase conventions. Do not touch files outside your task. When finished, stop.';
-        $inner  = EngineRegistry::agentCommand($reqEngine, $prompt, $this->engineModel, ['stream' => true]);
+        /* The model must come from the SAME engine this task runs on. A single model for
+           the whole plan was a claude-only assumption: the caller resolved claude's worker
+           tier and every task got it, so a task on another provider was launched asking for
+           a model that provider has never heard of. Per-task, via the registry, with the
+           task's own explicit model winning if the planner set one. */
+        $taskModel = trim((string) ($t->model ?? ''))
+            ?: MemberEnginePrefs::model($this->planMemberId(), $reqEngine, 'worker');
+        $inner  = EngineRegistry::agentCommand($reqEngine, $prompt, $taskModel, ['stream' => true]);
         $ranOn  = $reqEngine;
         if ($inner === null) {
-            $inner = EngineRegistry::agentCommand('claude', $prompt, $this->engineModel, ['stream' => true]);
-            $ranOn = 'claude';
-            if ($reqEngine !== 'claude') {
-                $this->logEvent($t, 'warning', "engine '{$reqEngine}' has no headless launcher — ran on claude ({$this->engineModel})");
-            }
+            // FAIL, do not substitute. This used to run the task on claude and log a
+            // warning, which meant a plan could complete "successfully" with work done by
+            // a provider nobody chose — billed to a different account, and invisible unless
+            // somebody read the event log. A task that cannot run on its assigned engine is
+            // not a task that runs somewhere else; it is a task that cannot run.
+            $msg = "engine '{$reqEngine}' has no headless launcher, so this task cannot be built. "
+                 . "Assign an engine with headless_ready = true in [engine.{$reqEngine}], or move the task to one.";
+            $this->logEvent($t, 'error', $msg);
+            $t->status       = 'failed';
+            $t->errorMessage = $msg;
+            Bean::store($t);
+            return false;
         }
         $inner = 'cd ' . $wtRel . ' && ' . $inner;
 
         // Project-scoped: plan ids AND subtask ids both come from this instance's own
         // workbench.db, so the unscoped name collided across every project at once.
         $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int)$t->id, $this->slug);
-        $script  = $this->buildRunnerScript($inner, $wtAbs, $session);
+        $script  = $this->buildRunnerScript($inner, $wtAbs, $session, $ranOn);
         $scriptFile = $wtAbs . '/.aibuilder/run-agent.sh';
         file_put_contents($scriptFile, $script);
         @chmod($scriptFile, 0755);
@@ -632,13 +647,26 @@ class PlanExecutor {
      * display-only. bypassPermissions is explicit because JAIL_CMD replaces
      * jail-run.sh's own permission wrapper.
      */
-    protected function buildRunnerScript(string $inner, string $wtAbs, string $session): string {
+    /**
+     * @param string $engine  The engine this task ACTUALLY runs on ($ranOn in launchTask),
+     *                        after the headless-launcher fallback has been applied.
+     *
+     * Passed in rather than read from the instance's .aibuilder/engine file, which is the
+     * PROJECT's engine and says nothing about a task that overrides it. Reading the file
+     * here bound one provider's credential store while the agent talked to another, and
+     * left the jail to default the provider — so a task marked zai built on Anthropic and
+     * the log still said zai.
+     */
+    protected function buildRunnerScript(string $inner, string $wtAbs, string $session, string $engine): string {
         $mainProjectRoot = dirname(__DIR__);
         $log = $wtAbs . '/.aibuilder/agent.log';
         $jail = $this->jailFor();
 
         if ($jail !== '') {
-            $run = 'JAIL_CMD=' . escapeshellarg($inner) . ' ' . escapeshellarg($jail) . ' ' . escapeshellarg($this->instanceDir);
+            // ENGINE selects the provider inside the jail. Without it the jail fell back to
+            // the project's engine file, so a task assigned another engine still built on
+            // whatever the project defaulted to.
+            $run = 'ENGINE=' . escapeshellarg($engine) . ' JAIL_CMD=' . escapeshellarg($inner) . ' ' . escapeshellarg($jail) . ' ' . escapeshellarg($this->instanceDir);
         } else {
             // Non-jailed fallback (isolated clone): run inner directly in the instance.
             $run = 'cd ' . escapeshellarg($this->instanceDir) . ' && ' . $inner;
@@ -647,7 +675,7 @@ class PlanExecutor {
         // Credentials follow the PERSON who owns this plan, not the project — the build
         // agents must run as the same account the planner did. See app\AgentState.
         $agentStateArg = escapeshellarg(
-            AgentState::resolve($this->planMemberId(), $this->engineName(), $this->instanceDir)
+            AgentState::resolve($this->planMemberId(), $engine, $this->instanceDir)
         );
         return <<<BASH
 #!/bin/bash
@@ -795,11 +823,6 @@ MD;
             $plan = Bean::load('workbenchtask', $this->planId);
             return (int) ($plan->memberId ?? 0);
         } catch (\Throwable $e) { return 0; }
-    }
-
-    /** The engine recorded for this instance by provisioning. */
-    private function engineName(): string {
-        return trim((string) @file_get_contents($this->instanceDir . '/.aibuilder/engine')) ?: 'claude';
     }
 
     /** jail-run.sh path when the instance is jailable, else '' (mirrors ClaudeRunner). */

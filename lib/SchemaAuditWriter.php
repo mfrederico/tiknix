@@ -39,14 +39,24 @@ class SchemaAuditWriter extends SQLiteT {
      * OODB::store — so they are dropped and the first application frame is reported.
      */
     private static function origin(): string {
-        $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 24);
+        /* PASS-THROUGH frames are skipped, not just vendor ones.
+         *
+         * Every bean operation in this codebase goes through the Bean:: wrapper by mandate,
+         * so the first non-vendor frame is ALWAYS lib/Bean.php — which reported the wrapper
+         * as the origin of every schema change and named nothing useful. The caller of the
+         * wrapper is the code that actually misspelled the property. */
+        $passThrough = ['/lib/SchemaAuditWriter.php', '/lib/Bean.php', '/vendor/gabordemooij/'];
+        $frames = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 32);
         foreach ($frames as $f) {
             $file = $f['file'] ?? '';
-            if ($file === '' || str_contains($file, '/vendor/gabordemooij/')) continue;
-            if (str_contains($file, '/lib/SchemaAuditWriter.php')) continue;
+            if ($file === '') continue;
+            foreach ($passThrough as $skip) {
+                if (str_contains($file, $skip)) continue 2;
+            }
             return $file . ':' . ($f['line'] ?? 0);
         }
-        return 'unknown';
+        // Only the wrapper on the stack — better to say so than to name it and mislead.
+        return 'unknown (wrapper-only stack)';
     }
 
     /**

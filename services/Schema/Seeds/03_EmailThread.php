@@ -96,6 +96,99 @@ $att->created_at = date('Y-m-d H:i:s');
 R::store($att);
 $_defer($att);
 
+/* ---- TEAM CHAT ------------------------------------------------------------
+ *
+ * Rooms, DMs and mentions were added on top of the email threads above, and their
+ * schema was never seeded — every one of these columns and both of these tables were
+ * created by RedBean's fluid mode on first use, at runtime, in whichever install
+ * happened to touch the feature first.
+ *
+ * That is not a theoretical gap. A freshly provisioned instance has no `threadmember`
+ * until somebody opens Communications, so anything that reads it first gets nothing
+ * back — fluid mode answers a missing table with an empty result rather than an error.
+ * The day the schema was frozen to stop typo'd columns, that silence became
+ * `no such table: threadmember` on a live instance within minutes. Freezing is not an
+ * option while a table can only appear by accident, so the tables are declared here.
+ *
+ * TYPES MATCH THE LIVE SCHEMA DELIBERATELY, including the inconsistent ones
+ * (`mention.read_at` is TEXT while `mention.created_at` is NUMERIC — fluid mode
+ * inferred each from whatever it was first handed). Declaring a different type here
+ * would make RedBean WIDEN the column, and on SQLite a widen rebuilds the table. This
+ * seed runs against installs that already hold real conversations; matching what is
+ * there keeps it a no-op instead of a rebuild.
+ */
+
+// Parent ghosts for the real foreign keys below (threadmember.member_id -> member,
+// mention.member_id -> member, thread.team_id -> team). Assigning a bare 999999 fails
+// the constraint on any install that already enforces it; assigning a BEAN both
+// satisfies the FK and is what makes RedBean emit the FK column in the first place.
+// Deferred first so the builder's reverse-trash removes the children before them.
+$memberGhost = R::dispense('member');
+$memberGhost->email = 'schema-ghost@example.invalid';
+R::store($memberGhost);
+$_defer($memberGhost);
+
+// team.name/slug/owner_id are NOT NULL, so the ghost has to satisfy them — a ghost
+// that cannot be stored declares no schema at all.
+$teamGhost = R::dispense('team');
+$teamGhost->name     = 'schema-ghost';
+$teamGhost->slug     = 'schema-ghost-' . bin2hex(random_bytes(4));
+$teamGhost->owner_id = $memberGhost->id;
+R::store($teamGhost);
+$_defer($teamGhost);
+
+// ---- chat-era columns on the thread ----------------------------------------
+// A room/DM is a thread with a kind, an owning team and a slug; created_by is the
+// member who opened it. connection_ref/external_ref are the plain-int + string
+// pointers for a thread mirrored from an outside system (see CLAUDE.md on _ref/_eid).
+$chatThread = R::dispense('thread');
+$chatThread->kind           = str_repeat('x', 16);
+$chatThread->team           = $teamGhost;   // → thread.team_id (real FK)
+$chatThread->slug           = str_repeat('x', 190);
+$chatThread->created_by     = 999999;
+$chatThread->connection_ref = 999999;
+$chatThread->external_ref   = str_repeat('x', 190);
+R::store($chatThread);
+$_defer($chatThread);
+
+// ---- chat-era columns on a message -----------------------------------------
+// sender_member_id is who typed it (email messages have none); transport says how it
+// arrived; external_identity_ref points at the identity it came in through.
+$chatMessage = R::dispense('message');
+$chatMessage->thread                = $chatThread;
+$chatMessage->sender_member_id      = 999999;
+$chatMessage->transport             = str_repeat('x', 32);
+$chatMessage->external_identity_ref = 999999;
+R::store($chatMessage);
+$_defer($chatMessage);
+
+// ---- threadmember ghost — who is in a room, and how far they have read -----
+$tmember = R::dispense('threadmember');
+$tmember->thread       = $chatThread;        // → threadmember.thread_id (FK + idx)
+$tmember->member       = $memberGhost;   // → threadmember.member_id (real FK)
+$tmember->role         = str_repeat('x', 16);
+$tmember->last_read_id = 999999;
+$tmember->muted        = 1;
+$tmember->joined_at    = date('Y-m-d H:i:s');
+$tmember->read_at      = date('Y-m-d H:i:s');
+R::store($tmember);
+$_defer($tmember);
+
+// ---- mention ghost ---------------------------------------------------------
+// thread_ref / message_ref, NOT thread_id / message_id: these are plain integer
+// pointers and a real FK would be wrong here, because a message can be hard-deleted
+// while its mention row is still being cleaned up. See CLAUDE.md and lib/Mentions.php.
+// A _ref column gets no automatic index — declare one in a migration if the unread
+// count ever needs it.
+$mention = R::dispense('mention');
+$mention->thread_ref  = 999999;
+$mention->message_ref = 999999;
+$mention->member      = $memberGhost;   // → mention.member_id (real FK)
+$mention->read_at     = str_repeat('x', 40);   // TEXT in the live schema, not a date
+$mention->created_at  = date('Y-m-d H:i:s');
+R::store($mention);
+$_defer($mention);
+
 // No hand-declared indexes: the schema is 100% bean-derived. RedBean's fluid
 // mode already indexes every *_id column by convention (thread_id / notify_id
 // as real FKs from the bean refs above; related_id / owner_member_id /

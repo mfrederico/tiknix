@@ -513,9 +513,11 @@ BASH;
         // it landed, and then it went.
         if (!$this->pasteUntilLanded($prompt)) {
             if (!$this->exists()) return false;
+            // The session is alive and never took the text — say how long we waited, since
+            // that is the number anyone diagnosing this needs.
             \Flight::get('log')->error('Prompt never reached the agent', [
                 'session' => $this->sessionName, 'task' => $this->taskId,
-                'attempts' => self::PROMPT_ATTEMPTS,
+                'waited_sec' => self::PROMPT_DEADLINE_SEC,
             ]);
             return false;
         }
@@ -535,20 +537,46 @@ BASH;
         return false;
     }
 
-    /** How many times to paste before giving up and saying so. */
-    private const PROMPT_ATTEMPTS = 8;
+    /**
+     * How long to keep offering the prompt before giving up, in seconds.
+     *
+     * This was a count — 8 attempts, about 18 seconds — tuned when every agent was claude
+     * starting outside a jail. A bwrap-jailed session on another provider takes longer to
+     * reach the point where it accepts input, so all eight failed, sendPrompt returned
+     * false, and the task sat `queued` with a live agent idling beside its brief on disk.
+     * Task #110 did exactly that.
+     *
+     * A DEADLINE rather than a bigger count, because the count was never the question. The
+     * loop already exits the moment the session dies, so waiting longer costs nothing when
+     * something is genuinely wrong — it only stops giving up on an agent that is merely
+     * slow. Raising 8 to 20 would have been the same guess with a different number.
+     */
+    private const PROMPT_DEADLINE_SEC = 120;
 
     /** How many times to press Enter before giving up and saying so. */
     private const SUBMIT_ATTEMPTS = 6;
 
-    /** Paste until the text is visibly in the input box. */
+    /** Paste until the text is visibly in the input box, or the deadline passes. */
     private function pasteUntilLanded(string $prompt): bool {
-        for ($attempt = 1; $attempt <= self::PROMPT_ATTEMPTS; $attempt++) {
+        $deadline = time() + self::PROMPT_DEADLINE_SEC;
+        $attempt  = 0;
+        while (time() < $deadline) {
+            $attempt++;
             if (!TmuxManager::sendTextViaBuffer($this->sessionName, $prompt, 'tiknix-prompt')) {
                 return $this->sendMessage($prompt);   // buffer paste unavailable
             }
             usleep(300000);
-            if ($this->promptLanded()) return true;
+            if ($this->promptLanded()) {
+                // Worth knowing how long a cold start actually takes on this engine —
+                // otherwise the next person tuning this is guessing too.
+                if ($attempt > 3) {
+                    \Flight::get('log')?->info('Prompt landed after a slow agent start', [
+                        'task' => $this->taskId, 'attempts' => $attempt,
+                        'waited_sec' => self::PROMPT_DEADLINE_SEC - ($deadline - time()),
+                    ]);
+                }
+                return true;
+            }
             if (!$this->exists()) return false;       // session died while we waited
             sleep(2);                                 // still starting up — try again
         }

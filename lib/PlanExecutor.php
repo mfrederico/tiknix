@@ -862,8 +862,15 @@ commit and merge your work — you just make the code changes.
   `-` lists, `` `code` `` for files/beans/routes) — it renders in the task view,
   so keep it scannable header-first.
 - Do not run git, do not push, do not start servers. Just implement, then stop.
-- Database / permission changes: do NOT write to the database directly, do NOT run
-  migration or seed scripts, and do NOT edit conf/config*.ini. The live SQLite DB is
+- Config: you CANNOT change this project's runtime settings from here, in either
+  direction. `conf/config.ini` is what the app loads and is gitignored, so an edit to it
+  never merges; `conf/config.<slug>.ini` is what merges and is NOT what the app loads.
+  Editing either looks like it worked and changes nothing — a task that wrote a version
+  key to the tracked file shipped an endpoint reporting "unknown" for it. If your task
+  needs a setting that does not exist yet, NAME IT IN YOUR SUMMARY for a person to add.
+  (Core's config is outside your sandbox entirely; you could not reach it if you tried.)
+- Database / permission changes: do NOT write to the database directly and do NOT run
+  migration or seed scripts. The live SQLite DB is
   discarded from your worktree, so direct writes will NOT persist. If this task needs
   a DB or permission change (e.g. an authcontrol route entry to make a page public),
   write an IDEMPOTENT PHP seed script to database/seeds/<descriptive-name>.php using

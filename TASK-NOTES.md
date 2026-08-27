@@ -138,6 +138,19 @@ Fixing only the clone path left 47 of 48 existing workspaces broken.
 Only `aibuilder.ini` is copied — `config.ini` carries the database path and would point a
 throwaway workspace at the live instance's database.
 
+**An agent cannot change runtime config from a worktree, in either direction:**
+
+| file | tracked? | loaded by the app? |
+|---|---|---|
+| `conf/config.ini` | gitignored | **yes** |
+| `conf/config.<slug>.ini` | **tracked** | no |
+
+Edit the file the app reads and it never merges; edit the file that merges and nothing
+reads it. A task that wrote `version = "1.0.0"` to the tracked file shipped an endpoint
+reporting `"version":"unknown"` — the edit merged cleanly and did nothing. A task needing a
+new setting must name it in its summary for a person to add. Core's config is outside the
+jail entirely.
+
 ---
 
 ## 7. Standing traps

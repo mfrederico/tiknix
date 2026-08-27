@@ -129,13 +129,11 @@ class AuditRunner {
            The model used to come from EngineRegistry::defaultEngine() — the CONF default,
            not this project's engine. On a project running anything else that asked for
            claude's auditor tier ('sonnet') and handed it to another provider. */
-        $engine = trim((string) @file_get_contents($ws . '/.aibuilder/engine'))
-            ?: EngineRegistry::defaultEngine();
-        if (!EngineRegistry::isValid($engine)) $engine = EngineRegistry::defaultEngine();
-
-        // Auditor tier from THAT engine (§4 — ideally decorrelated from the worker model),
-        // with the member who owns the run able to override it.
-        $model = MemberEnginePrefs::model($this->memberId, $engine, 'auditor');
+        // $ws IS the instance directory here (the auditor is instance-level, no per-task
+        // engine), so AgentContext reads the project's engine file itself.
+        $ctx    = AgentContext::for($this->memberId, 'auditor', $ws);
+        $engine = $ctx->engine;
+        $model  = $ctx->model;
 
         $jail = $this->jailFor();
         if ($jail !== '') {
@@ -159,8 +157,7 @@ class AuditRunner {
         // this it used the per-project store, which for any project relying on a member
         // store is empty: the QA agent died in a second with "Not logged in" and the
         // driver reported only "no manifest produced within the time budget".
-        // $engine resolved above — the same value the run and the model use.
-        $agentStateArg = escapeshellarg(AgentState::resolve($this->memberId, $engine, $ws));
+        $agentStateArg = escapeshellarg($ctx->stateDir);
         return <<<BASH
 #!/bin/bash
 # Tiknix headless auditor (claude -p) — instance {$this->slug}

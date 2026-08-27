@@ -28,6 +28,9 @@ class ClaudeRunner {
     /** Optional model override (e.g. a decorrelated resolver tier for conflict resolution, §5). */
     private ?string $modelOverride = null;
 
+    /** The project dir this task belongs to; null for a task with no instance tag. */
+    private ?string $instanceDir = null;
+
     /**
      * Which ENGINE this run uses — the provider, not the model.
      *
@@ -76,6 +79,15 @@ class ClaudeRunner {
                 $model = trim((string) ($row->model ?? ''));
                 if ($model !== '' && $this->engine !== null && $this->modelOverride === null) {
                     $this->setModelOverride($model);
+                }
+                /* The PROJECT this task belongs to. Every other runner resolves credentials
+                   and the engine file from the instance directory; this one had only the
+                   task workspace, which is a git clone with no .aibuilder/ in it. Left null
+                   when the row carries no tag (older tasks), which keeps the previous
+                   behaviour of using the workspace. */
+                $tag = trim((string) ($row->instanceTag ?? ''));
+                if ($tag !== '' && preg_match('/^[a-z0-9][a-z0-9.\-]*$/i', $tag)) {
+                    $this->instanceDir = '/var/www/html/default/' . $tag;
                 }
             }
         } catch (\Throwable $e) {
@@ -384,10 +396,17 @@ class ClaudeRunner {
          * $this->engine is set from the task row in the constructor, which is the same
          * value the run is dispatched on. The instance file is consulted only for a task
          * that names no engine, and is the PROJECT default rather than a guess. */
-        $engine   = $this->engine
-            ?: (trim((string) @file_get_contents($ws . '/.aibuilder/engine'))
-                ?: \app\EngineRegistry::defaultEngine());
-        $agentStateArg = escapeshellarg(AgentState::resolve((int) $this->memberId, $engine, $ws));
+        /* One resolution for engine, model and credential store (app\AgentContext), from
+           the PROJECT directory rather than this task's workspace clone. */
+        $ctx      = AgentContext::for(
+            (int) $this->memberId,
+            'worker',
+            $this->instanceDir ?: $ws,
+            $this->engine,
+            $this->modelOverride
+        );
+        $engine   = $ctx->engine;
+        $agentStateArg = escapeshellarg($ctx->stateDir);
         $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
             ? 'export TIKNIX_WORKBENCH_DB=' . escapeshellarg($wsDbEnv) . "\n" : '';

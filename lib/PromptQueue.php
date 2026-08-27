@@ -149,7 +149,9 @@ class PromptQueue {
             }
 
             $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ? AND app = ?', [$slug, $app]), null);
-            $engine = $inst && $inst->id ? (string) ($inst->engine ?: 'claude') : 'claude';
+            // '' rather than 'claude': an empty engine should fall through to the
+            // PROJECT's own .aibuilder/engine (app\AgentContext), not be overruled here.
+            $engine = $inst && $inst->id ? (string) ($inst->engine ?? '') : '';
 
             $runner = new PlanRunner($slug, $dir, $q['member_id'],
                 (int) ($inst->memberLevel ?? 50), $engine);

@@ -210,15 +210,18 @@ class PlanExecutor {
 
         // Resolve the per-task engine through the registry (§7). An engine with no proven
         // headless launcher fails the task below rather than quietly running elsewhere.
-        $reqEngine = (string)($t->engine ?: EngineRegistry::defaultEngine());
+        // One resolution for engine and model (app\AgentContext). buildRunnerScript
+        // derives the credential store from the same engine value below.
+        $ctx       = AgentContext::for($this->planMemberId(), 'worker', $this->instanceDir,
+                                       (string) ($t->engine ?? ''), (string) ($t->model ?? ''));
+        $reqEngine = $ctx->engine;
         $prompt = 'Read .aibuilder/task.md and implement it fully in this working directory, following the codebase conventions. Do not touch files outside your task. When finished, stop.';
         /* The model must come from the SAME engine this task runs on. A single model for
            the whole plan was a claude-only assumption: the caller resolved claude's worker
            tier and every task got it, so a task on another provider was launched asking for
            a model that provider has never heard of. Per-task, via the registry, with the
            task's own explicit model winning if the planner set one. */
-        $taskModel = trim((string) ($t->model ?? ''))
-            ?: MemberEnginePrefs::model($this->planMemberId(), $reqEngine, 'worker');
+        $taskModel = $ctx->model;
         $inner  = EngineRegistry::agentCommand($reqEngine, $prompt, $taskModel, ['stream' => true]);
         $ranOn  = $reqEngine;
         if ($inner === null) {

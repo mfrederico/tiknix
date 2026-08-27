@@ -236,10 +236,12 @@ class PlanRunner {
         // registry (§7), not a hardcoded opus. claude's planner tier is opus (unchanged);
         // another engine declares its own. Dispatch stays on the claude launcher until a
         // non-claude engine's headless jail path is wired (Phase A) — the tier still applies.
-        $engine = EngineRegistry::isValid($this->engine) ? $this->engine : EngineRegistry::defaultEngine();
+        // One resolution for engine, model and credential store (app\AgentContext).
+        $ctx    = AgentContext::for($this->memberId, 'planner', $this->instanceDir, $this->engine);
+        $engine = $ctx->engine;
         // The member who triggered the decompose may override the planner (decomp) model
         // in their settings; absent an override this is the engine's registry planner tier.
-        $model  = MemberEnginePrefs::model($this->memberId, $engine, 'planner');
+        $model  = $ctx->model;
 
         $jail = $this->jailFor();
         if ($jail !== '') {
@@ -293,9 +295,7 @@ class PlanRunner {
         // registry default, and the credential store must be the one the CLI will actually
         // use. Resolving them from different values binds a store for one provider while the
         // agent talks to another — a login that appears to succeed and never takes effect.
-        $agentStateArg = escapeshellarg(
-            AgentState::resolve($this->memberId, $engine, $this->instanceDir)
-        );
+        $agentStateArg = escapeshellarg($ctx->stateDir);
         $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
             ? "export TIKNIX_WORKBENCH_DB=" . escapeshellarg($wsDbEnv) . "\n" : '';

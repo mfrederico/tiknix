@@ -43,11 +43,65 @@ class PlanExecutor {
         $this->memberLevel = $memberLevel;
     }
 
-    /** Wall-clock allowed for ONE subtask, in orchestrator ticks (10s each). */
+    /** Per-task budget when there is not enough history to measure one. */
     private const TASK_BUDGET_TICKS = 180;      // 30 minutes
+
+    /** Fewer finished subtasks than this and the measurement is noise, not a p95. */
+    private const BUDGET_MIN_SAMPLES = 5;
+
+    /** Clamp on anything measured: no task budget below 15m or above 90m. */
+    private const BUDGET_FLOOR_TICKS = 90;
+    private const BUDGET_CEIL_TICKS  = 540;
 
     /** Absolute ceiling however big the plan is — a runaway must still end. */
     private const MAX_BUDGET_TICKS = 4320;      // 12 hours
+
+    /**
+     * How long ONE subtask on this engine+model may take, measured from what they have
+     * actually done here.
+     *
+     * A single constant could not fit: across 387 finished subtasks on this host, claude's
+     * p95 was 13 minutes and z.ai's was 35 — nearly three times longer for the same kind of
+     * work. A 30-minute budget was therefore both wasteful for one and too tight for the
+     * other, and plan #111 timed out on exactly that mismatch.
+     *
+     * p95 doubled: the p95 is what a slow-but-normal task costs, and the doubling covers a
+     * task that is genuinely harder than the ones already measured. Clamped either way,
+     * because a handful of quick tasks must not produce a budget that kills the first slow
+     * one, and no measurement should permit a task to run for a working day.
+     *
+     * Falls back to the documented default ONLY when there are too few samples to measure,
+     * and that is a real answer rather than a guess dressed as one: with four data points
+     * a p95 is just the maximum.
+     */
+    private function taskBudgetTicks(string $engine, string $model): int {
+        $secs = [];
+        try {
+            $rows = Bean::getAll(
+                'SELECT started_at, completed_at, updated_at FROM workbenchtask
+                  WHERE parent_task_id IS NOT NULL AND started_at IS NOT NULL
+                    AND engine = ? AND status IN (?, ?, ?)',
+                [$engine, 'merged', 'resolved', 'completed']
+            );
+            foreach ($rows as $r) {
+                $end = $r['completed_at'] ?: $r['updated_at'];
+                if (!$end || !$r['started_at']) continue;
+                $d = strtotime((string) $end) - strtotime((string) $r['started_at']);
+                // Discard the impossible: a clock skew, or a row whose end was written by
+                // something other than the task finishing.
+                if ($d > 0 && $d <= 86400) $secs[] = $d;
+            }
+        } catch (\Throwable $e) {
+            return self::TASK_BUDGET_TICKS;      // no history table here
+        }
+
+        if (count($secs) < self::BUDGET_MIN_SAMPLES) return self::TASK_BUDGET_TICKS;
+
+        sort($secs);
+        $p95   = $secs[(int) floor(0.95 * (count($secs) - 1))];
+        $ticks = (int) ceil(($p95 * 2) / 10);    // doubled, converted to 10s ticks
+        return max(self::BUDGET_FLOOR_TICKS, min(self::BUDGET_CEIL_TICKS, $ticks));
+    }
 
     /**
      * How long this plan may take, derived from the work and the provider's limits.
@@ -81,11 +135,17 @@ class PlanExecutor {
             $groups[$key]['n']++;
         }
 
-        $waves = 0;
-        foreach ($groups as $g) $waves += (int) ceil($g['n'] / $g['cap']);
-        if ($waves < 1) $waves = 1;             // nothing left to do; still allow one tick round
+        // Each group carries its own measured per-task cost, so a plan mixing a fast
+        // engine and a slow one is budgeted for what each actually takes.
+        $ticks = 0;
+        foreach ($groups as $key => $g) {
+            [$eng, $mdl] = array_pad(explode(':', $key, 2), 2, '');
+            $waves  = (int) ceil($g['n'] / $g['cap']);
+            $ticks += $waves * $this->taskBudgetTicks($eng, $mdl);
+        }
+        if ($ticks < 1) $ticks = self::TASK_BUDGET_TICKS;
 
-        return min($waves * self::TASK_BUDGET_TICKS, self::MAX_BUDGET_TICKS);
+        return min($ticks, self::MAX_BUDGET_TICKS);
     }
 
     // ---- public API --------------------------------------------------------

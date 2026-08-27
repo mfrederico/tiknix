@@ -373,7 +373,20 @@ class ClaudeRunner {
         // Credentials follow the PERSON, not the project — see app\AgentState.
         // The engine is recorded per instance by provisioning (.aibuilder/engine).
         $ws       = rtrim($this->getProjectPath(), '/');
-        $engine   = trim((string) @file_get_contents($ws . '/.aibuilder/engine')) ?: 'claude';
+        /* THE TASK'S ENGINE DECIDES, not a file in the workspace.
+         *
+         * This read `.aibuilder/engine` out of $ws — which for a task is a per-task git
+         * CLONE, where that file does not exist. It fell back to 'claude' and bound
+         * claude's credential store while the agent ran on the task's actual engine, so a
+         * zai task looked for its key in agent-state/<member>/claude, found none, and the
+         * jail refused: "$ZAI_API_KEY is empty in the operator environment".
+         *
+         * $this->engine is set from the task row in the constructor, which is the same
+         * value the run is dispatched on. The instance file is consulted only for a task
+         * that names no engine, and is the PROJECT default rather than a guess. */
+        $engine   = $this->engine
+            ?: (trim((string) @file_get_contents($ws . '/.aibuilder/engine'))
+                ?: \app\EngineRegistry::defaultEngine());
         $agentStateArg = escapeshellarg(AgentState::resolve((int) $this->memberId, $engine, $ws));
         $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')

@@ -120,15 +120,32 @@ class AuditRunner {
         $log = $this->logFile();
         $shortPrompt = 'Read the file .aibuilder/audit-request.md and follow its instructions exactly. '
                      . 'You MUST finish by writing the manifest to .aibuilder/audit.json.';
-        // Auditor model from the registry's auditor tier (§4 — ideally decorrelated
-        // from the worker model). The auditor is instance-level (no per-task engine),
-        // so resolve the default engine's auditor tier, letting the member who owns the
-        // run override it. Default sonnet: the QA work is procedural browser driving.
-        $model = MemberEnginePrefs::model($this->memberId, EngineRegistry::defaultEngine(), 'auditor');
+        /* THE PROJECT'S engine, resolved once and used for all three things that must
+           agree: the model asked for, the credential store bound, and the provider the jail
+           points the CLI at. The auditor is instance-level (no per-task engine), so the
+           instance's own .aibuilder/engine is the right source — it is the instance
+           directory here, not a workspace clone.
+
+           The model used to come from EngineRegistry::defaultEngine() — the CONF default,
+           not this project's engine. On a project running anything else that asked for
+           claude's auditor tier ('sonnet') and handed it to another provider. */
+        $engine = trim((string) @file_get_contents($ws . '/.aibuilder/engine'))
+            ?: EngineRegistry::defaultEngine();
+        if (!EngineRegistry::isValid($engine)) $engine = EngineRegistry::defaultEngine();
+
+        // Auditor tier from THAT engine (§4 — ideally decorrelated from the worker model),
+        // with the member who owns the run able to override it.
+        $model = MemberEnginePrefs::model($this->memberId, $engine, 'auditor');
 
         $jail = $this->jailFor();
         if ($jail !== '') {
-            $runBlock = escapeshellarg($jail) . ' ' . escapeshellarg($ws)
+            /* ENGINE ships with the model, as in PlanRunner. It worked here only by
+               coincidence: $ws is the instance directory, so jail-run.sh's own fallback read
+               the same file and happened to agree. Point the auditor at a worktree and that
+               coincidence ends — it would run one provider while holding another's
+               credentials. State it rather than rely on the two paths matching. */
+            $runBlock = 'ENGINE=' . escapeshellarg($engine) . ' '
+                      . escapeshellarg($jail) . ' ' . escapeshellarg($ws)
                       . ' -- -p ' . escapeshellarg($shortPrompt) . ' --model ' . escapeshellarg($model);
         } else {
             $claude = 'claude -p ' . escapeshellarg($shortPrompt)
@@ -142,7 +159,7 @@ class AuditRunner {
         // this it used the per-project store, which for any project relying on a member
         // store is empty: the QA agent died in a second with "Not logged in" and the
         // driver reported only "no manifest produced within the time budget".
-        $engine = trim((string) @file_get_contents($ws . '/.aibuilder/engine')) ?: 'claude';
+        // $engine resolved above — the same value the run and the model use.
         $agentStateArg = escapeshellarg(AgentState::resolve($this->memberId, $engine, $ws));
         return <<<BASH
 #!/bin/bash

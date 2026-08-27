@@ -116,6 +116,7 @@ class GitService {
         $this->repoPath = $workspacePath;
 
         $this->copyClaudeFolder($workspacePath);
+        $this->copyEngineConfig($workspacePath, $instanceTag);
         Mcp::ensureMcpConfig($workspacePath); // API key set later if needed
 
         $this->log("Workspace created at: {$workspacePath}");
@@ -142,6 +143,40 @@ class GitService {
      *
      * @param string $workspacePath Path to the workspace
      */
+    /**
+     * Carry the instance's engine config into the task workspace.
+     *
+     * conf/*.ini is GITIGNORED, so a clone never contains it — the workspace came up with
+     * no conf/ at all. jail-run.sh reads [engine.<name>] from $INSTANCE/conf/aibuilder.ini,
+     * and $INSTANCE for a task IS this workspace, so any engine whose settings live in
+     * config could not start here: "engine 'zai': no anthropic_base_url in [engine.zai]".
+     *
+     * It went unnoticed because claude needs nothing from that file — its credentials come
+     * from the state dir — so the gap only appeared the first time a task ran on another
+     * provider.
+     *
+     * ONLY aibuilder.ini. config.ini carries the database path and app identity; copying it
+     * would point a throwaway workspace at the live instance's database.
+     */
+    private function copyEngineConfig(string $workspacePath, string $instanceTag): void {
+        if ($instanceTag === '') return;                 // no instance to copy from
+        $src = '/var/www/html/default/' . $instanceTag . '/conf/aibuilder.ini';
+        if (!is_file($src)) return;                      // instance has none either
+
+        $dstDir = $workspacePath . '/conf';
+        if (!is_dir($dstDir) && !@mkdir($dstDir, 0775, true) && !is_dir($dstDir)) {
+            $this->log("WARNING: could not create {$dstDir}; engines needing config will fail here");
+            return;
+        }
+        if (!@copy($src, $dstDir . '/aibuilder.ini')) {
+            // Loud: the task will fail later with a confusing engine error otherwise.
+            $this->log("WARNING: failed to copy {$src} into the workspace; non-default engines will not start");
+            return;
+        }
+        @chmod($dstDir . '/aibuilder.ini', 0640);        // holds the bridge token secret
+        $this->log("Copied engine config into workspace");
+    }
+
     private function copyClaudeFolder(string $workspacePath): void {
         $claudeDir          = dirname(__DIR__) . '/.claude';
         $workspaceClaudeDir = $workspacePath . '/.claude';

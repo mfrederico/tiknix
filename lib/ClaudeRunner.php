@@ -585,7 +585,7 @@ BASH;
                 return $this->sendMessage($prompt);   // buffer paste unavailable
             }
             usleep(300000);
-            if ($this->promptLanded()) {
+            if ($this->promptLanded($prompt)) {
                 // Worth knowing how long a cold start actually takes on this engine —
                 // otherwise the next person tuning this is guessing too.
                 if ($attempt > 3) {
@@ -630,11 +630,30 @@ BASH;
      * placeholder is gone, and a long paste collapses to a "paste again to expand" hint.
      * Either of those means the terminal took the input.
      */
-    private function promptLanded(): bool {
-        $pane = TmuxManager::capture($this->sessionName, 20);
+    private function promptLanded(string $prompt = ''): bool {
+        /* 60 lines, not 20. The CLI prints a startup notice — 2.1.247 added a
+           "Keep working from anywhere / run /remote-control" block — which pushed the empty
+           box's placeholder out of a 20-line window. */
+        $pane = TmuxManager::capture($this->sessionName, 60);
         if ($pane === '') return false;
+
+        /* POSITIVE evidence first. A long paste collapses to a chip rather than showing the
+           text, so the chip is the strongest signal the terminal took it. */
         if (stripos($pane, 'paste again to expand') !== false) return true;
-        return stripos($pane, 'Try "') === false && stripos($pane, "Try '") === false;
+        if (stripos($pane, 'Pasted text') !== false) return true;
+
+        // A short prompt appears literally: look for its own opening words.
+        $head = trim(substr(preg_replace('/\s+/', ' ', $prompt), 0, 40));
+        if ($head !== '' && stripos($pane, $head) !== false) return true;
+
+        /* The placeholder being ABSENT used to be enough on its own. It is not evidence of
+           anything — the CLI hides it while drawing a notice, and a task was marked running
+           against a session sitting at an empty prompt. Require it gone AND the box to be
+           the only thing on screen worth trusting: no notice, no placeholder. */
+        $placeholderGone = stripos($pane, 'Try "') === false && stripos($pane, "Try '") === false;
+        $noticeShowing   = stripos($pane, 'Keep working from anywhere') !== false
+                        || stripos($pane, '/remote-control') !== false;
+        return $placeholderGone && !$noticeShowing;
     }
 
     /**

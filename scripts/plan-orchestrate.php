@@ -63,12 +63,35 @@ $ex = new PlanExecutor($planId, $slug, $dir, $level);
 
 $maxTicks = 720;                 // ~2h ceiling at 10s/tick
 $res = ['done' => false, 'stalled' => false, 'counts' => [], 'total' => 0];
+$ranOut = true;                  // set false the moment the loop breaks on a real outcome
 for ($i = 0; $i < $maxTicks; $i++) {
     $res = $ex->runOnce();
     $c = $res['counts'];
     echo "[orchestrator] tick $i: " . json_encode($c) . ($res['stalled'] ? " STALLED" : "") . "\n";
-    if ($res['done']) break;
+    if ($res['done']) { $ranOut = false; break; }
     sleep(10);
+}
+
+/* FOUR outcomes, not three. The loop can also simply run out of ticks with agents still
+   working — and that used to fall through to the "done" branch, because `stalled` is false
+   while anything is running. Plan #111 exhausted its 2h ceiling with one subtask running
+   and two pending, and was finalized, emailed, and handed to the auditor as complete.
+   Seeds from a partial build were applied to the live instance.
+   This became likely rather than theoretical the moment engines declared a concurrency of
+   1: a plan that used to run three agents wide now runs serially and takes three times the
+   wall-clock to reach the same ceiling. */
+if ($ranOut) {
+    $left = (int) ($res['counts']['running'] ?? 0) + (int) ($res['counts']['pending'] ?? 0);
+    echo "[orchestrator] plan #{$planId} RAN OUT OF TIME after {$maxTicks} ticks with {$left} subtask(s) unfinished\n";
+    $parent = Bean::load('workbenchtask', $planId);
+    $parent->planStatus   = 'stalled';     // incomplete, and a person must decide
+    $parent->status       = 'failed';
+    $parent->errorMessage = "The build ran out of time ({$maxTicks} ticks) with {$left} subtask(s) unfinished. "
+        . 'Nothing was finalized: no seeds applied and no audit run, because a partial build must not be '
+        . 'reported as a finished one. Press Build again to resume — merged subtasks are skipped.';
+    $parent->updatedAt = date('Y-m-d H:i:s');
+    Bean::store($parent);
+    exit(0);
 }
 
 // Apply DB seed scripts the plan introduced + rebuild the permission cache, but

@@ -158,6 +158,19 @@ class GitService {
      * ONLY aibuilder.ini. config.ini carries the database path and app identity; copying it
      * would point a throwaway workspace at the live instance's database.
      */
+    /**
+     * Idempotent, and PUBLIC because the clone is not the only path here.
+     *
+     * cloneToWorkspace runs once, on a task's FIRST run — after that the task has a branch
+     * and every retry reuses the existing workspace. A copy that only happened at clone
+     * time therefore fixed new tasks and left every existing one broken: 47 of 48
+     * workspaces on this host had no conf/ at all. Call this before launching an agent,
+     * whichever path produced the workspace.
+     */
+    public static function ensureEngineConfig(string $workspacePath, string $instanceTag): void {
+        (new self())->copyEngineConfig($workspacePath, $instanceTag);
+    }
+
     private function copyEngineConfig(string $workspacePath, string $instanceTag): void {
         if ($instanceTag === '') return;                 // no instance to copy from
         $src = '/var/www/html/default/' . $instanceTag . '/conf/aibuilder.ini';
@@ -168,6 +181,10 @@ class GitService {
             $this->log("WARNING: could not create {$dstDir}; engines needing config will fail here");
             return;
         }
+        $dst = $dstDir . '/aibuilder.ini';
+        // Re-copied when the instance's config is newer: an engine added or re-pointed after
+        // this workspace was created would otherwise never reach it.
+        if (is_file($dst) && filemtime($dst) >= filemtime($src)) return;
         if (!@copy($src, $dstDir . '/aibuilder.ini')) {
             // Loud: the task will fail later with a confusing engine error otherwise.
             $this->log("WARNING: failed to copy {$src} into the workspace; non-default engines will not start");

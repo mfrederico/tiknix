@@ -237,7 +237,7 @@ function sweepOneDeferred($inst, string $dir, int $level): int {
         // Was a hand-rolled copy of the launch block that did NOT export
         // TIKNIX_WORKBENCH_DB — so a deferred fix plan for an instance drove core's db.
         // app\PlanOrchestrator is the one launcher and carries the tasks db through.
-        if (!\app\PlanOrchestrator::launch($planId, (string)$inst->slug, $dir, $level, $model)) {
+        if (!\app\PlanOrchestrator::launch($planId, (string)$inst->slug, $dir, $level)) {
             alog("idle-sweep could NOT start the orchestrator for plan #$planId");
         }
         $err->taskId = $planId;

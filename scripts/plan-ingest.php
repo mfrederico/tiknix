@@ -216,7 +216,7 @@ if ($autoBuild) {
     // Pass $tasksDb EXPLICITLY. It is the path this script resolved and wrote the plan
     // to; handing the launcher an env var instead would let the orchestrator write task
     // state somewhere other than where the plan it is building actually lives.
-    $started = PlanOrchestrator::launch($planId, $slug, $dir, $level, 'sonnet', $tasksDb);
+    $started = PlanOrchestrator::launch($planId, $slug, $dir, $level, $tasksDb);
 
     $note = Bean::dispense('tasklog');
     $note->taskId     = $planId;

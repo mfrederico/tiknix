@@ -300,6 +300,24 @@ class EngineRegistry {
         return max(0, (int) ($e['max_concurrency'] ?? 0));
     }
 
+    /**
+     * An operator-supplied key this engine may run on, which the WEB APP cannot see.
+     *
+     * jail-run.sh injects ANTHROPIC_API_KEY from the bridge's environment, so claude runs
+     * on it with no OAuth login at all — that is what "API Usage Billing" in the terminal
+     * banner means. PHP-FPM does not share that environment, so the sign-in check looked
+     * for a `.credentials.json` that will never exist and told the member they had no
+     * credentials for an engine that was working in the next tab.
+     *
+     * Declaring it here does not prove a key is present; it says the app CANNOT KNOW. That
+     * is the honest distinction — refusing to start on an absence you cannot verify is
+     * worse than letting the jail refuse loudly with the variable's name, which it does.
+     */
+    public static function operatorKeyEnv(string $engine): string {
+        $e = self::all()[$engine] ?? null;
+        return $e === null ? '' : trim((string)($e['operator_key_env'] ?? ''));
+    }
+
     /** True when this engine can be launched headless (`-p`) TODAY. */
     public static function supportsHeadless(string $engine): bool {
         $e = self::all()[$engine] ?? null;

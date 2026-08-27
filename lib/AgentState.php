@@ -146,6 +146,17 @@ class AgentState {
         }
 
         if ($memberId > 0 && self::credentialsUsable(self::memberDir($memberId, $engine) . '/.credentials.json', $engine)) return true;
+
+        /* An engine the operator may have keyed cannot be judged from here. jail-run.sh
+           injects ANTHROPIC_API_KEY from the BRIDGE's environment, which PHP-FPM does not
+           share — so claude runs happily on a key while this function looks for a
+           .credentials.json that will never exist, and told a member they had no
+           credentials for the engine working in their other tab.
+           Answered after the OAuth checks so a real login is still preferred, and only for
+           engines that declare the variable. If no key is actually set, the jail refuses at
+           launch naming it, which is the right place for that failure: a check that cannot
+           see the credential must not be the thing that blocks the run. */
+        if (EngineRegistry::operatorKeyEnv($engine) !== '') return true;
         if (self::credentialsUsable(self::projectDir($instanceDir, $engine) . '/.credentials.json', $engine)) return true;
         // Not signed in HERE, but adoptable from another of their projects — which
         // resolve() will do on the next run, so the honest answer is yes.

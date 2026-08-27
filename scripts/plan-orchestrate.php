@@ -61,7 +61,11 @@ echo "[orchestrator] plan #$planId ($slug) starting " . date('c') . "\n";
 // engine. A single --model could only be right when every task ran on one provider.
 $ex = new PlanExecutor($planId, $slug, $dir, $level);
 
-$maxTicks = 720;                 // ~2h ceiling at 10s/tick
+/* Derived from the work left and the provider's concurrency, not a constant — see
+   PlanExecutor::timeBudgetTicks(). A fixed 720 (2h) was generous for a plan running three
+   wide and far too tight for the same plan against a provider that serves one at a time. */
+$maxTicks = $ex->timeBudgetTicks();
+echo "[orchestrator] time budget: {$maxTicks} ticks (~" . round($maxTicks * 10 / 3600, 1) . "h)\n";
 $res = ['done' => false, 'stalled' => false, 'counts' => [], 'total' => 0];
 $ranOut = true;                  // set false the moment the loop breaks on a real outcome
 for ($i = 0; $i < $maxTicks; $i++) {

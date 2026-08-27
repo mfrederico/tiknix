@@ -43,6 +43,51 @@ class PlanExecutor {
         $this->memberLevel = $memberLevel;
     }
 
+    /** Wall-clock allowed for ONE subtask, in orchestrator ticks (10s each). */
+    private const TASK_BUDGET_TICKS = 180;      // 30 minutes
+
+    /** Absolute ceiling however big the plan is — a runaway must still end. */
+    private const MAX_BUDGET_TICKS = 4320;      // 12 hours
+
+    /**
+     * How long this plan may take, derived from the work and the provider's limits.
+     *
+     * A fixed ceiling could only ever be right for one shape of plan. 720 ticks (2h) was
+     * generous for eight tasks running three wide — 40 minutes a wave — and far too tight
+     * for the same eight tasks against a provider that serves one at a time, which is 15
+     * minutes each. Plan #111 hit exactly that and was reported as finished.
+     *
+     * Waves, not tasks: work runs concurrently, so what bounds the clock is how many
+     * ROUNDS the remaining tasks must run in. Counted per model, because the limit belongs
+     * to the model, and SUMMED rather than maxed — two saturated models do not overlap for
+     * free when MAX_CONCURRENT bounds the total, and a ceiling that is too generous costs
+     * only a later timeout while one that is too tight kills working builds.
+     *
+     * Only pending and running tasks count. Resuming a plan that is most of the way done
+     * should not re-budget for the parts already merged.
+     */
+    public function timeBudgetTicks(): int {
+        $groups = [];
+        foreach ($this->subtasks() as $t) {
+            if (!in_array((string) $t->status, ['pending', 'running'], true)) continue;
+            $eng = (string) ($t->engine ?: EngineRegistry::defaultEngine());
+            $mdl = (string) ($t->model ?? '');
+            $key = $eng . ':' . $mdl;
+            if (!isset($groups[$key])) {
+                $cap = EngineRegistry::maxConcurrency($eng, $mdl);
+                // No declared provider limit: our own cap is the only one that applies.
+                $groups[$key] = ['n' => 0, 'cap' => max(1, min(self::MAX_CONCURRENT, $cap > 0 ? $cap : self::MAX_CONCURRENT))];
+            }
+            $groups[$key]['n']++;
+        }
+
+        $waves = 0;
+        foreach ($groups as $g) $waves += (int) ceil($g['n'] / $g['cap']);
+        if ($waves < 1) $waves = 1;             // nothing left to do; still allow one tick round
+
+        return min($waves * self::TASK_BUDGET_TICKS, self::MAX_BUDGET_TICKS);
+    }
+
     // ---- public API --------------------------------------------------------
 
     /** The plan (parent) bean. */

@@ -69,15 +69,47 @@ class PlanExecutor {
             }
         }
 
-        // 2) Launch: fill open slots with ready tasks (deps all merged).
-        $running = $this->countByStatus($this->subtasks(), 'running');
-        $slots   = self::MAX_CONCURRENT - $running;
+        /* 2) Launch: fill open slots with ready tasks (deps all merged).
+         *
+         * TWO caps, because they protect different things. MAX_CONCURRENT is ours — it
+         * bounds what this machine and the operator's quota will carry. The per-engine cap
+         * is the PROVIDER's: z.ai serves GLM-5.3 with a concurrency of 1, so launching
+         * three agents against it put two of them into 529 "overloaded" retry loops,
+         * spending wall-clock and quota to accomplish nothing. Launching fewer is faster.
+         *
+         * Counted per engine rather than globally, since a plan may mix engines and one
+         * saturated provider must not block a task bound for another. */
+        $fresh   = $this->subtasks();
+        $running = $this->countByStatus($fresh, 'running');
+        $perEngine = [];
+        foreach ($fresh as $t) {
+            if ($t->status !== 'running') continue;
+            $e = (string) ($t->engine ?: EngineRegistry::defaultEngine()) . ':' . (string) ($t->model ?? '');
+            $perEngine[$e] = ($perEngine[$e] ?? 0) + 1;
+        }
+
+        $slots = self::MAX_CONCURRENT - $running;
         if ($slots > 0) {
-            foreach ($this->subtasks() as $t) {
+            foreach ($fresh as $t) {
                 if ($slots <= 0) break;
                 if ($t->status !== 'pending') continue;
                 if (!$this->depsMerged($t, $byId)) continue;
-                if ($this->launchTask($t)) { $slots--; }
+
+                // Keyed by engine AND model: the provider's limit is per model, and a
+                // plan may mix tiers (a fast worker model alongside a frontier planner).
+                $eng = (string) ($t->engine ?: EngineRegistry::defaultEngine());
+                $mdl = (string) ($t->model ?? '');
+                $key = $eng . ':' . $mdl;
+                $cap = EngineRegistry::maxConcurrency($eng, $mdl);   // 0 = none declared
+                if ($cap > 0 && ($perEngine[$key] ?? 0) >= $cap) {
+                    // Saturated upstream. Leave it pending; the next tick tries again.
+                    continue;
+                }
+
+                if ($this->launchTask($t)) {
+                    $slots--;
+                    $perEngine[$key] = ($perEngine[$key] ?? 0) + 1;
+                }
             }
         }
 

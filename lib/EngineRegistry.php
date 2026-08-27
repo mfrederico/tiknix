@@ -272,6 +272,34 @@ class EngineRegistry {
         return $e === null ? '' : trim((string)($e['key_url'] ?? ''));
     }
 
+    /**
+     * How many agents this engine will serve AT ONCE, from its `max_concurrency` row.
+     *
+     * A provider limit, not a machine limit. z.ai serves GLM-5.3 with a concurrency of 1
+     * (GLM-5.3-Flash allows 50), so running the orchestrator's default three build agents
+     * against it guarantees that two of them sit in 529 "overloaded" retry loops burning
+     * wall-clock and quota to do nothing. Anthropic's limits are high enough that this
+     * never came up.
+     *
+     * 0 means "no declared limit" — the caller's own cap applies. Never invent a number
+     * here: guessing low throttles an engine that could go faster, guessing high recreates
+     * the retry storm.
+     */
+    public static function maxConcurrency(string $engine, string $model = ''): int {
+        $e = self::all()[$engine] ?? null;
+        if ($e === null) return 0;
+
+        /* PER MODEL first, because that is what the provider actually limits. z.ai allows
+           1 concurrent GLM-5.3 and 50 GLM-5.3-Flash — so a plan whose worker tier is the
+           fast model can run the orchestrator's full width while its planner cannot. An
+           engine-level number can only be right while every tier shares one model. */
+        $map = $e['concurrency'] ?? null;
+        if (is_array($map) && $model !== '' && isset($map[$model])) {
+            return max(0, (int) $map[$model]);
+        }
+        return max(0, (int) ($e['max_concurrency'] ?? 0));
+    }
+
     /** True when this engine can be launched headless (`-p`) TODAY. */
     public static function supportsHeadless(string $engine): bool {
         $e = self::all()[$engine] ?? null;

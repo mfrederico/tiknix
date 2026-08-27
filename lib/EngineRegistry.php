@@ -50,8 +50,45 @@ class EngineRegistry {
         return dirname(__DIR__) . '/conf/aibuilder.ini';
     }
 
+    /**
+     * The [engine.*] rows, and LOUD about not finding them.
+     *
+     * This was `@parse_ini_file(...) ?: []`, which collapsed three different situations
+     * into one silent empty array: the file is missing, the file is malformed, or the file
+     * is fine and declares nothing. The app then ran on BUILTIN claude with no clue why —
+     * so an instance configured for another provider quietly became a claude instance the
+     * moment its config went missing, and a task workspace with no conf/ reported "no such
+     * engine 'zai'" instead of "there is no config here".
+     *
+     * BUILTIN stays: it declares claude's actual tiers rather than inventing a value. What
+     * changes is that using it because nothing was READ now leaves a record naming the path.
+     * Logged once per process, since all() is called on ordinary page renders and a warning
+     * repeated fifty times is one nobody reads.
+     */
+    private static bool $iniComplained = false;
+
     private static function ini(): array {
-        return @parse_ini_file(self::iniPath(), true) ?: [];
+        $path = self::iniPath();
+        if (!is_file($path)) {
+            if (!self::$iniComplained) {
+                self::$iniComplained = true;
+                error_log("ERROR EngineRegistry: no engine config at {$path}; "
+                    . 'falling through to the built-in claude entry. Any other engine will '
+                    . 'read as unregistered here.');
+            }
+            return [];
+        }
+        $parsed = @parse_ini_file($path, true);
+        if ($parsed === false) {
+            // A broken edit, not an absent file — and the two need different fixes.
+            if (!self::$iniComplained) {
+                self::$iniComplained = true;
+                error_log("ERROR EngineRegistry: {$path} could not be parsed (syntax error); "
+                    . 'every engine it declares is being ignored.');
+            }
+            return [];
+        }
+        return $parsed;
     }
 
     private static function truthy($v): bool {

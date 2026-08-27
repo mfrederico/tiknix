@@ -412,14 +412,18 @@ class Firehose extends Control {
     private function startOrchestrator(int $planId, $inst, int $level): bool {
         $app = $inst->app ?: 'tiknix';
         $dir = $inst->dir();
-        // Escalate the FINAL cap-cycle fix to a stronger model. The audit->fix loop
-        // gets MAX_AUDIT_CYCLES attempts; the last one is the last auto-shot before a
-        // human takes over, so give it opus (the earlier, cheaper cycles stay sonnet).
-        $auditCycle = (int)(Bean::load('workbenchtask', $planId)->auditCycle ?? 0);
-        $model = ($auditCycle >= \app\AuditReporter::MAX_AUDIT_CYCLES) ? 'opus' : 'sonnet';
+        /* The cap-cycle model escalation is GONE, and saying so beats leaving code that
+           looks like it still works. It handed 'opus' (or 'sonnet') to launch() as a
+           plan-wide model. That parameter no longer exists — PlanExecutor resolves each
+           task's model from that task's own engine — so the value was landing in
+           $workbenchDb and the orchestrator exited with "no tasks db at sonnet". The
+           firehose's auto-fix has not started since.
+           The names were wrong regardless: 'opus' means nothing to a project on another
+           provider. Restoring the escalation means setting a model on the TASKS, by engine
+           tier, not on the launcher. */
         // This copy of the launcher used to omit the TIKNIX_WORKBENCH_DB export the
         // sidecar's copy had, so a sweep-launched plan for an instance wrote its task
         // state to core's db instead of the instance's. app\PlanOrchestrator carries it.
-        return \app\PlanOrchestrator::launch($planId, (string)$inst->slug, $dir, $level, $model);
+        return \app\PlanOrchestrator::launch($planId, (string)$inst->slug, $dir, $level);
     }
 }

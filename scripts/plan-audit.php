@@ -232,8 +232,6 @@ function sweepOneDeferred($inst, string $dir, int $level): int {
         Bean::store($parent);
 
         // Spawn the detached orchestrator (mirrors Firehose::startOrchestrator).
-        // Escalate the final cap-cycle fix to opus; earlier cycles stay on sonnet.
-        $model = ((int)$parent->auditCycle >= \app\AuditReporter::MAX_AUDIT_CYCLES) ? 'opus' : 'sonnet';
         // Was a hand-rolled copy of the launch block that did NOT export
         // TIKNIX_WORKBENCH_DB — so a deferred fix plan for an instance drove core's db.
         // app\PlanOrchestrator is the one launcher and carries the tasks db through.

@@ -149,6 +149,12 @@ class Firehose extends Control {
         $err->url         = mb_substr((string)($data['url'] ?? ''), 0, 500);
         $err->httpMethod  = mb_substr((string)($data['http_method'] ?? ''), 0, 12);
         $err->context     = json_encode($data['context'] ?? []);
+        /* WHERE it happened, which decides whether it is a bug at all.
+           A build agent works in a throwaway git worktree and verification steps run
+           one-off `php -r` lines; errors from either are scoped to a context that no longer
+           exists by the time anyone reads the task. Filing those as production bugs put
+           three "Fix: …" tasks on a board whose site was serving 200s the whole time. */
+        $err->origin      = self::classifyOrigin((string) $err->file, (string) $err->httpMethod);
         $err->hitCount    = 1;
         $err->status      = 'new';
         $err->taskId      = 0;
@@ -157,8 +163,12 @@ class Firehose extends Control {
         $err->createdAt   = $now;
         Bean::store($err);
 
-        // Phase 3 hooks auto-triage here.
-        $triage = $this->autoTriage($err);
+        /* Only a LIVE error becomes a task. The others are still recorded and still visible
+           on the firehose — they are evidence about a build — but they are not work for a
+           person, and a board that cannot tell the difference trains people to ignore it. */
+        $triage = $err->origin === 'live'
+            ? $this->autoTriage($err)
+            : ['action' => 'recorded', 'reason' => "origin={$err->origin}: not a live-request error"];
 
         Flight::jsonSuccess([
             'id' => (int)$err->id, 'status' => $err->status,
@@ -171,6 +181,24 @@ class Firehose extends Control {
      * against the reporting instance, guarded so it never collides with an agent
      * already on the repo. Returns a small status array for the ingest response.
      */
+    /**
+     * live | worktree | cli — where the error came from.
+     *
+     * Deliberately conservative: anything that is not recognisably a build worktree or a
+     * command-line one-off counts as live, because under-reporting a real production error
+     * is far worse than filing one extra task.
+     */
+    private static function classifyOrigin(string $file, string $httpMethod): string {
+        // A build agent's worktree is deleted when the plan ends; nothing there is fixable.
+        // Stored paths are relative to the instance, so no leading slash to match on.
+        if ($file !== '' && str_contains($file, '.aibuilder/wt/')) return 'worktree';
+        // Recorded fact, not inference: the reporter already stamps CLI on anything that
+        // did not arrive as an HTTP request. Guessing from the file path missed a seed run
+        // that blew up inside vendor/ and looked exactly like a live request.
+        if (strcasecmp(trim($httpMethod), 'CLI') === 0) return 'cli';
+        return 'live';
+    }
+
     private function autoTriage($err): array {
         // Control-plane only: an instance clone of this code must never create tasks.
         if (function_exists('is_control_plane') && !is_control_plane()) {

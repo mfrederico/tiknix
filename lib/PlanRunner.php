@@ -127,10 +127,26 @@ class PlanRunner {
         $dir      = $projects . '/' . $encoded;
         if (!is_dir($dir)) return null;
 
+        /* SCOPED TO THIS PLANNER. The terminal session runs in the same working directory,
+           so it writes transcripts to the same folder — "newest file here" reported terminal
+           typing as planner progress. Two filters, both cheap:
+
+             1. Started no earlier than this run. planner.log is written at launch, so its
+                mtime is the run's start; a slack of a minute covers the gap between the log
+                line and the CLI opening its transcript.
+             2. Contains the planner's own prompt. Only the planner is told to read
+                .aibuilder/plan-request.md, which makes it an unambiguous marker.
+
+           The marker scan reads a bounded head of each candidate, not the whole file —
+           these reach hundreds of KB and this is polled. */
+        $startedAt = (int) @filemtime($this->logFile());
         $newest = null; $newestAt = 0;
         foreach (glob($dir . '/*.jsonl') ?: [] as $f) {
             $m = @filemtime($f);
-            if ($m && $m > $newestAt) { $newestAt = $m; $newest = $f; }
+            if (!$m || $m <= $newestAt) continue;
+            if ($startedAt > 0 && $m < $startedAt - 60) continue;   // an older session
+            if (!self::mentions($f, 'plan-request.md')) continue;    // not the planner
+            $newestAt = $m; $newest = $f;
         }
         if ($newest === null) return null;
 
@@ -143,6 +159,21 @@ class PlanRunner {
             // Not a verdict — a long tool call or a slow provider can exceed it.
             'alive'   => $age < 120,
         ];
+    }
+
+    /**
+     * Does this transcript's opening contain $needle?
+     *
+     * Bounded read: the prompt is in the first turn, and these files grow past a megabyte
+     * while this is polled every few seconds. 256KB is far more than the first turn needs
+     * and still cheap.
+     */
+    private static function mentions(string $file, string $needle): bool {
+        $fh = @fopen($file, 'rb');
+        if (!$fh) return false;
+        $head = (string) @fread($fh, 262144);
+        @fclose($fh);
+        return $head !== '' && str_contains($head, $needle);
     }
 
     /** Last N lines of the planner log for the UI. */

@@ -101,6 +101,50 @@ class PlanRunner {
     /** True once the planner has produced a plan for ingest (any pending file). */
     public function planReady(): bool { return PlanIngestor::pending($this->instanceDir) !== []; }
 
+    /**
+     * Is the planner actually working, and how do we know?
+     *
+     * planner.log is silent for the whole run: PlanRunner uses plain `claude -p`, not
+     * --output-format stream-json, so nothing is written until the process exits. A live
+     * planner therefore looks identical to a wedged one — the process sits at 0% CPU
+     * between API turns, which is normal for an agent and indistinguishable from stuck.
+     * A 17-minute decompose was reported as hung on exactly that evidence.
+     *
+     * The CLI does leave a trail: it appends every turn to a JSONL transcript in the
+     * member's agent-state directory. Its SIZE and mtime are a real progress signal —
+     * growing means turns are still happening.
+     *
+     * @return array{bytes:int,updated:int,age_sec:int,alive:bool}|null
+     *         null when no transcript is found, which is not "stuck" — it is "cannot
+     *         tell", and the caller must not render it as either.
+     */
+    public function activity(): ?array {
+        $stateDir = AgentContext::for($this->memberId, 'planner', $this->instanceDir, $this->engine)->stateDir;
+        // The CLI names a project folder after its working directory, with the separators
+        // and dots flattened to dashes.
+        $projects = rtrim($stateDir, '/') . '/projects';
+        $encoded  = str_replace(['/', '.'], '-', $this->instanceDir);
+        $dir      = $projects . '/' . $encoded;
+        if (!is_dir($dir)) return null;
+
+        $newest = null; $newestAt = 0;
+        foreach (glob($dir . '/*.jsonl') ?: [] as $f) {
+            $m = @filemtime($f);
+            if ($m && $m > $newestAt) { $newestAt = $m; $newest = $f; }
+        }
+        if ($newest === null) return null;
+
+        $age = time() - $newestAt;
+        return [
+            'bytes'   => (int) @filesize($newest),
+            'updated' => $newestAt,
+            'age_sec' => $age,
+            // Two minutes of no new turns while the session is alive is worth surfacing.
+            // Not a verdict — a long tool call or a slow provider can exceed it.
+            'alive'   => $age < 120,
+        ];
+    }
+
     /** Last N lines of the planner log for the UI. */
     public function logTail(int $lines = 40): string {
         $f = $this->logFile();

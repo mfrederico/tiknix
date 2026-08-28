@@ -209,10 +209,24 @@ class GitService {
         }
 
         mkdir($workspaceClaudeDir, 0755, true);
+
+        /* settings.local.json is deliberately NOT copied. It is core's MACHINE-LOCAL config,
+           and on this host it carries permissions.additionalDirectories pointing at two
+           pydev directories that have nothing to do with a task workspace. The CLI treats
+           extra directories as a trust decision and opens on a confirmation dialog whose
+           default option is "No, exit" — so the runner's Enter keypress selected exit and
+           the agent died three seconds in with code 1, on every standalone task, every time.
+           Plan subtasks were unaffected because they run headless (`-p`), which never shows
+           the dialog: that is why builds worked while single-task runs never did.
+           The shared .claude/settings.json still copies, so agent policy carries over; only
+           the local overrides for a different checkout are left behind. */
+        $skip = ['settings.local.json'];
         foreach (glob($claudeDir . '/*') as $file) {
-            if (is_file($file)) copy($file, $workspaceClaudeDir . '/' . basename($file));
+            if (!is_file($file)) continue;
+            if (in_array(basename($file), $skip, true)) continue;
+            copy($file, $workspaceClaudeDir . '/' . basename($file));
         }
-        $this->log("Copied .claude from {$claudeDir}");
+        $this->log("Copied .claude from {$claudeDir} (excluding local overrides)");
     }
 
 

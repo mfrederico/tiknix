@@ -161,6 +161,60 @@ class ClaudeRunner {
     }
 
     /**
+     * Record this workspace as trusted in the agent's own config, so it does not open on a
+     * confirmation dialog nobody is there to answer.
+     *
+     * Writes `projects[<path>].hasTrustDialogAccepted = true` into the .claude.json inside
+     * the credential store the jail binds as the agent's home — the same file the CLI reads
+     * and the same place it would record the answer had a human clicked "Yes, I trust this
+     * folder".
+     *
+     * Failures here are logged and swallowed on purpose: an unwritable config must not stop
+     * a run. The consequence is the dialog appears and the agent exits, which is loud on its
+     * own and already carries its own error path.
+     */
+    private function trustWorkspace(string $workspaceRoot): void {
+        $stateDir = AgentContext::for(
+            (int) $this->memberId,
+            'worker',
+            $this->instanceDir ?: rtrim($workspaceRoot, '/'),
+            $this->engine,
+            $this->modelOverride
+        )->stateDir;
+
+        $file = rtrim($stateDir, '/') . '/.claude.json';
+        $cfg  = [];
+        if (is_file($file)) {
+            $decoded = json_decode((string) @file_get_contents($file), true);
+            if (is_array($decoded)) {
+                $cfg = $decoded;
+            } else {
+                // Do not silently replace a config we could not read — that would discard a
+                // member's credentials-adjacent settings to fix a dialog.
+                \Flight::get('log')?->error('ClaudeRunner: .claude.json is unreadable; not trusting workspace', [
+                    'file' => $file, 'task' => $this->taskId,
+                ]);
+                return;
+            }
+        }
+
+        $path = rtrim($workspaceRoot, '/');
+        if (!isset($cfg['projects']) || !is_array($cfg['projects'])) $cfg['projects'] = [];
+        if (!isset($cfg['projects'][$path]) || !is_array($cfg['projects'][$path])) $cfg['projects'][$path] = [];
+        if (!empty($cfg['projects'][$path]['hasTrustDialogAccepted'])) return;   // already trusted
+
+        $cfg['projects'][$path]['hasTrustDialogAccepted'] = true;
+
+        if (@file_put_contents($file, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) {
+            \Flight::get('log')?->error('ClaudeRunner: could not write .claude.json to trust the workspace', [
+                'file' => $file, 'task' => $this->taskId,
+            ]);
+            return;
+        }
+        @chmod($file, 0600);
+    }
+
+    /**
      * The engine this runner will ACTUALLY dispatch on — resolved, not guessed.
      *
      * Callers were reading $task->engine directly to report what ran, then substituting a
@@ -249,6 +303,22 @@ class ClaudeRunner {
 
         // Use custom project path (workspace) if provided, otherwise default to main project
         $workspaceRoot = $this->getProjectPath();
+
+        /* Pre-answer the CLI's folder-trust dialog for this workspace.
+         *
+         * Every task gets a FRESH workspace directory, and the CLI opens on "Is this a
+         * project you trust?" for any directory it has not seen — with "No, exit" selected.
+         * The runner's Enter keypress therefore chose exit, and the agent died three seconds
+         * in with code 1. On every standalone task, every time. Plan subtasks were immune
+         * because they run headless (`-p`), which shows no dialog — which is exactly why
+         * plan builds worked while single-task runs never did.
+         *
+         * Answering it for the agent is a real decision, and it is defensible here: this
+         * directory was created by our own provisioning as a clone of the member's own
+         * instance, the agent runs inside a bwrap jail confined to it, and a person pressed
+         * Run. It is not a folder of unknown origin, which is the case the prompt exists for.
+         */
+        $this->trustWorkspace($workspaceRoot);
 
         // SECURITY: never run a task agent against the live source app. A task must
         // operate on an isolated instance/workspace — never the main tree.

@@ -161,6 +161,25 @@ class ClaudeRunner {
     }
 
     /**
+     * The engine this runner will ACTUALLY dispatch on — resolved, not guessed.
+     *
+     * Callers were reading $task->engine directly to report what ran, then substituting a
+     * generic word when the row was empty. But an empty row does not mean "unknown": the
+     * task still runs, on the project's engine, and printing "Agent" hid which provider did
+     * the work. Same resolution AgentContext gives the launcher, so the log and the run can
+     * never disagree.
+     */
+    public function resolvedEngine(): string {
+        return AgentContext::for(
+            (int) $this->memberId,
+            'worker',
+            $this->instanceDir ?: rtrim($this->getProjectPath(), '/'),
+            $this->engine,
+            $this->modelOverride
+        )->engine;
+    }
+
+    /**
      * Get the work directory
      */
     public function getWorkDir(): string {

@@ -112,11 +112,9 @@ class Index extends BaseControls\Control {
            and posts it, which is exactly what the real traffic looked like: real harvested
            addresses, generated names, one submission an hour around the clock to stay under
            any rate limit.
-           Both checks are things a person cannot trip by accident. A hidden field a browser
+           The first two are things a person cannot trip by accident. A hidden field a browser
            never shows and a human never fills; and a form completed faster than anyone can
-           read it. Neither guesses at the CONTENT — no scoring of whether a name looks
-           foreign enough to be fake, which is a filter that eventually rejects a real
-           person and never tells them why. */
+           read it. */
         $spam = [];
         if (trim((string) $this->getParam(self::HONEYPOT_FIELD, '')) !== '') {
             $spam[] = 'honeypot';
@@ -126,6 +124,24 @@ class Index extends BaseControls\Control {
             $spam[] = 'submitted in ' . (time() - $shown) . 's';
         }
         unset($_SESSION['lead_form_shown']);   // one submission per render
+
+        /* Content signals: generated names and dot-alias addresses.
+           This code used to argue against exactly this — "no scoring of whether a name looks
+           foreign enough to be fake, which is a filter that eventually rejects a real person
+           and never tells them why". The objection was to REJECTING, and it still stands, so
+           these only ever FLAG. A misjudged Ångström is still captured, still in the leads
+           table, still reachable — one status column away from being a normal lead, instead
+           of a person who was turned away with no way to tell us.
+           LeadValidator is tuned against a corpus of hard real names for the same reason;
+           tests/lead-validator-corpus.php names everyone the thresholds would exclude.
+           Raw values, not the sanitized ones: sanitize() runs htmlspecialchars, so O'Brien
+           becomes "O&#039;Brien" and any content rule would fail a real person on OUR escaping. */
+        foreach (LeadValidator::signals(
+                     (string) $this->getParam('first_name'),
+                     (string) $this->getParam('last_name'),
+                     (string) $this->getParam('email')) as $signal) {
+            $spam[] = $signal;
+        }
 
         // Basic validation
         if ($firstName === '' || $lastName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {

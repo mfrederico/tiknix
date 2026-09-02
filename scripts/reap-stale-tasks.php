@@ -241,34 +241,62 @@ foreach (array_keys($live) as $name) {
     // lifecycle.
     if (\app\TmuxManager::isPlanSession($name)) continue;
 
-    // PLANNERS get a rule of their own rather than a blanket skip.
+    // PLANNERS AND AUDITORS get a rule of their own rather than a blanket skip.
     //
-    // PlanRunner names its session tiknix-<member>-plan-<slug>, and nothing in
-    // workbenchtask claims it — a plan is not a task. A blanket skip was the safe
-    // first move, because a decompose legitimately runs for many minutes before
-    // it writes anything and killing one mid-plan would be the cleaner causing
-    // the exact failure it exists to clean up after.
+    // PlanRunner names its session tiknix-<member>-plan-<slug>, AuditRunner names its
+    // own tiknix-<member>-audit-<slug>, and nothing in workbenchtask claims either — a
+    // plan is not a task, and neither is a QA pass. A blanket skip was the safe first
+    // move, because a decompose legitimately runs for many minutes before it writes
+    // anything and killing one mid-plan would be the cleaner causing the exact failure
+    // it exists to clean up after.
     //
-    // But a blanket skip leaves the opposite hole: PlanRunner::running() gates a
-    // new decompose on TmuxManager::exists(), with no timeout. So a planner that
-    // dies WITHOUT its script reaching the exit line — killed pane, host restart,
-    // OOM — locks that instance out of decomposing forever, and nothing would
-    // ever clear it.
+    // But a blanket skip leaves the opposite hole: PlanRunner::running() gates a new
+    // decompose on TmuxManager::exists() with no timeout, and AuditRunner::start()
+    // throws "An audit is already running for this instance." off the identical check.
+    // So a planner or auditor that dies WITHOUT its script reaching the exit line —
+    // killed pane, host restart, OOM — locks that instance out of decomposing (or
+    // auditing) forever, and nothing would ever clear it.
     //
-    // The test is not age. It is whether the jailed agent is still there: the
-    // runner script wraps `bwrap … claude -p`, so a planner with no bwrap child
-    // is a shell sitting on a corpse. Age alone would kill live work — an
-    // observed decompose took 3 minutes, but a large goal can run far longer, and
-    // guessing a number is how a cleaner starts eating real runs.
-    if (preg_match('/^tiknix-\d+-plan-(.+)$/', $name, $pm)) {
-        $planSlug = $pm[1];
+    // THE AUDITOR WAS MISSING FROM THIS RULE. It matched no exception above, so it fell
+    // through to the blanket "no running task claims it" kill at the bottom — which has
+    // no liveness test at all. A QA pass two minutes into its run was a kill candidate
+    // on the very next sweep, and the operator saw a plan that reported no manifest and
+    // an audit.log that simply stopped. That is the same defect the serve, planner and
+    // orchestrator exceptions were each added to fix, arriving once more through the
+    // one session shape nobody had named yet.
+    //
+    // The test is not age. It is whether the jailed agent is still there: both runner
+    // scripts wrap `bwrap … claude -p`, so one with no bwrap child is a shell sitting on
+    // a corpse. Age alone would kill live work — an observed decompose took 3 minutes,
+    // but a large goal can run far longer, and guessing a number is how a cleaner starts
+    // eating real runs.
+    //
+    // (Both runners fall back to an UNJAILED `claude -p` when jailFor() finds no jail
+    // script — a workspace outside /var/www/html/default, or one with no public/index.php.
+    // No provisioned instance looks like that, so the bwrap test holds for every session
+    // this sweep can actually see. If that ever stops being true the symptom is a live
+    // run killed after the grace period, and the fix is to test the pane's process tree
+    // for a live claude rather than to widen the pattern.)
+    if (preg_match('/^tiknix-\d+-(plan|audit)-(.+)$/', $name, $pm)) {
+        $kind     = $pm[1];                       // 'plan' | 'audit'
+        $instSlug = $pm[2];
+        $blocks   = $kind === 'plan' ? 'decompose' : 'audit';
+
+        // exec() APPENDS to the array it is handed rather than replacing it. Both of
+        // these were reused across loop iterations without being cleared, so the second
+        // planner in a sweep read $cr[0] from the FIRST one and was aged by another
+        // session's clock. For two sessions created hours apart that difference decides
+        // the kill, and it silently made the grace period meaningless for every planner
+        // after the first.
+        $bw = [];
+        $cr = [];
+
         $alive = 0;
-        // pgrep -f against the instance directory: the bwrap command line names
-        // it, and it is the one string that distinguishes THIS planner's agent
-        // from another instance's.
+        // pgrep -f against the instance directory: the bwrap command line names it, and
+        // it is the one string that distinguishes THIS instance's agent from another's.
         exec('pgrep -fa ' . escapeshellarg('bwrap') . ' 2>/dev/null', $bw);
         foreach ($bw as $line) {
-            if (strpos($line, '/' . $planSlug . '.') !== false) { $alive++; break; }
+            if (strpos($line, '/' . $instSlug . '.') !== false) { $alive++; break; }
         }
         if ($alive) continue;                       // still working — leave it
 
@@ -277,14 +305,14 @@ foreach (array_keys($live) as $name) {
              . ' "#{session_created}" 2>/dev/null', $cr);
         if (!empty($cr[0]) && ctype_digit(trim($cr[0]))) $age = time() - (int) trim($cr[0]);
 
-        // A grace period on top, because a planner is briefly alive before bwrap
-        // starts and briefly alive after it exits while the script ingests the
-        // plan — killing it in either window would lose the plan it just wrote.
+        // A grace period on top, because both are briefly alive before bwrap starts and
+        // briefly alive after it exits while the script ingests what it produced —
+        // killing it in either window would lose the plan or manifest it just wrote.
         if ($age < max($grace, 120)) continue;
 
         $say('  ' . ($apply ? 'KILLED  ' : 'would kill ') . $name
-            . ' (planner: no jailed agent, idle ' . (int) round($age / 60) . 'm — the lock it holds'
-            . ' blocks every future decompose for this instance)');
+            . " ({$kind}: no jailed agent, idle " . (int) round($age / 60) . 'm — the lock it holds'
+            . " blocks every future {$blocks} for this instance)");
         if ($apply) exec('tmux kill-session -t ' . escapeshellarg($name) . ' 2>/dev/null');
         $killed++;
         continue;
@@ -295,4 +323,237 @@ foreach (array_keys($live) as $name) {
     $killed++;
 }
 
-$say(sprintf('  %s: %d task(s), %d session(s)', $apply ? 'reaped' : 'would reap', $released, $killed));
+/* ─── THE PROCESS SWEEP ──────────────────────────────────────────────────────
+ *
+ * Everything above reaps BOOKKEEPING: a tmux session, a task row. None of it
+ * verifies that the agent's processes actually died, and routinely they do not.
+ * `tmux kill-session` hangs up the pane; the runner's tree underneath it —
+ * run-claude.sh → jail-run.sh → bwrap → claude → npm exec → playwright-mcp →
+ * chrome — does not reliably go with it. What survives stays parented to the
+ * tmux SERVER rather than to init, so it does not even read as an orphan in ps.
+ *
+ * Measured on this box before this sweep existed: nine such trees, the oldest
+ * twelve days old, holding ~2.5 GB. That is enough to fill an 8 GB container's
+ * entire 1 GB of swap, and it did. Their sessions were long gone and their task
+ * rows still said `running`, so the sweep above reported them released and moved
+ * on while every byte stayed allocated. Reaping the row without reaping the tree
+ * is the failure this whole file was written for, repeated one level down.
+ *
+ * IDENTITY COMES FROM THE PROCESS'S OWN ENVIRONMENT, never from a pattern over
+ * ps output. Each runner exports TIKNIX_SESSION_NAME (ClaudeRunner through
+ * run-claude.sh, AuditRunner through run-audit.sh), so the tree states which
+ * session owns it. When that cannot be read the tree is REPORTED AND LEFT
+ * RUNNING: killing a process we could not identify is how a cleaner becomes the
+ * outage, and this file already carries four comments about exactly that.
+ *
+ * ONLY run-claude.sh AND run-audit.sh. The aibuilder runner (run-agent.sh) is
+ * deliberately absent: it runs on a PRIVATE tmux socket under the instance's
+ * .aibuilder/, which `tmux list-sessions` here never sees. Every one of its live
+ * agents would therefore look sessionless and be killed on the first sweep.
+ * Reaping those needs the per-instance socket enumerated first; until then they
+ * are out of scope rather than guessed at.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** pid => ppid for everything visible. One /proc walk: a recursive descent that
+ *  stats per pid re-reads the same files hundreds of times. */
+function procParents(): array {
+    $out = [];
+    foreach (glob('/proc/[0-9]*') ?: [] as $dir) {
+        $stat = @file_get_contents($dir . '/stat');
+        if ($stat === false) continue;                       // exited mid-walk
+        // comm is arbitrary text in parentheses and may itself contain ') ',
+        // so every field is read relative to the LAST ')' rather than by split.
+        $rp = strrpos($stat, ')');
+        if ($rp === false) continue;
+        $f = preg_split('/\s+/', trim(substr($stat, $rp + 1)));
+        if (!isset($f[1])) continue;                         // [0]=state [1]=ppid
+        $out[(int) basename($dir)] = (int) $f[1];
+    }
+    return $out;
+}
+
+/** pid => full command line, NULs flattened. Kernel threads have none and are skipped. */
+function procCmdlines(): array {
+    $out = [];
+    foreach (glob('/proc/[0-9]*') ?: [] as $dir) {
+        $raw = @file_get_contents($dir . '/cmdline');
+        if ($raw === false || $raw === '') continue;
+        $out[(int) basename($dir)] = trim(str_replace("\0", ' ', $raw));
+    }
+    return $out;
+}
+
+/**
+ * Seconds since a pid started, or null if that cannot be established.
+ *
+ * NOT `ps -o etimes=`, and NOT /proc/uptime. Under lxcfs this container's
+ * /proc/uptime is virtualised to the CONTAINER's uptime (17 days here) while the
+ * starttime field in /proc/<pid>/stat stays relative to the HOST's boot (156
+ * days). Subtracting one from the other is meaningless, which is why ps reports
+ * every process on this box as roughly 47581 days old — and an age that large
+ * passes any grace period ever written. /proc/stat's btime is the host boot
+ * epoch and is not virtualised, so btime + starttime/HZ is the real start.
+ */
+function procStartEpoch(int $pid, int $btime, int $hz): ?int {
+    $stat = @file_get_contents("/proc/$pid/stat");
+    if ($stat === false) return null;
+    $rp = strrpos($stat, ')');
+    if ($rp === false) return null;
+    $f = preg_split('/\s+/', trim(substr($stat, $rp + 1)));
+    if (!isset($f[19])) return null;                          // field 22 overall
+    return $btime + (int) ((float) $f[19] / $hz);
+}
+
+/** A pid and every descendant of it. */
+function procTree(int $root, array $kids): array {
+    $tree = [];
+    $stack = [$root];
+    while ($stack) {
+        $p = array_pop($stack);
+        if (isset($tree[$p])) continue;                       // cycle guard
+        $tree[$p] = true;
+        foreach ($kids[$p] ?? [] as $c) $stack[] = $c;
+    }
+    return array_keys($tree);
+}
+
+$btime = 0;
+foreach (file('/proc/stat') ?: [] as $l) {
+    if (strncmp($l, 'btime ', 6) === 0) { $btime = (int) trim(substr($l, 6)); break; }
+}
+$hz = (int) trim((string) shell_exec('getconf CLK_TCK 2>/dev/null'));
+
+// No fallback to a guessed 100. Without a real btime and HZ every age below is
+// wrong, and an age that reads too large is precisely what kills live work.
+if ($btime <= 0 || $hz <= 0) {
+    $say('  ! cannot read btime (/proc/stat) or CLK_TCK — process sweep SKIPPED,'
+       . ' agent trees will not be reaped this pass');
+    $say(sprintf('  %s: %d task(s), %d session(s)', $apply ? 'reaped' : 'would reap', $released, $killed));
+    exit(0);
+}
+
+$parents = procParents();
+$kids    = [];
+foreach ($parents as $pid => $ppid) $kids[$ppid][] = $pid;
+$cmdlines = procCmdlines();
+
+// Never signal ourselves or anything we are running under: cron -> sh -> php.
+$selfChain = [];
+for ($p = getmypid(); $p > 1; $p = $parents[$p] ?? 0) {
+    $selfChain[$p] = true;
+    if (!isset($parents[$p])) break;
+}
+
+// Live sessions are re-read rather than reused from the top of the script: the
+// sweep above just killed some, and THOSE trees are exactly what this pass is
+// here to collect.
+$liveNow = [];
+exec('tmux list-sessions -F "#{session_name}" 2>/dev/null', $liveNow);
+$liveNow = array_flip(array_filter(array_map('trim', $liveNow)));
+
+/** SIGTERM the whole set at once, then SIGKILL whatever is still up. Signalling
+ *  parents first lets a supervisor respawn the child being killed; signalling
+ *  children first orphans them onto init mid-teardown. One pass over the set
+ *  avoids both. Returns the number of processes that were actually signalled. */
+$killTree = function (array $pids) use ($apply): int {
+    if (!$apply) return count($pids);
+    foreach ($pids as $p) @posix_kill($p, SIGTERM);
+    for ($i = 0; $i < 20; $i++) {                             // up to ~5s
+        usleep(250000);
+        $alive = array_filter($pids, fn($p) => @posix_kill($p, 0));
+        if (!$alive) return count($pids);
+    }
+    foreach ($pids as $p) { if (@posix_kill($p, 0)) @posix_kill($p, SIGKILL); }
+    return count($pids);
+};
+
+$treesReaped = 0; $procsKilled = 0;
+
+foreach ($cmdlines as $pid => $cmd) {
+    // TWO tests, because either alone matches the wrong thing. The path shape
+    // (a slash before the name) rejects someone's `grep run-claude.sh`, and the
+    // comm check rejects `vim /tmp/…/run-claude.sh` and `tail -f` on the same
+    // path — a runner IS the shell executing the script, so anything whose comm
+    // is not a shell is looking at the file rather than running it.
+    if (!preg_match('#(^|\s)\S*/run-(claude|audit)\.sh(\s|$)#', $cmd)) continue;
+    $comm = trim((string) @file_get_contents("/proc/$pid/comm"));
+    if ($comm !== 'bash' && $comm !== 'sh') continue;
+    if (isset($selfChain[$pid])) continue;
+
+    $tree = procTree($pid, $kids);
+
+    // THE WRAPPER'S OWN environ DOES NOT CARRY THIS. /proc/<pid>/environ is the
+    // block handed over at execve and nothing more: run-claude.sh sets
+    // TIKNIX_SESSION_NAME with `export` while it is ALREADY RUNNING, so the
+    // variable never appears in the environ of the shell that exported it. Read
+    // it there and every runner on the box looks unidentifiable — the first
+    // version of this sweep declined to reap a single one of the trees it was
+    // written for, and said so in a warning that looked like a permissions
+    // problem.
+    //
+    // The children are the record. jail-run.sh, bwrap and claude are all exec'd
+    // AFTER the export, so each inherits the finished environment. Any one of
+    // them answers the question; the first that does, wins.
+    $session = null;
+    foreach ($tree as $tp) {
+        $env = @file_get_contents("/proc/$tp/environ");
+        if ($env === false || $env === '') continue;
+        foreach (explode("\0", $env) as $kv) {
+            if (strncmp($kv, 'TIKNIX_SESSION_NAME=', 20) === 0) {
+                $session = trim(substr($kv, 20));
+                break 2;
+            }
+        }
+    }
+
+    // NO FALLBACK. No descendant carrying the variable means we cannot say which
+    // session owns this tree, and "probably stale" is not a reason to kill
+    // somebody's build. Say so loudly instead — a runner this sweep can never
+    // reap is a real fault, and silence would hide it for as long as it lives.
+    //
+    // A runner that has finished its agent and is sitting on the script's closing
+    // `read` lands here legitimately: no children left, so nothing to read the
+    // variable from. That is the correct outcome — it holds a shell and nothing
+    // else, and the session sweep above is what clears it.
+    if ($session === null || $session === '') {
+        $say("  ! pid {$pid}: runner with no identifiable session — LEFT RUNNING ("
+           . count($tree) . ' proc(s): ' . substr($cmd, 0, 70) . ')');
+        continue;
+    }
+
+    if (isset($liveNow[$session])) continue;                  // its session is up: working
+
+    $start = procStartEpoch($pid, $btime, $hz);
+    if ($start === null) continue;                            // exited under us
+    $age = time() - $start;
+    if ($age < $grace) continue;                              // may not have registered yet
+    $say('  ' . ($apply ? 'REAPED  ' : 'would reap ') . "tree pid {$pid} ({$session}): session gone, "
+       . 'idle ' . (int) round($age / 3600) . 'h, ' . count($tree) . ' process(es)');
+    $procsKilled += $killTree($tree);
+    $treesReaped++;
+}
+
+// ORPHANED MCP SERVERS. A tree kill cannot reach these — the claude that opened
+// them is already gone — so they are collected by their own rule or not at all.
+// PPID 1 is the entire test: claude spawns its MCP servers as children and they
+// exit with it, so one whose parent is init has outlived its agent. Chrome comes
+// along as a child of the tree. Two days after the agent died, one of these was
+// still holding 580 MB across node and eight chrome processes.
+foreach ($cmdlines as $pid => $cmd) {
+    if (strpos($cmd, 'playwright-mcp') === false) continue;
+    if (($parents[$pid] ?? 0) !== 1) continue;
+    if (isset($selfChain[$pid])) continue;
+
+    $start = procStartEpoch($pid, $btime, $hz);
+    if ($start === null) continue;
+    $age = time() - $start;
+    if ($age < $grace) continue;
+
+    $tree = procTree($pid, $kids);
+    $say('  ' . ($apply ? 'REAPED  ' : 'would reap ') . "orphan mcp pid {$pid}: parent gone, "
+       . 'idle ' . (int) round($age / 3600) . 'h, ' . count($tree) . ' process(es)');
+    $procsKilled += $killTree($tree);
+    $treesReaped++;
+}
+
+$say(sprintf('  %s: %d task(s), %d session(s), %d tree(s)/%d process(es)', $apply ? 'reaped' : 'would reap', $released, $killed, $treesReaped, $procsKilled));

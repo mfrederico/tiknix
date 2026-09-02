@@ -2303,44 +2303,46 @@ class Mcp extends BaseControls\Control {
         $originalServers = $config['mcpServers'];
         ksort($originalServers);
 
-        // Always ensure playwright is configured (for browser automation)
-        if (!isset($config['mcpServers']['playwright'])) {
-            $config['mcpServers']['playwright'] = [
-                'command' => 'npx',
-                // --isolated: without it the browser keeps a PERSISTENT profile instead
-                // of a temp one discarded on close, and where that lands decides what it
-                // costs. Jailed, XDG_CACHE_HOME is /tmp/.cache on jail-run.sh's --tmpfs
-                // /tmp, so the profile is RAM and dies with the jail. Unjailed — anyone
-                // running this config outside bwrap — it is ~/.cache/ms-playwright/
-                // mcp-chrome-<hash>/ on real disk, kept forever: five such dirs from
-                // Apr–May were still here in September holding ~190 MB.
-                //
-                // Neither is what made Aug 31 hurt. Two agent sessions never exited, so
-                // their chrome trees (21 processes, ~556 MB RSS) stayed up — parented to
-                // the tmux SERVER rather than init, so they did not read as orphans and
-                // nothing reaped them. That is scripts/reap-stale-tasks.php's job, not
-                // this flag's; --isolated only bounds what one leak leaves behind.
-                //
-                // -y keeps npx off the install prompt inside the jail, where nothing can
-                // answer it. Matches scripts/aibuilder-provision.php and
-                // scripts/add-playwright-mcp.php, which have always had both.
-                'args' => ['-y', '@playwright/mcp@latest', '--headless', '--isolated']
-            ];
-        }
+        // Always ensure playwright is configured (for browser automation).
+        //
+        // --isolated: without it the browser keeps a PERSISTENT profile instead of a
+        // temp one discarded on close, and where that lands decides what it costs.
+        // Jailed, XDG_CACHE_HOME is /tmp/.cache on jail-run.sh's --tmpfs /tmp, so the
+        // profile is RAM and dies with the jail. Unjailed — anyone running this config
+        // outside bwrap — it is ~/.cache/ms-playwright/mcp-chrome-<hash>/ on real disk,
+        // kept forever: five such dirs from Apr–May were still here in September
+        // holding ~190 MB.
+        //
+        // Neither is what made Aug 31 hurt. Two agent sessions never exited, so their
+        // chrome trees (21 processes, ~556 MB RSS) stayed up — parented to the tmux
+        // SERVER rather than init, so they did not read as orphans and nothing reaped
+        // them. That is scripts/reap-stale-tasks.php's job, not this flag's;
+        // --isolated only bounds what one leak leaves behind.
+        //
+        // -y keeps npx off the install prompt inside the jail, where nothing can answer
+        // it. Matches scripts/aibuilder-provision.php and add-playwright-mcp.php.
+        self::ensureServerArgs($config['mcpServers'], 'playwright', 'npx',
+            ['-y', '@playwright/mcp@latest', '--headless', '--isolated']);
 
         // Always ensure mantic is configured (for PHP 8.3 AST analysis), IF the host
         // has it. The server path is per-host — read it from conf/aibuilder.ini
         // [tools] mantic_server and skip wiring when unset/missing (breaks nothing
         // on hosts without Mantic.sh; no more hardcoded /home/<user>/… path).
-        if (!isset($config['mcpServers']['mantic'])) {
-            $aib = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
-            $manticServer = trim((string)($aib['tools']['mantic_server'] ?? ''));
-            if ($manticServer !== '' && is_file($manticServer)) {
-                $config['mcpServers']['mantic'] = [
-                    'command' => 'node',
-                    'args' => [$manticServer]
-                ];
-            }
+        //
+        // THE INI IS READ ON EVERY CALL, not only when the key is missing. This path is
+        // absolute and per-host, which makes it precisely the value that goes stale: a
+        // host migration or a version bump moves Mantic.sh, the ini is updated, and
+        // every workspace wired before the move keeps pointing at a file that is no
+        // longer there. It then fails the way jail-run.sh warns about — the agent still
+        // starts, the tools are just gone — so it can sit unnoticed indefinitely. It
+        // was is_file()-checked when first written and never re-checked after.
+        //
+        // An unset or missing ini value does NOT remove an existing entry. Unset means
+        // this host does not manage mantic, not that a hand-wired entry is wrong.
+        $aib = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
+        $manticServer = trim((string)($aib['tools']['mantic_server'] ?? ''));
+        if ($manticServer !== '' && is_file($manticServer)) {
+            self::ensureServerArgs($config['mcpServers'], 'mantic', 'node', [$manticServer]);
         }
 
         // Add/update tiknix server if API key provided
@@ -2362,6 +2364,41 @@ class Mcp extends BaseControls\Control {
         }
 
         return self::saveMcpConfig($configPath, $output);
+    }
+
+    /**
+     * Ensure one stdio server entry carries the args we intend, repairing one whose
+     * args have drifted.
+     *
+     * PRESENT IS NOT CORRECT. Both callers used to guard on
+     * isset($config['mcpServers'][$name]) and write only when the key was absent, so an
+     * entry written under an older definition counted as done and nothing ever repaired
+     * it. The playwright entry drifted that way for weeks — missing --isolated — and
+     * surfaced only when a leaked session left 21 chrome processes up. scripts/
+     * add-playwright-mcp.php carried the identical guard, so the one tool meant to fix
+     * this skipped every instance that needed it.
+     *
+     * tiknix, written a few lines above, has always overwritten unconditionally. This
+     * brings the other two in line, so ensureMcpConfig does one thing rather than three
+     * while claiming "always ensure" for all of them.
+     *
+     * ONLY args are replaced. A workspace may legitimately carry a hand-edited command
+     * (a pinned binary, a wrapper), and rewriting the whole entry would discard it
+     * silently. Same contract as scripts/add-playwright-mcp.php.
+     *
+     * @param array  $servers mcpServers map, by reference
+     * @param string $name    server key
+     * @param string $command command to use when creating the entry
+     * @param array  $args    args the entry must carry
+     */
+    private static function ensureServerArgs(array &$servers, string $name, string $command, array $args): void {
+        if (!isset($servers[$name])) {
+            $servers[$name] = ['command' => $command, 'args' => $args];
+            return;
+        }
+        if (($servers[$name]['args'] ?? null) !== $args) {
+            $servers[$name]['args'] = $args;
+        }
     }
 
     /**

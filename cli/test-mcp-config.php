@@ -39,13 +39,16 @@ echo "=== Test 2: Run again (should be no changes) ===\n";
 $result = Mcp::ensureMcpConfig($testPath);
 echo "Result: " . ($result ? 'updated' : 'NO CHANGES (correct)') . "\n\n";
 
+// The base url is EXPLICIT because buildMcpUrl refuses to guess (4e5ec2c): a config
+// generated against this install's host would point the agent at the wrong codebase.
+// This test predates that change and fataled here until the argument was added.
 echo "=== Test 3: Add API key ===\n";
-$result = Mcp::ensureMcpConfig($testPath, 'test-api-key-12345');
+$result = Mcp::ensureMcpConfig($testPath, 'test-api-key-12345', 'https://test-instance.tiknix.com');
 echo "Result: " . ($result ? 'UPDATED' : 'no changes') . "\n";
 echo file_get_contents($mcpJson) . "\n";
 
 echo "=== Test 4: Run again with same key (should be no changes) ===\n";
-$result = Mcp::ensureMcpConfig($testPath, 'test-api-key-12345');
+$result = Mcp::ensureMcpConfig($testPath, 'test-api-key-12345', 'https://test-instance.tiknix.com');
 echo "Result: " . ($result ? 'updated' : 'NO CHANGES (correct)') . "\n\n";
 
 echo "=== Test 5: Preserve custom servers ===\n";
@@ -54,7 +57,7 @@ $config['mcpServers']['my-custom-mcp'] = ['command' => 'custom-cmd', 'args' => [
 file_put_contents($mcpJson, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
 echo "Added 'my-custom-mcp' server manually...\n";
 
-$result = Mcp::ensureMcpConfig($testPath, 'test-api-key-12345');
+$result = Mcp::ensureMcpConfig($testPath, 'test-api-key-12345', 'https://test-instance.tiknix.com');
 echo "Result: " . ($result ? 'updated' : 'NO CHANGES (correct)') . "\n";
 $final = json_decode((file_get_contents($mcpJson)) ?? '', true);
 $preserved = isset($final['mcpServers']['my-custom-mcp']);

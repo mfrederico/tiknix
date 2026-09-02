@@ -2307,7 +2307,24 @@ class Mcp extends BaseControls\Control {
         if (!isset($config['mcpServers']['playwright'])) {
             $config['mcpServers']['playwright'] = [
                 'command' => 'npx',
-                'args' => ['@playwright/mcp@latest', '--headless']
+                // --isolated: without it the browser keeps a PERSISTENT profile instead
+                // of a temp one discarded on close, and where that lands decides what it
+                // costs. Jailed, XDG_CACHE_HOME is /tmp/.cache on jail-run.sh's --tmpfs
+                // /tmp, so the profile is RAM and dies with the jail. Unjailed — anyone
+                // running this config outside bwrap — it is ~/.cache/ms-playwright/
+                // mcp-chrome-<hash>/ on real disk, kept forever: five such dirs from
+                // Apr–May were still here in September holding ~190 MB.
+                //
+                // Neither is what made Aug 31 hurt. Two agent sessions never exited, so
+                // their chrome trees (21 processes, ~556 MB RSS) stayed up — parented to
+                // the tmux SERVER rather than init, so they did not read as orphans and
+                // nothing reaped them. That is scripts/reap-stale-tasks.php's job, not
+                // this flag's; --isolated only bounds what one leak leaves behind.
+                //
+                // -y keeps npx off the install prompt inside the jail, where nothing can
+                // answer it. Matches scripts/aibuilder-provision.php and
+                // scripts/add-playwright-mcp.php, which have always had both.
+                'args' => ['-y', '@playwright/mcp@latest', '--headless', '--isolated']
             ];
         }
 

@@ -15,11 +15,25 @@ function addPlaywright(string $file): string {
     $json = json_decode(((string)file_get_contents($file)) ?? '', true);
     if (!is_array($json)) return "skip: invalid JSON in $file";
     $json['mcpServers'] = $json['mcpServers'] ?? [];
-    if (isset($json['mcpServers']['playwright'])) return "ok: already present in $file";
-    $json['mcpServers']['playwright'] = [
-        'command' => 'npx',
-        'args'    => ['-y', '@playwright/mcp@latest', '--headless', '--isolated'],
-    ];
+
+    $want = ['-y', '@playwright/mcp@latest', '--headless', '--isolated'];
+    $have = $json['mcpServers']['playwright']['args'] ?? null;
+
+    // PRESENT IS NOT THE SAME AS CORRECT. This used to return early on isset(),
+    // which made the script useless for the one job it is reached for now: an
+    // entry written before --isolated was required is present, wrong, and leaks a
+    // persistent chrome profile per run. Compare the args and repair in place.
+    if ($have !== null) {
+        if ($have === $want) return "ok: already correct in $file";
+        // Only the args are replaced. A workspace may legitimately carry a
+        // hand-edited command (a pinned version, a wrapper), and rewriting the
+        // whole entry would silently discard it.
+        $json['mcpServers']['playwright']['args'] = $want;
+        file_put_contents($file, json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        return "repaired: $file (was " . json_encode($have) . ")";
+    }
+
+    $json['mcpServers']['playwright'] = ['command' => 'npx', 'args' => $want];
     file_put_contents($file, json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
     return "added: $file";
 }

@@ -119,6 +119,10 @@ class ProvisionService {
         $isDefault = !empty($p['is_default']) && !empty($p['is_root']);
 
         if (!preg_match(self::BASE_RE, $base)) return ['ok' => false, 'error' => 'Invalid name (a-z, then a-z0-9, 2-40 chars).', 'code' => 400];
+
+        // Plan gate. Checked BEFORE anything is minted or written, so a refusal leaves no
+        // half-made project behind. Returns null when enforcement is off.
+        if ($refusal = ProjectQuota::refusalFor($memberId, 1)) return $refusal;
         // The base repeats across tenants; mint a unique {base}-{hash} slug. The lone
         // exception is the root-flagged "(default)" core sandbox, which keeps its bare slug.
         if ($isDefault) {
@@ -188,6 +192,11 @@ class ProvisionService {
         $team = Bean::load('team', $teamId);
         if (!$team->id) return ['ok' => false, 'error' => 'No such team', 'code' => 404];
 
+        // Plan gate, on the RECEIVING side — sharing is the one action whose cost lands on
+        // someone other than the person doing it. Only when turning sharing ON; removing a
+        // share can only ever reduce a total, so it is never refused.
+        if ($shared && ($refusal = ProjectQuota::refusalForShare($instanceId, $teamId))) return $refusal;
+
         $inst  = Bean::load('instance', $instanceId);
         $teams = $inst->sharedTeamList;
         if ($shared) $teams[$team->id] = $team; else unset($teams[$team->id]);
@@ -212,6 +221,12 @@ class ProvisionService {
         if (trim($this->gitInstance($srcSlug, ['tag', '-l', $ckpt])['out']) !== $ckpt)
             return ['ok' => false, 'error' => 'Checkpoint not found in source instance', 'code' => 404];
         if (!preg_match(self::BASE_RE, $base)) return ['ok' => false, 'error' => 'Invalid name.', 'code' => 400];
+
+        // A fork is a NEW project and costs a slot exactly like create(). Gating create
+        // and not fork would leave the free tier one button away from unlimited, and a
+        // fork gate is precisely what somebody at the cap would go looking for.
+        if ($refusal = ProjectQuota::refusalFor($memberId, 1)) return $refusal;
+
         $slug = $this->mintSlug($base);   // fresh {base}-{hash}; the base may repeat across tenants
         if ($slug === '') return ['ok' => false, 'error' => 'Could not allocate a unique instance id.', 'code' => 500];
 

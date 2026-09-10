@@ -595,6 +595,18 @@ class Teams extends Control {
             return;
         }
 
+        /* Plan gate, at the moment of ACCEPTING rather than inviting.
+           Joining a team whose owner is on the free tier makes that team's shared projects
+           count against you, so it can put you over your own limit. Checking here — not at
+           invite time — is deliberate: an invitation must never be able to move a
+           stranger's bill, and being stopped at the door beats being billed for a room you
+           did not know you had walked into. No-op while enforcement is off. */
+        if ($refusal = \app\ProjectQuota::refusalForJoin((int) $this->member->id, (int) $team->id)) {
+            $this->flash('error', $refusal['error']);
+            Flight::redirect('/billing');
+            return;
+        }
+
         try {
             $this->beginTransaction();
 

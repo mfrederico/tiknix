@@ -96,11 +96,24 @@ class ProjectQuota {
     }
 
     /**
-     * Does this account need the paid plan, i.e. does it hold more than the free tier
-     * allows? This is the single number the billing service is told about — see
-     * Billing::usage and conf/rates/tiknix.php on the billing side.
+     * Does this account need the paid plan? This is the single number the billing service
+     * is told about — see Billing::usage and conf/rates/tiknix.php on the billing side.
+     *
+     * A `legacy` account is FALSE regardless of how many projects it holds. Grandfathered
+     * means covered, not billed-then-refunded.
+     *
+     * That clause is not a nicety. Without it a grandfathered account reported pro_plan=1,
+     * and the plan's answer — a matching 100% discount on the tenant — is a row somebody
+     * has to remember to add. The first grandfathered account to get a tenant would have
+     * been invoiced $499 for projects it was explicitly promised it could keep, and the
+     * invoice would have looked entirely correct on the way out. The saved discount stays
+     * worth having as a second layer; it is not worth depending on.
+     *
+     * The "$499 − $499" line on /billing is computed locally from the tier, so reporting
+     * zero here costs the customer nothing in visibility.
      */
     public static function needsPaidPlan(int $memberId): bool {
+        if (self::tierOf($memberId) === 'legacy') return false;
         return self::countFor($memberId) > self::FREE_CAP;
     }
 
@@ -244,7 +257,10 @@ class ProjectQuota {
             'count'      => $count,
             'cap'        => $cap,
             'tier'       => self::tierOf($memberId),
-            'needs_paid' => $count > self::FREE_CAP,
+            // Calls the same function the billing service is answered with, rather than
+            // repeating the comparison. The inline copy that used to live here is exactly
+            // how a page and an invoice come to disagree about what somebody owes.
+            'needs_paid' => self::needsPaidPlan($memberId),
             'over'       => $count > $cap,
         ];
     }

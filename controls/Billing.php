@@ -57,7 +57,15 @@ class Billing extends BaseControls\Control {
             return;
         }
 
+        /* Lazy catch-all. Six code paths create a member and only some register a tenant,
+           so anyone who arrives here without one gets it now rather than being told there
+           is nothing to see. Idempotent, and non-fatal: if the billing service is down the
+           page still renders, just without a portal link. */
         $tenantSlug = trim((string) ($this->member->billingTenantEid ?? ''));
+        if ($tenantSlug === '' && SignupFlow::enabled()) {
+            $ensured = SignupFlow::ensureTenantFor($memberId);
+            if ($ensured['ok']) $tenantSlug = $ensured['slug'];
+        }
 
         $this->render('billing/index', [
             'title'        => 'Billing',

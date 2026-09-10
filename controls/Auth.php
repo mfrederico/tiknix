@@ -259,6 +259,15 @@ class Auth extends BaseControls\Control {
             $member->loginCount = 1;
             $id = (int) Bean::store($member);
 
+            /* An invited member is a billing subject like any other — per-member billing,
+               their own tenant, their own invoice. Registered here so an invite produces a
+               complete account rather than one that has to be repaired later.
+               Deliberately NOT fatal: nobody is turned away from an invitation because a
+               billing service is unreachable. The failure is logged as an ERROR naming the
+               member, and the billing page registers one on demand for anyone who slipped
+               through. */
+            \app\SignupFlow::ensureTenantFor($id);
+
             \app\Invite::markAccepted($inv, $id);
 
             // An invited member arrives able to BUILD. Being invited to a place where you

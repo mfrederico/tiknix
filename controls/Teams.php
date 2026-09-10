@@ -560,6 +560,11 @@ class Teams extends Control {
             $member->invitedAt = date('Y-m-d H:i:s');
             Bean::store($member);
 
+            // Same as the /auth/invite path: an invited member gets their own billing
+            // tenant, because billing is per member. Non-fatal by design — see
+            // SignupFlow::ensureTenantFor.
+            \app\SignupFlow::ensureTenantFor((int) $member->id);
+
             $this->logger->info('Auto-created member from team invite', [
                 'member_id' => $member->id,
                 'email' => $invitation->email,

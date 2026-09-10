@@ -253,6 +253,55 @@ class SignupFlow {
         return $cfg['service_url'] . '/auth/sso?' . http_build_query($params);
     }
 
+    /**
+     * Make sure this member has a billing tenant, registering one if not. Idempotent.
+     *
+     * Six different paths create a member — ordinary signup, an invite, a team invite, an
+     * admin, Google, and start()/complete() above — and only the last set a tenant. Rather
+     * than patch all six and miss the seventh when somebody adds it, this is safe to call
+     * from anywhere, as often as you like, and is also called lazily by the billing page so
+     * an account that arrives by any route still ends up correct.
+     *
+     * A FAILURE HERE MUST NOT BLOCK THE CALLER. Somebody accepting an invitation is not
+     * going to be turned away because a billing service is unreachable; the account is
+     * perfectly valid without a tenant and one can be attached later. That is a documented
+     * decision rather than a swallowed error: it returns the failure and logs it as an
+     * ERROR naming the member, so an account without a tenant is discoverable rather than
+     * quietly normal.
+     *
+     * @return array{ok:bool, slug:string, created:bool, error:string}
+     */
+    public static function ensureTenantFor(int $memberId): array {
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) return ['ok' => false, 'slug' => '', 'created' => false, 'error' => 'no such member'];
+
+        $existing = trim((string) ($member->billingTenantEid ?? ''));
+        if ($existing !== '') return ['ok' => true, 'slug' => $existing, 'created' => false, 'error' => ''];
+
+        $slug = self::mintTenantSlug();
+        $name = trim(((string) $member->firstName) . ' ' . ((string) $member->lastName))
+                ?: (string) ($member->displayName ?: $member->username ?: $member->email);
+
+        $registered = self::registerTenant($slug, (string) $member->email, $name);
+        if (!$registered['ok']) {
+            \Flight::get('log')->error('SignupFlow: could not register a billing tenant for an existing member', [
+                'member' => $memberId, 'error' => $registered['error'],
+            ]);
+            return ['ok' => false, 'slug' => '', 'created' => false, 'error' => $registered['error']];
+        }
+
+        // Only stamped once the far side confirmed. Writing the slug first would leave a
+        // member pointing at a tenant that does not exist — which is exactly the state that
+        // produced an SSO link the billing service refused.
+        $member->billingTenantEid = $slug;
+        Bean::store($member);
+
+        \Flight::get('log')->info('SignupFlow: billing tenant registered for member', [
+            'member' => $memberId, 'slug' => $slug,
+        ]);
+        return ['ok' => true, 'slug' => $slug, 'created' => true, 'error' => ''];
+    }
+
     /** Mark abandoned signups expired so they stop holding their email address. */
     public static function expireStale(): int {
         $stale = Bean::find('pendingsignup', 'status = ? AND expires_at < ?',

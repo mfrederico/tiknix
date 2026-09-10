@@ -2,10 +2,11 @@
 /**
  * Billing — what this account holds and what it would cost.
  *
- * Phase 2 of BILLING_PLAN.md. Nothing on this page charges or blocks anything; it exists
- * so the counting rule can be checked against real accounts before it can hurt anyone.
- * The notice saying so is not decoration — a page showing "$499/month" with no explanation
- * is indistinguishable from a bill, and this account has not agreed to anything.
+ * Nothing on this page charges anything. Whether project limits are ENFORCED depends on
+ * [billing] enforce_project_cap, and the copy follows that flag rather than assuming —
+ * telling someone limits are off while a gate is refusing them is the confident wrong
+ * answer this page exists to avoid. A page showing "$499/month" with no explanation is
+ * also indistinguishable from a bill, and no account here has agreed to one.
  *
  * Vars: $error (string); when $error is '' also $snapshot, $freeCap, $proCap, $proPrice,
  *       $projects, $portalUrl, $tenantSlug.
@@ -15,7 +16,10 @@
 
   <div class="d-flex align-items-baseline justify-content-between flex-wrap gap-2 mb-4">
     <h1 class="h3 mb-0">Billing</h1>
-    <span class="badge text-bg-secondary">Preview — nothing is being charged</span>
+    <?php $enforcing = \app\ProjectQuota::enforcementEnabled(); ?>
+    <span class="badge <?= $enforcing ? 'text-bg-light border' : 'text-bg-secondary' ?>">
+      <?= $enforcing ? 'No card on file — nothing is being charged' : 'Preview — nothing is being charged' ?>
+    </span>
   </div>
 
 <?php if ($error !== ''): ?>
@@ -35,12 +39,20 @@
     $grandfathered = ($tier === 'legacy');
 ?>
 
+  <?php /* The copy has to match reality. Saying limits are not enforced while the gate is
+           refusing people is the same confident-wrong-answer this page exists to avoid. */ ?>
   <div class="alert alert-info d-flex gap-2" role="alert">
     <i class="bi bi-info-circle mt-1"></i>
     <div>
+<?php if ($enforcing): ?>
+      <strong>Project limits are active.</strong> You can keep and use everything you
+      already have; the limit only applies to adding another. No card is on file and
+      nothing is being charged.
+<?php else: ?>
       <strong>This is a preview.</strong> Project limits are not being enforced and no card
       is on file. We are showing you the numbers first so anything that looks wrong can be
       fixed before it counts.
+<?php endif; ?>
     </div>
   </div>
 
@@ -99,9 +111,16 @@
     <i class="bi bi-exclamation-triangle mt-1"></i>
     <div>
       This account holds <?= $count ?> projects and the <?= htmlspecialchars($tier) ?> plan
-      covers <?= $cap ?>. <strong>Nothing has changed and nothing is being charged.</strong>
-      If this number looks wrong, tell us before it starts counting — the breakdown below
-      shows exactly where each one came from.
+      covers <?= $cap ?>.
+<?php if ($enforcing): ?>
+      <strong>Everything you already have keeps working</strong> — you just cannot add
+      another until you are back within the limit or on a larger plan. If this number looks
+      wrong, the breakdown below shows where each one came from.
+<?php else: ?>
+      <strong>Nothing has changed and nothing is being charged.</strong> If this number looks
+      wrong, tell us before it starts counting — the breakdown below shows exactly where
+      each one came from.
+<?php endif; ?>
     </div>
   </div>
 <?php endif; ?>

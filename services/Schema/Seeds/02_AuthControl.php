@@ -179,6 +179,11 @@ $defaults = [
     // nothing and moves on.
     ['billing', 'usage', 101, 'Billing service usage pull (Bearer callback_key)'],
 
+    // The member-facing billing page. Seeded at MEMBER because the auto-generated
+    // default is ADMIN, and a billing page only an admin can open is a support ticket
+    // from every member who is told to go and check it.
+    ['billing', 'index', 100, 'Billing page — projects counted, plan, invoices'],
+
     // Root only (1)
     ['permissions', 'build', 1, 'Build mode - scan controllers'],
     ['permissions', 'scan', 1, 'Scan for new permissions'],

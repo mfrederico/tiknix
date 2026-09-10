@@ -23,6 +23,119 @@ use \Flight as Flight;
 
 class Billing extends BaseControls\Control {
 
+    /** The flat monthly price of the paid plan, for display only — the invoice comes
+     *  from conf/rates/tiknix.php on the billing server, which is the one that counts. */
+    private const PRO_PRICE = 499.00;
+
+    /**
+     * GET /billing — what this account holds, and what that would cost.
+     *
+     * Phase 2 of BILLING_PLAN.md: this page REPORTS. Nothing here blocks a project, and
+     * no member is registered for billing yet. It exists so the counting rule can be
+     * checked against real accounts while being wrong is still free — which is the whole
+     * reason this phase is separate from enforcement.
+     */
+    public function index() {
+        if (!$this->requireLevel(LEVELS['MEMBER'])) return;
+
+        $memberId = (int) $this->member->id;
+
+        try {
+            $snapshot = ProjectQuota::snapshot($memberId);
+        } catch (\Throwable $e) {
+            // Show the failure rather than a zero. A billing page that renders "0 projects"
+            // when the query broke is worse than an error page: it is a wrong answer about
+            // money, delivered confidently.
+            Flight::get('log')->error('Billing page: could not count projects', [
+                'member' => $memberId, 'error' => $e->getMessage(),
+            ]);
+            $this->render('billing/index', [
+                'title' => 'Billing',
+                'error' => 'We could not work out your project count just now. Nothing has been '
+                         . 'charged, and this has been logged for us to look at.',
+            ]);
+            return;
+        }
+
+        $tenantSlug = trim((string) ($this->member->billingTenantEid ?? ''));
+
+        $this->render('billing/index', [
+            'title'        => 'Billing',
+            'error'        => '',
+            'snapshot'     => $snapshot,
+            'freeCap'      => ProjectQuota::FREE_CAP,
+            'proCap'       => ProjectQuota::PRO_CAP,
+            'proPrice'     => self::PRO_PRICE,
+            'projects'     => $this->projectBreakdown($memberId),
+            // Empty until a member is registered with the billing service, which does not
+            // happen until phase 3. The view says so plainly rather than showing a dead link.
+            'portalUrl'    => $tenantSlug !== '' ? $this->portalUrl($tenantSlug) : '',
+            'tenantSlug'   => $tenantSlug,
+        ]);
+    }
+
+    /**
+     * Which projects are being counted, and why — owned, or reached through a team.
+     *
+     * The "why" is the point. "You have 13 projects" invites an argument; naming the six
+     * that arrived through somebody else's team ends it, and it is the same question
+     * support would otherwise have to answer by hand.
+     */
+    private function projectBreakdown(int $memberId): array {
+        $sql = "SELECT i.id,
+                       i.display_name,
+                       i.slug,
+                       CASE WHEN i.member_id = ? THEN 'owned' ELSE 'shared' END AS via,
+                       t.name AS team_name
+                FROM instance i
+                LEFT JOIN instance_team it  ON it.instance_id = i.id
+                LEFT JOIN team        t     ON t.id = it.team_id
+                LEFT JOIN member      owner ON owner.id = t.owner_id
+                LEFT JOIN teammember  tm    ON tm.team_id = t.id AND tm.member_id = ?
+                WHERE (i.status IS NULL OR i.status != 'deleted')
+                  AND (    i.member_id = ?
+                        OR t.owner_id  = ?
+                        OR (tm.member_id = ? AND COALESCE(owner.plan_tier, 'free') = 'free') )
+                GROUP BY i.id
+                ORDER BY via, i.display_name";
+        try {
+            return Bean::getAll($sql, array_fill(0, 5, $memberId));
+        } catch (\Throwable $e) {
+            // The count above already succeeded, so the page is still truthful without
+            // this. Log it and show the total alone rather than failing the whole page.
+            Flight::get('log')->error('Billing page: project breakdown failed', [
+                'member' => $memberId, 'error' => $e->getMessage(),
+            ]);
+            return [];
+        }
+    }
+
+    /** Signed SSO link into the billing portal, or '' when it cannot be built. */
+    private function portalUrl(string $tenantSlug): string {
+        $serviceUrl = trim((string) Flight::get('billing.service_url'));
+        $appSlug    = trim((string) Flight::get('billing.app_slug'));
+        $appSecret  = trim((string) Flight::get('billing.app_secret'));
+        if ($serviceUrl === '' || $appSlug === '' || $appSecret === '') {
+            Flight::get('log')->error(
+                'Billing: [billing] service_url/app_slug/app_secret missing in conf/config.ini — no portal link'
+            );
+            return '';
+        }
+
+        // Mirrors BillingClient::generateSsoUrl — same params, same ksort, same HMAC.
+        $params = [
+            'app'    => $appSlug,
+            'tenant' => $tenantSlug,
+            'email'  => (string) $this->member->email,
+            'name'   => (string) ($this->member->displayName ?: $this->member->username),
+            'ts'     => (string) time(),
+        ];
+        ksort($params);
+        $params['sig'] = hash_hmac('sha256', http_build_query($params), $appSecret);
+
+        return rtrim($serviceUrl, '/') . '/auth/sso?' . http_build_query($params);
+    }
+
     /**
      * GET /billing/usage/<tenant>?period_start=Y-m-d&period_end=Y-m-d
      *

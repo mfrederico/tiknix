@@ -18,8 +18,12 @@
  * holds MORE, in which case the cap is raised — never lowered. Re-running must not take
  * away headroom somebody has been using.
  *
- *   php scripts/grandfather-billing.php --dry-run     # show what would change
- *   php scripts/grandfather-billing.php --yes         # apply
+ * Grandfathering needs --before=DATE and only touches accounts created before it. Without
+ * it the run only normalises blank tiers, so a re-run cannot grandfather a new signup that
+ * drifted over the cap while enforcement was off.
+ *
+ *   php scripts/grandfather-billing.php --dry-run --before=2026-09-11
+ *   php scripts/grandfather-billing.php --yes --before=2026-09-11
  */
 
 require __DIR__ . '/../vendor/autoload.php';
@@ -31,6 +35,18 @@ $dryRun = in_array('--dry-run', $argv, true);
 $apply  = in_array('--yes', $argv, true);
 if (!$dryRun && !$apply) {
     fwrite(STDERR, "Refusing to guess. Pass --dry-run to preview or --yes to apply.\n");
+    exit(1);
+}
+
+// Only accounts created before this date can be grandfathered. Omit it and the run just
+// normalises blank tiers — grandfathering is a one-time act at launch, not something a
+// re-run should keep doing to whoever is over the cap that day.
+$cutoff = '';
+foreach ($argv as $arg) {
+    if (str_starts_with($arg, '--before=')) $cutoff = substr($arg, 9);
+}
+if ($cutoff !== '' && !strtotime($cutoff)) {
+    fwrite(STDERR, "--before must be a date, e.g. --before=2026-09-11\n");
     exit(1);
 }
 
@@ -64,15 +80,46 @@ printf("Database: %s\n%s\n\n", realpath($dbPath), $dryRun ? '(dry run — nothin
 
 $members = Bean::findAll('member', 'ORDER BY id');
 
-// ---- pass 1: everyone off the free tier ------------------------------------------
+// ---- pass 1: grandfather only accounts that need it -------------------------------
+//
+// Grandfathering protects accounts that ALREADY EXISTED and already hold more than the
+// new free tier allows. Both halves matter: without the cutoff a re-run grandfathers a
+// signup from yesterday that got over the cap while enforcement was off, handing a brand
+// new account free projects for good.
 $moved = 0;
+$normalised = 0;
 foreach ($members as $m) {
     $tier = (string) ($m->planTier ?: 'free');
     if ($tier !== 'free') continue;             // already legacy or pro — leave it
-    if (!$dryRun) { $m->planTier = 'legacy'; Bean::store($m); }
-    $moved++;
+
+    try {
+        $count = ProjectQuota::countFor((int) $m->id);
+    } catch (\Throwable $e) {
+        printf("  %-32s SKIPPED — count failed\n", substr((string) $m->email, 0, 31));
+        continue;
+    }
+
+    $existedAtCutoff = $cutoff !== '' && strtotime((string) $m->createdAt) < strtotime($cutoff);
+
+    if ($count > ProjectQuota::FREE_CAP && $existedAtCutoff) {
+        if (!$dryRun) { $m->planTier = 'legacy'; Bean::store($m); }
+        $moved++;
+    } elseif ($m->planTier === null || $m->planTier === '') {
+        // Blank columns behave as free but read as "unset"; make it explicit.
+        if (!$dryRun) {
+            $m->planTier = 'free';
+            $m->planProjectCap = ProjectQuota::FREE_CAP;
+            Bean::store($m);
+        }
+        $normalised++;
+    }
 }
-printf("Pass 1: %d account(s) moved from free to legacy%s\n\n", $moved, $dryRun ? ' (would be)' : '');
+printf("Pass 1: %d account(s) grandfathered to legacy, %d normalised to free%s\n",
+    $moved, $normalised, $dryRun ? ' (would be)' : '');
+if ($cutoff === '') {
+    echo "        (no --before=DATE, so nothing was grandfathered — normalise only)\n";
+}
+echo "\n";
 
 // In a dry run nothing was written, so pass 2 would still see the pre-migration world and
 // report caps nobody will actually get. Say so rather than print a number that is wrong.
@@ -88,6 +135,8 @@ printf("  %s\n", str_repeat('-', 78));
 $changed = 0;
 foreach ($members as $m) {
     $id = (int) $m->id;
+    // Caps are a grandfathering concept; a free account uses the tier default.
+    if (ProjectQuota::tierOf($id) === 'free') continue;
     try {
         $count = ProjectQuota::countFor($id);
     } catch (\Throwable $e) {

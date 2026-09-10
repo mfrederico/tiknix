@@ -384,6 +384,37 @@ class Auth extends BaseControls\Control {
             return;
         }
         
+        /* NOTE: the branch below lives here, AFTER validation and the duplicate checks, on
+           purpose. Putting it earlier would skip them and let a pendingsignup be written
+           for a username already taken — discovered only at completion, after the person
+           had entered a card. */
+
+        /* Card-on-file signup, when it is switched on: no member is created here at all.
+           The details become a `pendingsignup`, a billing tenant is registered so there is
+           a Stripe customer to attach a card to, and the account is created only once the
+           billing service confirms — server to server — that the card is really there.
+           See lib/SignupFlow.php. Off by default, in which case this is the signup that
+           has always been here. */
+        if (SignupFlow::enabled()) {
+            $started = SignupFlow::start($email, $password,
+                (string) ($request->data->first_name ?? ''),
+                (string) ($request->data->last_name ?? ''),
+                $username);
+
+            if (!$started['ok']) {
+                $this->render('auth/register', [
+                    'title'  => 'Register',
+                    'errors' => [$started['error']],
+                    'data'   => $request->data->getData(),
+                ]);
+                return;
+            }
+            // The token identifies which signup came back; it authorises nothing on its
+            // own, because completion still turns on what the billing service says.
+            Flight::redirect('/auth/complete?token=' . urlencode($started['token']));
+            return;
+        }
+
         try {
             // Create member
             $member = Bean::dispense('member');
@@ -401,9 +432,10 @@ class Auth extends BaseControls\Control {
             // Auto-login after registration
             $_SESSION['member'] = $member->export();
             $_SESSION['member']['id'] = $id;
-            
+
             $this->flash('success', 'Welcome to ' . Flight::get('app.name') . '! Your account has been created.');
             Flight::redirect('/dashboard');
+            return;
             
         } catch (\Exception $e) {
             Flight::get('log')->error('Registration failed: ' . $e->getMessage());
@@ -415,6 +447,79 @@ class Auth extends BaseControls\Control {
         }
     }
     
+    /**
+     * GET /auth/complete?token=… — the card step, and the account creation behind it.
+     *
+     * Reached only when card-on-file signup is on. Three states, and the page shows one:
+     *
+     *   - still waiting  → the card form link, and a Check again button
+     *   - confirmed      → the member now exists; sign them in and go to the builder
+     *   - error/expired  → say so plainly, and offer to start again
+     *
+     * PUBLIC by necessity: there is no account yet, so there can be no session. The token
+     * in the URL is a lookup key, NOT a credential — holding it grants nothing, because
+     * SignupFlow::complete decides on what the billing service says about the card, not on
+     * who is asking. A guessed token reaches somebody else's unfinished signup and gets
+     * exactly what its owner would: a card form for a Stripe customer with no card.
+     */
+    public function complete() {
+        if (!SignupFlow::enabled()) {
+            // Not a 404: a stale bookmark from a period when this was on should say what
+            // happened rather than look broken.
+            $this->render('auth/complete', [
+                'title' => 'Sign up',
+                'state' => 'error',
+                'error' => 'Card-on-file signup is not enabled. Please register normally.',
+                'portalUrl' => '', 'token' => '',
+            ]);
+            return;
+        }
+
+        $token  = trim((string) (Flight::request()->query->token ?? ''));
+        $result = SignupFlow::complete($token);
+
+        if ($result['ok']) {
+            $member = Bean::load('member', (int) $result['member_id']);
+            if (!$member->id) {
+                // complete() said it created one. If it is not here, something is wrong in
+                // a way that must not be papered over with a login attempt.
+                Flight::get('log')->error('Auth::complete — member reported created but not found', [
+                    'member_id' => (int) $result['member_id'],
+                ]);
+                $this->render('auth/complete', [
+                    'title' => 'Sign up', 'state' => 'error', 'token' => $token, 'portalUrl' => '',
+                    'error' => 'Your account was set up but we could not sign you in. Please use the login page.',
+                ]);
+                return;
+            }
+
+            session_regenerate_id(true);   // new account, new session id
+            $_SESSION['member'] = $member->export();
+            $_SESSION['member']['id'] = (int) $member->id;
+
+            $this->flash('success', 'Welcome to ' . Flight::get('app.name') . '! Your card is on file — '
+                                  . 'your first project is free.');
+            Flight::redirect('/dashboard');
+            return;
+        }
+
+        if ($result['pending']) {
+            $this->render('auth/complete', [
+                'title'     => 'Add your card',
+                'state'     => 'waiting',
+                'error'     => '',
+                'token'     => $token,
+                'portalUrl' => SignupFlow::portalUrlForToken($token),
+            ]);
+            return;
+        }
+
+        $this->render('auth/complete', [
+            'title' => 'Sign up', 'state' => 'error', 'token' => $token, 'portalUrl' => '',
+            'error' => $result['error'],
+        ]);
+    }
+
     /**
      * Show forgot password form
      */

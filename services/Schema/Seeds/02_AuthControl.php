@@ -179,6 +179,12 @@ $defaults = [
     // nothing and moves on.
     ['billing', 'usage', 101, 'Billing service usage pull (Bearer callback_key)'],
 
+    // Card-on-file signup completion. PUBLIC by necessity: no account exists yet, so
+    // there can be no session to check. The token in the URL is a lookup key rather than
+    // a credential — the account is created on what the billing service says about the
+    // card, not on who presents the token.
+    ['auth', 'complete', 101, 'Finish a card-on-file signup'],
+
     // The member-facing billing page. Seeded at MEMBER because the auto-generated
     // default is ADMIN, and a billing page only an admin can open is a support ticket
     // from every member who is told to go and check it.

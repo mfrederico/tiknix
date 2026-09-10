@@ -60,10 +60,22 @@ class SignupFlow {
      * Same shape as ProvisionService::mintSlug, which is how every instance slug is
      * already minted (`partsdna-74a225`). The readable label lives in the tenant NAME,
      * which is what a person actually reads in the portal.
+     *
+     * SIXTEEN hex, not the six an instance slug uses, and COLLISIONS are the reason rather
+     * than guessing. Six hex is 16.7M values, which sounds ample until the birthday bound:
+     * a 50% chance of one collision arrives at roughly 4,800 tenants. The retry below
+     * absorbs that, but a mint that starts colliding as the business grows is a strange
+     * thing to build on purpose. Sixteen hex is 1.8e19 — collision-free in practice.
+     *
+     * Brute force is the weaker argument, because the slug is an IDENTIFIER and not a
+     * credential: /billing/usage checks the Bearer token before it looks at the slug, so an
+     * unauthenticated request answers 401 whether the slug is real or invented, and there
+     * is no oracle to enumerate against. Length is still worth having — the day some future
+     * endpoint does distinguish the two, six hex is a 4.7-hour sweep and sixteen is not.
      */
     public static function mintTenantSlug(): string {
         for ($i = 0; $i < 8; $i++) {
-            $slug = 'tiknix-' . substr(bin2hex(random_bytes(4)), 0, 6);   // hex: DNS and path safe
+            $slug = 'tiknix-' . bin2hex(random_bytes(8));   // 16 hex chars: DNS and path safe
             $takenByMember  = Bean::count('member', 'billing_tenant_eid = ?', [$slug]) > 0;
             $takenByPending = Bean::count('pendingsignup', 'billing_tenant_eid = ?', [$slug]) > 0;
             if (!$takenByMember && !$takenByPending) return $slug;
@@ -210,6 +222,35 @@ class SignupFlow {
         ]);
 
         return $out(true, false, $memberId, '');
+    }
+
+    /**
+     * A signed SSO link into the billing portal for an in-flight signup, or '' if one
+     * cannot be built.
+     *
+     * Same HMAC as BillingClient::generateSsoUrl. Returns '' rather than an unsigned URL
+     * when the config is incomplete: a link that lands on a rejected signature is a worse
+     * dead end than no link, because the person cannot tell it apart from a declined card.
+     */
+    public static function portalUrlForToken(string $token): string {
+        $pending = Bean::findOne('pendingsignup', 'token = ?', [trim($token)]);
+        if (!$pending || !$pending->id) return '';
+
+        $cfg = self::billingConfig();
+        if (!$cfg['ok']) return '';
+
+        $params = [
+            'app'    => $cfg['app_slug'],
+            'tenant' => (string) $pending->billingTenantEid,
+            'email'  => (string) $pending->email,
+            'name'   => trim(((string) $pending->firstName) . ' ' . ((string) $pending->lastName))
+                        ?: (string) $pending->email,
+            'ts'     => (string) time(),
+        ];
+        ksort($params);
+        $params['sig'] = hash_hmac('sha256', http_build_query($params), $cfg['app_secret']);
+
+        return $cfg['service_url'] . '/auth/sso?' . http_build_query($params);
     }
 
     /** Mark abandoned signups expired so they stop holding their email address. */

@@ -23,10 +23,6 @@ use \Flight as Flight;
 
 class Billing extends BaseControls\Control {
 
-    /** The flat monthly price of the paid plan, for display only — the invoice comes
-     *  from conf/rates/tiknix.php on the billing server, which is the one that counts. */
-    private const PRO_PRICE = 499.00;
-
     /**
      * GET /billing — what this account holds, and what that would cost.
      *
@@ -72,8 +68,7 @@ class Billing extends BaseControls\Control {
             'error'        => '',
             'snapshot'     => $snapshot,
             'freeCap'      => ProjectQuota::FREE_CAP,
-            'proCap'       => ProjectQuota::PRO_CAP,
-            'proPrice'     => self::PRO_PRICE,
+            'perProject'   => ProjectQuota::PRICE_PER_PROJECT,
             'projects'     => $this->projectBreakdown($memberId),
             // Empty until a member is registered with the billing service, which does not
             // happen until phase 3. The view says so plainly rather than showing a dead link.
@@ -202,8 +197,10 @@ class Billing extends BaseControls\Control {
                 'period_start' => $periodStart,
                 'period_end'   => $periodEnd,
                 'usage'        => [
-                    // Maps to the 'pro' rate in conf/rates/tiknix.php on the billing side.
-                    'pro_plan' => $snapshot['needs_paid'] ? 1 : 0,
+                    // Maps to the 'project' rate in conf/rates/tiknix.php. A COUNT, not a
+                    // flag: pricing is per project now, so the rate engine multiplies this
+                    // by the unit price and there is no ceiling to encode anywhere.
+                    'billable_projects' => $snapshot['billable'],
                 ],
                 // Not priced — carried so an invoice can be explained without re-deriving
                 // it here weeks later, and so a surprised customer can be answered.

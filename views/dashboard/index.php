@@ -140,7 +140,9 @@ if (!empty($billing)):
                     <div class="col-sm-3">
                         <div class="text-secondary small">Monthly</div>
                         <div class="fs-5 ui-mono mb-0">
-                            <?= ($b_legacy || empty($billing['needs_paid'])) ? '$0.00' : '$499.00' ?>
+                            <?php /* Derived, not hard-coded: a price written in two places
+                                     is a price that eventually disagrees with the invoice. */ ?>
+                            $<?= number_format((int) $billing['billable'] * \app\ProjectQuota::PRICE_PER_PROJECT, 2) ?>
                         </div>
                         <?php if ($b_legacy): ?>
                             <div class="small text-success">early account, kept free</div>

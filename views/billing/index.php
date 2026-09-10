@@ -8,7 +8,7 @@
  * answer this page exists to avoid. A page showing "$499/month" with no explanation is
  * also indistinguishable from a bill, and no account here has agreed to one.
  *
- * Vars: $error (string); when $error is '' also $snapshot, $freeCap, $proCap, $proPrice,
+ * Vars: $error (string); when $error is '' also $snapshot, $freeCap, $perProject,
  *       $projects, $portalUrl, $tenantSlug.
  */
 ?>
@@ -33,6 +33,7 @@
     $cap       = (int) $snapshot['cap'];
     $tier      = (string) $snapshot['tier'];
     $needsPaid = (bool) $snapshot['needs_paid'];
+    $billable  = (int) $snapshot['billable'];
     $over      = (bool) $snapshot['over'];
     $owned     = array_values(array_filter($projects, fn($p) => ($p['via'] ?? '') === 'owned'));
     $shared    = array_values(array_filter($projects, fn($p) => ($p['via'] ?? '') === 'shared'));
@@ -74,7 +75,7 @@
           <div class="small text-muted">
             <?= $grandfathered
                   ? 'early account, kept at no charge'
-                  : ($tier === 'pro' ? 'up to ' . (int) $proCap . ' projects' : (int) $freeCap . ' project included') ?>
+                  : (int) $freeCap . ' free, then $' . number_format($perProject, 0) . ' each' ?>
           </div>
         </div>
       </div>
@@ -86,11 +87,16 @@
 <?php if ($grandfathered): ?>
           <div class="fs-4 mb-0">$0.00</div>
           <div class="small text-muted">
-            $<?= number_format($proPrice, 2) ?> &minus; $<?= number_format($proPrice, 2) ?> discount
+            <?= $count ?> project<?= $count === 1 ? '' : 's' ?>, covered
           </div>
 <?php else: ?>
-          <div class="fs-4 mb-0">$<?= number_format($needsPaid ? $proPrice : 0, 2) ?></div>
-          <div class="small text-muted"><?= $needsPaid ? 'if this were live today' : 'free tier' ?></div>
+          <div class="fs-4 mb-0">$<?= number_format($billable * $perProject, 2) ?></div>
+          <div class="small text-muted">
+            <?php /* Show the arithmetic. "$147" invites a query; "3 x $49" answers it. */ ?>
+            <?= $billable > 0
+                  ? $billable . ' &times; $' . number_format($perProject, 0) . ' a month'
+                  : 'free tier' ?>
+          </div>
 <?php endif; ?>
         </div>
       </div>
@@ -102,8 +108,8 @@
     <i class="bi bi-award mt-1"></i>
     <div>
       <strong>You were here early.</strong> Your <?= $count ?> project<?= $count === 1 ? '' : 's' ?>
-      stay at no charge. You will see the full $<?= number_format($proPrice, 2) ?> and a matching
-      discount on your account, so it is always clear what is being covered.
+      stay at no charge, where a new account would pay $<?= number_format($perProject, 0) ?> a month
+      for each one past the first.
     </div>
   </div>
 <?php elseif ($over): ?>

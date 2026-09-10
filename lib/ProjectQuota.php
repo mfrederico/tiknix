@@ -8,8 +8,8 @@
  * The counting rule (decided in BILLING_PLAN.md, D1):
  *
  *   1. Projects you own.
- *   2. Projects shared into a team YOU own — they are your responsibility, capped at
- *      PRO_CAP, so collaborators you invite do not each need their own subscription.
+ *   2. Projects shared into a team YOU own — they are billed to you, so collaborators you
+ *      invite do not each need their own plan.
  *   3. Projects shared into a team you merely belong to, WHEN that team's owner is on the
  *      free tier. This is the anti-abuse clause: two free accounts swapping projects both
  *      count both projects, so neither stays free.
@@ -30,8 +30,14 @@ class ProjectQuota {
     /** Projects included at no charge. */
     public const FREE_CAP = 1;
 
-    /** Projects included in the paid plan. */
-    public const PRO_CAP = 10;
+    /**
+     * Price per project beyond the free one, for display only. The invoice is priced by
+     * conf/rates/tiknix.php on the billing server; that is the figure that counts.
+     */
+    public const PRICE_PER_PROJECT = 49.00;
+
+    /** A paid account is UNCAPPED — every project past the first is simply billed. */
+    public const PRO_CAP = PHP_INT_MAX;
 
     /**
      * Projects counting against this account.
@@ -78,6 +84,17 @@ class ProjectQuota {
         if ($cap > 0) return $cap;
 
         return self::tierOf($memberId) === 'pro' ? self::PRO_CAP : self::FREE_CAP;
+    }
+
+    /**
+     * Projects this account is billed for: everything past the free one.
+     *
+     * Zero for a grandfathered account however many it holds — legacy means covered, not
+     * billed-then-discounted.
+     */
+    public static function billableProjects(int $memberId): int {
+        if (self::tierOf($memberId) === 'legacy') return 0;
+        return max(0, self::countFor($memberId) - self::FREE_CAP);
     }
 
     /** 'free' | 'pro' | 'legacy' — what the account is on right now. */
@@ -169,11 +186,16 @@ class ProjectQuota {
         $cap   = self::capFor($memberId);
         if ($count + $adding <= $cap) return null;
 
-        $tier = self::tierOf($memberId);
-        $msg  = $tier === 'free'
-            ? "Your free plan covers {$cap} project" . ($cap === 1 ? '' : 's') . " and you have {$count}. "
-              . "Adding another needs the paid plan — see /billing."
-            : "Your plan covers {$cap} projects and you have {$count}. See /billing to add more.";
+        // Per-project pricing means this is an invitation, not a wall: there is no ceiling
+        // to hit, only a card to add. Say the actual price — "upgrade" tells someone
+        // nothing about whether they want to.
+        $price = number_format(self::PRICE_PER_PROJECT, 0);
+        $tier  = self::tierOf($memberId);
+        $msg   = $tier === 'legacy'
+            ? "Your account covers {$cap} projects and you have {$count}. Add a card at /billing "
+              . "to go further — extra projects are \${$price} each per month."
+            : "Your free plan includes {$cap} project" . ($cap === 1 ? '' : 's') . " and you have {$count}. "
+              . "Add a card at /billing and each extra project is \${$price} a month.";
 
         return ['ok' => false, 'error' => $msg, 'code' => 402];   // 402 Payment Required
     }
@@ -261,6 +283,7 @@ class ProjectQuota {
             // repeating the comparison. The inline copy that used to live here is exactly
             // how a page and an invoice come to disagree about what somebody owes.
             'needs_paid' => self::needsPaidPlan($memberId),
+            'billable'   => self::billableProjects($memberId),
             'over'       => $count > $cap,
         ];
     }

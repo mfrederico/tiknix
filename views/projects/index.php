@@ -337,6 +337,18 @@ $fmt = function (string $iso): string {
         btn.disabled = false;
         msg.className = 'form-text text-danger';
         msg.textContent = (j && j.message) || 'Could not create the project.';
+        // A refusal that has somewhere to send you gets a link, not an instruction to go
+        // and find one. Built as DOM nodes with textContent/href rather than innerHTML —
+        // this is server-supplied text and must never be parsed as markup.
+        if (j && j.action_url) {
+          var a = document.createElement('a');
+          a.href = j.action_url;
+          a.textContent = j.action_label || 'Continue';
+          a.className = 'ms-1 fw-semibold';
+          if (j.action_blank) { a.target = '_blank'; a.rel = 'noopener'; }
+          msg.appendChild(document.createTextNode(' '));
+          msg.appendChild(a);
+        }
       }).catch(function () {
         btn.disabled = false;
         msg.className = 'form-text text-danger';

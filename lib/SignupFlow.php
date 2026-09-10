@@ -302,6 +302,42 @@ class SignupFlow {
         return ['ok' => true, 'slug' => $slug, 'created' => true, 'error' => ''];
     }
 
+    /**
+     * A signed SSO link into the billing portal for an existing member, or '' if one
+     * cannot be built.
+     *
+     * Registers a tenant first if the member has none, because a link is only worth
+     * offering if it lands somewhere: an SSO for an unknown tenant is refused by the
+     * billing service, which is exactly the dead end this replaces.
+     */
+    public static function portalUrlForMember(int $memberId): string {
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) return '';
+
+        $slug = trim((string) ($member->billingTenantEid ?? ''));
+        if ($slug === '') {
+            $ensured = self::ensureTenantFor($memberId);
+            if (!$ensured['ok']) return '';
+            $slug = $ensured['slug'];
+        }
+
+        $cfg = self::billingConfig();
+        if (!$cfg['ok']) return '';
+
+        $params = [
+            'app'    => $cfg['app_slug'],
+            'tenant' => $slug,
+            'email'  => (string) $member->email,
+            'name'   => trim(((string) $member->firstName) . ' ' . ((string) $member->lastName))
+                        ?: (string) ($member->displayName ?: $member->username ?: $member->email),
+            'ts'     => (string) time(),
+        ];
+        ksort($params);
+        $params['sig'] = hash_hmac('sha256', http_build_query($params), $cfg['app_secret']);
+
+        return $cfg['service_url'] . '/auth/sso?' . http_build_query($params);
+    }
+
     /** Mark abandoned signups expired so they stop holding their email address. */
     public static function expireStale(): int {
         $stale = Bean::find('pendingsignup', 'status = ? AND expires_at < ?',

@@ -72,7 +72,9 @@ class Billing extends BaseControls\Control {
             'projects'     => $this->projectBreakdown($memberId),
             // Empty until a member is registered with the billing service, which does not
             // happen until phase 3. The view says so plainly rather than showing a dead link.
-            'portalUrl'    => $tenantSlug !== '' ? $this->portalUrl($tenantSlug) : '',
+            // One SSO builder, shared with the refusal link on the projects page. Two
+            // implementations of the same signature is how one of them quietly goes stale.
+            'portalUrl'    => $tenantSlug !== '' ? SignupFlow::portalUrlForMember($memberId) : '',
             'tenantSlug'   => $tenantSlug,
         ]);
     }
@@ -113,31 +115,6 @@ class Billing extends BaseControls\Control {
         }
     }
 
-    /** Signed SSO link into the billing portal, or '' when it cannot be built. */
-    private function portalUrl(string $tenantSlug): string {
-        $serviceUrl = trim((string) Flight::get('billing.service_url'));
-        $appSlug    = trim((string) Flight::get('billing.app_slug'));
-        $appSecret  = trim((string) Flight::get('billing.app_secret'));
-        if ($serviceUrl === '' || $appSlug === '' || $appSecret === '') {
-            Flight::get('log')->error(
-                'Billing: [billing] service_url/app_slug/app_secret missing in conf/config.ini — no portal link'
-            );
-            return '';
-        }
-
-        // Mirrors BillingClient::generateSsoUrl — same params, same ksort, same HMAC.
-        $params = [
-            'app'    => $appSlug,
-            'tenant' => $tenantSlug,
-            'email'  => (string) $this->member->email,
-            'name'   => (string) ($this->member->displayName ?: $this->member->username),
-            'ts'     => (string) time(),
-        ];
-        ksort($params);
-        $params['sig'] = hash_hmac('sha256', http_build_query($params), $appSecret);
-
-        return rtrim($serviceUrl, '/') . '/auth/sso?' . http_build_query($params);
-    }
 
     /**
      * GET /billing/usage/<tenant>?period_start=Y-m-d&period_end=Y-m-d

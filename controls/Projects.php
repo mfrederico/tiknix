@@ -139,6 +139,19 @@ class Projects extends BaseControls\Control {
             'is_root' => (int) $this->member->level === LEVELS['ROOT'],
         ]);
         if (empty($res['ok'])) {
+            /* jsonError carries only a message, and a plan refusal has somewhere to send
+               you — so emit it directly with the link attached. Fewer clicks than "go to
+               /billing and find it": the URL is already a signed SSO into the card form. */
+            if (!empty($res['action_url'])) {
+                Flight::json([
+                    'success'      => false,
+                    'message'      => (string) $res['error'],
+                    'action_url'   => (string) $res['action_url'],
+                    'action_label' => (string) ($res['action_label'] ?? 'Continue'),
+                    'action_blank' => !empty($res['action_blank']),
+                ], (int) ($res['code'] ?? 400));
+                return;
+            }
             $this->jsonError((string) ($res['error'] ?? 'Could not create the project.'), (int) ($res['code'] ?? 400));
             return;
         }

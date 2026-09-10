@@ -192,12 +192,25 @@ class ProjectQuota {
         $price = number_format(self::PRICE_PER_PROJECT, 0);
         $tier  = self::tierOf($memberId);
         $msg   = $tier === 'legacy'
-            ? "Your account covers {$cap} projects and you have {$count}. Add a card at /billing "
-              . "to go further — extra projects are \${$price} each per month."
+            ? "Your account covers {$cap} projects and you have {$count}. Add a card and you can "
+              . "keep going — extra projects are \${$price} each per month."
             : "Your free plan includes {$cap} project" . ($cap === 1 ? '' : 's') . " and you have {$count}. "
-              . "Add a card at /billing and each extra project is \${$price} a month.";
+              . "Add a card and each extra project is \${$price} a month.";
 
-        return ['ok' => false, 'error' => $msg, 'code' => 402];   // 402 Payment Required
+        /* Take them straight to the card form rather than to /billing to find the link
+           themselves. A signed SSO URL when we can build one; /billing when we cannot,
+           because a link that lands on a refused signature is worse than one more click —
+           it looks like the card was declined. */
+        $sso = SignupFlow::portalUrlForMember($memberId);
+
+        return [
+            'ok'           => false,
+            'error'        => $msg,
+            'code'         => 402,                       // Payment Required
+            'action_url'   => $sso !== '' ? $sso : '/billing',
+            'action_label' => $sso !== '' ? 'Add a card' : 'Go to billing',
+            'action_blank' => $sso !== '',               // only leave the app for the portal
+        ];
     }
 
     /**
@@ -230,9 +243,12 @@ class ProjectQuota {
             if ($refusal === null) continue;
 
             $who = $memberId === (int) $team->ownerId ? "the owner of " . ($team->name ?: 'that team') : 'a member of that team';
+            // No card link here on purpose: the person who must act is somebody ELSE, and
+            // offering the sharer a card form would put the wrong account's payment details
+            // against the wrong bill.
             return ['ok' => false, 'code' => 402,
                     'error' => "Sharing this project would put {$who} over their plan. "
-                             . 'Ask them to upgrade at /billing, or share it with a different team.'];
+                             . 'Ask them to add a card, or share it with a different team.'];
         }
         return null;
     }
@@ -262,9 +278,12 @@ class ProjectQuota {
         $refusal = self::refusalFor($memberId, $adding);
         if ($refusal === null) return null;
 
-        return ['ok' => false, 'code' => 402,
-                'error' => "Joining this team would add {$adding} project" . ($adding === 1 ? '' : 's')
-                         . ' to your plan and put you over your limit. See /billing.'];
+        // Here the joiner IS the one who pays, so keep the card link refusalFor() built and
+        // only replace the wording with something that fits joining rather than creating.
+        $refusal['error'] = "Joining this team would add {$adding} project" . ($adding === 1 ? '' : 's')
+                          . ' to your plan. Add a card and each extra project is $'
+                          . number_format(self::PRICE_PER_PROJECT, 0) . ' a month.';
+        return $refusal;
     }
 
     /**

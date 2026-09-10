@@ -1,331 +1,289 @@
 # Paid Release: card-on-file signup, 1 free project, $499/mo for 10
 
 Status: **plan for review — nothing built, nothing enabled.**
+Revision 2 — rewritten after finding `billing-service`.
 
-The goal, as specified: a visitor creates an account only after a card is on file and
-validated; they land in the builder; their first project is free; a second project
-requires the $499/month plan; that plan covers 10 projects **including projects shared
-to them**, so accounts cannot swap projects to stay free.
+A visitor creates an account only after a card is on file and validated; they land in
+the builder; their first project is free; a second requires the $499/month plan, which
+covers 10 projects **including projects shared to them**.
 
 ---
 
-## 1. What exists today, and what doesn't
+## 1. Verdict: reuse `billing-service`. Don't build a billing layer.
 
-Grounded in the current tree, not assumed:
+`/var/www/html/default/billing-service` (symlinked as `billing.clicksimple`) is a
+production multi-tenant billing service that already bills real money for a live
+customer. It covers roughly **four fifths of this project**, including the two parts
+that are easiest to get dangerously wrong — Stripe idempotency and invoice math.
 
-| Piece | State |
+| Need | Status in `billing-service` |
 |---|---|
-| `lib/StripeGateway.php` | **Not reusable for this.** It is the *instance-side* client for a *customer's own* connected Stripe account (BYO-Stripe storefronts). Nothing calls it yet. |
-| Stripe SDK | **Absent.** Not in `composer.json`. `symfony/http-client` is available. |
-| `[stripe]` config | **Absent.** Zero mentions in `conf/config.ini`. |
-| Platform billing | **Does not exist.** No subscription, invoice, or payment tables for tiknix's own customers. `shopsubscription` belongs to the BYO-Stripe storefront feature. |
-| Signup | `Auth::register` / `Auth::doregister`, gated by the `registration_enabled` setting, rate-limited 5/hour/IP. Creates the member immediately. |
-| Project creation | `ProvisionService::create`, `::fork` |
-| Project sharing | `ProvisionService::share` — an `instance_team` m2m; every member of a shared team reaches the project |
-| Teams | `team.owner_id` exists, `teammember` carries per-member roles |
-| Quotas | **None anywhere.** The nearest prior art is `lib/Invite.php`, whose quota is worth copying — including its refusal to assume zero when the count query fails |
+| Stripe customers | `StripeService::createCustomer` / `ensureCustomer` |
+| **Card on file** | **`createSetupIntent`, `getPaymentMethods`, `detachPaymentMethod` — already built** |
+| Invoices + line items | `BillingService`, `BillingRuleEngine` (pure, tested) |
+| Charging on anniversary | `bin/billing.php autopay` |
+| Webhooks | `services/Stripe/WebhookHandler.php`, `Api/V1/WebhookController` |
+| Idempotency | Unique `(tenant_id, period_start)`, Stripe idempotency keys, exactly-once cycle advance, cron `flock` |
+| **Discounts** | Per-tenant JSON: `flat` or `percent`, whole-invoice or per line type |
+| Plans / pricing | Per-app rate schedules in `conf/rates/<app>.php`, tier support |
+| Usage reporting | `UsageFetcher` calls the consumer app's `callback_url` |
+| Client library | `packages/billing-client` — `register`, `check`, `getInvoices`, `generateSsoUrl`, … |
+| Hosted billing portal | `generateSsoUrl(slug, email, name)` |
 
-**Everything in this plan is new build.** There is no half-finished billing layer to
-resume.
+What that deletes from revision 1: the Stripe SDK work, the `[stripe]` plumbing, the
+`subscription` and `billingevent` tables, webhook signature verification, dunning, and
+the whole "phase 4 upgrade path". Those exist.
 
----
+**The billing entity is ClickSimple LLC** — confirmed, and correct, since that is the
+operating company. `StripeService` reads one global `stripe.secret_key`, so everything
+bills through ClickSimple's Stripe account. No per-app credentials are needed.
 
-## 2. Decisions I need from you before building
-
-These change the shape of the work. My recommendation is first in each.
-
-### D1. Who is the billing subject when a team is involved? ⚠️ **the big one**
-
-The rule as you stated it — a shared project counts against everyone who can see it —
-is airtight against the abuse you described. It also produces this:
-
-> A legitimate 5-person team with **2** shared projects puts all 5 members over the
-> free limit. That is **5 × $499 = $2,495/month** for two projects.
-
-That is the difference between anti-abuse and punishing the exact collaboration the
-$499/10-project tier appears designed to sell.
-
-- **(a) Recommended — count against the *account that owns the team*.** A project shared
-  into a team counts once, against the team owner's cap of 10. Invited collaborators
-  don't each need a subscription. Sharing into a team owned by a **free** account still
-  counts against every member individually — so the two-free-accounts-swapping case is
-  still blocked, because neither of them owns a paid team.
-- **(b) As specified — count against every member who can see it.** Maximum abuse
-  resistance. Charges legitimate teams per head.
-
-The abuse case you're defending against is *separate free accounts trading projects*.
-Option (a) blocks that and still sells seats to real teams. But it's your commercial
-call, and (b) is a one-line difference in the counting query.
-
-**I ran the (b) query against the live database.** This is not hypothetical:
-
-| Member | Owns | **Counts** | At a free cap of 1 |
-|---|---|---|---|
-| `mfrederico@gmail.com` | 5 | **13** | blocked |
-| `fabianduarte09@gmail.com` | 5 | **6** | blocked |
-| `pd@earlywater.com` | 3 | **3** | blocked |
-| `testinvite@clicksimple.com` | **0** | **4** | **blocked** |
-| `robflanagan@gmail.com` | 1 | 1 | ok |
-| `m.fred@clicksimple.com` | 0 | 1 | ok |
-
-Read the fourth row carefully. `testinvite@clicksimple.com` **owns nothing**. It was
-invited to a team, and rule (b) hands it a bill for $499/month for projects that belong
-to someone else. Under (b), *accepting an invitation* is what costs money — which also
-means anyone can raise a stranger's bill by inviting them to a team.
-
-That is the strongest argument for (a), and it came out of real rows, not a thought
-experiment.
-
-### D2. What happens at project 11?
-
-Undefined in the brief. Recommend: **hard block with an upgrade path** ("contact us" or
-a second seat), never a silent extra charge. A plan that auto-bills for the 11th project
-is the kind of surprise that produces chargebacks.
-
-### D3. What does non-payment do to existing projects?
-
-Recommend: 7-day grace, then the builder goes **read-only** — projects keep running,
-data is never deleted, exports stay available. Deleting or suspending a paying-then-lapsed
-customer's work is unrecoverable and the reputational cost far exceeds the $499.
-
-### D4. Is the $499 cliff intended?
-
-Project 1 is free, project 2 is $499/month. There is no middle. That's a defensible
-"prosumer to business" jump, but it means a hobbyist's second project costs the same as
-a company's tenth. Flagging it once; if it's intended, it's intended.
-
-### D5. Grandfathering — this is not optional
-
-Live data right now:
-
-| Member | Owned projects |
-|---|---|
-| `mfrederico@gmail.com` (level 1) | 5 |
-| `fabianduarte09@gmail.com` (level 100) | 5 |
-| `pd@earlywater.com` (level 100) | 3 |
-| `robflanagan@gmail.com` (level 100) | 1 |
-
-Plus **10 existing `instance_team` share links.** Switching enforcement on without a
-grandfather rule locks real users out of their own work on day one.
-
-Recommend: stamp every existing member with `plan_tier = 'legacy'` and
-`plan_project_cap = max(3, their current count)` in the enabling migration. They keep
-what they have; the new rules apply to signups from that day forward.
+> **Small but real:** customers buy "Tiknix" and will see **CLICKSIMPLE** on their card
+> statement. That mismatch is a routine chargeback trigger. Set a statement descriptor
+> like `CLICKSIMPLE* TIKNIX` on the tiknix invoices.
 
 ---
 
-## 3. Data model
+## 2. Decisions
 
-Additions only — no changes to existing columns.
+### ✅ D1 — Resolved: count against the account that owns the team
 
-```
-member
-  + stripe_customer_eid   TEXT     -- external string id, _eid per the naming rule
-  + plan_tier             TEXT     -- 'free' | 'pro' | 'legacy'
-  + plan_status           TEXT     -- 'active' | 'past_due' | 'canceled'
-  + plan_project_cap      INTEGER  -- 1 free, 10 pro, legacy = grandfathered count
-  + card_validated_at     NUMERIC
+Agreed. A project shared into a team counts once, against the **team owner's** cap of
+10. Collaborators don't each need a subscription. Sharing into a team owned by a *free*
+account still counts against every member individually, which is what keeps the
+free-accounts-trading-projects abuse closed.
 
-pendingsignup              -- signup in flight, before the member exists
-  email, password_hash, first_name, last_name
-  token TEXT               -- opaque, what the browser carries
-  stripe_customer_eid TEXT
-  status TEXT              -- 'awaiting_card' | 'completed' | 'expired'
-  created_at, expires_at   -- 24h
+Run against live data, rule (a) versus the originally specified rule (b):
 
-subscription
-  member_id INTEGER
-  stripe_subscription_eid TEXT
-  status TEXT, current_period_end NUMERIC, cancel_at_period_end INTEGER
+| Member | Owns | Rule (b) | **Rule (a)** | Under (a), free cap 1 |
+|---|---:|---:|---:|---|
+| `mfrederico@gmail.com` | 5 | 13 | **10** | pays |
+| `fabianduarte09@gmail.com` | 5 | 6 | **5** | pays |
+| `pd@earlywater.com` | 3 | 3 | **3** | pays |
+| `testinvite@clicksimple.com` | 0 | 4 | **0** | **free** |
+| `m.fred@clicksimple.com` | 0 | 1 | **0** | **free** |
+| `robflanagan@gmail.com` | 1 | 1 | **1** | free |
 
-billingevent               -- every webhook, for idempotency and audit
-  stripe_event_eid TEXT UNIQUE
-  type TEXT, payload TEXT, processed_at NUMERIC
+Rule (a) drops exactly the accounts that own nothing and keeps every account genuinely
+holding projects. Nobody gets a bill for someone else's work.
+
+*(The third clause — projects shared by a free account count for everyone — could not be
+simulated, because `plan_tier` does not exist yet. It is unreachable on today's data
+since nobody has a tier at all.)*
+
+### ⚠️ D2 — Grandfathering by discount: yes, but $0 currently means *no invoice*
+
+Your instinct is right, and there is live precedent: tenant `ltz2` carries a flat
+`-$550` discount against a $500 base and legitimately nets $0 in low-usage months. A
+grandfathered tiknix member is the same shape — full price on the invoice, a
+`Grandfathered` discount line cancelling it.
+
+The gap is the second half of the idea. `bin/billing.php:562`:
+
+```php
+if ($subtotal <= 0) {
+    cliOutput("  Nothing to bill.", 'info');
+    // advance the cycle so it can't freeze …
+    continue;               // ← no invoice is created
+}
 ```
 
-Ships as `services/Schema/Seeds/NN_Billing.php` (idempotent, run by
-`clitool.php --build`). RedBean creates tables on first store, so no `CREATE TABLE`.
-New routes get `authcontrol` rows via `PermissionCache::seedRule()` **before** anything
-fetches them.
+**A 100% discount produces no invoice at all today.** Three ways to get what you asked for:
+
+- **(a) Recommended — accept it, and show the value in the portal instead.** Grandfathered
+  members are real tenants with a real discount; `getUsagePreview` and the SSO billing
+  portal both show "$499 − $499 = $0". They see what they're getting free, we touch no
+  money path, and revoking the discount later needs no code.
+- **(b) Emit a $0 invoice, opt-in per app or tenant** (`invoice_at_zero`), defaulting off.
+  Gets you the literal invoice. Costs a change to a money path, gated by that repo's
+  invariant 6 (prove byte-identical output on the money-path tests).
+- **(c) Change the branch globally.** ❌ **No.** `ltz2` is a live paying customer that
+  nets $0 some months. A global change starts sending them $0 invoices they have never
+  received — someone else's production billing altered as a side effect of a tiknix
+  feature.
+
+### D3 — Shared deployment, or a second one for tiknix?
+
+Recommend **shared**: add tiknix as a new `app` row with its own rate schedule. App-scoped
+config doesn't touch `cannonwms`. It keeps one codebase and one set of money-path tests.
+
+The tradeoff to accept knowingly: tiknix changes land in a service that bills real money
+for a live customer. The discipline that follows is non-negotiable — copy the DB, point
+`BILLING_CONFIG` at the copy, never run a non-dry `run`/`autopay` against
+`database/billing.db`.
+
+### D4 — What happens at project 11?
+
+Recommend a hard block with an upgrade path, never a silent extra charge.
+
+### D5 — What does non-payment do?
+
+Recommend 7 days' grace, then the builder goes read-only. Projects keep running, data is
+never deleted, exports stay available.
+
+### D6 — Is the $499 cliff intended?
+
+Project 1 free, project 2 $499, nothing between. Flagging once.
+
+---
+
+## 3. How tiknix maps onto the service
+
+```
+billing-service `app`     → slug 'tiknix', rate schedule conf/rates/tiknix.php
+billing-service `tenant`  → ONE PER TIKNIX BILLING ACCOUNT (the member who pays)
+tenant.callback_url       → https://tiknix.com/api/billing/usage  (project count)
+tenant.discounts          → [{"name":"Grandfathered","type":"percent","amount":100}]
+```
+
+The tenant *is* the account that owns teams under D1 — the two models line up without a
+translation layer.
+
+**Pricing shape.** The rate engine prices per unit, but our plan is a stairstep ($0 for
+one project, $499 flat for two through ten). So tiknix does its own tier arithmetic —
+which it must anyway, to gate — and reports the *conclusion*:
+
+```php
+// conf/rates/tiknix.php
+return [
+    'name' => 'Tiknix', 'currency' => 'usd',
+    'rates' => [
+        'pro' => ['description' => 'Tiknix Pro — up to 10 projects', 'unit_price' => 499.00],
+    ],
+    'usage_mapping' => ['pro_plan' => 'pro'],
+];
+```
+
+`/api/billing/usage` returns `{"pro_plan": 0}` for a free account and `{"pro_plan": 1}`
+for a paying one. No rate-engine changes, and the quota rule stays in one place in tiknix
+rather than being half-expressed in a rate table.
 
 ---
 
 ## 4. Signup with card-on-file
 
-**Stripe Checkout in `setup` mode.** Hosted by Stripe: card data never touches our
-servers, SCA/3DS is handled, and it is the shortest path to a release we can defend.
+The card step is `StripeService::createSetupIntent` against a customer the service
+already knows how to create — so this is wiring, not new payment code.
 
 ```
 1. POST /auth/doregister
      → validate; create `pendingsignup` (NO member yet)
-     → create Stripe Customer
-     → create Checkout Session (mode=setup, client_reference_id=token)
-     → 303 to Stripe
+     → billing-service: register tenant + Stripe customer
+     → SetupIntent → collect card (Stripe Elements or Checkout setup mode)
 
-2. Visitor enters card at Stripe; 3DS if the bank asks.
+2. Card confirmed with Stripe; 3DS if the bank asks.
 
-3. Stripe → POST /billing/webhook   ← THE ACCOUNT IS CREATED HERE
-     verify signature
-     on checkout.session.completed / setup_intent.succeeded:
-       create member (plan_tier='free', cap=1, card_validated_at=now)
-       mark pendingsignup completed
-       record billingevent for idempotency
+3. Stripe webhook → billing-service → tiknix callback
+     ← THE ACCOUNT IS CREATED HERE
+     create member (plan_tier='free', cap=1, card_validated_at=now)
+     mark pendingsignup completed
 
 4. Visitor returns to /auth/complete?token=…
      polls for the member; on success logs in → builder
 ```
 
-**The account is created by the webhook, not the browser return.** The return URL is a
-navigation event the user's browser controls — it can be skipped, replayed, or hand-typed.
-Stripe's signed webhook is the only statement about that card we should trust. Building it
-the other way produces accounts with no validated card, which is precisely the thing this
-feature exists to prevent.
+**The account is created from the webhook, not the browser return.** The return URL is a
+navigation the user's browser controls — skippable, replayable, typeable. The signed
+webhook is the only trustworthy statement that the card was validated. Building it the
+other way produces accounts with no validated card, which is the exact thing this feature
+exists to prevent.
 
-Details that bite:
-
-- **Idempotency.** Stripe retries. Unique index on `billingevent.stripe_event_eid`;
-  ignore duplicates.
-- **Slow webhooks.** The return page must tolerate the webhook not having landed yet —
-  poll with a spinner, don't 404.
-- **Abandonment.** `pendingsignup` expires at 24h. Reserve the email while pending so two
-  signups can't race, without leaking whether an address is already registered.
-- **Card validated ≠ card chargeable.** A SetupIntent proves the card authenticates and
-  attaches. It does not guarantee funds later. Don't let the copy overpromise.
-- **No $1 pre-auth.** It adds friction and confuses people, and `setup_intent.succeeded`
-  already gives us what "validated" should mean here.
-- **Failure must be loud.** A webhook that can't verify, a Customer that won't create — log
-  an ERROR naming the setting or call, and show the visitor a real message. Never
-  half-create the account.
+Details that bite: `pendingsignup` expires at 24h; the return page must tolerate a
+webhook that hasn't landed yet; reserve the email while pending without leaking whether
+it's registered; a SetupIntent proves the card *authenticates*, not that it will have
+funds later — don't let the copy overpromise. No $1 pre-auth: friction for nothing.
 
 ---
 
 ## 5. Where the quota is enforced
 
-Four choke points, all in `ProvisionService`, plus team joins:
-
-| Entry point | Why it counts |
+| Entry point | Why |
 |---|---|
-| `create()` | New project |
-| `fork()` | **Also a new project.** Easy to miss; a fork gate is the first thing anyone routes around |
-| `share()` | Checked on the **recipient** side — sharing can push someone else over |
-| Team invite accept (`lib/Invite.php` / `Teams`) | Joining a team with shared projects can push the joiner over |
-| `delete()` | Frees a slot |
+| `ProvisionService::create` | New project |
+| `ProvisionService::fork` | **Also a new project** — easy to miss, first thing anyone routes around |
+| `ProvisionService::share` | Checked on the **recipient** side |
+| Team invite accept | Joining a team can change a count |
+| `ProvisionService::delete` | Frees a slot |
 
-The count, under **D1(b) as specified**:
+The count under D1(a):
 
 ```sql
 SELECT COUNT(DISTINCT i.id)
 FROM instance i
 LEFT JOIN instance_team it ON it.instance_id = i.id
-LEFT JOIN teammember   tm ON tm.team_id = it.team_id AND tm.member_id = ?
-WHERE i.status != 'deleted'
-  AND (i.member_id = ? OR tm.member_id IS NOT NULL)
+LEFT JOIN team        t    ON t.id = it.team_id
+LEFT JOIN member      owner ON owner.id = t.owner_id
+LEFT JOIN teammember  tm   ON tm.team_id = t.id AND tm.member_id = :m
+WHERE i.status != 'deleted' AND (
+      i.member_id  = :m                                 -- you own it
+   OR t.owner_id   = :m                                 -- shared into a team you own
+   OR (tm.member_id = :m AND owner.plan_tier = 'free')  -- shared by a free account
+)
 ```
 
-Under **D1(a) recommended**, the shared leg only counts when the team's owner is not on a
-paid plan.
-
-Two rules for the gate itself:
-
-- **One function, called by all five.** Not five copies of the rule — the first
-  divergence between them is a free tier that leaks.
+- **One function, called by all five.** Not five copies — the first divergence is a free
+  tier that leaks.
 - **A failed count blocks, it does not pass.** `lib/Invite.php` already learned this: a
-  quota check that treats an error as "0 used" is not a quota. Log the error, refuse the
-  action, name the reason.
+  quota check that treats an error as "0 used" is not a quota.
 
 ---
 
-## 6. Subscription lifecycle
+## 6. What tiknix still has to build
 
-- Upgrade on the 2nd project: Checkout in `subscription` mode against a `price_pro`
-  ($499/mo), or reuse the saved card with a direct Subscription create — the card is
-  already on file, so the second is one click instead of a form.
-- Webhooks handled: `customer.subscription.updated`, `.deleted`,
-  `invoice.paid`, `invoice.payment_failed`.
-- Dunning per **D3**: `past_due` → 7-day grace → read-only. Stripe Smart Retries do the
-  chasing.
-- Downgrade below 2 projects does **not** auto-cancel; the customer cancels deliberately.
-  Auto-cancelling on project deletion is a trapdoor.
+1. `member` columns: `billing_tenant_slug`, `plan_tier`, `plan_project_cap`, `card_validated_at`
+2. `pendingsignup` table + the signup flow above
+3. `ProjectQuota` — the counter, and the five gates
+4. `/api/billing/usage` callback (returns `pro_plan`) with `callback_key` auth
+5. `conf/rates/tiknix.php` + a `tiknix` app row
+6. `/billing` page — count, cap, invoices, SSO link to the portal
+7. Grandfather migration: register existing members as tenants with a 100% discount
 
 ---
 
-## 7. Config
+## 7. Phases
 
-```ini
-[stripe]
-secret_key      = "sk_live_…"
-publishable_key = "pk_live_…"
-webhook_secret  = "whsec_…"
-price_pro       = "price_…"     ; $499/mo
-```
-
-Per the no-fallbacks rule: a missing key **throws and names the file and setting**. There
-is no test-mode default, and no "unknown" price id — a billing path that silently falls
-back is how you charge the wrong amount or, worse, charge nobody and believe you did.
-
-`conf/config.ini` is gitignored but loaded; `conf/config.<slug>.ini` is tracked but not
-loaded — the live keys go in the former, on the box, never in git.
-
-Recommend adding `stripe/stripe-php` rather than hand-rolling on `symfony/http-client`:
-webhook signature verification alone justifies it, and it is the difference between a
-billing integration we can audit and one we hope about.
-
----
-
-## 8. Phases
-
-Each phase is reviewable and independently revertable. **Nothing is enforced until 5.**
+Nothing is enforced until phase 4.
 
 | # | Phase | Contents |
 |---|---|---|
-| 1 | Foundations | SDK, `[stripe]` config, schema seeder, `billingevent` + idempotency, webhook endpoint with signature verification. No behavior change. |
-| 2 | Card-on-file signup | `pendingsignup`, Checkout setup mode, webhook-creates-member, return/poll page. Behind a `billing_signup_enabled` flag, **off**. |
-| 3 | Counting, read-only | The counter function + a `/billing` page showing each member their count and cap. **Nothing blocked yet** — this is where we find out what the query says about real accounts before it can hurt anyone. |
-| 4 | Upgrade path | Subscription checkout, lifecycle webhooks, dunning, `/billing` self-serve. |
-| 5 | Enforcement | Turn on the five gates. Grandfather migration runs **first**. |
-| 6 | Release | Pricing page rewrite (it currently advertises **$10/instance** — that has to change and it is a public promise), terms, tax, then `registration_enabled` on. |
-
-Phase 3 is the one I'd insist on: it lets us run the real counting query against real
-accounts and see who it would have blocked, while it still costs nothing to be wrong.
+| 1 | Wire up | `billing-client` into tiknix, `tiknix` app row, rate schedule, usage callback. Read-only; nothing bills. |
+| 2 | Counting, visible | `ProjectQuota` + `/billing` showing count vs cap. **Nothing blocked.** Verify the query against real accounts while being wrong is still free. |
+| 3 | Signup with card | `pendingsignup`, SetupIntent, webhook-creates-member. Behind a flag, off. |
+| 4 | Enforcement | The five gates. **Grandfather migration runs first.** |
+| 5 | Release | Pricing page rewrite (it advertises **$10/instance** today), terms, tax, statement descriptor, then `registration_enabled` on. |
 
 ---
 
-## 9. Risks worth naming now
+## 8. Risks
 
-- **Charging is not reversible in reputation.** Every gate should fail toward *letting a
-  paying person work*, and every refusal should say exactly what to do next.
-- **The pricing page contradicts this today** ($10/instance). Until phase 6 it's a public
-  statement we'd be breaking.
-- **Tax/VAT.** Selling to the EU/UK means Stripe Tax or an accountant, not a TODO.
-- **Terms of service** need to exist before the first card. There's no `/index/terms`
-  content backing this pricing.
-- **Free-tier abuse will move, not stop.** Blocking project-sharing pushes it to multiple
-  accounts per person. Signup already rate-limits per IP; email verification is the next
-  cheap lever, not more quota complexity.
-- **`fork()` and team-invite are the leaks.** If enforcement is ever incomplete, it will be
-  one of those two.
-- **Under rule (b), an invitation is an attack.** Adding someone to a team raises their
-  counted total, so a stranger can push another account over its cap. If (b) is chosen,
-  team joins must require the *joiner's* consent against a quota they can see first.
+- **The service bills real money for someone else.** `ltz2`/cannonwms is live. Every
+  tiknix change must be app-scoped, and the zero-subtotal branch must never change
+  globally.
+- **Charging is not reversible in reputation.** Gates should fail toward letting a paying
+  person work; every refusal should say exactly what to do next.
+- **The pricing page contradicts this today** ($10/instance) — a public promise.
+- **Statement descriptor.** `CLICKSIMPLE` on a card statement for a `Tiknix` purchase.
+- **Tax/VAT.** Selling into the EU/UK means Stripe Tax or an accountant, not a TODO.
+- **`fork()` and team-invite are the leaks.** If enforcement is ever incomplete, it will
+  be one of those two.
+- **Free-tier abuse will move, not stop.** Blocking sharing pushes it to multiple accounts
+  per person; email verification is the next cheap lever, not more quota complexity.
 
 ---
 
-## 10. How to reproduce the numbers above
+## 9. Reproducing the numbers
 
-Read-only, safe to run any time:
+Read-only, safe any time. Note the database is `database/tiknix.db` — pointing sqlite at
+`tiknix.db` in the repo root silently creates an empty file and reports zero for every
+member, which looks exactly like "nobody is over quota".
 
 ```bash
-php -r '$p=new PDO("sqlite:database/tiknix.db");
-$sql="SELECT COUNT(DISTINCT i.id) FROM instance i
-      LEFT JOIN instance_team it ON it.instance_id = i.id
-      LEFT JOIN teammember tm ON tm.team_id = it.team_id AND tm.member_id = :m
-      WHERE i.status != \"deleted\" AND (i.member_id = :m OR tm.member_id IS NOT NULL)";
-$st=$p->prepare($sql);
+php -r '$p=new PDO("sqlite:file:database/tiknix.db?mode=ro");
+$q=$p->prepare("SELECT COUNT(DISTINCT i.id) FROM instance i
+  LEFT JOIN instance_team it ON it.instance_id = i.id
+  LEFT JOIN team t ON t.id = it.team_id
+  WHERE i.status != \"deleted\" AND (i.member_id = :m OR t.owner_id = :m)");
 foreach($p->query("SELECT id,email FROM member ORDER BY id") as $m){
-  $st->execute([":m"=>$m["id"]]);
-  printf("%-34s counted=%d\n",$m["email"],(int)$st->fetchColumn()); }'
+  $q->execute([":m"=>$m["id"]]);
+  printf("%-34s %d\n",$m["email"],(int)$q->fetchColumn()); }'
 ```
-
-Note the database is `database/tiknix.db`. Pointing sqlite at `tiknix.db` in the repo root
-silently creates an empty file and reports zero rows for every member — an empty result
-that looks exactly like "nobody is over quota".

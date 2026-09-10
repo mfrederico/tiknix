@@ -179,12 +179,25 @@ class ProjectQuota {
      *    do, because a person hitting this is trying to give us money.
      *  - It does not enforce anything while the flag is off.
      */
-    public static function refusalFor(int $memberId, int $adding = 1, string $what = 'project'): ?array {
+    public static function refusalFor(int $memberId, int $adding = 1, bool $syncCard = true): ?array {
         if (!self::enforcementEnabled()) return null;
 
         $count = self::countFor($memberId);
         $cap   = self::capFor($memberId);
         if ($count + $adding <= $cap) return null;
+
+        /* About to refuse — so check whether they have since added a card. The card form
+           opens in another tab, and without this the person who just did exactly what we
+           asked comes back, clicks again, and is refused identically. Only here, never on
+           the happy path: it is an HTTP round trip, and it earns its keep precisely when
+           the answer is about to be no. */
+        if ($syncCard) {
+            $synced = SignupFlow::syncPlanTier($memberId);
+            if ($synced['changed']) {
+                $cap = self::capFor($memberId);
+                if ($count + $adding <= $cap) return null;   // card added: let them through
+            }
+        }
 
         // Per-project pricing means this is an invitation, not a wall: there is no ceiling
         // to hit, only a card to add. Say the actual price — "upgrade" tells someone
@@ -239,7 +252,10 @@ class ProjectQuota {
         foreach ($affected as $memberId) {
             if ($memberId <= 0) continue;
             if (self::countsFor($memberId, $instanceId)) continue;   // already theirs, adds nothing
-            $refusal = self::refusalFor($memberId, 1);
+            // No card sync here: these are OTHER people, and a share can touch a whole
+            // team — one round trip per member, for accounts that are not even in this
+            // request. Their own next action syncs them.
+            $refusal = self::refusalFor($memberId, 1, false);
             if ($refusal === null) continue;
 
             $who = $memberId === (int) $team->ownerId ? "the owner of " . ($team->name ?: 'that team') : 'a member of that team';

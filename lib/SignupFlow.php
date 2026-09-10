@@ -338,6 +338,65 @@ class SignupFlow {
         return $cfg['service_url'] . '/auth/sso?' . http_build_query($params);
     }
 
+    /**
+     * Bring a member's plan tier into line with whether they actually have a card.
+     *
+     * This is the join between "card on file" and "uncapped": a card that is saved but
+     * never promotes the account leaves someone paying attention to a form that changes
+     * nothing, still blocked at one project and never billable.
+     *
+     *   card present, tier free  -> pro   (uncapped; projects past the first are billed)
+     *   no card,      tier pro   -> free  (back to the free allowance)
+     *   legacy                   -> untouched, always. Grandfathered accounts are covered
+     *                               whatever their card says, and promoting one to `pro`
+     *                               would start billing somebody we promised not to.
+     *
+     * AN UNREACHABLE BILLING SERVICE CHANGES NOTHING. Demoting on a failed check would
+     * lock a paying customer out over an outage on our side, and promoting on one would
+     * hand out uncapped projects to anybody who caught us at a bad moment. The error is
+     * logged and the tier is left exactly as it was.
+     *
+     * Synced at most once per member per request — the check is an HTTP round trip and
+     * the quota gate can ask about several members at once.
+     *
+     * @return array{ok:bool, tier:string, changed:bool, error:string}
+     */
+    public static function syncPlanTier(int $memberId): array {
+        static $seen = [];
+
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) return ['ok' => false, 'tier' => 'free', 'changed' => false, 'error' => 'no such member'];
+
+        $tier = trim((string) ($member->planTier ?: 'free'));
+        if ($tier === 'legacy') return ['ok' => true, 'tier' => 'legacy', 'changed' => false, 'error' => ''];
+        if (isset($seen[$memberId]))  return ['ok' => true, 'tier' => $tier, 'changed' => false, 'error' => ''];
+        $seen[$memberId] = true;
+
+        $slug = trim((string) ($member->billingTenantEid ?? ''));
+        if ($slug === '') return ['ok' => true, 'tier' => $tier, 'changed' => false, 'error' => ''];
+
+        $card = self::cardOnFile($slug);
+        if (!$card['ok']) {
+            \Flight::get('log')->error('SignupFlow: card check failed — leaving the plan tier alone', [
+                'member' => $memberId, 'tenant' => $slug, 'error' => $card['error'],
+            ]);
+            return ['ok' => false, 'tier' => $tier, 'changed' => false, 'error' => $card['error']];
+        }
+
+        $want = $card['has_method'] ? 'pro' : 'free';
+        if ($want === $tier) return ['ok' => true, 'tier' => $tier, 'changed' => false, 'error' => ''];
+
+        $member->planTier = $want;
+        // The cap comes from the tier for free/pro; a stale number here would outrank it.
+        $member->planProjectCap = 0;
+        Bean::store($member);
+
+        \Flight::get('log')->info('SignupFlow: plan tier synced to the card on file', [
+            'member' => $memberId, 'from' => $tier, 'to' => $want,
+        ]);
+        return ['ok' => true, 'tier' => $want, 'changed' => true, 'error' => ''];
+    }
+
     /** Mark abandoned signups expired so they stop holding their email address. */
     public static function expireStale(): int {
         $stale = Bean::find('pendingsignup', 'status = ? AND expires_at < ?',

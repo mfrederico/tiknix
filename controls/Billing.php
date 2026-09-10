@@ -63,6 +63,12 @@ class Billing extends BaseControls\Control {
             if ($ensured['ok']) $tenantSlug = $ensured['slug'];
         }
 
+        /* Reconcile the plan with the card before reading anything off it. This is the page
+           people land on after adding one, and it would be a poor showing to say "free
+           tier, 1 project" to somebody who just handed over a card. Leaves the tier alone
+           if the billing service cannot be reached. */
+        if ($tenantSlug !== '') SignupFlow::syncPlanTier($memberId);
+
         $this->render('billing/index', [
             'title'        => 'Billing',
             'error'        => '',

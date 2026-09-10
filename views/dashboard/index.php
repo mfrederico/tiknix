@@ -104,6 +104,68 @@
 </div>
 
 <?php
+/* Billing tile.
+ *
+ * Omitted entirely when $billing is null, which is what the controller returns if the
+ * count failed. A card reading "0 projects" because a query broke would be a confident
+ * wrong answer about money on the first page a member sees — better to show nothing and
+ * let the error stand in the log.
+ *
+ * The numbers come from ProjectQuota, the same function /billing and the billing service
+ * use. Nothing here is enforced or charged yet, and the tile says so.
+ */
+if (!empty($billing)):
+    $b_count = (int) $billing['count'];
+    $b_cap   = (int) $billing['cap'];
+    $b_tier  = (string) $billing['tier'];
+    $b_legacy = ($b_tier === 'legacy');
+?>
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="ui-panel">
+            <div class="ui-panel-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <h3 class="mb-0"><i class="bi bi-credit-card text-success me-2"></i>Billing</h3>
+                <span class="badge text-bg-secondary">Preview — nothing is being charged</span>
+            </div>
+            <div class="ui-panel-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-sm-3">
+                        <div class="text-secondary small">Projects</div>
+                        <div class="fs-4 ui-mono mb-0"><?= $b_count ?><span class="fs-6 text-secondary"> / <?= $b_cap ?></span></div>
+                    </div>
+                    <div class="col-sm-3">
+                        <div class="text-secondary small">Plan</div>
+                        <div class="fs-5 mb-0 text-capitalize"><?= htmlspecialchars($b_tier) ?></div>
+                    </div>
+                    <div class="col-sm-3">
+                        <div class="text-secondary small">Monthly</div>
+                        <div class="fs-5 ui-mono mb-0">
+                            <?= ($b_legacy || empty($billing['needs_paid'])) ? '$0.00' : '$499.00' ?>
+                        </div>
+                        <?php if ($b_legacy): ?>
+                            <div class="small text-success">early account, kept free</div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="col-sm-3 text-sm-end">
+                        <a href="/billing" class="btn btn-sm btn-outline-secondary">
+                            See what's counted <i class="bi bi-arrow-right ms-1"></i>
+                        </a>
+                    </div>
+                </div>
+                <?php if (!empty($billing['over'])): ?>
+                    <div class="small text-secondary mt-3 mb-0">
+                        This account holds more projects than the <?= htmlspecialchars($b_tier) ?> plan
+                        covers. Nothing has changed and nothing is being charged — if the number looks
+                        wrong, <a href="/billing">see where each one came from</a>.
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php
 /* Where to go when you are stuck. This used to be a "Make this page yours" panel
    explaining how to rewrite views/dashboard/index.php — which is advice for whoever is
    building an app, not for the people using one, and everybody lands here. Building

@@ -25,9 +25,34 @@ class Dashboard extends BaseControls\Control {
         $stats = $this->getStats();
 
         $this->render('dashboard/index', [
-            'title' => 'Dashboard',
-            'stats' => $stats
+            'title'   => 'Dashboard',
+            'stats'   => $stats,
+            'billing' => $this->billingCard(),
         ]);
+    }
+
+    /**
+     * The billing tile: projects counted, and what that would cost.
+     *
+     * Reads ProjectQuota — the same function /billing and the usage endpoint use — rather
+     * than counting again here. Two counts of the same thing eventually disagree, and the
+     * one a member sees first is the one they believe.
+     *
+     * Returns null when there is nothing truthful to show, and the view then omits the
+     * tile entirely. That is deliberate: a dashboard card reading "0 projects" because the
+     * query failed is a wrong answer about money on the first page a member sees.
+     *
+     * @return array{count:int, cap:int, tier:string, needs_paid:bool, over:bool}|null
+     */
+    private function billingCard(): ?array {
+        try {
+            return ProjectQuota::snapshot((int) $this->member->id);
+        } catch (\Throwable $e) {
+            Flight::get('log')->error('Dashboard: billing tile omitted — project count failed', [
+                'member' => (int) $this->member->id, 'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
     
     /**

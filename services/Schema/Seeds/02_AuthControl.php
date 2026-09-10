@@ -170,6 +170,15 @@ $defaults = [
     ['mcp', 'health', 101, 'MCP health check'],
     ['mcpregistry', 'testConnection', 101, 'Test MCP server connection'],
 
+    // Billing usage pull (101) — auth handled by the controller, same shape as mcp.
+    // The caller is the ClickSimple billing server, which has no tiknix session and
+    // cannot get one; it presents a Bearer token that Billing::usage compares against
+    // [billing] callback_key. Seeded here rather than discovered, because the first
+    // request to an unseeded route invents an ADMIN row — and a billing run that gets
+    // a 303 to the login page instead of usage does not fail loudly, it just bills
+    // nothing and moves on.
+    ['billing', 'usage', 101, 'Billing service usage pull (Bearer callback_key)'],
+
     // Root only (1)
     ['permissions', 'build', 1, 'Build mode - scan controllers'],
     ['permissions', 'scan', 1, 'Scan for new permissions'],

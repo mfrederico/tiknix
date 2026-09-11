@@ -270,6 +270,10 @@ class GoogleAuth {
         $member->avatarUrl = $googleUser['picture'] ?? '';
         $member->level = LEVELS['MEMBER'] ?? 100;
         $member->status = 'active';
+        // Stamped like every other creation path. A NULL tier reads as "unset", and the
+        // grandfather migration would sweep it into legacy — a free cap for a new signup.
+        $member->planTier = 'free';
+        $member->planProjectCap = \app\ProjectQuota::FREE_CAP;
         $member->createdAt = date('Y-m-d H:i:s');
         $member->lastLogin = date('Y-m-d H:i:s');
         $member->loginCount = 1;
@@ -279,6 +283,14 @@ class GoogleAuth {
 
         $id = Bean::store($member);
         $member->id = $id;
+
+        /* A Google signup is a billing subject like any other — per-member billing, its own
+           tenant. Without this it was the one creation path that never became billable, so
+           a member could hold projects that no invoice ever knew about.
+           Non-fatal: nobody is turned away from signing in because a billing service is
+           unreachable, and the billing page registers one on demand for anyone who slipped
+           through. The failure logs an ERROR naming the member. */
+        \app\SignupFlow::ensureTenantFor((int) $id);
 
         Flight::get('log')->info('New member created via Google OAuth', [
             'member_id' => $id,

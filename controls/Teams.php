@@ -552,6 +552,10 @@ class Teams extends Control {
             $member->status = 'active';
             $member->isActive = 1;
             $member->emailVerified = 1; // Email is verified by receiving invite
+            // Stamped like every other creation path: a NULL tier reads as "unset", and the
+            // grandfather migration would sweep it into legacy — a free cap for a new signup.
+            $member->planTier = 'free';
+            $member->planProjectCap = \app\ProjectQuota::FREE_CAP;
             $member->createdAt = date('Y-m-d H:i:s');
             // Same lineage stamp app\Invite::markAccepted makes, so somebody who joined
             // via a team invitation still appears in their sponsor's downline. Without it

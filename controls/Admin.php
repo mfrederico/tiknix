@@ -312,11 +312,19 @@ class Admin extends Control {
                         $member->password = password_hash($password, PASSWORD_DEFAULT);
                         $member->level = $level;
                         $member->status = $status;
+                        // Stamped like every other creation path: a NULL tier reads as
+                        // "unset", and the grandfather migration would sweep it into legacy.
+                        $member->planTier = 'free';
+                        $member->planProjectCap = \app\ProjectQuota::FREE_CAP;
                         $member->createdAt = date('Y-m-d H:i:s');
                         $member->updatedAt = date('Y-m-d H:i:s');
 
                         try {
                             Bean::store($member);
+
+                            // An admin-created member is a billing subject too. Non-fatal.
+                            \app\SignupFlow::ensureTenantFor((int) $member->id);
+
                             $this->logger->info('New member created by admin', [
                                 'member_id' => $member->id,
                                 'username' => $username,

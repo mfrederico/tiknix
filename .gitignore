@@ -87,3 +87,10 @@ conf/*.key
 # of customer data — a `git add -A` during a conflict resolution committed three
 # of them into instance repos before this rule existed.
 *.preupgrade
+
+# Backups written beside live files: DB snapshots taken before migrations, and the
+# IniFileService backup-on-write copies (<file>.bak-<stamp>). Each holds exactly what the
+# live file holds — member PII and password hashes, or live Stripe keys — so a `git add -A`
+# would publish them. The existing conf/*.ini and database/*.db rules do NOT match these
+# names, which is how two live-key backups sat untracked-but-addable for a day.
+*.bak-*

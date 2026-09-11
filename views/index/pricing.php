@@ -85,21 +85,33 @@
             <span class="logo-word">tiknix</span>
         </a>
         <div class="badge">Pricing</div>
-        <h1>Simple, honest pricing.</h1>
-        <p class="lede">One price, everything included. Build as many apps as you like &mdash; you pay per builder.</p>
+        <h1>Your first project is free.</h1>
+        <p class="lede">Build something real before you pay anything. After that it&rsquo;s $49 a
+           month per project &mdash; no tiers to compare, no ceiling, and nothing to cancel if
+           you only ever want the one.</p>
 
         <div class="price-card highlight">
-            <div class="plan-name">Builder instance</div>
-            <div class="price"><span class="amount">$499</span><span class="period"> / 3 month trial</span></div>
-            <div class="price-sub">per builder</div>
+            <div class="plan-name">Per project</div>
+            <div class="price"><span class="amount">$49</span><span class="period"> / month</span></div>
+            <div class="price-sub">your first project is free &mdash; forever, not a trial</div>
             <ul class="features">
-                <li>Your own isolated instance &mdash; app, database &amp; web server</li>
+                <li>Its own isolated instance &mdash; app, database &amp; web server</li>
                 <li>AI agent harness with built-in primitives</li>
                 <li>Sandboxed execution, safe to tinker</li>
                 <li>Build on our servers, deploy to yours</li>
                 <li>Unlimited edits while you build</li>
+                <li>Add or remove projects whenever you like &mdash; you pay for what you keep</li>
             </ul>
         </div>
+
+        <?php /* Said plainly because it is the question people actually have, and because
+                 the answer is genuinely in their favour. A shared project counts once,
+                 against whoever owns the team — collaborators are not charged for being
+                 invited. See ProjectQuota. */ ?>
+        <p class="lede" style="margin-top:1.5rem;font-size:0.95rem;">
+            Working with other people? Share a project with your team and it still counts as
+            one &mdash; the people you invite don&rsquo;t pay for being there.
+        </p>
 
         <?php if (!empty($subscribed)): ?>
             <div class="thank-you">

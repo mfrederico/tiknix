@@ -5,7 +5,7 @@
  * Nothing on this page charges anything. Whether project limits are ENFORCED depends on
  * [billing] enforce_project_cap, and the copy follows that flag rather than assuming —
  * telling someone limits are off while a gate is refusing them is the confident wrong
- * answer this page exists to avoid. A page showing "$499/month" with no explanation is
+ * answer this page exists to avoid. A page showing a monthly figure with no explanation is
  * also indistinguishable from a bill, and no account here has agreed to one.
  *
  * Vars: $error (string); when $error is '' also $snapshot, $freeCap, $perProject,

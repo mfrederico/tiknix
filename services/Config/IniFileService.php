@@ -406,6 +406,29 @@ class IniFileService {
         // Drop one trailing newline added by the loop so we land on a single \n.
         $out = rtrim($out, "\n") . "\n";
 
+        /* Keep the previous version before replacing it.
+         *
+         * The temp-and-rename below makes the write atomic — it cannot leave a
+         * half-written config — but atomic is not the same as recoverable. One bad save
+         * through this editor can take down database credentials or an API key with no way
+         * back, and the file is gitignored precisely because it holds secrets, so there is
+         * no version control to fall back on either.
+         *
+         * A backup that FAILS aborts the save. Writing anyway would be choosing the moment
+         * we cannot undo, which is exactly the moment a copy is worth having.
+         */
+        if (is_file($path)) {
+            $backup = self::backupPath($path);
+            if (!@copy($path, $backup)) {
+                return ['ok' => false, 'errors' => ['Could not back up the current file — nothing was changed.']];
+            }
+            @chmod($backup, 0600);   // it holds whatever secrets the live file holds
+            \Flight::get('log')?->info('IniFileService: backed up before save', [
+                'path' => $path, 'backup' => basename($backup),
+            ]);
+            self::pruneBackups($path);
+        }
+
         $tmp = $path . '.tmp.' . bin2hex(random_bytes(4));
         if (file_put_contents($tmp, $out, LOCK_EX) === false) {
             return ['ok' => false, 'errors' => ['Failed to write temp file.']];
@@ -415,6 +438,45 @@ class IniFileService {
             return ['ok' => false, 'errors' => ['Failed to swap config file into place.']];
         }
         return ['ok' => true, 'errors' => []];
+    }
+
+    /** How many previous versions of each file to keep. */
+    public const KEEP_BACKUPS = 10;
+
+    /** Timestamped sibling of the file, e.g. config.ini.bak-20260911-1304-a1b2. */
+    private static function backupPath(string $path): string {
+        // The random suffix stops two saves in the same second from overwriting each
+        // other's backup — which would lose the very version somebody wants back.
+        return $path . '.bak-' . date('Ymd-Hi') . '-' . bin2hex(random_bytes(2));
+    }
+
+    /**
+     * Keep the most recent KEEP_BACKUPS and delete the rest.
+     *
+     * Unbounded backups of a secrets file is its own problem: more copies of a live API key
+     * sitting on disk, and a conf/ directory nobody can read at a glance.
+     */
+    private static function pruneBackups(string $path): void {
+        $all = glob($path . '.bak-*') ?: [];
+        if (count($all) <= self::KEEP_BACKUPS) return;
+
+        // Newest first, then drop the tail.
+        usort($all, fn($a, $b) => filemtime($b) <=> filemtime($a));
+        foreach (array_slice($all, self::KEEP_BACKUPS) as $old) @unlink($old);
+    }
+
+    /**
+     * Previous versions of a config file, newest first. For the editor's "restore" list.
+     *
+     * @return array<int, array{name:string, path:string, when:int, size:int}>
+     */
+    public static function backupsFor(string $path): array {
+        $out = [];
+        foreach (glob($path . '.bak-*') ?: [] as $b) {
+            $out[] = ['name' => basename($b), 'path' => $b, 'when' => (int) filemtime($b), 'size' => (int) filesize($b)];
+        }
+        usort($out, fn($a, $b) => $b['when'] <=> $a['when']);
+        return $out;
     }
 
     // ─── Rendering helpers ──────────────────────────────────────────────

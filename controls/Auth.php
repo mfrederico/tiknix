@@ -935,6 +935,30 @@ class Auth extends BaseControls\Control {
             return;
         }
 
+        /* This is the step that completes a login, so it must prove the 2FA setup it
+           claims to follow actually happened. It used to prove nothing: any request that
+           arrived with 2fa_pending_member_id — which dologin() sets on BOTH the setup and
+           the verify branch, before any code is checked — was signed in, on a GET, with no
+           token. Password alone was enough to reach a ROOT session.
+
+           Three conditions, and the legitimate flow satisfies all of them:
+             - POST with a valid CSRF token: the recovery-codes page already submits one.
+             - $_SESSION['2fa_recovery_codes'] present: twofaSetup() sets it in exactly one
+               place, immediately after the TOTP code verified. Nothing else does.
+           A request that fails any of them is sent back to the start of setup, not to the
+           dashboard. */
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') {
+            $this->logger->warning('2FA confirm-saved rejected: not a POST', ['member_id' => $memberId]);
+            Flight::redirect('/auth/twofasetup');
+            return;
+        }
+        if (!$this->validateCSRF()) return;
+        if (empty($_SESSION['2fa_recovery_codes'])) {
+            $this->logger->warning('2FA confirm-saved rejected: setup was never verified', ['member_id' => $memberId]);
+            Flight::redirect('/auth/twofasetup');
+            return;
+        }
+
         $member = Bean::load('member', $memberId);
         if (!$member->id) {
             unset($_SESSION['2fa_pending_member_id']);

@@ -180,6 +180,13 @@ class Admin extends Control {
                             try {
                                 Bean::store($member);
 
+                                /* Billing follows the account status — suspend somebody here
+                                   and the nightly run must stop invoicing them, not keep
+                                   charging a card for an account that no longer works.
+                                   Called unconditionally: it compares the current status and
+                                   is a no-op when nothing needs changing. Non-fatal. */
+                                \app\BillingLifecycle::syncFor((int) $member->id);
+
                                 // Persist per-member feature flags eligible for this level.
                                 $submittedFeatures = (array)($request->data->features ?? []);
                                 foreach (\app\Feature::catalogForLevel((int)$member->level) as $fkey => $fmeta) {
@@ -486,8 +493,13 @@ class Admin extends Control {
                     'deleted_by' => $this->member->id
                 ]);
                 
+                /* Stop billing BEFORE the row goes: the tenant slug lives on it, and
+                   afterwards there is nothing left to say which tenant to stop. Non-fatal —
+                   see BillingLifecycle. */
+                \app\BillingLifecycle::onDelete((int) $id);
+
                 Bean::trash($member);
-                
+
                 $this->logger->info('Member deleted successfully', ['id' => $id]);
             } catch (Exception $e) {
                 $this->logger->error('Failed to delete member', [
@@ -536,6 +548,8 @@ class Admin extends Control {
                             $member->status = 'active';
                             $member->updatedAt = date('Y-m-d H:i:s');
                             Bean::store($member);
+                            // Billing follows the account status. Non-fatal.
+                            \app\BillingLifecycle::syncFor((int) $member->id);
                             $count++;
                         }
                     }
@@ -552,6 +566,8 @@ class Admin extends Control {
                             $member->status = 'suspended';
                             $member->updatedAt = date('Y-m-d H:i:s');
                             Bean::store($member);
+                            // Billing follows the account status. Non-fatal.
+                            \app\BillingLifecycle::syncFor((int) $member->id);
                             $count++;
                         }
                     }

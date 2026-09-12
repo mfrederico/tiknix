@@ -28,6 +28,17 @@ class HttpStep implements StepInterface {
     public function run(array $config, array $run): array {
         $url = (string) ($config['url'] ?? '');
         if (!preg_match('#^https?://#i', $url)) return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => 'invalid url', 'exit' => 1];
+
+        /* A pipeline is member-authored, so its URL is untrusted, and this step used to
+           check only the scheme before calling it — reaching 127.0.0.1, the LXC NAT range,
+           or 169.254.169.254 (cloud metadata) unhindered. Reuse the connector's guard: it
+           resolves the host and rejects any non-public address. */
+        try {
+            \app\services\connectors\RestConnector::assertPublicHost($url);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $e->getMessage(), 'exit' => 1];
+        }
+
         $method  = strtoupper((string) ($config['method'] ?? 'GET'));
         $timeout = max(1, min(300, (int) ($config['timeout'] ?? 30)));
 
@@ -42,8 +53,13 @@ class HttpStep implements StepInterface {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 3,
+            // NOT following redirects. assertPublicHost above only vets the URL we were
+            // given; a 302 to 127.0.0.1 or 169.254.169.254 would sail past it and hit the
+            // private address, which is the SSRF this step exists to prevent. Author the
+            // final URL directly. (Re-guarding each hop manually is the follow-up if a real
+            // pipeline needs cross-host redirects.)
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         ]);
         if ($body !== null && $method !== 'GET') curl_setopt($ch, CURLOPT_POSTFIELDS, (string) $body);
         $resp = curl_exec($ch);

@@ -128,9 +128,18 @@ class PermissionCache {
             return true; // Allow access in build mode
         }
 
-        // Default to public access if no permission defined
+        /* Deny by default. A route with no authcontrol row is one nobody has classified
+           yet, and the safe assumption for an unclassified route is ADMIN-only, never
+           world-reachable. The blanket PUBLIC fallback here meant every new controller
+           shipped publicly reachable and any lost row silently opened a route.
+
+           defaultLevelFor() is not a guess — it is the explicit allowlist of the routes
+           that are legitimately public (install, index, the pre-auth auth pages, and the
+           self-authenticating endpoints that verify their own bearer/API key), so those
+           still resolve to PUBLIC. Everything else an admin must classify with a real
+           row via seedRule(). */
         self::logAccess('default', $key);
-        return $userLevel <= LEVELS['PUBLIC'];
+        return $userLevel <= self::defaultLevelFor($control, $method);
     }
 
     /**

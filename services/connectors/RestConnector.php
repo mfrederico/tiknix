@@ -478,7 +478,13 @@ class RestConnector extends AbstractConnector {
      * address is checked, not just the first, because a name may return both a
      * public and a private record.
      */
-    private static function assertPublicHost(string $url): void {
+    /**
+     * Throw unless every address the URL's host resolves to is a public internet address.
+     * Public so other outbound-fetch paths (the pipeline HTTP step) reuse the one guard
+     * instead of copying a weaker check — a URL from an untrusted author reaching
+     * 127.0.0.1, 10.x, or 169.254.169.254 (cloud metadata) is the SSRF this blocks.
+     */
+    public static function assertPublicHost(string $url): void {
         $parts = parse_url($url);
         $scheme = strtolower((string) ($parts['scheme'] ?? ''));
         $host   = (string) ($parts['host'] ?? '');

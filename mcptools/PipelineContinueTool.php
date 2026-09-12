@@ -23,6 +23,8 @@ class PipelineContinueTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
+        // Member-level, same as pipeline_run: resuming a run is not editing code. The
+        // per-member, per-instance key is the authorization boundary.
         $runId = (int) ($args['run_id'] ?? 0);
         $input = (array) ($args['input'] ?? []);
         try {

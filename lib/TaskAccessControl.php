@@ -411,7 +411,9 @@ class TaskAccessControl {
         }
 
         $where = implode(' AND ', array_map(function($c) { return "($c)"; }, $conditions));
-        $orderBy = $filters['order_by'] ?? 'created_at DESC';
+        // Allowlist-validated: a caller-supplied order_by was interpolated raw, giving any
+        // logged-in member a boolean-blind SQLi oracle over workbenchtask. See safeOrderBy.
+        $orderBy = self::safeOrderBy((string) ($filters['order_by'] ?? ''), 'created_at DESC');
 
         return Bean::find('workbenchtask', "$where ORDER BY $orderBy", $params);
     }
@@ -660,6 +662,29 @@ class TaskAccessControl {
      * @param object|array $item Bean or array
      * @return array
      */
+    /**
+     * Validate a caller-supplied ORDER BY against a fixed column allowlist. One or more
+     * "<column> [ASC|DESC]" clauses over the sortable columns below; anything else returns
+     * the default. An allowlist, not an escaper — the value is still interpolated, so it
+     * must be proven safe, not merely cleaned. Mirrors WorkbenchAccess::safeOrderBy.
+     */
+    private static function safeOrderBy(string $requested, string $default): string {
+        $requested = trim($requested);
+        if ($requested === '') return $default;
+        static $sortable = [
+            'id', 'title', 'task_type', 'priority', 'status',
+            'created_at', 'updated_at', 'completed_at', 'run_count',
+        ];
+        $safe = [];
+        foreach (array_map('trim', explode(',', $requested)) as $clause) {
+            if (!preg_match('/^([a-z_]+)(?:\s+(asc|desc))?$/i', $clause, $m)) return $default;
+            $col = strtolower($m[1]);
+            if (!in_array($col, $sortable, true)) return $default;
+            $safe[] = $col . ' ' . (isset($m[2]) ? strtoupper($m[2]) : 'ASC');
+        }
+        return $safe ? implode(', ', $safe) : $default;
+    }
+
     private function toArray($item): array {
         if (is_object($item)) {
             // Convert bean to array with snake_case keys

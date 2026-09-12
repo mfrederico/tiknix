@@ -300,12 +300,17 @@ class Webhook extends Control {
         $data    = $payload['event-data'] ?? [];
         $sig     = $payload['signature']  ?? [];
 
-        // Event signature: HMAC over (timestamp + token).
-        if ($signingKey !== '' && !empty($sig)) {
+        /* Event signature: HMAC over (timestamp + token).
+           When a signing key is configured, a missing OR empty signature is a REJECTION,
+           not a skip. The old `$signingKey !== '' && !empty($sig)` let a forger omit the
+           whole `signature` object to bypass verification entirely — the guard only ran
+           when the caller chose to supply something to check. If we hold a key, every
+           event must present a signature that verifies. */
+        if ($signingKey !== '') {
             $expected = hash_hmac('sha256', ($sig['timestamp'] ?? '') . ($sig['token'] ?? ''), $signingKey);
-            if (!hash_equals($expected, (string)($sig['signature'] ?? ''))) {
-                $this->logger?->warning('Webhook: event HMAC mismatch');
-                \Flight::json(['accepted' => false, 'reason' => 'bad signature'], 200);
+            if (empty($sig) || !hash_equals($expected, (string)($sig['signature'] ?? ''))) {
+                $this->logger?->warning('Webhook: event signature missing or invalid');
+                \Flight::json(['accepted' => false, 'reason' => 'bad signature'], 403);
                 return;
             }
         }
@@ -364,6 +369,18 @@ class Webhook extends Control {
             if (empty($f['tmp_name']) || ($f['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) continue;
             $origName = $f['name'] ?: $key;
             $safeName = preg_replace('/[^a-zA-Z0-9._-]+/', '-', $origName);
+
+            /* These land under public/uploads, which is web-served, so a preserved .php (or
+               other executable) extension is a route to code execution the moment nginx is
+               configured to run PHP anywhere under uploads. Anyone can email an attachment,
+               so the name is fully attacker-controlled. Any dangerous extension is
+               neutralised to .txt — the file is still stored and linkable, just never
+               executable. */
+            $ext = strtolower((string) pathinfo($safeName, PATHINFO_EXTENSION));
+            $dangerous = ['php','php3','php4','php5','php7','phtml','phar','pht','shtml',
+                          'cgi','pl','py','sh','bash','htaccess','htm','html','svg','xhtml'];
+            if (in_array($ext, $dangerous, true)) $safeName .= '.txt';
+
             $dest = $dir . '/' . bin2hex(random_bytes(4)) . '-' . $safeName;
             if (!move_uploaded_file($f['tmp_name'], $dest)) continue;
 

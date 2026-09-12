@@ -183,9 +183,19 @@ class Member extends Control {
                         MemberEnginePrefs::setToken((int)$this->member->id, (string)$engine, $raw);
                     }
                 }
-                // Save remaining generic settings
+                /* Save generic settings from an ALLOWLIST, not a denylist.
+                   This loop used to write any posted key to the member's own settings row,
+                   and Feature::stored() reads `feature.<flag>` rows from that same
+                   member-scoped table — so a member could POST feature.mcp=1 (and invites,
+                   email, every sidecar) and self-grant capabilities the admin never gave.
+                   Only the preference keys the settings form actually offers are writable;
+                   anything else — feature.*, plan_tier, level, a mistyped key — is dropped. */
+                static $writableSettings = [
+                    'date_format', 'timezone', 'email_notifications',
+                    'newsletter', 'profile_visibility', 'show_email',
+                ];
                 foreach ($request->data as $key => $value) {
-                    if (in_array($key, ['csrf_token', 'csrf_token_name', 'enginepref', 'enginetoken'], true)) continue;
+                    if (!in_array($key, $writableSettings, true)) continue;
                     Flight::setSetting($key, $value, $this->member->id);
                 }
                 $this->viewData['success'] = 'Settings saved successfully';

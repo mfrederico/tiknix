@@ -43,6 +43,17 @@ class ProvisionService {
             ? $ns : self::APP;
     }
 
+    /**
+     * Is this member actually ROOT, per core's member row? The authority for privilege in
+     * the provision path — never a caller-supplied is_root flag, which the HMAC does not
+     * vouch for. A member id of 0, a missing row, or any level above ROOT is not root.
+     */
+    private static function memberIsRoot(int $memberId): bool {
+        if ($memberId <= 0) return false;
+        $level = Bean::getCell('SELECT level FROM member WHERE id = ?', [$memberId]);
+        return $level !== null && (int) $level <= \LEVELS['ROOT'];
+    }
+
     private function instanceDir(string $slug): string {
         // appNamespace() is derived from the HOST, which is what a not-yet-provisioned slug
         // has to use — there is no row to read yet. Once there is one, the row wins.
@@ -115,8 +126,9 @@ class ProvisionService {
         $base   = strtolower(trim((string) ($p['slug'] ?? '')));
         $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
         $engine = (string) ($p['engine'] ?? 'claude');
-        // Only root may flag the "(default)" core sandbox; the caller passes is_root.
-        $isDefault = !empty($p['is_default']) && !empty($p['is_root']);
+        // Only root may flag the "(default)" core sandbox; root-ness is read from the
+        // member's real level, not a caller-supplied is_root flag (see delete()).
+        $isDefault = !empty($p['is_default']) && self::memberIsRoot($memberId);
 
         if (!preg_match(self::BASE_RE, $base)) return ['ok' => false, 'error' => 'Invalid name (a-z, then a-z0-9, 2-40 chars).', 'code' => 400];
 
@@ -288,7 +300,11 @@ class ProvisionService {
 
     public function delete(int $memberId, array $p): array {
         $instanceId = (int) ($p['id'] ?? 0);
-        $isRoot     = !empty($p['is_root']);
+        // Root-ness is read from the MEMBER, never from $p. The signed provision payload
+        // proves which sidecar sent it, not the caller's privilege, so a caller-supplied
+        // is_root=true used to authorise deleting any tenant's project. member_id in the
+        // payload is signed and trustworthy; their level is the authority.
+        $isRoot = self::memberIsRoot($memberId);
         $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) return ['ok' => false, 'error' => 'No such instance', 'code' => 404];
         if ((int) $inst->memberId !== $memberId && !$isRoot) return ['ok' => false, 'error' => 'Not your instance', 'code' => 403];
@@ -355,7 +371,7 @@ class ProvisionService {
         return ['ok' => true, 'slug' => $slug, 'domain' => $domain, 'steps' => $steps];
     }
 
-    /** Archive an instance folder to public/slug.zip (secrets neutralized), then wipe. */
+    /** Archive an instance folder to core secure/archives (not web-served), then wipe. */
     private function archiveInstance(string $dir, string $slug): array {
         foreach (glob($dir . '/conf/*.ini') ?: [] as $ini) {
             if (substr($ini, -12) === '.example.ini') continue;
@@ -368,12 +384,23 @@ class ProvisionService {
         $out = []; $code = 0; @exec($cmd . ' 2>&1', $out, $code);
         if (!is_file($tmpZip)) return ['ok' => false, 'error' => 'zip produced no archive: ' . implode(' ', array_slice($out, -2))];
         @exec('rm -rf ' . escapeshellarg($dir) . ' 2>&1');
-        if (!@mkdir($dir . '/public', 0775, true) && !is_dir($dir . '/public'))
-            return ['ok' => false, 'error' => 'could not recreate public/ (archive kept at ' . $tmpZip . ')'];
-        $dest = $dir . '/public/' . $slug . '.zip';
+
+        /* NOT public/. That is the instance's web root, so every deleted project used to
+           publish its own database — the member table with password hashes and reset
+           tokens, API keys, all app data — at https://<slug>.tiknix.com/<slug>.zip to
+           anyone who guessed the name, which is just the slug. Thirteen were live and
+           returning HTTP 200 when this was found (2026-09-11). conf/*.ini is scrubbed to
+           its .example above, but the databases are not, so scrubbing config was never
+           enough. The archive goes to core's secure/ instead: gitignored, served by no
+           vhost, owner-only. Recovering a deleted project is an operator action, not a
+           public download. */
+        $archiveDir = dirname(__DIR__) . '/secure/archives';
+        if (!@mkdir($archiveDir, 0700, true) && !is_dir($archiveDir))
+            return ['ok' => false, 'error' => 'could not create secure/archives (archive kept at ' . $tmpZip . ')'];
+        $dest = $archiveDir . '/' . $slug . '-' . date('Ymd-His') . '.zip';
         if (!@rename($tmpZip, $dest)) { @copy($tmpZip, $dest); @unlink($tmpZip); }
-        @chmod($dest, 0644);
+        @chmod($dest, 0600);
         $kb = (int) round((@filesize($dest) ?: 0) / 1024);
-        return ['ok' => true, 'message' => 'archived to public/' . $slug . '.zip (' . $kb . ' KB)'];
+        return ['ok' => true, 'message' => 'archived to secure/archives/' . basename($dest) . ' (' . $kb . ' KB)'];
     }
 }

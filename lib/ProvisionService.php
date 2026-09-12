@@ -368,12 +368,23 @@ class ProvisionService {
         $out = []; $code = 0; @exec($cmd . ' 2>&1', $out, $code);
         if (!is_file($tmpZip)) return ['ok' => false, 'error' => 'zip produced no archive: ' . implode(' ', array_slice($out, -2))];
         @exec('rm -rf ' . escapeshellarg($dir) . ' 2>&1');
-        if (!@mkdir($dir . '/public', 0775, true) && !is_dir($dir . '/public'))
-            return ['ok' => false, 'error' => 'could not recreate public/ (archive kept at ' . $tmpZip . ')'];
-        $dest = $dir . '/public/' . $slug . '.zip';
+
+        /* NOT public/. That is the instance's web root, so every deleted project used to
+           publish its own database — the member table with password hashes and reset
+           tokens, API keys, all app data — at https://<slug>.tiknix.com/<slug>.zip to
+           anyone who guessed the name, which is just the slug. Thirteen were live and
+           returning HTTP 200 when this was found (2026-09-11). conf/*.ini is scrubbed to
+           its .example above, but the databases are not, so scrubbing config was never
+           enough. The archive goes to core's secure/ instead: gitignored, served by no
+           vhost, owner-only. Recovering a deleted project is an operator action, not a
+           public download. */
+        $archiveDir = dirname(__DIR__) . '/secure/archives';
+        if (!@mkdir($archiveDir, 0700, true) && !is_dir($archiveDir))
+            return ['ok' => false, 'error' => 'could not create secure/archives (archive kept at ' . $tmpZip . ')'];
+        $dest = $archiveDir . '/' . $slug . '-' . date('Ymd-His') . '.zip';
         if (!@rename($tmpZip, $dest)) { @copy($tmpZip, $dest); @unlink($tmpZip); }
-        @chmod($dest, 0644);
+        @chmod($dest, 0600);
         $kb = (int) round((@filesize($dest) ?: 0) / 1024);
-        return ['ok' => true, 'message' => 'archived to public/' . $slug . '.zip (' . $kb . ' KB)'];
+        return ['ok' => true, 'message' => 'archived to secure/archives/' . basename($dest) . ' (' . $kb . ' KB)'];
     }
 }

@@ -157,7 +157,16 @@ abstract class Control {
      * Validate CSRF token
      */
     protected function validateCSRF() {
-        if (Flight::request()->method !== 'GET') {
+        /* $_SERVER['REQUEST_METHOD'], NOT Flight::request()->method. Flight derives its
+           method from the X-HTTP-Method-Override header OR $_REQUEST['_method'] — including
+           the query string (CVE-2026-42551). So a cross-site POST to any handler with
+           ?_method=GET appended made this branch skip validation entirely. Confirmed live
+           2026-09-11: POST /auth/dologin?_method=GET with a bogus token reached "Invalid
+           credentials" instead of "Security validation failed". The real HTTP verb is the
+           one field an attacker cannot rewrite via the request body or query. Defaults to
+           POST when unset so an unexpected absence validates rather than skips. */
+        $verb = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'POST'));
+        if ($verb !== 'GET') {
             if (!SimpleCsrf::validateRequest()) {
                 $this->logger->warning('CSRF validation failed');
 

@@ -23,6 +23,9 @@ class PipelineContinueTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
+        // Resuming a paused run executes further steps with the install's stored
+        // credentials — same privilege as pipeline_run; gate it the same way.
+        $this->requireAdmin();
         $runId = (int) ($args['run_id'] ?? 0);
         $input = (array) ($args['input'] ?? []);
         try {

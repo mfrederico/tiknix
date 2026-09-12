@@ -24,6 +24,10 @@ class PipelineRunTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
+        // Running a pipeline executes the install's automations with its stored connector
+        // credentials — at least the privilege of editing one, which pipeline_set/_delete
+        // already gate. A level-100 member had none here.
+        $this->requireAdmin();
         $slug = (string) ($args['slug'] ?? '');
         $ctx  = (array) ($args['context'] ?? []);
         try {

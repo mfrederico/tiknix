@@ -43,6 +43,17 @@ class ProvisionService {
             ? $ns : self::APP;
     }
 
+    /**
+     * Is this member actually ROOT, per core's member row? The authority for privilege in
+     * the provision path — never a caller-supplied is_root flag, which the HMAC does not
+     * vouch for. A member id of 0, a missing row, or any level above ROOT is not root.
+     */
+    private static function memberIsRoot(int $memberId): bool {
+        if ($memberId <= 0) return false;
+        $level = Bean::getCell('SELECT level FROM member WHERE id = ?', [$memberId]);
+        return $level !== null && (int) $level <= \LEVELS['ROOT'];
+    }
+
     private function instanceDir(string $slug): string {
         // appNamespace() is derived from the HOST, which is what a not-yet-provisioned slug
         // has to use — there is no row to read yet. Once there is one, the row wins.
@@ -115,8 +126,9 @@ class ProvisionService {
         $base   = strtolower(trim((string) ($p['slug'] ?? '')));
         $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
         $engine = (string) ($p['engine'] ?? 'claude');
-        // Only root may flag the "(default)" core sandbox; the caller passes is_root.
-        $isDefault = !empty($p['is_default']) && !empty($p['is_root']);
+        // Only root may flag the "(default)" core sandbox; root-ness is read from the
+        // member's real level, not a caller-supplied is_root flag (see delete()).
+        $isDefault = !empty($p['is_default']) && self::memberIsRoot($memberId);
 
         if (!preg_match(self::BASE_RE, $base)) return ['ok' => false, 'error' => 'Invalid name (a-z, then a-z0-9, 2-40 chars).', 'code' => 400];
 
@@ -288,7 +300,11 @@ class ProvisionService {
 
     public function delete(int $memberId, array $p): array {
         $instanceId = (int) ($p['id'] ?? 0);
-        $isRoot     = !empty($p['is_root']);
+        // Root-ness is read from the MEMBER, never from $p. The signed provision payload
+        // proves which sidecar sent it, not the caller's privilege, so a caller-supplied
+        // is_root=true used to authorise deleting any tenant's project. member_id in the
+        // payload is signed and trustworthy; their level is the authority.
+        $isRoot = self::memberIsRoot($memberId);
         $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) return ['ok' => false, 'error' => 'No such instance', 'code' => 404];
         if ((int) $inst->memberId !== $memberId && !$isRoot) return ['ok' => false, 'error' => 'Not your instance', 'code' => 403];

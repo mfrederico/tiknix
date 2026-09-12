@@ -23,9 +23,8 @@ class PipelineContinueTool extends BaseTool {
     ];
 
     public function execute(array $args): string {
-        // Resuming a paused run executes further steps with the install's stored
-        // credentials — same privilege as pipeline_run; gate it the same way.
-        $this->requireAdmin();
+        // Member-level, same as pipeline_run: resuming a run is not editing code. The
+        // per-member, per-instance key is the authorization boundary.
         $runId = (int) ($args['run_id'] ?? 0);
         $input = (array) ($args['input'] ?? []);
         try {

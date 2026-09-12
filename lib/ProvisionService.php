@@ -371,7 +371,7 @@ class ProvisionService {
         return ['ok' => true, 'slug' => $slug, 'domain' => $domain, 'steps' => $steps];
     }
 
-    /** Archive an instance folder to public/slug.zip (secrets neutralized), then wipe. */
+    /** Archive an instance folder to core secure/archives (not web-served), then wipe. */
     private function archiveInstance(string $dir, string $slug): array {
         foreach (glob($dir . '/conf/*.ini') ?: [] as $ini) {
             if (substr($ini, -12) === '.example.ini') continue;

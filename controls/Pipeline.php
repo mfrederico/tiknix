@@ -225,8 +225,15 @@ class Pipeline extends Control {
         if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
         $body  = $this->jsonBody();
         $label = trim((string) ($body['label'] ?? '')) ?: 'editor test key';
-        $mid   = (int) ($body['member_id'] ?? 0); if ($mid <= 0) $mid = 1;
-        $res   = ApiKey::mint($mid, $label, $mid);
+        // member_id must be a real member. It used to default to 1 (ROOT) when the field
+        // was absent — a missing value silently minted a root-acting pk_ key. Fail loudly
+        // instead: no valid member, no key.
+        $mid = (int) ($body['member_id'] ?? 0);
+        if ($mid <= 0 || (int) Bean::count('member', 'id = ?', [$mid]) === 0) {
+            Flight::jsonError('A valid member_id is required to mint a key.', 400);
+            return;
+        }
+        $res = ApiKey::mint($mid, $label, $mid);
         Flight::json(['key' => $res['raw'], 'prefix' => $res['prefix']]);
     }
 

@@ -164,7 +164,7 @@ if (!empty($thread->ownerMemberId)) {
                                             <?php if (!empty($atts)): ?>
                                                 <div class="mt-2 pt-2 border-top">
                                                     <?php foreach ($atts as $a): ?>
-                                                        <a href="<?= htmlspecialchars(($a->diskPath) ?? '') ?>" target="_blank" rel="noopener"
+                                                        <a href="/communications/attachment?id=<?= (int)$a->id ?>" target="_blank" rel="noopener"
                                                            class="badge bg-secondary-subtle text-secondary-emphasis border text-decoration-none me-1">
                                                             <i class="bi bi-paperclip"></i> <?= htmlspecialchars(($a->filename) ?? '') ?>
                                                         </a>

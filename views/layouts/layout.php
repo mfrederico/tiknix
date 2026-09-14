@@ -50,7 +50,12 @@
                 <?php if ($isLogoutMessage): ?>
                 clearToastHistory();
                 <?php endif; ?>
-                showToast('<?= $flash['type'] ?>', '<?= addslashes($flash['message']) ?>');
+<?php /* json_encode with the HEX flags, NOT addslashes: addslashes escapes quotes but not
+         '<', so a flash message containing </script><script> broke out of this block and
+         ran in a ROOT session (flash text can be request-derived, e.g. Mcptools/Hooks
+         name params). JSON_HEX_TAG/APOS/QUOT/AMP encode <>&'" so nothing can escape the
+         string or the <script>. json_encode emits its own quotes, so none are written here. */ ?>
+                showToast(<?= json_encode($flash['type'], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP) ?>, <?= json_encode($flash['message'], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP) ?>);
             <?php endforeach; ?>
             <?php unset($_SESSION['flash']); ?>
         });

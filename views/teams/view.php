@@ -466,6 +466,7 @@ async function sendInvite() {
 
     try {
         const formData = new FormData();
+        formData.append('_csrf_token', <?= json_encode(csrf_token()) ?>);
         formData.append('email', email);
         formData.append('role', role);
         formData.append('id', <?= $team->id ?>);

@@ -693,6 +693,46 @@ class Communications extends BaseControls\Control {
         return $id;
     }
 
+    /**
+     * Stream an inbound-mail attachment, gated by the SAME canView() as the thread.
+     *
+     * Attachments are stored outside public/ (see Webhook::saveAttachments) precisely
+     * so they cannot be fetched by URL without passing this check — the old direct
+     * link to a public/ path let anyone with the URL read another team's files. The
+     * file is always sent as a download with nosniff, so a text/html attachment can
+     * never render inline in the viewer's session.
+     */
+    public function attachment($params = []) {
+        if (!$this->requireLogin()) return;
+
+        $att = Bean::load('messageattachment', (int)$this->getParam('id', 0));
+        if (!$att->id) { Flight::halt(404, 'Not found'); return; }
+
+        $thread = Bean::load('thread', (int)$att->threadId);
+        if (!$thread->id || !$this->canView($thread)) { Flight::halt(403, 'Forbidden'); return; }
+
+        // Resolve under the attachments base and confirm realpath stays inside it —
+        // diskPath is DB-controlled, so a stored '../' must not escape the store.
+        $base = realpath(dirname(__DIR__) . '/secure/uploads/inbound-mail');
+        $full = realpath(dirname(__DIR__) . '/' . (string)$att->diskPath);
+        if ($base === false || $full === false || strncmp($full, $base . '/', strlen($base) + 1) !== 0
+            || !is_file($full)) {
+            Flight::halt(404, 'Not found');
+            return;
+        }
+
+        $downloadName = preg_replace('/[^\x20-\x7e]|["\\\\]/', '_', (string)($att->filename ?: 'attachment'));
+
+        while (ob_get_level() > 0) { ob_end_clean(); }
+        header('Content-Type: application/octet-stream');
+        header('X-Content-Type-Options: nosniff');
+        header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+        header('Content-Length: ' . (string) filesize($full));
+        header('Cache-Control: private, no-store');
+        readfile($full);
+        exit;
+    }
+
     private function canView($thread): bool {
         if (Flight::hasLevel(LEVELS['ROOT'])) return true;   // only ROOT sees others' threads
         $mid = (int)$this->member->id;
@@ -726,19 +766,10 @@ class Communications extends BaseControls\Control {
 
     /**
      * Allowlist-sanitize a composed reply and force safe link attributes.
-     * Mirrors the port spec's allowlist.
+     * The reply is rendered raw in the inbox, so the DOM-based sanitizer is the
+     * whole defense; a regex allowlist leaked javascript: and split-attribute XSS.
      */
     private function sanitizeReply(string $html): string {
-        $allowed = '<p><br><strong><b><em><i><u><ul><ol><li><a><h1><h2><h3><h4><span><div><blockquote>';
-        $clean = strip_tags($html, $allowed);
-        $clean = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $clean);
-        $clean = preg_replace('/\bhref\s*=\s*(["\'])\s*javascript:[^"\']*\1/i', 'href="#"', $clean);
-        $clean = preg_replace('/\bhref\s*=\s*javascript:[^\s>]*/i', 'href="#"', $clean);
-        // Force target=_blank rel=noopener on anchors.
-        $clean = preg_replace_callback('/<a\b([^>]*)>/i', function ($m) {
-            $attrs = preg_replace('/\s(target|rel)\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $m[1]);
-            return '<a' . $attrs . ' target="_blank" rel="noopener">';
-        }, $clean);
-        return $clean;
+        return \app\HtmlSanitizer::clean($html);
     }
 }

@@ -354,14 +354,17 @@ class Admin extends Control {
     public function permissions($params = []) {
         $this->viewData['title'] = 'Permission Management';
         
-        $request = Flight::request();
-        
-        // Handle delete action
-        if ($request->query->delete && is_numeric($request->query->delete)) {
-            $auth = Bean::load('authcontrol', $request->query->delete);
+        // Handle delete action. Must be a POST with a CSRF token: deleting an
+        // authcontrol row is destructive (the route falls to default-deny), and
+        // a bare GET `?delete=` sink is CSRF-triggerable from any page an admin
+        // loads (e.g. <img src="/admin/permissions?delete=5">).
+        $deleteId = (int) $this->getParam('delete', 0);
+        if ($deleteId > 0) {
+            if (!$this->requirePost()) return;
+            $auth = Bean::load('authcontrol', $deleteId);
             if ($auth->id) {
                 Bean::trash($auth);
-                $this->logger->info('Deleted permission', ['id' => $request->query->delete]);
+                $this->logger->info('Deleted permission', ['id' => $deleteId]);
             }
             Flight::redirect('/admin/permissions');
             return;

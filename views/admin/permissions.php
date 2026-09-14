@@ -41,9 +41,12 @@
                                         <td><?= $perm['validcount'] ?? 0 ?></td>
                                         <td>
                                             <a href="/admin/editPermission?id=<?= $perm['id'] ?>" class="btn btn-sm btn-outline-primary">Edit</a>
-                                            <a href="/admin/permissions?delete=<?= $perm['id'] ?>" 
-                                               class="btn btn-sm btn-outline-danger"
-                                               onclick="return confirm('Delete this permission?')">Delete</a>
+                                            <form method="post" action="/admin/permissions" class="d-inline"
+                                                  onsubmit="return confirm('Delete this permission?')">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="delete" value="<?= (int)$perm['id'] ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                            </form>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

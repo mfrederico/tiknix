@@ -126,6 +126,61 @@ else
   skip "billing SSO" "billing.db not readable from here"
 fi
 
+# ---------------------------------------------------------------------------
+# Batch 2 — 2026-09-14 pre-launch hardening (branch security-hardening-2)
+# ---------------------------------------------------------------------------
+
+echo "H7 — MCP Basic auth rate-limited (no unlimited password oracle)"
+php -r '$s=file_get_contents("'"$ROOT"'/controls/Mcp.php");
+  if(!preg_match("/function authenticateBasic.*?\n    \}/s",$s,$m))exit(2); $b=$m[0];
+  exit((strpos($b,"sharedRemaining")!==false && strpos($b,"RateLimiter::shared(")!==false
+        && strpos($b,"password_verify")!==false)?0:1);' \
+  && ok "authenticateBasic gates on a rate limiter around the password check" || no "MCP basic rate-limit" "wiring absent"
+
+echo "H3 — stored-XSS sanitizer neutralizes evasions"
+php -r 'require "vendor/autoload.php"; use app\HtmlSanitizer as S; $f=0;
+  $bad=["<img/onerror=alert(1) src=x>"=>"onerror",
+        "<a href=\"jav&#97;script:x\">y</a>"=>"script:",
+        "<a href=\"javascript:x\">y</a>"=>"javascript:",
+        "<a href=\"data:text/html,x\">y</a>"=>"data:",
+        "<a href=\"vbscript:x\">y</a>"=>"vbscript:",
+        "<script>alert(1)</script>"=>"<script",
+        "<p onclick=x>t</p>"=>"onclick"];
+  foreach($bad as $in=>$needle){ if(stripos(S::clean($in,["img"]),$needle)!==false)$f++; }
+  if(strpos(S::clean("<a href=\"https://ok.com\">y</a>"),"https://ok.com")===false)$f++;
+  exit($f?1:0);' \
+  && ok "DOM sanitizer strips on*/js:/data:/vbscript:/script, keeps safe links" || no "XSS sanitizer" "a payload survived"
+
+echo "H4 — CSRF gate requires a real POST and a token"
+php -r '$s=file_get_contents("'"$ROOT"'/controls/BaseControls/Control.php");
+  if(!preg_match("/function requirePost.*?\n    \}/s",$s,$m))exit(2); $b=$m[0];
+  exit((strpos($b,"REQUEST_METHOD")!==false && strpos($b,"validateCSRF")!==false)?0:1);' \
+  && ok "requirePost() checks the real verb and the CSRF token" || no "requirePost" "verb-or-token check missing"
+G=0; for m in invite leave removemember resendinvite updaterole store update delete; do
+  php -r '$s=file_get_contents("'"$ROOT"'/controls/Teams.php");
+    if(!preg_match("/function '"$m"'\(.*?\n    \}/s",$s,$x)||strpos($x[0],"requirePost()")===false)exit(1);' || G=1
+done
+[ "$G" = "0" ] && ok "all 8 Teams mutations gated by requirePost()" || no "Teams CSRF" "a method ungated"
+[ "$(code "$H/admin/permissions?delete=1")" != "200" ] \
+  && ok "admin permissions delete is not a bare-GET 200 sink" || no "authcontrol delete" "GET returned 200"
+
+echo "H8 — attachments gated by canView and off the web root"
+php -r '$s=file_get_contents("'"$ROOT"'/controls/Communications.php");
+  if(!preg_match("/function attachment.*?\n    \}/s",$s,$m))exit(2); $b=$m[0];
+  $w=file_get_contents("'"$ROOT"'/controls/Webhook.php");
+  exit((strpos($b,"canView")!==false
+        && strpos($w,"secure/uploads/inbound-mail")!==false
+        && strpos($w,"public/uploads/inbound-mail")===false)?0:1);' \
+  && ok "attachment() checks canView; storage moved out of public/" || no "attachment gate" "gate or storage path wrong"
+redir "$H/communications/attachment?id=1" | grep -q '/auth/login' \
+  && ok "attachment endpoint requires login" || no "attachment login" "not redirected to login"
+
+echo "H9 — expired broker key rejected"
+php -r '$s=file_get_contents("'"$ROOT"'/controls/Brokerinfo.php");
+  if(!preg_match("/function brokerKey.*?\n    \}/s",$s,$m))exit(2); $b=$m[0];
+  exit((strpos($b,"expiresAt")!==false && strpos($b,"time()")!==false)?0:1);' \
+  && ok "brokerKey() rejects a key past expires_at" || no "broker expiry" "expiry check absent"
+
 echo
 printf 'Result: \033[32m%d passed\033[0m, \033[31m%d failed\033[0m, \033[33m%d skipped\033[0m\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" = "0" ]

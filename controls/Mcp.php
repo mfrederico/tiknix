@@ -1787,12 +1787,24 @@ class Mcp extends BaseControls\Control {
             return false;
         }
 
+        /* Rate-limit failed attempts per IP. This endpoint is reachable unauthenticated
+           (mcp::message is level 101), takes a username+password, and had no throttle — a
+           password-guessing oracle that also sidesteps 2FA. The counter is APCu-backed
+           (sessionless, so discarding a cookie does not reset it) and only FAILURES count,
+           so a legitimate client with the right password is never throttled. */
+        $ipBucket = 'mcpbasicfail:' . (string) (\Flight::request()->ip ?? ($_SERVER['REMOTE_ADDR'] ?? '?'));
+        if (\app\RateLimiter::sharedRemaining($ipBucket, 10, 900) <= 0) {
+            $this->logger->warning('MCP Basic auth rate-limited (too many failures)', ['bucket' => $ipBucket]);
+            return false;
+        }
+
         list($username, $password) = explode(':', $decoded, 2);
 
         // Find member by username or email
         $member = Bean::findOne('member', 'username = ? OR email = ?', [$username, $username]);
 
         if (!$member) {
+            \app\RateLimiter::shared($ipBucket, 10, 900);
             $this->logger->warning('MCP auth failed: user not found', ['username' => $username]);
             return false;
         }
@@ -1801,6 +1813,7 @@ class Mcp extends BaseControls\Control {
         // or not the credential is correct. This path had no status check at all, so
         // suspending somebody left their MCP access untouched.
         if (!$member->canAuthenticate()) {
+            \app\RateLimiter::shared($ipBucket, 10, 900);
             $this->logger->warning('MCP auth failed: account not active',
                 ['username' => $username, 'status' => (string) $member->status]);
             return false;
@@ -1808,6 +1821,7 @@ class Mcp extends BaseControls\Control {
 
         // Verify password
         if (!password_verify($password, $member->password)) {
+            \app\RateLimiter::shared($ipBucket, 10, 900);
             $this->logger->warning('MCP auth failed: invalid password', ['username' => $username]);
             return false;
         }

@@ -22,6 +22,22 @@ rest. It is the single source of truth for "is tiknix ready for members to feel 
 | Debug disclosure (H1) | `environment=development, debug=1` leaked stack traces + full paths to visitors | `production` + `debug=0` | `/index/privacy` leak markers → none; `APP_SESSION` now `Secure` |
 | Backup exposure | `*.bak-*` (DB snapshots, `stripe.ini` with live keys) untracked-but-addable, some 0644/0664 | gitignored in both repos, chmod 600 | `de92c55`, `5782a98` |
 
+**Batch 1** (branch `security-hardening-2026-09`, merged `147dead`) also closed C4 (CSRF
+method-override — `validateCSRF` reads `$_SERVER['REQUEST_METHOD']`), C2 (permission
+deny-by-default), the member self-grant allowlist, `provision::call` root-from-member,
+pipeline SSRF/order_by/mintkey, and the Mailgun signature. All re-asserted by
+`scripts/security-retest.sh`.
+
+**Batch 2** (branch `security-hardening-2`) — the remaining HIGH/MED code items:
+
+| # | Was | Now | Evidence |
+|---|-----|-----|----------|
+| Stored XSS (inbox) | `strip_tags`+regex sanitizers leaked `<img/onerror>`, tab/entity `javascript:`, `data:`/`vbscript:` into a raw-rendered inbox | `lib/HtmlSanitizer` (DOM allowlist, scheme-checked URLs); Communications + Webhook delegate | retest H3: 7 evasions neutralized |
+| CSRF (teams/admin/contact) | `->method` gate overridable; `GET ?_method=POST` skipped the token check; several mutations had no token at all | `requirePost()` = real POST + token; 8 Teams + 3 Contact methods gated, admin authcontrol delete moved GET→POST | retest H4 |
+| MCP Basic-auth oracle | `password_verify` with no rate limit on level-101 `mcp::message` (bypasses 2FA) | rate-limited per IP (10 fails / 15 min), only failures count | retest H7 |
+| Attachment IDOR | inbound-mail files under `public/`, linked by path, no access check | streamed via the thread `canView` gate; stored `secure/uploads` 0700; nosniff download | retest H8 |
+| Broker key expiry | `brokerKey()` matched `is_active` only, ignored `expires_at` | expired key rejected (matches MCP idiom) | retest H9 |
+
 ---
 
 ## CRITICAL — do before opening signups
@@ -73,43 +89,37 @@ enforce `scopes`/`key_class` in `handleToolsCall` before dispatch.
 
 ## HIGH — before or immediately after launch
 
-- **H/self-grant (`POST /member/settings`)** — a member can POST `feature.mcp=1` etc. into
-  their own settings; `Feature::stored()` reads those same rows, unlocking key-minting,
-  invites, email, sidecars. Allowlist writable keys; reject `^feature\.`.
-- **Firehose shared ingest key** — every instance shares one key, so anyone can inject a
-  task into another tenant's `workbench.db`; with `auto_triage`, launches an agent on the
-  victim's repo. Per-instance ingest key; reject a mismatched `instance` tag.
-- **`provision::call` `is_root`** — caller-supplied `is_root:true` in the signed payload
-  grants delete of any tenant's project. Read level from core's member row, not the payload.
-- **MCP pipeline tools unscoped** — `pipeline_run/continue/get/list` have no level check
-  (siblings `_set/_delete` call `requireAdmin`); a level-100 member runs the install's
-  automations with its stored connector creds. `requireAdmin()` on the mutating tools.
-- **MCP HTTP Basic auth** — accepts username+password, no rate limit, bypasses the `mcp`
-  feature grant and 2FA. Drop Basic auth or rate-limit + gate it.
-- **SSRF in pipeline HTTP step** — `HttpStep` checks only `^https?://` then follows
-  redirects; `169.254.169.254`, `127.0.0.1`, LXC NAT all reachable.
-  `RestConnector.php:529` already has the right `NO_PRIV_RANGE|NO_RES_RANGE` guard — reuse.
-- **SQLi via `?order_by=`** — `WorkbenchAccess.php:272` interpolates raw `$orderBy` into
-  `ORDER BY`; SQLite subselects make a boolean exfil oracle over `workbench.db`. Latent twin
-  in `TaskAccessControl.php:414`. Allowlist columns.
-- **Reflected XSS into a ROOT session** — `layout.php` toast uses `addslashes` (doesn't
-  escape `<`/`/`), tainted by `Mcptools`/`Hooks` `getParam('name')`. `json_encode` with
-  `JSON_HEX_TAG`. Plus stored-XSS gaps (`Communications`, `Webhook` regex sanitizers →
-  `views/teams/view.php`) and `javascript:` surviving the regexes.
-- **Sidecar session cookies** — `WORKBENCH/EXPLORER/PUBLISHER/PIPELINES_SESSION` have no
-  Secure/HttpOnly/SameSite (kit applies hardening only inside the `cookie_domain` branch,
-  which only `shop` sets). Move `session_set_cookie_params` outside that branch in the kit.
-- **Security headers** — only `x-content-type-options` + HSTS present; no CSP,
-  X-Frame-Options, Referrer-Policy, Permissions-Policy; `server:` leaks the openresty
-  version. Set at the nginx layer (operator; sandbox-blocked here).
-- **Team management + several admin/apikey/contact actions lack CSRF**, some act on GET
-  (`Admin.php:360` deletes an `authcontrol` row via bare GET — which via C2 makes the route
-  public). Add CSRF; make them POST.
-- **Mailgun signature skippable** — `if ($signingKey !== '' && !empty($sig))`: omit the
-  `signature` object and verification is skipped. Absent signature = 403. Attachment writer
-  has no extension allowlist and writes under a web-served path.
-- **Upgrade Flight ≥ 3.18.1** — `flightphp/core v3.17.0` carries 5 advisories (this is the
-  root of C4 and H1). Same in billing-service.
+- **[CLOSED — batch 1]** self-grant (`POST /member/settings`) — writable-key allowlist
+  rejects `^feature\.`, so a member can't unlock key-minting/invites/email/sidecars.
+- **[DEFERRED — isolation work]** Firehose shared ingest key — every instance shares one key,
+  so anyone can inject a task into another tenant's `workbench.db`. Closed structurally by the
+  per-instance key + uid work below; tracked there, not a standalone code fix.
+- **[CLOSED — batch 1]** `provision::call` `is_root` — root is read from core's member row,
+  not the caller-supplied payload flag.
+- **[BY DESIGN]** MCP pipeline tools — `pipeline_run/continue/get/list` are member-level on
+  purpose: a run needs the SAME level as the member who authored it, scoped by the per-member/
+  per-instance key. Only `_set/_delete` (editing = writing code) require admin. An earlier
+  `requireAdmin` on run/continue was reverted (`0146557`).
+- **[CLOSED — batch 2]** MCP HTTP Basic auth — rate-limited per IP (only failures count), so
+  it is no longer an unlimited password oracle around the 2FA-less endpoint.
+- **[CLOSED — batch 1]** SSRF in pipeline HTTP step — `HttpStep` reuses
+  `RestConnector::assertPublicHost`, disables redirect-follow, restricts protocols.
+- **[CLOSED — batch 1]** SQLi via `?order_by=` — `safeOrderBy` allowlists sortable columns in
+  both `WorkbenchAccess` and `TaskAccessControl`.
+- **[CLOSED — batch 1 + 2]** XSS — reflected: `layout.php` toast uses `json_encode` with the
+  HEX flags. Stored: `lib/HtmlSanitizer` (DOM allowlist) replaces the regex sanitizers in
+  Communications + Webhook; `data:`/`vbscript:`/`javascript:`/split-attribute evasions all die.
+- **[CLOSED — batch 2 era]** Sidecar session cookies — kit `startSession()` now sets
+  Secure/HttpOnly/SameSite unconditionally (`fc17fc0`); all four sidecar cookies verified.
+- **[DEFERRED — operator/nginx]** Security headers — CSP, X-Frame-Options, Referrer-Policy,
+  Permissions-Policy, and suppressing the `server:` version are an nginx-layer change.
+- **[CLOSED — batch 2]** Team/admin/contact CSRF — `requirePost()` enforces a real POST plus a
+  token; the bare-GET `Admin.php` authcontrol delete is now a CSRF-protected POST form.
+- **[CLOSED — batch 1 + 2]** Mailgun signature — absent signature now 403; the attachment
+  writer neutralizes dangerous extensions AND (batch 2) stores off the web root behind a
+  `canView` gate.
+- **[DEFERRED — operator]** Upgrade Flight ≥ 3.18.1 — `flightphp/core v3.17.0` advisories;
+  same in billing-service. (C4/H1 already patched in code regardless.)
 
 ---
 

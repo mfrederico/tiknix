@@ -123,22 +123,22 @@ class ProvisionService {
      */
     private function isolateInstance(string $slug, int $instanceId): void {
         if (!$this->isolationEnabled() || $instanceId <= 0) return;
-        // --apply is idempotent, so retry a few times: the exec was seen killed mid-useradd
-        // once in the provision-request context (no error, output just stopped), and a plain
-        // re-run succeeded immediately. PHP survives the killed child (it returns non-zero),
-        // so this loop actually runs. Only the final failure logs + warns.
-        $r = ['ok' => false, 'out' => ''];
-        for ($attempt = 1; $attempt <= 3; $attempt++) {
-            $r = $this->runIsolation(['--apply', $slug, (string) $instanceId]);
-            if ($r['ok']) return;
-            if ($attempt < 3) usleep(500000);   // 0.5s backoff between attempts
-        }
-        Flight::get('log')?->error('provision: instance isolation --apply FAILED after 3 attempts', [
-            'slug' => $slug, 'instance_id' => $instanceId, 'out' => substr($r['out'], -400),
-        ]);
-        $msg = 'The project was created and is usable, but per-instance isolation could not '
-             . 'be applied; it is on the shared pool until isolate-instance.sh --apply is re-run.';
-        $this->lastWarning = $this->lastWarning === '' ? $msg : $this->lastWarning . ' ' . $msg;
+        // Run DETACHED, not inline. Two reasons the synchronous call was wrong: (1) --apply
+        // does `systemctl reload php-fpm`, which reloads the very pool serving THIS provision
+        // request; (2) useradd/setfacl add seconds a signup should not wait on. Isolation is
+        // non-fatal — the project works on the shared pool until the marker lands — so we
+        // fire-and-forget to a per-instance log and let backfill-isolate.sh sweep any misses.
+        // isolate-instance.sh nsenter-escapes php-fpm's read-only-/etc (ProtectSystem=full)
+        // sandbox itself, so the detached child (still in that namespace) can create the user
+        // and write the pool file. setsid + </dev/null + &: fully detached, survives the request.
+        $bin = (string) ($this->cfg()['isolation']['bin'] ?? '/home/ubuntu/capricorn/bin/isolate-instance.sh');
+        $log = dirname(__DIR__) . '/log/isolate-' . preg_replace('/[^a-z0-9-]/', '', $slug) . '.log';
+        $cmd = 'setsid sudo -n ' . escapeshellarg($bin) . ' --apply ' . escapeshellarg($slug)
+             . ' ' . escapeshellarg((string) $instanceId)
+             . ' >> ' . escapeshellarg($log) . ' 2>&1 < /dev/null &';
+        exec($cmd);
+        Flight::get('log')?->info('provision: isolation launched (detached)',
+            ['slug' => $slug, 'instance_id' => $instanceId, 'log' => $log]);
     }
 
     /** Remove an instance's uid + pool + socket + marker on delete (fast, no drain). */

@@ -726,19 +726,10 @@ class Communications extends BaseControls\Control {
 
     /**
      * Allowlist-sanitize a composed reply and force safe link attributes.
-     * Mirrors the port spec's allowlist.
+     * The reply is rendered raw in the inbox, so the DOM-based sanitizer is the
+     * whole defense; a regex allowlist leaked javascript: and split-attribute XSS.
      */
     private function sanitizeReply(string $html): string {
-        $allowed = '<p><br><strong><b><em><i><u><ul><ol><li><a><h1><h2><h3><h4><span><div><blockquote>';
-        $clean = strip_tags($html, $allowed);
-        $clean = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $clean);
-        $clean = preg_replace('/\bhref\s*=\s*(["\'])\s*javascript:[^"\']*\1/i', 'href="#"', $clean);
-        $clean = preg_replace('/\bhref\s*=\s*javascript:[^\s>]*/i', 'href="#"', $clean);
-        // Force target=_blank rel=noopener on anchors.
-        $clean = preg_replace_callback('/<a\b([^>]*)>/i', function ($m) {
-            $attrs = preg_replace('/\s(target|rel)\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $m[1]);
-            return '<a' . $attrs . ' target="_blank" rel="noopener">';
-        }, $clean);
-        return $clean;
+        return \app\HtmlSanitizer::clean($html);
     }
 }

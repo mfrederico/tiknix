@@ -397,18 +397,12 @@ class Webhook extends Control {
     }
 
     /**
-     * Allowlist-sanitize inbound HTML so a reply rendered in the inbox can't
-     * carry script/style/event-handler payloads. Strips tags outside the
-     * allowlist, inline on-event attributes, and javascript: URIs.
+     * Allowlist-sanitize inbound HTML so a reply rendered raw in the inbox can't
+     * carry script/style/event-handler payloads. Inbound email adds pre/code/img
+     * to the base tag set; the DOM sanitizer validates img src the same as href.
      */
     private function sanitizeInboundHtml(string $html): string {
-        $allowed = '<p><br><strong><b><em><i><u><ul><ol><li><a><h1><h2><h3><h4><span><div><blockquote><pre><code><img>';
-        $clean = strip_tags($html, $allowed);
-        // Drop on* event attributes and javascript: URIs (quoted + unquoted).
-        $clean = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $clean);
-        $clean = preg_replace('/\b(href|src)\s*=\s*(["\'])\s*javascript:[^"\']*\2/i', '$1="#"', $clean);
-        $clean = preg_replace('/\b(href|src)\s*=\s*javascript:[^\s>]*/i', '$1="#"', $clean);
-        return $clean;
+        return \app\HtmlSanitizer::clean($html, ['pre', 'code', 'img']);
     }
 
     /** Mailgun settings from conf/mailgun.ini (single source, shared with Mailer). */

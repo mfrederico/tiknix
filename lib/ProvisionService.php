@@ -123,15 +123,22 @@ class ProvisionService {
      */
     private function isolateInstance(string $slug, int $instanceId): void {
         if (!$this->isolationEnabled() || $instanceId <= 0) return;
-        $r = $this->runIsolation(['--apply', $slug, (string) $instanceId]);
-        if (!$r['ok']) {
-            Flight::get('log')?->error('provision: instance isolation --apply FAILED', [
-                'slug' => $slug, 'instance_id' => $instanceId, 'out' => substr($r['out'], -400),
-            ]);
-            $msg = 'The project was created and is usable, but per-instance isolation could not '
-                 . 'be applied; it is on the shared pool until isolate-instance.sh --apply is re-run.';
-            $this->lastWarning = $this->lastWarning === '' ? $msg : $this->lastWarning . ' ' . $msg;
+        // --apply is idempotent, so retry a few times: the exec was seen killed mid-useradd
+        // once in the provision-request context (no error, output just stopped), and a plain
+        // re-run succeeded immediately. PHP survives the killed child (it returns non-zero),
+        // so this loop actually runs. Only the final failure logs + warns.
+        $r = ['ok' => false, 'out' => ''];
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            $r = $this->runIsolation(['--apply', $slug, (string) $instanceId]);
+            if ($r['ok']) return;
+            if ($attempt < 3) usleep(500000);   // 0.5s backoff between attempts
         }
+        Flight::get('log')?->error('provision: instance isolation --apply FAILED after 3 attempts', [
+            'slug' => $slug, 'instance_id' => $instanceId, 'out' => substr($r['out'], -400),
+        ]);
+        $msg = 'The project was created and is usable, but per-instance isolation could not '
+             . 'be applied; it is on the shared pool until isolate-instance.sh --apply is re-run.';
+        $this->lastWarning = $this->lastWarning === '' ? $msg : $this->lastWarning . ' ' . $msg;
     }
 
     /** Remove an instance's uid + pool + socket + marker on delete (fast, no drain). */

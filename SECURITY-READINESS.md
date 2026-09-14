@@ -118,8 +118,9 @@ enforce `scopes`/`key_class` in `handleToolsCall` before dispatch.
 - **[CLOSED — batch 1 + 2]** Mailgun signature — absent signature now 403; the attachment
   writer neutralizes dangerous extensions AND (batch 2) stores off the web root behind a
   `canView` gate.
-- **[DEFERRED — operator]** Upgrade Flight ≥ 3.18.1 — `flightphp/core v3.17.0` advisories;
-  same in billing-service. (C4/H1 already patched in code regardless.)
+- **[CLOSED]** Upgrade Flight — both repos now floor `flightphp/core` at `^3.19.3` (were
+  `^3.0`, running 3.17.0 / 3.18.0). `composer audit` clean in both; all route shapes and
+  billing SSO re-verified live.
 
 ---
 

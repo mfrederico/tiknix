@@ -285,6 +285,14 @@ class Brokerinfo extends Control {
         if ($token === '') return null;
         $key = Bean::findOne('apikey', 'token_hash = ? AND key_class = ? AND is_active = 1',
             [EncryptionService::hashHex($token), 'broker']);
-        return ($key && $key->id) ? $key : null;
+        if (!$key || !$key->id) return null;
+
+        // is_active means "not revoked"; an expires_at in the past is a separate,
+        // equally hard stop. Without this an expired broker key kept full access.
+        if ($key->expiresAt && strtotime((string) $key->expiresAt) < time()) {
+            $this->logger?->warning('Broker auth failed: key expired', ['key_id' => $key->id]);
+            return null;
+        }
+        return $key;
     }
 }

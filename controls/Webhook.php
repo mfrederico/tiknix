@@ -362,33 +362,38 @@ class Webhook extends Control {
     /** Persist Mailgun inbound file uploads as notifyattachment rows. */
     private function saveAttachments($thread, $notify): void {
         if (empty($_FILES)) return;
-        $dir = 'public/uploads/inbound-mail/' . (int)$thread->id;
-        if (!is_dir($dir) && !mkdir($dir, 0755, true)) return;
+        /* Store OUTSIDE public/ so nginx never serves these directly: an inbound
+           attachment is fully attacker-controlled (anyone can email one), and a
+           web-served path is both an access-control hole (any member could read
+           another team's attachment by URL) and a code-execution risk. They are
+           streamed instead through Communications::attachment, which checks the
+           requester canView the thread. Path is stored relative to the instance
+           root; 0700 so only the pool user can read the tree. */
+        $rel = 'secure/uploads/inbound-mail/' . (int)$thread->id;
+        $dir = dirname(__DIR__) . '/' . $rel;
+        if (!is_dir($dir) && !mkdir($dir, 0700, true)) return;
 
         foreach ($_FILES as $key => $f) {
             if (empty($f['tmp_name']) || ($f['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) continue;
             $origName = $f['name'] ?: $key;
             $safeName = preg_replace('/[^a-zA-Z0-9._-]+/', '-', $origName);
 
-            /* These land under public/uploads, which is web-served, so a preserved .php (or
-               other executable) extension is a route to code execution the moment nginx is
-               configured to run PHP anywhere under uploads. Anyone can email an attachment,
-               so the name is fully attacker-controlled. Any dangerous extension is
-               neutralised to .txt — the file is still stored and linkable, just never
-               executable. */
+            // Belt-and-suspenders even off the web root: neutralise executable
+            // extensions so a later misconfig can't turn the store into a shell.
             $ext = strtolower((string) pathinfo($safeName, PATHINFO_EXTENSION));
             $dangerous = ['php','php3','php4','php5','php7','phtml','phar','pht','shtml',
                           'cgi','pl','py','sh','bash','htaccess','htm','html','svg','xhtml'];
             if (in_array($ext, $dangerous, true)) $safeName .= '.txt';
 
-            $dest = $dir . '/' . bin2hex(random_bytes(4)) . '-' . $safeName;
+            $base = bin2hex(random_bytes(4)) . '-' . $safeName;
+            $dest = $dir . '/' . $base;
             if (!move_uploaded_file($f['tmp_name'], $dest)) continue;
 
             $att = Bean::dispense('messageattachment');
             $att->threadId  = (int)$thread->id;
             $att->notifyId  = (int)$notify->id;
             $att->filename  = $origName;
-            $att->diskPath  = substr($dest, strlen('public')); // web-accessible path
+            $att->diskPath  = $rel . '/' . $base; // instance-root-relative, NOT web-served
             $att->mimeType  = $f['type'] ?: 'application/octet-stream';
             $att->size      = (int)$f['size'];
             $att->createdAt = date('Y-m-d H:i:s');

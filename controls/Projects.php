@@ -251,6 +251,9 @@ class Projects extends BaseControls\Control {
             'name'         => (string) ($inst->displayName ?: $inst->slug),
             'owned'        => $owned,
             'status'       => (string) $inst->status,
+            // Async per-instance isolation state, so the picker can say "finishing setup" vs
+            // "isolated" instead of the member wondering whether provisioning worked.
+            'isolation'    => (string) ($inst->isolationState ?? ''),
             'created'      => (string) $inst->createdAt,
             // Hosting: a container is the strongest signal of "published"; fall back to
             // nothing rather than inventing a date we cannot substantiate.

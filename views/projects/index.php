@@ -197,6 +197,25 @@ $fmt = function (string $iso): string {
                     <?php endif; ?>
                   </dd>
                 </div>
+                <?php if (($p['isolation'] ?? '') !== ''): ?>
+                <div class="d-flex justify-content-between border-top py-1">
+                  <dt class="fw-normal text-body-secondary">Isolation</dt>
+                  <dd class="mb-0 text-end">
+                    <?php if ($p['isolation'] === 'active'): ?>
+                      <span class="text-success"><i class="bi bi-shield-check"></i> Isolated</span>
+                    <?php elseif ($p['isolation'] === 'pending'): ?>
+                      <span class="text-body-secondary" title="Your project is already live on the shared pool; its own isolated environment is being set up (usually seconds).">
+                        <span class="spinner-border spinner-border-sm" style="width:.6rem;height:.6rem" role="status"></span>
+                        Live · finishing setup…
+                      </span>
+                    <?php else: /* failed — still live, maintenance will retry */ ?>
+                      <span class="text-warning-emphasis" title="Your project is live and usable. Its isolated environment is delayed and will be retried automatically — no action needed.">
+                        <i class="bi bi-shield-exclamation"></i> Live · isolation delayed
+                      </span>
+                    <?php endif; ?>
+                  </dd>
+                </div>
+                <?php endif; ?>
                 <div class="d-flex justify-content-between border-top border-bottom py-1">
                   <dt class="fw-normal text-body-secondary">Team</dt>
                   <dd class="mb-0 text-end">

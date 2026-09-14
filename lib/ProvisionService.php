@@ -101,57 +101,68 @@ class ProvisionService {
         return filter_var($this->cfg()['isolation']['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
     }
 
-    /** Run isolate-instance.sh as root via the scoped NOPASSWD sudoers rule. */
-    private function runIsolation(array $args): array {
-        $bin = (string) ($this->cfg()['isolation']['bin'] ?? '/home/ubuntu/capricorn/bin/isolate-instance.sh');
-        $cmd = 'sudo -n ' . escapeshellarg($bin);          // -n: never prompt; fail if it would
-        foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string) $a); }
-        $lines = []; $code = 0;
-        exec($cmd . ' 2>&1', $lines, $code);
-        return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
+    /** The isolation spool the root systemd worker drains (capricorn isolation-worker.sh). */
+    private function isolationQueueDir(): string {
+        return (string) ($this->cfg()['isolation']['queue'] ?? '/var/spool/tiknix-isolation/queue');
     }
 
     /**
-     * Give a freshly registered instance its own uid + fpm pool + open_basedir (--apply).
-     *
-     * Non-fatal on purpose: a failure leaves the project fully usable on the shared pool,
-     * so we do NOT abort a signup over it — but it is logged as an ERROR (naming the
-     * instance and the script output) and surfaced to the caller as a warning, so it is
-     * loud and backfillable rather than silent. --harden is deliberately NOT run here:
-     * open_basedir is the isolation enforcer, and leaving the tree owned by the web user
-     * keeps future git-based upgrades clean (a chowned tree trips git's ownership guard).
+     * Enqueue an isolation request for the root worker. The web tier NEVER runs privileged
+     * isolation itself — it drops a file, a systemd .path watch wakes the root worker (see
+     * capricorn isolation-worker.sh), which does useradd/pool/reload outside this sandbox.
+     * So: no sudo, no read-only-/etc escape, no per-request fpm reload. One file per instance
+     * (dedup); tmp+rename so the worker never reads a half-written request.
+     */
+    private function enqueueIsolation(string $op, string $slug, int $instanceId): bool {
+        $dir = $this->isolationQueueDir();
+        if (!is_dir($dir) || !is_writable($dir)) {
+            Flight::get('log')?->error('isolation spool missing/unwritable — cannot enqueue', [
+                'op' => $op, 'slug' => $slug, 'instance_id' => $instanceId, 'queue' => $dir,
+            ]);
+            return false;
+        }
+        $body  = "op={$op}\nslug={$slug}\niid={$instanceId}\nhost=local\n";
+        $final = $dir . '/' . $instanceId . '.req';
+        $tmp   = $final . '.tmp';
+        if (@file_put_contents($tmp, $body) === false || !@rename($tmp, $final)) {
+            @unlink($tmp);
+            Flight::get('log')?->error('isolation enqueue failed', ['op' => $op, 'slug' => $slug]);
+            return false;
+        }
+        Flight::get('log')?->info('isolation enqueued', ['op' => $op, 'slug' => $slug, 'instance_id' => $instanceId]);
+        return true;
+    }
+
+    /**
+     * Queue isolation for a freshly registered instance. Non-fatal: the project is usable on
+     * the shared pool until the worker applies isolation (seconds); the worker's .timer sweep
+     * and backfill-isolate.sh catch anything that slips. State is tracked on the instance
+     * (isolation_state) so the UI shows "finishing setup" vs "isolated" instead of the member
+     * wondering whether provisioning failed.
      */
     private function isolateInstance(string $slug, int $instanceId): void {
         if (!$this->isolationEnabled() || $instanceId <= 0) return;
-        // Run DETACHED, not inline. Two reasons the synchronous call was wrong: (1) --apply
-        // does `systemctl reload php-fpm`, which reloads the very pool serving THIS provision
-        // request; (2) useradd/setfacl add seconds a signup should not wait on. Isolation is
-        // non-fatal — the project works on the shared pool until the marker lands — so we
-        // fire-and-forget to a per-instance log and let backfill-isolate.sh sweep any misses.
-        // isolate-instance.sh nsenter-escapes php-fpm's read-only-/etc (ProtectSystem=full)
-        // sandbox itself, so the detached child (still in that namespace) can create the user
-        // and write the pool file. setsid + </dev/null + &: fully detached, survives the request.
-        $bin = (string) ($this->cfg()['isolation']['bin'] ?? '/home/ubuntu/capricorn/bin/isolate-instance.sh');
-        $log = dirname(__DIR__) . '/log/isolate-' . preg_replace('/[^a-z0-9-]/', '', $slug) . '.log';
-        $cmd = 'setsid sudo -n ' . escapeshellarg($bin) . ' --apply ' . escapeshellarg($slug)
-             . ' ' . escapeshellarg((string) $instanceId)
-             . ' >> ' . escapeshellarg($log) . ' 2>&1 < /dev/null &';
-        exec($cmd);
-        Flight::get('log')?->info('provision: isolation launched (detached)',
-            ['slug' => $slug, 'instance_id' => $instanceId, 'log' => $log]);
+        $ok = $this->enqueueIsolation('apply', $slug, $instanceId);
+        $inst = Bean::load('instance', $instanceId);
+        if ($inst->id) {
+            $inst->isolationState = $ok ? 'pending' : 'failed';
+            $inst->isolatedAt     = date('Y-m-d H:i:s');
+            if (empty($inst->host)) $inst->host = 'local';   // multi-node: which node holds it
+            Bean::store($inst);
+        }
+        if (!$ok) {
+            $this->lastWarning = trim($this->lastWarning
+                . ' The project is usable; per-instance isolation could not be queued and'
+                . ' will be applied by the next maintenance sweep.');
+        }
     }
 
-    /** Remove an instance's uid + pool + socket + marker on delete (fast, no drain). */
+    /** Queue isolation teardown on delete (worker frees the uid/pool/socket asynchronously). */
     private function deprovisionIsolation(string $slug, int $instanceId): void {
         if (!$this->isolationEnabled() || $instanceId <= 0) return;
-        $r = $this->runIsolation(['--deprovision', $slug, (string) $instanceId]);
-        if (!$r['ok']) {
-            // Loud, but do not block the delete — an orphaned pool/user is a cleanup task,
-            // not a reason to leave the customer unable to remove their project.
-            Flight::get('log')?->error('deprovision: isolation teardown FAILED (orphan possible)', [
-                'slug' => $slug, 'instance_id' => $instanceId, 'out' => substr($r['out'], -400),
-            ]);
-        }
+        // Non-fatal: an orphaned pool is a cleanup task the worker's sweep also catches, never
+        // a reason to block the member's delete.
+        $this->enqueueIsolation('deprovision', $slug, $instanceId);
     }
 
     /** Register an instance bean owned by $memberId (shared by create/fork). */

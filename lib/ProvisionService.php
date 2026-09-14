@@ -87,6 +87,66 @@ class ProvisionService {
         return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
     }
 
+    // ---- per-instance OS isolation (uid + fpm pool + open_basedir) ---------------------
+    //
+    // Gated OFF by default. Enable in conf/aibuilder.ini once the sudoers rule and the
+    // one-time Lua router snippet are installed:
+    //   [isolation]
+    //   enabled = true
+    //   bin     = /home/ubuntu/capricorn/bin/isolate-instance.sh
+    // The boundary is per INSTANCE (uid = 30000 + instance_id), never per member — teams
+    // share a project, so the OS user is the project and app-layer rules gate who reaches it.
+
+    private function isolationEnabled(): bool {
+        return filter_var($this->cfg()['isolation']['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /** Run isolate-instance.sh as root via the scoped NOPASSWD sudoers rule. */
+    private function runIsolation(array $args): array {
+        $bin = (string) ($this->cfg()['isolation']['bin'] ?? '/home/ubuntu/capricorn/bin/isolate-instance.sh');
+        $cmd = 'sudo -n ' . escapeshellarg($bin);          // -n: never prompt; fail if it would
+        foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string) $a); }
+        $lines = []; $code = 0;
+        exec($cmd . ' 2>&1', $lines, $code);
+        return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
+    }
+
+    /**
+     * Give a freshly registered instance its own uid + fpm pool + open_basedir (--apply).
+     *
+     * Non-fatal on purpose: a failure leaves the project fully usable on the shared pool,
+     * so we do NOT abort a signup over it — but it is logged as an ERROR (naming the
+     * instance and the script output) and surfaced to the caller as a warning, so it is
+     * loud and backfillable rather than silent. --harden is deliberately NOT run here:
+     * open_basedir is the isolation enforcer, and leaving the tree owned by the web user
+     * keeps future git-based upgrades clean (a chowned tree trips git's ownership guard).
+     */
+    private function isolateInstance(string $slug, int $instanceId): void {
+        if (!$this->isolationEnabled() || $instanceId <= 0) return;
+        $r = $this->runIsolation(['--apply', $slug, (string) $instanceId]);
+        if (!$r['ok']) {
+            Flight::get('log')?->error('provision: instance isolation --apply FAILED', [
+                'slug' => $slug, 'instance_id' => $instanceId, 'out' => substr($r['out'], -400),
+            ]);
+            $msg = 'The project was created and is usable, but per-instance isolation could not '
+                 . 'be applied; it is on the shared pool until isolate-instance.sh --apply is re-run.';
+            $this->lastWarning = $this->lastWarning === '' ? $msg : $this->lastWarning . ' ' . $msg;
+        }
+    }
+
+    /** Remove an instance's uid + pool + socket + marker on delete (fast, no drain). */
+    private function deprovisionIsolation(string $slug, int $instanceId): void {
+        if (!$this->isolationEnabled() || $instanceId <= 0) return;
+        $r = $this->runIsolation(['--deprovision', $slug, (string) $instanceId]);
+        if (!$r['ok']) {
+            // Loud, but do not block the delete — an orphaned pool/user is a cleanup task,
+            // not a reason to leave the customer unable to remove their project.
+            Flight::get('log')?->error('deprovision: isolation teardown FAILED (orphan possible)', [
+                'slug' => $slug, 'instance_id' => $instanceId, 'out' => substr($r['out'], -400),
+            ]);
+        }
+    }
+
     /** Register an instance bean owned by $memberId (shared by create/fork). */
     private function registerInstanceBean(int $memberId, string $slug, string $name, string $engine, bool $isDefault): object {
         $member = Bean::load('member', $memberId);
@@ -157,6 +217,8 @@ class ProvisionService {
 
         @file_put_contents($this->instanceDir($slug) . '/.aibuilder/engine', $engine . "\n");
         $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, $isDefault);
+        // Isolate now that the id exists (uid = 30000 + id). No-op unless enabled; never fatal.
+        $this->isolateInstance($slug, (int) $inst->id);
         $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
         if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
         return $out;
@@ -279,6 +341,8 @@ class ProvisionService {
             'Fork from ' . $srcSlug . '@' . $ckpt . ($carried ? ' (code+data)' : ' (code only)')]);
 
         $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, false);
+        // A fork is a new instance with its own id — isolate it like create(). No-op unless enabled.
+        $this->isolateInstance($slug, (int) $inst->id);
         $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'data_carried' => $carried];
         if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
         return $out;
@@ -326,6 +390,11 @@ class ProvisionService {
         $steps = [];
         $sock = $dir . '/.aibuilder/tmux.sock';
         if (@file_exists($sock)) { @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1'); $steps[] = 'killed jailed session'; }
+
+        // Tear down per-instance isolation BEFORE the archive wipes the tree: frees the uid,
+        // pool, socket and routing marker (marker first, so the router falls back at once).
+        // No-op unless isolation is enabled; never blocks the delete.
+        $this->deprovisionIsolation($slug, $instanceId);
 
         // No connector cleanup here any more: the connections live in the instance's
         // own data/connections.db, sealed with its own secure/connections.key, and

@@ -180,7 +180,7 @@ abstract class Control {
         }
         return true;
     }
-    
+
     /**
      * Get request parameter with optional default
      */
@@ -404,13 +404,21 @@ abstract class Control {
     }
 
     /**
-     * Guard: require the request be POST. Halts with 405 otherwise.
+     * Guard a state-changing action: it must be a genuine POST AND carry a valid
+     * CSRF token. Halts 405 on the wrong verb; validateCSRF() emits its own
+     * response (redirect / 403 JSON) on a bad token. Returns false either way.
+     *
+     * The verb comes from $_SERVER, not Flight's ->method: Flight derives ->method
+     * from an overridable header / _method param, so a cross-site
+     * `GET /teams/leave?_method=POST` could satisfy a `->method === 'POST'` gate
+     * while the real GET verb made the token check skip — a tokenless state change.
+     * $_SERVER['REQUEST_METHOD'] is the one verb an attacker cannot rewrite.
      */
     protected function requirePost() {
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
             Flight::halt(405, 'Method Not Allowed');
             return false;
         }
-        return true;
+        return $this->validateCSRF();
     }
 }

@@ -63,18 +63,7 @@ class Teams extends Control {
     public function store($params = []) {
         if (!$this->requireLogin()) return;
 
-        $request = Flight::request();
-
-        if ($request->method !== 'POST') {
-            Flight::redirect('/teams');
-            return;
-        }
-
-        if (!Flight::csrf()->validateRequest()) {
-            $this->flash('error', 'Invalid CSRF token');
-            Flight::redirect('/teams/create');
-            return;
-        }
+        if (!$this->requirePost()) return;
 
         $name = trim($this->getParam('name', ''));
         $description = trim($this->getParam('description', ''));
@@ -272,12 +261,7 @@ class Teams extends Control {
      */
     public function update($params = []) {
         if (!$this->requireLogin()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/teams');
-            return;
-        }
+        if (!$this->requirePost()) return;
 
         $teamId = (int)$this->getParam('id');
         if (!$teamId) {
@@ -379,12 +363,7 @@ class Teams extends Control {
      */
     public function invite($params = []) {
         if (!$this->requireLogin()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/teams');
-            return;
-        }
+        if (!$this->requirePost()) return;
 
         $teamId = (int)$this->getParam('id');
         if (!$teamId) {
@@ -658,12 +637,7 @@ class Teams extends Control {
      */
     public function leave($params = []) {
         if (!$this->requireLogin()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/teams');
-            return;
-        }
+        if (!$this->requirePost()) return;
 
         $teamId = (int)$this->getParam('id');
         if (!$teamId) {
@@ -701,12 +675,7 @@ class Teams extends Control {
      */
     public function removemember($params = []) {
         if (!$this->requireLogin()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/teams');
-            return;
-        }
+        if (!$this->requirePost()) return;
 
         $teamId = (int)$this->getParam('team_id');
         $memberId = (int)$this->getParam('member_id');
@@ -762,12 +731,7 @@ class Teams extends Control {
      */
     public function resendinvite($params = []) {
         if (!$this->requireLogin()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/teams');
-            return;
-        }
+        if (!$this->requirePost()) return;
 
         $teamId       = (int)$this->getParam('team_id');
         $invitationId = (int)$this->getParam('invitation_id');
@@ -831,12 +795,7 @@ class Teams extends Control {
      */
     public function updaterole($params = []) {
         if (!$this->requireLogin()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/teams');
-            return;
-        }
+        if (!$this->requirePost()) return;
 
         $teamId = (int)$this->getParam('team_id');
         $memberId = (int)$this->getParam('member_id');
@@ -897,12 +856,7 @@ class Teams extends Control {
      */
     public function delete($params = []) {
         if (!$this->requireLogin()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/teams');
-            return;
-        }
+        if (!$this->requirePost()) return;
 
         $teamId = (int)$this->getParam('id');
         if (!$teamId) {

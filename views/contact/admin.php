@@ -158,6 +158,7 @@ document.querySelectorAll('.quick-status').forEach(btn => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                 },
                 body: `id=${id}&status=${status}`
             })
@@ -187,8 +188,14 @@ document.querySelectorAll('.delete-message').forEach(btn => {
             input.type = 'hidden';
             input.name = 'id';
             input.value = id;
-            
             form.appendChild(input);
+
+            const csrf = document.createElement('input');
+            csrf.type = 'hidden';
+            csrf.name = '_csrf_token';
+            csrf.value = document.querySelector('meta[name="csrf-token"]').content;
+            form.appendChild(csrf);
+
             document.body.appendChild(form);
             form.submit();
         }

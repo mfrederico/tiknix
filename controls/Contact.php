@@ -360,7 +360,8 @@ class Contact extends BaseControls\Control {
     public function respond() {
         // Require admin access
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;
-        
+        if (!$this->requirePost()) return;
+
         $request = Flight::request();
         $messageId = $request->data->message_id ?? 0;
         $responseText = $this->sanitize($request->data->response);
@@ -449,7 +450,8 @@ class Contact extends BaseControls\Control {
     public function status() {
         // Require admin access
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;
-        
+        if (!$this->requirePost()) return;
+
         $request = Flight::request();
         $id = $request->data->id ?? 0;
         $status = $request->data->status ?? '';
@@ -479,7 +481,8 @@ class Contact extends BaseControls\Control {
     public function delete() {
         // Require admin access
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;
-        
+        if (!$this->requirePost()) return;
+
         $request = Flight::request();
         $id = $request->data->id ?? 0;
         

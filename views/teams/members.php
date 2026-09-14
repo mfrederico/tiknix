@@ -204,10 +204,13 @@
 
 <script>
 const teamId = <?= $team->id ?>;
+// These POSTs hit CSRF-gated endpoints; every FormData below carries the token.
+const CSRF_TOKEN = <?= json_encode(function_exists('csrf_token') ? csrf_token() : '') ?>;
 
 async function updateRole(memberId, newRole) {
     try {
         const formData = new FormData();
+        formData.append('_csrf_token', CSRF_TOKEN);
         formData.append('team_id', teamId);
         formData.append('member_id', memberId);
         formData.append('role', newRole);
@@ -236,6 +239,7 @@ async function removeMember(memberId, memberName) {
 
     try {
         const formData = new FormData();
+        formData.append('_csrf_token', CSRF_TOKEN);
         formData.append('team_id', teamId);
         formData.append('member_id', memberId);
 
@@ -263,6 +267,7 @@ async function resendInvite(btn, invitationId) {
 
     try {
         const formData = new FormData();
+        formData.append('_csrf_token', CSRF_TOKEN);
         formData.append('team_id', teamId);
         formData.append('invitation_id', invitationId);
 
@@ -296,6 +301,7 @@ async function sendInvite() {
 
     try {
         const formData = new FormData();
+        formData.append('_csrf_token', CSRF_TOKEN);
         formData.append('email', email);
         formData.append('role', role);
         formData.append('id', teamId);

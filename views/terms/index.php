@@ -112,6 +112,7 @@ $email   = 'legal@clicksimple.com';
             <p class="text-center">
                 <a href="/" class="btn btn-outline-secondary">Back to Home</a>
                 <a href="/privacy" class="btn btn-outline-secondary">Privacy Policy</a>
+                <a href="/index/security" class="btn btn-outline-secondary">Security</a>
             </p>
         </div>
     </div>

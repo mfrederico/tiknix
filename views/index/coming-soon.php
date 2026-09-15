@@ -307,6 +307,14 @@
         <?php if (!empty($flagship)): ?>
         <div class="mini-links"><a href="/pricing">See pricing &rarr;</a></div>
         <?php endif; ?>
+
+        <footer class="mini-links" style="margin-top:2.5rem;display:flex;flex-wrap:wrap;gap:1.25rem;justify-content:center">
+            <a href="/pricing">Pricing</a>
+            <a href="/index/security">Security</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
+        </footer>
+        <div style="margin-top:.9rem;font-size:.8rem;color:var(--text-soft);opacity:.75">&copy; <?= date('Y') ?> ClickSimple LLC</div>
     </div>
 
     <script>

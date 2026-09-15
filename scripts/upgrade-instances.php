@@ -62,21 +62,6 @@ function sh(string $cmd, ?string $cwd = null): array {
 }
 function say(string $s): void { echo $s . "\n"; }
 
-// A per-instance-isolated instance is chowned to its own uid (tiknix-i<id>). git run as the
-// web/ops user then refuses every command on it ("detected dubious ownership") — which at
-// detection time would silently DROP the instance from the upgrade set. Register the dir as
-// safe (idempotent: added at most once, and only if not already present) so the merge works
-// whether or not the instance has been hardened. See instance-isolation-rollout.
-function ensureGitSafe(string $dir): void {
-    static $done = [];
-    if (isset($done[$dir])) return;
-    $done[$dir] = true;
-    $have = sh('git config --global --get-all safe.directory');
-    if (!in_array($dir, explode("\n", (string) $have['out']), true)) {
-        sh('git config --global --add safe.directory ' . escapeshellarg($dir));
-    }
-}
-
 // ---- Which directories are actually instances -------------------------------
 // An instance clones CORE and sits on instance/<slug>. The sidecars (workbench,
 // pipelines, publisher, …) are clones of their OWN repos on main — upgrading those with
@@ -85,7 +70,6 @@ function ensureGitSafe(string $dir): void {
 $instances = [];
 foreach (glob($root . '/*.tiknix') ?: [] as $dir) {
     if (!is_dir($dir . '/.git')) continue;
-    ensureGitSafe($dir);   // isolated (hardened) instances are owned by their own uid
     $origin = sh('git remote get-url origin', $dir);
     $branch = sh('git rev-parse --abbrev-ref HEAD', $dir);
     if (!$origin['ok'] || !$branch['ok']) continue;

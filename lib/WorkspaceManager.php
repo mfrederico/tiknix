@@ -356,7 +356,9 @@ csrf_enabled = false
 password_min_length = 6
 
 [features]
-registration_enabled = true
+; registration_enabled is NOT set here — it is an admin SETTING (database), toggled at
+; /admin/settings, so this instance can flip public sign-ups from the UI without editing
+; this file.
 INI;
 
         $configDir = dirname($configPath);

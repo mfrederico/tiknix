@@ -111,8 +111,12 @@ enforce `scopes`/`key_class` in `handleToolsCall` before dispatch.
   Communications + Webhook; `data:`/`vbscript:`/`javascript:`/split-attribute evasions all die.
 - **[CLOSED — batch 2 era]** Sidecar session cookies — kit `startSession()` now sets
   Secure/HttpOnly/SameSite unconditionally (`fc17fc0`); all four sidecar cookies verified.
-- **[DEFERRED — operator/nginx]** Security headers — CSP, X-Frame-Options, Referrer-Policy,
-  Permissions-Policy, and suppressing the `server:` version are an nginx-layer change.
+- **[DRAFTED — operator reload]** Security headers — `capricorn/etc/nginx/security/security-headers.conf`
+  adds X-Frame-Options, Referrer-Policy, Permissions-Policy, and a `Server:` override (XCTO/HSTS
+  already set). It's in the glob-auto-included `security/` dir, so it goes live on the next
+  `sudo nginx -t && sudo systemctl reload nginx`. CSP is scoped/documented separately in
+  `security-headers-CSP.md` (a global CSP would break tenant projects) — apply to tiknix.com
+  after testing, report-only first.
 - **[CLOSED — batch 2]** Team/admin/contact CSRF — `requirePost()` enforces a real POST plus a
   token; the bare-GET `Admin.php` authcontrol delete is now a CSRF-protected POST form.
 - **[CLOSED — batch 1 + 2]** Mailgun signature — absent signature now 403; the attachment

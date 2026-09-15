@@ -37,7 +37,16 @@
                             <?php endforeach;
                         endif;
                         ?>
-                        
+
+                        <?php $__tsKey = \app\Turnstile::siteKey(); if ($__tsKey !== ''): ?>
+                        <div class="mb-3 text-center" id="ts-gate">
+                            <p class="text-muted small mb-2">Please verify you're human to continue.</p>
+                            <div class="cf-turnstile d-inline-block" data-sitekey="<?= htmlspecialchars($__tsKey) ?>"
+                                 data-callback="tsVerified" data-expired-callback="tsReset" data-error-callback="tsReset"></div>
+                        </div>
+                        <div id="reg-fields" hidden>
+                        <?php endif; ?>
+
                         <div class="mb-3">
                             <label for="username" class="form-label">Username</label>
                             <input type="text" 
@@ -86,18 +95,22 @@
                                    placeholder="Confirm your password">
                         </div>
                         
-                        <?php $__tsKey = \app\Turnstile::siteKey(); if ($__tsKey !== ''): ?>
-                        <div class="mb-3 d-flex justify-content-center">
-                            <div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($__tsKey) ?>"></div>
-                        </div>
-                        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-                        <?php endif; ?>
-
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary">
                                 <i class="bi bi-person-plus"></i> Create Account
                             </button>
                         </div>
+
+                        <?php if ($__tsKey !== ''): ?>
+                        </div><!-- /#reg-fields -->
+                        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+                        <script>
+                          // Reveal the form only after Turnstile verifies; hide again if it expires/errors.
+                          function tsVerified(){ var f=document.getElementById('reg-fields'); if(f){f.hidden=false;}
+                            var g=document.getElementById('ts-gate'); if(g){var p=g.querySelector('p'); if(p){p.innerHTML='<span class="text-success">Verified &#10003;</span>';}} }
+                          function tsReset(){ var f=document.getElementById('reg-fields'); if(f){f.hidden=true;} }
+                        </script>
+                        <?php endif; ?>
                         
                         <hr class="my-4">
                         

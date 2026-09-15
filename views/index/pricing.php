@@ -133,7 +133,7 @@
             </div>
         <?php endif; ?>
 
-        <div class="mini-links"><a href="/">&larr; Back to home</a></div>
+        <div class="mini-links"><a href="/">&larr; Back to home</a> <a href="/index/security" style="margin-left:1.25rem">How we protect your projects</a></div>
     </div>
 </body>
 </html>

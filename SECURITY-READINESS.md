@@ -158,8 +158,9 @@ The three highest-value moves, in order:
   names the operating entity (**ClickSimple LLC**). Still marked for legal review before
   launch (governing-law state, contact addresses, refund terms — see the review notes atop
   each view).
-- No security page describes isolation/encryption to a prospective member; once the isolation
-  work lands, a short "how we protect your projects" page converts.
+- **[CLOSED — 2026-09-15]** Security overview page — `/index/security` ("How we protect your
+  projects") describes per-project isolation, encryption, sandboxed agents, and Stripe, all
+  now true. Linked from the pricing page. Contact: `security@clicksimple.com` (confirm it routes).
 
 ---
 

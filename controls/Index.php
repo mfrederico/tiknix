@@ -229,6 +229,11 @@ class Index extends BaseControls\Control {
         $this->flash('success', 'Thank you for your message. We will get back to you soon!');
         Flight::redirect('/contact');
     }
+
+    /** Public security-overview / trust page (/index/security). */
+    public function security() {
+        $this->render('index/security', ['title' => 'Security — Tiknix']);
+    }
     // Privacy/Terms live in their own controllers (Privacy::index at /privacy, Terms::index
     // at /terms) — the URLs the signup form links to. The duplicate Index::privacy/terms
     // here rendered non-existent index/* views (a 500) and were never linked; removed.

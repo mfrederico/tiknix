@@ -25,6 +25,7 @@ if (!$_tableCheck('authcontrol')) {
 $defaults = [
     // Public (101)
     ['index', 'index', 101, 'Home page'],
+    ['index', 'comingsoon', 101, 'Pre-launch lead-capture page (kept reachable)'],
     ['index', '*', 101, 'All index methods'],
     ['auth', 'login', 101, 'Login page'],
     ['auth', 'dologin', 101, 'Process login'],

@@ -30,14 +30,34 @@ class Index extends BaseControls\Control {
         // First-run setup takes precedence over the landing page.
         if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
 
-        // Public "Coming Soon" landing page.
-        // Rendered without the Tiknix header/footer layout so visitors see a
-        // clean, standalone page. To restore the original homepage, revert this
-        // method to render 'index/index' with the layout (see git history).
-        // The showcase + pricing are marketing surfaces for the PRIMARY tiknix.com
-        // site only. Provisioned instances are clones of this app, so gate those
-        // surfaces off on any non-flagship host — an instance shows just the plain
-        // "coming soon" page, with no confusion about which is the real Tiknix.
+        // Rendered without the Tiknix header/footer layout so visitors see a clean,
+        // standalone page. The PRIMARY tiknix.com site shows the marketing landing
+        // (ICP: freelance devs & small agencies). Provisioned instances are clones of
+        // this app, so a non-flagship host still shows the plain "coming soon" lead
+        // page — no confusion about which is the real Tiknix, and no marketing pitch
+        // on someone else's project.
+        if (self::isFlagship()) {
+            $this->render('index/landing', [
+                'title'    => 'tiknix — build a real app for every client',
+                'showcase' => $this->showcaseItems(),
+            ], false);
+            return;
+        }
+        $this->renderComingSoon();
+    }
+
+    /**
+     * The pre-launch lead-capture page. It was the landing until the marketing page
+     * took that slot; kept reachable at /index/comingsoon (and still the default for
+     * instance clones) so the lead form + its Turnstile gate are not lost.
+     */
+    public function comingsoon() {
+        if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
+        $this->renderComingSoon();
+    }
+
+    /** Render the coming-soon lead page (shared by index() on a clone and comingsoon()). */
+    private function renderComingSoon(): void {
         /* When the form was put in front of someone, so dolead() can tell a person typing
            from a script posting. Session rather than a hidden field: a value in the form is
            just another thing for the bot to replay, and this needs to be something it

@@ -229,22 +229,7 @@ class Index extends BaseControls\Control {
         $this->flash('success', 'Thank you for your message. We will get back to you soon!');
         Flight::redirect('/contact');
     }
-    
-    /**
-     * Privacy policy
-     */
-    public function privacy() {
-        $this->render('index/privacy', [
-            'title' => 'Privacy Policy'
-        ]);
-    }
-    
-    /**
-     * Terms of service
-     */
-    public function terms() {
-        $this->render('index/terms', [
-            'title' => 'Terms of Service'
-        ]);
-    }
+    // Privacy/Terms live in their own controllers (Privacy::index at /privacy, Terms::index
+    // at /terms) — the URLs the signup form links to. The duplicate Index::privacy/terms
+    // here rendered non-existent index/* views (a 500) and were never linked; removed.
 }

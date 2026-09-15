@@ -151,10 +151,13 @@ The three highest-value moves, in order:
 
 ## What to tell members (the trust surface)
 
-- `/index/privacy` and `/index/terms` **500 today** — the views don't exist
-  (`views/index/privacy.php` missing). With debug now off a visitor sees a clean 500, but a
-  paid product needs real privacy + terms pages before signups. This is a launch blocker of
-  a different kind: legal, not code.
+- **[CLOSED — 2026-09-15]** Privacy + Terms pages. The real public pages live at `/privacy`
+  and `/terms` (dedicated `Privacy`/`Terms` controllers — the URLs signup links to); the 500
+  was a dead DUPLICATE `Index::privacy/terms` rendering non-existent `index/*` views, now
+  removed. The canonical pages were rewritten with complete, isolation-accurate content that
+  names the operating entity (**ClickSimple LLC**). Still marked for legal review before
+  launch (governing-law state, contact addresses, refund terms — see the review notes atop
+  each view).
 - No security page describes isolation/encryption to a prospective member; once the isolation
   work lands, a short "how we protect your projects" page converts.
 

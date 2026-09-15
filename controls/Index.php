@@ -119,6 +119,15 @@ class Index extends BaseControls\Control {
         if (trim((string) $this->getParam(self::HONEYPOT_FIELD, '')) !== '') {
             $spam[] = 'honeypot';
         }
+        /* Cloudflare Turnstile. A no-op when Turnstile is not configured for this install
+           (verify() returns true), so it only bites where the widget actually rendered. FLAGGED,
+           not refused — same reasoning as the honeypot above: a bot told "thank you" stops, and
+           the evidence stays in the leads table instead of being silently dropped. */
+        if (!\app\Turnstile::verify(
+                $this->getParam(\app\Turnstile::FIELD, null),
+                (string) (Flight::request()->ip ?? ''))) {
+            $spam[] = 'turnstile';
+        }
         $shown = (int) ($_SESSION['lead_form_shown'] ?? 0);
         if ($shown > 0 && (time() - $shown) < self::MIN_FILL_SECONDS) {
             $spam[] = 'submitted in ' . (time() - $shown) . 's';

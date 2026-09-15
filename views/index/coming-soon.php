@@ -300,6 +300,12 @@
                         <input type="text" name="last_name" placeholder="Last name" required maxlength="100">
                     </div>
                     <input type="email" name="email" placeholder="Email address" required maxlength="255">
+                    <?php /* Cloudflare Turnstile — same install-local connection as the sign-up form.
+                             Renders nothing when unconfigured, so an instance's plain coming-soon
+                             page is unaffected; verified server-side in dolead(). */ ?>
+                    <?php $__ts = \app\Turnstile::widget(['theme' => 'dark']); if ($__ts !== ''): ?>
+                    <div style="margin:0.75rem 0;display:flex;justify-content:center"><?= $__ts ?></div>
+                    <?php endif; ?>
                     <button type="submit">Notify Me</button>
                 </form>
             </div>

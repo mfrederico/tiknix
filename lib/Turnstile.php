@@ -28,8 +28,44 @@ use \Flight as Flight;
 class Turnstile
 {
     private const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+    private const WIDGET_JS  = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
     /** The form field the Turnstile widget writes its token into. */
     public const FIELD = 'cf-turnstile-response';
+
+    /**
+     * Render the Turnstile widget for a form — the builder primitive. Drop it inside any
+     * <form> and the widget injects the {@see FIELD} token the form submits; pair it with a
+     * server-side {@see verify()} call in the handler. Returns '' when not configured, so a
+     * template can call it unconditionally.
+     *
+     * $opts: callback / expired_callback / error_callback (JS function names),
+     *        theme ('auto'|'light'|'dark'), size ('normal'|'flexible'|'compact'),
+     *        action, class (extra CSS classes), no_script (skip the <script> tag when the
+     *        page already loaded api.js once).
+     */
+    public static function widget(array $opts = []): string
+    {
+        $key = self::siteKey();
+        if ($key === '') return '';
+        $esc  = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $attr = 'data-sitekey="' . $esc($key) . '"';
+        foreach ([
+            'callback'         => 'data-callback',
+            'expired_callback' => 'data-expired-callback',
+            'error_callback'   => 'data-error-callback',
+            'theme'            => 'data-theme',
+            'size'             => 'data-size',
+            'action'           => 'data-action',
+        ] as $o => $a) {
+            if (!empty($opts[$o])) $attr .= ' ' . $a . '="' . $esc($opts[$o]) . '"';
+        }
+        $cls  = 'cf-turnstile' . (!empty($opts['class']) ? ' ' . $esc($opts['class']) : '');
+        $html = '<div class="' . $cls . '" ' . $attr . '></div>';
+        if (empty($opts['no_script'])) {
+            $html .= '<script src="' . self::WIDGET_JS . '" async defer></script>';
+        }
+        return $html;
+    }
 
     public static function siteKey(): string   { return trim((string) (Flight::get('turnstile.site_key')   ?? '')); }
     private static function secretKey(): string { return trim((string) (Flight::get('turnstile.secret_key') ?? '')); }

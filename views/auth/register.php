@@ -41,8 +41,7 @@
                         <?php $__tsKey = \app\Turnstile::siteKey(); if ($__tsKey !== ''): ?>
                         <div class="mb-3 text-center" id="ts-gate">
                             <p class="text-muted small mb-2">Please verify you're human to continue.</p>
-                            <div class="cf-turnstile d-inline-block" data-sitekey="<?= htmlspecialchars($__tsKey) ?>"
-                                 data-callback="tsVerified" data-expired-callback="tsReset" data-error-callback="tsReset"></div>
+                            <?= \app\Turnstile::widget(['callback' => 'tsVerified', 'expired_callback' => 'tsReset', 'error_callback' => 'tsReset', 'class' => 'd-inline-block']) ?>
                         </div>
                         <div id="reg-fields" hidden>
                         <?php endif; ?>
@@ -103,7 +102,7 @@
 
                         <?php if ($__tsKey !== ''): ?>
                         </div><!-- /#reg-fields -->
-                        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+                        <?php /* api.js is emitted by Turnstile::widget() above. */ ?>
                         <script>
                           // Reveal the form only after Turnstile verifies; hide again if it expires/errors.
                           function tsVerified(){ var f=document.getElementById('reg-fields'); if(f){f.hidden=false;}

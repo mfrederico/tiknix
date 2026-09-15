@@ -409,11 +409,6 @@ class ProvisionService {
         $sock = $dir . '/.aibuilder/tmux.sock';
         if (@file_exists($sock)) { @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1'); $steps[] = 'killed jailed session'; }
 
-        // Tear down per-instance isolation BEFORE the archive wipes the tree: frees the uid,
-        // pool, socket and routing marker (marker first, so the router falls back at once).
-        // No-op unless isolation is enabled; never blocks the delete.
-        $this->deprovisionIsolation($slug, $instanceId);
-
         // No connector cleanup here any more: the connections live in the instance's
         // own data/connections.db, sealed with its own secure/connections.key, and
         // both are inside $dir. Archiving the directory takes them with it — and
@@ -455,6 +450,14 @@ class ProvisionService {
 
         Bean::trash($inst);
         $steps[] = 'removed instance record';
+
+        // Enqueue isolation teardown LAST — after the slow archive + all DB work. The queue
+        // worker's fpm reload (freeing the pool) fires the moment this file lands, so doing it
+        // any earlier let the reload race THIS request's response and surface as a client
+        // "network error" (the delete still completed). The worker frees the uid/pool/socket
+        // async; the marker is already gone with the wiped dir, so routing has fallen back.
+        $this->deprovisionIsolation($slug, $instanceId);
+
         return ['ok' => true, 'slug' => $slug, 'domain' => $domain, 'steps' => $steps];
     }
 

@@ -359,7 +359,13 @@ class Auth extends BaseControls\Control {
         
         // Simple validation
         $errors = [];
-        
+
+        // Bot challenge (Cloudflare Turnstile). No-op unless configured; when configured, a
+        // failed/absent challenge blocks the signup before any account work happens.
+        if (!\app\Turnstile::verify($request->data[\app\Turnstile::FIELD] ?? null, $request->ip)) {
+            $errors[] = 'Please complete the human-verification challenge and try again.';
+        }
+
         if (empty($username) || strlen($username) < 3) {
             $errors[] = 'Username must be at least 3 characters';
         }

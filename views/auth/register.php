@@ -86,6 +86,13 @@
                                    placeholder="Confirm your password">
                         </div>
                         
+                        <?php $__tsKey = \app\Turnstile::siteKey(); if ($__tsKey !== ''): ?>
+                        <div class="mb-3 d-flex justify-content-center">
+                            <div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($__tsKey) ?>"></div>
+                        </div>
+                        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+                        <?php endif; ?>
+
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary">
                                 <i class="bi bi-person-plus"></i> Create Account

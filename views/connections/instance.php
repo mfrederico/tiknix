@@ -43,6 +43,9 @@ $flash = $_SESSION['flash'] ?? []; unset($_SESSION['flash']);
     What this app <em>exposes</em> is on the <a href="/integrations" style="text-decoration:underline">Integrations</a> page.
   </div>
 
+  <?php /* This app's own sign-up gate (Turnstile) — install-local security connection. */
+  include __DIR__ . '/_turnstile.php'; ?>
+
   <?php if ($connectorsError !== ''): ?>
     <div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($connectorsError) ?></div>
   <?php elseif (empty($connectors)): ?>

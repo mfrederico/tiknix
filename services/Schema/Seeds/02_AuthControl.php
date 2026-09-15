@@ -146,6 +146,8 @@ $defaults = [
     ['connections', 'instancedisconnect', 100, 'Instance-side: disconnect (owner/admin)'],
     ['connections', 'connectkey', 100, 'Connect an api_key connector from a validated pasted key'],
     ['connections', 'webhooksecret', 100, 'Set/clear a connection webhook verification secret'],
+    ['connections', 'turnstilesave', 100, "Store this install's Turnstile keys (admin-guarded in controller)"],
+    ['connections', 'turnstileforget', 100, "Remove this install's Turnstile keys (admin-guarded in controller)"],
     ['connections', 'publishfeed', 100, 'Publish a public social showcase page for a social connection'],
 
     // NOTE: the platform storefront (shop/ecommerce/store/products/catalog/category)

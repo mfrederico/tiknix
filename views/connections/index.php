@@ -55,6 +55,13 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
      the failure this whole mechanism exists to prevent. */
   ?>
 
+  <?php
+  /* This site's own sign-up gate (Turnstile). Install-local, so on the control plane it
+     manages THIS site's registration, not the selected project's — kept at the top and
+     under its own "Security" heading so it does not read as a per-project connector. */
+  include __DIR__ . '/_turnstile.php';
+  ?>
+
   <?php if (!empty($publishDrivers)): ?>
     <!--
       Hosting. First on the hub because it answers the question everything else assumes:

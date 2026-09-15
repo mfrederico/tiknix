@@ -686,6 +686,8 @@ class Connections extends Control {
             'instance'       => $inst,
             'instances'      => $instances,
             'cards'          => $cards,
+            // This site's own sign-up gate — install-local, so this is CORE's Turnstile.
+            'turnstile'      => \app\Turnstile::state(),
             // A manifest that will not load must SAY so here. A declarative connector
             // that simply fails to appear is indistinguishable from one nobody added,
             // and the file is the only place the mistake is visible.
@@ -764,6 +766,7 @@ class Connections extends Control {
         $this->render('connections/instance', [
             'title'           => 'Connections',
             'connections'     => $connections,
+            'turnstile'       => \app\Turnstile::state(),
             'brokerError'     => '',
             'connectors'      => $connectors,
             'connectorsError' => '',
@@ -890,6 +893,45 @@ class Connections extends Control {
             return false;
         }
         return true;
+    }
+
+    // --- Human verification (Cloudflare Turnstile) ----------------------------
+    //
+    // A per-install SECURITY connection, not a per-project data connector: it gates
+    // THIS site's registration form, so it is stored in and read from this install's
+    // own connection store (core's on core, the instance's on an instance). Both
+    // actions are install-local and never touch another install's keys.
+
+    /** POST /connections/turnstilesave — store this install's Turnstile keys (admin). JSON. */
+    public function turnstilesave($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) { $this->jsonError('Admins only.', 403); return; }
+        if (!$this->validateCSRF()) return;
+        $site   = trim((string) $this->getParam('site_key', ''));
+        $secret = trim((string) $this->getParam('secret_key', ''));
+        if ($site === '' || $secret === '') { $this->jsonError('Both the site key and the secret key are required.', 400); return; }
+        try {
+            $id = \app\Turnstile::save($site, $secret);
+        } catch (\Throwable $e) {
+            $this->jsonError($e->getMessage(), 400); return;
+        }
+        if ($id <= 0) { $this->jsonError('The Turnstile keys could not be stored on this install.', 500); return; }
+        $this->jsonSuccess(['id' => $id], 'Human verification is on — new sign-ups now pass the Turnstile challenge.');
+    }
+
+    /** POST /connections/turnstileforget — remove this install's Turnstile keys (admin). JSON. */
+    public function turnstileforget($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!Flight::hasLevel(LEVELS['ADMIN'])) { $this->jsonError('Admins only.', 403); return; }
+        if (!$this->validateCSRF()) return;
+        \app\Turnstile::forget();
+        // If a config.ini [turnstile] seed is still present, the feature stays on from
+        // that source — say so rather than implying it is fully off.
+        $st = \app\Turnstile::state();
+        $msg = $st['source'] === 'config'
+            ? 'Removed the stored keys. Turnstile is still enabled from conf/config.ini — clear [turnstile] there to fully disable it.'
+            : 'Human verification is off for this site.';
+        $this->jsonSuccess(['source' => $st['source']], $msg);
     }
 
     /** POST /connections/pipelinerun — trigger one of the instance's pipelines (owner-scoped). */

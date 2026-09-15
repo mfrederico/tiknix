@@ -3,11 +3,10 @@
  * Terms of Service — canonical page. Served by Terms::index() at /terms (the URL the signup
  * form links to). Uses the app layout (Bootstrap card).
  *
- * ⚠ STARTER CONTENT FOR LEGAL REVIEW — not legal advice. Confirm/fill with counsel:
- *   the governing-law state (left as "the state in which ClickSimple LLC is organized" —
- *   make it specific), the contact address routes, that refund/cancellation terms match what
- *   billing actually does, and any arbitration/consumer-law clauses you want.
- *   Entity per the owner: ClickSimple LLC.
+ * ⚠ STARTER CONTENT FOR LEGAL REVIEW — not legal advice. Confirm with counsel:
+ *   that the North Carolina governing-law/venue clause is what you want, the contact address
+ *   routes, that refund/cancellation terms match what billing actually does, and any
+ *   arbitration/consumer-law clauses you want. Entity per the owner: ClickSimple LLC (NC).
  */
 $updated = 'September 15, 2026';
 $entity  = 'ClickSimple LLC';
@@ -94,9 +93,9 @@ $email   = 'legal@clicksimple.com';
                     others.</p>
 
                     <h5>11. Governing law</h5>
-                    <p>These terms are governed by the laws of the state in which <?= htmlspecialchars($entity) ?>
-                    is organized, without regard to conflict-of-law rules, and any dispute will be resolved in the
-                    courts located there unless applicable law provides otherwise.</p>
+                    <p>These terms are governed by the laws of the State of North Carolina, without regard to
+                    conflict-of-law rules, and any dispute will be resolved in the state or federal courts located
+                    in North Carolina, unless applicable law provides otherwise.</p>
 
                     <h5>12. Changes to these terms</h5>
                     <p>We may update these terms from time to time. When we make material changes, we will update

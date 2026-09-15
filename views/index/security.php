@@ -59,60 +59,51 @@ $logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
         <a class="logo" href="/" aria-label="tiknix home"><span class="logo-mark"></span><span class="logo-word">tiknix</span></a>
         <div class="badge">Security</div>
         <h1>How we protect your projects</h1>
-        <p class="lede">Every project you build on Tiknix runs in its own walled-off environment,
-        separated from every other member's at the operating-system level. Here's what that means in practice.</p>
+        <p class="lede">Security is built into how Tiknix works, not bolted on. Every project runs in its own
+        isolated environment, kept private to you.</p>
 
         <div class="grid">
             <div class="card">
                 <span class="ic">🧱</span>
-                <h3>Per-project isolation</h3>
-                <p>Each project runs as its <strong>own operating-system user</strong> in its own sandbox, with
-                a hard boundary (<code>open_basedir</code>) around its files. One member's project
-                <strong>cannot read another's</strong> code, database, or secrets — enforced by the OS, not just
-                by application rules.</p>
+                <h3>Your project is yours alone</h3>
+                <p>Each project runs in its <strong>own isolated environment</strong>, walled off from every
+                other member's. Your code, data, and secrets stay private to your project.</p>
             </div>
             <div class="card">
                 <span class="ic">🔒</span>
-                <h3>Encrypted in transit</h3>
-                <p>All traffic to and from Tiknix uses <strong>HTTPS</strong>. Session cookies are marked Secure
-                and HttpOnly, so they never travel in the clear and can't be read by page scripts.</p>
+                <h3>Encrypted connections</h3>
+                <p>Traffic to and from Tiknix is protected with <strong>industry-standard encryption</strong>,
+                so your data is safe in transit.</p>
             </div>
             <div class="card">
                 <span class="ic">🔑</span>
-                <h3>Credentials &amp; secrets</h3>
-                <p>Passwords are stored only as <strong>salted hashes</strong> — never in plain text. Integration
-                keys you connect (APIs, providers) are <strong>encrypted at rest</strong> and scoped to your
-                project.</p>
+                <h3>Protected credentials</h3>
+                <p>Passwords are <strong>never stored in readable form</strong>, and any keys you connect are
+                encrypted and kept private to your project.</p>
             </div>
             <div class="card">
                 <span class="ic">🤖</span>
-                <h3>Sandboxed build agents</h3>
-                <p>When an AI agent builds in your project, it runs inside a <strong>locked-down jail</strong> —
-                no access to the host, your home directory, or other projects, and its network egress is
-                firewalled. It can touch <em>your</em> project and nothing else.</p>
+                <h3>Contained AI agents</h3>
+                <p>When an AI agent works on your project, it's <strong>confined to that project alone</strong> —
+                it can't reach anyone else's.</p>
             </div>
             <div class="card">
                 <span class="ic">💳</span>
-                <h3>Payments handled by Stripe</h3>
-                <p>Billing runs through <strong>Stripe</strong>. Your full card number never touches — and is never
-                stored on — our servers; we keep only a billing reference and your plan status.</p>
+                <h3>Secure payments</h3>
+                <p>Payments are handled by <strong>Stripe</strong>. We never store your card details.</p>
             </div>
             <div class="card">
-                <span class="ic">🗑️</span>
-                <h3>Your data, your control</h3>
-                <p>You own your projects. Delete one and it's <strong>archived briefly for recovery, then
-                permanently removed</strong>. Admin accounts can require <strong>two-factor authentication</strong>.</p>
+                <span class="ic">✅</span>
+                <h3>You stay in control</h3>
+                <p>You own your projects and can delete them at any time, and
+                <strong>two-factor authentication</strong> is available for extra protection.</p>
             </div>
         </div>
 
         <div class="honest">
-            <h2>Honest about the limits</h2>
-            <p>No platform is perfectly secure, and we won't pretend otherwise. Isolation and least-privilege
-            access are built into how Tiknix works, but you should still keep your own backups of anything
-            important and use a strong, unique password.</p>
-            <p>For the strongest separation, published/production projects can run in their own dedicated
-            container. Found something that looks wrong? Tell us at
-            <a href="mailto:security@clicksimple.com">security@clicksimple.com</a> — we take it seriously.</p>
+            <p>No system is ever perfectly secure, so we recommend keeping your own backups of anything important
+            and using a strong, unique password. If you ever spot something that doesn't look right, let us know
+            at <a href="mailto:security@clicksimple.com">security@clicksimple.com</a>.</p>
         </div>
 
         <div class="cta">

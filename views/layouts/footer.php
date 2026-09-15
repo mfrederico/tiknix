@@ -1,7 +1,23 @@
+      <?php
+        /* The legal/entity footer belongs to the CORE PLATFORM only — this same file also
+           renders on every tenant's own app, and stamping tiknix's Privacy/Terms/Security
+           links or ClickSimple's copyright onto a member's app would be wrong (they own it).
+           The core install dir is the bare app namespace ("tiknix", no dot); a tenant clone
+           is "<slug>.tiknix" (has a dot). So a dotless install root == core — namespace- and
+           domain-agnostic, and it makes this shared file self-scope in either context. */
+        $__isCore = strpos(basename(dirname(__DIR__, 2)), '.') === false;
+      ?>
       <!-- slim app footer (inside content column) -->
-      <footer class="d-flex justify-content-between flex-wrap gap-2 pt-4 mt-4 small text-secondary"
+      <footer class="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-4 mt-4 small text-secondary"
               style="border-top:1px solid var(--bs-border-color)">
-        <span>&copy; <?= date('Y') ?> <?= htmlspecialchars($site_name ?? 'Tiknix') ?></span>
+        <span>&copy; <?= date('Y') ?> <?= $__isCore ? 'ClickSimple LLC' : htmlspecialchars($site_name ?? 'Tiknix') ?></span>
+          <?php if ($__isCore): ?>
+          <span class="d-flex flex-wrap gap-3">
+            <a href="/privacy" class="link-secondary text-decoration-none">Privacy</a>
+            <a href="/terms" class="link-secondary text-decoration-none">Terms</a>
+            <a href="/index/security" class="link-secondary text-decoration-none">Security</a>
+          </span>
+          <?php endif; ?>
           <?php /* The credit every generated app carries. It named the frameworks underneath
                    rather than the thing the customer actually built with — and it is on every
                    page of every instance, so it is the platform's most-seen sentence. */ ?>

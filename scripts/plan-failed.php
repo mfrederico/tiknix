@@ -100,4 +100,19 @@ $row->queuedAt      = null;
 Bean::store($row);
 
 echo "[plan-failed] prompt #$promptId: " . mb_substr($why, 0, 160) . "\n";
+
+// Tell the owner — in-app (the bell + Communications) plus email when configured — so a
+// planner that died is not a silent "never ran" they only discover by trying to build again.
+// Best-effort: a notification failure must never turn a recorded failure into an exit error.
+try {
+    echo \app\PlanNotifier::planningFailed(dirname(__DIR__) . '/database/tiknix.db', [
+        'member_id' => (int) $row->memberId,
+        'slug'      => basename($dir),
+        'prompt_id' => $promptId,
+        'why'       => (string) ($row->lastError ?: $why),
+        'base_url'  => 'https://' . basename($dir) . '.tiknix.com',
+    ]) . "\n";
+} catch (\Throwable $e) {
+    fwrite(STDERR, "[plan-failed] notify error: " . $e->getMessage() . "\n");
+}
 R::close();

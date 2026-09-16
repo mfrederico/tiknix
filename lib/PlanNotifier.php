@@ -205,4 +205,118 @@ class PlanNotifier {
             if ($restore) Bean::selectDatabase($restore);
         }
     }
+
+    /**
+     * Announce that the PLANNER failed before any plan existed.
+     *
+     * planFinished() is for a plan that RAN; this is the earlier, quieter failure — the
+     * decompose itself died (a session limit, a bad credential, an engine that would not
+     * start), so there is no plan to review and the prompt sits at "never ran" with nothing
+     * telling the owner why. Same delivery as planFinished — in-app first (the bell +
+     * Communications, no mail config needed), email as an extra — keyed on the prompt so a
+     * retry of the same request continues one thread.
+     *
+     * @param string $coreDb path to core's sqlite db (members + threads live there)
+     * @param array  $p      [member_id, slug, prompt_id, why, base_url]
+     */
+    public static function planningFailed(string $coreDb, array $p): string {
+        $memberId = (int) ($p['member_id'] ?? 0);
+        $promptId = (int) ($p['prompt_id'] ?? 0);
+        $slug     = (string) ($p['slug'] ?? '');
+        $why      = trim((string) ($p['why'] ?? ''));
+        $baseUrl  = rtrim((string) ($p['base_url'] ?? ''), '/');
+
+        if ($memberId <= 0) return 'notify: skipped (no member)';
+        if (!is_file($coreDb)) return 'notify: skipped (no core db at ' . $coreDb . ')';
+
+        $subject = 'Build plan failed' . ($slug !== '' ? ' on ' . $slug : '');
+        $lines = ['<p>The planner for <code>' . htmlspecialchars($slug, ENT_QUOTES)
+            . '</code> could not produce a plan, so nothing was built.</p>'];
+        if ($why !== '') {
+            $lines[] = '<p><strong>Why:</strong><br><code>'
+                . htmlspecialchars(mb_substr($why, 0, 400), ENT_QUOTES) . '</code></p>';
+        }
+        $lines[] = '<p><strong>What you can do:</strong> open Create Task and run the same request '
+            . 'again — a transient failure (a session limit, a hiccup) usually clears on a retry. '
+            . 'If it keeps failing, the reason above says what to fix.</p>';
+        if ($baseUrl !== '') $lines[] = '<p><a href="' . htmlspecialchars($baseUrl, ENT_QUOTES) . '">Open the app</a></p>';
+        $content = implode("\n", $lines);
+        $preview = $subject . ($why !== '' ? ' — ' . mb_substr($why, 0, 120) : '');
+
+        $restore = Bean::hasDatabase('default') ? 'default' : null;
+        if (!Bean::hasDatabase('plannotify')) Bean::addDatabase('plannotify', 'sqlite:' . $coreDb);
+        Bean::selectDatabase('plannotify');
+
+        try {
+            $now = date('Y-m-d H:i:s');
+
+            // One thread per prompt: a retry of the same request continues it rather than
+            // stacking a new failure notice beside the last.
+            $thread = $promptId > 0
+                ? Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['promptfail', $promptId])
+                : null;
+            if (!$thread || !$thread->id) {
+                $thread = Bean::dispense('thread');
+                $thread->subject       = $subject;
+                $thread->relatedType   = 'promptfail';
+                $thread->relatedId     = $promptId;
+                $thread->ownerMemberId = $memberId;
+                $thread->messageCount  = 0;
+                $thread->status        = 'open';
+                $thread->createdAt     = $now;
+            }
+            $thread->lastDirection = 'in';
+            $thread->lastPreview   = mb_substr($preview, 0, 200);
+            $thread->lastMessageAt = $now;
+            $thread->messageCount  = (int) $thread->messageCount + 1;
+            $thread->updatedAt     = $now;
+            Bean::store($thread);
+
+            $msg = Bean::dispense('message');
+            $msg->threadId   = (int) $thread->id;
+            $msg->direction  = 'in';
+            $msg->notifyType = 'system';
+            $msg->fromName   = 'AI Builder';
+            $msg->subject    = $subject;
+            $msg->content    = $content;
+            $msg->bodyPlain  = trim(html_entity_decode(strip_tags(
+                str_replace(['</p>', '</li>', '<br>'], "\n", $content)
+            ), ENT_QUOTES));
+            $msg->status     = 'received';
+            $msg->createdAt  = $now;
+            $msg->sentAt     = $now;
+            Bean::store($msg);
+
+            // Live-push is best effort; the bell is DERIVED from read marks, so the notice
+            // still appears on the next poll even if this throws (MQTT down, no participants).
+            try { $thread->wakeParticipants((int) $msg->id); } catch (\Throwable $e) { /* non-fatal */ }
+
+            $sent = 'notify: fail-thread #' . (int) $thread->id . ' for member ' . $memberId;
+
+            self::ensureLogger();
+            if (class_exists('\\app\\Mailer') && Mailer::isConfigured()) {
+                $member = Bean::load('member', $memberId);
+                $email  = (string) ($member->email ?? '');
+                if ($email !== '') {
+                    try {
+                        $okMail = Mailer::create()
+                            ->to($email, (string) ($member->username ?? ''))
+                            ->subject($subject)
+                            ->send($content, $msg->bodyPlain);
+                        $sent .= $okMail ? ', emailed ' . $email : ', email FAILED';
+                    } catch (\Throwable $e) {
+                        $sent .= ', email error: ' . $e->getMessage();
+                    }
+                }
+            } else {
+                $sent .= ', no email (conf/mailgun.ini not configured)';
+            }
+
+            return $sent;
+        } catch (\Throwable $e) {
+            return 'notify: FAILED — ' . $e->getMessage();
+        } finally {
+            if ($restore) Bean::selectDatabase($restore);
+        }
+    }
 }

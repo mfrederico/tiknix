@@ -1127,6 +1127,19 @@ class Mcp extends BaseControls\Control {
 
             // Route to built-in Tiknix tools or proxy to backend
             if ($serverSlug === 'tiknix') {
+                // The planner's shell env does not reach THIS php-fpm handler, so a tool that
+                // keys off TIKNIX_WORKSPACE / TIKNIX_MEMBER_ID (submit_plan) cannot otherwise
+                // tell which project it is for over HTTP — it refuses, and the build stalls
+                // with a plan that was written but never handed in. This request arrived on
+                // this install's own host, so this install IS the workspace: pass it (and the
+                // authenticated member) along, the HTTP equivalent of the env a stdio server
+                // inherits. This handler is the HTTP transport only, so it never shadows the
+                // value a stdio planner exported.
+                putenv('TIKNIX_WORKSPACE=' . dirname(__DIR__));
+                if (($this->authMember->id ?? 0)) {
+                    putenv('TIKNIX_MEMBER_ID=' . (int) $this->authMember->id);
+                }
+
                 // Local tiknix tools via the shared fastmcphp server. Auth is set
                 // on the shared ToolLoader the adapters delegate to.
                 $this->toolLoader->setAuth($this->authMember, $this->authApiKey);

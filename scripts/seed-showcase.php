@@ -38,6 +38,13 @@ $entries = [
         'blurb' => 'A fly-fishing brand site with lead capture.',
         'sortOrder' => 30,
     ],
+    [
+        'slug'  => 'partsdna-74a225',
+        'url'   => 'https://partsdna-74a225.tiknix.com/parts/find',
+        'title' => 'PartsDNA',
+        'blurb' => 'A Shopify parts app — find the right part by vehicle fitment.',
+        'sortOrder' => 50,
+    ],
 ];
 
 $now = date('Y-m-d H:i:s');

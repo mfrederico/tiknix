@@ -151,6 +151,22 @@ $hasShowcase = !empty($showcase);
         .foot-links{ display:flex; flex-wrap:wrap; gap:24px; font-size:14px; }
         .foot-links a{ color:var(--soft); } .foot-links a:hover{ color:var(--text); }
 
+        /* AI dev-team task snapshot */
+        .roles-row{ display:flex; flex-wrap:wrap; gap:8px; }
+        .role-chip{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--soft);
+                    border:1px solid var(--line2); border-radius:999px; padding:5px 12px; }
+        .tasklist{ margin-top:16px; }
+        .task{ display:flex; align-items:center; gap:13px; padding:12px 0; border-top:1px solid var(--line); font-size:14.5px; }
+        .task:first-child{ border-top:none; }
+        .task.q{ color:var(--dim); }
+        .task .st{ width:18px; height:18px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; }
+        .task .role{ margin-left:auto; font-family:var(--mono); font-size:11.5px; color:var(--dim);
+                     border:1px solid var(--line); border-radius:6px; padding:3px 8px; white-space:nowrap; }
+        .dot-b{ width:11px; height:11px; border-radius:999px; background:var(--accent);
+                animation:pulseb 1.6s ease-out infinite; }
+        @keyframes pulseb{ 0%{ box-shadow:0 0 0 0 rgba(59,118,240,0.55); } 70%{ box-shadow:0 0 0 7px rgba(59,118,240,0); } 100%{ box-shadow:0 0 0 0 rgba(59,118,240,0); } }
+        .ring{ width:15px; height:15px; border-radius:999px; border:2px solid var(--dim); box-sizing:border-box; }
+
         @media (max-width: 900px){
             .hero{ grid-template-columns:1fr; gap:2.5rem; padding:36px 0 64px; }
             .hero-visual{ order:2; }
@@ -244,8 +260,8 @@ $hasShowcase = !empty($showcase);
       </div>
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7"/><path d="M18 10.5c0 4-6 2-6 5.5"/></svg></div>
-        <h3>Own the code, hand it off</h3>
-        <p>Publish straight to your client's GitHub as a branch and pull request, or their own domain. No lock-in, no export tax — a normal app they can host themselves.</p>
+        <h3>Own every line — no lock-in</h3>
+        <p>The code the AI writes is yours. Publish it to your (or your client's) GitHub, host it anywhere, walk away anytime. Software sovereignty — not another subscription you rent and never control.</p>
       </div>
     </div>
   </section>
@@ -276,6 +292,64 @@ $hasShowcase = !empty($showcase);
           <div><span class="ck">✓</span> Move a project forward without waiting in the engineering queue</div>
           <div><span class="ck">✓</span> Hand the client a real, isolated app with their name on it</div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AI DEV TEAM -->
+  <section class="band">
+    <div class="band-head">
+      <div class="eyebrow">Your AI dev team</div>
+      <h2>A whole dev team, on tap</h2>
+      <p>No contractors to chase, no ticket backlog to groom. Brief the goal and tiknix's agents plan it, build it in parallel, and review each other's work — a planner, builders, and a reviewer you never had to hire. You watch it happen and steer.</p>
+    </div>
+
+    <div class="frame" style="max-width:820px; margin:0 auto;">
+      <div class="frame-bar">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="tl" style="background:#f0655b;"></span>
+          <span class="tl" style="background:#f2bd4a;"></span>
+          <span class="tl" style="background:#43c86a;"></span>
+          <span class="url" style="margin-left:12px;">Builder · Acme Co — Booking Portal</span>
+        </div>
+        <span class="badge-iso" style="color:var(--accent2); border-color:rgba(59,118,240,0.4);"><span class="dot-b" style="width:9px; height:9px;"></span> Building</span>
+      </div>
+      <div style="padding:20px 22px;">
+        <div style="font-size:13px; color:var(--dim);">Goal</div>
+        <div style="font-size:16px; font-weight:600; margin-top:3px;">"Add online booking with Stripe deposits and an admin schedule."</div>
+
+        <div class="roles-row" style="margin-top:16px;">
+          <span class="role-chip"><span class="dot" style="background:var(--accent2); box-shadow:none;"></span>Planner</span>
+          <span class="role-chip"><span class="dot-b" style="width:8px; height:8px;"></span>Builder</span>
+          <span class="role-chip"><span class="dot-b" style="width:8px; height:8px;"></span>Builder</span>
+          <span class="role-chip"><span class="ring" style="width:10px; height:10px;"></span>Reviewer</span>
+        </div>
+
+        <div class="tasklist">
+          <div class="task">
+            <span class="st"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--good)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.3 12 2.5 2.6 4.9-5.4"/></svg></span>
+            Plan the data model &amp; routes<span class="role">Planner</span>
+          </div>
+          <div class="task">
+            <span class="st"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--good)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.3 12 2.5 2.6 4.9-5.4"/></svg></span>
+            Build the booking form &amp; calendar<span class="role">Builder</span>
+          </div>
+          <div class="task">
+            <span class="st"><span class="dot-b"></span></span>
+            Wire Stripe deposit checkout<span class="role">Builder · 62%</span>
+          </div>
+          <div class="task q">
+            <span class="st"><span class="ring"></span></span>
+            Add the admin schedule view<span class="role">Queued</span>
+          </div>
+          <div class="task q">
+            <span class="st"><span class="ring"></span></span>
+            Review &amp; test the full flow<span class="role">Reviewer</span>
+          </div>
+        </div>
+      </div>
+      <div class="frame-foot" style="color:var(--soft); background:rgba(255,255,255,0.02);">
+        <span style="color:var(--good);">✓ 2 done</span> · <span style="color:var(--accent2);">1 building</span> · 2 queued — you steer, they ship
       </div>
     </div>
   </section>
@@ -315,6 +389,32 @@ $hasShowcase = !empty($showcase);
       <span class="int"><span class="d" style="background:#eaedf5;"></span>GitHub</span>
       <span class="int"><span class="d" style="background:#29a9eb;"></span>Telegram</span>
       <span class="int"><span class="d" style="background:#ff3d57;"></span>Monday</span>
+    </div>
+  </section>
+
+  <!-- WHAT YOU BUILD (use cases + sovereignty) -->
+  <section class="band">
+    <div class="band-head">
+      <div class="eyebrow">What you build — and own</div>
+      <h2>From Shopify apps to the SaaS you'd rather own</h2>
+      <p>Whatever you ship, it's yours — every line, no lock-in. Build the thing your client keeps renting and hand them software they actually control.</p>
+    </div>
+    <div class="grid-3">
+      <div class="card pcard">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
+        <h3 style="font-size:20px;">Shopify apps &amp; storefronts</h3>
+        <p>Build the embedded app or store tool you need — orders, inventory, custom checkout — instead of renting one that half-fits. The store's keys stay scoped to that one project.</p>
+      </div>
+      <div class="card pcard">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0"/></svg></div>
+        <h3 style="font-size:20px;">The SaaS you'd rather own</h3>
+        <p>Replace the monthly subscription your client keeps paying — CRM, scheduling, dashboards — built once and owned outright. No per-seat fees, no vendor setting the roadmap.</p>
+      </div>
+      <div class="card pcard">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></div>
+        <h3 style="font-size:20px;">Client portals &amp; internal tools</h3>
+        <p>Member logins, back-office dashboards and admin — each isolated per client and handed off to their own repo. Real software with their name on it, not a locked SaaS seat.</p>
+      </div>
     </div>
   </section>
 
@@ -406,7 +506,9 @@ $hasShowcase = !empty($showcase);
     <div class="faq-grid">
       <div class="card qa"><h3>Do I need to write code?</h3><p>No. Start by describing what you want in plain language and refine from there. Developers can drop into the code anytime — project leads never have to.</p></div>
       <div class="card qa"><h3>Can my team work on a project together?</h3><p>Yes — invite teammates into a project and share a live preview link with the client, so review and sign-off happen in the same place you build.</p></div>
-      <div class="card qa"><h3>Is the code mine?</h3><p>Yes. Publish it to your own (or your client's) GitHub and host it anywhere. It's a normal app, not a locked export.</p></div>
+      <div class="card qa"><h3>Is the code mine?</h3><p>Completely — every line the AI generates is yours. Publish it to your own GitHub, host it anywhere, and keep it if you ever leave. No lock-in, no proprietary runtime holding it hostage.</p></div>
+      <div class="card qa"><h3>Why build it instead of buying SaaS?</h3><p>Because you stop renting. A tool you build here is a one-time asset you own and change on your terms — no per-seat fees, no vendor setting your roadmap or raising the price.</p></div>
+      <div class="card qa"><h3>Can I build a Shopify app?</h3><p>Yes — connect a store and build the embedded app, storefront tool or ops dashboard you need. The store's keys stay encrypted and scoped to that one project.</p></div>
       <div class="card qa"><h3>How isolated are projects?</h3><p>Each runs under its own OS user and process with its own data — and can get a dedicated container. No project can read another's.</p></div>
       <div class="card qa"><h3>What's the stack?</h3><p><span class="code">PHP (FlightPHP)</span> + <span class="code">SQLite</span> — conventional and readable, so it stays maintainable long after handoff.</p></div>
       <div class="card qa"><h3>Can my client run it without tiknix?</h3><p>Yes — eject to their repo and host it themselves. tiknix is where you build it, not a place it's trapped.</p></div>
@@ -416,7 +518,7 @@ $hasShowcase = !empty($showcase);
   <!-- FINAL CTA -->
   <section class="final">
     <h2>Ship your next client app on tiknix.</h2>
-    <p>Isolated, integrated, and theirs to keep. Your first project is free.</p>
+    <p>Isolated, integrated, and yours to own — every line. Your first project is free.</p>
     <a class="btn btn-primary" style="margin-top:32px;" href="/auth/register">Start your first project — free</a>
   </section>
 

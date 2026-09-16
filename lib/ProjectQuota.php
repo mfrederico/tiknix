@@ -135,6 +135,20 @@ class ProjectQuota {
     }
 
     /**
+     * May this account use team collaboration?
+     *
+     * Collaboration is a PAID-PROJECT perk: the free tier builds solo. The team's owner is
+     * the billing principal (shared projects count against them), so it is their tier that
+     * decides. When enforcement is off, everyone may — an install without billing behaves as
+     * it did before. One predicate so the rule lives in exactly one place; the invite gate in
+     * controls/Teams.php and its test both call this rather than re-spelling the condition.
+     */
+    public static function canUseTeams(int $ownerId): bool {
+        if (!self::enforcementEnabled()) return true;
+        return self::tierOf($ownerId) !== 'free';
+    }
+
+    /**
      * Is cap enforcement switched on? Default OFF, so an install that says nothing keeps
      * behaving exactly as it did before phase 4.
      */

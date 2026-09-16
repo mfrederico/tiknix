@@ -244,6 +244,77 @@ class Member extends Control {
     }
 
     /**
+     * Danger zone — permanently close this account.
+     *
+     * Deprovisions every project the member owns, disbands the teams they own, then voids
+     * their credentials and scrubs their PII so the login no longer works. The member ROW is
+     * KEPT (soft-closed, id preserved) so billing history stays intact and referential —
+     * "delete my account, but billing records stay". Irreversible from the member's side.
+     */
+    public function closeaccount($params = []) {
+        $request = Flight::request();
+        if ($request->method !== 'POST') { Flight::redirect('/member/settings'); return; }
+        if (!Flight::csrf()->validateRequest()) { $this->jsonError('Invalid CSRF token', 400); return; }
+
+        $member = Bean::load('member', (int) $this->member->id);
+        if (!$member->id) { $this->jsonError('Account not found', 404); return; }
+        // The platform owner cannot self-destruct the control plane by accident.
+        if ((int) $member->level === LEVELS['ROOT']) {
+            $this->jsonError('The owner account cannot be closed from here.', 403); return;
+        }
+
+        // Two proofs for an irreversible action: the exact account email, and the password.
+        $typed = trim((string) ($request->data->confirm_email ?? ''));
+        $pass  = (string) ($request->data->password ?? '');
+        if (strcasecmp($typed, (string) $member->email) !== 0) {
+            $this->jsonError('Type your account email exactly to confirm.', 400); return;
+        }
+        if ((string) $member->password === '' || !password_verify($pass, (string) $member->password)) {
+            $this->jsonError('That password is not correct.', 403); return;
+        }
+
+        // 1) Deprovision every project they own (reports, never aborts on a single failure).
+        $del = (new ProvisionService())->deleteAllForMember((int) $member->id);
+
+        // 2) Disband teams they own; drop their memberships in others' teams.
+        foreach (Bean::find('team', 'owner_id = ?', [(int) $member->id]) as $t) {
+            foreach (Bean::find('teammember', 'team_id = ?', [(int) $t->id]) as $tm) Bean::trash($tm);
+            Bean::trash($t);
+        }
+        foreach (Bean::find('teammember', 'member_id = ?', [(int) $member->id]) as $tm) Bean::trash($tm);
+
+        // 3) Void credentials + scrub PII. The row stays so billing keeps its foreign key.
+        $member->status        = 'closed';
+        $member->password      = '';                 // no login is possible against ''
+        $member->emailVerified = 0;
+        $member->totpSecret    = '';
+        $member->totpEnabled   = 0;
+        $member->recoveryCodes = '';
+        $member->email         = 'closed-' . $member->id . '@deleted.invalid';
+        $member->username      = 'closed-' . $member->id;
+        $member->firstName     = '';
+        $member->lastName      = '';
+        $member->displayName   = 'Closed account';
+        $member->closedAt      = date('Y-m-d H:i:s');
+        Bean::store($member);
+
+        $this->logger->info('account closed', [
+            'member'           => (int) $member->id,
+            'projects_deleted' => count($del['deleted'] ?? []),
+            'projects_failed'  => count($del['failed'] ?? []),
+        ]);
+
+        // 4) End the session — they are no longer anyone.
+        session_destroy();
+
+        $this->jsonSuccess([
+            'projects_deleted' => $del['deleted'] ?? [],
+            'projects_failed'  => $del['failed'] ?? [],
+            'redirect'         => '/',
+        ], 'Your account has been closed.');
+    }
+
+    /**
      * Start 2FA setup - generate secret and show QR code
      */
     public function setup2fa($params = []) {

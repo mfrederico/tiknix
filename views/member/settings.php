@@ -284,7 +284,78 @@
             <?php endif; ?>
         </div>
     </div>
+
+    <!-- Danger zone -->
+    <div class="row mt-4">
+      <div class="col-12">
+        <div class="card border-danger">
+          <div class="card-body">
+            <h5 class="card-title text-danger"><i class="bi bi-exclamation-octagon"></i> Danger zone</h5>
+            <p class="text-muted mb-3">Permanently close your account. This deletes every project you own and cannot be undone. Your billing records are retained.</p>
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#closeAccountModal">
+              <i class="bi bi-trash"></i> Close my account&hellip;
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 </div>
+
+<!-- Close account modal -->
+<div class="modal fade" id="closeAccountModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title text-danger">Close your account</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger">
+          <strong>This cannot be undone.</strong> Every project you own will be deleted. Billing history is kept.
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Type your account email to confirm</label>
+          <input type="email" class="form-control" id="ca_email" autocomplete="off" placeholder="your account email">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Your password</label>
+          <input type="password" class="form-control" id="ca_password" autocomplete="off">
+        </div>
+        <div id="ca_msg" class="small text-danger"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="ca_submit"><i class="bi bi-trash"></i> Permanently close account</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var btn = document.getElementById('ca_submit');
+  if (!btn) return;
+  var csrf = <?= json_encode(function_exists('csrf_token') ? csrf_token() : '') ?>;
+  var busy = '<i class="bi bi-trash"></i> Permanently close account';
+  btn.addEventListener('click', function(){
+    var email = (document.getElementById('ca_email').value || '').trim();
+    var pass = document.getElementById('ca_password').value || '';
+    var msg = document.getElementById('ca_msg');
+    msg.textContent = '';
+    if (!email || !pass) { msg.textContent = 'Enter your email and password.'; return; }
+    if (!confirm('This permanently deletes your account and all your projects. Continue?')) return;
+    btn.disabled = true; btn.textContent = 'Closing…';
+    fetch('/member/closeaccount', {
+      method: 'POST',
+      headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
+      body: new URLSearchParams({_csrf_token: csrf, confirm_email: email, password: pass}).toString()
+    }).then(function(r){ return r.json(); }).then(function(j){
+      if (j && j.success) { window.location = (j.data && j.data.redirect) || '/'; }
+      else { msg.textContent = (j && j.message) || 'Could not close the account.'; btn.disabled = false; btn.innerHTML = busy; }
+    }).catch(function(){ msg.textContent = 'Could not close the account.'; btn.disabled = false; btn.innerHTML = busy; });
+  });
+})();
+</script>
 
 <!-- Disable 2FA Modal -->
 <div class="modal fade" id="disable2faModal" tabindex="-1">

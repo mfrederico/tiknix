@@ -65,6 +65,7 @@ $defaults = [
 
     // Member (100)
     ['auth', 'logout', 100, 'Logout'],
+    ['member', 'closeaccount', 100, 'Danger zone: permanently close your own account'],
     ['member', '*', 100, 'All member methods'],
     ['dashboard', '*', 100, 'Dashboard access'],
     ['apikeys', '*', 100, 'API key management'],

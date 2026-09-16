@@ -461,6 +461,32 @@ class ProvisionService {
         return ['ok' => true, 'slug' => $slug, 'domain' => $domain, 'steps' => $steps];
     }
 
+    /**
+     * Delete EVERY project a member owns — for account closure.
+     *
+     * The per-instance typed confirmation delete() demands is for a person deleting one
+     * project on purpose; account closure has already made the member type their whole
+     * account's confirmation once, so the phrase is supplied here per instance rather than
+     * asked for again. Default/core instances are skipped by delete()'s own guard. Returns
+     * a summary; a single instance failing does NOT abort the rest (a half-closed account
+     * with one orphaned project is worse than reporting which ones did not go).
+     */
+    public function deleteAllForMember(int $memberId): array {
+        $deleted = []; $failed = [];
+        $rows = Bean::find('instance',
+            "member_id = ? AND (status IS NULL OR status != 'deleted')", [$memberId]);
+        foreach ($rows as $inst) {
+            if (!$inst->id || !empty($inst->isDefault)) continue;
+            $res = $this->delete($memberId, [
+                'id'      => (int) $inst->id,
+                'confirm' => $this->confirmPhrase((string) $inst->slug),
+            ]);
+            if (!empty($res['ok'])) $deleted[] = (string) $inst->slug;
+            else $failed[] = ['slug' => (string) $inst->slug, 'error' => (string) ($res['error'] ?? 'unknown')];
+        }
+        return ['ok' => empty($failed), 'deleted' => $deleted, 'failed' => $failed];
+    }
+
     /** Archive an instance folder to core secure/archives (not web-served), then wipe. */
     private function archiveInstance(string $dir, string $slug): array {
         foreach (glob($dir . '/conf/*.ini') ?: [] as $ini) {

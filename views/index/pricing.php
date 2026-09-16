@@ -87,14 +87,16 @@
         <div class="badge">Pricing</div>
         <h1>Your first project is free.</h1>
         <p class="lede">Build something real before you pay anything. After that it&rsquo;s $49 a
-           month per project &mdash; no tiers to compare, no ceiling, and nothing to cancel if
-           you only ever want the one.</p>
+           month per project &mdash; no tiers, no ceiling, and <strong>no lock-in</strong>. The code the
+           AI writes is yours: publish it to your GitHub, host it anywhere, and keep it if you
+           ever leave.</p>
 
         <div class="price-card highlight">
             <div class="plan-name">Per project</div>
             <div class="price"><span class="amount">$49</span><span class="period"> / month</span></div>
             <div class="price-sub">your first project is free &mdash; forever, not a trial</div>
             <ul class="features">
+                <li><strong>You own every line</strong> &mdash; publish to your GitHub, self-host anytime, no lock-in</li>
                 <li>Its own isolated instance &mdash; app, database &amp; web server</li>
                 <li>AI agent harness with built-in primitives</li>
                 <li>Sandboxed execution, safe to tinker</li>
@@ -116,7 +118,7 @@
         <div class="form-card">
             <h2>Ready when you are</h2>
             <a href="/auth/register" style="display:inline-block;margin-top:0.5rem;padding:0.95rem 1.7rem;border-radius:11px;background:#3b76f0;color:#fff;font-weight:700;text-decoration:none;box-shadow:0 8px 26px rgba(59,118,240,0.4);">Start your first project &mdash; free</a>
-            <p class="note">Your first builder instance is free &mdash; no card to start.</p>
+            <p class="note">Your first builder instance is free &mdash; no card to start, and the code you build is yours to keep.</p>
         </div>
 
         <div class="mini-links"><a href="/">&larr; Back to home</a> <a href="/index/security" style="margin-left:1.25rem">How we protect your projects</a></div>

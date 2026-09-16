@@ -269,9 +269,9 @@ $hasShowcase = !empty($showcase);
   <!-- WHO IT'S FOR -->
   <section class="band">
     <div class="band-head">
-      <div class="eyebrow">Built for the whole studio</div>
-      <h2>However your projects get shipped</h2>
-      <p>The AI does the building. Direct it in plain language, or drop into the code to refine it — same project, same place, no handoffs lost in translation.</p>
+      <div class="eyebrow">Collaboration by design</div>
+      <h2>Your whole team, in one project</h2>
+      <p>Developers, PMs and clients work in the same project — direct the build in plain language or drop into the code, review a live preview together, and ship as one. Every paid project includes your whole team, with <strong>no per-seat fees</strong>.</p>
     </div>
     <div class="grid-2">
       <div class="card pcard">
@@ -505,7 +505,7 @@ $hasShowcase = !empty($showcase);
     <h2 style="font-size:clamp(26px,3vw,34px); text-align:center; margin-bottom:44px;">The questions everyone asks first</h2>
     <div class="faq-grid">
       <div class="card qa"><h3>Do I need to write code?</h3><p>No. Start by describing what you want in plain language and refine from there. Developers can drop into the code anytime — project leads never have to.</p></div>
-      <div class="card qa"><h3>Can my team work on a project together?</h3><p>Yes — invite teammates into a project and share a live preview link with the client, so review and sign-off happen in the same place you build.</p></div>
+      <div class="card qa"><h3>Can my team work on a project together?</h3><p>Yes — every paid project includes your whole team at <strong>no per-seat cost</strong>. Invite teammates, share a live preview with the client, and review in the same place you build. (The free project is a solo workspace.)</p></div>
       <div class="card qa"><h3>Is the code mine?</h3><p>Completely — every line the AI generates is yours. Publish it to your own GitHub, host it anywhere, and keep it if you ever leave. No lock-in, no proprietary runtime holding it hostage.</p></div>
       <div class="card qa"><h3>Why build it instead of buying SaaS?</h3><p>Because you stop renting. A tool you build here is a one-time asset you own and change on your terms — no per-seat fees, no vendor setting your roadmap or raising the price.</p></div>
       <div class="card qa"><h3>Can I build a Shopify app?</h3><p>Yes — connect a store and build the embedded app, storefront tool or ops dashboard you need. The store's keys stay encrypted and scoped to that one project.</p></div>

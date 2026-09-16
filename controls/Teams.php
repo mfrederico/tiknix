@@ -382,6 +382,20 @@ class Teams extends Control {
             return;
         }
 
+        // Collaboration is a PAID-PROJECT perk: the free tier builds solo. The team's owner
+        // is the billing principal (ProjectQuota counts shared projects against them), so it
+        // is their tier that decides. Gated behind the same billing-enforcement flag as every
+        // other quota gate — an install with billing off keeps working exactly as before.
+        if (\app\ProjectQuota::enforcementEnabled()
+            && \app\ProjectQuota::tierOf((int) $team->ownerId) === 'free') {
+            Flight::jsonError(
+                'Team collaboration comes with any paid project. Add a project to your account '
+              . '(the first is free, then $49/mo each) and you can invite your whole team — '
+              . 'no per-seat fees.',
+                402);
+            return;
+        }
+
         $email = trim($this->getParam('email', ''));
         $role = $this->getParam('role', 'member');
 

@@ -104,6 +104,7 @@
                     <li><span>Its own isolated app, database &amp; web server</span></li>
                     <li><span><strong>You own every line</strong> &mdash; publish to your GitHub</span></li>
                     <li><span>Unlimited edits while you build</span></li>
+                    <li><span>Solo workspace &mdash; add a project to invite your team</span></li>
                 </ul>
             </div>
             <div class="price-card highlight">
@@ -113,6 +114,7 @@
                 <ul class="features">
                     <li><span>Everything in the free instance</span></li>
                     <li><span>Add a project per client &mdash; no ceiling</span></li>
+                    <li><span><strong>Your whole team included</strong> &mdash; no per-seat fees</span></li>
                     <li><span>Own every line &mdash; no lock-in, option to self-host</span></li>
                     <li><span>Pay only for the projects you keep</span></li>
                 </ul>
@@ -124,8 +126,9 @@
                  against whoever owns the team — collaborators are not charged for being
                  invited. See ProjectQuota. */ ?>
         <p class="lede" style="margin-top:1.5rem;font-size:0.95rem;">
-            Working with other people? Share a project with your team and it still counts as
-            one &mdash; the people you invite don&rsquo;t pay for being there.
+            Working with a team? Every paid project includes your whole team &mdash; invite as many
+            people as you like, with <strong>no per-seat fees</strong>. The free project is your own solo
+            workspace.
         </p>
 
         <div class="form-card" style="text-align:center; max-width:460px; margin-left:auto; margin-right:auto;">

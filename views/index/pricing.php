@@ -98,7 +98,7 @@
                 <li>Its own isolated instance &mdash; app, database &amp; web server</li>
                 <li>AI agent harness with built-in primitives</li>
                 <li>Sandboxed execution, safe to tinker</li>
-                <li>Build on our servers, deploy to yours</li>
+                <li>Build on our servers, option to deploy to yours</li>
                 <li>Unlimited edits while you build</li>
                 <li>Add or remove projects whenever you like &mdash; you pay for what you keep</li>
             </ul>

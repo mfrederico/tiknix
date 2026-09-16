@@ -65,18 +65,12 @@
             "lib/functions.php"
         ]
     },
-    "autoload-dev": {
-        "psr-4": {
-            "Tests\\": "tests/"
-        }
-    },
     "scripts": {
         "post-create-project-cmd": [
             "@php -r \"copy('conf/config.example.ini', 'conf/config.ini');\"",
             "@php -r \"echo 'Please update conf/config.ini with your settings\\n';\"",
             "@php -r \"echo 'Run the database schema from sql/schema.sql\\n';\""
         ],
-        "test": "phpunit",
         "cs": "phpcs --standard=PSR12 controls/ models/",
         "cs-fix": "phpcbf --standard=PSR12 controls/ models/"
     },

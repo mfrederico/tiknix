@@ -182,9 +182,9 @@ $hasShowcase = !empty($showcase);
   <!-- HERO -->
   <section class="hero">
     <div>
-      <span class="pill"><span class="dot"></span> For studios, agencies &amp; freelance developers</span>
+      <span class="pill"><span class="dot"></span> For dev agencies, studios &amp; the product teams who run them</span>
       <h1 style="margin-top:26px;">Build a real app for every client —<br><span style="color:var(--accent2);">isolated, integrated, and theirs to keep.</span></h1>
-      <p class="sub">tiknix spins up a full-stack app per project with AI — its own database, auth, and hard walls between every client. Wire up their Stripe or Shopify, then publish to their GitHub or domain.</p>
+      <p class="sub">Describe what your client needs and tiknix builds the real thing — its own database, auth, and hard walls between every client. Connect their Stripe or Shopify and publish to their GitHub. Whoever <em>runs</em> the project can drive it forward; whoever <em>writes</em> the code owns the result.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
         <a class="btn btn-ghost" href="#how">See how it works
@@ -250,6 +250,36 @@ $hasShowcase = !empty($showcase);
     </div>
   </section>
 
+  <!-- WHO IT'S FOR -->
+  <section class="band">
+    <div class="band-head">
+      <div class="eyebrow">Built for the whole studio</div>
+      <h2>However your projects get shipped</h2>
+      <p>The person steering the project and the person writing the code work in the same place — no handoffs lost in translation.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card pcard">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13 5-2 14"/></svg></div>
+        <h3>For developers</h3>
+        <div class="feat" style="margin-top:14px;">
+          <div><span class="ck">✓</span> Skip the boilerplate — real, conventional PHP you can read and own</div>
+          <div><span class="ck">✓</span> Connect the client's real services, keys scoped per project</div>
+          <div><span class="ck">✓</span> Publish to your (or their) GitHub and self-host anytime</div>
+        </div>
+      </div>
+      <div class="card pcard">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h4"/><path d="M7 13h6"/><path d="m16 16 1.5 1.5L21 14"/></svg></div>
+        <h3>For product &amp; project managers</h3>
+        <div class="feat" style="margin-top:14px;">
+          <div><span class="ck">✓</span> Describe what the client needs in plain language — no code to start</div>
+          <div><span class="ck">✓</span> Watch it become a working app you can click, share and demo</div>
+          <div><span class="ck">✓</span> Move a project forward without waiting in the engineering queue</div>
+          <div><span class="ck">✓</span> Hand the client a real, isolated app with their name on it</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- HOW IT WORKS -->
   <section class="band" id="how">
     <div class="band-head">
@@ -260,7 +290,7 @@ $hasShowcase = !empty($showcase);
       <div class="card pcard">
         <div class="step-n">01</div>
         <h3 style="font-size:21px; margin-top:14px;">Describe the app</h3>
-        <p>Tell the builder what your client needs. It scaffolds a real full-stack app — routes, models, admin — on conventions it keeps consistent.</p>
+        <p>Say what your client needs in plain language — no code to start. tiknix scaffolds a real full-stack app: routes, models, admin, all on consistent conventions.</p>
       </div>
       <div class="card pcard">
         <div class="step-n">02</div>
@@ -372,8 +402,10 @@ $hasShowcase = !empty($showcase);
 
   <!-- FAQ -->
   <section class="band">
-    <h2 style="font-size:clamp(26px,3vw,34px); text-align:center; margin-bottom:44px;">The questions every dev asks first</h2>
+    <h2 style="font-size:clamp(26px,3vw,34px); text-align:center; margin-bottom:44px;">The questions everyone asks first</h2>
     <div class="faq-grid">
+      <div class="card qa"><h3>Do I need to write code?</h3><p>No. Start by describing what you want in plain language and refine from there. Developers can drop into the code anytime — project leads never have to.</p></div>
+      <div class="card qa"><h3>Can my team work on a project together?</h3><p>Yes — invite teammates into a project and share a live preview link with the client, so review and sign-off happen in the same place you build.</p></div>
       <div class="card qa"><h3>Is the code mine?</h3><p>Yes. Publish it to your own (or your client's) GitHub and host it anywhere. It's a normal app, not a locked export.</p></div>
       <div class="card qa"><h3>How isolated are projects?</h3><p>Each runs under its own OS user and process with its own data — and can get a dedicated container. No project can read another's.</p></div>
       <div class="card qa"><h3>What's the stack?</h3><p><span class="code">PHP (FlightPHP)</span> + <span class="code">SQLite</span> — conventional and readable, so it stays maintainable long after handoff.</p></div>

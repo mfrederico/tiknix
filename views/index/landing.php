@@ -184,7 +184,7 @@ $hasShowcase = !empty($showcase);
     <div>
       <span class="pill"><span class="dot"></span> For dev agencies, studios &amp; the product teams who run them</span>
       <h1 style="margin-top:26px;">Build a real app for every client —<br><span style="color:var(--accent2);">isolated, integrated, and theirs to keep.</span></h1>
-      <p class="sub">Describe what your client needs and tiknix builds the real thing — its own database, auth, and hard walls between every client. Connect their Stripe or Shopify and publish to their GitHub. Whoever <em>runs</em> the project can drive it forward; whoever <em>writes</em> the code owns the result.</p>
+      <p class="sub">Describe what your client needs and tiknix's AI builds the real thing — its own database, auth, and hard walls between every client. Connect their Stripe or Shopify and publish to their GitHub. <em>You</em> steer it and own the result — whether you review every line or never touch the code.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
         <a class="btn btn-ghost" href="#how">See how it works
@@ -255,7 +255,7 @@ $hasShowcase = !empty($showcase);
     <div class="band-head">
       <div class="eyebrow">Built for the whole studio</div>
       <h2>However your projects get shipped</h2>
-      <p>The person steering the project and the person writing the code work in the same place — no handoffs lost in translation.</p>
+      <p>The AI does the building. Direct it in plain language, or drop into the code to refine it — same project, same place, no handoffs lost in translation.</p>
     </div>
     <div class="grid-2">
       <div class="card pcard">

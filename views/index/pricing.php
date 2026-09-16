@@ -113,25 +113,11 @@
             one &mdash; the people you invite don&rsquo;t pay for being there.
         </p>
 
-        <?php if (!empty($subscribed)): ?>
-            <div class="thank-you">
-                🎉 You're on the list! We'll be in touch soon.
-            </div>
-        <?php else: ?>
-            <div class="form-card">
-                <h2>Join the waitlist</h2>
-                <form method="post" action="/index/dolead">
-                    <?= csrf_field() ?>
-                    <div class="field-row">
-                        <input type="text" name="first_name" placeholder="First name" required maxlength="100">
-                        <input type="text" name="last_name" placeholder="Last name" required maxlength="100">
-                    </div>
-                    <input type="email" name="email" placeholder="Email address" required maxlength="255">
-                    <button type="submit">Join the waitlist</button>
-                </form>
-                <p class="note">We're not open for sign-ups yet &mdash; join the list and we'll let you in.</p>
-            </div>
-        <?php endif; ?>
+        <div class="form-card">
+            <h2>Ready when you are</h2>
+            <a href="/auth/register" style="display:inline-block;margin-top:0.5rem;padding:0.95rem 1.7rem;border-radius:11px;background:#3b76f0;color:#fff;font-weight:700;text-decoration:none;box-shadow:0 8px 26px rgba(59,118,240,0.4);">Start your first project &mdash; free</a>
+            <p class="note">Your first builder instance is free &mdash; no card to start.</p>
+        </div>
 
         <div class="mini-links"><a href="/">&larr; Back to home</a> <a href="/index/security" style="margin-left:1.25rem">How we protect your projects</a></div>
     </div>

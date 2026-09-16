@@ -26,7 +26,11 @@
             color: var(--text); text-align: center;
             padding: clamp(2.5rem, 6vh, 4.5rem) 1.5rem;
         }
-        .wrap { max-width: 520px; width: 100%; }
+        .wrap { max-width: 880px; width: 100%; }
+        .plans { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; align-items: stretch; }
+        .price-card { display: flex; flex-direction: column; }
+        .price .amount.free { color: #3ddc97; }
+        @media (max-width: 680px) { .plans { grid-template-columns: 1fr; } }
         .logo { display: inline-flex; align-items: center; gap: 0.7rem; margin-bottom: 1.5rem; color: var(--text); text-decoration: none; }
         .logo-mark {
             width: 48px; height: 48px; flex: 0 0 auto; background: currentColor;
@@ -85,25 +89,34 @@
             <span class="logo-word">tiknix</span>
         </a>
         <div class="badge">Pricing</div>
-        <h1>Your first project is free.</h1>
-        <p class="lede">Build something real before you pay anything. After that it&rsquo;s $49 a
-           month per project &mdash; no tiers, no ceiling, and <strong>no lock-in</strong>. The code the
-           AI writes is yours: publish it to your GitHub, host it anywhere, and keep it if you
-           ever leave.</p>
+        <h1>Priced per project &mdash; and yours to keep.</h1>
+        <p class="lede">Your first project is free. After that it&rsquo;s $49 a month per project &mdash;
+           no tiers, no ceiling, <strong>no lock-in</strong>. The code the AI writes is yours to publish,
+           host anywhere, and keep if you ever leave.</p>
 
-        <div class="price-card highlight">
-            <div class="plan-name">Per project</div>
-            <div class="price"><span class="amount">$49</span><span class="period"> / month</span></div>
-            <div class="price-sub">your first project is free &mdash; forever, not a trial</div>
-            <ul class="features">
-                <li><strong>You own every line</strong> &mdash; publish to your GitHub, self-host anytime, no lock-in</li>
-                <li>Its own isolated instance &mdash; app, database &amp; web server</li>
-                <li>AI agent harness with built-in primitives</li>
-                <li>Sandboxed execution, safe to tinker</li>
-                <li>Build on our servers, option to deploy to yours</li>
-                <li>Unlimited edits while you build</li>
-                <li>Add or remove projects whenever you like &mdash; you pay for what you keep</li>
-            </ul>
+        <div class="plans">
+            <div class="price-card">
+                <div class="plan-name">First project</div>
+                <div class="price"><span class="amount free">Free</span></div>
+                <div class="price-sub">forever &mdash; not a trial</div>
+                <ul class="features">
+                    <li><span>One full-stack builder instance</span></li>
+                    <li><span>Its own isolated app, database &amp; web server</span></li>
+                    <li><span><strong>You own every line</strong> &mdash; publish to your GitHub</span></li>
+                    <li><span>Unlimited edits while you build</span></li>
+                </ul>
+            </div>
+            <div class="price-card highlight">
+                <div class="plan-name">Each additional project</div>
+                <div class="price"><span class="amount">$49</span><span class="period"> / month</span></div>
+                <div class="price-sub">cancel one, stop paying</div>
+                <ul class="features">
+                    <li><span>Everything in the free instance</span></li>
+                    <li><span>Add a project per client &mdash; no ceiling</span></li>
+                    <li><span>Own every line &mdash; no lock-in, option to self-host</span></li>
+                    <li><span>Pay only for the projects you keep</span></li>
+                </ul>
+            </div>
         </div>
 
         <?php /* Said plainly because it is the question people actually have, and because
@@ -115,7 +128,7 @@
             one &mdash; the people you invite don&rsquo;t pay for being there.
         </p>
 
-        <div class="form-card">
+        <div class="form-card" style="text-align:center; max-width:460px; margin-left:auto; margin-right:auto;">
             <h2>Ready when you are</h2>
             <a href="/auth/register" style="display:inline-block;margin-top:0.5rem;padding:0.95rem 1.7rem;border-radius:11px;background:#3b76f0;color:#fff;font-weight:700;text-decoration:none;box-shadow:0 8px 26px rgba(59,118,240,0.4);">Start your first project &mdash; free</a>
             <p class="note">Your first builder instance is free &mdash; no card to start, and the code you build is yours to keep.</p>

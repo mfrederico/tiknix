@@ -93,6 +93,18 @@ $when = function ($v, string $fmt = 'Y-m-d H:i') {
                             </div>
                         </div>
 
+                        <div class="row">
+                            <div class="col-sm-6 mb-3">
+                                <label for="free_projects" class="form-label">Free projects</label>
+                                <input type="number" class="form-control" id="free_projects" name="free_projects"
+                                       min="0" step="1" value="<?= (int)($editMember->freeProjects ?? 0) ?>">
+                                <small class="form-text text-muted">
+                                    Projects this member gets free. <strong>0 = the default (<?= (int)\app\ProjectQuota::FREE_CAP ?>)</strong>;
+                                    raise it to grant more — e.g. 99 for effectively unlimited. Anything past this is billed.
+                                </small>
+                            </div>
+                        </div>
+
                         <hr class="my-4">
                         <h5 class="mb-3">Profile</h5>
 

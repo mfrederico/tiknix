@@ -74,6 +74,22 @@ class ProjectQuota {
         }
     }
 
+    /**
+     * How many projects are FREE for this member.
+     *
+     * Default is the global FREE_CAP; an admin can raise it per member (member.free_projects)
+     * — e.g. the operator's own account set to 99 so it is effectively unlimited-free, bumped
+     * higher whenever they need more. 0/unset means "use the default". This is the number the
+     * billing math treats as free, so raising it grants free projects, it does not just lift a
+     * ceiling.
+     */
+    public static function freeCapFor(int $memberId): int {
+        $member = Bean::load('member', $memberId);
+        if (!$member->id) throw new \RuntimeException('ProjectQuota: no such member ' . $memberId);
+        $n = (int) ($member->freeProjects ?? 0);
+        return $n > 0 ? $n : self::FREE_CAP;
+    }
+
     /** How many projects this account may hold. */
     public static function capFor(int $memberId): int {
         $member = Bean::load('member', $memberId);
@@ -83,7 +99,9 @@ class ProjectQuota {
         $cap = (int) ($member->planProjectCap ?? 0);
         if ($cap > 0) return $cap;
 
-        return self::tierOf($memberId) === 'pro' ? self::PRO_CAP : self::FREE_CAP;
+        // Pro is uncapped (billed past the free allowance); a free account may hold up to its
+        // free allowance (the admin-editable per-member number, default 1).
+        return self::tierOf($memberId) === 'pro' ? self::PRO_CAP : self::freeCapFor($memberId);
     }
 
     /**
@@ -94,7 +112,7 @@ class ProjectQuota {
      */
     public static function billableProjects(int $memberId): int {
         if (self::tierOf($memberId) === 'legacy') return 0;
-        return max(0, self::countFor($memberId) - self::FREE_CAP);
+        return max(0, self::countFor($memberId) - self::freeCapFor($memberId));
     }
 
     /** 'free' | 'pro' | 'legacy' — what the account is on right now. */
@@ -131,7 +149,7 @@ class ProjectQuota {
      */
     public static function needsPaidPlan(int $memberId): bool {
         if (self::tierOf($memberId) === 'legacy') return false;
-        return self::countFor($memberId) > self::FREE_CAP;
+        return self::countFor($memberId) > self::freeCapFor($memberId);
     }
 
     /**

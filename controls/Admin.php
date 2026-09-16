@@ -165,6 +165,13 @@ class Admin extends Control {
                         $avatar = trim($request->data->avatar_url ?? '');
                         $member->avatarUrl   = $avatar !== '' ? $avatar : null;
 
+                        // Per-member FREE-project allowance (ProjectQuota::freeCapFor). 0 = the
+                        // global default. NOT gated by the system-account check above — the
+                        // operator's own account is exactly the one they raise to "unlimited".
+                        if (isset($request->data->free_projects)) {
+                            $member->freeProjects = max(0, (int) $request->data->free_projects);
+                        }
+
                         // Update password if provided
                         if (!empty($request->data->password)) {
                             if (strlen($request->data->password) < 8) {

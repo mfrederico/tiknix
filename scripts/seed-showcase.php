@@ -40,7 +40,7 @@ $entries = [
     ],
     [
         'slug'  => 'partsdna-74a225',
-        'url'   => 'https://partsdna-74a225.tiknix.com/parts/find',
+        'url'   => 'https://partsdna-74a225.tiknix.com/parts/find?q=MYT4213500',
         'title' => 'PartsDNA',
         'blurb' => 'A Shopify parts app — find the right part by vehicle fitment.',
         'sortOrder' => 50,

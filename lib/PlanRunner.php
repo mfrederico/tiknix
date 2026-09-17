@@ -236,8 +236,10 @@ class PlanRunner {
             }
 
             // Only the log is cleared, and only once nothing above objected. It is a
-            // transcript, not a result.
+            // transcript, not a result. The stale completion marker goes too: this run
+            // re-decides whether the goal is met, so last time's "complete" must not linger.
             @unlink($this->logFile());
+            @unlink($ab . '/plan-complete.md');
             return $this->launch($goal, $ab);
         } finally {
             /* Exactly one release, on every path. This was a catch that released, plus a
@@ -396,8 +398,15 @@ echo "[planner] exit=\$PLANNER_RC \$(date)" | tee -a {$logArg}
 # Workbench with no browser tab needing to stay open. Atomic-claim makes this
 # race-safe with the AI Builder browser poll (whichever wins ingests once).
 if compgen -G {$planGlobArg}"/*.plan.json" > /dev/null || [ -f {$planGlobArg}"/plan.json" ]; then
+  rm -f {$planGlobArg}"/plan-complete.md"   # a real plan supersedes any stale completion marker
   echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
   php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg}{$autoBuildArg}{$promptArg} 2>&1 | tee -a {$logArg}
+elif [ -f {$planGlobArg}"/plan-complete.md" ]; then
+  # The planner judged the goal already built and wrote a completion marker instead of a
+  # plan (see the brief's "is the goal already met?" step). NOT a failure — this is how
+  # "continue to the next phase" learns there is no next phase. Leave the marker for the
+  # board to read; do not run plan-failed.
+  echo "[planner] GOAL COMPLETE — nothing left to plan for this goal." | tee -a {$logArg}
 else
   # No plan file. That is NOT proof of failure, and treating it as one told a client
   # their decompose had failed when it had in fact succeeded: the file legitimately
@@ -474,9 +483,24 @@ truth: it is what already exists right now. You do NOT need to call `codebase_ma
    permission row and any starter data MUST be shipped as a seed task. Reuse an
    existing `<controller>::* = <level>` permission pattern from the inventory.
 
+## First — is the goal already met?
+
+Before decomposing, check the goal against the inventory above (what already exists in THIS
+codebase). If EVERYTHING the goal calls for is already built — there is no meaningful next
+phase — do NOT invent work and do NOT call `submit_plan`. Instead:
+
+1. Write the file `.aibuilder/plan-complete.md` — one short paragraph naming what the goal
+   asked for and confirming it already exists, citing the controllers / models / routes from
+   the inventory that satisfy it.
+2. Reply `GOAL_COMPLETE` and stop.
+
+Only decompose (below) when real, un-built work remains. A phase of make-work — renaming,
+re-listing, or "polish" nobody asked for — is worse than reporting the goal is done: the
+whole point of "continue to the next phase" is that it STOPS when the goal is realized.
+
 ## Deliverable
 
-When (and only when) you have MATCHED against the inventory and decided the breakdown,
+When (and only when) you have MATCHED against the inventory and decided real work remains,
 call the **`submit_plan`** MCP tool exactly once with:
 
 - `title` — short name for the whole plan

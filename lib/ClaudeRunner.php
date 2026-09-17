@@ -1204,12 +1204,19 @@ BASH;
      * Recursively remove a directory
      */
     private static function removeDirectory(string $dir): void {
+        // Never follow a symlink: is_dir() resolves through links, so a symlink to a
+        // directory (e.g. a composer path-repository package under vendor/) would be
+        // recursed INTO — deleting the link target's files outside this workspace — and
+        // then rmdir() on the link fails with "Not a directory". Unlink links, don't follow.
+        if (is_link($dir)) { @unlink($dir); return; }
         if (!is_dir($dir)) return;
 
         $files = array_diff(scandir($dir), ['.', '..']);
         foreach ($files as $file) {
             $path = $dir . '/' . $file;
-            is_dir($path) ? self::removeDirectory($path) : unlink($path);
+            if (is_link($path)) unlink($path);
+            elseif (is_dir($path)) self::removeDirectory($path);
+            else unlink($path);
         }
         rmdir($dir);
     }

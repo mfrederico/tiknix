@@ -289,7 +289,10 @@ R::close();
             'url'     => "$baseUrl/mcp/message",
             'headers' => ['Authorization' => 'Bearer ' . $agentToken],
         ],
-        'playwright' => ['command' => 'npx', 'args' => ['-y', '@playwright/mcp@latest', '--headless', '--isolated']],
+        // --no-sandbox: the agent runs this inside bwrap, where Chrome's userns sandbox is
+        // unavailable and the bundled chromium's setuid helper isn't 4755 root — so Chrome
+        // aborts and the browser never opens without it. See scripts/add-playwright-mcp.php.
+        'playwright' => ['command' => 'npx', 'args' => ['-y', '@playwright/mcp@latest', '--headless', '--isolated', '--no-sandbox']],
     ],
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
 @chmod("$ROOT/.mcp.json", 0600);   // it carries a bearer token

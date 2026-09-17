@@ -16,7 +16,12 @@ function addPlaywright(string $file): string {
     if (!is_array($json)) return "skip: invalid JSON in $file";
     $json['mcpServers'] = $json['mcpServers'] ?? [];
 
-    $want = ['-y', '@playwright/mcp@latest', '--headless', '--isolated'];
+    // --no-sandbox: a JAILED agent runs @playwright/mcp inside bwrap, where Chrome's
+    // userns sandbox is unavailable (namespaces restricted) AND the bundled chromium's
+    // setuid helper is not root:root 4755 — so without this Chrome aborts and the browser
+    // never opens ("SUID sandbox helper ... not configured correctly"). The target is the
+    // agent's own project, so the sandbox buys nothing here.
+    $want = ['-y', '@playwright/mcp@latest', '--headless', '--isolated', '--no-sandbox'];
     $have = $json['mcpServers']['playwright']['args'] ?? null;
 
     // PRESENT IS NOT THE SAME AS CORRECT. This used to return early on isset(),

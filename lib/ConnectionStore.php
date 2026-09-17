@@ -91,12 +91,21 @@ class ConnectionStore {
         // and it could only be protected in git by an extension glob — conf/*.key
         // ignored a .key and would have let a .pem or a .json straight through. A
         // directory rule cannot be slipped past by naming a file differently.
+        // On an ISOLATED instance, secure/ carries a POSIX ACL (user:tiknix-iNN:rwx plus
+        // an inherited default ACL) so the per-instance php-fpm pool — which is NOT the
+        // owner — can read/write it. chmod recalculates the ACL mask from the mode's
+        // group bits, so chmod 0700 forces mask '---', dropping that grant to effective
+        // '---' and locking the pool out ("Could not write connections.key"). The
+        // inherited default ACL already denies 'other', so we must NOT chmod an isolated
+        // secure/ — provisioning's ACL is the source of truth. Only tighten the mode on a
+        // non-isolated install, where secure/ may exist for uploads and be world-readable.
+        $isolated = is_file(dirname($dir) . '/.fpm-isolated');
         if (!is_dir($dir)) {
-            @mkdir($dir, 0700, true);
+            @mkdir($dir, $isolated ? 0770 : 0700, true);
         }
-        // 0700 whether we made it or found it: instances already have a secure/ for
-        // uploads, and it is world-readable, which is not good enough for this.
-        @chmod($dir, 0700);
+        if (!$isolated) {
+            @chmod($dir, 0700);
+        }
 
         if (is_file($file)) {
             $k = trim((string) file_get_contents($file));
@@ -113,7 +122,14 @@ class ConnectionStore {
         if (@file_put_contents($file, $key . "\n", LOCK_EX) === false) {
             throw new \Exception('Could not write conf/connections.key — connections cannot be stored.');
         }
-        @chmod($file, 0600);
+        // Same ACL-mask trap as the directory above: on an isolated instance the key file
+        // inherits secure/'s default ACL (the pool needs to read it), and chmod 0600 would
+        // collapse the file's ACL mask to '---' and lock the pool out of its own key on the
+        // next request. The inherited default:other::--- already keeps it off-limits to
+        // 'other', so only lock it to the owner on a non-isolated install.
+        if (!$isolated) {
+            @chmod($file, 0600);
+        }
 
         \Flight::get('log')?->info('ConnectionStore: minted this install\'s connection key');
         return $key;

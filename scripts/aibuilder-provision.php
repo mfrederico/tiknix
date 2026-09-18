@@ -29,6 +29,24 @@ if (strpos(basename($ROOT), '.') === false) {
     exit(1);
 }
 
+// Per-instance claude binary: the pipeline agent step runs the instance's OWN claude at
+// <root>/bin/claude (self-contained — works for a local isolated pool AND a remote instance).
+// Locally that's a symlink to the host install; resolve it the way jail-run.sh does (this
+// runs as the provisioning user, so `command -v claude` sees ~/.local/bin).
+$claudeBin = trim((string) @shell_exec('command -v claude 2>/dev/null'));
+if ($claudeBin === '') {
+    foreach ([getenv('HOME') . '/.local/bin/claude', '/usr/local/bin/claude', '/usr/bin/claude'] as $c) {
+        if ($c && @is_file($c)) { $claudeBin = $c; break; }
+    }
+}
+if ($claudeBin !== '') {
+    @mkdir($ROOT . '/bin', 0755, true);
+    @unlink($ROOT . '/bin/claude');
+    if (@symlink($claudeBin, $ROOT . '/bin/claude')) echo "  bin/claude -> {$claudeBin}\n";
+} else {
+    fwrite(STDERR, "aibuilder-provision: WARNING — no claude binary found to symlink; pipeline agent steps will need one at bin/claude\n");
+}
+
 // --- args -------------------------------------------------------------------
 $opts = getopt('', ['tenant:', 'admin::', 'name::', 'from-mysql::']);
 $sub  = strtolower(trim($opts['tenant'] ?? ''));

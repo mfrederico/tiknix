@@ -70,6 +70,14 @@ class AgentStep implements StepInterface {
         $stderr = (string) stream_get_contents($pipes[2]); fclose($pipes[2]);
         $exit = proc_close($proc);
 
+        // Surface an out-of-credit failure to the instance's admins (a flag the UI shows + one
+        // email/day), and clear it on any successful agent run so the alert resolves itself.
+        if ($exit === 0) {
+            \app\CreditAlert::clear();
+        } elseif (\app\CreditAlert::looksLikeCredit($stderr . "\n" . $stdout)) {
+            \app\CreditAlert::raise($engine, $stderr !== '' ? $stderr : $stdout);
+        }
+
         return [
             'ok'     => $exit === 0,
             'output' => trim($stdout),

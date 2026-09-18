@@ -46,6 +46,8 @@ abstract class Control {
             'site_name' => Flight::siteName(),
             'site_logo' => Flight::siteLogo(),
             '__isCore'  => is_core_install(),
+            // Out-of-AI-credit banner state (null when fine); set by the pipeline agent step.
+            'agent_credit_alert' => \app\CreditAlert::current(),
         ];
         
         $this->logger->debug('Controller initialized: ' . get_class($this));

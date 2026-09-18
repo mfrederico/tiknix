@@ -381,3 +381,14 @@ if ($__loggedIn) {
     <?php endif; ?>
 
     <div class="ui-content">
+      <?php if (!empty($agent_credit_alert)): ?>
+      <div class="alert alert-warning d-flex align-items-start gap-2 mx-4 mt-3 mb-0" role="alert">
+        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+        <div>
+          <strong>AI tasks are paused — out of credit.</strong>
+          The <?= htmlspecialchars((($agent_credit_alert['engine'] ?? '') === 'claude' || ($agent_credit_alert['engine'] ?? '') === 'zai') ? 'Anthropic' : 'AI provider') ?>
+          account behind this site's API key has run out of credit, so AI steps are failing. Add credit
+          (or update the key) to resume — tasks pick back up automatically.
+        </div>
+      </div>
+      <?php endif; ?>

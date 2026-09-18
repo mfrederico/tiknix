@@ -27,7 +27,7 @@ $has = fn(string $flag) => $__signedIn
 
   <div class="ui-page-header mb-4">
     <span class="ui-eyebrow">Help</span>
-    <h1>How Tiknix works</h1>
+    <h1>How <?= htmlspecialchars(Flight::siteName()) ?> works</h1>
     <div class="ui-sub">
       You describe what you want built; agents build it into a real application with a
       database, a web server and a place to run. This is the short version of how the

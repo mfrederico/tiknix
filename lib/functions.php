@@ -592,5 +592,18 @@ if (!function_exists('parse_db_dsn')) {
     }
 }
 
+/**
+ * True on the flagship/core install, false on a tenant instance.
+ *
+ * Core vs tenant is decided by the install DIRECTORY name: a tenant lives in
+ * "<slug>.<app>" (a dot in the basename), core does not. This mirrors the check the
+ * footer/layout have always inlined, centralised so branding decisions (the copyright
+ * entity, platform-only doc links) have a single answer. Distinct from is_control_plane(),
+ * which is about builder-tool availability by HOST, not the filesystem identity.
+ */
+function is_core_install(): bool {
+    return strpos(basename(dirname(__DIR__)), '.') === false;
+}
+
 
 ?>

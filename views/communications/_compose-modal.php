@@ -105,7 +105,7 @@ $__canRoom = !empty($__rooms);
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="form-text">Stays inside Tiknix — no email is sent.</div>
+                                <div class="form-text">Stays inside <?= htmlspecialchars(Flight::siteName()) ?> — no email is sent.</div>
                             </div>
                         </div>
                         <?php endif; ?>

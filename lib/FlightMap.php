@@ -480,6 +480,22 @@ Flight::map('getSetting', function($key, $memberId = null) {
     return $setting ? $setting->settingValue : null;
 });
 
+/**
+ * The install's display name for all user-facing chrome, emails and 2FA.
+ * ONE source of truth: the admin-editable 'site_name' setting (/admin/settings), falling
+ * back to the [app] name config, then 'Tiknix'. Cached per request. Never throws — a
+ * display name must not take a page or an email down if the settings DB is momentarily
+ * unavailable (e.g. a CLI context with no connection).
+ */
+Flight::map('siteName', function() {
+    static $cached = null;
+    if ($cached !== null) return $cached;
+    $name = '';
+    try { $name = trim((string) Flight::getSetting('site_name', 0)); } catch (\Throwable $e) { $name = ''; }
+    if ($name === '') $name = trim((string) (Flight::get('app.name') ?? ''));
+    return $cached = ($name !== '' ? $name : 'Tiknix');
+});
+
 Flight::map('setSetting', function($key, $value, $memberId = null) {
     if ($memberId === null) {
         $member = Flight::getMember();

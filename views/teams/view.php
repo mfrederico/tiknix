@@ -279,13 +279,13 @@
                         ?>
                         <?php if (\app\Feature::allows(\app\Invite::FLAG, (int) (\Flight::getMember()->id ?? 0), (int) (\Flight::getMember()->level ?? 101))): ?>
                             <a href="/invites" class="btn btn-sm btn-outline-secondary"
-                               title="Invite someone who has no Tiknix account yet">
-                                <i class="bi bi-envelope-plus"></i> Invite to Tiknix
+                               title="Invite someone who has no <?= htmlspecialchars(Flight::siteName()) ?> account yet">
+                                <i class="bi bi-envelope-plus"></i> Invite to <?= htmlspecialchars(Flight::siteName()) ?>
                             </a>
                         <?php endif; ?>
                         <?php if ($isAdmin): ?>
                             <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#inviteModal"
-                                    title="Add an existing Tiknix member to this team">
+                                    title="Add an existing <?= htmlspecialchars(Flight::siteName()) ?> member to this team">
                                 <i class="bi bi-person-plus"></i>
                             </button>
                         <?php endif; ?>

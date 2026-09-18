@@ -12,7 +12,9 @@
         <?php if (builder_tools_enabled()): ?>
             <a href="/projects" class="btn btn-primary"><i class="bi bi-grid-3x3-gap"></i> Projects</a>
         <?php endif; ?>
+        <?php if ($__isCore ?? is_core_install()): /* platform docs — core only, not a tenant's UI */ ?>
         <a href="https://docs.tiknix.com" target="_blank" rel="noopener" class="btn btn-outline-primary"><i class="bi bi-book"></i> Read Tiknix docs</a>
+        <?php endif; ?>
     </div>
 </div>
 

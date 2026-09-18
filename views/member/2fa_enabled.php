@@ -45,7 +45,7 @@
 const recoveryCodes = <?= json_encode($recovery_codes) ?>;
 
 function downloadCodes() {
-    const text = "Tiknix Recovery Codes\n" +
+    const text = <?= json_encode(Flight::siteName() . " Recovery Codes\n") ?> +
                  "Generated: " + new Date().toISOString() + "\n\n" +
                  recoveryCodes.join("\n") + "\n\n" +
                  "Each code can only be used once.\nStore these codes securely.";

@@ -40,7 +40,11 @@ abstract class Control {
             'isLoggedIn' => Flight::isLoggedIn(),
             'menu' => Flight::loadMenu(),
             'title' => 'App',
-            'csrf' => SimpleCsrf::getTokenArray()
+            'csrf' => SimpleCsrf::getTokenArray(),
+            // Global branding, available to every view: the admin-editable site name and
+            // whether this is the core install (tenants show their own name, core shows Tiknix).
+            'site_name' => Flight::siteName(),
+            '__isCore'  => is_core_install(),
         ];
         
         $this->logger->debug('Controller initialized: ' . get_class($this));

@@ -5,7 +5,9 @@
            The core install dir is the bare app namespace ("tiknix", no dot); a tenant clone
            is "<slug>.tiknix" (has a dot). So a dotless install root == core — namespace- and
            domain-agnostic, and it makes this shared file self-scope in either context. */
-        $__isCore = strpos(basename(dirname(__DIR__, 2)), '.') === false;
+        // Provided globally by Control::render; is_core_install() is the single source of
+        // that truth (falls back to it if this partial is ever rendered outside a controller).
+        $__isCore = $__isCore ?? is_core_install();
       ?>
       <!-- slim app footer (inside content column) -->
       <footer class="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-4 mt-4 small text-secondary"

@@ -89,7 +89,7 @@ class TwoFactorAuth {
      * Generate QR code SVG for authenticator app
      */
     public static function generateQrCode(string $secret, string $email): string {
-        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $appName = Flight::siteName();
 
         $qrCodeUrl = self::getGoogle2FA()->getQRCodeUrl(
             $appName,

@@ -16,7 +16,7 @@
       <?php else: ?>
 
         <div class="text-center mb-4">
-          <h1 class="h4 fw-bold mb-1">You've been invited to Tiknix</h1>
+          <h1 class="h4 fw-bold mb-1">You've been invited to <?= htmlspecialchars(Flight::siteName()) ?></h1>
           <div class="text-body-secondary small">
             Sign-ups are closed — this invitation is your way in.
           </div>

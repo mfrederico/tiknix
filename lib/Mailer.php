@@ -74,7 +74,10 @@ class Mailer {
             $this->client = Mailgun::create($config['key']);
             $this->domain = $config['domain'];
             $this->fromEmail = $config['fromEmail'] ?? "noreply@{$this->domain}";
-            $this->fromName = $config['fromName'] ?? Flight::get('app.name') ?? 'Tiknix';
+            // From-NAME is the site's display name, not a config literal: mailgun.ini shipped
+            // "Tiknix Notification", which is wrong on a tenant. site_name is the source of
+            // truth (setSender() can still override per-message where a flow needs to).
+            $this->fromName = Flight::siteName();
             $this->configured = true;
 
         } catch (Exception $e) {
@@ -165,7 +168,7 @@ class Mailer {
         $params = [
             'from' => "{$this->fromName} <{$this->fromEmail}>",
             'to' => $this->toName ? "{$this->toName} <{$this->toEmail}>" : $this->toEmail,
-            'subject' => $this->subject ?: 'Message from ' . (Flight::get('app.name') ?? 'Tiknix'),
+            'subject' => $this->subject ?: 'Message from ' . (Flight::siteName()),
             'html' => $html,
         ];
 
@@ -217,7 +220,7 @@ class Mailer {
      * Wrap content in HTML email template
      */
     private function wrapInTemplate(string $content): string {
-        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $appName = Flight::siteName();
         $baseUrl = app_url();
         $year = date('Y');
 
@@ -315,7 +318,7 @@ HTML;
      * Send password reset email
      */
     public static function sendPasswordReset(string $email, string $name, string $resetUrl): bool {
-        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $appName = Flight::siteName();
 
         $content = <<<HTML
 <h2>Password Reset Request</h2>
@@ -348,7 +351,7 @@ HTML;
         string $responseText,
         string $adminName
     ): bool {
-        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $appName = Flight::siteName();
 
         $content = <<<HTML
 <h2>Response to Your Message</h2>
@@ -384,7 +387,7 @@ HTML;
         string $role,
         string $acceptUrl
     ): bool {
-        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $appName = Flight::siteName();
 
         $content = <<<HTML
 <h2>You've Been Invited!</h2>
@@ -420,7 +423,7 @@ HTML;
         string $expiresOn,
         string $note = ''
     ): bool {
-        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $appName = Flight::siteName();
         $safeNote = $note !== ''
             ? '<p style="border-left:3px solid #ddd;padding-left:12px;color:#444"><em>'
               . htmlspecialchars($note, ENT_QUOTES) . '</em></p>'
@@ -468,7 +471,7 @@ HTML;
         int $contactId,
         bool $fromMember
     ): bool {
-        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $appName = Flight::siteName();
         $baseUrl = rtrim((string) (Flight::get('app.baseurl') ?? ''), '/');
         $link    = $baseUrl . '/contact/view?id=' . $contactId;
 
@@ -505,7 +508,7 @@ HTML;
      * Send welcome email after registration
      */
     public static function sendWelcome(string $email, string $name): bool {
-        $appName = Flight::get('app.name') ?? 'Tiknix';
+        $appName = Flight::siteName();
         $baseUrl = Flight::get('app.baseurl') ?? Flight::get('baseurl') ?? '';
 
         $content = <<<HTML

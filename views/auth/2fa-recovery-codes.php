@@ -89,7 +89,7 @@ function downloadRecoveryCodes() {
         codes.push(el.textContent.trim());
     });
 
-    const appName = '<?= htmlspecialchars(Flight::get('app.name') ?? 'Tiknix') ?>';
+    const appName = <?= json_encode(Flight::siteName()) ?>;
     const content = `${appName} Recovery Codes
 Generated: <?= date('Y-m-d H:i:s') ?>
 

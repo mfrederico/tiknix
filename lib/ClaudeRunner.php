@@ -403,6 +403,12 @@ class ClaudeRunner {
      * prompts off, while the wrapper it generated announced itself as jailed.
      */
     private function jailFor(string $workspace): string {
+        // Already running inside an isolated instance's pool? open_basedir confines this
+        // process to the instance tree, so we ARE the jail: jail-run.sh lives outside that
+        // boundary (an is_file() on it throws an open_basedir warning and breaks the caller)
+        // and re-jailing as the same isolated uid is neither possible nor needed. Run direct.
+        if ((string) ini_get('open_basedir') !== '') return '';
+
         $root = '/var/www/html/default';
         $real = realpath($workspace) ?: $workspace;
         if (strpos($real, $root . '/') !== 0) return '';

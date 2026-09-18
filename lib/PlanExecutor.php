@@ -987,6 +987,10 @@ MD;
 
     /** jail-run.sh path when the instance is jailable, else '' (mirrors ClaudeRunner). */
     private function jailFor(): string {
+        // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
+        // is outside the boundary (is_file() would throw) and re-jailing is redundant. Direct.
+        if ((string) ini_get('open_basedir') !== '') return '';
+
         $root = '/var/www/html/default';
         $real = realpath($this->instanceDir) ?: $this->instanceDir;
         if (strpos(basename($real), '.') === false) return '';

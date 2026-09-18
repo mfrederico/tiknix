@@ -20,12 +20,14 @@
             <a href="/index/security" class="link-secondary text-decoration-none">Security</a>
           </span>
           <?php endif; ?>
-          <?php /* The credit every generated app carries. It named the frameworks underneath
-                   rather than the thing the customer actually built with — and it is on every
-                   page of every instance, so it is the platform's most-seen sentence. */ ?>
+          <?php /* Platform attribution — the flagship/core only. Tenants are white-labelled
+                   (own site_name + logo), so the "Built with tiknix" credit and its link are
+                   gated off their customer-facing pages. */ ?>
+          <?php if ($__isCore): ?>
           <span>Built with <i class="bi bi-heart-fill text-danger" aria-hidden="true"></i><span class="visually-hidden">love</span> using
             <a href="https://tiknix.com" class="link-secondary text-decoration-none" target="_blank" rel="noopener">tiknix</a>
           </span>
+          <?php endif; ?>
       </footer>
     </div><!-- /.ui-content -->
   </div><!-- /.ui-main -->

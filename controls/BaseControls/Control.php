@@ -44,6 +44,7 @@ abstract class Control {
             // Global branding, available to every view: the admin-editable site name and
             // whether this is the core install (tenants show their own name, core shows Tiknix).
             'site_name' => Flight::siteName(),
+            'site_logo' => Flight::siteLogo(),
             '__isCore'  => is_core_install(),
         ];
         

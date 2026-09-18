@@ -113,8 +113,13 @@ if ($__loggedIn) {
 
   <aside class="ui-sidebar" id="uiSidebar">
     <a class="ui-sidebar-brand" href="/" aria-label="<?= htmlspecialchars($site_name ?? 'Tiknix') ?>">
-      <span class="ui-brand-logo"></span>
-      <span class="ui-brand-word">tiknix</span>
+      <?php $__brandLogo = $site_logo ?? Flight::siteLogo(); ?>
+      <?php if ($__brandLogo !== ''): ?>
+        <img class="ui-brand-logo" src="<?= htmlspecialchars($__brandLogo) ?>" alt="" style="max-height:28px;width:auto;object-fit:contain">
+      <?php elseif ($__isCore ?? is_core_install()): /* the Tiknix mark only on the flagship */ ?>
+        <span class="ui-brand-logo"></span>
+      <?php endif; ?>
+      <span class="ui-brand-word"><?= htmlspecialchars($site_name ?? Flight::siteName()) ?></span>
     </a>
 
     <nav class="ui-nav">

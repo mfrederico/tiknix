@@ -496,6 +496,20 @@ Flight::map('siteName', function() {
     return $cached = ($name !== '' ? $name : 'Tiknix');
 });
 
+/**
+ * Optional per-install brand logo (admin-editable 'site_logo' setting — a URL or a path
+ * under the instance's public/). Empty string when unset: callers then fall back to the
+ * core Tiknix mark (core install only) or to the site-name text, so a tenant never shows
+ * the Tiknix logo by accident. Cached per request; never throws.
+ */
+Flight::map('siteLogo', function() {
+    static $cached = null;
+    if ($cached !== null) return $cached;
+    $logo = '';
+    try { $logo = trim((string) Flight::getSetting('site_logo', 0)); } catch (\Throwable $e) { $logo = ''; }
+    return $cached = $logo;
+});
+
 Flight::map('setSetting', function($key, $value, $memberId = null) {
     if ($memberId === null) {
         $member = Flight::getMember();

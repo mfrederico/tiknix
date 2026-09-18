@@ -28,6 +28,14 @@
                 </div>
                 
                 <div class="mb-3">
+                    <label for="site_logo" class="form-label">Site Logo (URL or path)</label>
+                    <input type="text" class="form-control" id="site_logo" name="site_logo"
+                           value="<?= htmlspecialchars(Flight::getSetting('site_logo', 0) ?? '') ?>"
+                           placeholder="/img/logo.png or https://example.com/logo.svg">
+                    <small class="form-text text-muted">Brand mark shown in the header and on the sign-in page. Leave blank to show the site name only.</small>
+                </div>
+
+                <div class="mb-3">
                     <label for="site_description" class="form-label">Site Description</label>
                     <textarea class="form-control" id="site_description" name="site_description" rows="3"><?= htmlspecialchars(Flight::getSetting('site_description', 0) ?? '') ?></textarea>
                 </div>

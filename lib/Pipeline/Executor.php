@@ -300,7 +300,49 @@ class Executor {
         $run->runDir = $dir; $run->createdAt = date('Y-m-d H:i:s');
         if ($status === 'running') $run->startedAt = date('Y-m-d H:i:s');
         Bean::store($run);
+        $this->pruneOldRuns();   // opportunistic, throttled housekeeping
         return $run;
+    }
+
+    /** Keep finished run dirs under data/pipe-runs/ for this long, then prune them (7 days). */
+    private const RUN_RETENTION_SECONDS = 604800;
+
+    /**
+     * Delete run dirs older than RUN_RETENTION_SECONDS from this instance's
+     * data/pipe-runs/. Throttled to at most once an hour via a marker file's mtime, so it
+     * costs nothing on a normal dispatch. Best-effort — a failed prune must never block a
+     * run from starting. (Old runs used to live in /tmp and got wiped on reboot; per-instance
+     * dirs persist, so they need their own housekeeping.)
+     */
+    private function pruneOldRuns(): void {
+        try {
+            $base = $this->root . '/data/pipe-runs';
+            if (!is_dir($base)) return;
+            $marker = $base . '/.last-prune';
+            if (is_file($marker) && (time() - (int) @filemtime($marker)) < 3600) return;
+            @touch($marker);
+            $cutoff = time() - self::RUN_RETENTION_SECONDS;
+            foreach (glob($base . '/*', GLOB_ONLYDIR) ?: [] as $slugDir) {
+                foreach (glob($slugDir . '/*', GLOB_ONLYDIR) ?: [] as $runDir) {
+                    $mt = @filemtime($runDir);
+                    if ($mt !== false && $mt < $cutoff) self::rmTree($runDir);
+                }
+            }
+        } catch (\Throwable $e) {
+            // housekeeping is best-effort; ignore
+        }
+    }
+
+    /** Recursively remove a directory; never follow symlinks (unlink them, don't descend). */
+    private static function rmTree(string $dir): void {
+        if (is_link($dir) || !is_dir($dir)) { @unlink($dir); return; }
+        foreach (scandir($dir) ?: [] as $e) {
+            if ($e === '.' || $e === '..') continue;
+            $p = $dir . '/' . $e;
+            if (is_link($p) || !is_dir($p)) @unlink($p);
+            else self::rmTree($p);
+        }
+        @rmdir($dir);
     }
 
     private function freshBag(array $def, array $context, $run): array {

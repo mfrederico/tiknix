@@ -282,8 +282,17 @@ class Executor {
     public function newRun(array $def, array $context, string $source, string $status): object {
         $slug = (string) ($def['slug'] ?? 'pipeline');
         $uid  = bin2hex(random_bytes(12));
-        $dir  = sys_get_temp_dir() . '/tiknix-pipe/' . $slug . '/' . $uid;
-        @mkdir($dir, 0775, true);
+        // Per-instance run dir under the project's OWN data/ tree — pool-owned, inside the
+        // instance's open_basedir, and gitignored/non-public. NOT a shared sys_get_temp_dir()
+        // /tiknix-pipe: that single path is shared by every isolated tenant, so whichever pool
+        // touches it first owns it 0755 and every OTHER instance's pool then can't mkdir its run
+        // dir — the background worker's `>> run_dir/worker.log` redirect fails and the run wedges
+        // as 'queued' forever. Fail LOUD if the dir still can't be made (never @-swallow it).
+        $safeSlug = preg_replace('/[^a-z0-9_-]/i', '', $slug) ?: 'pipeline';
+        $dir = $this->root . '/data/pipe-runs/' . $safeSlug . '/' . $uid;
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException("Pipeline: could not create run directory '{$dir}' — is the instance's data/ writable by this process?");
+        }
         $run = Bean::dispense('piperun');
         $run->slug = $slug; $run->runUid = $uid; $run->status = $status; $run->source = $source;
         $run->contextJson = json_encode($context, JSON_UNESCAPED_SLASHES);

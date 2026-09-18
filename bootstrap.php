@@ -45,6 +45,7 @@ class Bootstrap {
         
         // Initialize remaining components in order
         $this->initLogging();
+        $this->warnOnConfigDrift();   // logger is up now; surface config.ini vs config.<slug>.ini drift
         $this->initDatabase();
         $this->initSession();
         $this->initFlight();
@@ -82,7 +83,64 @@ class Bootstrap {
             }
         }
     }
-    
+
+    /**
+     * Warn loudly when the git-tracked conf/config.<slug>.ini has drifted from the live
+     * conf/config.ini the app actually loads.
+     *
+     * Provisioning writes BOTH files, identical, at create time: config.ini is the live
+     * config (gitignored — it holds secrets, so it is never committed), and config.<slug>.ini
+     * is the git-tracked rollback snapshot. Only config.ini is ever loaded. So an edit made
+     * to the .<slug>.ini file — the one a person or an agent can see and commit — silently
+     * never takes effect (this is exactly how a "why won't my setting apply?" mystery starts:
+     * image/webp uploads, two_factor_enforce, etc.). Surface it in the log instead.
+     *
+     * Once per process (FPM worker), best-effort, never fatal.
+     */
+    private function warnOnConfigDrift(): void {
+        static $checked = false;
+        if ($checked) return;
+        $checked = true;
+        try {
+            $dir  = __DIR__ . '/conf';
+            $base = basename(__DIR__);
+            $dot  = strrpos($base, '.');
+            if ($dot === false) return;                     // core install ("tiknix"): no <slug>.ini
+            $slug = substr($base, 0, $dot);
+            $tracked = "{$dir}/config.{$slug}.ini";
+            if (!is_file($tracked) || !is_file("{$dir}/config.ini")) return;
+
+            $live = @parse_ini_file("{$dir}/config.ini", true) ?: [];
+            $snap = @parse_ini_file($tracked, true) ?: [];
+            if ($live == $snap) return;                     // in sync — nothing to say
+
+            $diffs = [];
+            foreach ($snap as $sec => $vals) {
+                if (!is_array($vals)) { if (($live[$sec] ?? null) !== $vals) $diffs[] = (string) $sec; continue; }
+                foreach ($vals as $k => $v) {
+                    if (($live[$sec][$k] ?? null) !== $v) $diffs[] = "[{$sec}] {$k}";
+                }
+            }
+            foreach ($live as $sec => $vals) {              // present live but missing from the snapshot
+                if (!is_array($vals)) continue;
+                foreach ($vals as $k => $v) {
+                    if (!array_key_exists($k, (array) ($snap[$sec] ?? []))) $diffs[] = "[{$sec}] {$k} (live-only)";
+                }
+            }
+            $log = \Flight::get('log');
+            if ($log) {
+                $log->warning(
+                    "Config drift: the git-tracked conf/config.{$slug}.ini differs from the live "
+                    . "conf/config.ini the app loads — edits to the .{$slug}.ini file DO NOT take "
+                    . "effect. Reconcile them. Diverged: "
+                    . implode(', ', array_slice($diffs, 0, 20)) . (count($diffs) > 20 ? ' …' : '')
+                );
+            }
+        } catch (\Throwable $e) {
+            // a diagnostic must never take down boot
+        }
+    }
+
     /**
      * Initialize Composer autoloader
      */

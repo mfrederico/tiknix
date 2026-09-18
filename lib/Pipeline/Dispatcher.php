@@ -45,6 +45,11 @@ class Dispatcher {
 
     /** jail-run.sh path when the app root is a jailable capricorn instance, else ''. */
     private function jailFor(): string {
+        // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
+        // is outside the boundary (is_file() would throw open_basedir and break the dispatch,
+        // e.g. "Could not start draft generation") and re-jailing is redundant. Run direct.
+        if ((string) ini_get('open_basedir') !== '') return '';
+
         $base = '/var/www/html/default';
         $real = realpath($this->root) ?: $this->root;
         if (strpos(basename($real), '.') === false) return '';        // <slug>.<app> dirs only

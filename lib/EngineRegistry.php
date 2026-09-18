@@ -338,7 +338,10 @@ class EngineRegistry {
     public static function agentCommand(string $engine, string $prompt, ?string $model, array $opts = []): ?string {
         if (!self::supportsHeadless($engine)) return null;
         $e   = self::all()[$engine];
-        $bin = (string)$e['command'];
+        // opts['bin'] lets the caller pass the instance's OWN binary (e.g. <root>/bin/claude,
+        // a symlink to the host install locally or a real install on a remote instance) so a
+        // self-contained instance runs its own claude instead of relying on PATH.
+        $bin = (string)($opts['bin'] ?? $e['command']);
 
         if ((string)($e['cli_flavor'] ?? 'claude') === 'claude') {
             $cmd = escapeshellarg($bin) . ' --permission-mode bypassPermissions -p ' . escapeshellarg($prompt);

@@ -24,6 +24,8 @@ class Mailer {
     private string $toName = '';
     private string $subject = '';
     private string $replyTo = '';
+    private array $cc = [];
+    private array $bcc = [];
 
     private array $attachments = [];
     private bool $configured = false;
@@ -107,6 +109,24 @@ class Mailer {
     }
 
     /**
+     * Add a CC recipient. Call more than once to add several; each is "Name <email>".
+     */
+    public function cc(string $email, string $name = ''): self {
+        $email = filter_var($email, FILTER_SANITIZE_EMAIL);
+        if ($email !== '') $this->cc[] = $name ? "{$name} <{$email}>" : $email;
+        return $this;
+    }
+
+    /**
+     * Add a BCC recipient. Call more than once to add several.
+     */
+    public function bcc(string $email, string $name = ''): self {
+        $email = filter_var($email, FILTER_SANITIZE_EMAIL);
+        if ($email !== '') $this->bcc[] = $name ? "{$name} <{$email}>" : $email;
+        return $this;
+    }
+
+    /**
      * Set sender (override default)
      */
     public function from(string $email, string $name = ''): self {
@@ -171,6 +191,10 @@ class Mailer {
             'subject' => $this->subject ?: 'Message from ' . (Flight::siteName()),
             'html' => $html,
         ];
+
+        // CC / BCC (Mailgun takes comma-separated recipient lists)
+        if ($this->cc)  $params['cc']  = implode(',', $this->cc);
+        if ($this->bcc) $params['bcc'] = implode(',', $this->bcc);
 
         // Add plain text if provided
         if ($plainText) {

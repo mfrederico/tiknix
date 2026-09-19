@@ -66,6 +66,17 @@ class Contact extends BaseControls\Control {
             return;
         }
 
+        // 2b. Cloudflare Turnstile. A no-op when Turnstile isn't configured for this install
+        //     (verify() returns true), so it only bites where the widget actually rendered.
+        //     Answered as success on failure, same as the honeypot: a bot told "thanks" stops.
+        if (!\app\Turnstile::verify($this->getParam(\app\Turnstile::FIELD, null), (string)($_SERVER['REMOTE_ADDR'] ?? ''))) {
+            Flight::get('log')->info('Contact form rejected: Turnstile failed', [
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? '', 'email' => (string)($request->data->email ?? ''),
+            ]);
+            $this->render('contact/form', ['title' => 'Contact Support', 'success' => true]);
+            return;
+        }
+
         // 3. Rate limit per IP. A real person does not file four support requests an hour.
         $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
         if ($ip !== '') {

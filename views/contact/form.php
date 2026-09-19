@@ -103,6 +103,10 @@
                                 <small class="form-text text-muted">Please provide as much detail as possible</small>
                             </div>
                             
+                            <?php $__ts = \app\Turnstile::widget(); if ($__ts !== ''): ?>
+                            <div class="mb-3"><?= $__ts ?></div>
+                            <?php endif; ?>
+
                             <div class="d-grid gap-2">
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-envelope-fill"></i> Send Message

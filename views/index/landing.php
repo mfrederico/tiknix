@@ -427,6 +427,24 @@ $hasShowcase = !empty($showcase);
       </div>
       <?php if (!$hasShowcase): ?><span style="font-size:13px; color:var(--dim);">Example projects</span><?php endif; ?>
     </div>
+
+    <!-- CASE STUDY: Serenity Gemstones -->
+    <div class="card" style="grid-column:1 / -1; padding:30px 32px; margin-bottom:26px; display:grid; grid-template-columns:1.35fr 1fr; gap:28px; align-items:center;">
+      <div>
+        <div class="eyebrow">Case study · Serenity Gemstones</div>
+        <h3 style="font-family:var(--serif); font-size:clamp(22px,2.4vw,28px); margin-top:12px;">We uploaded a business plan. tiknix built the SaaS.</h3>
+        <p style="color:var(--soft); margin-top:14px; line-height:1.6;">
+          Serenity Gemstones handed us their <em>business plan</em> — not wireframes, not a spec sheet, the actual plan for how they wanted to run the business. tiknix read it and generated a fully customized system built around their real needs: product catalog, a class &amp; events calendar, ticketing with QR check-in at the door, and a storefront — each with its own database, its own logins, and the full source in hand.
+        </p>
+        <p style="color:var(--dim); margin-top:14px; font-size:14px;">From plan to a running, customized platform — built to their business, owned by them.</p>
+      </div>
+      <div style="display:grid; gap:10px;">
+        <div class="stat"><div class="k">Started from</div><div class="v" style="font-size:19px;">A business plan</div></div>
+        <div class="stat"><div class="k">Generated</div><div class="v" style="font-size:19px;">A custom SaaS</div></div>
+        <div class="stat"><div class="k">Owns</div><div class="v" style="font-size:19px;">Every line</div></div>
+      </div>
+    </div>
+
     <div class="grid-3">
       <?php if ($hasShowcase): ?>
         <?php foreach ($showcase as $s): $spath = (string)($s->screenshotPath ?? ''); $ver = (int)($s->capturedAt ?? 0); ?>
@@ -517,9 +535,14 @@ $hasShowcase = !empty($showcase);
 
   <!-- FINAL CTA -->
   <section class="final">
-    <h2>Ship your next client app on tiknix.</h2>
-    <p>Isolated, integrated, and yours to own — every line. Your first project is free.</p>
-    <a class="btn btn-primary" style="margin-top:32px;" href="/auth/register">Start your first project — free</a>
+    <div class="eyebrow" style="justify-content:center;">Code sovereignty</div>
+    <h2 style="margin-top:14px;">A fully working, custom app — built, deployed, and running in under a week. Yours to keep, full source in hand.</h2>
+    <p>That's code sovereignty: not another subscription you rent and never control — the real thing, and you can walk away with every line whenever you want.</p>
+    <p style="color:var(--text); margin-top:14px;">If you're a product-minded person with a brilliant software idea, now is a great time to get excited about your business again.</p>
+    <div class="hero-cta" style="justify-content:center; margin-top:32px;">
+      <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
+      <a class="btn btn-ghost" href="/contact">Reach out — I'd love to show you</a>
+    </div>
   </section>
 
   <!-- FOOTER -->

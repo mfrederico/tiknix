@@ -190,6 +190,7 @@ $hasShowcase = !empty($showcase);
       <a class="hide-sm" href="#how">How it works</a>
       <a class="hide-sm" href="#integrations">Integrations</a>
       <a href="/pricing">Pricing</a>
+      <a href="/contact">Contact</a>
       <a href="/auth/login">Sign in</a>
       <a class="nav-cta" href="/auth/register">Start free</a>
     </div>

@@ -1317,12 +1317,8 @@ class Mcp extends BaseControls\Control {
      * Uses session persistence for stateful servers like Playwright
      */
     private function proxyToolCall(string $serverSlug, string $toolName, array $arguments): string {
-        // Find the server
-        $server = Bean::findOne('mcpserver', 'slug = ? AND status = ?', [$serverSlug, 'active']);
-
-        if (!$server) {
-            throw new \Exception("Server not found: {$serverSlug}");
-        }
+        // Find the server (throws "Server not found" when absent — the tool caller catches it)
+        $server = Bean::findOneOrFail('mcpserver', 'slug = ? AND status = ?', [$serverSlug, 'active'], "Server not found: {$serverSlug}");
 
         // Check access
         if (!$this->hasServerAccess($serverSlug)) {

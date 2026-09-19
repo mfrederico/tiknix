@@ -532,7 +532,7 @@ class Teams extends Control {
             $member = Bean::dispense('member');
             $member->email = $invitation->email;
             $member->username = $this->generateUsernameFromEmail($invitation->email);
-            $member->level = 100; // Regular member level
+            $member->level = LEVELS['MEMBER'];
             $member->needsPasswordSetup = 1;
             $member->status = 'active';
             $member->isActive = 1;

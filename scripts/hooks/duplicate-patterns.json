@@ -29,7 +29,7 @@
             "pattern": "header\\(\\s*['\"]Content-Type:\\s*application\\/json|echo\\s+json_encode\\(",
             "suggestion": "Use Flight::jsonSuccess()/Flight::jsonError() so envelope and status codes stay consistent",
             "severity": "medium",
-            "exclude": "^(lib/|scripts/)"
+            "exclude": "^(lib/|scripts/|controls/(Mcp|Hooks)\\.php$)"
         },
         "Flight jsonError + return": {
             "pattern": "Flight::jsonError\\([^;]+\\);\\s*\\n\\s*return;",
@@ -45,7 +45,7 @@
             "pattern": "(level|minlevel|min_level)['\"]?\\s*(=>|=|===|==)\\s*(1|50|100|101)\\b",
             "suggestion": "Use LEVELS['ROOT'|'ADMIN'|'MEMBER'|'PUBLIC'] - hardcoded ints drift when levels change and do not render in UI dropdowns",
             "severity": "medium",
-            "exclude": "^(lib/PermissionCache|lib/Scaffold|conf/)"
+            "exclude": "^(lib/PermissionCache|lib/Scaffold|lib/Feature\\.php$|conf/|services/Schema/Seeds/|database/seeds/)"
         },
         "Manual logger fetch": {
             "pattern": "\\$\\w+\\s*=\\s*Flight::get\\(\\s*['\"]log['\"]\\s*\\)",

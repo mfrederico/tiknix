@@ -57,8 +57,7 @@ class Publish extends Control {
         if (!$owner->id || $level > $need) {
             $this->logger->warning('publish denied', ['target' => $target, 'op' => $op,
                 'instance' => $instanceId, 'owner_level' => $level, 'needs' => $need]);
-            Flight::jsonError('This project\'s owner is not permitted to ' . $op . ' the ' . $target . ' target.', 403);
-            return;
+            $this->fail('This project\'s owner is not permitted to ' . $op . ' the ' . $target . ' target.', 403); return;
         }
 
         // Target config lives with the target. The pipeline may pass per-run overrides

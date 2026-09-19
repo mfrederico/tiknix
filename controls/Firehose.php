@@ -105,15 +105,13 @@ class Firehose extends Control {
         $provided = $_SERVER['HTTP_X_FIREHOSE_KEY'] ?? ($data['api_key'] ?? '');
         $expected = (string)(Flight::get('firehose.ingest_key') ?? '');
         if ($expected === '' || !hash_equals($expected, (string)$provided)) {
-            Flight::jsonError('unauthorized', 401);
-            return;
+            return $this->fail('unauthorized', 401);
         }
 
         $sig      = trim((string)($data['signature'] ?? ''));
         $instance = trim((string)($data['instance'] ?? ''));
         if ($sig === '' || $instance === '') {
-            Flight::jsonError('missing signature or instance', 422);
-            return;
+            return $this->fail('missing signature or instance', 422);
         }
 
         $now = date('Y-m-d H:i:s');

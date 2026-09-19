@@ -230,8 +230,7 @@ class Pipeline extends Control {
         // instead: no valid member, no key.
         $mid = (int) ($body['member_id'] ?? 0);
         if ($mid <= 0 || (int) Bean::count('member', 'id = ?', [$mid]) === 0) {
-            Flight::jsonError('A valid member_id is required to mint a key.', 400);
-            return;
+            return $this->fail('A valid member_id is required to mint a key.', 400);
         }
         $res = ApiKey::mint($mid, $label, $mid);
         Flight::json(['key' => $res['raw'], 'prefix' => $res['prefix']]);

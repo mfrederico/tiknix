@@ -71,6 +71,18 @@ class Bean {
     }
 
     /**
+     * findOne(), but THROWS when nothing matches — the "load-or-fail" idiom in one call, for
+     * callers that would otherwise do findOne() + `if (!$x->id) …`. Callers that treat "absent"
+     * as a normal empty result keep using findOne(); this is only for the not-found-is-an-error
+     * case (wrap in a try/catch or let a handler turn it into a 404).
+     */
+    public static function findOneOrFail(string $type, ?string $sql = null, array $params = [], string $error = 'Not found') {
+        $bean = self::findOne($type, $sql, $params);
+        if (!$bean || !$bean->id) throw new \RuntimeException($error);
+        return $bean;
+    }
+
+    /**
      * Find all beans matching criteria
      *
      * @param string $type Bean type

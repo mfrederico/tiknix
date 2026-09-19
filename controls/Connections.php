@@ -1005,8 +1005,7 @@ class Connections extends Control {
         try {
             $connector->setWebhook($token, $url, $secret);
         } catch (\Throwable $e) {
-            Flight::jsonError($e->getMessage(), 400);
-            return;
+            $this->fail($e->getMessage(), 400); return;
         }
 
         // Stored only after Telegram accepted it. Storing first would leave the

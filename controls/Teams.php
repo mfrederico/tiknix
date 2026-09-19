@@ -373,13 +373,11 @@ class Teams extends Control {
 
         $team = Bean::load('team', $teamId);
         if (!$team->id) {
-            Flight::jsonError('Team not found', 404);
-            return;
+            return $this->fail('Team not found', 404);
         }
 
         if (!$this->access->canInviteToTeam($teamId, $this->member->id)) {
-            Flight::jsonError('You cannot invite members to this team', 403);
-            return;
+            return $this->fail('You cannot invite members to this team', 403);
         }
 
         // Collaboration is a PAID-PROJECT perk: the free tier builds solo. The rule lives in
@@ -398,8 +396,7 @@ class Teams extends Control {
         $role = $this->getParam('role', 'member');
 
         if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            Flight::jsonError('Valid email address is required', 400);
-            return;
+            return $this->fail('Valid email address is required', 400);
         }
 
         // Inviting an address with NO account auto-creates one further down this flow
@@ -410,8 +407,7 @@ class Teams extends Control {
         if (!Bean::findOne('member', 'LOWER(email) = ?', [strtolower(trim($email))])) {
             $why = \app\Invite::blockedReason((int) $this->member->id, (int) $this->member->level);
             if ($why !== '') {
-                Flight::jsonError('That address has no Tiknix account, so this would create one. ' . $why, 403);
-                return;
+                return $this->fail('That address has no Tiknix account, so this would create one. ' . $why, 403);
             }
         }
 
@@ -425,16 +421,14 @@ class Teams extends Control {
         if ($existingMember) {
             $existingMembership = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, $existingMember->id]);
             if ($existingMembership) {
-                Flight::jsonError('This user is already a team member', 400);
-                return;
+                return $this->fail('This user is already a team member', 400);
             }
         }
 
         // Check for existing pending invitation
         $existingInvitation = Bean::findOne('teaminvitation', 'team_id = ? AND email = ? AND accepted_at IS NULL', [$teamId, $email]);
         if ($existingInvitation) {
-            Flight::jsonError('An invitation has already been sent to this email', 400);
-            return;
+            return $this->fail('An invitation has already been sent to this email', 400);
         }
 
         // Create invitation
@@ -693,37 +687,31 @@ class Teams extends Control {
         $memberId = (int)$this->getParam('member_id');
 
         if (!$teamId || !$memberId) {
-            Flight::jsonError('Invalid parameters', 400);
-            return;
+            return $this->fail('Invalid parameters', 400);
         }
 
         $team = Bean::load('team', $teamId);
         if (!$team->id) {
-            Flight::jsonError('Team not found', 404);
-            return;
+            return $this->fail('Team not found', 404);
         }
 
         if (!$this->access->canManageMembers($teamId, $this->member->id)) {
-            Flight::jsonError('You cannot manage members in this team', 403);
-            return;
+            return $this->fail('You cannot manage members in this team', 403);
         }
 
         // Cannot remove the owner
         if ((int)$team->ownerId === $memberId) {
-            Flight::jsonError('Cannot remove the team owner', 400);
-            return;
+            return $this->fail('Cannot remove the team owner', 400);
         }
 
         // Cannot remove yourself this way
         if ($memberId === $this->member->id) {
-            Flight::jsonError('Use the leave function to leave the team', 400);
-            return;
+            return $this->fail('Use the leave function to leave the team', 400);
         }
 
         $membership = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, $memberId]);
         if (!$membership) {
-            Flight::jsonError('Member not found in team', 404);
-            return;
+            return $this->fail('Member not found in team', 404);
         }
 
         Bean::trash($membership);
@@ -748,25 +736,21 @@ class Teams extends Control {
         $teamId       = (int)$this->getParam('team_id');
         $invitationId = (int)$this->getParam('invitation_id');
         if (!$teamId || !$invitationId) {
-            Flight::jsonError('Invalid parameters', 400);
-            return;
+            return $this->fail('Invalid parameters', 400);
         }
 
         $team = Bean::load('team', $teamId);
         if (!$team->id) {
-            Flight::jsonError('Team not found', 404);
-            return;
+            return $this->fail('Team not found', 404);
         }
 
         if (!$this->access->canInviteToTeam($teamId, $this->member->id)) {
-            Flight::jsonError('You cannot manage invitations for this team', 403);
-            return;
+            return $this->fail('You cannot manage invitations for this team', 403);
         }
 
         $invitation = Bean::load('teaminvitation', $invitationId);
         if (!$invitation->id || (int)$invitation->teamId !== $teamId || $invitation->acceptedAt) {
-            Flight::jsonError('Pending invitation not found', 404);
-            return;
+            return $this->fail('Pending invitation not found', 404);
         }
 
         // Refresh the expiry so a stale invite is usable again; keep the same token.
@@ -814,38 +798,32 @@ class Teams extends Control {
         $role = $this->getParam('role', 'member');
 
         if (!$teamId || !$memberId) {
-            Flight::jsonError('Invalid parameters', 400);
-            return;
+            return $this->fail('Invalid parameters', 400);
         }
 
         $team = Bean::load('team', $teamId);
         if (!$team->id) {
-            Flight::jsonError('Team not found', 404);
-            return;
+            return $this->fail('Team not found', 404);
         }
 
         // Only owner can change roles
         if (!$this->access->isTeamOwner($teamId, $this->member->id)) {
-            Flight::jsonError('Only the team owner can change roles', 403);
-            return;
+            return $this->fail('Only the team owner can change roles', 403);
         }
 
         // Cannot change owner's role
         if ((int)$team->ownerId === $memberId) {
-            Flight::jsonError('Cannot change the owner\'s role', 400);
-            return;
+            return $this->fail('Cannot change the owner\'s role', 400);
         }
 
         // Validate role
         if (!in_array($role, ['admin', 'member', 'viewer'])) {
-            Flight::jsonError('Invalid role', 400);
-            return;
+            return $this->fail('Invalid role', 400);
         }
 
         $membership = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, $memberId]);
         if (!$membership) {
-            Flight::jsonError('Member not found in team', 404);
-            return;
+            return $this->fail('Member not found in team', 404);
         }
 
         $membership->role = $role;

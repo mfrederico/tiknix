@@ -300,13 +300,11 @@ class Security extends Control {
 
         $request = Flight::request();
         if ($request->method !== 'POST') {
-            Flight::jsonError('POST required', 405);
-            return;
+            return $this->fail('POST required', 405);
         }
 
         if (!SimpleCsrf::validate()) {
-            Flight::jsonError('CSRF validation failed', 403);
-            return;
+            return $this->fail('CSRF validation failed', 403);
         }
 
         $id = (int)$this->getParam('id');
@@ -406,8 +404,7 @@ class Security extends Control {
 
         $request = Flight::request();
         if ($request->method !== 'POST') {
-            Flight::jsonError('POST required', 405);
-            return;
+            return $this->fail('POST required', 405);
         }
 
         $target = $this->getParam('target', 'path');
@@ -416,8 +413,7 @@ class Security extends Control {
         $isWrite = (bool)$this->getParam('is_write', false);
 
         if (empty($subject)) {
-            Flight::jsonError('Subject required', 400);
-            return;
+            return $this->fail('Subject required', 400);
         }
 
         $this->useSecurityDb();

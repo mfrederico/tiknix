@@ -145,8 +145,7 @@ class Invites extends Control {
 
         // Yours, or anyone's if you are an admin.
         if ((int) $inv->invitedBy !== (int) $this->member->id && !Invite::isAdmin((int) $this->member->level)) {
-            Flight::jsonError('That is not your invitation.', 403);
-            return;
+            return $this->fail('That is not your invitation.', 403);
         }
         if ($inv->acceptedAt) { Flight::jsonError('That invitation has already been used.', 409); return; }
 

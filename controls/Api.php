@@ -26,16 +26,14 @@ class Api extends Control
     {
         // Require admin level for code validation
         if (!Flight::hasLevel(LEVELS['ADMIN'])) {
-            Flight::jsonError('Unauthorized', 403);
-            return;
+            $this->fail('Unauthorized', 403); return;
         }
 
         // Get JSON input
         $input = json_decode((file_get_contents('php://input')) ?? '', true);
 
         if (!$input || empty($input['code'])) {
-            Flight::jsonError('Missing code parameter', 400);
-            return;
+            $this->fail('Missing code parameter', 400); return;
         }
 
         $code = $input['code'];
@@ -60,15 +58,13 @@ class Api extends Control
     public function toolMetadata(): void
     {
         if (!Flight::hasLevel(LEVELS['ADMIN'])) {
-            Flight::jsonError('Unauthorized', 403);
-            return;
+            $this->fail('Unauthorized', 403); return;
         }
 
         $input = json_decode((file_get_contents('php://input')) ?? '', true);
 
         if (!$input || empty($input['code'])) {
-            Flight::jsonError('Missing code parameter', 400);
-            return;
+            $this->fail('Missing code parameter', 400); return;
         }
 
         $metadata = PhpValidator::extractToolMetadata($input['code']);

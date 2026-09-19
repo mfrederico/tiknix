@@ -159,7 +159,18 @@ abstract class Control {
         }
         return true;
     }
-    
+
+    /**
+     * Emit a JSON error and end the action in ONE statement:
+     *   return $this->fail('Team not found', 404);
+     * Flight::jsonError() only sends the response (it doesn't halt), so the caller must return;
+     * folding both into `return $this->fail(...)` is the 'jsonError + return' idiom the
+     * duplicate scanner flags. Returns void so `return $this->fail(...)` reads naturally.
+     */
+    protected function fail(string $message = 'Error', int $code = 400): void {
+        Flight::jsonError($message, $code);
+    }
+
     /**
      * Validate CSRF token
      */

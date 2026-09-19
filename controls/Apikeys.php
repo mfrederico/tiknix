@@ -187,15 +187,13 @@ class Apikeys extends Control {
         $keyId = $request->data->id ?? null;
 
         if (!$keyId) {
-            Flight::jsonError('Key ID required', 400);
-            return;
+            return $this->fail('Key ID required', 400);
         }
 
         // Load key and verify ownership
         $key = Bean::load('apikey', $keyId);
         if (!$key->id || $key->memberId != $this->member->id) {
-            Flight::jsonError('API key not found', 404);
-            return;
+            return $this->fail('API key not found', 404);
         }
 
         // Generate new token

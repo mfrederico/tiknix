@@ -50,6 +50,14 @@
                             </div>
                             <input type="hidden" name="form_ts" value="<?= time() ?>">
 
+                            <?php $__tsKey = \app\Turnstile::siteKey(); if ($__tsKey !== ''): ?>
+                            <div class="mb-3 text-center" id="ts-gate">
+                                <p class="text-muted small mb-2">Please verify you're human to continue.</p>
+                                <?= \app\Turnstile::widget(['callback' => 'tsVerified', 'expired_callback' => 'tsReset', 'error_callback' => 'tsReset', 'class' => 'd-inline-block']) ?>
+                            </div>
+                            <div id="contact-fields" hidden>
+                            <?php endif; ?>
+
                             <div class="mb-3">
                                 <label for="name" class="form-label">Your Name <span class="text-danger">*</span></label>
                                 <input type="text" 
@@ -103,16 +111,23 @@
                                 <small class="form-text text-muted">Please provide as much detail as possible</small>
                             </div>
                             
-                            <?php $__ts = \app\Turnstile::widget(); if ($__ts !== ''): ?>
-                            <div class="mb-3"><?= $__ts ?></div>
-                            <?php endif; ?>
-
                             <div class="d-grid gap-2">
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-envelope-fill"></i> Send Message
                                 </button>
                                 <a href="/" class="btn btn-outline-secondary">Cancel</a>
                             </div>
+
+                            <?php if (!empty($__tsKey)): ?>
+                            </div><!-- /#contact-fields -->
+                            <?php /* api.js is emitted by Turnstile::widget() above. */ ?>
+                            <script>
+                              // Reveal the form only after Turnstile fires its success hook; hide again on expire/error.
+                              function tsVerified(){ var f=document.getElementById('contact-fields'); if(f){f.hidden=false;}
+                                var g=document.getElementById('ts-gate'); if(g){var p=g.querySelector('p'); if(p){p.innerHTML='<span class="text-success">Verified &#10003;</span>';}} }
+                              function tsReset(){ var f=document.getElementById('contact-fields'); if(f){f.hidden=true;} }
+                            </script>
+                            <?php endif; ?>
                         </form>
                     </div>
                 </div>

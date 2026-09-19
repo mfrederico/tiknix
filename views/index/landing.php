@@ -198,9 +198,9 @@ $hasShowcase = !empty($showcase);
   <!-- HERO -->
   <section class="hero">
     <div>
-      <span class="pill"><span class="dot"></span> For dev agencies, studios &amp; the product teams who run them</span>
-      <h1 style="margin-top:26px;">Build a real app for every client —<br><span style="color:var(--accent2);">isolated, integrated, and theirs to keep.</span></h1>
-      <p class="sub">Describe what your client needs and tiknix's AI builds the real thing — its own database, auth, and hard walls between every client. Connect their Stripe or Shopify and publish to their GitHub. <em>You</em> steer it and own the result — whether you review every line or never touch the code.</p>
+      <span class="pill"><span class="dot"></span> Code sovereignty</span>
+      <h1 style="margin-top:26px;">A real, custom app — built, deployed, and running in a week.<br><span style="color:var(--accent2);">Yours to keep, full source in hand.</span></h1>
+      <p class="sub">Describe what you need and tiknix's AI builds the real thing — its own database, auth, and encrypted connections to Stripe, Shopify and more. Publish it to your own (or your client's) GitHub, host it anywhere, walk away anytime. Not a subscription you rent and never control — <em>you</em> own every line, whether you review each one or never touch the code.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
         <a class="btn btn-ghost" href="#how">See how it works
@@ -429,19 +429,23 @@ $hasShowcase = !empty($showcase);
     </div>
 
     <!-- CASE STUDY: Serenity Gemstones -->
-    <div class="card" style="grid-column:1 / -1; padding:30px 32px; margin-bottom:26px; display:grid; grid-template-columns:1.35fr 1fr; gap:28px; align-items:center;">
-      <div>
-        <div class="eyebrow">Case study · Serenity Gemstones</div>
-        <h3 style="font-family:var(--serif); font-size:clamp(22px,2.4vw,28px); margin-top:12px;">We uploaded a business plan. tiknix built the SaaS.</h3>
-        <p style="color:var(--soft); margin-top:14px; line-height:1.6;">
-          Serenity Gemstones handed us their <em>business plan</em> — not wireframes, not a spec sheet, the actual plan for how they wanted to run the business. tiknix read it and generated a fully customized system built around their real needs: product catalog, a class &amp; events calendar, ticketing with QR check-in at the door, and a storefront — each with its own database, its own logins, and the full source in hand.
-        </p>
-        <p style="color:var(--dim); margin-top:14px; font-size:14px;">From plan to a running, customized platform — built to their business, owned by them.</p>
-      </div>
-      <div style="display:grid; gap:10px;">
-        <div class="stat"><div class="k">Started from</div><div class="v" style="font-size:19px;">A business plan</div></div>
-        <div class="stat"><div class="k">Generated</div><div class="v" style="font-size:19px;">A custom SaaS</div></div>
-        <div class="stat"><div class="k">Owns</div><div class="v" style="font-size:19px;">Every line</div></div>
+    <div class="card" style="grid-column:1 / -1; margin-bottom:26px; overflow:hidden;">
+      <a href="https://serenity-bbdc01.tiknix.com/" target="_blank" rel="noopener" style="display:block;">
+        <img src="/uploads/showcase/serenity-case.jpg" alt="Serenity Gemstones — a custom storefront, catalog, class calendar and QR ticketing built by tiknix from their business plan" loading="lazy" style="width:100%; display:block;">
+      </a>
+      <div style="padding:28px 32px; display:grid; grid-template-columns:1.4fr 1fr; gap:28px; align-items:center;">
+        <div>
+          <div class="eyebrow">Case study · Serenity Gemstones</div>
+          <h3 style="font-family:var(--serif); font-size:clamp(22px,2.4vw,28px); margin-top:12px;">We uploaded a business plan. tiknix built the SaaS.</h3>
+          <p style="color:var(--soft); margin-top:14px; line-height:1.6;">
+            Serenity Gemstones handed us their <em>business plan</em> — not wireframes, not a spec sheet, the actual plan for how they wanted to run the business. tiknix read it and generated a fully customized system built around their real needs: product catalog, a class &amp; events calendar, ticketing with QR check-in at the door, and a storefront — each with its own database, its own logins, and the full source in hand.
+          </p>
+        </div>
+        <div style="display:grid; gap:10px;">
+          <div class="stat"><div class="k">Started from</div><div class="v" style="font-size:19px;">A business plan</div></div>
+          <div class="stat"><div class="k">Generated</div><div class="v" style="font-size:19px;">A custom SaaS</div></div>
+          <div class="stat"><div class="k">Owns</div><div class="v" style="font-size:19px;">Every line</div></div>
+        </div>
       </div>
     </div>
 
@@ -535,10 +539,9 @@ $hasShowcase = !empty($showcase);
 
   <!-- FINAL CTA -->
   <section class="final">
-    <div class="eyebrow" style="justify-content:center;">Code sovereignty</div>
-    <h2 style="margin-top:14px;">A fully working, custom app — built, deployed, and running in under a week. Yours to keep, full source in hand.</h2>
-    <p>That's code sovereignty: not another subscription you rent and never control — the real thing, and you can walk away with every line whenever you want.</p>
-    <p style="color:var(--text); margin-top:14px;">If you're a product-minded person with a brilliant software idea, now is a great time to get excited about your business again.</p>
+    <div class="eyebrow" style="justify-content:center;">Now's the time</div>
+    <h2 style="margin-top:14px;">A great time to get excited about your business again.</h2>
+    <p>If you're a product-minded person with a brilliant software idea, tiknix turns it into the real thing — running, custom, and yours to own, every line.</p>
     <div class="hero-cta" style="justify-content:center; margin-top:32px;">
       <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
       <a class="btn btn-ghost" href="/contact">Reach out — I'd love to show you</a>

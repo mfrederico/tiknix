@@ -16,7 +16,8 @@
         "Direct R::exec for CRUD": {
             "pattern": "R::exec\\(\\s*['\"]\\s*(INSERT|UPDATE|DELETE)\\s+",
             "suggestion": "Use bean operations (Bean::dispense/store/trash) - raw SQL bypasses FUSE model hooks entirely",
-            "severity": "high"
+            "severity": "high",
+            "exclude": "^(services/Schema/Seeds/|database/seeds/)"
         },
         "JSON input parsing": {
             "pattern": "\\$\\w+\\s*=\\s*json_decode\\(\\s*file_get_contents\\(\\s*['\"]php:\\/\\/input['\"]\\s*\\)\\s*,\\s*true\\s*\\)",

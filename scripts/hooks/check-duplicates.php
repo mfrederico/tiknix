@@ -120,9 +120,31 @@ if (!file_exists($patternsFile)) {
     echo "Loaded " . count($patterns) . " patterns from: {$patternsFile}\n\n";
 }
 
+/**
+ * Strip PHP comments (T_COMMENT / T_DOC_COMMENT) but KEEP strings and code, preserving line
+ * numbers (each comment collapses to its own newline count). Pattern rules describe real code,
+ * not prose — so an "R::addDatabase" written in a // comment no longer trips the raw-R:: rule.
+ * Strings are deliberately preserved: several patterns legitimately match string content
+ * (php://input, "Content-Type: application/json", R::exec("INSERT ...")).
+ */
+function stripPhpComments(string $code): string {
+    if (!function_exists('token_get_all')) return $code;
+    $out = '';
+    foreach (@token_get_all($code) as $tok) {
+        if (is_array($tok)) {
+            $out .= ($tok[0] === T_COMMENT || $tok[0] === T_DOC_COMMENT)
+                  ? str_repeat("\n", substr_count($tok[1], "\n"))
+                  : $tok[1];
+        } else {
+            $out .= $tok;
+        }
+    }
+    return $out;
+}
+
 $patternResults = [];
 foreach ($files as $filepath) {
-    $content = file_get_contents($filepath);
+    $content = stripPhpComments(file_get_contents($filepath));
     $relativePath = str_replace($baseDir . '/', '', $filepath);
 
     foreach ($patterns as $name => $config) {

@@ -36,9 +36,9 @@
             "suggestion": "Frequent 2-line idiom - consider a base-class helper that emits and returns in one call",
             "severity": "high"
         },
-        "Bean findOne + not found check": {
-            "pattern": "\\$\\w+\\s*=\\s*Bean::findOne\\([^;]+\\);\\s*\\n\\s*if\\s*\\(\\s*!\\s*\\$\\w+\\s*\\)\\s*\\{",
-            "suggestion": "Consider Bean::findOneOrFail() that throws on not found",
+        "Bean findOne then error-out": {
+            "pattern": "\\$\\w+\\s*=\\s*Bean::findOne\\([^;]+\\);\\s*\\n\\s*if\\s*\\(\\s*!\\s*\\$\\w+\\s*(?:->id)?\\s*\\)\\s*\\{[^}]*?(?:throw\\b|Flight::jsonError\\(|->fail\\()",
+            "suggestion": "This findOne + not-found block only errors out - use Bean::findOneOrFail() which throws on not found. (A not-found block that redirects, flashes, returns false, or find-or-creates is correct as-is and is intentionally NOT flagged.)",
             "severity": "high"
         },
         "Hardcoded permission level": {

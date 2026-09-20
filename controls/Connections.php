@@ -995,8 +995,8 @@ class Connections extends Control {
         // https only. Telegram refuses a plain-http webhook anyway, but failing here
         // says why, rather than surfacing as its less obvious complaint.
         if (stripos($url, 'https://') !== 0) {
-            Flight::jsonError('Telegram only delivers to https. This install\'s [app] baseurl is "'
-                            . $url . '".', 400);
+            $this->fail('Telegram only delivers to https. This install\'s [app] baseurl is "'
+                      . $url . '".', 400);
             return;
         }
 

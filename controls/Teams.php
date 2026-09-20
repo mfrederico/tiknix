@@ -384,12 +384,11 @@ class Teams extends Control {
         // ProjectQuota::canUseTeams() (which also respects the billing-enforcement flag, so an
         // install with billing off keeps working exactly as before) — one source, tested.
         if (!\app\ProjectQuota::canUseTeams((int) $team->ownerId)) {
-            Flight::jsonError(
+            return $this->fail(
                 'Team collaboration comes with any paid project. Add a project to your account '
               . '(the first is free, then $49/mo each) and you can invite your whole team — '
               . 'no per-seat fees.',
                 402);
-            return;
         }
 
         $email = trim($this->getParam('email', ''));

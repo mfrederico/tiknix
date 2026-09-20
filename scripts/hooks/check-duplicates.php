@@ -42,7 +42,7 @@ Options:
 
 Environment variables:
   OLLAMA_URL      Ollama API URL (default: http://localhost:11434)
-  OLLAMA_MODEL    Model to use (default: deepseek-coder-v2:16b)
+  OLLAMA_MODEL    Model to use (default: gpt-oss:120b-cloud)
 
 Custom Patterns:
   Add your own patterns to scripts/hooks/duplicate-patterns.json or specify a custom file.
@@ -330,7 +330,7 @@ if ($useOllama) {
     echo "=== Ollama Semantic Analysis ===\n\n";
 
     $ollamaUrl = getenv('OLLAMA_URL') ?: 'http://localhost:11434';
-    $ollamaModel = getenv('OLLAMA_MODEL') ?: 'deepseek-coder-v2:16b';
+    $ollamaModel = getenv('OLLAMA_MODEL') ?: 'gpt-oss:120b-cloud';
 
     // Extract function signatures for analysis
     $functions = [];

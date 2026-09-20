@@ -132,310 +132,176 @@ class Agentsetup extends Control {
 
     // ==================== MCP SERVER ACTIONS ====================
 
-    /**
-     * Store new MCP server
-     */
+    /** Flash a message and redirect back to an agent-setup tab (optionally its edit view). */
+    private function flashTo(string $tab, string $type, string $message, ?string $edit = null): void {
+        $_SESSION['flash'][] = ['type' => $type, 'message' => $message];
+        Flight::redirect('/agent-setup?tab=' . $tab . ($edit !== null ? '&edit=' . urlencode($edit) : ''));
+    }
+
+    /** Add or update an MCP server via Mcp:: and flash the outcome. $mode = 'add' | 'update'. */
+    private function saveServer(string $mode, string $slug, array $config): void {
+        try {
+            $ok = $mode === 'add' ? Mcp::addServer($slug, $config) : Mcp::updateServer($slug, $config);
+            $this->flashTo('servers', $ok ? 'success' : 'error',
+                $ok ? 'Server ' . ($mode === 'add' ? 'added' : 'updated') . ': ' . $slug : 'Failed to save');
+        } catch (Exception $e) {
+            $this->flashTo('servers', 'error', 'Error: ' . $e->getMessage());
+        }
+    }
+
+    /** Create a NEW managed PHP file (tool/hook): reject if it exists, validate, write. */
+    private function createManagedFile(string $tab, string $label, string $filePath, string $code, string $kind, bool $chmodExec = false): void {
+        if (file_exists($filePath)) { $this->flashTo($tab, 'error', 'File already exists'); return; }
+        $errors = PhpValidator::validateAll($code, $kind)['errors'] ?? [];
+        if (!empty($errors)) { $this->flashTo($tab, 'error', implode(', ', array_column($errors, 'message'))); return; }
+        try {
+            file_put_contents($filePath, $code);
+            if ($chmodExec) chmod($filePath, 0755);
+            $this->flashTo($tab, 'success', $label . ' created: ' . basename($filePath));
+        } catch (Exception $e) {
+            $this->flashTo($tab, 'error', 'Error: ' . $e->getMessage());
+        }
+    }
+
+    /** Update an EXISTING managed PHP file (tool/hook): require it, validate, back up, write. */
+    private function updateManagedFile(string $tab, string $label, ?string $filePath, string $editName, string $code, string $kind): void {
+        if (!$filePath || !file_exists($filePath)) { $this->flashTo($tab, 'error', $label . ' not found'); return; }
+        $errors = PhpValidator::validateAll($code, $kind)['errors'] ?? [];
+        if (!empty($errors)) { $this->flashTo($tab, 'error', implode(', ', array_column($errors, 'message')), $editName); return; }
+        try {
+            copy($filePath, $filePath . '.bak.' . date('Ymd_His'));
+            file_put_contents($filePath, $code);
+            $this->flashTo($tab, 'success', $label . ' updated');
+        } catch (Exception $e) {
+            $this->flashTo($tab, 'error', 'Error: ' . $e->getMessage());
+        }
+    }
+
+    /** Soft-delete a managed file (rename to .deleted.<ts>); the caller has already vetted it. */
+    private function softDeleteFile(string $tab, string $label, string $filePath): void {
+        try {
+            rename($filePath, $filePath . '.deleted.' . date('Ymd_His'));
+            $this->flashTo($tab, 'success', $label . ' deleted');
+        } catch (Exception $e) {
+            $this->flashTo($tab, 'error', 'Error: ' . $e->getMessage());
+        }
+    }
+
+    /** Store new MCP server */
     public function storeServer($params = []) {
         if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
-
         if (!$this->validatePost()) return;
 
         $slug = $this->sanitize($this->getParam('slug', ''));
-        $serverConfig = $this->buildServerConfig();
+        if (empty($slug) || !preg_match('/^[a-z0-9][a-z0-9-]*$/', $slug)) { $this->flashTo('servers', 'error', 'Invalid server name'); return; }
+        if (in_array($slug, ['tiknix', 'playwright'])) { $this->flashTo('servers', 'error', 'Cannot use reserved name'); return; }
 
-        if (empty($slug) || !preg_match('/^[a-z0-9][a-z0-9-]*$/', $slug)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid server name'];
-            Flight::redirect('/agent-setup?tab=servers');
-            return;
-        }
-
-        if (in_array($slug, ['tiknix', 'playwright'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Cannot use reserved name'];
-            Flight::redirect('/agent-setup?tab=servers');
-            return;
-        }
-
-        try {
-            if (Mcp::addServer($slug, $serverConfig)) {
-                $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Server added: ' . $slug];
-            } else {
-                $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Failed to save'];
-            }
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agent-setup?tab=servers');
+        $this->saveServer('add', $slug, $this->buildServerConfig());
     }
 
-    /**
-     * Update MCP server
-     */
+    /** Update MCP server */
     public function updateServer($params = []) {
         if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
-
         if (!$this->validatePost()) return;
 
         $slug = $this->sanitize($this->getParam('slug', ''));
-        $serverConfig = $this->buildServerConfig();
+        if (in_array($slug, ['tiknix'])) { $this->flashTo('servers', 'error', 'Cannot modify system server'); return; }
 
-        if (in_array($slug, ['tiknix'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Cannot modify system server'];
-            Flight::redirect('/agent-setup?tab=servers');
-            return;
-        }
-
-        try {
-            if (Mcp::updateServer($slug, $serverConfig)) {
-                $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Server updated: ' . $slug];
-            } else {
-                $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Failed to save'];
-            }
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agent-setup?tab=servers');
+        $this->saveServer('update', $slug, $this->buildServerConfig());
     }
 
-    /**
-     * Delete MCP server
-     */
+    /** Delete MCP server */
     public function deleteServer($params = []) {
         if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
-
         if (!$this->validatePost()) return;
 
         $slug = $this->sanitize($this->getParam('slug', ''));
-
-        if (in_array($slug, ['tiknix', 'playwright'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Cannot delete system server'];
-            Flight::redirect('/agent-setup?tab=servers');
-            return;
-        }
+        if (in_array($slug, ['tiknix', 'playwright'])) { $this->flashTo('servers', 'error', 'Cannot delete system server'); return; }
 
         try {
-            if (Mcp::removeServer($slug)) {
-                $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Server removed: ' . $slug];
-            }
+            if (Mcp::removeServer($slug)) { $this->flashTo('servers', 'success', 'Server removed: ' . $slug); return; }
         } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
+            $this->flashTo('servers', 'error', 'Error: ' . $e->getMessage()); return;
         }
-
         Flight::redirect('/agent-setup?tab=servers');
     }
 
     // ==================== MCP TOOL ACTIONS ====================
 
-    /**
-     * Store new tool
-     */
+    /** Store new tool */
     public function storeTool($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
-
         if (!$this->validatePost()) return;
 
-        $code = $this->getParam('code', '');
+        $code     = $this->getParam('code', '');
         $fileName = $this->sanitize($this->getParam('file_name', ''));
-
-        if (empty($code) || !preg_match('/^[A-Z][a-zA-Z0-9]*Tool\.php$/', $fileName)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid file name (must be PascalCaseTool.php)'];
-            Flight::redirect('/agent-setup?tab=tools');
-            return;
+        if (empty($code) || !preg_match('/^[A-Z][a-zA-Z0-9]*Tool\\.php$/', $fileName)) {
+            $this->flashTo('tools', 'error', 'Invalid file name (must be PascalCaseTool.php)'); return;
         }
 
-        $filePath = $this->toolsDir . '/' . $fileName;
-        if (file_exists($filePath)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'File already exists'];
-            Flight::redirect('/agent-setup?tab=tools');
-            return;
-        }
-
-        $validation = PhpValidator::validateAll($code, 'tool');
-        if (!empty($validation['errors'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => implode(', ', array_column($validation['errors'], 'message'))];
-            Flight::redirect('/agent-setup?tab=tools');
-            return;
-        }
-
-        try {
-            file_put_contents($filePath, $code);
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Tool created: ' . $fileName];
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agent-setup?tab=tools');
+        $this->createManagedFile('tools', 'Tool', $this->toolsDir . '/' . $fileName, $code, 'tool');
     }
 
-    /**
-     * Update tool
-     */
+    /** Update tool */
     public function updateTool($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
-
         if (!$this->validatePost()) return;
 
         $code = $this->getParam('code', '');
         $name = $this->sanitize($this->getParam('name', ''));
-
-        $filePath = $this->findToolFile($name);
-        if (!$filePath) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Tool not found'];
-            Flight::redirect('/agent-setup?tab=tools');
-            return;
-        }
-
-        $validation = PhpValidator::validateAll($code, 'tool');
-        if (!empty($validation['errors'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => implode(', ', array_column($validation['errors'], 'message'))];
-            Flight::redirect('/agent-setup?tab=tools&edit=' . urlencode($name));
-            return;
-        }
-
-        try {
-            copy($filePath, $filePath . '.bak.' . date('Ymd_His'));
-            file_put_contents($filePath, $code);
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Tool updated'];
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agent-setup?tab=tools');
+        $this->updateManagedFile('tools', 'Tool', $this->findToolFile($name), $name, $code, 'tool');
     }
 
-    /**
-     * Delete tool
-     */
+    /** Delete tool */
     public function deleteTool($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
-
         if (!$this->validatePost()) return;
 
-        $name = $this->sanitize($this->getParam('name', ''));
+        $name     = $this->sanitize($this->getParam('name', ''));
         $filePath = $this->findToolFile($name);
-
         if (!$filePath || in_array(basename($filePath), ['BaseTool.php', 'ToolLoader.php'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Cannot delete'];
-            Flight::redirect('/agent-setup?tab=tools');
-            return;
+            $this->flashTo('tools', 'error', 'Cannot delete'); return;
         }
 
-        try {
-            rename($filePath, $filePath . '.deleted.' . date('Ymd_His'));
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Tool deleted'];
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agent-setup?tab=tools');
+        $this->softDeleteFile('tools', 'Tool', $filePath);
     }
 
     // ==================== HOOK ACTIONS ====================
 
-    /**
-     * Store new hook
-     */
+    /** Store new hook */
     public function storeHook($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
-
         if (!$this->validatePost()) return;
 
-        $code = $this->getParam('code', '');
+        $code     = $this->getParam('code', '');
         $fileName = $this->sanitize($this->getParam('file_name', ''));
-
-        if (empty($code) || !preg_match('/^[a-z][a-z0-9-]*\.php$/', $fileName)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid file name'];
-            Flight::redirect('/agent-setup?tab=hooks');
-            return;
+        if (empty($code) || !preg_match('/^[a-z][a-z0-9-]*\\.php$/', $fileName)) {
+            $this->flashTo('hooks', 'error', 'Invalid file name'); return;
         }
 
-        $filePath = $this->hooksDir . '/' . $fileName;
-        if (file_exists($filePath)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'File already exists'];
-            Flight::redirect('/agent-setup?tab=hooks');
-            return;
-        }
-
-        $validation = PhpValidator::validateAll($code, 'hook');
-        if (!empty($validation['errors'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => implode(', ', array_column($validation['errors'], 'message'))];
-            Flight::redirect('/agent-setup?tab=hooks');
-            return;
-        }
-
-        try {
-            file_put_contents($filePath, $code);
-            chmod($filePath, 0755);
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Hook created: ' . $fileName];
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agent-setup?tab=hooks');
+        $this->createManagedFile('hooks', 'Hook', $this->hooksDir . '/' . $fileName, $code, 'hook', true);
     }
 
-    /**
-     * Update hook
-     */
+    /** Update hook */
     public function updateHook($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
-
         if (!$this->validatePost()) return;
 
         $code = $this->getParam('code', '');
         $name = $this->sanitize($this->getParam('name', ''));
-
-        $filePath = $this->hooksDir . '/' . $name . '.php';
-        if (!file_exists($filePath)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Hook not found'];
-            Flight::redirect('/agent-setup?tab=hooks');
-            return;
-        }
-
-        $validation = PhpValidator::validateAll($code, 'hook');
-        if (!empty($validation['errors'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => implode(', ', array_column($validation['errors'], 'message'))];
-            Flight::redirect('/agent-setup?tab=hooks&edit=' . urlencode($name));
-            return;
-        }
-
-        try {
-            copy($filePath, $filePath . '.bak.' . date('Ymd_His'));
-            file_put_contents($filePath, $code);
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Hook updated'];
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agent-setup?tab=hooks');
+        $this->updateManagedFile('hooks', 'Hook', $this->hooksDir . '/' . $name . '.php', $name, $code, 'hook');
     }
 
-    /**
-     * Delete hook
-     */
+    /** Delete hook */
     public function deleteHook($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
-
         if (!$this->validatePost()) return;
 
-        $name = $this->sanitize($this->getParam('name', ''));
+        $name     = $this->sanitize($this->getParam('name', ''));
         $filePath = $this->hooksDir . '/' . $name . '.php';
+        if (!file_exists($filePath)) { $this->flashTo('hooks', 'error', 'Hook not found'); return; }
 
-        if (!file_exists($filePath)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Hook not found'];
-            Flight::redirect('/agent-setup?tab=hooks');
-            return;
-        }
-
-        try {
-            rename($filePath, $filePath . '.deleted.' . date('Ymd_His'));
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Hook deleted'];
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agent-setup?tab=hooks');
+        $this->softDeleteFile('hooks', 'Hook', $filePath);
     }
 
     /**

@@ -17,11 +17,16 @@ What exists:
   catalog itself is its own repository beside core: `[concepts] catalog_dir`.
 - **CLI** — `clitool --concepts | --concept-verify | --concept-enable | --concept-disable |
   --concept-search | --concept-lint | --concept-publish | --concept-install`.
+- **Screen** — `/admin/concepts` ("Plugins" in the left nav, under Admin): what is installed,
+  whether each verifies, Enable / Disable, where it came from, and what the catalog offers.
+  ROOT only — by `admin::concept*` rows at level 1 *and* a check in each method — because
+  enabling makes new code routable and runs seeds. It switches plugins; it cannot install
+  one (that stays a build task), and it never forces a disable (that stays a CLI action).
 - **First concept** — `calendar` 1.0.0, extracted from serenity's `EventCalendar`, published.
 - **Tests** — `vendor/bin/phpunit` (`tests/unit/`); each concept ships its own under `tests/`.
 
-Not yet: a root manifest and slots in core's views, a web UI for the flag, bundles, update
-notices, ADOPT in the planner prompt, and how a build agent in a worktree installs a concept
+Not yet: a root manifest and slots in core's views, a settings form for concepts, bundles,
+update notices, ADOPT in the planner prompt, and how a build agent in a worktree installs a concept
 (see "The catalog as built").
 
 Four related pieces:

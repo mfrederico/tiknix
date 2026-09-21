@@ -785,6 +785,106 @@ class Admin extends Control {
         $this->render('admin/cache', $this->viewData);
     }
 
+    /* ---- Concepts (COMPONENTS_PLAN.md) ------------------------------------------------
+     *
+     * ROOT, not ADMIN, even though admin::* is 50: switching a concept on makes new code
+     * routable and runs its seeds against the schema. That is the same blast radius as the
+     * raw INI editor, so it carries the same level — by an authcontrol row AND by the check
+     * in each method, because a row can be edited.
+     *
+     * This screen SWITCHES concepts. It deliberately cannot INSTALL one: the instance pool
+     * user can write controls/, so a web install would be the web process writing executable
+     * PHP into its own tree. Installing is a build task (clitool --concept-install, in a
+     * worktree, reviewed, merged).
+     */
+
+    /** GET /admin/concepts — what is installed, whether each could be switched on, and the catalog. */
+    public function concepts($params = []) {
+        if (!$this->requireLevel(self::ROOT_LEVEL)) return;
+
+        $registry = \app\Concepts::instance();
+        $installed = [];
+        foreach ($registry->scan() as $name => $row) {
+            $row['problems'] = $row['manifest'] !== null ? $registry->verify($name) : [];
+            try {
+                $row['provenance'] = $registry->provenance($name);
+            } catch (\app\ConceptException $e) {
+                $row['provenance'] = null;
+                $row['problems'][] = $e->getMessage();
+            }
+            $installed[$name] = $row;
+        }
+
+        // Unreachable is shown as unreachable. An empty list here would read as "the
+        // catalog has nothing", which is a different fact.
+        $catalog = ['results' => [], 'broken' => [], 'source' => null, 'error' => null];
+        try {
+            $found = \app\ConceptCatalog::forInstall()->search('', 50);
+            $catalog = ['error' => null] + $found;
+        } catch (\app\ConceptException $e) {
+            $catalog['error'] = $e->getMessage();
+        }
+
+        $this->render('admin/concepts', [
+            'title'     => 'Plugins',
+            'installed' => $installed,
+            'catalog'   => $catalog,
+        ]);
+    }
+
+    /** POST /admin/conceptenable — verify, run the concept's seeds, switch it on. */
+    public function conceptenable($params = []) {
+        if (!$this->requireLevel(self::ROOT_LEVEL)) return;
+        if (!$this->conceptPost()) return;
+        $name = (string) $this->getParam('name', '');
+        try {
+            $seeded = \app\Concepts::instance()->enable($name);
+            \app\PermissionCache::clear();   // its seeds may have added routes
+            $this->logger->info('Concept enabled', ['concept' => $name, 'member_id' => $this->member->id, 'seeds' => $seeded]);
+            $this->flash('success', "Concept '{$name}' enabled" . ($seeded ? ' — ' . count($seeded) . ' seed file(s) ran.' : '.'));
+        } catch (\app\ConceptException $e) {
+            $this->logger->warning('Concept enable refused', ['concept' => $name, 'member_id' => $this->member->id, 'why' => $e->getMessage()]);
+            $this->flash('error', self::oneLine($e->getMessage()));
+        }
+        Flight::redirect('/admin/concepts');
+    }
+
+    /**
+     * POST /admin/conceptdisable — switch it off. Never forced from here: a concept whose
+     * beans still hold rows is refused, and overriding that is a deliberate CLI action
+     * (clitool --concept-disable=NAME --force). Data is kept either way.
+     */
+    public function conceptdisable($params = []) {
+        if (!$this->requireLevel(self::ROOT_LEVEL)) return;
+        if (!$this->conceptPost()) return;
+        $name = (string) $this->getParam('name', '');
+        try {
+            \app\Concepts::instance()->disable($name);
+            \app\PermissionCache::clear();
+            $this->logger->info('Concept disabled', ['concept' => $name, 'member_id' => $this->member->id]);
+            $this->flash('success', "Concept '{$name}' disabled. Its tables and rows are kept.");
+        } catch (\app\ConceptException $e) {
+            $this->logger->warning('Concept disable refused', ['concept' => $name, 'member_id' => $this->member->id, 'why' => $e->getMessage()]);
+            $this->flash('error', self::oneLine($e->getMessage()));
+        }
+        Flight::redirect('/admin/concepts');
+    }
+
+    /** These two change state, so: the real HTTP verb must be POST, and the CSRF token must hold. */
+    private function conceptPost(): bool {
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST') {
+            $this->flash('error', 'That action must be submitted from the Concepts page.');
+            Flight::redirect('/admin/concepts');
+            return false;
+        }
+        return $this->validateCSRF();
+    }
+
+    /** A multi-line refusal ("cannot be enabled:\n  - a\n  - b") as one flash line. */
+    private static function oneLine(string $message): string {
+        return trim(preg_replace('/\s*\n\s*-\s*/', ' • ', $message));
+    }
+
     /**
      * Clear cache after permission updates
      */

@@ -200,6 +200,12 @@ $defaults = [
     ['billing', 'index', 100, 'Billing page — projects counted, plan, invoices'],
 
     // Root only (1)
+    // Concepts: switching one on makes new code routable and runs its seeds against the
+    // schema — the raw INI editor's blast radius, so the same level. These specific rows
+    // beat admin::* (50); the controller checks ROOT again, because a row can be edited.
+    ['admin', 'concepts',       1, 'Concepts — installed pluggable features (ROOT)'],
+    ['admin', 'conceptenable',  1, 'Concepts — switch one on (ROOT)'],
+    ['admin', 'conceptdisable', 1, 'Concepts — switch one off (ROOT)'],
     ['permissions', 'build', 1, 'Build mode - scan controllers'],
     ['permissions', 'scan', 1, 'Scan for new permissions'],
 ];

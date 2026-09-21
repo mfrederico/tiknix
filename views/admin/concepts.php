@@ -1,0 +1,197 @@
+<?php
+/**
+ * Concepts — installed pluggable features and their on/off switch (ROOT).
+ *
+ * Vars: $installed — name => [manifest, error, enabled, problems[], provenance]
+ *       $catalog   — [results[], broken[], source, error]
+ *
+ * This page switches concepts. It cannot install one: that is a build task
+ * (clitool --concept-install in a worktree), because the web process must never write
+ * executable PHP into its own tree.
+ */
+$h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+$installedNames = array_keys($installed);
+?>
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12 d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+            <div>
+                <h1 class="h3 mb-1">Plugins</h1>
+                <p class="text-muted mb-0">
+                    Pluggable features ("concepts") installed under <code>concepts/</code>. Switched off, a plugin is inert:
+                    none of its classes load, none of its routes answer, none of its partials render.
+                </p>
+            </div>
+            <a href="/admin" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Admin</a>
+        </div>
+    </div>
+
+    <!-- Installed -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="h5">Installed <span class="badge bg-secondary"><?= count($installed) ?></span></h2>
+
+            <?php if (!$installed): ?>
+                <div class="alert alert-light border">
+                    No plugins are installed here. Installing is a build task, not a button —
+                    from a worktree of this project:
+                    <pre class="mb-0 mt-2"><code>php scripts/clitool.php --concept-install=NAME</code></pre>
+                </div>
+            <?php endif; ?>
+
+            <?php foreach ($installed as $name => $c): ?>
+                <?php
+                $m = $c['manifest'];
+                $broken = $m === null;
+                $ready = !$broken && !$c['problems'];
+                $border = $broken ? 'danger' : ($c['enabled'] ? ($c['problems'] ? 'danger' : 'success') : 'secondary');
+                ?>
+                <div class="card mb-3 border-<?= $border ?>">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                            <div>
+                                <h3 class="h5 mb-1">
+                                    <?= $h($name) ?>
+                                    <?php if (!$broken): ?><small class="text-muted">v<?= $h($m->version) ?></small><?php endif; ?>
+                                    <?php if ($broken): ?>
+                                        <span class="badge bg-danger">broken</span>
+                                    <?php elseif ($c['enabled']): ?>
+                                        <span class="badge bg-success">enabled</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-secondary">disabled</span>
+                                    <?php endif; ?>
+                                </h3>
+                                <?php if (!$broken && ($m->title !== '' || $m->blurb !== '')): ?>
+                                    <p class="mb-2"><?= $m->title !== '' ? '<strong>' . $h($m->title) . '</strong> — ' : '' ?><?= $h($m->blurb) ?></p>
+                                <?php endif; ?>
+                            </div>
+
+                            <?php if (!$broken): ?>
+                                <?php if ($c['enabled']): ?>
+                                    <form method="POST" action="/admin/conceptdisable"
+                                          onsubmit="return confirm('Disable <?= $h($name) ?>? Its routes stop answering immediately. Its data is kept.')">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="name" value="<?= $h($name) ?>">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-power"></i> Disable</button>
+                                    </form>
+                                <?php else: ?>
+                                    <form method="POST" action="/admin/conceptenable"
+                                          onsubmit="return confirm('Enable <?= $h($name) ?>? Its seeds run against the database and its routes start answering.')">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="name" value="<?= $h($name) ?>">
+                                        <button type="submit" class="btn btn-success btn-sm" <?= $ready ? '' : 'disabled' ?>
+                                                title="<?= $ready ? '' : 'Fix the problems listed below first' ?>">
+                                            <i class="bi bi-power"></i> Enable
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </div>
+
+                        <?php if ($broken): ?>
+                            <div class="alert alert-danger mb-0"><?= $h($c['error']) ?></div>
+                        <?php else: ?>
+                            <dl class="row small mb-0">
+                                <?php
+                                $facts = [
+                                    'Routes'            => $m->controllers ? implode(', ', array_map(fn($x) => '/' . strtolower($x), $m->controllers)) : '',
+                                    'Owns beans'        => implode(', ', $m->beans),
+                                    'Uses beans'        => implode(', ', $m->usesBeans),
+                                    'Requires concepts' => implode(', ', $m->requiresConcepts),
+                                    'Requires core'     => implode(', ', $m->requiresLib),
+                                    'Hosts slots'       => implode(', ', array_merge(array_keys($m->hostsSlots), $m->hostsCollect)),
+                                    'Fills slots'       => implode(', ', array_merge(array_keys($m->slots), array_keys($m->collect))),
+                                    'Capabilities'      => implode(', ', $m->capabilities),
+                                ];
+                                foreach ($facts as $label => $value):
+                                    if ($value === '') continue; ?>
+                                    <dt class="col-sm-3 col-lg-2 text-muted fw-normal"><?= $h($label) ?></dt>
+                                    <dd class="col-sm-9 col-lg-10 mb-1"><code><?= $h($value) ?></code></dd>
+                                <?php endforeach; ?>
+
+                                <dt class="col-sm-3 col-lg-2 text-muted fw-normal">Origin</dt>
+                                <dd class="col-sm-9 col-lg-10 mb-1">
+                                    <?php if ($c['provenance']): ?>
+                                        catalog <code><?= $h($c['provenance']['source'] ?? '?') ?></code>,
+                                        v<?= $h($c['provenance']['version'] ?? '?') ?>,
+                                        installed <?= $h(substr((string) ($c['provenance']['installed_at'] ?? ''), 0, 10)) ?>
+                                        <?php if (($c['provenance']['version'] ?? null) !== $m->version): ?>
+                                            <span class="badge bg-warning text-dark">adapted: manifest now says v<?= $h($m->version) ?></span>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        authored on this install
+                                    <?php endif; ?>
+                                </dd>
+                            </dl>
+
+                            <?php if ($c['problems']): ?>
+                                <div class="alert alert-<?= $c['enabled'] ? 'danger' : 'warning' ?> mt-3 mb-0">
+                                    <strong><?= $c['enabled']
+                                        ? 'This concept is ENABLED but no longer verifies — pages that use it will error:'
+                                        : 'Cannot be enabled yet:' ?></strong>
+                                    <ul class="mb-0">
+                                        <?php foreach ($c['problems'] as $p): ?><li><?= $h($p) ?></li><?php endforeach; ?>
+                                    </ul>
+                                </div>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- Catalog -->
+    <div class="row">
+        <div class="col-12">
+            <h2 class="h5">In the catalog</h2>
+
+            <?php if ($catalog['error'] !== null): ?>
+                <div class="alert alert-danger">
+                    <strong>The catalog could not be read.</strong> This is a failure to reach it, not an empty catalog.
+                    <div class="small mt-1"><?= $h($catalog['error']) ?></div>
+                </div>
+            <?php else: ?>
+                <p class="text-muted small">Source: <code><?= $h($catalog['source']) ?></code></p>
+                <?php if (!$catalog['results']): ?>
+                    <div class="alert alert-light border">The catalog was reached and holds no concepts yet.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead><tr><th>Plugin</th><th>Version</th><th>What it does</th><th>Requires</th><th>To install</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($catalog['results'] as $r): ?>
+                                <tr>
+                                    <td><strong><?= $h($r['name']) ?></strong><br><small class="text-muted"><?= $h($r['kind']) ?></small></td>
+                                    <td>v<?= $h($r['version']) ?></td>
+                                    <td>
+                                        <?= $h($r['title']) ?>
+                                        <div class="small text-muted"><?= $h($r['blurb']) ?></div>
+                                    </td>
+                                    <td class="small"><?= $h(implode(', ', array_merge($r['requires']['concepts'], $r['requires']['lib'])) ?: '—') ?></td>
+                                    <td class="text-nowrap">
+                                        <?php if (in_array($r['name'], $installedNames, true)): ?>
+                                            <span class="badge bg-success">installed</span>
+                                        <?php else: ?>
+                                            <code class="small">--concept-install=<?= $h($r['name']) ?></code>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+                <?php foreach ($catalog['broken'] as $bname => $why): ?>
+                    <div class="alert alert-warning small">Catalog entry <code><?= $h($bname) ?></code> is broken and was skipped: <?= $h($why) ?></div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+
+            <p class="small text-muted mb-0">
+                Installing is a build task, not a button: <code>php scripts/clitool.php --concept-install=NAME</code> from a
+                worktree, reviewed and merged like any other change. A concept is <em>copied</em> in and becomes this
+                install's own code.
+            </p>
+        </div>
+    </div>
+</div>

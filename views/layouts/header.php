@@ -200,7 +200,15 @@ if ($__loggedIn) {
             <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
             <a class="ui-nav-link<?= $__active('/integrations') ?>" href="/integrations"><i class="bi bi-diagram-3"></i> Integrations</a>
           <?php endif; ?>
-          <a class="ui-nav-link<?= $__active('/admin') ?>" href="/admin"><i class="bi bi-shield-lock"></i> Admin</a>
+          <?php /* /admin/concepts lives under /admin, and $__active is a prefix match — without
+                   this both links would light up on the Plugins page. */
+                $__onPlugins = strpos($__cur, '/admin/concept') === 0; ?>
+          <a class="ui-nav-link<?= $__onPlugins ? '' : $__active('/admin') ?>" href="/admin"><i class="bi bi-shield-lock"></i> Admin</a>
+          <?php /* ROOT only, matching admin::concepts* — switching a plugin on makes new code
+                   routable and runs its seeds. Hidden rather than shown-and-refused. */ ?>
+          <?php if ($__level <= LEVELS['ROOT']): ?>
+            <a class="ui-nav-link<?= $__onPlugins ? ' active' : '' ?>" href="/admin/concepts"><i class="bi bi-puzzle"></i> Plugins</a>
+          <?php endif; ?>
           <a class="ui-nav-link<?= $__active('/security') ?>" href="/security"><i class="bi bi-shield-check"></i> Security</a>
         <?php endif; ?>
       <?php endif; ?>

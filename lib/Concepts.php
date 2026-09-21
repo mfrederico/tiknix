@@ -184,6 +184,21 @@ class Concepts {
         return $out;
     }
 
+    /**
+     * Where an installed concept came from (the catalog's .installed.json), or null when it
+     * was authored here. A file that exists but does not parse is a fault, not "authored here".
+     */
+    public function provenance(string $name): ?array {
+        if (!preg_match(self::NAME_RE, $name)) return null;
+        $file = $this->conceptsDir() . "/{$name}/" . ConceptCatalog::PROVENANCE_FILE;
+        if (!is_file($file)) return null;
+        $data = json_decode((string) file_get_contents($file), true);
+        if (!is_array($data)) {
+            throw new ConceptException("Concept '{$name}': {$file} exists but is not valid JSON.");
+        }
+        return $data;
+    }
+
     /* ---- autoload ------------------------------------------------------------------- */
 
     /**

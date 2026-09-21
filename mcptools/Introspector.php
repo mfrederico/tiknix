@@ -118,7 +118,42 @@ class Introspector {
         }
 
         usort($hits, fn($a, $b) => $b['_s'] <=> $a['_s']);
-        return array_map(fn($h) => array_diff_key($h, ['_s' => 1]), array_slice($hits, 0, $limit));
+        $local = array_map(fn($h) => array_diff_key($h, ['_s' => 1]), array_slice($hits, 0, $limit));
+
+        // After what is HERE, what could be ADOPTED. Appended rather than ranked in, so a
+        // busy codebase never crowds the catalog out of the answer — and asked in the tool
+        // agents already call by habit, instead of relying on them to remember a second one.
+        return array_merge($local, $this->catalogHits($concept));
+    }
+
+    /**
+     * Catalog concepts matching a capability, shaped like whatprovides() hits. Concepts this
+     * project already has are left out — those are found above, as code.
+     *
+     * No catalog configured → nothing (absent is not news). A catalog that is configured and
+     * cannot be reached → ONE hit saying so, because an agent reading "no matches" would
+     * conclude the capability has to be built.
+     */
+    private function catalogHits(string $query, int $limit = 5): array {
+        if (!\app\ConceptCatalog::isConfigured()) return [];
+        try {
+            $found = \app\ConceptCatalog::forInstall()->search($query, $limit + count($this->concepts()));
+        } catch (\app\ConceptException $e) {
+            return [['kind' => 'catalog-UNREACHABLE', 'name' => 'concept catalog', 'path' => '-', 'line' => 0,
+                     'why' => 'could not be checked, so this is NOT "nothing to adopt": ' . $e->getMessage()]];
+        }
+        $have = $this->concepts();
+        $out = [];
+        foreach ($found['results'] as $r) {
+            if (isset($have[$r['name']])) continue;
+            $needs = array_merge($r['requires']['concepts'], $r['requires']['lib']);
+            $out[] = ['kind' => 'catalog-concept', 'name' => $r['name'], 'path' => "catalog:{$r['name']} v{$r['version']}", 'line' => 0,
+                      'why' => 'NOT in this codebase — available to ADOPT (list it in the task\'s `adopts`). '
+                             . ($r['title'] !== '' ? $r['title'] . '. ' : '') . mb_substr($r['blurb'], 0, 200)
+                             . ($needs ? ' Requires: ' . implode(', ', $needs) . '.' : '')];
+            if (count($out) >= $limit) break;
+        }
+        return $out;
     }
 
     /**
@@ -163,6 +198,33 @@ class Introspector {
             }
             $out[] = '';
         }
+        // --- Available to adopt ------------------------------------------------
+        // What this project does NOT have but the shared catalog does. Without this the
+        // inventory ends at the project's own walls, and a fresh project asked for
+        // something another one already built has no way to know.
+        if (\app\ConceptCatalog::isConfigured()) {
+            try {
+                $offered = array_values(array_filter(
+                    \app\ConceptCatalog::forInstall()->search('', 50)['results'],
+                    fn(array $r) => !isset($concepts[$r['name']])));
+                if ($offered) {
+                    $out[] = '### Available to ADOPT (' . count($offered) . ') — ready-made concepts in the shared catalog, NOT in this codebase. '
+                           . 'List one in a task\'s `adopts` and it is installed into that task\'s worktree; `concepts_get("<name>")` for detail';
+                    foreach ($offered as $r) {
+                        $needs = array_merge($r['requires']['concepts'], $r['requires']['lib']);
+                        $out[] = "- **{$r['name']}** v{$r['version']} — " . ($r['title'] !== '' ? "{$r['title']}. " : '')
+                               . mb_substr($r['blurb'], 0, 220) . ($needs ? ' (requires: ' . implode(', ', $needs) . ')' : '');
+                    }
+                    $out[] = '';
+                }
+            } catch (\app\ConceptException $e) {
+                $out[] = '### Available to ADOPT — the catalog could NOT be checked';
+                $out[] = '- ' . $e->getMessage();
+                $out[] = '- Do not read this as "nothing to adopt". Say in the plan that the catalog was unreachable.';
+                $out[] = '';
+            }
+        }
+
         $conceptTag = function (array $row) use ($concepts): string {
             if (($row['concept'] ?? null) === null) return '';
             $on = $concepts[$row['concept']]['enabled'] ?? null;

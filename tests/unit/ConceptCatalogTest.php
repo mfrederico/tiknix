@@ -168,6 +168,24 @@ class ConceptCatalogTest extends ConceptsTestCase {
         $this->assertStringContainsString('adapted for this client', file_get_contents("{$other}/concepts/calendar/lib/Calendar.php"));
     }
 
+    /**
+     * Found by running the real executor: .installed.json recorded the local catalog's
+     * absolute path, so every installed concept failed the lint it is checked with — and the
+     * file is committed into the adopting project's repository.
+     */
+    public function testAnInstalledConceptLintsCleanAndRecordsNoServerPath(): void {
+        $this->local()->publish($this->calendar());
+        $other = $this->root . '/_otherinstall';
+        mkdir($other);
+        $this->local()->install('calendar', $other);
+
+        $this->assertSame('', $this->errors("{$other}/concepts/calendar"));
+        $provenance = file_get_contents("{$other}/concepts/calendar/.installed.json");
+        $this->assertStringNotContainsString($this->catalogDir, $provenance);
+        $this->assertStringNotContainsString('/tmp/', $provenance);
+        $this->assertSame('control-plane catalog', json_decode($provenance, true)['source']);
+    }
+
     public function testProvenanceIsNotPublishedBack(): void {
         $this->local()->publish($this->calendar());
         $other = $this->root . '/_otherinstall';

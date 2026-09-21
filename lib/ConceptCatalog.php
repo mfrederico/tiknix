@@ -68,22 +68,56 @@ class ConceptCatalog {
         }
     }
 
-    /** The catalog THIS install uses — local if it has one, otherwise the control plane's. */
+    /**
+     * The catalog THIS install uses — local if it has one, otherwise the control plane's.
+     *
+     * Reads conf/config.ini itself rather than asking Flight for the loaded value. The plan
+     * orchestrator installs adopted concepts into worktrees, and it boots only the
+     * autoloader — no Bootstrap, no Flight config — so a Flight lookup there answered "no
+     * catalog configured" on the one machine that has the catalog. Same file Flight loads
+     * from; one source, reachable from every process.
+     *
+     * $root is the install whose config decides, which is the install this CODE belongs to —
+     * not the project being built. The executor runs on the control plane, so it reads the
+     * catalog directly; the same code on a self-hosted tenant has no catalog_dir and asks
+     * the control plane with its broker key.
+     */
     public static function forInstall(?string $root = null): self {
+        $where = self::locate($root);
+        return new self($where['dir'] ?? null, $where['broker'] ?? null);   // neither → throws, naming both settings
+    }
+
+    /**
+     * Does this install have a catalog to ask at all? "None configured" is ABSENT — a plain
+     * install that never adopts anything, and nothing to report. It is decided here, as a
+     * value, so it can never be confused with "configured but unreachable", which is a fault
+     * and is always reported. (A config that does not parse still throws: that is broken.)
+     */
+    public static function isConfigured(?string $root = null): bool {
+        return self::locate($root) !== [];
+    }
+
+    /** @return array{dir?:string,broker?:array{base:string,key:string}} empty = nothing configured */
+    private static function locate(?string $root): array {
         $root = rtrim($root ?? dirname(__DIR__), '/');
-        $dir = trim((string) (\Flight::get('concepts.catalog_dir') ?? ''));
+        $config = is_file("{$root}/conf/config.ini") ? parse_ini_file("{$root}/conf/config.ini", true) : [];
+        if ($config === false) {
+            throw new ConceptException("Concept catalog: {$root}/conf/config.ini could not be parsed, so [concepts] catalog_dir is unknown.");
+        }
+        $dir = trim((string) ($config['concepts']['catalog_dir'] ?? ''));
         if ($dir !== '') {
-            return new self($dir[0] === '/' ? $dir : "{$root}/{$dir}");
+            return ['dir' => $dir[0] === '/' ? $dir : "{$root}/{$dir}"];
         }
         $ini = is_file("{$root}/conf/broker.ini") ? (parse_ini_file("{$root}/conf/broker.ini", true) ?: []) : [];
-        $endpoint = (string) ($ini['broker']['endpoint'] ?? '');
-        $key      = (string) ($ini['broker']['key'] ?? '');
-        $u = parse_url($endpoint);
+        $u = parse_url((string) ($ini['broker']['endpoint'] ?? ''));
+        $key = (string) ($ini['broker']['key'] ?? '');
         if ($key === '' || empty($u['scheme']) || empty($u['host'])) {
-            return new self(null, null);   // throws, naming both settings
+            return [];
         }
-        $base = $u['scheme'] . '://' . $u['host'] . (isset($u['port']) ? ':' . $u['port'] : '');
-        return new self(null, ['base' => $base, 'key' => $key]);
+        return ['broker' => [
+            'base' => $u['scheme'] . '://' . $u['host'] . (isset($u['port']) ? ':' . $u['port'] : ''),
+            'key'  => $key,
+        ]];
     }
 
     public function isLocal(): bool {
@@ -148,6 +182,71 @@ class ConceptCatalog {
         return ['name' => $name, 'version' => $m->version, 'files' => $files];
     }
 
+    /* ---- install as a build ---------------------------------------------------------- */
+
+    /**
+     * A plan that installs $name into a project — the shape PlanIngestor::ingest() takes, so
+     * an install is approved, run, committed and merged exactly like any other plan. No
+     * planner wrote it and no agent runs: its one task is of type 'install', and the executor
+     * does the copying (PlanExecutor::installAdopted).
+     *
+     * Everything $name requires comes with it, resolved from the catalog, in dependency
+     * order — except what $projectRoot already has, which is that project's own code and is
+     * never reinstalled. A requirement the catalog does not hold is an error naming it: a
+     * plan that would install a concept which can never be enabled is not a plan.
+     *
+     * @return array{title:string,summary:string,subtasks:array<int,array>}
+     */
+    public function installPlan(string $name, string $projectRoot): array {
+        self::assertName($name);
+        $projectRoot = rtrim($projectRoot, '/');
+        if (is_dir("{$projectRoot}/" . Concepts::DIR . "/{$name}")) {
+            throw new ConceptException("Concept '{$name}' is already in this project ({$projectRoot}/" . Concepts::DIR . "/{$name}). It is that project's own code now; there is nothing to install.");
+        }
+
+        $order = [];      // names, requirements first
+        $detail = [];     // name => get() result
+        $visit = function (string $n, array $trail) use (&$visit, &$order, &$detail, $projectRoot) {
+            if (in_array($n, $trail, true)) {
+                throw new ConceptException('Concept requirements loop: ' . implode(' → ', [...$trail, $n]) . '.');
+            }
+            if (isset($detail[$n]) || is_dir("{$projectRoot}/" . Concepts::DIR . "/{$n}")) return;
+            try {
+                $detail[$n] = $this->get($n);
+            } catch (ConceptException $e) {
+                $why = $trail ? "required by '" . end($trail) . "', but " : '';
+                throw new ConceptException("Concept '{$n}' is {$why}not available: " . $e->getMessage());
+            }
+            foreach ($detail[$n]['requires']['concepts'] as $req) $visit($req, [...$trail, $n]);
+            $order[] = $n;
+        };
+        $visit($name, []);
+
+        $lines = [];
+        foreach ($order as $n) {
+            $d = $detail[$n];
+            $lines[] = "- **{$n}** v{$d['version']}" . ($d['title'] !== '' ? " — {$d['title']}" : '') . ' (' . count($d['files']) . ' files)';
+        }
+        $main = $detail[$name];
+        $also = array_values(array_diff($order, [$name]));
+        return [
+            'title'   => "Install plugin: {$name}" . ($also ? ' (+ ' . implode(', ', $also) . ')' : ''),
+            'summary' => trim("Installs from the concept catalog ({$this->where()}), copied into `concepts/`:\n\n" . implode("\n", $lines)
+                       . "\n\n{$main['blurb']}\n\nNo agent runs. The files are committed and merged like any task; "
+                       . 'afterwards the plugin is switched on from Admin → Plugins. It is a COPY — this project\'s own code from then on.'),
+            'subtasks' => [[
+                'id'          => 't1',
+                'title'       => 'Install ' . implode(', ', $order) . ' from the catalog',
+                'description' => "Copy into `concepts/`: " . implode(', ', $order) . '. Install-only — nothing is adapted or wired by this task.',
+                'task_type'   => 'install',
+                'adopts'      => $order,
+                'files'       => array_map(fn($n) => Concepts::DIR . "/{$n}/", $order),
+                'depends_on'  => [],
+                'reuses'      => [],
+            ]],
+        ];
+    }
+
     /* ---- install (any install) ------------------------------------------------------ */
 
     /**
@@ -193,8 +292,12 @@ class ConceptCatalog {
             if ($m->version !== (string) $bundle['version']) {
                 throw new ConceptException("Concept '{$name}': bundle says version {$bundle['version']} but its manifest says {$m->version}.");
             }
+            // This file is committed into the PROJECT's repository — a client's, eventually. So
+            // the source is never the control plane's filesystem path: that would publish the
+            // server's layout into every project that adopts anything.
             file_put_contents("{$tmp}/" . self::PROVENANCE_FILE, json_encode([
-                'name' => $name, 'version' => $m->version, 'source' => $this->where(),
+                'name' => $name, 'version' => $m->version,
+                'source' => $this->isLocal() ? 'control-plane catalog' : $this->where(),
                 'installed_at' => date('c'), 'bundle_sha256' => hash('sha256', json_encode($bundle['files'])),
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
             if (!rename($tmp, $target)) {

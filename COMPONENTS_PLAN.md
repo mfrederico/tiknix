@@ -1,7 +1,7 @@
 # Concepts: pluggable features, one storefront, augment-decompose
 
-**The runtime, the catalog and the first concept are built and tested. The storefront work,
-ADOPT in the planner prompt, and augment-decompose are still design.**
+**The runtime, the catalog, the first concept, ADOPT and the install runner are built and
+tested. The storefront work and augment-decompose are still design.**
 Written 2026-09-21, revised the same day after surveying serenity and the shop sidecar.
 
 What exists:
@@ -25,9 +25,13 @@ What exists:
 - **First concept** — `calendar` 1.0.0, extracted from serenity's `EventCalendar`, published.
 - **Tests** — `vendor/bin/phpunit` (`tests/unit/`); each concept ships its own under `tests/`.
 
+- **ADOPT** — the planner classifies REUSE → EXTEND → ADOPT → NEW; a task's `adopts` list is
+  installed into its worktree by the executor; `whatprovides` and `reuse_digest` surface
+  catalog matches; **Install into &lt;project&gt;** on the Plugins page queues an agent-less
+  install plan. See "The catalog as built".
+
 Not yet: a root manifest and slots in core's views, a settings form for concepts, bundles,
-update notices, ADOPT in the planner prompt, and how a build agent in a worktree installs a concept
-(see "The catalog as built").
+update notices, the myctobot multi-source scanner, and any of the storefront work.
 
 Four related pieces:
 
@@ -650,10 +654,49 @@ A naming trap found the hard way: PHP class names are case-insensitive and `app\
 class — the controller called itself and every authenticated request answered 500. Hence
 `Concepthub`, and `tests/unit/CoreNamingTest.php` to keep core from doing it again.
 
-**Open: how a build agent installs.** `--concept-install` needs the instance's
-`conf/broker.ini`, which is gitignored and so absent from a build worktree. Either the
-executor installs into the worktree before the agent starts (it runs with the instance's
-config), or an MCP tool does it on the agent's behalf. Decide this with ADOPT, below.
+**Settled: the executor installs.** A build agent cannot — its worktree has no
+`conf/broker.ini` (gitignored), so it cannot reach the catalog — and a web button must not
+copy into the live tree, because **every worktree is cut from the committed base**: files
+dropped into the working tree are invisible to every agent that runs afterwards. An install
+has to end as a commit. So:
+
+- A plan task carries **`adopts: ["calendar"]`** beside `reuses` (`SubmitPlanTool`,
+  `PlanIngestor`). `PlanExecutor::installAdopted()` copies each one into the task's worktree
+  right after the worktree is created and before the agent starts, and the brief tells the
+  agent what is already there ("adapt and wire it, do not rewrite it"). A concept the project
+  already has is left exactly as it is. An unknown concept, or a requirement that is neither
+  present nor adopted alongside, **fails the task by name**.
+- **Finding is in the tools agents already call.** `whatprovides("<capability>")` lists what
+  is in the project and then appends catalog matches — "NOT in this codebase — available to
+  ADOPT" — and `reuse_digest` gains an "Available to ADOPT" section. `concepts_search` stays
+  for deliberate browsing. No catalog configured says nothing (absent); a catalog that is
+  configured and unreachable says so in both, because "no matches" would be read as "build it".
+- **Installing is not an MCP tool.** `whatprovides` is a read tool and stays one; nothing an
+  agent calls writes code from the catalog.
+- **The install runner** — a plugin installed with no feature work around it — is a plan
+  nobody had to write: `ConceptCatalog::installPlan()` (the concept plus whatever it requires
+  that the project lacks, requirements first) → `scripts/concept-install.php` writes it as a
+  `*.plan.json` and hands it to the existing `plan-ingest.php` → it appears in Builder, is
+  approved and run like any plan. Its one task has `task_type: install`: the executor copies
+  the files, **runs no agent**, leaves the task running with no session, and the ordinary
+  `reapTask()` commits and merges it. The **Install into &lt;project&gt;** button on the
+  Plugins page (`admin::conceptinstall`, ROOT) runs that script for the project selected in
+  the header.
+- The runner checks an installed concept with the static lint only. It does **not** run the
+  concept's tests: the orchestrator is outside the jail every agent runs in, and executing
+  catalog code from it would give a published concept the builder's own privileges.
+
+Proven with the real executor on a throwaway git project: tick 1 installs and leaves the
+task running, tick 2 reaps → commit → merge to `main`, worktree and branch cleaned up, the
+merged copy passes its own 21 tests. That run found what unit tests had not: `.installed.json`
+recorded the local catalog's absolute path, so every installed concept failed its own lint —
+and that file is committed into the adopting project's repository. Provenance now records
+`control-plane catalog`, and the lint skips the provenance file.
+
+**Open: the Plugins page is about THIS install.** Its "Installed" list is the install it runs
+on; Install goes into the selected *project*. On the control plane those differ, which the
+button's label ("Install into Serenity") makes explicit — but a project's plugins are still
+switched on from that project's own `/admin/concepts`, not from core's.
 
 **Open: concept settings.** `calendar` needs one system setting
 (`concept.calendar.timezone`) and there is no screen to set it — it is documented as a seed

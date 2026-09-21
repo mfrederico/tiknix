@@ -204,6 +204,7 @@ $defaults = [
     ['admin', 'concepts',       1, 'Concepts — installed pluggable features (ROOT)'],
     ['admin', 'conceptenable',  1, 'Concepts — switch one on (ROOT)'],
     ['admin', 'conceptdisable', 1, 'Concepts — switch one off (ROOT)'],
+    ['admin', 'conceptinstall', 1, 'Concepts — queue an install into the selected project, as a build (ROOT)'],
     ['permissions', 'build', 1, 'Build mode - scan controllers'],
     ['permissions', 'scan', 1, 'Scan for new permissions'],
 ];

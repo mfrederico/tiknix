@@ -338,9 +338,29 @@ class PlanExecutor {
         $add = $this->git(['worktree', 'add', '-b', $branch, $wtRel, $base]);
         if (!$add['ok']) { $this->fail($t, 'worktree add failed: ' . $add['out']); return false; }
 
+        // Adopted concepts land in the worktree BEFORE the agent starts, so the task is to
+        // adapt code that is there rather than to write it. Before the brief, because the
+        // brief describes what was installed.
+        $adopted = $this->installAdopted($t, $wtAbs);
+        if ($adopted === null) {               // already failed, with the reason
+            $this->cleanupWorktree($wtRel, $branch, false);
+            return false;
+        }
+
+        // An INSTALL task has no agent: the concepts just copied in ARE the work. It is left
+        // 'running' with no session, which is exactly what reapTask() looks for — so the
+        // install is committed and merged by the same code, on the same terms, as any task.
+        // That is the point of doing it here: a button that wrote into the live tree would
+        // leave files no worktree can see, because every worktree is cut from the COMMITTED base.
+        if ((string) $t->taskType === 'install') {
+            $ok = $this->finishInstallTask($t, $wtAbs, $branch, $adopted);
+            if (!$ok) $this->cleanupWorktree($wtRel, $branch, false);
+            return $ok;
+        }
+
         // Brief + MCP config live under the worktree's .aibuilder (gitignored, not committed).
         @mkdir($wtAbs . '/.aibuilder', 0775, true);
-        file_put_contents($wtAbs . '/.aibuilder/task.md', $this->buildTaskBrief($t));
+        file_put_contents($wtAbs . '/.aibuilder/task.md', $this->buildTaskBrief($t, $adopted));
         if (is_file($this->instanceDir . '/.mcp.json')) {
             @copy($this->instanceDir . '/.mcp.json', $wtAbs . '/.mcp.json');
         }
@@ -830,12 +850,127 @@ echo "[agent] {$session} exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
 BASH;
     }
 
-    private function buildTaskBrief($t): string {
+    /**
+     * Copy every concept this task adopts into its worktree, from the catalog.
+     *
+     * This is how a plugin gets installed by a build: not by the agent (a worktree has no
+     * conf/broker.ini — it is gitignored — so it could not reach the catalog) and not by a
+     * web button writing into the live tree (every worktree is cut from the COMMITTED base,
+     * so an uncommitted install is invisible to every agent). The executor has the catalog
+     * and the worktree, and the install is committed and merged with the rest of the task.
+     *
+     * A concept already in the worktree — installed by an earlier, merged task — is left
+     * exactly as it is: it is this project's own code and may have been adapted.
+     *
+     * @return array<int,array{name:string,version:string,status:string,blurb:string,files:int}>|null
+     *         null when the task was failed (the reason is already recorded)
+     */
+    private function installAdopted($t, string $wtAbs): ?array {
+        $names = json_decode((string) ($t->adopts ?? ''), true);
+        if (!is_array($names) || !$names) return [];
+
+        try {
+            $catalog = $this->catalog();
+        } catch (ConceptException $e) {
+            $this->fail($t, 'cannot adopt ' . implode(', ', $names) . ': ' . $e->getMessage());
+            return null;
+        }
+
+        $out = [];
+        foreach ($names as $name) {
+            $name = (string) $name;
+            try {
+                if (is_dir("{$wtAbs}/" . Concepts::DIR . "/{$name}")) {
+                    $m = ConceptManifest::load("{$wtAbs}/" . Concepts::DIR . "/{$name}", $name);
+                    $out[] = ['name' => $name, 'version' => $m->version, 'status' => 'already in this project', 'blurb' => $m->blurb, 'files' => 0];
+                    $this->logEvent($t, 'info', "Concept '{$name}' v{$m->version} is already in this project; left as it is.");
+                    continue;
+                }
+                $r = $catalog->install($name, $wtAbs);
+                $m = ConceptManifest::load($r['dir'], $name);
+                $out[] = ['name' => $name, 'version' => $r['version'], 'status' => 'installed from the catalog', 'blurb' => $m->blurb, 'files' => $r['files']];
+                $this->logEvent($t, 'info', "Adopted concept '{$name}' v{$r['version']} ({$r['files']} files) into the worktree.");
+            } catch (ConceptException $e) {
+                $this->fail($t, "could not adopt concept '{$name}': " . $e->getMessage());
+                return null;
+            }
+        }
+
+        // What each one requires must be there too — present already, or adopted alongside.
+        // Named here, because the agent would otherwise meet it as a fatal at enable time.
+        foreach ($out as $a) {
+            $m = ConceptManifest::load("{$wtAbs}/" . Concepts::DIR . "/{$a['name']}", $a['name']);
+            foreach ($m->requiresConcepts as $req) {
+                if (!is_dir("{$wtAbs}/" . Concepts::DIR . "/{$req}")) {
+                    $this->fail($t, "concept '{$a['name']}' requires concept '{$req}', which is neither in this project nor in this task's 'adopts'.");
+                    return null;
+                }
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Close out an install-only task: check what landed, then hand it to the reaper.
+     *
+     * The check is the static lint, nothing more. A concept's own tests are deliberately NOT
+     * run here: this process is the orchestrator, outside the jail every build agent runs
+     * in, and executing catalog code from it would give a published concept the builder's
+     * own privileges. Tests run where agents run.
+     */
+    private function finishInstallTask($t, string $wtAbs, string $branch, array $adopted): bool {
+        if (!$adopted) {
+            $this->fail($t, "this is an install task, but its 'adopts' list is empty — there is nothing to install.");
+            return false;
+        }
+        foreach ($adopted as $a) {
+            $errors = array_filter(ConceptLint::check("{$wtAbs}/" . Concepts::DIR . "/{$a['name']}"),
+                                   fn(array $f) => $f['severity'] === ConceptLint::ERROR);
+            if ($errors) {
+                $first = reset($errors);
+                $this->fail($t, "concept '{$a['name']}' did not pass the lint once installed (" . count($errors)
+                              . " error(s)); first: {$first['file']} — {$first['message']}");
+                return false;
+            }
+        }
+        $t->status         = 'running';
+        $t->worktreeBranch = $branch;
+        $t->agentSession   = '';                    // no agent: reaped on the next tick
+        $t->startedAt      = date('Y-m-d H:i:s');
+        Bean::store($t);
+        $this->logEvent($t, 'info', 'Install task: ' . implode(', ', array_map(fn($a) => "{$a['name']} v{$a['version']} ({$a['status']})", $adopted))
+                                   . ' — no agent; it will be committed and merged like any task.');
+        return true;
+    }
+
+    /** The catalog adopted concepts come from. Its own method so a test can supply one. */
+    protected function catalog(): ConceptCatalog {
+        return ConceptCatalog::forInstall();
+    }
+
+    /** What the agent is told about the concepts installed for it. */
+    private function adoptedBrief(array $adopted): string {
+        if (!$adopted) return '';
+        $lines = [];
+        foreach ($adopted as $a) {
+            $lines[] = "- **concepts/{$a['name']}/** v{$a['version']} ({$a['status']})" . ($a['blurb'] !== '' ? " — {$a['blurb']}" : '');
+        }
+        return "\n## Adopted concepts — already installed for you, do not rewrite them\n"
+             . implode("\n", $lines) . "\n\n"
+             . "Each is a self-contained directory (`concept.json`, `lib/`, `controls/`, `views/`, `seeds/`, `tests/`, and a\n"
+             . "`README.md` — read that first). It was COPIED in and is this project's own code now: adapt it freely, and\n"
+             . "wire it into the rest of the app. Its classes are `app\\concepts\\<name>\\…`. Keep `concept.json` truthful\n"
+             . "as you change it (`requires.lib`, `uses.beans`, `provides`). You cannot switch it on from here — a concept\n"
+             . "is enabled after merge, on the Plugins page — so do not depend on its routes answering while you work;\n"
+             . "its own tests (`vendor/bin/phpunit concepts/<name>/tests`) are how you check it.\n";
+    }
+
+    private function buildTaskBrief($t, array $adopted = []): string {
         $files = json_decode(((string)$t->relatedFiles) ?? '', true);
         $files = is_array($files) ? implode("\n", array_map(fn($f) => "- $f", $files)) : '';
         $title = (string)$t->title;
         $desc  = (string)$t->description;
-        $reuse = $this->reuseBrief($t);
+        $reuse = $this->reuseBrief($t) . $this->adoptedBrief($adopted);
         return <<<MD
 # Build task: {$title}
 

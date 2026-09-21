@@ -16,11 +16,7 @@ class ConceptsTest extends ConceptsTestCase {
 
     /** A bean to hand to save(). In-memory SQLite: nothing is stored, and no install is touched. */
     private function bean(): OODBBean {
-        static $connected = false;
-        if (!$connected) {
-            \RedBeanPHP\R::setup('sqlite::memory:');
-            $connected = true;
-        }
+        self::memoryDb();
         return Bean::dispense('product');
     }
 

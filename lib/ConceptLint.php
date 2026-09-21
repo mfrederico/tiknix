@@ -59,6 +59,9 @@ class ConceptLint {
         $sawRawSql = [];
 
         foreach (self::files($dir) as $rel) {
+            // Where an INSTALL came from — written by the installer, never published, and not
+            // the concept author's text. Linting it faulted every installed concept.
+            if ($rel === ConceptCatalog::PROVENANCE_FILE) continue;
             // Never read THROUGH a symlink: it points out of the concept, and linting it would
             // mean opening whatever it names (it was /etc/hostname in the test that found this).
             if (is_link("{$dir}/{$rel}")) {

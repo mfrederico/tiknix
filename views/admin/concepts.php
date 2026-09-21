@@ -10,7 +10,6 @@
  * executable PHP into its own tree.
  */
 $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-$installedNames = array_keys($installed);
 ?>
 <div class="container-fluid">
     <div class="row">
@@ -33,9 +32,9 @@ $installedNames = array_keys($installed);
 
             <?php if (!$installed): ?>
                 <div class="alert alert-light border">
-                    No plugins are installed here. Installing is a build task, not a button —
-                    from a worktree of this project:
-                    <pre class="mb-0 mt-2"><code>php scripts/clitool.php --concept-install=NAME</code></pre>
+                    No plugins are installed on this install. To add one to a project, use
+                    <strong>Install</strong> in the catalog below — it is queued as a build, and once that has merged
+                    the plugin appears on that project's own Plugins page to be switched on.
                 </div>
             <?php endif; ?>
 
@@ -152,13 +151,24 @@ $installedNames = array_keys($installed);
                     <div class="small mt-1"><?= $h($catalog['error']) ?></div>
                 </div>
             <?php else: ?>
-                <p class="text-muted small">Source: <code><?= $h($catalog['source']) ?></code></p>
+                <p class="text-muted small mb-2">Source: <code><?= $h($catalog['source']) ?></code></p>
+                <?php if ($project !== null): ?>
+                    <p class="small mb-2">
+                        <i class="bi bi-box-arrow-in-down"></i>
+                        Installs go into the selected project, <strong><?= $h($project['name']) ?></strong>
+                        (<code><?= $h($project['slug']) ?></code>) — change it from the project switcher in the header.
+                    </p>
+                <?php else: ?>
+                    <div class="alert alert-warning small py-2">
+                        No project is selected, so there is nowhere to install into. <a href="/projects">Choose a project</a> first.
+                    </div>
+                <?php endif; ?>
                 <?php if (!$catalog['results']): ?>
                     <div class="alert alert-light border">The catalog was reached and holds no concepts yet.</div>
                 <?php else: ?>
                     <div class="table-responsive">
                         <table class="table table-sm align-middle">
-                            <thead><tr><th>Plugin</th><th>Version</th><th>What it does</th><th>Requires</th><th>To install</th></tr></thead>
+                            <thead><tr><th>Plugin</th><th>Version</th><th>What it does</th><th>Requires</th><th></th></tr></thead>
                             <tbody>
                             <?php foreach ($catalog['results'] as $r): ?>
                                 <tr>
@@ -170,10 +180,19 @@ $installedNames = array_keys($installed);
                                     </td>
                                     <td class="small"><?= $h(implode(', ', array_merge($r['requires']['concepts'], $r['requires']['lib'])) ?: '—') ?></td>
                                     <td class="text-nowrap">
-                                        <?php if (in_array($r['name'], $installedNames, true)): ?>
-                                            <span class="badge bg-success">installed</span>
+                                        <?php if ($project === null): ?>
+                                            <span class="text-muted small">select a project</span>
+                                        <?php elseif (!empty($r['in_project'])): ?>
+                                            <span class="badge bg-success">in <?= $h($project['name']) ?></span>
                                         <?php else: ?>
-                                            <code class="small">--concept-install=<?= $h($r['name']) ?></code>
+                                            <form method="POST" action="/admin/conceptinstall" class="d-inline"
+                                                  onsubmit="return confirm('Queue an install of <?= $h($r['name']) ?> into <?= $h($project['name']) ?>? It becomes a plan in Builder for you to approve and run — nothing is copied until then.')">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="name" value="<?= $h($r['name']) ?>">
+                                                <button type="submit" class="btn btn-primary btn-sm">
+                                                    <i class="bi bi-box-arrow-in-down"></i> Install into <?= $h($project['name']) ?>
+                                                </button>
+                                            </form>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
@@ -188,9 +207,10 @@ $installedNames = array_keys($installed);
             <?php endif; ?>
 
             <p class="small text-muted mb-0">
-                Installing is a build task, not a button: <code>php scripts/clitool.php --concept-install=NAME</code> from a
-                worktree, reviewed and merged like any other change. A concept is <em>copied</em> in and becomes this
-                install's own code.
+                <strong>Install</strong> queues a build rather than copying files: the plugin (and anything it requires) becomes
+                a plan in Builder, and running it commits and merges the code like any other task. It has to end as a commit —
+                build agents work in worktrees cut from the committed base, so files dropped into the live tree would be
+                invisible to them. A plugin is <em>copied</em> in and becomes that project's own code.
             </p>
         </div>
     </div>

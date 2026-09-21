@@ -114,7 +114,9 @@ class PlanIngestor
             $t = Bean::dispense('workbenchtask');
             $t->title        = mb_substr((string)$st['title'], 0, 200);
             $t->description  = (string)($st['description'] ?? '');
-            $t->taskType     = 'feature';
+            // 'install' is the one other type: a task with no agent, whose whole job is the
+            // `adopts` the executor installs (ConceptCatalog::installPlan builds these).
+            $t->taskType     = ($st['task_type'] ?? '') === 'install' ? 'install' : 'feature';
             $t->priority     = (int)($st['priority'] ?? 3);
             $t->status       = 'pending';
             $t->parentTaskId = (int)$parent->id;
@@ -123,6 +125,7 @@ class PlanIngestor
             $t->engine       = EngineRegistry::coerce($st['engine'] ?? null, (string)$inst->engine);
             $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
             $t->reuses       = json_encode(is_array($st['reuses'] ?? null) ? array_values($st['reuses']) : []);
+            $t->adopts       = json_encode(self::adopts($st['adopts'] ?? null, (string) $st['title']));
             $t->planRef      = $ref;
             $t->memberId     = $memberId;
             $t->createdAt    = $now;
@@ -149,6 +152,7 @@ class PlanIngestor
                 'id' => (int)$t->id, 'ref' => $ref, 'title' => $t->title,
                 'priority' => (int)$t->priority, 'engine' => $t->engine, 'depends_on' => $deps,
                 'reuses' => json_decode((string)$t->reuses, true) ?: [],
+                'adopts' => json_decode((string)$t->adopts, true) ?: [],
             ];
         }
 
@@ -157,5 +161,32 @@ class PlanIngestor
             'checkpoint' => $checkpointTag,
             'subtasks'   => $subs,
         ];
+    }
+
+    /**
+     * The catalog concepts a subtask adopts, as clean names.
+     *
+     * A name that is not a concept name is REFUSED, not dropped: these become directory
+     * names under concepts/ in the task's worktree, and a planner that wrote
+     * "calendar (v1.0.0)" meant something the executor would otherwise silently skip —
+     * leaving an agent told to adapt code that was never installed.
+     *
+     * @return string[]
+     */
+    private static function adopts($raw, string $taskTitle): array {
+        if ($raw === null || $raw === []) return [];
+        if (!is_array($raw)) {
+            throw new \RuntimeException("Plan task \"{$taskTitle}\": 'adopts' must be a list of concept names.");
+        }
+        $out = [];
+        foreach ($raw as $name) {
+            if (!is_string($name) || !preg_match('/^[a-z][a-z0-9]*$/D', $name)) {
+                throw new \RuntimeException(
+                    "Plan task \"{$taskTitle}\": 'adopts' entry " . json_encode($name)
+                  . ' is not a concept name. Use the exact name concepts_search returned (lowercase letters and digits).');
+            }
+            $out[] = $name;
+        }
+        return array_values(array_unique($out));
     }
 }

@@ -39,6 +39,17 @@ abstract class ConceptsTestCase extends TestCase {
     /** @var callable[] autoloaders this test registered, removed again in tearDown */
     private array $registered = [];
 
+    /**
+     * An in-memory SQLite for tests that need a bean. One per process — RedBean refuses a
+     * second setup of the same key, and several test classes ask. Nothing is ever stored to
+     * disk, and no install's database is touched.
+     */
+    protected static function memoryDb(): void {
+        if (!\app\Bean::hasDatabase('default')) {
+            \RedBeanPHP\R::setup('sqlite::memory:');
+        }
+    }
+
     /** A concept name no other test has used: tkt1, tkt2, … */
     protected function uniq(string $stem): string {
         return $stem . (++self::$seq);

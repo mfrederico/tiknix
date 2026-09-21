@@ -852,11 +852,77 @@ class Admin extends Control {
             $catalog['error'] = $e->getMessage();
         }
 
+        // An install goes into the SELECTED PROJECT, as a build — not into this install's live
+        // tree. So the catalog rows are judged against that project, and the button names it.
+        $project = $this->conceptProject();
+        foreach ($catalog['results'] as &$row) {
+            $row['in_project'] = $project !== null && is_dir($project['dir'] . '/' . \app\Concepts::DIR . '/' . $row['name']);
+        }
+        unset($row);
+
         $this->render('admin/concepts', [
             'title'     => 'Plugins',
             'installed' => $installed,
             'catalog'   => $catalog,
+            'project'   => $project,
         ]);
+    }
+
+    /** The project an install would go into: the one selected in the header, or null. */
+    private function conceptProject(): ?array {
+        $inst = \app\ProjectContext::current((int) $this->member->id);
+        if ($inst === null) return null;
+        return [
+            'id'   => (int) $inst->id,
+            'slug' => (string) $inst->slug,
+            'name' => (string) ($inst->displayName ?? '') !== '' ? (string) $inst->displayName : (string) $inst->slug,
+            'dir'  => \Model_Instance::dirFrom((string) $inst->slug, (string) ($inst->app ?? '')),
+        ];
+    }
+
+    /**
+     * POST /admin/conceptinstall — queue a plugin install for the selected project.
+     *
+     * It does NOT copy files. It runs scripts/concept-install.php, which writes an install
+     * PLAN into the project and ingests it; the plan is then approved and run in Builder,
+     * and the executor installs, commits and merges. A copy into the live tree would be
+     * invisible to every build agent, because worktrees are cut from the committed base.
+     */
+    public function conceptinstall($params = []) {
+        if (!$this->requireLevel(self::ROOT_LEVEL)) return;
+        if (!$this->conceptPost()) return;
+
+        $name = (string) $this->getParam('name', '');
+        if (!preg_match('/^[a-z][a-z0-9]*$/D', $name)) {
+            $this->flash('error', 'That is not a plugin name.');
+            Flight::redirect('/admin/concepts');
+            return;
+        }
+        $project = $this->conceptProject();
+        if ($project === null) {
+            $this->flash('error', 'Select a project first — a plugin is installed INTO a project, as a build.');
+            Flight::redirect('/admin/concepts');
+            return;
+        }
+
+        $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(dirname(__DIR__) . '/scripts/concept-install.php')
+             . ' --concept=' . escapeshellarg($name)
+             . ' --slug='    . escapeshellarg($project['slug'])
+             . ' --dir='     . escapeshellarg($project['dir'])
+             . ' --member='  . (int) $this->member->id
+             . ' 2>&1';
+        $out = [];
+        exec($cmd, $out, $code);
+        $said = trim(implode(' ', array_slice(array_filter(array_map('trim', $out)), -2)));
+
+        if ($code === 0) {
+            $this->logger->info('Concept install queued', ['concept' => $name, 'project' => $project['slug'], 'member_id' => $this->member->id]);
+            $this->flash('success', "Install of '{$name}' queued for {$project['name']}. Approve and run it in Builder; once it has merged, switch it on from that project's Plugins page.");
+        } else {
+            $this->logger->warning('Concept install not queued', ['concept' => $name, 'project' => $project['slug'], 'exit' => $code, 'output' => $out]);
+            $this->flash('error', "Could not queue '{$name}' for {$project['name']}: " . ($said !== '' ? $said : "the runner exited {$code}"));
+        }
+        Flight::redirect('/admin/concepts');
     }
 
     /** POST /admin/conceptenable — verify, run the concept's seeds, switch it on. */

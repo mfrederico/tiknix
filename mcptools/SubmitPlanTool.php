@@ -40,6 +40,7 @@ class SubmitPlanTool extends BaseTool {
                         'files'       => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'likely files to touch'],
                         'depends_on'  => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'ids of tasks that MUST finish before this one (empty = can start immediately / run in parallel)'],
                         'reuses'      => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'existing primitives this task builds on, as "kind/name" (e.g. "controller/Lead", "model/member", "lib/Mailer"). Empty ONLY for genuinely new ground.'],
+                        'adopts'      => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'catalog concepts this task ADOPTS, by exact name from concepts_search (e.g. "calendar"). Each is copied into the task\'s worktree at concepts/<name>/ BEFORE the agent starts, so the task is to adapt and wire it, not to write it. Include everything it requires.'],
                     ],
                     'required' => ['title'],
                 ],

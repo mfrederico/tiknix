@@ -459,11 +459,20 @@ truth: it is what already exists right now. You do NOT need to call `codebase_ma
    For every capability the goal needs, classify it explicitly as ONE of:
    - **REUSE** `<existing controller/model/lib>` — it already does this; wire to it.
    - **EXTEND** `<existing>` — add a method / column / route to something that exists.
-   - **NEW** — nothing above fits; you MUST justify in the task's description why no
-     existing primitive covers it.
-   Bias hard toward REUSE/EXTEND. A plan that proposes NEW controllers, models, or
-   services when a close match already exists above is a defect — prefer a method on
-   an existing controller and a column on an existing model.
+   - **ADOPT** `<concept>` — it is not in this codebase, but the shared catalog has a
+     ready-made, tested concept that does it. The inventory's "Available to adopt" section
+     lists the catalog; `concepts_search("<the capability, in plain words>")` searches it
+     and `concepts_get("<name>")` shows what one provides, requires, and which beans it
+     borrows. Put the exact concept name in the task's `adopts` list: it is copied into
+     that task's worktree at `concepts/<name>/` before the agent starts, so the task is to
+     **adapt and wire it**, not to write it. Adopt what it `requires` too. A concept is
+     COPIED in and becomes this project's own code — adopting is not a dependency.
+   - **NEW** — nothing above fits and nothing in the catalog fits; you MUST justify in the
+     task's description why no existing primitive and no catalog concept covers it.
+   Try them in that order. Bias hard toward REUSE/EXTEND, then ADOPT. A plan that proposes
+   NEW controllers, models, or services when a close match already exists above — or a
+   catalog concept already does it — is a defect. If `concepts_search` reports that it
+   FAILED, that is not "no match": say in the plan that the catalog could not be checked.
 
 2. **Decompose into the smallest sensible tasks.** Each task is one focused unit
    of work a single agent can complete and commit on its own.

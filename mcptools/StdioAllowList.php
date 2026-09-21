@@ -75,6 +75,12 @@ class StdioAllowList {
         // feature". It was absent from this list for as long as the list existed.
         'reuse_digest',
 
+        // The shared concept catalog (COMPONENTS_PLAN.md): what somebody already built,
+        // anywhere. Read-only, and neither takes a member or an api key — an instance
+        // authenticates to the control plane with its own conf/broker.ini.
+        'concepts_search',
+        'concepts_get',
+
         // The standards checks this project actually enforces. An agent that can
         // run them before finishing is one that stops shipping the violations.
         'check_redbean',

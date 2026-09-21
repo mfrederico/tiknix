@@ -26,8 +26,13 @@ class WorkspaceSchemaBuilder {
     private array $deferred = [];
     private array $results = [];
 
-    public function build(): array {
-        $seedDir = __DIR__ . '/Seeds';
+    /**
+     * @param string|null $seedDir numbered seeds to run; defaults to core's own. A concept
+     *                             passes concepts/<name>/seeds so its schema is built by the
+     *                             same thaw / run / refreeze, with the same helpers in scope.
+     */
+    public function build(?string $seedDir = null): array {
+        $seedDir = $seedDir ?? __DIR__ . '/Seeds';
         if (!is_dir($seedDir)) {
             return ['error' => 'Seeds directory not found'];
         }

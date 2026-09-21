@@ -108,7 +108,14 @@ abstract class Control {
 
         // Log the render action
         $this->logger->debug("Rendering view: {$template}");
-        
+
+        // A concept's controller renders from its OWN views/ (concepts/<name>/views), inside
+        // core's layout. Flight returns an absolute template path untouched, so no view-path
+        // juggling is needed.
+        if (strncmp(static::class, 'app\\concepts\\', 13) === 0) {
+            $template = \app\Concepts::instance()->viewsDirFor(static::class) . '/' . $template;
+        }
+
         if ($layout) {
             // Render with layout (header/footer sandwich)
             Flight::render('layouts/header', $data, 'header_content');

@@ -201,6 +201,95 @@ class Feature {
         unset(self::$cache[$memberId]);   // this request only; nothing outlives it
     }
 
+    /* ---- install scope ------------------------------------------------------------
+     *
+     * Everything above answers "may THIS PERSON use it". A concept asks a different
+     * question — "does THIS INSTALL have it" — and a per-member grant cannot express that:
+     * tickets are either part of the application or they are not, for every visitor
+     * including the logged-out ones.
+     *
+     * Install flags are not in CATALOG, because what can be switched on is whatever is
+     * installed on disk (concepts/<name>/), which a constant cannot list. They are stored
+     * as `install.<key>` rows owned by the system member — the same place site_name lives.
+     * Same table, same class, second scope; see COMPONENTS_PLAN.md.
+     */
+
+    private const INSTALL_PREFIX = 'install.';
+    private const INSTALL_KEY_RE = '/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/D';
+
+    /** @var array<string,string>|null every install.* row, cached for THIS REQUEST only */
+    private static ?array $installCache = null;
+
+    public static function installEnabled(string $key): bool {
+        return (self::installRows()[self::installKey($key)] ?? null) === '1';
+    }
+
+    /**
+     * Every install flag that is ON under a dotted prefix, with the prefix removed:
+     * installKeys('concept') → ['tickets', 'calendar'].
+     *
+     * @return string[]
+     */
+    public static function installKeys(string $prefix): array {
+        $lead = self::installKey($prefix) . '.';
+        $out = [];
+        foreach (self::installRows() as $k => $v) {
+            if ($v === '1' && strncmp($k, $lead, strlen($lead)) === 0) $out[] = substr($k, strlen($lead));
+        }
+        sort($out);
+        return $out;
+    }
+
+    public static function setInstallEnabled(string $key, bool $on): void {
+        $settingKey = self::installKey($key);
+        $owner = self::systemMemberId();
+        $row = Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$owner, $settingKey]);
+        $now = date('Y-m-d H:i:s');
+        if ($on) {
+            if (!$row || !$row->id) {
+                $row = Bean::dispense('settings');
+                $row->memberId   = $owner;
+                $row->settingKey = $settingKey;
+                $row->createdAt  = $now;
+            }
+            $row->settingValue = '1';
+            $row->updatedAt    = $now;
+            Bean::store($row);
+        } elseif ($row && $row->id) {
+            Bean::trash($row);
+        }
+        self::$installCache = null;
+    }
+
+    private static function installKey(string $key): string {
+        if (!preg_match(self::INSTALL_KEY_RE, $key)) {
+            throw new \InvalidArgumentException("Feature: '{$key}' is not a valid install flag key.");
+        }
+        return self::INSTALL_PREFIX . $key;
+    }
+
+    /** One query per request. A failure here throws — "no flags" and "could not read flags" are different answers. */
+    private static function installRows(): array {
+        if (self::$installCache === null) {
+            $rows = [];
+            foreach (Bean::find('settings', 'member_id = ? AND setting_key LIKE ?',
+                [self::systemMemberId(), self::INSTALL_PREFIX . '%']) as $r) {
+                $rows[(string) $r->settingKey] = (string) $r->settingValue;
+            }
+            self::$installCache = $rows;
+        }
+        return self::$installCache;
+    }
+
+    private static function systemMemberId(): int {
+        if (!defined('SYSTEM_ADMIN_ID')) {
+            throw new \RuntimeException(
+                'Feature: SYSTEM_ADMIN_ID is not defined, so install flags have no owner. It is set by '
+              . 'lib/FlightMap.php — this was called before the bootstrap loaded it.');
+        }
+        return (int) SYSTEM_ADMIN_ID;
+    }
+
     /**
      * Every flag stored for a member, cached for THIS REQUEST only.
      *

@@ -64,6 +64,21 @@ Flight::map('defaultRoute', function($prefix = '') {
             $classname = ucfirst($class);
             try {
                 $classname = '\\'.CLASS_NAMESPACE.'\\'.$classname;
+                $controllerRoots = [realpath(dirname(__DIR__) . '/controls')];
+
+                // An ENABLED concept may claim a URL that core does not (COMPONENTS_PLAN.md).
+                // Core is tried first, and a concept cannot be enabled while core owns the
+                // name, so this never changes what an existing URL means. The concept's own
+                // controls/ joins the allowed roots only for the class it claimed — a
+                // disabled concept is never consulted, so it is unroutable by construction.
+                if (!class_exists($classname) && is_dir(dirname(__DIR__) . '/' . \app\Concepts::DIR)) {
+                    $concepts = \app\Concepts::instance();
+                    $claimed = $concepts->controllerClass($class);
+                    if ($claimed !== null) {
+                        $classname = '\\' . $claimed;
+                        $controllerRoots = array_merge($controllerRoots, $concepts->controllerRoots());
+                    }
+                }
 
                 // Check if controller class exists before trying to instantiate
                 // A URL nobody implements is a visitor typo or a scanner, not a fault in
@@ -82,10 +97,17 @@ Flight::map('defaultRoute', function($prefix = '') {
                 // could instantiate helper classes (Bean, PermissionCache, ...)
                 // straight from a URL. Directory-based (not a name list) so new
                 // controllers in any controls/ subdir work automatically.
-                $controlsDir = realpath(dirname(__DIR__) . '/controls');
                 $classFile = (new \ReflectionClass($classname))->getFileName();
-                if ($controlsDir === false || $classFile === false
-                    || strpos(realpath($classFile), $controlsDir . DIRECTORY_SEPARATOR) !== 0) {
+                $classReal = $classFile === false ? false : realpath($classFile);
+                $inControllerRoot = false;
+                foreach ($controllerRoots as $controllerRoot) {
+                    if ($controllerRoot !== false && $classReal !== false
+                        && strpos($classReal, $controllerRoot . DIRECTORY_SEPARATOR) === 0) {
+                        $inControllerRoot = true;
+                        break;
+                    }
+                }
+                if (!$inControllerRoot) {
                     Flight::get('log')->warning("Refused non-controller class: {$classname}");
                     Flight::notFound();
                     return;

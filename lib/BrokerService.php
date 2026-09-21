@@ -23,6 +23,47 @@ class BrokerService {
     }
 
     /**
+     * The `apikey` bean for the broker token this request presented, or null.
+     *
+     * ONE implementation for every self-authenticating control-plane endpoint (Brokerinfo,
+     * Publish, Concepthub). It was written out twice and had already drifted — one copy
+     * stamped last-used, the other logged expiry — which is how an auth rule ends up
+     * enforced in one door and not the next.
+     *
+     * Broker keys are stored as a sha-256 hash, never plaintext, so the lookup is by hash.
+     * `is_active` means "not revoked"; an `expires_at` in the past is a separate hard stop.
+     *
+     * @param bool $touch record last_used_at / last_used_ip — for endpoints that ACT;
+     *                    read-only lookups leave the row alone
+     */
+    public static function keyFromRequest(bool $touch = false) {
+        $h = '';
+        $headers = function_exists('getallheaders') ? (getallheaders() ?: []) : [];
+        foreach ($headers as $k => $v) {
+            if (strcasecmp((string) $k, 'Authorization') === 0) { $h = (string) $v; break; }
+        }
+        // REDIRECT_ is where some server setups put the header; it is the same header, not a second credential.
+        if ($h === '') $h = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+        $token = stripos($h, 'bearer ') === 0 ? trim(substr($h, 7)) : '';
+        if ($token === '') return null;
+
+        $key = Bean::findOne('apikey', 'token_hash = ? AND key_class = ? AND is_active = 1',
+            [EncryptionService::hashHex($token), 'broker']);
+        if (!$key || !$key->id) return null;
+
+        if ($key->expiresAt && strtotime((string) $key->expiresAt) < time()) {
+            \Flight::get('log')?->warning('Broker auth failed: key expired', ['key_id' => $key->id]);
+            return null;
+        }
+        if ($touch) {
+            $key->lastUsedAt = date('Y-m-d H:i:s');
+            $key->lastUsedIp = $_SERVER['REMOTE_ADDR'] ?? null;
+            Bean::store($key);
+        }
+        return $key;
+    }
+
+    /**
      * Mint (or rotate) the instance's broker key. Returns the RAW token ONCE —
      * only its hash is persisted. The caller must enforce instance ownership.
      *

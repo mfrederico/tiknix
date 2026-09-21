@@ -56,6 +56,9 @@ $longopts = [
     'wizard', 'scaffold:',
     // i18n
     'i18n-scan',
+    // concepts (COMPONENTS_PLAN.md)
+    'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'force',
+    'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
     'status:', 'set-password:', 'set-level:', 'reset-2fa', 'delete-user',
@@ -166,6 +169,162 @@ if (isset($opt['build'])) {
     out('# running seeds…');
     foreach ((new WorkspaceSchemaBuilder())->build() as $file => $status) out("  {$file}: {$status}");
     if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
+    exit(0);
+}
+
+// --- Concepts: --concepts | --concept-verify | --concept-enable | --concept-disable ---
+// Switching a concept on or off is an operator action, from here. INSTALLING one (putting
+// its directory in concepts/) is a build task — worktree, review, merge — never a web
+// action: the instance pool user can write controls/, so a web "install" would be the web
+// process writing executable PHP into its own tree.
+if (isset($opt['concepts'])) {
+    $scan = \app\Concepts::instance()->scan();
+    if (!$scan) { out('(no concepts installed — ' . \app\Concepts::DIR . '/ is empty or absent)'); exit(0); }
+    out(sprintf('%-20s %-9s %-10s %s', 'CONCEPT', 'STATE', 'VERSION', 'TITLE / ERROR'));
+    out(str_repeat('-', 78));
+    foreach ($scan as $name => $row) {
+        $m = $row['manifest'];
+        out(sprintf('%-20s %-9s %-10s %s', $name,
+            $m === null ? 'BROKEN' : ($row['enabled'] ? 'enabled' : 'disabled'),
+            $m->version ?? '-', $m === null ? $row['error'] : ($m->title !== '' ? $m->title : $m->blurb)));
+    }
+    exit(0);
+}
+if (isset($opt['concept-verify'])) {
+    $name = (string) $opt['concept-verify'];
+    $problems = \app\Concepts::instance()->verify($name);
+    if (!$problems) { out("# concept '{$name}': ready to enable"); exit(0); }
+    err("concept '{$name}' has " . count($problems) . ' problem(s):');
+    foreach ($problems as $p) err("  - {$p}");
+    exit(1);
+}
+if (isset($opt['concept-enable'])) {
+    $name = (string) $opt['concept-enable'];
+    if ($DRYRUN) {
+        $problems = \app\Concepts::instance()->verify($name);
+        out($problems ? "# dry-run: would REFUSE —\n  - " . implode("\n  - ", $problems)
+                      : "# dry-run: would run concepts/{$name}/seeds, then enable '{$name}'");
+        exit($problems ? 1 : 0);
+    }
+    try {
+        foreach (\app\Concepts::instance()->enable($name) as $file => $status) out("  {$file}: {$status}");
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
+    out("# concept '{$name}' enabled");
+    exit(0);
+}
+if (isset($opt['concept-disable'])) {
+    $name = (string) $opt['concept-disable'];
+    if ($DRYRUN) { out("# dry-run: would disable '{$name}'" . (isset($opt['force']) ? ' (forced)' : '')); exit(0); }
+    try {
+        \app\Concepts::instance()->disable($name, isset($opt['force']));
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    out("# concept '{$name}' disabled — its tables and rows are kept");
+    exit(0);
+}
+
+// --- Concept catalog: --concept-search | --concept-lint | --concept-publish | --concept-install
+/**
+ * Strings that identify the install a concept was extracted FROM, so the lint can refuse a
+ * concept that still carries them: the origin's slug, its [app] name, its hostname, plus
+ * anything passed as --forbid=a,b.
+ *
+ * --origin=INSTALL_ROOT names that install. It is separate from --from because extraction
+ * happens in a worktree, whose directory is a task id and says nothing about the client; the
+ * origin is the INSTANCE the code came out of. With no --origin, --from is assumed to be it.
+ * A concept authored here, with neither, has no foreign origin to leak.
+ *
+ * @return string[]
+ */
+function conceptOriginStrings(?string $fromRoot, array $opt): array {
+    $forbid = isset($opt['forbid']) ? array_map('trim', explode(',', (string) $opt['forbid'])) : [];
+    $origin = $fromRoot;
+    if (isset($opt['origin'])) {
+        $origin = realpath((string) $opt['origin']);
+        if ($origin === false || !is_file("{$origin}/conf/config.ini")) {
+            bail("--origin='{$opt['origin']}' is not an install root (no conf/config.ini there).");
+        }
+    }
+    if ($origin !== null) {
+        $forbid[] = preg_replace('/\.tiknix$/', '', basename($origin));
+        $ini = is_file("{$origin}/conf/config.ini") ? (parse_ini_file("{$origin}/conf/config.ini", true) ?: []) : [];
+        $forbid[] = (string) ($ini['app']['name'] ?? '');
+        $forbid[] = (string) (parse_url((string) ($ini['app']['baseurl'] ?? ''), PHP_URL_HOST) ?: '');
+    }
+    return array_values(array_unique(array_filter($forbid, fn($s) => strlen($s) >= 3)));
+}
+/** --from=DIR is an install root (the directory that HOLDS concepts/). Absent = this install. */
+function conceptFromRoot(array $opt): ?string {
+    if (!isset($opt['from'])) return null;
+    $root = realpath((string) $opt['from']);
+    if ($root === false || !is_dir($root)) bail("--from='{$opt['from']}' is not a directory.");
+    return $root;
+}
+function printConceptFindings(array $findings): void {
+    foreach ($findings as $f) {
+        $at = $f['file'] . ($f['line'] ? ':' . $f['line'] : '');
+        out(sprintf('  %-5s %s — %s', strtoupper($f['severity']), $at, $f['message']));
+    }
+}
+if (isset($opt['concept-search'])) {
+    try {
+        $found = \app\ConceptCatalog::forInstall()->search((string) ($opt['concept-search'] ?: ''), (int) ($opt['limit'] ?? 10));
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    out("# catalog: {$found['source']}");
+    if (!$found['results']) out('(no concept matched — the catalog was reached)');
+    foreach ($found['results'] as $r) {
+        out(sprintf('%4d  %-16s v%-8s %s', $r['score'], $r['name'], $r['version'], $r['title'] !== '' ? $r['title'] : $r['blurb']));
+    }
+    foreach ($found['broken'] as $name => $why) err("BROKEN catalog entry {$name}: {$why}");
+    exit(0);
+}
+if (isset($opt['concept-lint'])) {
+    $name = (string) $opt['concept-lint'];
+    $from = conceptFromRoot($opt);
+    $dir = ($from ?? dirname(__DIR__)) . '/' . \app\Concepts::DIR . '/' . $name;
+    $forbid = conceptOriginStrings($from, $opt);
+    if ($forbid) out('# origin strings that must not appear: ' . implode(', ', $forbid));
+    $findings = \app\ConceptLint::check($dir, $forbid);
+    if (!$findings) { out("# concept '{$name}': clean"); exit(0); }
+    printConceptFindings($findings);
+    exit(\app\ConceptLint::hasErrors($findings) ? 1 : 0);
+}
+if (isset($opt['concept-publish'])) {
+    $name = (string) $opt['concept-publish'];
+    $from = conceptFromRoot($opt);
+    $dir = ($from ?? dirname(__DIR__)) . '/' . \app\Concepts::DIR . '/' . $name;
+    $forbid = conceptOriginStrings($from, $opt);
+    if ($DRYRUN) {
+        $findings = \app\ConceptLint::check($dir, $forbid);
+        printConceptFindings($findings);
+        out(\app\ConceptLint::hasErrors($findings) ? '# dry-run: would REFUSE to publish' : "# dry-run: would publish '{$name}'");
+        exit(\app\ConceptLint::hasErrors($findings) ? 1 : 0);
+    }
+    try {
+        $r = \app\ConceptCatalog::forInstall()->publish($dir, $forbid);
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    printConceptFindings($r['findings']);
+    out("# concept '{$r['name']}' v{$r['version']}: {$r['status']} ({$r['files']} files)");
+    exit(0);
+}
+if (isset($opt['concept-install'])) {
+    $name = (string) $opt['concept-install'];
+    if ($DRYRUN) { out("# dry-run: would copy '{$name}' from the catalog into " . \app\Concepts::DIR . "/{$name}/ (it would NOT be enabled)"); exit(0); }
+    try {
+        $r = \app\ConceptCatalog::forInstall()->install($name, dirname(__DIR__));
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    out("# installed '{$r['name']}' v{$r['version']} → {$r['dir']} ({$r['files']} files)");
+    out("# it is NOT enabled. Next: --concept-verify={$name}, then --concept-enable={$name}");
     exit(0);
 }
 
@@ -419,6 +578,27 @@ SCAFFOLD (code generation)
   --wizard                       Interactive model/CRUD wizard
   --scaffold=PARTS --bean=TYPE   Generate PARTS (model,controller,view,api | all) for a bean
                                  e.g. --scaffold=all --bean=product
+
+CONCEPTS (pluggable features — see COMPONENTS_PLAN.md)
+  --concepts                     List installed concepts: enabled / disabled / BROKEN
+  --concept-verify=NAME          Everything that would stop NAME being enabled
+  --concept-enable=NAME          Verify, run concepts/NAME/seeds (thawed), then switch on
+  --concept-disable=NAME [--force]
+                                 Switch off. Refused while another concept requires it, or
+                                 while its beans hold rows (--force overrides the rows check;
+                                 data is always kept)
+  --concept-search[=WORDS]       Search the shared catalog (no words = list everything)
+  --concept-install=NAME         Copy NAME from the catalog into concepts/NAME/. Never
+                                 overwrites, never enables
+  --concept-lint=NAME [--from=ROOT] [--origin=INSTALL_ROOT] [--forbid=a,b]
+                                 Is it fit to publish? Origin leakage, secrets, absolute
+                                 paths, R::, undeclared core classes and beans.
+                                 --from   where ROOT/concepts/NAME is (default: this install)
+                                 --origin the instance it was extracted from — its slug,
+                                          [app] name and hostname must not appear anywhere
+  --concept-publish=NAME [--from=ROOT] [--origin=INSTALL_ROOT] [--forbid=a,b]
+                                 Lint, then copy into the catalog (control plane only).
+                                 A version already published cannot change — bump it
 
 I18N
   --i18n-scan                    Harvest t('…') strings from source into lang/en.json

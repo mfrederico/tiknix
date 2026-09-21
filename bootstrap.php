@@ -470,6 +470,11 @@ class Bootstrap {
             require_once __DIR__ . '/routes/mcp.php';
         }
 
+        // Concepts (COMPONENTS_PLAN.md): autoload enabled concepts' classes. After FlightMap
+        // (install flags are owned by SYSTEM_ADMIN_ID) and after the database. A no-op on an
+        // install with no concepts/ directory.
+        \app\Concepts::boot(__DIR__);
+
         // Register default route handler (catch-all for /class/method pattern)
         Flight::defaultRoute();
 

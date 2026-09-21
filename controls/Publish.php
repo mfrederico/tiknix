@@ -99,30 +99,12 @@ class Publish extends Control {
      * cannot yield a usable token — the lookup is by hash, exactly as Mcp does it.
      */
     private function brokerKey() {
-        $token = $this->bearer();
-        if ($token === '') return null;
-        $key = Bean::findOne('apikey', 'token_hash = ? AND key_class = ? AND is_active = 1',
-            [EncryptionService::hashHex($token), 'broker']);
-        if (!$key || !$key->id) return null;
-        if ($key->expiresAt && strtotime((string) $key->expiresAt) < time()) return null;
-
-        $key->lastUsedAt = date('Y-m-d H:i:s');
-        $key->lastUsedIp = $_SERVER['REMOTE_ADDR'] ?? null;
-        Bean::store($key);
-        return $key;
+        return BrokerService::keyFromRequest(true);   // publishing ACTS, so last-used is recorded
     }
 
     private function jsonBody(): array {
         $raw = (string) (Flight::request()->getBody() ?: file_get_contents('php://input'));
         $d = json_decode($raw, true);
         return is_array($d) ? $d : [];
-    }
-
-    private function bearer(): string {
-        $headers = function_exists('getallheaders') ? (getallheaders() ?: []) : [];
-        $h = '';
-        foreach ($headers as $k => $v) if (strcasecmp($k, 'Authorization') === 0) { $h = (string) $v; break; }
-        if ($h === '') $h = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
-        return stripos($h, 'bearer ') === 0 ? trim(substr($h, 7)) : '';
     }
 }

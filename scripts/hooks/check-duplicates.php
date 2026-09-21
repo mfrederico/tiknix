@@ -70,6 +70,15 @@ $scanDirs = $quick
     ? ['controls', 'services']
     : ['controls', 'services', 'lib', 'models'];
 
+// Installed concepts (concepts/<name>/ — a self-contained directory with the same layout,
+// see COMPONENTS_PLAN.md) hold the same kinds of file, so they are held to the same rules.
+$baseDirs = $scanDirs;
+foreach (glob('concepts/*', GLOB_ONLYDIR) ?: [] as $conceptDir) {
+    foreach ($baseDirs as $sub) {
+        if (is_dir("{$conceptDir}/{$sub}")) $scanDirs[] = "{$conceptDir}/{$sub}";
+    }
+}
+
 echo "=== Duplicate Code Scanner ===\n\n";
 echo "Settings: min-lines={$minLines}, dirs=" . implode(',', $scanDirs) . "\n\n";
 
@@ -146,9 +155,13 @@ $patternResults = [];
 foreach ($files as $filepath) {
     $content = stripPhpComments(file_get_contents($filepath));
     $relativePath = str_replace($baseDir . '/', '', $filepath);
+    // Excludes are written against the install's layout ("^lib/"). A concept has the same
+    // layout one level down, so match them against the path inside the concept; findings
+    // are still reported with the full path.
+    $excludePath = preg_replace('#^concepts/[a-z][a-z0-9]*/#', '', $relativePath);
 
     foreach ($patterns as $name => $config) {
-        if (!empty($config['exclude']) && preg_match($config['exclude'], $relativePath)) {
+        if (!empty($config['exclude']) && preg_match($config['exclude'], $excludePath)) {
             continue;
         }
         if (preg_match_all($config['pattern'], $content, $matches, PREG_OFFSET_CAPTURE)) {

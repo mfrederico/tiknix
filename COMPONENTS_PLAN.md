@@ -1,7 +1,30 @@
 # Concepts: pluggable features, one storefront, augment-decompose
 
-**Designed, not built.** Written 2026-09-21, revised the same day after surveying serenity
-and the shop sidecar. Four related pieces:
+**The runtime, the catalog and the first concept are built and tested. The storefront work,
+ADOPT in the planner prompt, and augment-decompose are still design.**
+Written 2026-09-21, revised the same day after surveying serenity and the shop sidecar.
+
+What exists:
+
+- **Runtime** — `lib/ConceptManifest.php` (shape rules), `lib/Concepts.php` (autoload, routing,
+  slots, collect, save, verify / enable / disable), install-scoped flags in `lib/Feature.php`,
+  the enabled-concept roots in `defaultRoute`, concept views in `Control::render()`,
+  `WorkspaceSchemaBuilder::build($seedDir)`, concept awareness in `mcptools/Introspector` and
+  `check-duplicates.php`.
+- **Catalog** — `lib/ConceptCatalog.php` (local on the control plane, remote over HTTP from an
+  instance), `lib/ConceptLint.php` (the scrub gate), `controls/Concepthub.php` (served to
+  instances, broker-key authenticated), MCP tools `concepts_search` / `concepts_get`. The
+  catalog itself is its own repository beside core: `[concepts] catalog_dir`.
+- **CLI** — `clitool --concepts | --concept-verify | --concept-enable | --concept-disable |
+  --concept-search | --concept-lint | --concept-publish | --concept-install`.
+- **First concept** — `calendar` 1.0.0, extracted from serenity's `EventCalendar`, published.
+- **Tests** — `vendor/bin/phpunit` (`tests/unit/`); each concept ships its own under `tests/`.
+
+Not yet: a root manifest and slots in core's views, a web UI for the flag, bundles, update
+notices, ADOPT in the planner prompt, and how a build agent in a worktree installs a concept
+(see "The catalog as built").
+
+Four related pieces:
 
 1. **Concepts** — features built on one instance, parcelled into small installable units that
    switch on per install. Not "the whole Events module" — the ideas it is made of.
@@ -127,11 +150,16 @@ the type has no enabled handler.
 - Add-to-calendar belongs to `calendar`, and its real condition is
   `EventCalendar::isEligible()` — "has a date window" — not `offerType === 'class'`.
 
-So a slot registration can narrow itself two ways, both pure data: an `offerTypes` list, and
-the `when` predicate. `profiles` registers the teacher select once, with
-`"offerTypes": ["class", "session"]`; `calendar` registers add-to-calendar with
-`"when": "app\\EventCalendar::isEligibleCtx"`. An offer type registers its own field block the
-same way — there is one way to put something on a page.
+So a slot registration can narrow itself two ways, both pure data: a `match` on the context
+the host passes, and the `when` predicate. `profiles` registers the teacher select once, with
+`"match": {"offerType": ["class", "session"]}`; `calendar` registers add-to-calendar with
+`"when": "Portlets::isEligibleCtx"`. An offer type registers its own field block the same way
+— there is one way to put something on a page.
+
+`match` is generic on purpose: the runtime in core knows nothing about offer types. It compares
+a scalar in the host's `$ctx` against a list, so the storefront passes `offerType` and some
+other host can pass whatever it narrows by. A `match` key the host did not pass is an error,
+not a non-match — otherwise a host that forgets it produces a slot that silently never renders.
 
 ### Capabilities — need no shop at all
 
@@ -233,7 +261,7 @@ Registered in the concept's `concept.json` — this one is `concepts/profiles/co
     "provider": "Portlets::teacherSelect",
     "view": "teacher-select.php",
     "level": "ADMIN",
-    "offerTypes": ["class", "session"],
+    "match": { "offerType": ["class", "session"] },
     "save": "Portlets::saveTeacher"
   },
   "member.profile.panels": {
@@ -299,8 +327,8 @@ So the manifest is pure data, and every name in it that resolves to code is cons
   **`save`** takes `(OODBBean $bean, array $input): void` and throws on invalid input.
   Nothing is ever passed to `eval`, and nothing from a request ever selects the callable.
 - **The top-level `offerTypes` map's values are relative class names** (`"ClassOffer"`),
-  checked with `is_subclass_of(…, OfferType::class)`. A slot's `offerTypes` *filter* is a
-  plain list of type keys, each of which must be a type some enabled concept provides.
+  checked with `is_subclass_of(…, OfferType::class)`. That map belongs to the storefront, not
+  to the core runtime, which keeps the raw manifest available for it to read.
 - **`view` is a filename**, resolved under the concept's `views/` and `realpath`-checked to
   stay there. No `../`.
 - **`level` is a name** (`"MEMBER"`), resolved through `LEVELS`. An unknown name is an error.
@@ -347,12 +375,14 @@ The rules:
   controller reads them. A host marks a slot as a *form* slot, and every registration in a
   form slot **must** carry `save` — a constrained `Class::method` name under the same rules
   as `when`, taking `(OODBBean $bean, array $input): void` and throwing on invalid input. The
-  host calls the `save` of every registration whose `offerTypes`/`when` matched, inside its
+  host calls the `save` of every registration whose `match`/`when` passed, inside its
   own save transaction, so a plugin's bad input rolls the whole save back. A form-slot
   registration with no `save` refuses to enable. It is not on the `OfferType` contract
   because the owner is often not an offer type — `profiles` saves `teacherId`.
-- **Hosts declare their slots; an unknown slot is an error.** Each host lists its slots in
-  its manifest (`"slots": ["catalog.edit.fields", "shop.item.extras", …]`). A concept
+- **Hosts declare their slots; an unknown slot is an error.** Each host lists what it hosts
+  under `"hosts"` — `{"slots": {"catalog.edit.fields": {"form": true}, "shop.item.extras": {}},
+  "collect": ["nav.sections"]}` — kept apart from `"slots"`, which is what a concept
+  *registers*. A name has exactly one host. A concept
   registering against a slot no installed host declares refuses to enable, naming the slot —
   a typo cannot produce a plugin that silently renders nowhere.
 - **The host owns the wrapper.** `catalog/edit.php` toggles hard-coded
@@ -398,7 +428,7 @@ directory, so what is browsed is byte-for-byte what installs. `concepts/class/co
       "provider": "Portlets::catalogFields",
       "view": "catalog-fields.php",
       "level": "ADMIN",
-      "offerTypes": ["class"],
+      "match": { "offerType": ["class"] },
       "save": "Portlets::saveCatalogFields"
     }
   },
@@ -553,6 +583,63 @@ Carry over carefully:
   store tiknix already has.
 - **`Bean::`, not `R::`.** `PluginManager` uses `R::` directly; the port goes through the
   wrapper, and the validation hook will insist on it anyway.
+
+### The catalog as built (v1)
+
+Narrower than the port above, on purpose: the spine first — extract, scrub, publish, find,
+install — with one source. What exists:
+
+```
+extract   author concepts/<name>/ in a worktree of the origin instance
+lint      clitool --concept-lint=<name> --from=<worktree> --origin=<instance root>
+publish   clitool --concept-publish=<name> --from=… --origin=…      (control plane)
+find      MCP concepts_search / concepts_get        (any install; planner-facing)
+install   clitool --concept-install=<name>          (any install; copies, never enables)
+enable    clitool --concept-verify=<name> → --concept-enable=<name>
+```
+
+- **One source: a directory.** `[concepts] catalog_dir` on the control plane, its own git
+  repository beside core. Inside core's repository every instance clone would inherit the
+  whole catalog. myctobot's multi-source scanner (repos, orgs, a private source per client)
+  is still the plan; it slots in behind `ConceptCatalog` without changing a caller.
+- **An instance asks over HTTP** with its own broker key — `GET /concepthub/{search,get,bundle}`.
+  No new credential. `BrokerService::keyFromRequest()` is now the one implementation of that
+  check; it had been written out twice (`Brokerinfo`, `Publish`) and the copies had drifted.
+- **A concept travels as data**, `{name, version, files: {path: base64}}`, not an archive, so
+  every path is validated on the way out and again on the way in. The installer never trusts
+  the sender: a bundle carrying `../evil.php` writes nothing at all (tested).
+- **The scrub gate is `ConceptLint`.** Errors block publishing: the origin's slug, app name
+  or hostname anywhere (comments included), secret-shaped strings, absolute server paths, raw
+  `R::`, the wrong namespace, a core class not in `requires.lib`, a bean neither owned
+  (`provides.beans`) nor declared (`uses.beans`), another concept not in `requires.concepts`,
+  a symlink. Run against serenity's untouched `EventCalendar.php` it flags lines 22, 105 and
+  406 — the three found by hand in the survey.
+  `--origin` is separate from `--from` because extraction happens in a worktree, whose
+  directory is a task id and says nothing about the client.
+- **A published version is immutable.** Same version, different contents → refused; bump it.
+  Otherwise "which calendar 1.0.0 did that instance install?" has no answer. That is the
+  whole of versioning so far — no update notices yet.
+- **Install copies and records provenance** in `.installed.json` (never published back),
+  builds beside the target and renames, refuses to overwrite, never enables, never chmods.
+- **Search** is myctobot's weights (name 100/80, title 50, tags, blurb 30) applied per query
+  word and summed, because a planner asks in phrases. "let staff put their work shifts in
+  their phone calendar" finds `calendar`; "accept bitcoin payments" is a real no-match.
+- **Unreachable is never empty.** An outage or a refused key throws, and `concepts_search`
+  says `FAILED — this is NOT an empty result`.
+
+A naming trap found the hard way: PHP class names are case-insensitive and `app\` maps to both
+`controls/` and `lib/`, so `controls/Conceptcatalog.php` and `lib/ConceptCatalog.php` were one
+class — the controller called itself and every authenticated request answered 500. Hence
+`Concepthub`, and `tests/unit/CoreNamingTest.php` to keep core from doing it again.
+
+**Open: how a build agent installs.** `--concept-install` needs the instance's
+`conf/broker.ini`, which is gitignored and so absent from a build worktree. Either the
+executor installs into the worktree before the agent starts (it runs with the instance's
+config), or an MCP tool does it on the agent's behalf. Decide this with ADOPT, below.
+
+**Open: concept settings.** `calendar` needs one system setting
+(`concept.calendar.timezone`) and there is no screen to set it — it is documented as a seed
+one-liner. The generated settings form ("Smaller holes") is the fix.
 
 ## ADOPT in decompose
 

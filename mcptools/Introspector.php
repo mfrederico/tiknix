@@ -135,6 +135,40 @@ class Introspector {
         $lvl = fn($n) => $n === null ? '?' : ($names[$n] ?? (string)$n);
         $out = [];
 
+        // --- Concepts --------------------------------------------------------
+        // First, because it changes how everything below reads: a controller or bean that
+        // belongs to a DISABLED concept exists on disk but is not routable, and the right
+        // move is to enable the concept, not to build the feature again.
+        $concepts = $this->concepts();
+        if ($concepts) {
+            $out[] = '### Concepts (' . count($concepts) . ') — pluggable features installed under concepts/<name>/. '
+                   . 'REUSE one by enabling it (`php scripts/clitool.php --concept-enable=<name>`) before building the same thing';
+            foreach ($concepts as $name => $c) {
+                $state = $c['enabled'] === null ? 'state unknown — this instance\'s database could not be read'
+                                                : ($c['enabled'] ? 'ENABLED' : 'disabled');
+                if ($c['manifest'] === null) {
+                    $out[] = "- **{$name}** [BROKEN, {$state}] — {$c['error']}";
+                    continue;
+                }
+                $m = $c['manifest'];
+                $bits = [];
+                if ($m->controllers)      $bits[] = 'controllers: ' . implode(', ', $m->controllers);
+                if ($m->beans)            $bits[] = 'beans: ' . implode(', ', $m->beans);
+                if ($m->hostsSlots)       $bits[] = 'hosts slots: ' . implode(', ', array_keys($m->hostsSlots));
+                if ($m->slots)            $bits[] = 'fills slots: ' . implode(', ', array_keys($m->slots));
+                if ($m->requiresConcepts) $bits[] = 'requires: ' . implode(', ', $m->requiresConcepts);
+                $what = $m->blurb !== '' ? $m->blurb : $m->title;
+                $out[] = "- **{$name}** v{$m->version} [{$state}]" . ($what !== '' ? " — {$what}" : '')
+                       . ($bits ? ' (' . implode('; ', $bits) . ')' : '');
+            }
+            $out[] = '';
+        }
+        $conceptTag = function (array $row) use ($concepts): string {
+            if (($row['concept'] ?? null) === null) return '';
+            $on = $concepts[$row['concept']]['enabled'] ?? null;
+            return " _(concept: {$row['concept']}" . ($on === false ? ', DISABLED — not routable until enabled' : '') . ')_';
+        };
+
         // --- Controllers -----------------------------------------------------
         $ctrls = $this->controllers();
         $out[] = '### Controllers (' . count($ctrls) . ') — reuse an existing route/controller before adding one';
@@ -146,7 +180,7 @@ class Introspector {
             $lv = $levels ? ' [' . implode(',', array_keys($levels)) . ']' : '';
             $shown = array_slice($methods, 0, $maxRoutesPerCtrl);
             $more = count($methods) > $maxRoutesPerCtrl ? ' +' . (count($methods) - $maxRoutesPerCtrl) : '';
-            $out[] = "- **{$c['name']}**{$lv} — " . implode(', ', $shown) . $more;
+            $out[] = "- **{$c['name']}**{$lv}{$conceptTag($c)} — " . implode(', ', $shown) . $more;
         }
 
         // --- Models / tables -------------------------------------------------
@@ -392,11 +426,65 @@ class Introspector {
 
     // === scanners ============================================================
 
+    /**
+     * Where code lives: the install's own tree, plus every installed concept's
+     * (concepts/<name>/ — a self-contained directory with the same layout; COMPONENTS_PLAN.md).
+     *
+     * Without this the inventory cannot see an installed concept, and a planner that cannot
+     * see `tickets` classifies ticketing as NEW and builds it a second time beside the first.
+     *
+     * @return array<int,array{dir:string,concept:?string}>
+     */
+    private function codeRoots(): array {
+        $roots = [['dir' => $this->root, 'concept' => null]];
+        foreach (array_keys($this->concepts()) as $name) {
+            $roots[] = ['dir' => "{$this->root}/concepts/{$name}", 'concept' => $name];
+        }
+        return $roots;
+    }
+
+    private function rel(string $file): string {
+        return substr($file, strlen($this->root) + 1);
+    }
+
+    private array $_concepts;
+    /**
+     * Installed concepts, from disk. `enabled` is read from THIS instance's database — never
+     * core's — and is null when that cannot be read: "off" and "could not tell" are
+     * different answers, and the planner is told which one it got.
+     *
+     * @return array<string,array{manifest:?\app\ConceptManifest,error:?string,enabled:?bool}>
+     */
+    public function concepts(): array {
+        if (isset($this->_concepts)) return $this->_concepts;
+        $on = null;
+        if ($this->db) {
+            $st = $this->db->query("SELECT setting_key FROM settings WHERE setting_key LIKE 'install.concept.%' AND setting_value = '1'");
+            if ($st !== false) {
+                $on = [];
+                foreach ($st->fetchAll(\PDO::FETCH_COLUMN) as $key) $on[substr((string) $key, strlen('install.concept.'))] = true;
+            }
+        }
+        $out = [];
+        foreach (glob("{$this->root}/concepts/*", GLOB_ONLYDIR) ?: [] as $dir) {
+            $name = basename($dir);
+            $enabled = $on === null ? null : isset($on[$name]);
+            try {
+                $out[$name] = ['manifest' => \app\ConceptManifest::load($dir, $name), 'error' => null, 'enabled' => $enabled];
+            } catch (\app\ConceptException $e) {
+                $out[$name] = ['manifest' => null, 'error' => $e->getMessage(), 'enabled' => $enabled];
+            }
+        }
+        ksort($out);
+        return $this->_concepts = $out;
+    }
+
     private array $_ctrl;
     private function controllers(): array {
         if (isset($this->_ctrl)) return $this->_ctrl;
         $out = [];
-        foreach (glob("{$this->root}/controls/*.php") ?: [] as $file) {
+        foreach ($this->codeRoots() as $codeRoot)
+        foreach (glob("{$codeRoot['dir']}/controls/*.php") ?: [] as $file) {
             $base = basename($file, '.php');
             if ($base === 'BaseControls') continue;
             $src = @file_get_contents($file); if ($src === false) continue;
@@ -411,7 +499,7 @@ class Introspector {
                     $methods[] = ['name' => $mm[1], 'line' => $i + 1];
                 }
             }
-            $out[] = ['name' => $base, 'path' => "controls/{$base}.php", 'line' => $classLine, 'methods' => $methods, 'doc' => $doc];
+            $out[] = ['name' => $base, 'path' => $this->rel($file), 'line' => $classLine, 'methods' => $methods, 'doc' => $doc, 'concept' => $codeRoot['concept']];
         }
         return $this->_ctrl = $out;
     }
@@ -442,10 +530,11 @@ class Introspector {
     private function models(): array {
         if (isset($this->_models)) return $this->_models;
         $out = [];
-        foreach (glob("{$this->root}/models/Model_*.php") ?: [] as $file) {
+        foreach ($this->codeRoots() as $codeRoot)
+        foreach (glob("{$codeRoot['dir']}/models/Model_*.php") ?: [] as $file) {
             $base = basename($file, '.php');                 // Model_Member
             $bean = strtolower(substr($base, strlen('Model_')));
-            $out[] = ['name' => $bean, 'class' => $base, 'table' => $bean, 'path' => "models/{$base}.php"];
+            $out[] = ['name' => $bean, 'class' => $base, 'table' => $bean, 'path' => $this->rel($file), 'concept' => $codeRoot['concept']];
         }
         return $this->_models = $out;
     }
@@ -454,14 +543,15 @@ class Introspector {
     private function libs(): array {
         if (isset($this->_libs)) return $this->_libs;
         $out = [];
-        foreach (glob("{$this->root}/lib/*.php") ?: [] as $file) {
+        foreach ($this->codeRoots() as $codeRoot)
+        foreach (glob("{$codeRoot['dir']}/lib/*.php") ?: [] as $file) {
             $base = basename($file, '.php');
             $src = @file_get_contents($file); if ($src === false) continue;
             $methods = [];
             if (preg_match_all('/^\s*public\s+(?:static\s+)?function\s+(\w+)/m', $src, $mm)) {
                 $methods = array_values(array_filter($mm[1], fn($x) => strpos($x, '__') !== 0));
             }
-            $out[] = ['name' => $base, 'path' => "lib/{$base}.php", 'methods' => $methods];
+            $out[] = ['name' => $base, 'path' => $this->rel($file), 'methods' => $methods, 'concept' => $codeRoot['concept']];
         }
         return $this->_libs = $out;
     }

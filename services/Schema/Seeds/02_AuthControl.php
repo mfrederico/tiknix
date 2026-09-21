@@ -127,6 +127,11 @@ $defaults = [
     ['brokerinfo', 'connectkey', 101, 'Instance-driven api_key connect (broker key)'],
     ['brokerinfo', 'disconnect', 101, 'Instance-driven disconnect (broker key)'],
     ['brokerinfo', 'connectintent', 101, 'Instance-driven OAuth connect handoff (broker key)'],
+    // The concept catalog, served to instances (COMPONENTS_PLAN.md). Same shape as
+    // brokerinfo: reachable at 101, and every method authenticates the broker key itself.
+    ['concepthub', 'search', 101, 'Concept catalog search (self-authenticating broker key)'],
+    ['concepthub', 'get',    101, 'Concept catalog detail (broker key)'],
+    ['concepthub', 'bundle', 101, 'Concept catalog download (broker key)'],
     // The inverse door: core (or a sidecar) calling THIS install about its own
     // connectors, authenticated by this install's conf/broker.ini key. PUBLIC means
     // reachable, not unprotected — Connectorapi::authed() closes it when no key is

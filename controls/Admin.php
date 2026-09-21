@@ -448,16 +448,43 @@ class Admin extends Control {
         $this->viewData['title'] = 'System Settings';
         $request = Flight::request();
 
-        if ($request->method === 'POST') {
+        /* The real HTTP verb, not $request->method: Flight derives that from ?_method= too
+           (CVE-2026-42551), and SimpleCsrf::validateRequest() — which reads the real verb —
+           waves a GET through. Asking the same question of two different sources is how a
+           GET dressed as a POST reaches the save with validation skipped. */
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) === 'POST') {
             // Validate CSRF
             if (!Flight::csrf()->validateRequest()) {
                 $this->viewData['error'] = 'Invalid CSRF token';
             } else {
-                // Update system-wide settings (stored under SYSTEM_ADMIN_ID)
+                /* ONLY the fields this form has. This loop used to store every posted key as a
+                   SYSTEM setting, skipping two names ('csrf_token', 'csrf_token_name') that
+                   the form never sends — the real field is '_csrf_token', so the token itself
+                   was saved as a setting on every submit.
+
+                   That was the small half. System settings are also where install flags live
+                   (install.concept.<name>, lib/Feature.php), so any ADMIN could post one and
+                   switch a concept on — past the ROOT gate, the verify step and the seeds that
+                   /admin/conceptenable exists to enforce. A settings form decides what it
+                   saves; the request does not. Member::settings already works this way. */
+                static $writableSettings = [
+                    'site_name', 'site_description', 'site_logo',
+                    'registration_enabled', 'default_user_level', 'session_timeout',
+                    'maintenance_mode', 'debug_mode',
+                    'twofa_whitelist_enabled', 'twofa_ip_whitelist',
+                ];
+                $refused = [];
                 foreach ($request->data as $key => $value) {
-                    if ($key !== 'csrf_token' && $key !== 'csrf_token_name') {
+                    if (in_array($key, $writableSettings, true)) {
                         Flight::setSetting($key, $value, 0);
+                    } elseif ($key !== '_csrf_token') {
+                        $refused[] = (string) $key;
                     }
+                }
+                if ($refused) {
+                    $this->logger->warning('Admin settings: refused keys this form does not own', [
+                        'keys' => $refused, 'member_id' => $this->member->id,
+                    ]);
                 }
                 $this->viewData['success'] = 'Settings updated successfully';
             }

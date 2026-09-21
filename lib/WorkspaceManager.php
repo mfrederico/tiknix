@@ -352,7 +352,6 @@ level = "DEBUG"
 file = "log/app.log"
 
 [security]
-csrf_enabled = false
 password_min_length = 6
 
 [features]

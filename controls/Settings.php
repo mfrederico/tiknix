@@ -56,10 +56,10 @@ class Settings extends Control {
                      'label'   => 'Require 2FA (no skipping)',
                      'hint'    => 'On: eligible admins must set it up. Off: they are prompted but may skip. Ignored entirely when the master switch is off.',
                      'default' => true],
-                    ['section' => 'security', 'key' => 'csrf_enabled', 'type' => 'bool',
-                     'label'   => 'CSRF protection',
-                     'hint'    => 'Leave on outside local development.',
-                     'default' => true],
+                    /* No CSRF toggle, deliberately. There was one ([security] csrf_enabled) and
+                       nothing ever read it: SimpleCsrf validates unconditionally. A switch that
+                       reads "CSRF protection: off" while protection is on is worse than no
+                       switch — and CSRF protection is not something to be able to turn off. */
                     ['section' => 'security', 'key' => 'max_login_attempts', 'type' => 'int',
                      'label'   => 'Max login attempts', 'hint' => 'Before lockout.', 'default' => 5,
                      'min'     => 1, 'max' => 100],

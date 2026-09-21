@@ -30,9 +30,12 @@ class Contact extends BaseControls\Control {
 
         // Bot defences, in order of cheapness. This form took 189 submissions before it
         // had any: it is public by design (a person who cannot log in still needs to
-        // reach support), Contact::submit() validated no CSRF token at all, and
-        // csrf_enabled is false globally anyway — so a bare POST to /contact/submit from
-        // anywhere worked, forever, at any rate.
+        // reach support), and Contact::submit() validates no CSRF token — so a bare POST to
+        // /contact/submit from anywhere worked, forever, at any rate.
+        //
+        // (An earlier version of this note also said "csrf_enabled is false globally anyway".
+        // That config key existed and was read by nothing: CSRF validation is unconditional
+        // wherever validateCSRF() is called. The key is gone; this method simply never calls it.)
         //
         // None of these stop a determined human, and none of them are meant to. They stop
         // the automated volume, which is all of what was in that table.

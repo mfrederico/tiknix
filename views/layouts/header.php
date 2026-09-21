@@ -163,7 +163,6 @@ if ($__loggedIn) {
           <?php endif; ?>
         <?php endif; ?>
 
-        <?php /* Ecommerce moved to the shop.tiknix sidecar — listed via the plugin nav below. */ ?>
         <?php
         /* These act ON the selected project, so they cannot be USED until one is chosen —
            otherwise you click in, get asked to pick a project, and two places own that

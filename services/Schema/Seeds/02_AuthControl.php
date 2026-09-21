@@ -69,12 +69,9 @@ $defaults = [
     ['member', '*', 100, 'All member methods'],
     ['dashboard', '*', 100, 'Dashboard access'],
     ['apikeys', '*', 100, 'API key management'],
-    // Generic sidecar-plugin launcher: /sidecar/launch/<name> (Explorer, Store, …).
+    // Generic sidecar-plugin launcher: /sidecar/launch/<name> (Explorer, Builder, …).
     // MEMBER-eligible; each plugin's own Feature grant gates it (Sidecar::launch enforces).
     ['sidecar', '*', 100, 'Sidecar plugin launcher (per-plugin feature-gated)'],
-    // Store checkout broker for the shop.tiknix sidecar. PUBLIC — it authenticates
-    // itself via an HMAC signature ([sidecar.shop] secret); no session.
-    ['storebroker', '*', 101, 'Shop sidecar checkout broker (HMAC-signed)'],
     // Pipeline run surfaces. api/trigger/status are PUBLIC — self-authenticating via
     // a per-member pk_ key or the [pipeline] trigger_secret. keys is ADMIN (mint UI).
     ['pipeline', 'api', 101, 'Pipeline REST API (per-member pk_ key)'],
@@ -157,10 +154,11 @@ $defaults = [
     ['connections', 'turnstileforget', 100, "Remove this install's Turnstile keys (admin-guarded in controller)"],
     ['connections', 'publishfeed', 100, 'Publish a public social showcase page for a social connection'],
 
-    // NOTE: the platform storefront (shop/ecommerce/store/products/catalog/category)
-    // was removed — the store is now the shop.tiknix sidecar (per-instance). The
-    // Stripe connector + connections custody stay; checkout is brokered via
-    // storebroker::* (below). See explorer.tiknix/PROVISION + memory sidecar-plugins.
+    // NOTE: there are no storefront routes here. The platform storefront
+    // (shop/ecommerce/store/products/catalog/category) was removed, and the shop.tiknix
+    // sidecar that replaced it — with its checkout broker, storebroker::* — was retired
+    // unused. A storefront is an in-instance concept now (COMPONENTS_PLAN.md), charging
+    // with the instance's own Stripe connection; the connector + custody code stays.
     ['social', '*', 101, 'Public social showcase front controller'],
 
     // Public webhook (101) — authenticates itself via Mailgun HMAC

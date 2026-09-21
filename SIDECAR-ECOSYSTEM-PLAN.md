@@ -184,6 +184,9 @@ start.
 
 - Sidecar repos pushed (SSH, secret-audited): `pipelines.tiknix`, `store.tiknix` (dir
   `shop.tiknix`), `explorer.tiknix`, `sidecar-kit.tiknix` (tagged `v0.1.0`).
+  **The store sidecar was retired 2026-09-21**, unused — directory, `Storebroker`, the `shop`
+  flag and `[sidecar.shop]` are gone; the GitHub repo remains. A storefront is an in-instance
+  concept now: see `COMPONENTS_PLAN.md` → "One storefront".
 - **Kit flip done** (core `8da1857`): core consumes `tiknix/sidecar-kit ^0.1.0` (composer VCS),
   `core/lib/Sidecar` deleted; sidecar front-controllers boot from `vendor/autoload`. Live-verified.
 - **`scripts/trim-instance.php`** (`53caea3`) — migration tool; dry-run on bidsurge = 489K/14

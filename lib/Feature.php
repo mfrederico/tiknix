@@ -22,9 +22,10 @@ class Feature {
 
     /** Flag catalog: key => ['label', 'blurb', 'min_level']. */
     public const CATALOG = [
-        // NOTE: the in-core 'ecommerce' flag was removed — the store is now the
-        // shop.tiknix sidecar, gated by the 'shop' flag below (per-instance storefront
-        // + admin, checkout via each instance's own Stripe via controls/Storebroker).
+        // There is no store flag. Selling moved twice: out of core into the shop.tiknix
+        // sidecar ('shop'), and then the sidecar was retired unused — a store that runs on
+        // the platform stays behind when the client leaves, which "take your app and go"
+        // cannot exclude. A storefront is an in-instance CONCEPT now (COMPONENTS_PLAN.md).
         'explorer' => [
             'label'     => 'Architecture Explorer',
             'blurb'     => 'Visual data-model + call-graph explorer for your instances (heavy; runs as a sidecar). Members can reach it; each grant is per-member.',
@@ -39,11 +40,6 @@ class Feature {
             // Builders::admin() re-checks level on every request, so a demotion takes
             // effect on the next click rather than the next login.
             'min_level' => 50,
-        ],
-        'shop' => [
-            'label'     => 'Store',
-            'blurb'     => 'A per-instance storefront + admin, with checkout via that instance\'s own Stripe. Runs as the shop.tiknix sidecar.',
-            'min_level' => 100, // MEMBER and above — they own the instances that get a store
         ],
         // MCP is NOT a sidecar — it is core's own tooling (API keys, the server registry,
         // the tool editor). It gets a flag for the same reason the plugins do: on the

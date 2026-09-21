@@ -537,14 +537,27 @@ Ideas, not code:
 - **"Is Stripe usable?" as one status call** (`ShopStripe::status()`) — the storefront should
   render a clear "connect Stripe" state rather than failing at checkout.
 
-### Retiring it
+### Retired (2026-09-21)
 
-Remove together, so nothing is left pointing at a store that no longer exists:
-`shop.tiknix/`, the empty `store.tiknix/`, `controls/Storebroker.php` + its `storebroker::*`
-authcontrol rows, the `shop` entry in `Feature::CATALOG`, `[sidecar.shop]` in config, the nav
-entry in `views/layouts/header.php`, and the references in `Brokerinfo.php`,
-`Connections.php`, `InstanceAutomations.php`. `ShopifyGateway.php` also matched the search
-and needs reading before it is touched — it may be unrelated.
+Done ahead of the storefront extraction, because it was unused and its nav entry led nowhere
+anyone had a store. Re-verified empty immediately before: zero rows in `storeproduct`,
+`storeorder`, `storeorderitem`; the only `feature.shop` grant was member 1.
+
+Removed together: `controls/Storebroker.php`, the `storebroker::*` authcontrol row (seed and
+live), the `shop` entry in `Feature::CATALOG`, the `feature.shop` grant, `[sidecar.shop]` in
+the live and example config (the nav entry came from that section via the sidecar registry),
+and the directories `shop.tiknix/` and the empty `store.tiknix/`. `shop.tiknix` was clean and
+fully pushed, so `github.com/mfrederico/store.tiknix` still holds it; the remote was left alone.
+
+What the first search matched and was **not** touched: `ShopifyGateway`, `ShopifyConnector`,
+`Connections`, `InstanceAutomations`, the connect-intent code in `Brokerinfo`, and the Shopify
+pipelines. Their `'shop'` is the Shopify connector's shop-domain parameter — nothing to do
+with the sidecar. Reading before deleting is what told them apart.
+
+Deleting a controller needs `composer dump-autoload -o`: `optimize-autoloader` is on, so the
+generated classmap kept `app\Storebroker` and the URL answered 500 (include of a missing
+file) until it was regenerated. `vendor/` is per install, so an instance that loses a
+controller in an upgrade needs the same.
 
 ### Generifying serenity's storefront
 
@@ -802,7 +815,7 @@ Settle this before the first extraction, not after.
 5. **Extract `storefront`**, generified and scrubbed. Then `digital`, `class`, `session`, and
    the remaining capabilities (`tickets`, `availability`, `profiles`, `vendors`), and the
    `events` bundle over them.
-6. **Retire the sidecar** — once `storefront` installs clean on an instance with data.
+6. ~~Retire the sidecar~~ — done 2026-09-21, early: it was unused (see "Retired").
 7. **Port the catalog from myctobot** — sources, scanner, scored search, versions, registry
    cache — then `concepts_search` / `concepts_get` over it, and ADOPT in the planner prompt.
 8. **Browsable catalog page** with screenshots (myctobot's registry views as the start).

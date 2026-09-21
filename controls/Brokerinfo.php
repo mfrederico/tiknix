@@ -214,8 +214,8 @@ class Brokerinfo extends Control {
      *
      * Request: { sidecar: "workbench", token: <signed> }
      * The signed claims carry instance_id, connector and member_id, and are minted
-     * by the sidecar with its own [sidecar.<name>] sso_secret. Same trust model as
-     * controls/Storebroker.php.
+     * by the sidecar with its own [sidecar.<name>] sso_secret (verified by
+     * app\Sidecar\Token).
      *
      * Ownership is resolved HERE, never taken from the claims: the member must be
      * able to reach the instance, and the connection must belong to that instance.

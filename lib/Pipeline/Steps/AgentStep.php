@@ -38,14 +38,38 @@ class AgentStep implements StepInterface {
         if ($engine === '' || !EngineRegistry::isValid($engine)) $engine = EngineRegistry::defaultEngine();
         $model = (string) ($config['model'] ?? '') ?: EngineRegistry::model($engine, 'worker');
 
-        // Self-contained: the instance runs its OWN claude. Prefer the per-instance binary at
-        // <root>/bin/claude (a symlink to the host install on a local pool, a real install on a
-        // remote instance); fall back to PATH. is_link() checks the symlink itself, so it does
-        // NOT trip open_basedir on the (out-of-jail) symlink target the way is_file() would.
+        // Self-contained: the instance runs its OWN claude, <root>/bin/claude — a hard link to
+        // the host install (app\ClaudeBinary), or a real install on a remote instance. An
+        // install with no bin/claude at all (the control plane itself) uses the engine's
+        // configured command.
         $runDir  = (string) ($run['run_directory'] ?? '');
         $root    = $runDir !== '' ? (string) preg_replace('#/data/pipe-runs/.*$#', '', $runDir) : '';
         $instBin = $root !== '' ? $root . '/bin/claude' : '';
-        $binOpt  = ($instBin !== '' && (@is_link($instBin) || @is_file($instBin))) ? ['bin' => $instBin] : [];
+        $binOpt  = [];
+        if ($instBin !== '' && @is_link($instBin)) {
+            // A symlink whose target cannot be seen FROM THIS PROCESS is a fault, and it is
+            // named — not exec'd, and not quietly swapped for whatever `claude` is on PATH.
+            // It used to be exec'd: is_link() is true for a dangling link, so the run died
+            // several steps in with bash's "No such file or directory" about a path that
+            // plainly existed on the host. It existed on the HOST; the run had been started
+            // from inside the builder sandbox, where /home/ubuntu is not mounted. Falling back
+            // to PATH would have "worked" there by running a different binary under different
+            // assumptions about whose credentials it carries — the instance runs its own, or
+            // it does not run. (Under open_basedir PHP cannot stat outside the tree at all,
+            // so there the check is skipped rather than guessed; bash will say.)
+            if ((string) ini_get('open_basedir') === '' && !@file_exists($instBin)) {
+                $target = (string) @readlink($instBin);
+                return ['ok' => false, 'output' => null, 'stdout' => '', 'exit' => 127,
+                        'stderr' => "agent step cannot run: {$instBin} is a symlink to {$target}, which does not exist from this process. "
+                                  . 'Either the host install moved (claude updates itself), or this run was started from inside the AI Builder '
+                                  . "sandbox, which does not mount the operator's home. Fix: on the host, as the operator, run "
+                                  . "`php scripts/claude-link.php --root={$root}` — it replaces the symlink with a hard link inside the instance, "
+                                  . 'which is visible from both.'];
+            }
+            $binOpt = ['bin' => $instBin];
+        } elseif ($instBin !== '' && @is_file($instBin)) {
+            $binOpt = ['bin' => $instBin];
+        }
 
         // Build the headless agent command; engines without a proven headless launcher
         // fall back to claude (best-effort), matching the AI Builder's own posture.

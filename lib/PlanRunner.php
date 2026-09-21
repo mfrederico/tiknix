@@ -288,7 +288,9 @@ class PlanRunner {
     private function jailFor(): string {
         // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
         // is outside the boundary (is_file() would throw) and re-jailing is redundant. Direct.
-        if ((string) ini_get('open_basedir') !== '') return '';
+        // (IsolatedPool, not a bare open_basedir test: a CLI process started BY the pool — a
+        // pipeline worker fanning out child runs — has no open_basedir and still IS the pool.)
+        if (\app\IsolatedPool::inside($this->instanceDir)) return '';
 
         $root = '/var/www/html/default';
         $real = realpath($this->instanceDir) ?: $this->instanceDir;

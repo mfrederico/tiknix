@@ -30,21 +30,17 @@ if (strpos(basename($ROOT), '.') === false) {
 }
 
 // Per-instance claude binary: the pipeline agent step runs the instance's OWN claude at
-// <root>/bin/claude (self-contained — works for a local isolated pool AND a remote instance).
-// Locally that's a symlink to the host install; resolve it the way jail-run.sh does (this
-// runs as the provisioning user, so `command -v claude` sees ~/.local/bin).
-$claudeBin = trim((string) @shell_exec('command -v claude 2>/dev/null'));
-if ($claudeBin === '') {
-    foreach ([getenv('HOME') . '/.local/bin/claude', '/usr/local/bin/claude', '/usr/bin/claude'] as $c) {
-        if ($c && @is_file($c)) { $claudeBin = $c; break; }
-    }
-}
-if ($claudeBin !== '') {
-    @mkdir($ROOT . '/bin', 0755, true);
-    @unlink($ROOT . '/bin/claude');
-    if (@symlink($claudeBin, $ROOT . '/bin/claude')) echo "  bin/claude -> {$claudeBin}\n";
-} else {
-    fwrite(STDERR, "aibuilder-provision: WARNING — no claude binary found to symlink; pipeline agent steps will need one at bin/claude\n");
+// <root>/bin/claude. A HARD LINK to the host install, not a symlink — a symlink to the
+// operator's home dangles inside the AI Builder sandbox and across claude's self-updates
+// (lib/ClaudeBinary.php has the whole story). Refresh later with scripts/claude-link.php.
+require_once $ROOT . '/lib/ClaudeBinary.php';
+try {
+    $linked = \app\ClaudeBinary::link($ROOT);
+    echo "  bin/claude: {$linked['action']} — {$linked['detail']}\n";
+} catch (\RuntimeException $e) {
+    // Provisioning carries on — an instance with no agent steps does not need claude — but
+    // this is said as an ERROR, because the first agent step will fail until it is fixed.
+    fwrite(STDERR, 'aibuilder-provision: ERROR — ' . $e->getMessage() . "\n");
 }
 
 // --- args -------------------------------------------------------------------

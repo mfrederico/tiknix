@@ -48,7 +48,9 @@ class Dispatcher {
         // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
         // is outside the boundary (is_file() would throw open_basedir and break the dispatch,
         // e.g. "Could not start draft generation") and re-jailing is redundant. Run direct.
-        if ((string) ini_get('open_basedir') !== '') return '';
+        // (IsolatedPool, not a bare open_basedir test: a CLI process started BY the pool — a
+        // pipeline worker fanning out child runs — has no open_basedir and still IS the pool.)
+        if (\app\IsolatedPool::inside($this->root)) return '';
 
         $base = '/var/www/html/default';
         $real = realpath($this->root) ?: $this->root;

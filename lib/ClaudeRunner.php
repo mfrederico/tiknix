@@ -407,7 +407,9 @@ class ClaudeRunner {
         // process to the instance tree, so we ARE the jail: jail-run.sh lives outside that
         // boundary (an is_file() on it throws an open_basedir warning and breaks the caller)
         // and re-jailing as the same isolated uid is neither possible nor needed. Run direct.
-        if ((string) ini_get('open_basedir') !== '') return '';
+        // (IsolatedPool, not a bare open_basedir test: a CLI process started BY the pool — a
+        // pipeline worker fanning out child runs — has no open_basedir and still IS the pool.)
+        if (\app\IsolatedPool::inside($workspace)) return '';
 
         $root = '/var/www/html/default';
         $real = realpath($workspace) ?: $workspace;

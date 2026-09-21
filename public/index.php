@@ -4,9 +4,19 @@
  * This is the main entry point for all web requests and CLI commands
  */
 
-// Set error reporting for development
+// The error page of last resort — FIRST, before the autoloader, so that whatever breaks
+// afterwards (Composer included) still ends in a real page rather than a blank one.
+require __DIR__ . '/../lib/fatal-handler.php';
+
+// Report everything; SHOW nothing unless this install says it is being debugged.
+//
+// This used to be ini_set('display_errors', 1) unconditionally, "for development" — in
+// production too. A fatal therefore printed PHP's raw message, server paths and all, to the
+// visitor, and printing it sent the headers, so nothing could replace it with a proper page or
+// even a 500 status. Bootstrap::loadConfig() turns it back on when [app] debug is set; the CLI
+// keeps it, because a terminal is where that message belongs.
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', PHP_SAPI === 'cli' ? '1' : '0');
 
 // Define base path
 define('BASE_PATH', dirname(__DIR__));

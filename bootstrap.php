@@ -72,6 +72,14 @@ class Bootstrap {
         $timezone = $this->config['app']['timezone'] ?? 'UTC';
         date_default_timezone_set($timezone);
 
+        // Raw PHP errors are shown only on an install that says it is being debugged.
+        // public/index.php turns them OFF before anything else runs; this is the one place
+        // they come back on. With them on, a fatal prints server paths to the visitor and
+        // sends the headers, so lib/fatal-handler.php can no longer replace it with a page.
+        if (PHP_SAPI !== 'cli' && filter_var($this->config['app']['debug'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            ini_set('display_errors', '1');
+        }
+
         // Set configuration in Flight
         foreach ($this->config as $section => $values) {
             if (is_array($values)) {

@@ -94,3 +94,6 @@ conf/*.key
 # would publish them. The existing conf/*.ini and database/*.db rules do NOT match these
 # names, which is how two live-key backups sat untracked-but-addable for a day.
 *.bak-*
+
+# machine-local: a hard link to the host claude binary (~230 MB). See lib/ClaudeBinary.php.
+/bin/claude

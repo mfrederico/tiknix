@@ -28,14 +28,18 @@ class Contact extends BaseControls\Control {
     public function submit() {
         $request = Flight::request();
 
+        // The real HTTP verb. A form submission is a POST; anything else has nothing to submit.
+        // ($request->method is not asked: Flight derives it from ?_method= too, and
+        // SimpleCsrf waves a real GET through — see Control::validateCSRF().)
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST') {
+            Flight::redirect('/contact');
+            return;
+        }
+
         // Bot defences, in order of cheapness. This form took 189 submissions before it
         // had any: it is public by design (a person who cannot log in still needs to
-        // reach support), and Contact::submit() validates no CSRF token — so a bare POST to
-        // /contact/submit from anywhere worked, forever, at any rate.
-        //
-        // (An earlier version of this note also said "csrf_enabled is false globally anyway".
-        // That config key existed and was read by nothing: CSRF validation is unconditional
-        // wherever validateCSRF() is called. The key is gone; this method simply never calls it.)
+        // reach support), and for a long time it validated no CSRF token either — so a bare
+        // POST to /contact/submit from anywhere worked, forever, at any rate.
         //
         // None of these stop a determined human, and none of them are meant to. They stop
         // the automated volume, which is all of what was in that table.
@@ -66,6 +70,32 @@ class Contact extends BaseControls\Control {
                 'email' => (string)($request->data->email ?? ''),
             ]);
             $this->render('contact/form', ['title' => 'Contact Support', 'success' => true]);
+            return;
+        }
+
+        // 2a. CSRF. The form has always emitted the token; this is the half that was missing.
+        //
+        //     Answered DIFFERENTLY from the checks around it, on purpose. Those are tripped
+        //     by bots, so they answer "thanks" and teach nothing. This one is also tripped by
+        //     a real person: the form may sit open for a day (form_ts allows it) and a session
+        //     lasts about as long, so somebody who wrote a long message and came back to send
+        //     it has no matching token through no fault of their own. Control::validateCSRF()
+        //     would send them to a Forbidden page and throw the message away — the one
+        //     outcome a support form must not have. So: say what happened, keep what they
+        //     typed, and let them send again. The re-rendered form carries this session's
+        //     token, so the second attempt goes through.
+        //
+        //     Before Turnstile, so a failure here does not spend a verification.
+        if (!SimpleCsrf::validate()) {
+            Flight::get('log')->info('Contact form rejected: CSRF token missing or stale', [
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? '', 'email' => (string)($request->data->email ?? ''),
+                'had_token' => isset($_POST['_csrf_token']),
+            ]);
+            $this->render('contact/form', [
+                'title'  => 'Contact Support',
+                'errors' => ['Your session expired before this was sent, so we could not accept it. Your message is still here — please send it again.'],
+                'data'   => $request->data->getData(),
+            ]);
             return;
         }
 

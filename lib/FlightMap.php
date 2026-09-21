@@ -171,7 +171,7 @@ Flight::map('defaultRoute', function($prefix = '') {
                 // A real 403, for the same reason notFound() sends a real 404: a refusal
                 // served with a 200 is invisible to logs, monitoring and every client
                 // that decides what to do from the status code.
-                Flight::response()->status(403);
+                Flight::errorStatus(403);
                 Flight::renderView('error/403', [
                     'title' => '403 - Forbidden',
                     'message' => 'You do not have permission to access this page.'
@@ -367,10 +367,32 @@ Flight::map('notFound', function() {
     // page with a Content-Length promising a body that never came. Rendering and
     // returning is enough: every caller returns immediately after this, which is what
     // the stop() was standing in for.
-    Flight::response()->status(404);
+    Flight::errorStatus(404);
     Flight::renderView('error/404', [
         'title' => '404 - Page Not Found'
     ]);
+});
+
+/**
+ * Make an error status REAL, by both routes it can leave by.
+ *
+ * Flight::response()->status() only records the code on Flight's response object; it reaches
+ * the wire when Flight later calls send(). Inside a route that happens. From Flight's GLOBAL
+ * exception handler it does not — the handler echoes its page and nothing ever sends the
+ * response — so the 500 page went out with PHP's default 200. That is the path an exception
+ * takes when it is thrown before the router's own try/catch, e.g. while the permission check
+ * autoloads a controller whose file is missing. http_response_code() sets it on PHP itself,
+ * which is what is actually transmitted; setting both keeps the two in agreement.
+ */
+Flight::map('errorStatus', function (int $code) {
+    Flight::response()->status($code);
+    if (!headers_sent()) {
+        // The status LINE, replacing any earlier one. Not http_response_code(): it refuses —
+        // with a warning Flight turns into an exception — once anything has already called
+        // header('HTTP/…'), and an error handler is exactly where that may have happened.
+        $reason = [403 => 'Forbidden', 404 => 'Not Found', 500 => 'Internal Server Error'][$code] ?? '';
+        header(trim(($_SERVER['SERVER_PROTOCOL'] ?? 'HTTP/1.1') . " {$code} {$reason}"), true, $code);
+    }
 });
 
 Flight::map('error', function($ex) {
@@ -401,9 +423,28 @@ Flight::map('error', function($ex) {
     // "500 - Server Error" that every client, proxy, cache and uptime check was told had
     // succeeded. Nothing upstream can distinguish a broken request from a working one, and
     // an outage looks green on the dashboard — which is exactly how this survived unnoticed
-    // until a deleted controller started throwing.
-    Flight::response()->status(500);
-    Flight::renderView('error/500', $errorData);
+    // until a deleted controller started throwing. (errorStatus, not response()->status():
+    // this handler is also reached from Flight's global exception handler, where the
+    // response object is never sent — see errorStatus above.)
+    Flight::errorStatus(500);
+
+    // The branded page — and if rendering IT fails (a broken view, a layout that needs the
+    // database that just went away), the self-contained page rather than Flight's built-in
+    // one, which prints the message and a stack trace to the visitor.
+    $bufferLevel = ob_get_level();
+    try {
+        Flight::renderView('error/500', $errorData);
+    } catch (\Throwable $renderFailure) {
+        Flight::get('log')->error('ERROR the 500 page itself failed to render: ' . $renderFailure->getMessage(), [
+            'file' => $renderFailure->getFile(), 'line' => $renderFailure->getLine(),
+        ]);
+        require_once __DIR__ . '/fatal-handler.php';
+        // Drop what the failed view managed to write: close any buffer IT opened, then empty —
+        // not close — the one we were given, which Flight still expects to collect.
+        while (ob_get_level() > $bufferLevel) { @ob_end_clean(); }
+        if (ob_get_level() > 0) { @ob_clean(); }
+        echo tiknix_error_page(500, 'Server Error', 'Something went wrong on our end. The problem has been recorded. Please try again in a moment.');
+    }
 });
 
 /**

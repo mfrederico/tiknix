@@ -81,6 +81,7 @@ through view slots (next section), not through this interface:
 interface OfferType {
     /** [sqlFragment, params] narrowing the public listing for THIS type, or null for no rule. */
     public function listingCondition(): ?array;
+    public function validateProduct(OODBBean $product): void;            // called by Model_Product::update(); throws
     public function validateLine(OODBBean $product, array $line): void;  // throws, naming the reason
     public function onPaid(OODBBean $order, OODBBean $item): array;      // fulfilment records for the confirmation email
     public function onCancelled(OODBBean $order, OODBBean $item): void;
@@ -150,18 +151,57 @@ installs a storefront.
 
 ## How a concept plugs in
 
-- **Files install into the normal directories** — `controls/`, `lib/`, `models/`, `views/` —
-  plus its manifest at `concepts/<name>/concept.json`. Flight's auto-routing and the
-  autoloader are untouched.
+A concept is a **self-contained directory**, a portlet-style mini-app that shares the
+instance's one runtime:
+
+```
+concepts/tickets/
+  concept.json      the manifest — and the whole registration
+  controls/         app\concepts\tickets\…   (routable only while enabled)
+  lib/              app\concepts\tickets\…   incl. Portlets.php
+  models/
+  views/
+  seeds/
+  screenshot.jpg
+```
+
+- **Install is copying a directory; uninstall is deleting one.** Nothing is scattered into
+  the instance's own `controls/` or `lib/`, so provenance is visible from the path and
+  removal never depends on a file list being right.
 - **Registration is data, never code.** The manifest *is* the registration. The loader reads
   JSON and executes nothing a concept supplies — see "Registration is data" below.
-- **Off means inert.** A disabled concept's manifest is never read into the registry, so it
-  contributes no offer type, no partials, no handlers.
-- **Controllers declare their concept**: `const CONCEPT = 'tickets';`. Base `Control` refuses
-  the route while the flag is off — auto-routing makes any controller file reachable the
-  moment it exists, so the gate has to be in the base class, not left to each controller.
+- **Off means unroutable, by construction.** `defaultRoute` already refuses any class whose
+  file is outside `controls/` — that check exists so a URL cannot instantiate `Bean` or
+  `PermissionCache`. The allowed roots become `controls/` **plus `concepts/<name>/controls/`
+  for each enabled concept**. A disabled concept's controllers are refused by the mechanism
+  that was already there; no controller has to remember to declare anything.
+- **Autoload and views.** One autoloader maps `app\concepts\<name>\` onto the directories of
+  *enabled* concepts (composer's static map only knows `controls/` and `lib/`). Views need no
+  path juggling: Flight's `View::getTemplate()` returns an absolute path untouched, so the
+  loader renders `<root>/concepts/<name>/views/<file>`, after a `realpath` check that the
+  file is inside that concept's `views/`.
+- **Controller names are claimed.** `/tickets/…` resolves through the registry to
+  `app\concepts\tickets\Tickets`. A concept claiming a controller name that core or another
+  enabled concept already owns refuses to enable, naming both.
 - **Permissions follow the flag.** A concept's authcontrol seeds run on enable, via
   `PermissionCache::seedRule()`.
+
+### Shared runtime — not a mini-Flight per plugin
+
+A plugin with its own bootstrap, its own Flight engine and its own database already exists
+here: it is a **sidecar**, and it remains the right tool for untrusted or heavy work. Inside
+an instance, a concept shares the one runtime, for three reasons:
+
+- **Flight and RedBean are static singletons.** `Bean::selectDatabase()` switches the
+  database for the whole process. A portlet that selects its own database inside a host page
+  and throws before switching back sends every later host query to the wrong database, with
+  no error — the "wrong query reports zero rows" failure `CLAUDE.md` already records.
+- **The data is shared on purpose.** A class *is* a `product`; a booking *is* a
+  `shoporderitem`; `validateLine` decrements seats inside the host's checkout transaction;
+  `Orders.php:304` joins `shoporderitem` to `product`. Separate databases break the
+  transaction and the join.
+- **A per-plugin bootstrap is code that runs at load**, which data-only registration exists
+  to avoid.
 
 ### View slots
 
@@ -185,36 +225,46 @@ Two primitives cover all four:
 $__sections += Concepts::collect('nav.sections', ['member' => $__me]);
 ```
 
-Registered in the concept's `concept.json`:
+Registered in the concept's `concept.json` — this one is `concepts/profiles/concept.json`:
 
 ```json
 "slots": {
-  "shop.item.extras": {
-    "view": "views/concepts/session/slot-picker.php",
-    "level": "PUBLIC",
-    "offerTypes": ["session"]
-  },
   "catalog.edit.fields": {
-    "view": "views/concepts/profiles/teacher-select.php",
+    "provider": "Portlets::teacherSelect",
+    "view": "teacher-select.php",
     "level": "ADMIN",
     "offerTypes": ["class", "session"],
-    "save": "app\\Profiles::applyCatalogForm"
+    "save": "Portlets::saveTeacher"
   },
   "member.profile.panels": {
-    "view": "views/concepts/profiles/edit-bio.php",
+    "provider": "Portlets::editBio",
+    "view": "edit-bio.php",
     "level": "MEMBER",
-    "when": "app\\EventAccess::isVendorCtx"
+    "when": "vendors:Access::isVendorCtx"
   }
 },
 "collect": {
   "nav.sections": {
     "level": "MEMBER",
-    "when": "app\\EventAccess::isVendorCtx",
-    "data": { "Events & Classes": [{ "label": "Calendar", "href": "/events" }] }
+    "when": "vendors:Access::isVendorCtx",
+    "data": { "Teachers": [{ "label": "Teachers", "href": "/teachers" }] }
   }
-},
-"offerTypes": { "class": "app\\concepts\\ClassOffer" }
+}
 ```
+
+#### A slot entry is a portlet
+
+Each entry is a miniature controller-plus-view: a **provider** that fetches its own data, and
+a **view** that renders it. The teacher select needs the list of teachers; today the host's
+`Catalog` controller queries them, but once `profiles` is a plugin the host cannot know to.
+Without a provider the partial would end up querying the database from inside the view.
+
+- `provider` takes `(array $ctx): array` and returns the view's variables. The view sees
+  **only** what the provider returned plus the `$ctx` the host passed — never the host view's
+  local scope. That leak is exactly what makes extraction hard today.
+- `view` is a filename relative to the concept's own `views/`.
+- By convention providers and `save` handlers live in the concept's `Portlets` class, so the
+  whole manifest-reachable surface of a concept is one file a reviewer can read top to bottom.
 
 #### Registration is data
 
@@ -234,28 +284,37 @@ ships — but it is the wrong shape, for three reasons:
 
 So the manifest is pure data, and every name in it that resolves to code is constrained:
 
-- **`when` is a name, never an expression.** It must match `Class::method` exactly, the class
-  must be in the `app\` namespace **and** be listed in `provides.lib` by this concept or one
-  it `requires`, and the method takes `(array $ctx): bool`. A bare function name fails the
-  shape check and is never called. Nothing is ever passed to `eval`, and nothing from a
-  request ever selects the callable.
-- **`save` follows the same rules as `when`** — same shape, same namespace, same
-  `provides.lib` allowlist — with the signature `(OODBBean $bean, array $input): void`.
-- **The top-level `offerTypes` map's values are class names**, checked with
-  `is_subclass_of(…, OfferType::class)`. A slot's `offerTypes` *filter* is a plain list of
-  type keys, each of which must be a type some enabled concept provides.
+- **Names are relative to the concept's own namespace.** The manifest lives in
+  `concepts/profiles/`, so the loader builds the class name itself:
+  `app\concepts\profiles\` + what the manifest says. A name must match
+  `^[A-Z]\w*::[a-z]\w*$` — **no backslashes**. There is no syntax for reaching outside the
+  concept: `"system"` and `"\\app\\Bean::exec"` both fail the shape check before anything is
+  resolved. No allowlist is needed, so there is no allowlist to get wrong.
+- **One qualified form, for a required concept:** `"vendors:Access::isVendorCtx"`. The prefix
+  must name a concept in this manifest's `requires.concepts`; it resolves into *that*
+  concept's namespace under the same shape rule. This is how `when` points at the predicate
+  the owning concept's controllers actually call, rather than a copy — and it makes the
+  dependency visible in the manifest.
+- **`when`** takes `(array $ctx): bool`. **`provider`** takes `(array $ctx): array`.
+  **`save`** takes `(OODBBean $bean, array $input): void` and throws on invalid input.
+  Nothing is ever passed to `eval`, and nothing from a request ever selects the callable.
+- **The top-level `offerTypes` map's values are relative class names** (`"ClassOffer"`),
+  checked with `is_subclass_of(…, OfferType::class)`. A slot's `offerTypes` *filter* is a
+  plain list of type keys, each of which must be a type some enabled concept provides.
+- **`view` is a filename**, resolved under the concept's `views/` and `realpath`-checked to
+  stay there. No `../`.
 - **`level` is a name** (`"MEMBER"`), resolved through `LEVELS`. An unknown name is an error.
 - **`collect` data is static JSON** — no closure builds it.
 - **All of this is verified at enable time.** A concept with an unresolvable or disallowed
   name refuses to enable, naming the entry. It is not re-discovered per request.
 
-This also enforces a rule that was previously only stated: `when` can only point at a named,
-reviewed method in `lib/` — the same one the controller calls — so the view's gate and the
-route's gate cannot drift into two implementations.
+This also enforces a rule that was previously only stated: `when` can only point at a named
+method in a concept's own `lib/` — the same one that concept's controllers call — so the
+view's gate and the route's gate cannot drift into two implementations.
 
 What this does **not** fix: a concept is still copied code, some of it agent-written, running
 with the instance's privileges. Data-only registration shrinks what runs *at load*; it does
-not vet what the concept's own controllers do. That protection is the blank-instance install
+not vet what the concept's own controllers do. That protection is the install
 gate plus a human reading the concept before it enters the catalog.
 
 #### Who sees a slot
@@ -296,8 +355,6 @@ The rules:
   its manifest (`"slots": ["catalog.edit.fields", "shop.item.extras", …]`). A concept
   registering against a slot no installed host declares refuses to enable, naming the slot —
   a typo cannot produce a plugin that silently renders nowhere.
-- **Partials get only the vars passed in** — no leaking of the host view's local scope. That
-  leak is exactly what makes extraction hard today.
 - **The host owns the wrapper.** `catalog/edit.php` toggles hard-coded
   `data-catalog-class-field` attributes per type. The host instead wraps each offer type's
   partial in `data-offer-type="<type>"`, and one generic toggle replaces the per-type JS.
@@ -322,38 +379,45 @@ second flag class. One catalog, two scopes.
 
 ### The manifest
 
-```
-concepts/<name>/
-  concept.json        manifest
-  screenshot.jpg      captured by the Playwright job that feeds the landing showcase
-  files/              laid out as they install
-  seeds/              numbered seeders: authcontrol rows + starter data
-```
+The directory layout is under "How a concept plugs in". The catalog stores that same
+directory, so what is browsed is byte-for-byte what installs. `concepts/class/concept.json`:
 
 ```json
 {
   "name": "class",
+  "version": "1.0.0",
   "kind": "offer-type",
   "title": "Classes & dated events",
   "blurb": "Sell seats in dated classes: capacity, recurring series, tickets on payment.",
   "tags": ["events", "classes", "booking", "capacity"],
-  "requires": { "concepts": ["storefront", "tickets", "calendar"], "lib": ["Mailer"] },
-  "provides": {
-    "controllers": ["Events"],
-    "lib": ["app\\concepts\\ClassOffer"],
-    "routes": [["events", "*", "MEMBER"]]
+  "requires": { "concepts": ["storefront", "tickets", "calendar", "vendors"], "lib": ["Mailer"] },
+  "provides": { "controllers": ["Events"], "routes": [["events", "*", "MEMBER"]] },
+  "offerTypes": { "class": "ClassOffer" },
+  "slots": {
+    "catalog.edit.fields": {
+      "provider": "Portlets::catalogFields",
+      "view": "catalog-fields.php",
+      "level": "ADMIN",
+      "offerTypes": ["class"],
+      "save": "Portlets::saveCatalogFields"
+    }
   },
-  "offerTypes": { "class": "app\\concepts\\ClassOffer" },
-  "slots": { "catalog.edit.fields": { "view": "views/concepts/class/catalog-fields.php", "level": "ADMIN", "offerTypes": ["class"], "save": "app\\concepts\\ClassOffer::applyCatalogForm" } },
+  "collect": {
+    "nav.sections": {
+      "level": "MEMBER",
+      "when": "vendors:Access::isVendorCtx",
+      "data": { "Events & Classes": [{ "label": "Calendar", "href": "/events" }] }
+    }
+  },
   "extends": { "product": ["offerType", "classStartsAt", "classCapacity"] },
   "config": [["app", "event_timezone"]],
   "source": { "instance": "serenity-bbdc01", "commit": "<sha>" }
 }
 ```
 
-`provides.lib` is not descriptive — it is the allowlist. A `when`, `save` or `offerTypes` name
-may only resolve into a class listed there, by this concept or one it `requires`. So what the
-catalog says a concept contains and what the concept is permitted to call cannot drift apart.
+`requires.lib` names **core** classes the concept calls (`Mailer`), checked to exist at enable
+time. There is no `provides.lib`: every name in the manifest resolves inside the concept's own
+namespace by construction, so there is nothing to allowlist.
 
 ### Copy, don't link
 
@@ -362,10 +426,44 @@ instance's own code. That keeps the code-sovereignty promise (the client walks a
 everything), leaves no upgrade pipeline through which a catalog change can break a tenant,
 and lets an adopted concept be adapted per client without fighting a link.
 
+### Flat install, bundles, and the root concept
+
+Concepts install **flat** — siblings under `concepts/`, one copy of each per instance. A
+concept never carries a private copy of another concept.
+
+Only PHP class names would nest. Everything else a concept owns is global to the instance: a
+bean type is one table and RedBean allows one `Model_*` per type; auto-routing is a flat
+`/controller/method`; `authcontrol` is keyed by controller and method; slot names and offer
+type keys are install-wide. Two private copies of `tickets` would write one `ticket` table
+with two models, and claim one `/tickets` URL. Composer — which tiknix already uses — has the
+same constraint and the same answer: one flat `vendor/`, one version of each package, and a
+conflict refuses to install.
+
+What nesting was reaching for is met flat:
+
+- **Ship together → a bundle.** A manifest with no code:
+  `{"kind": "bundle", "name": "events", "includes": ["class", "tickets", "calendar", "profiles"]}`.
+  Installing it resolves the list as siblings. The planner ADOPTs `events` as one thing, the
+  instance gets one `tickets`, and two bundles that include the same concept share it.
+- **Split a large concept → sub-namespaces.** `app\concepts\storefront\checkout\…` is an
+  ordinary folder. A part with no table, route or flag of its own needs no manifest. A part
+  that *does* need its own flag is a sibling concept that `requires` its parent.
+- **Claimed names are install-wide.** Controller names, bean types, slot names it hosts, and
+  offer type keys. A concept claiming one that core or another enabled concept owns refuses
+  to enable, naming both.
+
+**The instance is the root concept.** A concept directory already has the same layout as an
+instance root, and names already resolve relative to the concept. So the instance's own
+`controls/`, `lib/` and `views/` are the root concept, with a root manifest declaring the
+slots core hosts (`nav.sections`, `member.profile.panels`, …). That is where "hosts declare
+their slots" lives for core; `storefront` declares its own in its own manifest.
+
 ### A concept must prove it installs
 
-The gate for entering the catalog: install onto a **blank instance**, run the seeds, enable
-the flag, load its routes, and pass. It installs clean or it stays out.
+The gate for entering the catalog: install onto an instance **that already has data**, run
+the schema and permission seeds, enable the flag, run the concept's own tests, and pass. It
+installs clean or it stays out. A blank instance is not enough — see "Schema on a frozen
+instance" below.
 
 ## One storefront
 
@@ -425,6 +523,37 @@ partial, packing-slip wording. The work:
 - Serenity then re-adopts the generic storefront and keeps its gemstone pieces as its own
   code — the proof that adopt-then-adapt works on a real client.
 
+## The catalog — port it from myctobot
+
+`/var/www/html/default/myctobot` already has a plugin system (~5,000 lines, GitHub issue #104),
+and it is the half this plan is thin on. Its `PluginManager` never executes plugin code — no
+`require`, no boot, no hooks; a plugin there is an ordinary class in `lib/plugins/` with a
+sibling JSON manifest. The whole system is **discovery, registry, search and versioning**.
+Today's design is all runtime. They meet at the manifest and barely overlap, so this is a
+port (as pipelines were), not a second design.
+
+| myctobot | Becomes |
+|---|---|
+| `PluginScannerService` — finds plugins by a `plugin.json` marker across configured **sources** (GitHub / GitLab repos or orgs, via the install's own `github` connection), exponential backoff on 403/429 | Discovery by a `concept.json` marker. The catalog is a **set of sources**, not one repo: a shared source for generic concepts, and a private source per client for concepts that are theirs alone — which is also how "Ownership of extracted code" stays enforceable. |
+| `PluginSearchService` — relevance scoring: exact name 100, name contains 80, description 50, tags 30 | `concepts_search` v1, as is. |
+| `PluginVersionService` + `Model_Pluginversion` — `update_available`, `update_type` (major / minor / patch), version history; unit-tested | The manifest gains `version`. Installed concepts get an **"update available" notice, inform only** — copy-install never auto-applies. |
+| `"provides": {"auth": ["google"]}` | Capability-keyed `provides` — a vocabulary the planner matches on, aligned with the existing `whatprovides("<concept>")`. |
+| `"config": {"key": "Required: …"}` | The settings declaration ("Smaller holes → Settings"). |
+| `PluginRegistryCache` — per-workspace keys, TTL refresh, keeps the last good data when a source fails and records the error with a timestamp | The registry cache, with the rule below. |
+| `Pluginsources` / `Pluginregistry` / `Plugins` controllers + views | The admin screens and the browsable catalog page. |
+
+Carry over carefully:
+
+- **Stale is allowed only when it is said.** `concepts_search` returns source errors and their
+  timestamps *with* the results, so the planner can report "results as of 14:02; source X
+  failing since". No reachable source **and** no cache is an error — never an empty result,
+  which would silently turn every ADOPT into a NEW.
+- **Not APCu from cron.** myctobot's cron refreshes APCu from the CLI. APCu is per-SAPI — the
+  CLI can never invalidate the web's copy (see the query-cache notes). Use the valkey version
+  store tiknix already has.
+- **`Bean::`, not `R::`.** `PluginManager` uses `R::` directly; the port goes through the
+  wrapper, and the validation hook will insist on it anyway.
+
 ## ADOPT in decompose
 
 Two MCP tools, served by **core** (the catalog crosses instances; instances already reach
@@ -445,11 +574,12 @@ are emitted first and chained via `depends_on`. `reuses` records `concept/<name>
 Small concepts make this work. A planner asked for "staff shift scheduling" matches
 `availability` + `profiles` + `calendar`; it would never have matched a 5,400-line "Events".
 
-Matching starts as keyword/tag search over blurbs. The `gpt-oss:120b-cloud` semantic pass
-(already wired into `check-duplicates.php --ollama`) can rank later if needed.
+Matching starts as myctobot's scored keyword search (above). The `gpt-oss:120b-cloud`
+semantic pass (already wired into `check-duplicates.php --ollama`) can rank later if needed.
 
-A catalog that cannot be reached is an **error the planner reports**, not an empty result —
-otherwise an outage silently turns every ADOPT into a NEW and nobody notices.
+Failure handling is the rule under "The catalog": stale results are returned **with** their
+source errors, and no source plus no cache is an error the planner reports — never an empty
+result.
 
 ## Augment-decompose
 
@@ -466,10 +596,104 @@ original (`replanOf`). What is missing is an **additive** mode:
 The existing "is the goal already met?" check applies unchanged, so augmenting with nothing
 new invents no work. Augment is independent of everything above and can ship any time.
 
+## Gaps the runtime has to close
+
+Checked against the code 2026-09-21. The first five break a real install if ignored.
+
+### Schema on a frozen instance
+
+`bootstrap.php:330` calls `R::freeze()` in production. "RedBean auto-creates a model's table
+on first store" is true only unfrozen — enabling a concept on a live instance creates **no
+tables**, and the columns it `extends` onto `product` never appear; the first store throws.
+
+So enable has an explicit schema step: unfreeze, run the concept's schema seed, refreeze. The
+seed declares every column **with its type**. RedBean widening a column rebuilds the SQLite
+table and drops the rows (dates must be sized as text — see the widen trap in memory), and a
+concept adding columns to a populated `product` table is exactly where that bites. This is why
+the install gate needs an instance with data.
+
+Data outlives the code: disabling or deleting a concept never drops its tables or columns.
+
+### One model per bean
+
+`Model_Product` validates per offer type on `update()` — `digital` at line 78, `class` at 89,
+`session` at 123. RedBean allows one model class per bean type, so three concepts cannot each
+contribute theirs. The `OfferType` contract gains:
+
+```php
+public function validateProduct(OODBBean $product): void;   // throws, naming the reason
+```
+
+and `Model_Product::update()` dispatches to it. Bean types join the install-wide claimed
+names. Concept models are global-namespace `Model_*` classes, so the concept autoloader has to
+resolve those from enabled concepts' `models/` as well as the `app\concepts\…` namespace.
+
+### Tooling that cannot see `concepts/`
+
+`mcptools/Introspector` globs `controls/*.php`, `models/Model_*.php` and `lib/*.php`. Once a
+concept is installed, the planner's own inventory does not list it — so the planner classifies
+the capability NEW and builds it again, beside the concept. Same blind spot in
+`check-duplicates.php` (`controls, services, lib, models`), the `R::` validation hook, and
+`whatprovides` / `describe`. Each must walk enabled concepts' directories, and `reuse_digest`
+should list installed concepts as a section of their own.
+
+### Core files a concept currently patches
+
+Serenity added `sendClassTickets()` to `lib/Mailer.php`. A concept owns its email templates
+and calls a generic send; it never edits core. The same goes for `views/admin/edit_member.php`
+and `views/member/profile.php` (the `isVendor` fields) — those become slots in the root
+manifest.
+
+### No tests on the client that takes money
+
+Serenity has no `tests/` directory. Build step 3 refactors checkout — seat decrements inside a
+transaction, ticket issue on paid, void on cancel — on a live client, and calls it
+behaviour-preserving with nothing that would notice otherwise. Characterization tests for
+checkout, paid, cancel and return come **before** the refactor. Concepts ship their tests;
+the install gate runs them.
+
+### Install is a build task, never a web action
+
+The instance pool user (`tiknix-i<id>`) holds `rwx` on `controls/`. A web "Install" button
+would be the web process writing executable PHP into its own tree. Install always goes through
+a build task — worktree, review, merge — which is what ADOPT already produces. The web UI only
+flips the flag, and only for a concept whose directory is already present and committed.
+
+### Smaller holes
+
+- **Assets.** `concepts/<name>/` is outside `public/`, so its JS and CSS are not served.
+  Either inline in the view, or the install task copies `assets/` to
+  `public/concepts/<name>/`. Undecided.
+- **Settings.** The manifest asks for `[app] event_timezone`, but `config.ini` is gitignored,
+  holds secrets, and editing it raises the config-drift warning. Concept settings are system
+  settings (as `site_name` is), declared in the manifest with a type, rendered as a generated
+  settings form. A required setting that is unset is an error naming the setting, as
+  `EventCalendar` already does.
+- **Non-web entry points.** Webhooks, scheduled jobs, MCP tools and pipeline steps have no
+  place in the manifest yet, and the loader must run for CLI and cron, not only the web
+  bootstrap. Not urgent: serenity's one cleanup (`releaseStaleSeatHolds()`) runs lazily inside
+  requests.
+- **Slot order and slot stability.** Two concepts in one slot need a declared `order`. Slot
+  names and `$ctx` shapes are a public interface once concepts depend on them, so `requires`
+  carries a contract version (`"storefront": 1`), not only a name.
+
+### Ownership of extracted code
+
+The landing page promises the client full source in hand, and serenity's code was generated
+for that client. Before it enters a catalog other clients install from:
+
+- the terms say tiknix retains the right to reuse **generic** components, and
+- extraction includes a scrub — no client data, seed rows, credentials, branding, or
+  business rules particular to that client.
+
+Settle this before the first extraction, not after.
+
 ## Build order
 
-1. **Concept runtime** — `concepts/` registration, install-scoped flags in `Feature`, the
-   `CONCEPT` gate in base `Control`, the manifest, and the blank-instance install gate.
+1. **Concept runtime** — the manifest loader and its name-shape checks, install-scoped flags
+   in `Feature`, the enabled-concepts roots in `defaultRoute`'s containment check, the
+   `app\concepts\<name>\` autoloader, `Concepts::slot()` / `collect()` with providers, and
+   the install gate (against an instance with data).
 2. **First capability: `calendar`.** The most self-contained piece found: `EventCalendar`
    makes zero `Bean::` calls and touches no other app class. It is coupled by *shape*, not by
    calls — it reads product fields directly (`classStartsAt`, `classLocation`, `classFormat`,
@@ -478,14 +702,23 @@ new invents no work. Augment is independent of everything above and can ship any
    and let each caller map its own bean onto that. That also collapses its two parallel API
    families (`window`/`vevent`/`links` and `bookingWindow`/`bookingVevent`/`bookingLinks`)
    into one. Small, real, and it proves the runtime before the storefront.
-3. **`OfferType` contract inside serenity.** Refactor the `offerType` branches behind the
-   interface *in place*, with serenity still live. Behaviour-preserving; this is the risky
-   step and it happens where there is a real client to catch regressions.
-4. **Extract `storefront`**, generified. Then `digital`, `class`, `session`, and the
-   remaining capabilities (`tickets`, `availability`, `profiles`, `vendors`).
-5. **Retire the sidecar** — once `storefront` installs clean on a blank instance.
-6. **`concepts_search` / `concepts_get`** + ADOPT in the planner prompt.
-7. **Browsable catalog page** with screenshots.
+3. **Characterization tests on serenity** — checkout, paid, cancel, return, ticket issue and
+   void, slot hold and release. Serenity has none today, and step 4 is unsafe without them.
+4. **`OfferType` contract inside serenity.** Refactor the `offerType` branches behind the
+   interface *in place*, with serenity still live and step 3's tests green before and after.
+   This is the risky step: it touches the code that takes money.
+5. **Extract `storefront`**, generified and scrubbed. Then `digital`, `class`, `session`, and
+   the remaining capabilities (`tickets`, `availability`, `profiles`, `vendors`), and the
+   `events` bundle over them.
+6. **Retire the sidecar** — once `storefront` installs clean on an instance with data.
+7. **Port the catalog from myctobot** — sources, scanner, scored search, versions, registry
+   cache — then `concepts_search` / `concepts_get` over it, and ADOPT in the planner prompt.
+8. **Browsable catalog page** with screenshots (myctobot's registry views as the start).
+
+Step 1 includes teaching `Introspector`, `check-duplicates.php` and the validation hook to
+walk enabled concepts — otherwise the first installed concept is invisible to the planner.
+
+Before step 5: the ownership terms and the extraction scrub ("Ownership of extracted code").
 
 Augment-decompose slots in anywhere.
 
@@ -493,6 +726,7 @@ Augment-decompose slots in anywhere.
 
 - **Product attributes.** Does the generic storefront get an attributes mechanism, or do
   domain fields like `stoneType` always stay instance-side?
-- **Concept versions.** Copy-install means no upgrades. Is provenance (source commit) enough,
-  or do we want a "this concept has changed upstream" notice — inform only, never auto-apply?
+- **Applying an upstream update.** Versions and the inform-only "update available" notice are
+  settled (ported from myctobot). Open: once a client has adapted a copied concept, what does
+  "take the update" mean — a build task that merges upstream into the adapted copy?
 - **Who may enable a concept** — instance owner, or admin only?

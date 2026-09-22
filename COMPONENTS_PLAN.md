@@ -1144,6 +1144,90 @@ the step's trace and the log), and each step type has its own output shape
 object smoke) and `garbagecollector` (runtime housekeeping). No instance ran the removed
 demos except partsdna's four August test runs; instances drop them on their next merge.
 
+## Every app has its own /pipelines (planned 2026-09-22)
+
+**Today the runtime lives in every install and the editor only in core.** An instance runs,
+triggers, debugs and exposes its pipelines, and its agent writes them through `pipeline_set`
+— but a person logged into the instance cannot see or edit them. The editor is the
+`pipelines.tiknix` sidecar, reached from core's *Data* link, which exists only because a
+project's pipelines had to be edited from core with core's login. Instances have no
+`[sidecar.*]` config, so their nav has no Data at all. Owner's call: every app gets its own
+`/pipelines`; the sidecar retires.
+
+The editor is not being rewritten. `pipelines.tiknix/views/edit/index.php` (985 lines) is
+already the myctobot-style one: one row per step in a spreadsheet layout, drag to reorder,
+row → config card with typed fields from each step's `schema()`, the step-trace debugger
+(breakpoint, resolved input/output, inject data, Step/Continue/Abort), `{` variable
+autocomplete with chips, JSON as an "Advanced" toggle. It moves house.
+
+### 1. A `pipeline` step — "chainable"
+
+No step type runs another pipeline; chaining today is an `http` step POSTing
+`/pipeline/trigger/<slug>` with the secret, and the child's output never comes back.
+
+```
+{"name": "enrich", "type": "pipeline",
+ "config": {"slug": "leadgen-enrich", "context": {"lead": "{prev.output}"}, "mode": "sync"},
+ "on_success": "next"}
+```
+
+- `mode: sync` (default) runs the child in-process to completion and yields its final
+  output as `{enrich.output}`, plus `{enrich.run_id}`; `mode: async` dispatches it like a
+  trigger and yields the run id only.
+- The child's steps are its own run (`piperun` row, `parent_run_id` set) so the debugger
+  and `pipeline_run_get` show it whole; the parent's trace shows one row.
+- Depth guard: a parent chain deeper than 8, or a slug already on the chain, fails the step
+  loudly ("pipeline 'x' calls itself"). A concept pipeline may call another only if it is
+  listed in the manifest or is the install's own — same resolution as the Loader.
+- `Loader::validate()` checks the slug exists on this install; the editor's type dropdown
+  offers it with a slug picker.
+
+### 2. `/pipelines` in every install
+
+- **`controls/Pipelines.php`** (plural; `Pipeline.php` stays the machine endpoints:
+  trigger/api/status/debug/debugstep/varshapes/object/objecttick/keys). Actions mirror the
+  sidecar's `Edit` controller: `index` (the editor), `list`, `get`, `validate`, `save`,
+  `delete`, `run`, `runstatus`, `debug`, `debugstep`, `varshapes`, `connectors`, `mintkey`.
+  Each is a thin call into `Runner` / `Loader::forInstall()` — the `PipeFiles` bridge, the
+  instance-dir lookups and the trigger-secret hops disappear: it is the same process as the
+  runtime. A concept's pipeline saves to the concept's file and refuses delete, as the
+  Loader already does; the editor shows `concept: <name>` on the row.
+- **`views/pipelines/index.php`** = the sidecar view, with its two external dependencies
+  made local: core's `css/app.css` by relative URL and `views/components/design-system.php`
+  by `include`. SortableJS stays on the CDN it already uses. Rendered inside the app layout
+  (the nav stays; the pipeline list is the panel's left column, as now).
+- **Permission**: `pipelines::* = 50` (ADMIN) via `PermissionCache::seedRule` in
+  `02_AuthControl.php`. Editing pipelines is editing the app's automations; MEMBER is not
+  the audience. `run`/`debug` inherit the same row.
+- **Nav**: *Data* under the app's own Build/Tools group, level-gated the same way, in
+  `views/layouts/header.php` — on every install, core included (core edits its own).
+- **Guidance**: `agent/guidelines/` gains the pointer (`/pipelines` for people,
+  `pipeline_set` for agents, both write the same files).
+
+### 3. No SSO: the editor belongs to the app
+
+Core's *Data* stops launching a sidecar. On core it opens core's own `/pipelines`; for a
+project, the Projects page links to `https://<slug>.<app>.com/pipelines`, and the person
+signs in there with their account on that app (the owner holds its seeded ROOT, which
+carries their email). Owner's decision 2026-09-22: once the editor is tied to the app
+itself there is nothing to hand off — a core member id is not an instance member id, and
+inventing a mapping would only reintroduce the coupling the move removes.
+
+### 4. Retire `pipelines.tiknix`
+
+After 2 and 3 are live on core and the six instances: remove `[sidecar.pipelines]` from
+core's config, the `pipelines` entry from `Feature::CATALOG`, the sidecar's vhost, and its
+directory — the shop retirement's checklist. `pipeline_*` MCP tools and the cron are
+untouched throughout.
+
+### Order and proof
+
+1 first (runtime, tested in `tests/unit/` with an in-memory run: sync output flows back,
+async yields a run id, the self-call is refused). Then 2 on core, proven in the browser
+against core's own `demo-hello` and `counter` (Playwright: list, open a row, edit a field,
+save, run, debug to a breakpoint, inject, continue). Then the six instances by merge, and
+lead-machine's before/after diff again. Then 3, then 4.
+
 ## Observation tools (planned 2026-09-22)
 
 The other half of what Boost has and we do not. Our tools answer *what exists* (`reuse_digest`,
@@ -1195,7 +1279,11 @@ hook in the layout and a sink, and Playwright covers the case for now.
 11. **Pipeline definitions as a concept part** — `provides.pipelines`, concept-aware `Loader`
     with the instance's own `pipelines/` unchanged and first; lead-machine before/after proof
     ("Pipeline definitions as a concept part" above).
-12. **Observation tools** — `last_error`, `read_log_entries`, `database_schema`,
+12. **Every app has its own /pipelines** — the `pipeline` step (chainable), the editor
+    moved from the sidecar into `controls/Pipelines.php` + `views/pipelines/` on every
+    install at ADMIN, core's Data link becomes a plain link, `pipelines.tiknix` retires
+    ("Every app has its own /pipelines" above).
+13. **Observation tools** — `last_error`, `read_log_entries`, `database_schema`,
     `application_info` on stdio; `database_query` HTTP-only ("Observation tools" above).
 
 Step 1 includes teaching `Introspector`, `check-duplicates.php` and the validation hook to

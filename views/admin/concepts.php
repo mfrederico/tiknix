@@ -33,8 +33,9 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
             <?php if (!$installed): ?>
                 <div class="alert alert-light border">
                     No plugins are installed on this install. To add one to a project, use
-                    <strong>Install</strong> in the catalog below — it is queued as a build, and once that has merged
-                    the plugin appears on that project's own Plugins page to be switched on.
+                    <strong>Install</strong> in the catalog below — it runs as a build (a commit and merge on that
+                    project), and once merged the plugin is switched on with
+                    <code>clitool --concept-enable=&lt;name&gt;</code> in that project, or on its Plugins page.
                 </div>
             <?php endif; ?>
 
@@ -184,9 +185,11 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                                             <span class="text-muted small">select a project</span>
                                         <?php elseif (!empty($r['in_project'])): ?>
                                             <span class="badge bg-success">in <?= $h($project['name']) ?></span>
+                                            <div class="small text-muted mt-1">switch on:
+                                                <code><?= $h('cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-enable=' . $r['name']) ?></code></div>
                                         <?php else: ?>
                                             <form method="POST" action="/admin/conceptinstall" class="d-inline"
-                                                  onsubmit="return confirm('Queue an install of <?= $h($r['name']) ?> into <?= $h($project['name']) ?>? It becomes a plan in Builder for you to approve and run — nothing is copied until then.')">
+                                                  onsubmit="return confirm('Install <?= $h($r['name']) ?> into <?= $h($project['name']) ?>? It runs now as a build with no agent — a commit and merge on that project, usually under a minute.')">
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="name" value="<?= $h($r['name']) ?>">
                                                 <button type="submit" class="btn btn-primary btn-sm">

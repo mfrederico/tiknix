@@ -907,11 +907,15 @@ class Admin extends Control {
 
         // 'php', never PHP_BINARY: in this process that constant is php-fpm itself, which
         // answers a script argument with its usage screen ("-R, --allow-to-run-as-root …").
+        // --autobuild=1: the approval gate exists for plans that spend agent time; an install
+        // plan has no agent and takes seconds, so the click IS the approval. It is still a
+        // build — worktree, commit, merge — never a copy made by this web process.
         $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/concept-install.php')
              . ' --concept=' . escapeshellarg($name)
              . ' --slug='    . escapeshellarg($project['slug'])
              . ' --dir='     . escapeshellarg($project['dir'])
              . ' --member='  . (int) $this->member->id
+             . ' --autobuild=1'
              . ' 2>&1';
         $out = [];
         exec($cmd, $out, $code);
@@ -919,7 +923,9 @@ class Admin extends Control {
 
         if ($code === 0) {
             $this->logger->info('Concept install queued', ['concept' => $name, 'project' => $project['slug'], 'member_id' => $this->member->id]);
-            $this->flash('success', "Install of '{$name}' queued for {$project['name']}. Approve and run it in Builder; once it has merged, switch it on from that project's Plugins page.");
+            $enable = 'cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-enable=' . $name;
+            $this->flash('success', "Installing '{$name}' into {$project['name']} — a build with no agent, usually under a minute; "
+                . "watch it in Builder. Once it has merged, switch it on with: {$enable}  (or that project's Plugins page, where it has one).");
         } else {
             $this->logger->warning('Concept install not queued', ['concept' => $name, 'project' => $project['slug'], 'exit' => $code, 'output' => $out]);
             $this->flash('error', "Could not queue '{$name}' for {$project['name']}: " . ($said !== '' ? $said : "the runner exited {$code}"));

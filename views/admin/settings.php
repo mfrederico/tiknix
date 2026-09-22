@@ -8,7 +8,23 @@
     <?php if (!empty($success)): ?>
         <div class="alert alert-success"><?= htmlspecialchars(($success) ?? '') ?></div>
     <?php endif; ?>
-    
+
+    <?php /* The settings below are the ones stored in the database. Everything in conf/*.ini
+             (app, database, mail, security, pipeline secret, …) is edited at /settings/ini —
+             ROOT only, matching the settings::ini* authcontrol rows, because those files hold
+             credentials. Linked here because this page is where people look for it, and
+             it used to be reachable only from the Admin index. */ ?>
+    <?php if (Flight::hasLevel(LEVELS['ROOT'])): ?>
+        <div class="alert alert-light border d-flex align-items-center gap-3 mb-4">
+            <i class="bi bi-file-earmark-code fs-4"></i>
+            <div class="flex-grow-1">
+                <strong>Configuration files</strong> — <code>conf/*.ini</code> (app, database, mail, security, pipeline, cache)
+                are not on this page. Edit them directly, with a saved backup of each change.
+            </div>
+            <a href="/settings/ini" class="btn btn-outline-primary btn-sm text-nowrap"><i class="bi bi-pencil-square me-1"></i>Edit .ini files</a>
+        </div>
+    <?php endif; ?>
+
     <div class="card">
         <div class="card-header">
             <h5>Application Settings</h5>

@@ -1134,6 +1134,16 @@ missing shop connection; `pipeline_delete` refused with the fix; disable removes
 own `pipeline_list` and cron tick are byte-identical before and after. `ConceptLint` treats
 `app\Pipeline` as always available — the runtime is core by this decision.
 
+**Core stopped shipping the Shopify/REST demos** (`shopify-inventory`, `shopify-orders`,
+`shopify-test`, `rest-pull`) the same day: they live in the catalog as `shopifysync` 1.1.0
+and `pipedemo` 1.0.0. `pipedemo-teeth` is the hello world with teeth — every core step type
+doing real work with no credentials — and writing it found two things worth teaching, now
+in its guidelines: an unresolved `{token}` stays literal (and, since then, is a WARNING in
+the step's trace and the log), and each step type has its own output shape
+(`db_query` → `{rows, count}`). Core keeps `demo-hello` (runtime smoke), `counter` (durable
+object smoke) and `garbagecollector` (runtime housekeeping). No instance ran the removed
+demos except partsdna's four August test runs; instances drop them on their next merge.
+
 ## Observation tools (planned 2026-09-22)
 
 The other half of what Boost has and we do not. Our tools answer *what exists* (`reuse_digest`,

@@ -257,10 +257,21 @@ class Executor {
         if (!$handler) {
             $res = ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => "unknown step type '$type'", 'exit' => 1];
         } else {
+            Vars::takeUnresolved();   // start this step's tally clean
             $config = Vars::resolve((array) ($step['config'] ?? []), $bag);
+            $unresolved = Vars::takeUnresolved();
             $sr->inputJson = json_encode($config, JSON_UNESCAPED_SLASHES);
             try { $res = $handler->run($config, $runMeta); }
             catch (\Throwable $e) { $res = ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $e->getMessage(), 'exit' => 1]; }
+            if ($unresolved) {
+                // The step ran with the literal text — that is unchanged — but the trace and
+                // the log now say so. A literal "{context.mailto}" is truthy and looks like a
+                // value; nothing downstream can tell it from one.
+                $warn = 'WARNING: unresolved token(s) ' . implode(', ', $unresolved)
+                      . ' — left as literal text. Write {token|fallback} if absence is intended, or fix the reference.';
+                $res['stderr'] = trim($warn . "\n" . (string) ($res['stderr'] ?? ''));
+                error_log("WARNING Pipeline run {$runId} step '{$name}': unresolved token(s) " . implode(', ', $unresolved));
+            }
         }
         $res += ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => '', 'exit' => 1, 'await' => false];
         $res['input'] = $config;   // the resolved config/args that ran → {<step>.input.*}

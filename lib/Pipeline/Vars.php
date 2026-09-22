@@ -25,6 +25,22 @@ namespace app\Pipeline;
 class Vars {
 
     /** Recursively substitute tokens in a config value (string | array). */
+    /**
+     * Tokens the current resolve() pass left literal because nothing in the bag matched and
+     * no fallback was written. The executor drains this after resolving a step's config and
+     * puts a WARNING in that step's stderr: a literal "{context.mailto}" is truthy, is a
+     * valid-looking string, and used to pass through every step in silence.
+     * @var string[]
+     */
+    private static array $unresolved = [];
+
+    /** @return string[] unresolved tokens since the last call, each once, in order seen */
+    public static function takeUnresolved(): array {
+        $u = array_values(array_unique(self::$unresolved));
+        self::$unresolved = [];
+        return $u;
+    }
+
     public static function resolve($value, array $bag) {
         if (is_array($value)) {
             $out = [];
@@ -39,14 +55,17 @@ class Vars {
         if (preg_match('/^\{([a-zA-Z0-9_.\-]+)(?:\|([^}]*))?\}$/', $value, $m)) {
             $v = self::lookup($m[1], $bag);
             if ($v !== null) return $v;
-            return isset($m[2]) ? self::literal($m[2]) : $value;
+            if (isset($m[2])) return self::literal($m[2]);
+            self::$unresolved[] = $value;
+            return $value;
         }
         return preg_replace_callback('/\{([a-zA-Z0-9_.\-]+)(?:\|([^}]*))?\}/', function ($m) use ($bag) {
             $v = self::lookup($m[1], $bag);
             if ($v === null) {
                 // An unknown token stays literal so a typo is VISIBLE rather than
-                // silently becoming empty — unless the author wrote a fallback.
-                if (!isset($m[2])) return $m[0];
+                // silently becoming empty — unless the author wrote a fallback. Recorded,
+                // so the step's trace says so too (takeUnresolved).
+                if (!isset($m[2])) { self::$unresolved[] = $m[0]; return $m[0]; }
                 $v = self::literal($m[2]);
             }
             if ($v === null) return '';

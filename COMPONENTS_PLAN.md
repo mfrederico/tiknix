@@ -836,6 +836,85 @@ for that client. Before it enters a catalog other clients install from:
 
 Settle this before the first extraction, not after.
 
+## Concept MCP tools (planned 2026-09-21)
+
+**The MCP server stays core; MCP tools become a concept part.** The server
+(`controls/Mcp.php`) is the door agents come through to find things — `reuse_digest`,
+`whatprovides`, `concepts_search`, `submit_plan`. The concept system is *discovered through*
+it, so a concept that hosts MCP would be circular: a plugin you need enabled to learn which
+plugins exist. Same category as the router, `Bean::` and authcontrol. Its 2,400 lines are a
+reason to split it into lib services, not to put it behind a flag. The external-server
+registry (`mcpserver` beans) is already data.
+
+The tools are a different matter. `mcptools/` today: 8 of 32 are `pipeline_*` and `use
+app\Pipeline\Runner`; `concepts_search`/`concepts_get` belong to the catalog; and there is
+already an ad-hoc `mcptools/workbench/` subdirectory, grouped by feature by hand because
+nothing offered to. `ToolLoader` is a single-directory glob — exactly what `defaultRoute` was
+before `controllerRoots`. So the seam mirrors controllers and views.
+
+### Shape
+
+```
+concepts/<name>/mcptools/<Class>.php      namespace app\concepts\<name>\mcptools
+concept.json:  "tools": ["TicketsListTool", "TicketsHoldTool"]
+```
+
+- **Declared, not discovered.** The manifest names each tool class, as it names
+  `controllers`. `verify()` checks the file exists, the class extends `app\mcptools\BaseTool`,
+  and its `$name` obeys the naming rule. A file in `mcptools/` that is not declared is not a
+  tool. Manifest stays pure data.
+- **Tool names carry the concept: `$name` must be `<concept>_<something>`.** Collisions with
+  core tools become impossible by construction, and an agent reading `tickets_hold` in a
+  `tools/list` knows where it came from. Enforced in `verify()` and `ConceptLint`.
+- **Absent, not denied.** A disabled concept's tools do not appear in `tools/list` and
+  `tools/call` answers "unknown tool". An agent that can see a tool and gets "forbidden"
+  wastes a build step on it; one that cannot see it never tries. Same rule as slots: zero
+  contributors is fine.
+- **The concept's `level` gates its tools, per caller.** `ToolLoader::setAuth()` already
+  carries the member; concept tools record the concept's level, and both `getDefinitions()`
+  and `execute()` consult the caller's level against it. Core tools keep today's behaviour
+  (any authenticated caller; `requireAdmin()` inside the tool where it applies). A broker key
+  has no member: concept tools are not offered to it — a broker key reaches connectors, not
+  the instance's features.
+- **Never over stdio.** `StdioAllowList` is the only gate for the unauthenticated stdio
+  servers, and a manifest must not be able to widen a security boundary. Concept tools are
+  HTTP-only. If a concept tool ever belongs on stdio, the allow-list gains it by hand, with
+  the same justification the existing entries carry.
+- **Same base class, same context.** A concept tool extends `app\mcptools\BaseTool` and gets
+  `$mcp`, `$member`, `$apiKey` like any other. Its `execute()` may use the concept's own lib
+  and models and core lib; `ConceptLint`'s undeclared-dependency rules apply unchanged.
+
+### Changes
+
+| Where | What |
+|---|---|
+| `lib/ConceptManifest.php` | `tools` field (list of class names, `PART_RE`); root concept may not declare it. |
+| `lib/Concepts.php` | `autoload()` resolves `app\concepts\<n>\mcptools\<C>` to `<dir>/mcptools/<C>.php`; `tools()` returns `[class, level, concept]` for enabled concepts; `verify()` loads each declared tool, checks the base class and the `<concept>_` name rule. |
+| `mcptools/ToolLoader.php` | `register(string $class, array $meta)` beside `discover()`; per-tool `level`/`concept` meta; `getDefinitions()` and `execute()` filter by `$this->member->level`. `getClassNameFromFile()` is unchanged for core. |
+| `controls/Mcp.php` | After constructing the loader: `foreach (Concepts::instance()->tools() as $t) $loader->register(...)`. `tools/list` already iterates the loader's definitions through `LocalMcpServer`; the filter lives in the loader so every transport that shares it agrees. |
+| `mcptools/LocalMcpServer.php` | Registers concept tools into fastmcphp the same way as core ones; the visibility check is the loader's, at list and call time, not at build time (the server is built once per request, the caller is known by then). |
+| `lib/ConceptLint.php` | `mcptools/` gets the namespace rule (`app\concepts\<name>\mcptools`); a tool whose `$name` lacks the `<concept>_` prefix is an ERROR. |
+| `lib/ConceptCatalog.php` | `TOP_DIRS` gains `mcptools`. |
+| `lib/PhpValidator.php` | Accepts `namespace app\concepts\<x>\mcptools` where it insists on `app\mcptools`. |
+| `mcptools/Introspector.php` | `reuse_digest`/`whatprovides` list enabled concepts' tools (they already walk `concepts/`). |
+| `tests/unit/` | `ConceptToolsTest`: declared tool registers; undeclared file does not; disabled → absent from definitions and `execute()` throws unknown; caller below level → absent and unknown; name without prefix fails `verify()`; collision with a core name is impossible by the rule; stdio list unchanged. |
+
+### Proving case
+
+The `probe` fixture concept (used to prove routing and slots over HTTP) gains
+`mcptools/ProbeEchoTool.php` (`probe_echo`). On a scratch copy, over the real gateway:
+`tools/list` shows `tiknix:probe_echo` when the concept is enabled and the caller is at its
+level; absent when disabled or below level; `tools/call` round-trips; `mcp-stdio.php` never
+lists it. `concepts_search`/`concepts_get` stay core-shipped: the catalog is core, and a
+tool that lists the catalog belongs beside it.
+
+### Not now
+
+Moving `pipeline_*` and `workbench/*` out of core. `pipeline_*` moves if and when pipelines
+become a concept (open decision); `workbench/*` is bound to the workbench sidecar's identity
+model and is that sidecar's problem. The seam is what this builds; the first real concept
+tool is whichever concept needs one.
+
 ## Build order
 
 1. **Concept runtime** — the manifest loader and its name-shape checks, install-scoped flags
@@ -862,6 +941,8 @@ Settle this before the first extraction, not after.
 7. **Port the catalog from myctobot** — sources, scanner, scored search, versions, registry
    cache — then `concepts_search` / `concepts_get` over it, and ADOPT in the planner prompt.
 8. **Browsable catalog page** with screenshots (myctobot's registry views as the start).
+9. **Concept MCP tools** — the `tools` manifest part and the loader seam ("Concept MCP
+   tools" above). Independent of 3–5; can go next.
 
 Step 1 includes teaching `Introspector`, `check-duplicates.php` and the validation hook to
 walk enabled concepts — otherwise the first installed concept is invisible to the planner.

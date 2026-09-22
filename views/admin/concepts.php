@@ -153,7 +153,14 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                 </div>
             <?php else: ?>
                 <p class="text-muted small mb-2">Source: <code><?= $h($catalog['source']) ?></code></p>
-                <?php if ($project !== null): ?>
+                <?php if ($project !== null && !empty($project['here'])): ?>
+                    <p class="small mb-2">
+                        <i class="bi bi-box-arrow-in-down"></i>
+                        This install, <strong><?= $h($project['name']) ?></strong>, is the project. A plugin is installed
+                        by a command run in its directory (it must end as a commit, so the web process never writes it),
+                        then switched on above.
+                    </p>
+                <?php elseif ($project !== null): ?>
                     <p class="small mb-2">
                         <i class="bi bi-box-arrow-in-down"></i>
                         Installs go into the selected project, <strong><?= $h($project['name']) ?></strong>
@@ -184,9 +191,14 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                                         <?php if ($project === null): ?>
                                             <span class="text-muted small">select a project</span>
                                         <?php elseif (!empty($r['in_project'])): ?>
-                                            <span class="badge bg-success">in <?= $h($project['name']) ?></span>
+                                            <span class="badge bg-success"><?= !empty($project['here']) ? 'installed' : 'in ' . $h($project['name']) ?></span>
+                                            <?php if (empty($installed[$r['name']]['enabled'])): ?>
                                             <div class="small text-muted mt-1">switch on:
                                                 <code><?= $h('cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-enable=' . $r['name']) ?></code></div>
+                                            <?php endif; ?>
+                                        <?php elseif (!empty($project['here'])): ?>
+                                            <div class="small">install here:
+                                                <code><?= $h('cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-install=' . $r['name']) ?></code></div>
                                         <?php else: ?>
                                             <form method="POST" action="/admin/conceptinstall" class="d-inline"
                                                   onsubmit="return confirm('Install <?= $h($r['name']) ?> into <?= $h($project['name']) ?>? It runs now as a build with no agent — a commit and merge on that project, usually under a minute.')">

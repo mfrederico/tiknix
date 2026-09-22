@@ -868,8 +868,24 @@ class Admin extends Control {
         ]);
     }
 
-    /** The project an install would go into: the one selected in the header, or null. */
+    /**
+     * The project an install would go into. On core: the one selected in the header, or
+     * null. On an instance there is nothing to select — the install IS the project
+     * ('here' => true), and the catalog is judged against this tree. An instance cannot
+     * queue the build itself (plan-ingest resolves the project in core's registry), so the
+     * view shows the command that installs here, not a button that would fail.
+     */
     private function conceptProject(): ?array {
+        if (!is_core_install()) {
+            $dir = dirname(__DIR__);
+            return [
+                'id'   => 0,
+                'slug' => explode('.', basename($dir), 2)[0],
+                'name' => Flight::siteName(),
+                'dir'  => $dir,
+                'here' => true,
+            ];
+        }
         $inst = \app\ProjectContext::current((int) $this->member->id);
         if ($inst === null) return null;
         return [
@@ -877,6 +893,7 @@ class Admin extends Control {
             'slug' => (string) $inst->slug,
             'name' => (string) ($inst->displayName ?? '') !== '' ? (string) $inst->displayName : (string) $inst->slug,
             'dir'  => \Model_Instance::dirFrom((string) $inst->slug, (string) ($inst->app ?? '')),
+            'here' => false,
         ];
     }
 
@@ -901,6 +918,13 @@ class Admin extends Control {
         $project = $this->conceptProject();
         if ($project === null) {
             $this->flash('error', 'Select a project first — a plugin is installed INTO a project, as a build.');
+            Flight::redirect('/admin/concepts');
+            return;
+        }
+        if (!empty($project['here'])) {
+            // The web process never writes PHP into its own tree, and the build path lives in
+            // core. Name the command rather than pretend.
+            $this->flash('error', "On a project the install is a command run in its directory: cd {$project['dir']} && php scripts/clitool.php --concept-install={$name} — or install it from the platform's Plugins page with this project selected.");
             Flight::redirect('/admin/concepts');
             return;
         }

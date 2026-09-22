@@ -9,21 +9,22 @@
         <div class="alert alert-success"><?= htmlspecialchars(($success) ?? '') ?></div>
     <?php endif; ?>
 
-    <?php /* The settings below are the ones stored in the database. Everything in conf/*.ini
-             (app, database, mail, security, pipeline secret, …) is edited at /settings/ini —
-             ROOT only, matching the settings::ini* authcontrol rows, because those files hold
-             credentials. Linked here because this page is where people look for it, and
-             it used to be reachable only from the Admin index. */ ?>
-    <?php if (Flight::hasLevel(LEVELS['ROOT'])): ?>
-        <div class="alert alert-light border d-flex align-items-center gap-3 mb-4">
-            <i class="bi bi-file-earmark-code fs-4"></i>
-            <div class="flex-grow-1">
-                <strong>Configuration files</strong> — <code>conf/*.ini</code> (app, database, mail, security, pipeline, cache)
-                are not on this page. Edit them directly, with a saved backup of each change.
-            </div>
-            <a href="/settings/ini" class="btn btn-outline-primary btn-sm text-nowrap"><i class="bi bi-pencil-square me-1"></i>Edit .ini files</a>
+    <?php /* The settings below are the ones stored in the database. Everything in conf/config.ini
+             ([app] [features] [security] [mail] [turnstile] …) is edited at /settings — ADMIN,
+             scoped to the sections IniFileService::ADMIN_SECTIONS names, with credentials
+             absent. Every file and every key is /settings/ini, ROOT only. Linked here because
+             this page is where people look for it. */ ?>
+    <div class="alert alert-light border d-flex align-items-center gap-3 mb-4">
+        <i class="bi bi-file-earmark-code fs-4"></i>
+        <div class="flex-grow-1">
+            <strong>Configuration file</strong> — <code>conf/config.ini</code> (features, security and 2FA policy,
+            mail, uploads, Turnstile, maintenance) is not on this page. Each save keeps a backup of the file.
         </div>
-    <?php endif; ?>
+        <a href="/settings" class="btn btn-outline-primary btn-sm text-nowrap"><i class="bi bi-pencil-square me-1"></i>Edit config.ini</a>
+        <?php if (Flight::hasLevel(LEVELS['ROOT'])): ?>
+            <a href="/settings/ini" class="btn btn-outline-secondary btn-sm text-nowrap" title="Every conf/*.ini file, every key, add/delete (root)"><i class="bi bi-files me-1"></i>All .ini files</a>
+        <?php endif; ?>
+    </div>
 
     <div class="card">
         <div class="card-header">

@@ -648,6 +648,34 @@ class IniFileService {
      *      depth — protects files like mailgun.ini that ship without the
      *      metadata convention. Override with {"obfuscate": false} per-key.
      */
+    /**
+     * The sections an ADMIN may edit in config.ini through /settings. Everything else in
+     * the file — [database], [cache] (redis password), [pipeline] (trigger secret),
+     * [sidecar.*] (SSO secrets), [billing], [mqtt], [concepts], [integrations] — is ROOT's,
+     * through /settings/ini. Within an allowed section, keys shouldObfuscate() flags are
+     * removed for ADMIN as well (not masked: absent), so [security] app_key never reaches
+     * the page at all.
+     */
+    public const ADMIN_SECTIONS = ['app', 'logging', 'mail', 'cors', 'security', 'uploads', 'features', 'turnstile', 'maintenance', 'social'];
+
+    /** parse() output narrowed to what ADMIN may see and save. */
+    public static function adminScope(array $parsed): array {
+        $out = ['lines' => $parsed['lines'] ?? [], 'sections' => []];
+        foreach ($parsed['sections'] ?? [] as $name => $sec) {
+            if (!in_array((string) $name, self::ADMIN_SECTIONS, true)) continue;
+            $keys = [];
+            foreach ($sec['keys'] ?? [] as $k => $kd) {
+                if (self::shouldObfuscate((string) $k, $sec['meta'] ?? [], $kd['meta'] ?? [])) continue;
+                $keys[$k] = $kd;
+            }
+            // A section whose every key is a secret (turnstile: site_key + secret_key) has
+            // nothing an ADMIN may touch; an empty card would only invite a support ticket.
+            if (!$keys) continue;
+            $out['sections'][$name] = ['meta' => $sec['meta'] ?? [], 'keys' => $keys];
+        }
+        return $out;
+    }
+
     public static function shouldObfuscate(string $key, array $sectionMeta, array $keyMeta = []): bool {
         // type=secret implies obfuscate=true unless explicitly overridden.
         if (strtolower((string)($keyMeta['type'] ?? '')) === 'secret') {
@@ -669,6 +697,8 @@ class IniFileService {
         // explicit metadata.
         $needles = ['secret', 'password', 'passwd', 'token', 'private_key', 'apikey', 'api_key'];
         $lower = strtolower($key);
+        // A rule ABOUT passwords is not a password: password_min_length, password_require_*.
+        if (preg_match('/^password_(min_length|max_length|require_[a-z_]+|history|max_age_days?)$/', $lower)) return false;
         foreach ($needles as $n) {
             if (str_contains($lower, $n)) return true;
         }

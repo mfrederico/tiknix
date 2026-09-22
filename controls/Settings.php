@@ -5,9 +5,12 @@
  *
  * TWO tiers on purpose:
  *
- *   /settings         ADMIN. A curated list of toggles (2FA, registration,
- *                     mail). Every field is declared in fields() below, so the
- *                     page can only ever write keys somebody chose to expose.
+ *   /settings         ADMIN. conf/config.ini in the SAME section editor ROOT uses,
+ *                     narrowed to IniFileService::ADMIN_SECTIONS with every secret key
+ *                     absent (not masked: absent). saveini() enforces that scope on the
+ *                     way in and says what it refused. It replaced a hand-curated form of
+ *                     six toggles, which showed no [features] section at all and was a
+ *                     second editor for the same file.
  *
  *   /settings/ini     ROOT.  The raw round-trip INI editor — every file in
  *                     conf/, every key, plus add/delete/templates.
@@ -35,200 +38,28 @@ use app\services\Config\IniFileService;
 class Settings extends Control {
 
     /**
-     * The curated surface. section/key are the REAL ini coordinates, so what
-     * this page writes is what the app reads back — no aliases, no shadow
-     * settings table that drifts from the file.
-     *
-     * Adding a row here is the whole job of exposing a new setting.
-     */
-    private static function fields(): array {
-        return [
-            [
-                'group' => 'Security',
-                'items' => [
-                    ['section' => 'security', 'key' => 'two_factor_enabled', 'type' => 'bool',
-                     'label'   => 'Two-factor authentication',
-                     'hint'    => 'Master switch. Off means no setup and no verification, for everyone.',
-                     // policyEnabled() returns true when the key is missing, so the
-                     // form has to show ON for an absent key or it would lie.
-                     'default' => true],
-                    ['section' => 'security', 'key' => 'two_factor_enforce', 'type' => 'bool',
-                     'label'   => 'Require 2FA (no skipping)',
-                     'hint'    => 'On: eligible admins must set it up. Off: they are prompted but may skip. Ignored entirely when the master switch is off.',
-                     'default' => true],
-                    /* No CSRF toggle, deliberately. There was one ([security] csrf_enabled) and
-                       nothing ever read it: SimpleCsrf validates unconditionally. A switch that
-                       reads "CSRF protection: off" while protection is on is worse than no
-                       switch — and CSRF protection is not something to be able to turn off. */
-                    ['section' => 'security', 'key' => 'max_login_attempts', 'type' => 'int',
-                     'label'   => 'Max login attempts', 'hint' => 'Before lockout.', 'default' => 5,
-                     'min'     => 1, 'max' => 100],
-                ],
-            ],
-            [
-                'group' => 'Access',
-                'items' => [
-                    ['section' => 'features', 'key' => 'registration_enabled', 'type' => 'bool',
-                     'label'   => 'Public sign-up', 'hint' => 'Off means accounts are created by an admin only.',
-                     'default' => true],
-                    ['section' => 'features', 'key' => 'email_verification', 'type' => 'bool',
-                     'label'   => 'Require email verification', 'hint' => 'New accounts must confirm their address.',
-                     'default' => false],
-                ],
-            ],
-            [
-                'group' => 'Mail',
-                'items' => [
-                    ['section' => 'mail', 'key' => 'enabled', 'type' => 'bool',
-                     'label'   => 'Outbound email', 'hint' => 'Off suppresses all sending. Credentials live in the raw editor.',
-                     'default' => false],
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * GET /settings — the curated form.
+     * GET /settings — config.ini for an ADMIN: the same section editor ROOT gets, narrowed
+     * to IniFileService::ADMIN_SECTIONS with every secret key absent. One editor, two
+     * scopes; saveini() enforces the same scope on the way back in.
      */
     public function index(): void {
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;
-
         $path = IniFileService::resolvePath('config.ini');
         if (!$path) {
             $this->flash('danger', t('conf/config.ini was not found.'));
             Flight::redirect('/dashboard');
             return;
         }
-
-        $this->render('settings/index', [
-            'title'    => t('Settings'),
-            'groups'   => self::hydrate($path),
-            'writable' => is_writable($path),
-            'isRoot'   => Flight::hasLevel(LEVELS['ROOT']),
-        ]);
-    }
-
-    /**
-     * Read the current value of every declared field straight from the file.
-     *
-     * Deliberately re-parsed rather than read from Flight's config: the point of
-     * the page is to show what the FILE says, and a stale runtime cache is
-     * exactly how somebody ends up believing a setting they never applied.
-     */
-    private static function hydrate(string $path): array {
+        $isRoot = Flight::hasLevel(LEVELS['ROOT']);
         $parsed = IniFileService::parse($path);
-        $groups = [];
-
-        foreach (self::fields() as $group) {
-            $items = [];
-            foreach ($group['items'] as $f) {
-                $raw     = $parsed['sections'][$f['section']]['keys'][$f['key']]['value'] ?? null;
-                $present = $raw !== null;
-
-                if ($f['type'] === 'bool') {
-                    $value = $present ? self::truthy($raw) : (bool) ($f['default'] ?? false);
-                } else {
-                    $value = $present ? $raw : ($f['default'] ?? '');
-                }
-
-                $items[] = $f + ['value' => $value, 'present' => $present];
-            }
-            $groups[] = ['group' => $group['group'], 'items' => $items];
-        }
-        return $groups;
-    }
-
-    /** Same truth table the app itself uses for ini booleans. */
-    private static function truthy($v): bool {
-        if (is_bool($v)) return $v;
-        return in_array(strtolower(trim((string) $v)), ['1', 'true', 'on', 'yes'], true);
-    }
-
-    /**
-     * POST /settings/save — write the curated form back.
-     */
-    public function save(): void {
-        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
-        if (!$this->validateCSRF()) return;
-
-        $path = IniFileService::resolvePath('config.ini');
-        if (!$path) {
-            $this->flash('danger', t('conf/config.ini was not found.'));
-            Flight::redirect('/settings');
-            return;
-        }
-
-        $posted  = is_array($_POST['f'] ?? null) ? $_POST['f'] : [];
-        $sections = [];
-        $changed  = 0;
-
-        // Index current state so we only write what actually moved. Rewriting
-        // every key on every save would churn the file (and its comments), which
-        // makes a diff useless for spotting a real change.
-        $now = [];
-        foreach (self::hydrate($path) as $g) {
-            foreach ($g['items'] as $it) { $now[$it['section'] . '.' . $it['key']] = $it; }
-        }
-
-        foreach (self::fields() as $group) {
-            foreach ($group['items'] as $f) {
-                $id  = $f['section'] . '.' . $f['key'];
-                $cur = $now[$id] ?? null;
-
-                if ($f['type'] === 'bool') {
-                    // An unchecked checkbox posts nothing at all, which is the
-                    // difference between "off" and "absent" — and absent means
-                    // the app falls back to its default, which for 2FA is ON.
-                    // So a bool is always written explicitly, never left out.
-                    $new = isset($posted[$id]) ? 'true' : 'false';
-                    $old = ($cur && $cur['present']) ? (self::truthy($cur['value']) ? 'true' : 'false') : null;
-                } else {
-                    $new = trim((string) ($posted[$id] ?? ''));
-                    if ($new === '') continue;
-                    if ($f['type'] === 'int') {
-                        if (!ctype_digit($new)) {
-                            $this->flash('danger', t(':label must be a whole number.', ['label' => $f['label']]));
-                            Flight::redirect('/settings');
-                            return;
-                        }
-                        $n = (int) $new;
-                        if ((isset($f['min']) && $n < $f['min']) || (isset($f['max']) && $n > $f['max'])) {
-                            $this->flash('danger', t(':label is out of range.', ['label' => $f['label']]));
-                            Flight::redirect('/settings');
-                            return;
-                        }
-                    }
-                    $old = ($cur && $cur['present']) ? (string) $cur['value'] : null;
-                }
-
-                if ($old !== null && $old === $new) continue;   // untouched
-                $sections[$f['section']]['keys'][$f['key']] = $new;
-                $changed++;
-            }
-        }
-
-        if ($changed === 0) {
-            $this->flash('info', t('Nothing changed.'));
-            Flight::redirect('/settings');
-            return;
-        }
-
-        $result = IniFileService::save($path, ['sections' => $sections, 'newSections' => []]);
-        if (!$result['ok']) {
-            foreach ($result['errors'] ?? [] as $e) $this->flash('danger', $e);
-            Flight::redirect('/settings');
-            return;
-        }
-
-        $this->logger->info('Settings updated via curated editor', [
-            'member_id' => $this->member->id ?? null,
-            'changed'   => array_keys($sections),
+        $this->render('settings/ini-edit', [
+            'title'    => t('Settings'),
+            'basename' => 'config.ini',
+            'parsed'   => $isRoot ? $parsed : IniFileService::adminScope($parsed),
+            'writable' => is_writable($path),
+            'scope'    => $isRoot ? 'root' : 'admin',
         ]);
-        $this->flash('success', t('Saved. :n setting(s) updated.', ['n' => $changed]));
-        Flight::redirect('/settings');
     }
-
-    // ---------------------------------------------------------------- raw editor
 
     /**
      * GET /settings/ini — every ini file in conf/. ROOT only.
@@ -274,19 +105,26 @@ class Settings extends Control {
      * POST /settings/saveini — the raw editor's writer.
      */
     public function saveini(): void {
-        if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
         if (!$this->validateCSRF()) return;
-
+        $isRoot   = Flight::hasLevel(LEVELS['ROOT']);
         $basename = (string) ($_POST['file'] ?? '');
+        $back     = $isRoot ? '/settings/ini' : '/settings';
+        // An ADMIN edits config.ini and nothing else; every other file is ROOT's.
+        if (!$isRoot && $basename !== 'config.ini') {
+            $this->flash('danger', t('Only conf/config.ini is editable at this level.'));
+            Flight::redirect('/settings');
+            return;
+        }
         $path = IniFileService::resolvePath($basename);
         if (!$path) {
             $this->flash('danger', t('INI file not found.'));
-            Flight::redirect('/settings/ini');
+            Flight::redirect($back);
             return;
         }
         if (IniFileService::isExample($basename)) {
             $this->flash('danger', t('Templates cannot be edited.'));
-            Flight::redirect('/settings/ini');
+            Flight::redirect($back);
             return;
         }
 
@@ -300,6 +138,25 @@ class Settings extends Control {
         }
 
         $parsed = IniFileService::parse($path);
+        // ADMIN scope on the way in, whatever the form said: sections outside the allowlist
+        // and secret keys are refused, and the refusal is shown — a page that quietly
+        // dropped part of a save would teach people their settings are flaky.
+        if (!$isRoot) {
+            $refused = [];
+            foreach ($sections as $secName => $secChanges) {
+                if (!in_array((string) $secName, IniFileService::ADMIN_SECTIONS, true)) { $refused[] = "[{$secName}]"; unset($sections[$secName]); continue; }
+                $secMeta = $parsed['sections'][$secName]['meta'] ?? [];
+                foreach (($secChanges['keys'] ?? []) as $k => $v) {
+                    $keyMeta = $parsed['sections'][$secName]['keys'][$k]['meta'] ?? [];
+                    if (IniFileService::shouldObfuscate((string) $k, $secMeta, $keyMeta)) { $refused[] = "[{$secName}] {$k}"; unset($sections[$secName]['keys'][$k]); }
+                }
+                if (!empty($secChanges['add']) || !empty($secChanges['delete'])) { $refused[] = "[{$secName}] add/delete keys"; unset($sections[$secName]['add'], $sections[$secName]['delete']); }
+            }
+            if ($refused) {
+                $this->logger->warning('Settings: ADMIN save refused out-of-scope keys', ['keys' => $refused, 'member_id' => $this->member->id]);
+                $this->flash('warning', t('Not saved (root only): :keys', ['keys' => implode(', ', $refused)]));
+            }
+        }
         foreach ($sections as $secName => &$secChanges) {
             $secMeta = $parsed['sections'][$secName]['meta'] ?? [];
 
@@ -374,15 +231,18 @@ class Settings extends Control {
             $newSections[$secName] = $kvp;
         }
 
+        // newSections is ROOT's (adding a whole section); ADMIN's form never offers it.
+        if (!$isRoot) $newSections = [];
         $result = IniFileService::save($path, ['sections' => $sections, 'newSections' => $newSections]);
+        $editor = $isRoot ? '/settings/iniedit?file=' . urlencode($basename) : '/settings';
         if (!$result['ok']) {
             foreach ($result['errors'] ?? [] as $e) $this->flash('danger', $e);
-            Flight::redirect('/settings/iniedit?file=' . urlencode($basename));
+            Flight::redirect($editor);
             return;
         }
 
         $this->flash('success', t('Saved :file.', ['file' => $basename]));
-        Flight::redirect('/settings/iniedit?file=' . urlencode($basename));
+        Flight::redirect($editor);
     }
 
     /**

@@ -100,11 +100,12 @@ $defaults = [
     // page is ADMIN; the raw INI editor is ROOT because conf/config.ini holds
     // [security] app_key — the EncryptionService key — and changing it makes
     // every value encrypted under the old key unreadable.
-    ['settings', 'index', 50, 'Settings — curated toggles'],
-    ['settings', 'save', 50, 'Settings — save curated toggles'],
+    // /settings is config.ini in the section editor, scoped for ADMIN (IniFileService::
+    // ADMIN_SECTIONS, secrets absent); saveini enforces that scope itself, so it is ADMIN too.
+    ['settings', 'index', 50, 'Settings — config.ini, admin-scoped sections'],
     ['settings', 'ini', 1, 'Raw INI editor — file list'],
     ['settings', 'iniedit', 1, 'Raw INI editor — edit a file'],
-    ['settings', 'saveini', 1, 'Raw INI editor — save a file'],
+    ['settings', 'saveini', 50, 'INI editor — save (scope enforced per level)'],
     ['settings', 'initemplate', 1, 'Raw INI editor — create from template'],
     ['translations', '*', 50, 'Translations editor (i18n)'],
     ['permissions', '*', 50, 'Permission management'],
@@ -233,6 +234,36 @@ foreach ($defaults as [$control, $method, $level, $desc]) {
     }
 }
 echo '  authcontrol: ' . json_encode($_acCounts) . "\n";
+
+// Rows this seed itself wrote at a level it no longer wants. seedRule keeps any row that
+// lacks the auto-generated marker — including rows an EARLIER version of this file wrote —
+// so a seed-authored row is recognised by the description it was written with and moved.
+// A row a person re-described is not touched, and is reported.
+$_acMoves = [
+    // settings::saveini was ROOT while /settings was a curated form; it is the one save
+    // route for both scopes now, and the controller narrows what an ADMIN may write.
+    // The descriptions machines wrote for it: this seed, this seed with the level suffix an
+    // older PermissionCache appended, and the /permissions scanner's bulk row.
+    ['settings', 'saveini', ['Raw INI editor — save a file', 'Raw INI editor — save a file (ROOT)', 'Settings'], 50, 'INI editor — save (scope enforced per level)'],
+];
+foreach ($_acMoves as [$control, $method, $wasDescs, $level, $desc]) {
+    $row = \app\Bean::findOne('authcontrol', 'control = ? AND method = ?', [$control, $method]);
+    if (!$row || !$row->id || (int) $row->level === $level) continue;
+    if (!in_array((string) $row->description, $wasDescs, true)) {
+        echo "  authcontrol: {$control}::{$method} is at {$row->level} with a description this seed did not write — left alone (seed wants {$level})\n";
+        continue;
+    }
+    $row->level = $level; $row->description = $desc; $row->updatedAt = date('Y-m-d H:i:s');
+    \app\Bean::store($row);
+    echo "  authcontrol: moved {$control}::{$method} to {$level}\n";
+}
+
+// Routes that no longer exist. A row for a dead method is harmless to the router (no
+// controller answers it) but misleading on /permissions, so it goes.
+foreach ([['settings', 'save']] as [$control, $method]) {
+    $row = \app\Bean::findOne('authcontrol', 'control = ? AND method = ?', [$control, $method]);
+    if ($row && $row->id) { \app\Bean::trash($row); echo "  authcontrol: removed {$control}::{$method} (route retired)\n"; }
+}
 
 // Schema is 100% bean-derived — no hand-declared indexes/constraints. RedBean
 // has no bean-native way to express the composite UNIQUE (control, method) or a

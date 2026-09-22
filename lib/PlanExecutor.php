@@ -292,15 +292,7 @@ class PlanExecutor {
             foreach ($seeds as $seed) {
                 $name = basename($seed);
                 if (isset($appliedSet[$name])) { $log[] = "seed {$name}: already applied"; continue; }
-                $out = []; $code = 0;
-                // env -u: this orchestrator runs with TIKNIX_WORKBENCH_DB set, and exec()
-                // hands its environment to the child. The instance's own bootstrap honours
-                // that variable, so a seed run this way wrote to the workbench.db instead
-                // of the app's database — the seed reported "ok" and the rows landed
-                // somewhere the app never reads.
-                exec('env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg(
-                        'cd ' . escapeshellarg($this->instanceDir) . ' && php ' . escapeshellarg($seed)
-                     ) . ' 2>&1', $out, $code);
+                [$code, $out] = $this->runInProject('php ' . escapeshellarg($seed));
                 $tail = trim(implode(' ', array_slice($out, -2)));
                 $log[] = "seed {$name}: " . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
                 if ($code === 0) { $applied[] = $name; }
@@ -314,10 +306,7 @@ class PlanExecutor {
         // (a direct DB insert doesn't bump the APCu cache version on its own).
         $rc = $this->instanceDir . '/scripts/resetcache.php';
         if (is_file($rc)) {
-            $out = []; $code = 0;
-            exec('env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg(
-                    'cd ' . escapeshellarg($this->instanceDir) . ' && php ' . escapeshellarg($rc)
-                 ) . ' 2>&1', $out, $code);
+            [$code] = $this->runInProject('php ' . escapeshellarg($rc));
             $log[] = 'resetcache: ' . ($code === 0 ? 'ok' : 'FAILED');
         }
         return $log;
@@ -488,6 +477,22 @@ class PlanExecutor {
     }
 
     /**
+     * Run a command in the project's live directory, as the project — with THIS process's
+     * TIKNIX_WORKBENCH_DB scrubbed. The orchestrator carries that variable and exec() hands
+     * its environment to the child; the project's bootstrap honours it, so anything run
+     * without the scrub writes to workbench.db instead of the app's database and reports
+     * success. It happened to the seed runner (rows the app never read) and to the plugin
+     * enable (flag in the wrong file: "enabled" on the task, "disabled" on the page).
+     *
+     * @return array{0:int,1:string[]} exit code, output lines
+     */
+    private function runInProject(string $command): array {
+        $out = []; $code = 0;
+        exec('env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg('cd ' . escapeshellarg($this->instanceDir) . ' && ' . $command) . ' 2>&1', $out, $code);
+        return [$code, $out];
+    }
+
+    /**
      * Switch on every concept an install task adopted, requirements first (that is the
      * order installPlan wrote them in). Runs the project's own clitool so the seeds hit the
      * project's database and its guidance regenerates. A concept that will not enable is
@@ -499,9 +504,7 @@ class PlanExecutor {
         if (!is_array($names) || !$names) return;
         foreach ($names as $name) {
             $name = (string) $name;
-            $cmd = 'cd ' . escapeshellarg($this->instanceDir) . ' && php scripts/clitool.php --concept-enable=' . escapeshellarg($name) . ' 2>&1';
-            $out = [];
-            exec($cmd, $out, $code);
+            [$code, $out] = $this->runInProject('php scripts/clitool.php --concept-enable=' . escapeshellarg($name));
             $said = trim(implode(' ', array_slice(array_filter(array_map('trim', $out)), -3)));
             if ($code === 0) {
                 $this->logEvent($t, 'info', "Plugin '{$name}' switched on: {$said}");

@@ -6,7 +6,7 @@
  * TWO tiers on purpose:
  *
  *   /settings         ADMIN. conf/config.ini in the SAME section editor ROOT uses,
- *                     narrowed to IniFileService::ADMIN_SECTIONS with every secret key
+ *                     with IniFileService::ROOT_SECTIONS removed and every secret key
  *                     absent (not masked: absent). saveini() enforces that scope on the
  *                     way in and says what it refused. It replaced a hand-curated form of
  *                     six toggles, which showed no [features] section at all and was a
@@ -38,8 +38,8 @@ use app\services\Config\IniFileService;
 class Settings extends Control {
 
     /**
-     * GET /settings — config.ini for an ADMIN: the same section editor ROOT gets, narrowed
-     * to IniFileService::ADMIN_SECTIONS with every secret key absent. One editor, two
+     * GET /settings — config.ini for an ADMIN: the same section editor ROOT gets, with the
+     * install's plumbing sections (IniFileService::ROOT_SECTIONS) and every secret key absent. One editor, two
      * scopes; saveini() enforces the same scope on the way back in.
      */
     public function index(): void {
@@ -138,23 +138,32 @@ class Settings extends Control {
         }
 
         $parsed = IniFileService::parse($path);
-        // ADMIN scope on the way in, whatever the form said: sections outside the allowlist
-        // and secret keys are refused, and the refusal is shown — a page that quietly
+        // ADMIN scope on the way in, whatever the form said: root-only sections and secret
+        // keys are refused, and the refusal is shown — a page that quietly
         // dropped part of a save would teach people their settings are flaky.
+        // An ADMIN may change and ADD keys and sections (an app that reads [brand]
+        // instagram_url needs its owner able to create it) but never delete or attach rules;
+        // a new key with a secret-looking name, or a new root section, is refused like an
+        // existing one would be.
+        $refused = [];
         if (!$isRoot) {
-            $refused = [];
             foreach ($sections as $secName => $secChanges) {
-                if (!in_array((string) $secName, IniFileService::ADMIN_SECTIONS, true)) { $refused[] = "[{$secName}]"; unset($sections[$secName]); continue; }
+                if (IniFileService::isRootSection((string) $secName)) { $refused[] = "[{$secName}]"; unset($sections[$secName]); continue; }
                 $secMeta = $parsed['sections'][$secName]['meta'] ?? [];
                 foreach (($secChanges['keys'] ?? []) as $k => $v) {
                     $keyMeta = $parsed['sections'][$secName]['keys'][$k]['meta'] ?? [];
                     if (IniFileService::shouldObfuscate((string) $k, $secMeta, $keyMeta)) { $refused[] = "[{$secName}] {$k}"; unset($sections[$secName]['keys'][$k]); }
                 }
-                if (!empty($secChanges['add']) || !empty($secChanges['delete'])) { $refused[] = "[{$secName}] add/delete keys"; unset($sections[$secName]['add'], $sections[$secName]['delete']); }
-            }
-            if ($refused) {
-                $this->logger->warning('Settings: ADMIN save refused out-of-scope keys', ['keys' => $refused, 'member_id' => $this->member->id]);
-                $this->flash('warning', t('Not saved (root only): :keys', ['keys' => implode(', ', $refused)]));
+                foreach ((array) ($secChanges['newKeyNames'] ?? []) as $i => $k) {
+                    $k = trim((string) $k);
+                    if ($k !== '' && IniFileService::shouldObfuscate($k, $secMeta)) { $refused[] = "[{$secName}] {$k} (new)"; unset($sections[$secName]['newKeyNames'][$i], $sections[$secName]['newKeyValues'][$i]); }
+                }
+                if (isset($sections[$secName]['newKeyNames'])) {   // the merge below walks both by position
+                    $sections[$secName]['newKeyNames']  = array_values((array) $sections[$secName]['newKeyNames']);
+                    $sections[$secName]['newKeyValues'] = array_values((array) ($sections[$secName]['newKeyValues'] ?? []));
+                }
+                if (!empty($secChanges['deletes']))     { $refused[] = "[{$secName}] delete keys"; unset($sections[$secName]['deletes']); }
+                if (!empty($secChanges['keyMetaJson'])) { unset($sections[$secName]['keyMetaJson']); }   // rules: the form does not offer them; drop silently
             }
         }
         foreach ($sections as $secName => &$secChanges) {
@@ -231,8 +240,18 @@ class Settings extends Control {
             $newSections[$secName] = $kvp;
         }
 
-        // newSections is ROOT's (adding a whole section); ADMIN's form never offers it.
-        if (!$isRoot) $newSections = [];
+        if (!$isRoot) {
+            foreach ($newSections as $secName => $kvp) {
+                if (IniFileService::isRootSection($secName)) { $refused[] = "[{$secName}] (new section)"; unset($newSections[$secName]); continue; }
+                foreach ($kvp as $k => $v) {
+                    if (IniFileService::shouldObfuscate((string) $k, [])) { $refused[] = "[{$secName}] {$k} (new)"; unset($newSections[$secName][$k]); }
+                }
+            }
+            if ($refused) {
+                $this->logger->warning('Settings: ADMIN save refused out-of-scope keys', ['keys' => $refused, 'member_id' => $this->member->id]);
+                $this->flash('warning', t('Not saved (root only): :keys', ['keys' => implode(', ', $refused)]));
+            }
+        }
         $result = IniFileService::save($path, ['sections' => $sections, 'newSections' => $newSections]);
         $editor = $isRoot ? '/settings/iniedit?file=' . urlencode($basename) : '/settings';
         if (!$result['ok']) {

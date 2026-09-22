@@ -2,9 +2,10 @@
 /**
  * /settings for an ADMIN is config.ini narrowed by IniFileService::adminScope(). The
  * narrowing is the security boundary between "an owner can turn 2FA off" and "an owner
- * can read the app key", so its two rules are pinned: only allowlisted sections survive,
- * and inside them a secret key is ABSENT — not masked, absent — while a policy key that
- * merely contains the word "password" stays visible.
+ * can read the app key", so its rules are pinned: the install's plumbing sections
+ * (ROOT_SECTIONS, and sidecar.*) are gone while the app's own sections — ones core has
+ * never heard of, like [brand] — stay; inside every section a secret key is ABSENT — not
+ * masked, absent — while a policy key that merely contains "password" stays visible.
  */
 
 namespace tests\unit;
@@ -40,19 +41,40 @@ from_email = "noreply@example.com"
 [sidecar.workbench]
 url = "https://workbench.example.com"
 sso_secret = "shh"
+
+[brand]
+instagram_url = "https://instagram.com/serenity"
+tagline = "Rest, restored"
 INI;
         $file = tempnam(sys_get_temp_dir(), 'ini');
         file_put_contents($file, $ini);
         try { return IniFileService::parse($file); } finally { @unlink($file); }
     }
 
-    public function testOnlyAllowlistedSectionsSurvive(): void {
+    public function testPlumbingSectionsAreRootsAppSectionsAreNot(): void {
         $scoped = IniFileService::adminScope($this->parsed());
         $names  = array_keys($scoped['sections']);
         sort($names);
-        $this->assertSame(['app', 'features', 'mail', 'security'], $names);
+        $this->assertSame(['app', 'brand', 'features', 'mail', 'security'], $names);
         $this->assertArrayNotHasKey('database', $scoped['sections']);
-        $this->assertArrayNotHasKey('sidecar.workbench', $scoped['sections']);
+        $this->assertArrayNotHasKey('sidecar.workbench', $scoped['sections'], 'sidecar.* is covered by sidecar');
+        $this->assertSame(['instagram_url', 'tagline'], array_keys($scoped['sections']['brand']['keys']), 'an app-added section is the owner\'s');
+    }
+
+    public function testIsRootSectionMatchesPrefixedSubsections(): void {
+        $this->assertTrue(IniFileService::isRootSection('database'));
+        $this->assertTrue(IniFileService::isRootSection('sidecar'));
+        $this->assertTrue(IniFileService::isRootSection('sidecar.explorer'));
+        $this->assertFalse(IniFileService::isRootSection('sidecars'), 'prefix match needs the dot');
+        $this->assertFalse(IniFileService::isRootSection('features'));
+        $this->assertFalse(IniFileService::isRootSection('brand'));
+    }
+
+    public function testASectionOfOnlySecretsIsDropped(): void {
+        $file = tempnam(sys_get_temp_dir(), 'ini');
+        file_put_contents($file, "[turnstile]\nsite_key = \"a\"\nsecret_key = \"b\"\n[features]\nleads = true\n");
+        try { $scoped = IniFileService::adminScope(IniFileService::parse($file)); } finally { @unlink($file); }
+        $this->assertSame(['features'], array_keys($scoped['sections']));
     }
 
     public function testFeaturesSectionIsEditableWithItsKeys(): void {

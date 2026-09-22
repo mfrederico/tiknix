@@ -101,8 +101,8 @@ $defaults = [
     // [security] app_key — the EncryptionService key — and changing it makes
     // every value encrypted under the old key unreadable.
     // /settings is config.ini in the section editor, scoped for ADMIN (IniFileService::
-    // ADMIN_SECTIONS, secrets absent); saveini enforces that scope itself, so it is ADMIN too.
-    ['settings', 'index', 50, 'Settings — config.ini, admin-scoped sections'],
+    // ROOT_SECTIONS removed, secrets absent); saveini enforces that scope itself, so it is ADMIN too.
+    ['settings', 'index', 50, 'Settings — config.ini, admin scope'],
     ['settings', 'ini', 1, 'Raw INI editor — file list'],
     ['settings', 'iniedit', 1, 'Raw INI editor — edit a file'],
     ['settings', 'saveini', 50, 'INI editor — save (scope enforced per level)'],

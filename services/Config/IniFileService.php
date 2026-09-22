@@ -649,20 +649,31 @@ class IniFileService {
      *      metadata convention. Override with {"obfuscate": false} per-key.
      */
     /**
-     * The sections an ADMIN may edit in config.ini through /settings. Everything else in
-     * the file — [database], [cache] (redis password), [pipeline] (trigger secret),
-     * [sidecar.*] (SSO secrets), [billing], [mqtt], [concepts], [integrations] — is ROOT's,
-     * through /settings/ini. Within an allowed section, keys shouldObfuscate() flags are
-     * removed for ADMIN as well (not masked: absent), so [security] app_key never reaches
-     * the page at all.
+     * The sections of config.ini that stay ROOT's (/settings/ini) when an ADMIN edits the
+     * file through /settings: the install's plumbing — where the database and cache live,
+     * the encryption and provisioning wiring, the sidecar/broker/catalog hookups — where a
+     * wrong value breaks the install rather than a feature. Everything else is the app's
+     * own configuration and is the owner's to change: [features], [security] policy, [mail]
+     * addresses, and whatever sections the app itself added ([brand], [dealer], [stripe]…),
+     * which no allowlist written in core could know about. Within every section shown, keys
+     * shouldObfuscate() flags are removed for ADMIN (not masked: absent), so app_key, API
+     * keys and passwords never reach the page at all. 'sidecar' also covers 'sidecar.*'.
      */
-    public const ADMIN_SECTIONS = ['app', 'logging', 'mail', 'cors', 'security', 'uploads', 'features', 'turnstile', 'maintenance', 'social'];
+    public const ROOT_SECTIONS = ['database', 'cache', 'encryption', 'logging', 'concepts', 'provision', 'provisioner', 'mqtt', 'firehose', 'sidecar', 'broker'];
+
+    /** Is this section ROOT's in the ADMIN scope? */
+    public static function isRootSection(string $name): bool {
+        foreach (self::ROOT_SECTIONS as $r) {
+            if ($name === $r || strpos($name, $r . '.') === 0) return true;
+        }
+        return false;
+    }
 
     /** parse() output narrowed to what ADMIN may see and save. */
     public static function adminScope(array $parsed): array {
         $out = ['lines' => $parsed['lines'] ?? [], 'sections' => []];
         foreach ($parsed['sections'] ?? [] as $name => $sec) {
-            if (!in_array((string) $name, self::ADMIN_SECTIONS, true)) continue;
+            if (self::isRootSection((string) $name)) continue;
             $keys = [];
             foreach ($sec['keys'] ?? [] as $k => $kd) {
                 if (self::shouldObfuscate((string) $k, $sec['meta'] ?? [], $kd['meta'] ?? [])) continue;

@@ -85,9 +85,10 @@ $helperText = function (array $meta): string {
 
 <?php
 // Two callers, one editor. /settings/iniedit (ROOT) passes no $scope: every file, every
-// key, add/delete/rules. /settings passes $scope — 'admin' is config.ini narrowed to
-// IniFileService::ADMIN_SECTIONS with secrets absent, and the structural controls are not
-// drawn because saveini() would refuse them anyway; 'root' is /settings for a ROOT.
+// key, add/delete/rules. /settings passes $scope — 'admin' is config.ini with
+// IniFileService::ROOT_SECTIONS and secrets absent; delete and rules are not drawn because
+// saveini() refuses them for an ADMIN (adding keys/sections is allowed); 'root' is
+// /settings for a ROOT.
 $scope   = $scope ?? 'file';
 $isAdmin = $scope === 'admin';
 $backUrl = $scope === 'file' ? '/settings/ini' : ($isAdmin ? '/admin/settings' : '/settings/ini');
@@ -102,7 +103,7 @@ $backUrl = $scope === 'file' ? '/settings/ini' : ($isAdmin ? '/admin/settings' :
         </h1>
         <?php if ($isAdmin): ?>
             <div class="text-body-secondary small">
-                <?= htmlspecialchars(t('The sections an administrator may change. Credentials, the app key and the database section are root-only and are not shown.'), ENT_QUOTES, 'UTF-8') ?>
+                <?= htmlspecialchars(t('What an administrator may change. Credentials and keys, and the plumbing sections of this install (database, cache, sidecars), are root-only and are not shown.'), ENT_QUOTES, 'UTF-8') ?>
             </div>
         <?php endif ?>
     </div>
@@ -304,7 +305,6 @@ $backUrl = $scope === 'file' ? '/settings/ini' : ($isAdmin ? '/admin/settings' :
 
                 <!-- Add a new key to this section. JS clones the template
                      row and appends parallel name/value inputs. -->
-                <?php if (!$isAdmin): ?>
                 <div class="mt-3 pt-2 border-top">
                     <details>
                         <summary class="small text-body-secondary"><i class="bi bi-plus-circle me-1"></i><?= htmlspecialchars(t('Add a key to this section'), ENT_QUOTES, 'UTF-8') ?></summary>
@@ -316,13 +316,11 @@ $backUrl = $scope === 'file' ? '/settings/ini' : ($isAdmin ? '/admin/settings' :
                         </button>
                     </details>
                 </div>
-                <?php endif ?>
             </div>
         </div>
     <?php endforeach ?>
 
     <!-- Add a new section. JS gives you a name + initial KVPs. -->
-    <?php if (!$isAdmin): ?>
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-body py-2">
             <details>
@@ -334,7 +332,6 @@ $backUrl = $scope === 'file' ? '/settings/ini' : ($isAdmin ? '/admin/settings' :
             </details>
         </div>
     </div>
-    <?php endif ?>
 
     <div class="d-flex justify-content-between align-items-center mt-3">
         <a href="<?= $backUrl ?>" class="btn btn-outline-secondary"><?= htmlspecialchars(t('Cancel'), ENT_QUOTES, 'UTF-8') ?></a>
@@ -386,8 +383,7 @@ $backUrl = $scope === 'file' ? '/settings/ini' : ($isAdmin ? '/admin/settings' :
     // New-section flow: name field + an "Add row" that grows kvp inputs
     // under newSections[<name>][newKeyNames|Values][].
     var nsContainer = document.getElementById('ini-newsections');
-    var addSection  = document.getElementById('ini-add-section');   // absent on the ADMIN-scoped page
-    if (addSection) addSection.addEventListener('click', () => {
+    document.getElementById('ini-add-section').addEventListener('click', () => {
         var wrap = document.createElement('div');
         wrap.className = 'card mb-3';
         wrap.innerHTML =

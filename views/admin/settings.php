@@ -11,14 +11,14 @@
 
     <?php /* The settings below are the ones stored in the database. Everything in conf/config.ini
              ([app] [features] [security] [mail] [turnstile] …) is edited at /settings — ADMIN,
-             scoped to the sections IniFileService::ADMIN_SECTIONS names, with credentials
+             with IniFileService::ROOT_SECTIONS (database, cache, sidecars…) and credentials
              absent. Every file and every key is /settings/ini, ROOT only. Linked here because
              this page is where people look for it. */ ?>
     <div class="alert alert-light border d-flex align-items-center gap-3 mb-4">
         <i class="bi bi-file-earmark-code fs-4"></i>
         <div class="flex-grow-1">
             <strong>Configuration file</strong> — <code>conf/config.ini</code> (features, security and 2FA policy,
-            mail, uploads, Turnstile, maintenance) is not on this page. Each save keeps a backup of the file.
+            mail, uploads, maintenance and the app's own sections) is not on this page. Each save keeps a backup of the file.
         </div>
         <a href="/settings" class="btn btn-outline-primary btn-sm text-nowrap"><i class="bi bi-pencil-square me-1"></i>Edit config.ini</a>
         <?php if (Flight::hasLevel(LEVELS['ROOT'])): ?>

@@ -5,7 +5,11 @@
  *
  * Creates or resets the admin user with specified credentials.
  *
- * Usage: php cli/reset-admin.php [--username=admin] [--password=admin123]
+ * Usage: php cli/reset-admin.php --password=PASS [--username=admin] [--email=...]
+ *
+ * --password is required. It used to default to 'admin123', freshly hashed — which,
+ * unlike the SEEDED admin123 hash, every login accepts, so a script run with no
+ * arguments left a ROOT account behind whose password is printed in this repository.
  */
 
 // Define base path
@@ -31,7 +35,7 @@ Usage: php cli/reset-admin.php [options]
 
 Options:
   --username=NAME   Admin username (default: admin)
-  --password=PASS   Admin password (default: admin123)
+  --password=PASS   Admin password (REQUIRED, at least 8 characters)
   --email=EMAIL     Admin email (default: admin@tiknix.local)
   --help            Show this help message
 
@@ -40,8 +44,17 @@ HELP;
 }
 
 $username = $options['username'] ?? 'admin';
-$password = $options['password'] ?? 'admin123';
+$password = (string) ($options['password'] ?? '');
 $email = $options['email'] ?? 'admin@tiknix.local';
+
+if (strlen($password) < 8) {
+    fwrite(STDERR, "reset-admin: --password is required (at least 8 characters). There is no default.\n");
+    exit(1);
+}
+if ($password === 'admin123') {
+    fwrite(STDERR, "reset-admin: 'admin123' is the public seed password and is refused here. Pick a real one.\n");
+    exit(1);
+}
 
 echo "=== Tiknix Admin Reset ===\n\n";
 

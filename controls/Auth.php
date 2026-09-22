@@ -103,6 +103,19 @@ class Auth extends BaseControls\Control {
                 return;
             }
 
+            // The seeded hash is public in the repo; 'admin123' verifies against it. Refuse
+            // BEFORE verifying, on every install: the /install redirect above is the wizard's
+            // gate, this is the account's, and only the second one holds when the wizard is
+            // bypassed (it was, for a month — see Install::isInstalled()).
+            if ($member->passwordIsSeeded()) {
+                $this->logger->error('Login refused: this account still has the seeded default password. '
+                    . 'Set a real one at /install, or: php scripts/clitool.php --user=' . $member->username . ' --set-password=...',
+                    ['id' => $member->id, 'username' => $member->username, 'level' => (int) $member->level]);
+                $this->flash('error', 'This account still has the seeded default password and cannot sign in until a real one is set. Finish setup at /install.');
+                Flight::redirect('/auth/login');
+                return;
+            }
+
             if (!password_verify($password, $member->password)) {
                 $this->logger->warning('Failed login attempt - wrong password', ['login' => $login]);
                 $this->flash('error', 'Invalid credentials');

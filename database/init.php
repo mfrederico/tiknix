@@ -88,10 +88,8 @@ try {
     echo "✓ Database initialization complete!\n";
     echo "========================================\n\n";
 
-    echo "Default login:\n";
-    echo "  Username: admin\n";
-    echo "  Password: admin123\n";
-    echo "  ** CHANGE THIS PASSWORD IMMEDIATELY **\n\n";
+    echo "Admin account: username 'admin', no password yet.\n";
+    echo "  Open /install in the browser to set it (the seeded default cannot sign in).\n\n";
 
     echo "Access points:\n";
     echo "  Home:        /\n";

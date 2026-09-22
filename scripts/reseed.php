@@ -60,4 +60,4 @@ if (class_exists('\app\PermissionCache')) {
 }
 
 R::close();
-echo "reseed: done — login admin / admin123 (change immediately)\n";
+echo "reseed: done — the admin has no password yet; set it at /install (the seeded default cannot sign in)\n";

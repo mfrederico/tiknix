@@ -1828,6 +1828,16 @@ class Mcp extends BaseControls\Control {
             return false;
         }
 
+        // The seeded default hash is public in the repo, and 'admin123' verifies against it.
+        // Same rule as the web login: not a credential, never accepted.
+        if ($member->passwordIsSeeded()) {
+            \app\RateLimiter::shared($ipBucket, 10, 900);
+            $this->logger->error('MCP auth refused: this account still has the seeded default password. '
+                . 'Set a real one at /install, or: php scripts/clitool.php --user=' . $member->username . ' --set-password=...',
+                ['username' => $username, 'level' => (int) $member->level]);
+            return false;
+        }
+
         // Verify password
         if (!password_verify($password, $member->password)) {
             \app\RateLimiter::shared($ipBucket, 10, 900);

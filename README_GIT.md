@@ -33,7 +33,7 @@ php -S localhost:8000 -t public/
 
 6. Access the application
 - Open http://localhost:8000
-- Register a new account or login with admin/admin123
+- Complete /install to set the admin password, then log in as admin
 
 ## Features
 

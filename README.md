@@ -146,7 +146,7 @@ After installation, start the development server:
 
 Then open http://localhost:8080 in your browser.
 
-**Default login**: username `admin`, password `admin123` (change immediately!)
+**First login**: open `/install` and set the admin password. The seeded account (`admin`) has no usable password until you do — the seeded default is refused at every login.
 
 ### Installation Options
 
@@ -200,7 +200,7 @@ php database/init.php
 ```
 
 This creates:
-- Admin user (username: `admin`, password: `admin123`) - **Change this immediately!**
+- Admin user (username: `admin`) with NO usable password — set one at `/install`
 - Public user entity for guest permissions
 - Initial permission settings
 
@@ -238,7 +238,7 @@ location / {
 8. **Access the application**
 - Open http://localhost:8080
 - **Register a new account**: Click "Register" - no email verification needed
-- **Or login with admin**: username `admin`, password `admin123` (change immediately!)
+- **Or finish setup at `/install`**: it turns the seeded `admin` into your root account
 - After login/registration, you'll be redirected to the main dashboard at `/dashboard`
 
 ## Project Structure
@@ -569,7 +569,7 @@ build_mode = false  # IMPORTANT: Disable build mode!
 - Test all forms to ensure tokens are working
 
 3. **Change default passwords**
-- Immediately change the admin password from `admin123`
+- Complete `/install` (the seeded admin cannot sign in until it has a real password)
 - Remove or secure the Test controller
 
 4. **Set proper permissions**

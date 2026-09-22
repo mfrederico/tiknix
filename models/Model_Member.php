@@ -17,6 +17,27 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
     private const EMAIL_FLAG = 'email_out';
 
     /**
+     * password_hash('admin123') as sql/schema.sql and 01_Member.php seed it. It is public
+     * in the repository, so it is not a credential: it is the marker for "no password has
+     * been set yet". The install wizard is what replaces it (controls/Install.php), and
+     * passwordIsSeeded() is what keeps it from ever being accepted at a login.
+     */
+    public const SEEDED_PASSWORD_HASH = '$2y$10$jVz654DI7bX8e1Dh32O9suFcMW4x1V.0SrniJNpDyknwkzc6gM20a';
+
+    /**
+     * Is this account still on the seeded default password?
+     *
+     * Every password login must ask this BEFORE password_verify(): 'admin123' verifies
+     * against that hash, and it was accepted as ROOT on live instances whose wizard never
+     * ran (see Install::isInstalled()). Exact-hash on purpose — a person who chose
+     * 'admin123' themselves gets a fresh salt and a different hash, and that is their
+     * (poor) password, not the seed.
+     */
+    public function passwordIsSeeded(): bool {
+        return (string) $this->bean->password === self::SEEDED_PASSWORD_HASH;
+    }
+
+    /**
      * First and last name joined, or '' when neither is set.
      *
      * One place, because the join was being rebuilt inline wherever it was needed — and

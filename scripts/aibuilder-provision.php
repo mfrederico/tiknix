@@ -245,7 +245,9 @@ $runSqlFile("$ROOT/sql/workbench_schema.sql");
 // raw way. The in-instance app rebuilds its permission cache on first request.
 Bean::exec('UPDATE member SET email = ?, updated_at = ? WHERE username = ?',
         [$admin, date('Y-m-d H:i:s'), 'admin']);
-echo "  admin email → $admin (password: admin123 — change after first login)\n";
+// The admin keeps the seeded hash, which no login accepts (Model_Member::passwordIsSeeded);
+// the owner sets the real password at /install, which answers only to this email.
+echo "  admin email → $admin (no password yet: the owner completes setup at /install)\n";
 
 // The AI Builder lives inside every instance too; make it reachable at ADMIN.
 Bean::exec('INSERT OR IGNORE INTO authcontrol (control, method, level, description, created_at)

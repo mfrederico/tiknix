@@ -160,6 +160,101 @@ class AgentGuidance {
           . self::START . "\n" . self::END);
     }
 
+    /* ---- skills ---------------------------------------------------------------------- */
+
+    public const SKILLS_DIR = '.claude/skills';
+    /** Which skill directories sync installed — the only ones it will ever remove. */
+    public const SKILLS_LEDGER = '.tiknix-managed.json';
+
+    /**
+     * Install enabled concepts' skills as <root>/.claude/skills/<concept>-<skill>/ and remove
+     * the ones whose concept is no longer enabled. Only directories in the ledger are ever
+     * removed; a directory that exists, is not in the ledger, and is now wanted is a
+     * collision reported by name — never overwritten, never skipped.
+     *
+     * @param array<string,array{version:string,dir:string}> $concepts  enabled
+     * @return array{installed:string[],removed:string[],kept:string[]}
+     */
+    public static function syncSkills(string $root, array $concepts): array {
+        $base = rtrim($root, '/') . '/' . self::SKILLS_DIR;
+        $ledgerFile = "{$base}/" . self::SKILLS_LEDGER;
+        $ledger = [];
+        if (is_file($ledgerFile)) {
+            $ledger = json_decode((string) file_get_contents($ledgerFile), true);
+            if (!is_array($ledger)) throw new \RuntimeException("AgentGuidance: {$ledgerFile} is not a JSON list. Fix or delete it.");
+        }
+
+        $wanted = [];   // target name => source dir
+        foreach ($concepts as $name => $c) {
+            foreach (glob(rtrim($c['dir'], '/') . '/skills/*', GLOB_ONLYDIR) ?: [] as $sd) {
+                if (!is_file("{$sd}/SKILL.md")) continue;   // the lint names this; not a skill
+                $wanted["{$name}-" . basename($sd)] = $sd;
+            }
+        }
+
+        $installed = $removed = $kept = [];
+        foreach ($ledger as $old) {
+            if (isset($wanted[$old])) continue;
+            if (is_dir("{$base}/{$old}")) { self::rmTree("{$base}/{$old}"); $removed[] = $old; }
+        }
+        foreach ($wanted as $target => $src) {
+            $dst = "{$base}/{$target}";
+            if (is_dir($dst) && !in_array($target, $ledger, true)) {
+                throw new \RuntimeException(
+                    "AgentGuidance: {$dst} exists and was not installed by sync (not in " . self::SKILLS_LEDGER . "), "
+                  . "so a concept skill of the same name cannot be installed over it. Rename one of them.");
+            }
+            if (is_dir($dst) && self::treeSame($src, $dst)) { $kept[] = $target; continue; }
+            if (is_dir($dst)) self::rmTree($dst);
+            self::copyTree($src, $dst);
+            $installed[] = $target;
+        }
+        $now = array_keys($wanted);
+        sort($now);
+        if ($now || $ledger) {
+            if (!is_dir($base) && !@mkdir($base, 0775, true)) throw new \RuntimeException("AgentGuidance: could not create {$base}.");
+            if ($now) {
+                file_put_contents($ledgerFile, json_encode($now, JSON_PRETTY_PRINT) . "\n");
+            } elseif (is_file($ledgerFile)) {
+                unlink($ledgerFile);
+            }
+        }
+        return ['installed' => $installed, 'removed' => $removed, 'kept' => $kept];
+    }
+
+    private static function copyTree(string $src, string $dst): void {
+        if (!@mkdir($dst, 0775, true) && !is_dir($dst)) throw new \RuntimeException("AgentGuidance: could not create {$dst}.");
+        foreach (scandir($src) ?: [] as $e) {
+            if ($e === '.' || $e === '..') continue;
+            $s = "{$src}/{$e}"; $d = "{$dst}/{$e}";
+            if (is_link($s)) throw new \RuntimeException("AgentGuidance: {$s} is a symlink; a skill carries files, not pointers.");
+            if (is_dir($s)) { self::copyTree($s, $d); continue; }
+            if (!copy($s, $d)) throw new \RuntimeException("AgentGuidance: could not copy {$s}.");
+        }
+    }
+
+    private static function treeSame(string $a, string $b): bool {
+        $list = function (string $dir) use (&$list): array {
+            $out = [];
+            foreach (scandir($dir) ?: [] as $e) {
+                if ($e === '.' || $e === '..') continue;
+                $p = "{$dir}/{$e}";
+                if (is_dir($p)) { foreach ($list($p) as $k => $v) $out["{$e}/{$k}"] = $v; }
+                else $out[$e] = hash_file('sha256', $p);
+            }
+            return $out;
+        };
+        return $list($a) == $list($b);
+    }
+
+    private static function rmTree(string $path): void {
+        if (is_link($path) || is_file($path)) { unlink($path); return; }
+        foreach (scandir($path) ?: [] as $e) {
+            if ($e !== '.' && $e !== '..') self::rmTree("{$path}/{$e}");
+        }
+        rmdir($path);
+    }
+
     /** True when <root>/CLAUDE.md carries the managed block. */
     public static function isManaged(string $root): bool {
         $path = rtrim($root, '/') . '/' . self::FILE;

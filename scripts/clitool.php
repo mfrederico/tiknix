@@ -176,14 +176,12 @@ if (isset($opt['build'])) {
 // CLAUDE.md is generated: core's agent/guidelines/ sections plus each enabled concept's
 // guidelines.md, in one managed block. Whatever is above the block is left alone.
 function agentSync(): void {
-    $enabled = [];
-    foreach (\app\Concepts::instance()->enabled() as $name => $m) {
-        $enabled[$name] = ['version' => $m->version, 'dir' => $m->dir];
-    }
-    $r = \app\AgentGuidance::sync(dirname(__DIR__), $enabled);
+    $r = \app\Concepts::instance()->syncGuidance();
     foreach ($r['notes'] as $n) err("warning: {$n}");
     out('# ' . \app\AgentGuidance::FILE . ': ' . ($r['changed'] ? ($r['migrated'] ? 'migrated to the managed block' : 'regenerated') : 'unchanged')
-        . ' (' . count($enabled) . ' enabled concept(s))');
+        . ' (' . count(\app\Concepts::instance()->enabled()) . ' enabled concept(s))');
+    foreach ($r['skills']['installed'] as $k) out("# skill installed: " . \app\AgentGuidance::SKILLS_DIR . "/{$k}");
+    foreach ($r['skills']['removed'] as $k)   out("# skill removed: " . \app\AgentGuidance::SKILLS_DIR . "/{$k}");
 }
 if (isset($opt['agent-sync'])) {
     if ($DRYRUN) {

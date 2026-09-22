@@ -34,6 +34,7 @@ class ConceptCatalogTest extends ConceptsTestCase {
         ], $files + [
             'lib/Calendar.php' => "<?php\nnamespace app\\concepts\\{$name};\nclass Calendar { public static function ics(array \$e): string { return 'BEGIN:VCALENDAR'; } }\n",
             'tests/CalendarTest.php' => "<?php\n",
+            'guidelines.md' => "### {$name}\n\nCall Calendar::ics() with a neutral event array.\n",
         ]);
     }
 
@@ -239,7 +240,7 @@ class ConceptCatalogTest extends ConceptsTestCase {
         $this->local()->publish($this->concept('tickets', [
             'title' => 'QR tickets', 'blurb' => 'Issue QR tickets on payment and check people in at the door.',
             'tags' => ['tickets', 'qr', 'check-in'],
-        ], ['tests/T.php' => '<?php']));
+        ], ['tests/T.php' => '<?php', 'guidelines.md' => "### tickets\n\nIssue on paid, void on cancel.\n"]));
         $this->put("{$this->catalogDir}/junk/concept.json", '{nope');
 
         $found = $this->local()->search('qr ticket check-in at the door');

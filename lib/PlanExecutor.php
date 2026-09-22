@@ -882,13 +882,15 @@ BASH;
             try {
                 if (is_dir("{$wtAbs}/" . Concepts::DIR . "/{$name}")) {
                     $m = ConceptManifest::load("{$wtAbs}/" . Concepts::DIR . "/{$name}", $name);
-                    $out[] = ['name' => $name, 'version' => $m->version, 'status' => 'already in this project', 'blurb' => $m->blurb, 'files' => 0];
+                    $out[] = ['name' => $name, 'version' => $m->version, 'status' => 'already in this project', 'blurb' => $m->blurb, 'files' => 0,
+                              'guidelines' => self::guidelinesOf($m->dir)];
                     $this->logEvent($t, 'info', "Concept '{$name}' v{$m->version} is already in this project; left as it is.");
                     continue;
                 }
                 $r = $catalog->install($name, $wtAbs);
                 $m = ConceptManifest::load($r['dir'], $name);
-                $out[] = ['name' => $name, 'version' => $r['version'], 'status' => 'installed from the catalog', 'blurb' => $m->blurb, 'files' => $r['files']];
+                $out[] = ['name' => $name, 'version' => $r['version'], 'status' => 'installed from the catalog', 'blurb' => $m->blurb, 'files' => $r['files'],
+                          'guidelines' => self::guidelinesOf($r['dir'])];
                 $this->logEvent($t, 'info', "Adopted concept '{$name}' v{$r['version']} ({$r['files']} files) into the worktree.");
             } catch (ConceptException $e) {
                 $this->fail($t, "could not adopt concept '{$name}': " . $e->getMessage());
@@ -949,20 +951,32 @@ BASH;
     }
 
     /** What the agent is told about the concepts installed for it. */
+    /** The concept's own rules for agents (guidelines.md), or '' — the brief says which. */
+    private static function guidelinesOf(string $dir): string {
+        $f = rtrim($dir, '/') . '/' . \app\AgentGuidance::CONCEPT_FILE;
+        return is_file($f) ? trim((string) file_get_contents($f)) : '';
+    }
+
     private function adoptedBrief(array $adopted): string {
         if (!$adopted) return '';
         $lines = [];
+        $rules = [];
         foreach ($adopted as $a) {
             $lines[] = "- **concepts/{$a['name']}/** v{$a['version']} ({$a['status']})" . ($a['blurb'] !== '' ? " — {$a['blurb']}" : '');
+            // The concept's own guidance, verbatim: the worker starts knowing its rules, not
+            // a pointer to a README it may or may not open.
+            $rules[] = "### Concept: {$a['name']} — how to use it\n\n"
+                     . (($a['guidelines'] ?? '') !== '' ? $a['guidelines'] : "_(this concept ships no guidelines.md; read its README.md before touching it)_");
         }
         return "\n## Adopted concepts — already installed for you, do not rewrite them\n"
              . implode("\n", $lines) . "\n\n"
              . "Each is a self-contained directory (`concept.json`, `lib/`, `controls/`, `views/`, `seeds/`, `tests/`, and a\n"
-             . "`README.md` — read that first). It was COPIED in and is this project's own code now: adapt it freely, and\n"
+             . "`README.md`). It was COPIED in and is this project's own code now: adapt it freely, and\n"
              . "wire it into the rest of the app. Its classes are `app\\concepts\\<name>\\…`. Keep `concept.json` truthful\n"
              . "as you change it (`requires.lib`, `uses.beans`, `provides`). You cannot switch it on from here — a concept\n"
              . "is enabled after merge, on the Plugins page — so do not depend on its routes answering while you work;\n"
-             . "its own tests (`vendor/bin/phpunit concepts/<name>/tests`) are how you check it.\n";
+             . "its own tests (`vendor/bin/phpunit concepts/<name>/tests`) are how you check it.\n\n"
+             . implode("\n\n", $rules) . "\n";
     }
 
     private function buildTaskBrief($t, array $adopted = []): string {

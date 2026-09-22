@@ -15,7 +15,7 @@ use app\ConceptException;
 class ConceptsGetTool extends BaseTool {
 
     public static string $name = 'concepts_get';
-    public static string $description = 'Full detail for one concept in the shared catalog: its manifest (requires, provides, the slots it fills or hosts, beans it owns vs borrows) and its file list with sizes. Use after concepts_search to decide whether to ADOPT a concept and to plan how it must be adapted. Returns pointers, not file contents — install it (clitool --concept-install=<name>) to read the code.';
+    public static string $description = 'Full detail for one concept in the shared catalog: its manifest (requires, provides, the slots it fills or hosts, beans it owns vs borrows) and its guidelines (how to use it), and its file list with sizes. Use after concepts_search to decide whether to ADOPT a concept and to plan how it must be adapted. Returns pointers, not file contents — install it (clitool --concept-install=<name>) to read the code.';
     public static array $inputSchema = [
         'type' => 'object',
         'properties' => ['name' => ['type' => 'string', 'description' => 'The concept name, exactly as concepts_search returned it.']],
@@ -33,6 +33,8 @@ class ConceptsGetTool extends BaseTool {
         $bytes = array_sum(array_column($c['files'], 'bytes'));
         $out  = "# {$c['name']} v{$c['version']}" . ($c['title'] !== '' ? " — {$c['title']}" : '') . "\n_catalog: {$c['source']}_\n\n";
         if ($c['blurb'] !== '') $out .= "{$c['blurb']}\n\n";
+        // The concept's own rules for agents — what an ADOPT decision should be made on.
+        if (($c['guidelines'] ?? '') !== '') $out .= "## How to use it (guidelines.md)\n\n{$c['guidelines']}\n\n";
         $out .= "## Manifest\n```json\n" . json_encode($c['manifest'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n```\n\n";
         $out .= '## Files (' . count($c['files']) . ", {$bytes} bytes)\n";
         foreach ($c['files'] as $f) $out .= "- {$f['path']}  ({$f['bytes']})\n";

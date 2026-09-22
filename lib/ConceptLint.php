@@ -58,6 +58,35 @@ class ConceptLint {
         $out = [];
         $sawRawSql = [];
 
+        // Agent guidance (AgentGuidance): the catalog exists so agents learn what they can
+        // adopt, and a concept without guidelines.md is one they will misuse. Short, because
+        // it is loaded every session on every install that enables the concept.
+        $g = "{$dir}/" . AgentGuidance::CONCEPT_FILE;
+        if (!is_file($g) || is_link($g)) {
+            $out[] = self::finding(self::ERROR, AgentGuidance::CONCEPT_FILE, 0,
+                'is missing. Every concept ships guidelines.md: what it is, its beans, slots and tools, how to extend it, what not to do (≤ ' . AgentGuidance::MAX_LINES . ' lines; the long form is a skill).');
+        } else {
+            $text = trim((string) file_get_contents($g));
+            $n = $text === '' ? 0 : substr_count($text, "\n") + 1;
+            if ($n === 0) $out[] = self::finding(self::ERROR, AgentGuidance::CONCEPT_FILE, 0, 'is empty.');
+            if ($n > AgentGuidance::MAX_LINES) $out[] = self::finding(self::ERROR, AgentGuidance::CONCEPT_FILE, AgentGuidance::MAX_LINES + 1, "is {$n} lines; the limit is " . AgentGuidance::MAX_LINES . '. Move the long form to skills/<skill>/SKILL.md.');
+            foreach (self::linesMatching($text, '/^## /m') as $ln) $out[] = self::finding(self::ERROR, AgentGuidance::CONCEPT_FILE, $ln, "opens a '## ' heading; the concept's guidance is one section (use ### inside it).");
+        }
+        // Skills: skills/<skill>/SKILL.md, Agent Skills format — frontmatter with name + description.
+        foreach (glob("{$dir}/skills/*", GLOB_ONLYDIR) ?: [] as $sd) {
+            $skill = basename($sd);
+            $rel = "skills/{$skill}/SKILL.md";
+            if (!preg_match('/^[a-z][a-z0-9-]*$/D', $skill)) {
+                $out[] = self::finding(self::ERROR, "skills/{$skill}", 0, 'skill directory names are lowercase letters, digits and dashes.');
+            }
+            if (!is_file("{$dir}/{$rel}")) { $out[] = self::finding(self::ERROR, $rel, 0, 'is missing; a skill is a directory with a SKILL.md.'); continue; }
+            $body = (string) file_get_contents("{$dir}/{$rel}");
+            if (!preg_match('/\A---\n(.*?)\n---\n/s', $body, $fm)
+                || !preg_match('/^name:\s*\S/m', $fm[1]) || !preg_match('/^description:\s*\S/m', $fm[1])) {
+                $out[] = self::finding(self::ERROR, $rel, 1, 'must start with YAML frontmatter carrying name: and description: (Agent Skills format).');
+            }
+        }
+
         foreach (self::files($dir) as $rel) {
             // Where an INSTALL came from — written by the installer, never published, and not
             // the concept author's text. Linting it faulted every installed concept.

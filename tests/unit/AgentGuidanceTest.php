@@ -144,6 +144,82 @@ class AgentGuidanceTest extends ConceptsTestCase {
         G::sync($this->root, []);
     }
 
+    /* ---- the lint: what a published concept must carry ---- */
+
+    private function lintErrors(string $dir): array {
+        $out = [];
+        foreach (\app\ConceptLint::check($dir) as $f) if ($f['severity'] === \app\ConceptLint::ERROR) $out[] = "{$f['file']}: {$f['message']}";
+        return $out;
+    }
+
+    public function testLintRequiresGuidelinesAndChecksSkills(): void {
+        $bare = $this->concept('bare');
+        $this->assertNotEmpty(preg_grep('/^guidelines.md: is missing/', $this->lintErrors($bare)));
+
+        $ok = $this->concept('fine', [], [
+            'guidelines.md' => "### fine\n\nUse it.\n",
+            'skills/fine-deep/SKILL.md' => "---\nname: fine-deep\ndescription: The long form.\n---\n\n# Deep\n",
+        ]);
+        $this->assertSame([], $this->lintErrors($ok));
+
+        $bad = $this->concept('bad', [], [
+            'guidelines.md' => "## A section\n" . implode("\n", array_fill(0, 85, 'x')),
+            'skills/Bad_Name/SKILL.md' => "no frontmatter\n",
+            'skills/empty/README.md' => "not a skill\n",
+        ]);
+        $e = $this->lintErrors($bad);
+        $this->assertNotEmpty(preg_grep('/guidelines.md: is 86 lines; the limit is 80/', $e));
+        $this->assertNotEmpty(preg_grep("/guidelines.md: opens a '## ' heading/", $e));
+        $this->assertNotEmpty(preg_grep('/skills\/Bad_Name: skill directory names/', $e));
+        $this->assertNotEmpty(preg_grep('/skills\/Bad_Name\/SKILL.md: must start with YAML frontmatter/', $e));
+        $this->assertNotEmpty(preg_grep('/skills\/empty\/SKILL.md: is missing/', $e));
+    }
+
+    public function testTheCatalogCarriesGuidelinesAndSkills(): void {
+        $dir = $this->concept('c', [], ['guidelines.md' => "### c\n", 'skills/c-deep/SKILL.md' => "---\nname: c-deep\ndescription: d\n---\n"]);
+        $files = \app\ConceptCatalog::collect($dir);
+        $this->assertContains('guidelines.md', $files);
+        $this->assertContains('skills/c-deep/SKILL.md', $files);
+    }
+
+    /* ---- skills ---- */
+
+    private function skilled(string $name): array {
+        $c = $this->concept_($name);
+        $this->put("{$c[$name]['dir']}/skills/deep/SKILL.md", "---\nname: {$name}-deep\ndescription: d\n---\n# deep\n");
+        $this->put("{$c[$name]['dir']}/skills/deep/ref/notes.md", "notes\n");
+        return $c;
+    }
+
+    public function testSkillsAreInstalledLedgeredAndRemovedWithTheirConcept(): void {
+        $cal = $this->skilled('cal');
+        $r = G::syncSkills($this->root, $cal);
+        $this->assertSame(['cal-deep'], $r['installed']);
+        $this->assertFileExists("{$this->root}/.claude/skills/cal-deep/SKILL.md");
+        $this->assertFileExists("{$this->root}/.claude/skills/cal-deep/ref/notes.md");
+        $this->assertSame(['cal-deep'], json_decode(file_get_contents("{$this->root}/.claude/skills/" . G::SKILLS_LEDGER), true));
+
+        $this->assertSame(['cal-deep'], G::syncSkills($this->root, $cal)['kept'], 'idempotent');
+
+        $r = G::syncSkills($this->root, []);
+        $this->assertSame(['cal-deep'], $r['removed']);
+        $this->assertDirectoryDoesNotExist("{$this->root}/.claude/skills/cal-deep");
+        $this->assertFileDoesNotExist("{$this->root}/.claude/skills/" . G::SKILLS_LEDGER);
+    }
+
+    public function testAPersonsSkillIsNeverTouched(): void {
+        $this->put("{$this->root}/.claude/skills/mine/SKILL.md", "---\nname: mine\ndescription: m\n---\n");
+        G::syncSkills($this->root, $this->skilled('cal'));
+        G::syncSkills($this->root, []);
+        $this->assertFileExists("{$this->root}/.claude/skills/mine/SKILL.md", 'not in the ledger, so never removed');
+    }
+
+    public function testACollisionWithAnUnmanagedSkillIsRefused(): void {
+        $this->put("{$this->root}/.claude/skills/cal-deep/SKILL.md", "theirs\n");
+        $this->expectExceptionMessage('exists and was not installed by sync');
+        G::syncSkills($this->root, $this->skilled('cal'));
+    }
+
     public function testNoFileAtAllBecomesJustTheBlock(): void {
         $this->core();
         G::sync($this->root, []);

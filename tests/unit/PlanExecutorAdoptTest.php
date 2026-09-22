@@ -31,6 +31,7 @@ class PlanExecutorAdoptTest extends ConceptsTestCase {
         $dir = $this->concept($name, $manifest + ['title' => ucfirst($name), 'blurb' => "The {$name} concept.", 'tags' => [$name]], [
             'lib/Thing.php'  => "<?php\nnamespace app\\concepts\\{$name};\nclass Thing {}\n",
             'tests/T.php'    => "<?php\n",
+            'guidelines.md'  => "### {$name}\n\nUse it.\n",
         ]);
         (new ConceptCatalog($this->catalogDir))->publish($dir);
     }
@@ -177,5 +178,6 @@ class PlanExecutorAdoptTest extends ConceptsTestCase {
         $this->assertStringContainsString('concepts/calendar/', $brief);
         $this->assertStringContainsString('do not rewrite them', $brief);
         $this->assertStringContainsString('Plugins page', $brief);
+        $this->assertStringContainsString("### Concept: calendar — how to use it\n\n### calendar\n\nUse it.", $brief, 'the concept\'s guidelines.md is in the brief verbatim');
     }
 }

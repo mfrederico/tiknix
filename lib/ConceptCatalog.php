@@ -31,8 +31,8 @@ class ConceptCatalog {
     public const MAX_TOTAL_BYTES = 8_000_000;
 
     /** What a concept may contain. Anything else refuses to publish, naming the file. */
-    private const TOP_FILES = ['concept.json', 'README.md', 'screenshot.jpg', 'screenshot.png'];
-    private const TOP_DIRS  = ['controls', 'lib', 'models', 'views', 'seeds', 'assets', 'tests', 'mcptools'];
+    private const TOP_FILES = ['concept.json', 'README.md', 'guidelines.md', 'screenshot.jpg', 'screenshot.png'];
+    private const TOP_DIRS  = ['controls', 'lib', 'models', 'views', 'seeds', 'assets', 'tests', 'mcptools', 'skills'];
     private const EXTENSIONS = ['php', 'json', 'md', 'txt', 'js', 'css', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
     private const PATH_RE = '#^[A-Za-z0-9_][A-Za-z0-9_\-.]*(?:/[A-Za-z0-9_][A-Za-z0-9_\-.]*)*$#D';
     private const NAME_RE = '/^[a-z][a-z0-9]*$/D';
@@ -166,7 +166,9 @@ class ConceptCatalog {
         $m = ConceptManifest::load($cdir, $name);
         $files = [];
         foreach (self::collect($cdir) as $rel) $files[] = ['path' => $rel, 'bytes' => filesize("{$cdir}/{$rel}")];
-        return ['source' => $this->where()] + self::summary($m) + ['manifest' => $m->raw, 'files' => $files];
+        $g = "{$cdir}/" . AgentGuidance::CONCEPT_FILE;
+        return ['source' => $this->where()] + self::summary($m)
+             + ['manifest' => $m->raw, 'files' => $files, 'guidelines' => is_file($g) ? trim((string) file_get_contents($g)) : ''];
     }
 
     /** The concept as data: {name, version, files: {path: base64}}. */

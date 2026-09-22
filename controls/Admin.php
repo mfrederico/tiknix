@@ -935,11 +935,26 @@ class Admin extends Control {
             \app\PermissionCache::clear();   // its seeds may have added routes
             $this->logger->info('Concept enabled', ['concept' => $name, 'member_id' => $this->member->id, 'seeds' => $seeded]);
             $this->flash('success', "Concept '{$name}' enabled" . ($seeded ? ' — ' . count($seeded) . ' seed file(s) ran.' : '.'));
+            $this->syncGuidanceAfter($name);
         } catch (\app\ConceptException $e) {
             $this->logger->warning('Concept enable refused', ['concept' => $name, 'member_id' => $this->member->id, 'why' => $e->getMessage()]);
             $this->flash('error', self::oneLine($e->getMessage()));
         }
         Flight::redirect('/admin/concepts');
+    }
+
+    /**
+     * The flag flipped; now CLAUDE.md's managed block must say so (AgentGuidance). A failure
+     * here does not undo the enable — it is reported beside it, with the fix.
+     */
+    private function syncGuidanceAfter(string $name): void {
+        try {
+            $r = \app\Concepts::instance()->syncGuidance();
+            foreach ($r['notes'] as $n) $this->flash('warning', self::oneLine($n));
+        } catch (\RuntimeException $e) {
+            $this->logger->error('Agent guidance not synced after concept change', ['concept' => $name, 'why' => $e->getMessage()]);
+            $this->flash('warning', 'CLAUDE.md was not regenerated: ' . self::oneLine($e->getMessage()));
+        }
     }
 
     /**
@@ -956,6 +971,7 @@ class Admin extends Control {
             \app\PermissionCache::clear();
             $this->logger->info('Concept disabled', ['concept' => $name, 'member_id' => $this->member->id]);
             $this->flash('success', "Concept '{$name}' disabled. Its tables and rows are kept.");
+            $this->syncGuidanceAfter($name);
         } catch (\app\ConceptException $e) {
             $this->logger->warning('Concept disable refused', ['concept' => $name, 'member_id' => $this->member->id, 'why' => $e->getMessage()]);
             $this->flash('error', self::oneLine($e->getMessage()));

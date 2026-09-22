@@ -281,6 +281,25 @@ class Concepts {
         return $roots;
     }
 
+    /* ---- agent guidance ------------------------------------------------------------- */
+
+    /**
+     * Regenerate this install's CLAUDE.md managed block from core's sections plus the
+     * enabled concepts' guidelines.md (AgentGuidance). Called after a flag flips — by the
+     * CLI and by the Plugins screen — and by --agent-sync. Throws RuntimeException when
+     * the install has no agent/guidelines/ or the file cannot be migrated: the caller
+     * reports that beside the enable it belongs to, and the flag change stands.
+     *
+     * @return array{changed:bool,path:string,notes:string[],migrated:bool,skills:array{installed:string[],removed:string[],kept:string[]}}
+     */
+    public function syncGuidance(): array {
+        $enabled = [];
+        foreach ($this->enabled() as $name => $m) $enabled[$name] = ['version' => $m->version, 'dir' => $m->dir];
+        $r = AgentGuidance::sync($this->root, $enabled);
+        $r['skills'] = AgentGuidance::syncSkills($this->root, $enabled);
+        return $r;
+    }
+
     /* ---- MCP tools ------------------------------------------------------------------ */
 
     /**

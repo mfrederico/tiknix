@@ -922,7 +922,7 @@ become a concept (open decision); `workbench/*` is bound to the workbench sideca
 model and is that sidecar's problem. The seam is what this builds; the first real concept
 tool is whichever concept needs one.
 
-## Concept guidance: guidelines and skills composed from what is enabled (planned 2026-09-22)
+## Concept guidance: guidelines and skills composed from what is enabled (built 2026-09-22)
 
 Learned from Laravel Boost. Its Claude plugin is two files that run `php artisan boost:mcp`;
 the lesson is in the package: **agent guidance is a generated artifact, composed from what is
@@ -1028,6 +1028,19 @@ section in `CLAUDE.md` below an untouched preamble; `--concept-disable` removes 
 in a row change nothing; a build task that adopts `calendar` shows its guidelines in the
 brief. Then core: split, sync, `git diff CLAUDE.md` is empty.
 
+### As built
+
+Everything in the table, with three notes. The split of core's `CLAUDE.md` reproduced the
+file with only the two markers added and one double blank line normalised; the drift guard
+(`AgentGuidanceTest::testCoresClaudeMdIsExactlyWhatComposeProduces`) runs in the pre-commit
+hook. The executor does NOT sync the worktree: adopted concepts are enabled after merge, so
+a sync there would add nothing — the brief carries their guidelines verbatim instead.
+Capricorn's `provision-instance.sh` step 3 now writes the preamble plus the two marker lines
+and runs `--agent-sync`; the "App technical notes" appendix remains only for a non-tiknix
+app. `calendar` 1.0.1 in the catalog is the first concept with `guidelines.md`. Existing
+instances migrate on their first sync after core is propagated: the capricorn seam is
+recognised, the old pasted body is dropped, the preamble is kept.
+
 ### Not now
 
 The hosted docs search (Boost's 17,000-entry API). A keyword search over our own guidance
@@ -1082,9 +1095,7 @@ hook in the layout and a sink, and Playwright covers the case for now.
    cache — then `concepts_search` / `concepts_get` over it, and ADOPT in the planner prompt.
 8. **Browsable catalog page** with screenshots (myctobot's registry views as the start).
 9. ~~**Concept MCP tools**~~ — built 2026-09-22 ("Concept MCP tools" above).
-10. **Concept guidance** — `agent/guidelines/` split, `AgentGuidance` composer, `--agent-sync`,
-    `guidelines.md` + skills as concept parts, `adoptedBrief()` embedding, `calendar` as the
-    proving case ("Concept guidance" above). Independent of 3–5.
+10. ~~**Concept guidance**~~ — built 2026-09-22 ("Concept guidance" above).
 11. **Observation tools** — `last_error`, `read_log_entries`, `database_schema`,
     `application_info` on stdio; `database_query` HTTP-only ("Observation tools" above).
 

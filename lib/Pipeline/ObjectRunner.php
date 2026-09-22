@@ -32,7 +32,7 @@ class ObjectRunner {
         // SQLite instances: let writers wait on a busy DB instead of erroring (no-op elsewhere).
         try { Bean::exec('PRAGMA busy_timeout = 5000'); } catch (\Throwable $e) {}
 
-        $def = (new Loader($this->root))->get($slug);
+        $def = Loader::forInstall($this->root)->get($slug);
         if (!$def) throw new \RuntimeException("no such pipeline '$slug'");
 
         $obj = DurableObject::open('pipe:' . $slug, $key, $slug);
@@ -62,7 +62,7 @@ class ObjectRunner {
     public function tick(): array {
         $this->ensureGarbageCollector();      // core dogfoods the runtime: a scheduled GC object
         $fired = [];
-        $loader = new Loader($this->root);
+        $loader = Loader::forInstall($this->root);
         foreach (DurableObject::due() as $b) {
             $slug = (string) $b->slug; $key = (string) $b->objKey;
             if ($slug === '') continue;
@@ -103,7 +103,7 @@ class ObjectRunner {
      * the next tick re-arms it. Self-healing, and immune to step-order changes.
      */
     private function ensureGarbageCollector(): void {
-        $def = (new Loader($this->root))->get('garbagecollector');
+        $def = Loader::forInstall($this->root)->get('garbagecollector');
         if (!$def) return;
         $obj = \app\Bean::findOne('dobject', 'type = ?', ['pipe:garbagecollector']);
         if ($obj && $obj->id && (int) $obj->wakeAt > 0) return;   // already scheduled

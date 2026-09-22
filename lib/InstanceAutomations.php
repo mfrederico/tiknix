@@ -14,11 +14,27 @@ use app\Pipeline\Loader;
 
 class InstanceAutomations {
 
+    /**
+     * The Loader for another install's directory: its own pipelines/ plus what its enabled
+     * concepts ship. When its flags cannot be read the instance's own pipelines are still
+     * listed (they are true regardless) and the failure is logged, naming the install.
+     */
+    private static function loaderFor(string $dir): Loader {
+        try {
+            return new Loader($dir, \app\Concepts::pipelineSourcesForInstall($dir));
+        } catch (\RuntimeException $e) {
+            error_log('ERROR InstanceAutomations: concept pipelines of ' . basename($dir) . ' not listed — ' . $e->getMessage());
+            return new Loader($dir);
+        }
+    }
+
     /** The instance's pipeline definitions (metadata only). */
     public static function pipelines(string $dir): array {
         $out = [];
-        foreach ((new Loader($dir))->all() as $slug => $def) {
+        $loader = self::loaderFor($dir);
+        foreach ($loader->all() as $slug => $def) {
             $out[] = [
+                'concept'     => $loader->originOf((string) $slug),
                 'slug'        => (string) $slug,
                 'name'        => (string) ($def['name'] ?? $slug),
                 'description' => (string) ($def['description'] ?? ''),
@@ -134,7 +150,7 @@ class InstanceAutomations {
     /** Fire every pipeline whose trigger.github matches this GitHub event + branch. */
     public static function fireGithub(string $dir, string $event, string $branch, array $context): array {
         $fired = [];
-        foreach ((new Loader($dir))->all() as $slug => $def) {
+        foreach (self::loaderFor($dir)->all() as $slug => $def) {
             $gh = $def['trigger']['github'] ?? null;
             if (!is_array($gh)) continue;
             $events   = is_array($gh['events'] ?? null)   ? $gh['events']   : ['push'];

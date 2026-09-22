@@ -300,6 +300,72 @@ class Concepts {
         return $r;
     }
 
+    /* ---- pipeline definitions ------------------------------------------------------- */
+
+    /**
+     * Pipelines enabled concepts ship, for Pipeline\Loader's second argument:
+     * slug => ['concept' => name, 'file' => path]. THIS install's flags decide; a reader of
+     * another install's directory uses pipelineSourcesFor() with that install's flags.
+     *
+     * @return array<string,array{concept:string,file:string}>
+     */
+    public function pipelineSources(): array {
+        return self::pipelineSourcesFor($this->conceptsDir(), array_keys($this->enabled()), $this->enabled());
+    }
+
+    /**
+     * The same, from a concepts/ directory and a list of enabled names — pure, no database:
+     * InstanceAutomations, Introspector and pipeline-cron read OTHER installs this way.
+     *
+     * @param string   $conceptsDir  <install>/concepts
+     * @param string[] $enabledNames from that install's install.concept.* flags
+     * @param array<string,ConceptManifest> $manifests already-loaded manifests, if the caller has them
+     */
+    public static function pipelineSourcesFor(string $conceptsDir, array $enabledNames, array $manifests = []): array {
+        $out = [];
+        foreach ($enabledNames as $name) {
+            if (!preg_match(self::NAME_RE, (string) $name)) continue;
+            $m = $manifests[$name] ?? null;
+            if ($m === null) {
+                $dir = rtrim($conceptsDir, '/') . '/' . $name;
+                if (!is_file($dir . '/' . ConceptManifest::FILE)) continue;   // enabled but gone: enabled() reports that; a reader lists what is there
+                $m = ConceptManifest::load($dir, $name);
+            }
+            foreach ($m->pipelines as $slug) {
+                $out[$slug] = ['concept' => $name, 'file' => $m->dir . '/pipelines/' . $slug . '.json'];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Another install's pipeline sources, from ITS settings: opens that install's sqlite
+     * read-only and reads its install.concept.* flags. Throws when the install's database
+     * cannot be read — "could not tell" and "none enabled" are different answers, and the
+     * caller (InstanceAutomations, pipeline-cron) says which one it got.
+     *
+     * @return array<string,array{concept:string,file:string}>
+     */
+    public static function pipelineSourcesForInstall(string $installDir): array {
+        $installDir = rtrim($installDir, '/');
+        if (!is_dir($installDir . '/' . self::DIR)) return [];   // no concepts/ at all: nothing to read
+        $ini = @parse_ini_file($installDir . '/conf/config.ini', true);
+        if (!is_array($ini)) throw new \RuntimeException("Concepts: {$installDir}/conf/config.ini could not be parsed.");
+        $type = (string) ($ini['database']['type'] ?? '');
+        $path = (string) ($ini['database']['path'] ?? '');
+        if ($type !== 'sqlite' || $path === '') throw new \RuntimeException("Concepts: {$installDir} has no sqlite [database] path to read concept flags from.");
+        $abs = $path[0] === '/' ? $path : "{$installDir}/{$path}";
+        try {
+            $pdo = new \PDO('sqlite:' . $abs, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+            $st = $pdo->query("SELECT setting_key FROM settings WHERE setting_key LIKE 'install.concept.%' AND setting_value = '1'");
+            $names = [];
+            foreach ($st->fetchAll(\PDO::FETCH_COLUMN) as $key) $names[] = substr((string) $key, strlen('install.concept.'));
+        } catch (\Throwable $e) {
+            throw new \RuntimeException("Concepts: could not read concept flags from {$abs}: " . $e->getMessage());
+        }
+        return self::pipelineSourcesFor($installDir . '/' . self::DIR, $names);
+    }
+
     /* ---- MCP tools ------------------------------------------------------------------ */
 
     /**
@@ -557,6 +623,25 @@ class Concepts {
                     $problems[] = "provides.controllers lists '{$c}', but {$file} does not exist.";
                 } elseif (!class_exists("app\\concepts\\{$name}\\{$c}")) {
                     $problems[] = "{$file} does not define app\\concepts\\{$name}\\{$c}.";
+                }
+            }
+            foreach ($m->pipelines as $slug) {
+                $file = "{$m->dir}/pipelines/{$slug}.json";
+                if (!is_file($file)) { $problems[] = "provides.pipelines lists '{$slug}', but {$file} does not exist."; continue; }
+                $def = json_decode((string) file_get_contents($file), true);
+                if (!is_array($def)) { $problems[] = "{$file} is not valid JSON."; continue; }
+                if (($def['slug'] ?? null) !== $slug) {
+                    $problems[] = "{$file} has slug '" . ($def['slug'] ?? '') . "'; the file name and provides.pipelines say '{$slug}'.";
+                    continue;
+                }
+                foreach (\app\Pipeline\Loader::validate($def) as $why) $problems[] = "pipeline '{$slug}': {$why}";
+                // The instance's own pipelines/ wins in the Loader, so a clash would make this
+                // concept's pipeline silently unreachable: refused here instead.
+                if (is_file($this->root . "/pipelines/{$slug}.json")) {
+                    $problems[] = "provides.pipelines claims '{$slug}', but this install already has pipelines/{$slug}.json.";
+                }
+                foreach ($others as $o) {
+                    if (in_array($slug, $o->pipelines, true)) $problems[] = "provides.pipelines claims '{$slug}', already claimed by concept '{$o->name}'.";
                 }
             }
             foreach ($m->tools as $t) {

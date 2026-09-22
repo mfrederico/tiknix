@@ -18,6 +18,7 @@
 if (php_sapi_name() !== 'cli') { http_response_code(403); exit("cli only\n"); }
 
 require_once __DIR__ . '/../lib/Pipeline/Cron.php';
+require_once __DIR__ . '/../vendor/autoload.php';   // app\Concepts, for enabled concepts' pipelines
 
 use app\Pipeline\Cron;
 
@@ -29,8 +30,27 @@ $minute = date('Y-m-d H:i', $now);
 
 // --- 1) collect due cron jobs + one object-tick per instance --------------------
 $jobs = []; $checked = 0; $seen = [];   // $seen[dir] = ['base','secret'] | null
-foreach (glob($BASE . '/*/pipelines/*.json') ?: [] as $file) {
-    $instanceDir = dirname(dirname($file));
+
+// Every definition file to consider: each install's own pipelines/*.json, then the
+// pipelines its ENABLED concepts ship (COMPONENTS_PLAN.md, "Pipeline definitions as a
+// concept part"), read from that install's own flags. An install whose flags cannot be
+// read still gets its own pipelines scheduled, and says so — silence here would look like
+// "no cron pipelines" on an install that has some.
+$files = [];   // [instanceDir, file]
+foreach (glob($BASE . '/*/pipelines/*.json') ?: [] as $file) $files[] = [dirname(dirname($file)), $file];
+foreach (glob($BASE . '/*/concepts', GLOB_ONLYDIR) ?: [] as $cdir) {
+    $instanceDir = dirname($cdir);
+    try {
+        $own = array_map(fn($f) => basename($f, '.json'), glob($instanceDir . '/pipelines/*.json') ?: []);
+        foreach (\app\Concepts::pipelineSourcesForInstall($instanceDir) as $slug => $src) {
+            if (in_array($slug, $own, true)) continue;   // the install's own file wins
+            $files[] = [$instanceDir, $src['file']];
+        }
+    } catch (\Throwable $e) {
+        echo '[warn] ' . basename($instanceDir) . ': concept pipelines not scheduled — ' . $e->getMessage() . "\n";
+    }
+}
+foreach ($files as [$instanceDir, $file]) {
     if (!array_key_exists($instanceDir, $seen)) {
         $ini = @parse_ini_file($instanceDir . '/conf/config.ini', true) ?: [];
         $base   = rtrim((string) ($ini['app']['baseurl'] ?? ''), '/');

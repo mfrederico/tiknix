@@ -21,7 +21,12 @@ class PipelineDeleteTool extends BaseTool {
     public function execute(array $args): string {
         $this->requireAdmin();
         $slug = (string) ($args['slug'] ?? '');
-        $ok = (new Loader(Runner::root()))->delete($slug);
+        try {
+            $ok = Loader::forInstall(Runner::root())->delete($slug);
+        } catch (\RuntimeException $e) {
+            // A concept's pipeline: refused, with the way to do it (see Loader::delete).
+            return json_encode(['ok' => false, 'slug' => $slug, 'deleted' => false, 'error' => $e->getMessage()], JSON_PRETTY_PRINT);
+        }
         return json_encode(['ok' => $ok, 'slug' => $slug, 'deleted' => $ok], JSON_PRETTY_PRINT);
     }
 }

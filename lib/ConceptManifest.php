@@ -40,6 +40,8 @@ class ConceptManifest {
     private const CLASS_RE    = '/^[A-Z][A-Za-z0-9]*$/D';
     private const BEAN_RE     = '/^[a-z][a-z0-9]*$/D';
     private const SLOT_RE     = '/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/D';
+    /** The same shape Pipeline\Loader::safeSlug() accepts. */
+    private const PIPELINE_RE = '/^[a-z0-9][a-z0-9-]{0,63}$/D';
     private const CALLABLE_RE = '/^(?:([a-z][a-z0-9]*):)?([A-Z][A-Za-z0-9]*)::([a-z][A-Za-z0-9]*)$/D';
     private const VIEW_RE     = '/^[A-Za-z0-9][A-Za-z0-9_\-]*(?:\/[A-Za-z0-9][A-Za-z0-9_\-]*)*\.php$/D';
     private const MATCH_KEY_RE = '/^[a-z][A-Za-z0-9]*$/D';
@@ -59,6 +61,12 @@ class ConceptManifest {
     public array $controllers = [];
     /** @var string[] bean types this concept claims */
     public array $beans = [];
+    /**
+     * Pipeline definitions this concept ships: pipelines/<slug>.json each, slug
+     * "<concept>-<something>". The runtime stays core; the definitions are the part.
+     * @var string[]
+     */
+    public array $pipelines = [];
     /**
      * MCP tools this concept offers, each {class, level}: mcptools/<class>.php defining
      * app\concepts\<name>\mcptools\<class>. `level` is required for the same reason a slot's
@@ -147,6 +155,14 @@ class ConceptManifest {
         $m->controllers = self::stringList($provides['controllers'] ?? [], 'provides.controllers', $name, self::CLASS_RE);
         $m->beans       = self::stringList($provides['beans'] ?? [], 'provides.beans', $name, self::BEAN_RE);
         $m->capabilities = self::stringList($provides['capabilities'] ?? [], 'provides.capabilities', $name, null);
+        $m->pipelines = self::stringList($provides['pipelines'] ?? [], 'provides.pipelines', $name, self::PIPELINE_RE);
+        foreach ($m->pipelines as $slug) {
+            if (strncmp($slug, $name . '-', strlen($name) + 1) !== 0) {
+                throw new ConceptException(
+                    "Concept '{$name}': provides.pipelines lists '{$slug}'; a concept's pipeline slug must be "
+                  . "'{$name}-<something>' (it is public: /pipeline/trigger/<slug>, tiknix:pipe_<slug>).");
+            }
+        }
         if (isset($provides['tools'])) {
             foreach (self::entryList($provides['tools'], 'provides.tools', $name) as $i => $entry) {
                 $m->tools[] = $m->toolEntry($entry, "provides.tools[{$i}]");
@@ -191,7 +207,7 @@ class ConceptManifest {
 
         // The instance hosts; it does not register. Its namespace is app\ itself, so letting
         // it name callables would reopen exactly the reach the relative-name rule closes.
-        if ($name === self::ROOT && ($m->slots || $m->collect || $m->controllers || $m->beans || $m->tools || $m->requiresConcepts)) {
+        if ($name === self::ROOT && ($m->slots || $m->collect || $m->controllers || $m->beans || $m->tools || $m->pipelines || $m->requiresConcepts)) {
             throw new ConceptException(
                 "Concept 'root': the root manifest may only declare \"hosts\". Core's own controllers, "
               . "beans, tools and views are not registered through a manifest.");

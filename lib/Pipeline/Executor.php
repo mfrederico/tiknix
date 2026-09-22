@@ -43,7 +43,7 @@ class Executor {
     public function resume(int $runId): array {
         $run = Bean::load('piperun', $runId);
         if (!$run->id) throw new \RuntimeException("run $runId not found");
-        $def = (new Loader($this->root))->get((string) $run->slug);
+        $def = Loader::forInstall($this->root)->get((string) $run->slug);
         if (!$def) { $run->status = 'failed'; $run->error = 'definition missing'; Bean::store($run); throw new \RuntimeException('definition missing'); }
         $run->status = 'running'; $run->startedAt = $run->startedAt ?: date('Y-m-d H:i:s'); Bean::store($run);
         $context = json_decode((string) $run->contextJson, true) ?: [];
@@ -56,7 +56,7 @@ class Executor {
         $run = Bean::load('piperun', $runId);
         if (!$run->id) throw new \RuntimeException("run $runId not found");
         if ($run->status !== 'paused') throw new \RuntimeException("run $runId is not awaiting input (status={$run->status})");
-        $def = (new Loader($this->root))->get((string) $run->slug);
+        $def = Loader::forInstall($this->root)->get((string) $run->slug);
         if (!$def) throw new \RuntimeException('definition missing');
         $state = json_decode((string) $run->stateJson, true) ?: [];
         $bag = $state['bag'] ?? $this->freshBag($def, [], $run);
@@ -100,7 +100,7 @@ class Executor {
         if ($run->status !== 'paused') throw new \RuntimeException("run $runId is not at a breakpoint (status={$run->status})");
         $state = json_decode((string) $run->stateJson, true) ?: [];
         if (($state['kind'] ?? '') !== 'debug') throw new \RuntimeException("run $runId is not a debug breakpoint");
-        $def = (new Loader($this->root))->get((string) $run->slug);
+        $def = Loader::forInstall($this->root)->get((string) $run->slug);
         if (!$def) throw new \RuntimeException('definition missing');
         $bag = $state['bag'] ?? $this->freshBag($def, [], $run);
         if ($patch) $bag = self::mergeBag($bag, $patch);

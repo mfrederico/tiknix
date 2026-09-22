@@ -25,7 +25,8 @@ class ConceptLint {
     public const WARN  = 'warn';
 
     /** Core classes every install has and no manifest needs to declare. */
-    private const ALWAYS_AVAILABLE = ['Bean', 'Concepts', 'ConceptException', 'PermissionCache', 'mcptools'];
+    /** Core classes every install has and no manifest needs to declare. Pipeline: the runtime is core by design (COMPONENTS_PLAN.md). */
+    private const ALWAYS_AVAILABLE = ['Bean', 'Concepts', 'ConceptException', 'PermissionCache', 'mcptools', 'Pipeline'];
 
     private const SECRET_PATTERNS = [
         'Stripe key'        => '/\b[sr]k_(?:live|test)_[A-Za-z0-9]{8,}/',
@@ -71,6 +72,25 @@ class ConceptLint {
             if ($n === 0) $out[] = self::finding(self::ERROR, AgentGuidance::CONCEPT_FILE, 0, 'is empty.');
             if ($n > AgentGuidance::MAX_LINES) $out[] = self::finding(self::ERROR, AgentGuidance::CONCEPT_FILE, AgentGuidance::MAX_LINES + 1, "is {$n} lines; the limit is " . AgentGuidance::MAX_LINES . '. Move the long form to skills/<skill>/SKILL.md.');
             foreach (self::linesMatching($text, '/^## /m') as $ln) $out[] = self::finding(self::ERROR, AgentGuidance::CONCEPT_FILE, $ln, "opens a '## ' heading; the concept's guidance is one section (use ### inside it).");
+        }
+        // Pipelines: pipelines/<slug>.json, declared in provides.pipelines (never discovered),
+        // valid JSON whose slug agrees with the file, and every step type known here.
+        $declaredPipes = $m->pipelines;
+        foreach (glob("{$dir}/pipelines/*.json") ?: [] as $pf) {
+            $slug = basename($pf, '.json'); $rel = "pipelines/{$slug}.json";
+            if (!in_array($slug, $declaredPipes, true)) {
+                $out[] = self::finding(self::ERROR, $rel, 0, "is in pipelines/ but provides.pipelines does not declare '{$slug}'. A pipeline is declared, never discovered.");
+                continue;
+            }
+            $def = json_decode((string) file_get_contents($pf), true);
+            if (!is_array($def)) { $out[] = self::finding(self::ERROR, $rel, 1, 'is not valid JSON.'); continue; }
+            if (($def['slug'] ?? null) !== $slug) $out[] = self::finding(self::ERROR, $rel, 1, "has slug '" . ($def['slug'] ?? '') . "'; the file name says '{$slug}'.");
+            if (class_exists('\\app\\Pipeline\\Loader')) {
+                foreach (\app\Pipeline\Loader::validate($def) as $why) $out[] = self::finding(self::ERROR, $rel, 1, $why);
+            }
+        }
+        foreach ($declaredPipes as $slug) {
+            if (!is_file("{$dir}/pipelines/{$slug}.json")) $out[] = self::finding(self::ERROR, "pipelines/{$slug}.json", 0, "is declared in provides.pipelines but missing.");
         }
         // Skills: skills/<skill>/SKILL.md, Agent Skills format — frontmatter with name + description.
         foreach (glob("{$dir}/skills/*", GLOB_ONLYDIR) ?: [] as $sd) {

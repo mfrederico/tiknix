@@ -342,10 +342,15 @@ class Introspector {
         $out[] = '- **Pipeline steps** to compose (files at `pipelines/<slug>.json`; build via the `pipeline_components` + `pipeline_set` MCP tools): ' . implode(', ', $stepTypes);
         $pipes = [];
         try {
-            foreach ((new \app\Pipeline\Loader($this->root))->all() as $slug => $def) {
+            // Enabled concepts' pipelines too, from THIS root's flags (concepts() read them).
+            $on = [];
+            foreach ($this->concepts() as $cname => $c) if ($c['enabled'] === true && $c['manifest'] !== null) $on[$cname] = $c['manifest'];
+            $loader = new \app\Pipeline\Loader($this->root, \app\Concepts::pipelineSourcesFor("{$this->root}/concepts", array_keys($on), $on));
+            foreach ($loader->all() as $slug => $def) {
                 $tag = !empty($def['stateful']) ? ' (durable object)'
                      : (!empty($def['trigger']['cron']) ? ' (cron ' . $def['trigger']['cron'] . ')' : '');
-                $pipes[] = $slug . $tag;
+                $origin = $loader->originOf((string) $slug);
+                $pipes[] = $slug . $tag . ($origin !== null ? " [concept: {$origin}]" : '');
             }
         } catch (\Throwable $e) {}
         $out[] = '- **Existing pipelines** (reuse/extend before adding): ' . ($pipes ? implode(', ', $pipes) : '(none yet)');

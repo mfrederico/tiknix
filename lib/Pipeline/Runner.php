@@ -19,7 +19,12 @@ class Runner {
     }
 
     private static function loader(): Loader {
-        return new Loader(self::root());
+        return Loader::forInstall(self::root());
+    }
+
+    /** The concept a pipeline comes from, or null for the install's own (Loader::originOf). */
+    public static function originOf(string $slug): ?string {
+        return self::loader()->originOf($slug);
     }
 
     /** [slug => definition] for every valid pipeline file. */

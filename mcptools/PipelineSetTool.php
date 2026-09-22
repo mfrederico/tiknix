@@ -52,7 +52,7 @@ class PipelineSetTool extends BaseTool {
         }
 
         $this->requireAdmin();   // writing a pipeline = editing the instance's code
-        $file = (new Loader(Runner::root()))->save($def);
+        $file = Loader::forInstall(Runner::root())->save($def);
         return json_encode(['ok' => true, 'valid' => true, 'saved' => true, 'slug' => $def['slug'],
             'file' => 'pipelines/' . $def['slug'] . '.json', 'steps' => count($def['steps'])], JSON_PRETTY_PRINT);
     }

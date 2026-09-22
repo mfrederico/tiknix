@@ -1048,7 +1048,7 @@ and the two framework READMEs, scored with the catalog's weights, would cover it
 embeddings — after this lands. Per-IDE agent writers (Cursor, Codex, Gemini, Junie): we
 have one CLI flavour.
 
-## Pipeline definitions as a concept part (planned 2026-09-22)
+## Pipeline definitions as a concept part (built 2026-09-22)
 
 **The pipeline runtime stays core. Pipeline definitions become a concept part.** The runtime
 (`lib/Pipeline/`, 25 files; `controls/Pipeline.php`; 8 MCP tools; `pipeline-cron.php`; the
@@ -1122,12 +1122,17 @@ that path byte-for-byte:
 | `lib/ConceptLint.php`, `ConceptCatalog.php` | `pipelines/` in `TOP_DIRS`; JSON must parse; declared ⇔ present; slug rule. |
 | `tests/unit/ConceptPipelinesTest.php` | Manifest, verify (missing file, bad JSON, slug mismatch, invalid step, collision, prefix), Loader precedence and the no-concept pin, delete refusal, lint. |
 
-### Proving case
+### As built
 
-Extract one of lead-machine's pipelines (the least connection-bound one) into a `leadgen`
-concept in the catalog with `guidelines.md`; adopt it into a scratch install; `--concept-enable`;
-`pipeline_list` shows it with provenance; `Runner::debugRun` runs it; `--concept-disable`
-removes it. Then the lead-machine before/after diff above.
+lead-machine's own pipelines turned out not to be the extraction candidate: 15 of 18 read its
+`prospect`/`campaign` beans and shell out to scripts in its tree. Core's Shopify demos are
+the reusable ones, so the first pipeline concept is **`shopifysync` 1.0.0** in the catalog
+(`shopifysync-inventory`, `shopifysync-orders`, guidelines, a definitions test). Proven on a
+scratch install: absent before enable; listed with `concept: shopifysync` after; the install's
+own `shopify-inventory` untouched; `Runner::validate` clean; a real run fails loudly on the
+missing shop connection; `pipeline_delete` refused with the fix; disable removes both. Core's
+own `pipeline_list` and cron tick are byte-identical before and after. `ConceptLint` treats
+`app\Pipeline` as always available — the runtime is core by this decision.
 
 ## Observation tools (planned 2026-09-22)
 

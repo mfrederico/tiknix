@@ -24,6 +24,10 @@ class PipelineListTool extends BaseTool {
                 'expose_as_api'  => (bool) ($def['expose_as_api'] ?? false),
                 'trigger'        => $def['trigger'] ?? null,
             ];
+            // Provenance, only when there is some: an install with no concept pipelines
+            // gets the exact output it always did.
+            $origin = Runner::originOf((string) $slug);
+            if ($origin !== null) $out[count($out) - 1]['concept'] = $origin;
         }
         return json_encode(['pipelines' => $out], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }

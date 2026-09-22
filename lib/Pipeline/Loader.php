@@ -12,19 +12,62 @@ class Loader {
 
     private string $dir;
 
-    /** $root = the app/instance root; pipelines live at <root>/pipelines/. */
-    public function __construct(string $root) {
+    /**
+     * Pipelines that enabled CONCEPTS ship (COMPONENTS_PLAN.md, "Pipeline definitions as a
+     * concept part"): slug => ['concept' => name, 'file' => absolute path]. The instance's own
+     * pipelines/ is read first and wins; these are appended. Empty by default, so every
+     * one-argument construction — which is every caller that predates concepts — reads
+     * exactly what it always did.
+     *
+     * @var array<string,array{concept:string,file:string}>
+     */
+    private array $conceptSources = [];
+
+    /**
+     * @param string $root            the app/instance root; pipelines live at <root>/pipelines/
+     * @param array  $conceptSources  from Concepts::pipelineSources(), for THIS install only —
+     *                                a reader of another install's directory passes what that
+     *                                install's flags say (Concepts::pipelineSourcesFor)
+     */
+    public function __construct(string $root, array $conceptSources = []) {
         $this->dir = rtrim($root, '/') . '/pipelines';
+        foreach ($conceptSources as $slug => $src) {
+            $slug = self::safeSlug((string) $slug);
+            if ($slug === '' || !is_string($src['concept'] ?? null) || !is_string($src['file'] ?? null)) {
+                throw new \InvalidArgumentException("Loader: concept source '{$slug}' must be [concept, file].");
+            }
+            $this->conceptSources[$slug] = ['concept' => $src['concept'], 'file' => $src['file']];
+        }
     }
 
     public function dir(): string { return $this->dir; }
 
-    /** All valid definitions keyed by slug. */
+    /**
+     * The loader for the install THIS process runs in: its own pipelines/ plus its enabled
+     * concepts' (Concepts::pipelineSources reads this install's flags). For any other root
+     * there are no flags to read in-process, so the sources are empty — a reader of another
+     * install (InstanceAutomations, Introspector, pipeline-cron) derives them from that
+     * install's settings with Concepts::pipelineSourcesFor() and constructs the Loader itself.
+     */
+    public static function forInstall(string $root): self {
+        $here = realpath(dirname(__DIR__, 2));
+        $there = realpath($root);
+        $sources = ($here !== false && $there !== false && $here === $there && class_exists('\\app\\Concepts'))
+            ? \app\Concepts::instance()->pipelineSources() : [];
+        return new self($root, $sources);
+    }
+
+    /** All valid definitions keyed by slug: the instance's own first, then enabled concepts'. */
     public function all(): array {
         $out = [];
         foreach (glob($this->dir . '/*.json') ?: [] as $file) {
             $def = $this->read($file);
             if ($def && ($def['slug'] ?? '') !== '') $out[$def['slug']] = $def;
+        }
+        foreach ($this->conceptSources as $slug => $src) {
+            if (isset($out[$slug])) continue;   // the instance's own file wins (verify() refuses this at enable)
+            $def = is_file($src['file']) ? $this->read($src['file']) : null;
+            if ($def && ($def['slug'] ?? '') === $slug) $out[$slug] = $def;
         }
         return $out;
     }
@@ -33,22 +76,52 @@ class Loader {
         $slug = self::safeSlug($slug);
         if ($slug === '') return null;
         $file = $this->dir . '/' . $slug . '.json';
-        return is_file($file) ? $this->read($file) : null;
+        if (is_file($file)) return $this->read($file);
+        $src = $this->conceptSources[$slug] ?? null;
+        if ($src !== null && is_file($src['file'])) {
+            $def = $this->read($src['file']);
+            return ($def && ($def['slug'] ?? '') === $slug) ? $def : null;
+        }
+        return null;
     }
 
-    /** Write a definition to its file (create the dir if needed). Returns the path. */
+    /** The concept a slug comes from, or null for the instance's own pipeline (or an unknown slug). */
+    public function originOf(string $slug): ?string {
+        $slug = self::safeSlug($slug);
+        if ($slug === '' || is_file($this->dir . '/' . $slug . '.json')) return null;
+        return $this->conceptSources[$slug]['concept'] ?? null;
+    }
+
+    /**
+     * Write a definition to its file (create the dir if needed). Returns the path. A concept
+     * pipeline is the project's own code once adopted, so it is saved back to the concept's
+     * file, not shadowed by a new instance file that would silently take precedence.
+     */
     public function save(array $def): string {
         $slug = self::safeSlug((string) ($def['slug'] ?? ''));
         if ($slug === '') throw new \InvalidArgumentException('pipeline needs a valid slug');
-        if (!is_dir($this->dir)) @mkdir($this->dir, 0775, true);
-        $file = $this->dir . '/' . $slug . '.json';
+        $own = $this->dir . '/' . $slug . '.json';
+        $src = $this->conceptSources[$slug] ?? null;
+        $file = (!is_file($own) && $src !== null) ? $src['file'] : $own;
+        if (!is_dir(dirname($file))) @mkdir(dirname($file), 0775, true);
         file_put_contents($file, json_encode($def, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         return $file;
     }
 
+    /**
+     * Delete the instance's own definition. A concept's pipeline is declared by its manifest,
+     * so deleting the file would leave the concept unverifiable: refused, with the two ways
+     * to do it properly.
+     */
     public function delete(string $slug): bool {
         $slug = self::safeSlug($slug);
         $file = $this->dir . '/' . $slug . '.json';
+        if (!is_file($file) && isset($this->conceptSources[$slug])) {
+            $c = $this->conceptSources[$slug]['concept'];
+            throw new \RuntimeException(
+                "pipeline '{$slug}' belongs to concept '{$c}'. Remove it from that concept's provides.pipelines "
+              . "(and its file), or disable the concept — it is not deleted from here.");
+        }
         return is_file($file) ? @unlink($file) : false;
     }
 

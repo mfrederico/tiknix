@@ -77,6 +77,16 @@ $h = fn($s) => htmlspecialchars((string) $s);
         <button class="btn btn-sm btn-primary" onclick="newPipeline()"><i class="bi bi-plus-lg"></i> New</button>
       </div>
       <div id="plist" class="pe-list"></div>
+
+      <?php /* The app's named agents (COMPONENTS_PLAN.md, "Named agents for the app"): what an
+         `agent` step picks from. Name, pre-prompt, engine/model/timeout, kind (cli through the
+         install's bin/claude, or any OpenAI-compatible endpoint), its own key. */ ?>
+      <div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+        <span class="ui-eyebrow">Agents</span>
+        <button class="btn btn-sm btn-outline-primary" onclick="newAgent()"><i class="bi bi-plus-lg"></i> New</button>
+      </div>
+      <div id="agents-list" class="pe-list"></div>
+      <div id="agent-slot"></div>
     </div>
 
     <!-- ============ builder ============ -->
@@ -173,7 +183,7 @@ function pkCurl(){
   const url=(base||'')+'/pipeline/api/'+slug; const key=SELECTED_PK||'pk_YOUR_KEY';
   return 'curl -X POST '+url+' \\\n  -H "Authorization: Bearer '+key+'" \\\n  -H "Content-Type: application/json" \\\n  -d \'{}\'';
 }
-let DEF = null, CURRENT = null, watchTimer = null, DEBUG = null, OPEN = null, sortable = null, UIDSEQ = 1, schedForceCustom = false, CONNECTORS = [];
+let DEF = null, CURRENT = null, watchTimer = null, DEBUG = null, OPEN = null, sortable = null, UIDSEQ = 1, schedForceCustom = false, CONNECTORS = [], AGENTS = [], ENGINES = [];
 
 // ---- theme toggle (shares the tiknix 'ui-theme' key) ----
 $('#themeToggle') && ($('#themeToggle').onclick = () => {
@@ -224,6 +234,83 @@ function newPipeline(){ DEF=normalize(TEMPLATE()); CURRENT=null; DEBUG=null; SHA
 
 // the instance's connected connectors (for the connection step's dropdown; no secrets)
 async function loadConnectors(){ try{ const d=await jget('/pipelines/connectors'); CONNECTORS=d.connectors||[]; }catch(e){ CONNECTORS=[]; } if(DEF) renderBuilder(); }
+
+// ---- agents: the app's named agents (Data page → Agents). Keys never arrive here. ----
+async function loadAgents(){
+  try{ const d=await jget('/pipelines/agents'); AGENTS=d.agents||[]; ENGINES=d.engines||[]; }
+  catch(e){ AGENTS=[]; ENGINES=[]; document.getElementById('agents-list').innerHTML=`<div class="small text-danger">${esc(e.message)}</div>`; return; }
+  renderAgents(); if(DEF) renderBuilder();
+}
+function renderAgents(){
+  const el=document.getElementById('agents-list');
+  if(!AGENTS.length){ el.innerHTML=`<div class="small" style="color:var(--bs-tertiary-color)">No agents yet. An <code>agent</code> step then runs on the install's engine and credential. Add one to give it a name, a pre-prompt and its own key.</div>`; return; }
+  el.innerHTML = AGENTS.map(a=>`
+    <div class="item" onclick="editAgent(${a.id})">
+      <div class="d-flex align-items-center gap-2">
+        <span class="nm flex-grow-1">${esc(a.name)}</span>
+        ${a.is_default?'<span class="ui-chip">default</span>':''}
+        <span class="ui-chip ${a.key_status==='unreadable'?'text-danger':''}" title="API key">${esc(a.key_status==='set'?'key':(a.key_status==='unreadable'?'key unreadable':'no key'))}</span>
+      </div>
+      <div class="small" style="color:var(--bs-secondary-color)">${esc(a.kind)} · ${esc(a.kind==='openai'?a.model:((a.engine||'install default')+(a.model?' / '+a.model:'')))} · ${a.timeout}s</div>
+      ${a.description?`<div class="small text-truncate" style="color:var(--bs-tertiary-color)">${esc(a.description)}</div>`:''}
+    </div>`).join('');
+}
+function agentForm(a){
+  a = a || {id:0,name:'',description:'',kind:'cli',engine:'',model:'',endpoint:'',timeout:600,pre_prompt:'',is_default:!AGENTS.length,key_status:'unset'};
+  const engOpts = ['',...ENGINES].map(e=>`<option value="${esc(e)}" ${e===a.engine?'selected':''}>${e||'— install default —'}</option>`).join('');
+  return `
+  <div class="ui-panel mt-2" id="agent-form">
+    <div class="ui-panel-header"><span class="ui-eyebrow">${a.id?'Edit agent':'New agent'}</span></div>
+    <div class="ui-panel-body">
+      <div class="row g-2">
+        <div class="col-6"><div class="fld-label">Name <span class="req">*</span></div><input class="form-control form-control-sm" id="ag-name" value="${esc(a.name)}" placeholder="data-append"></div>
+        <div class="col-6"><div class="fld-label">Kind</div><select class="form-select form-select-sm" id="ag-kind" onchange="agentKindChanged()"><option value="cli" ${a.kind==='cli'?'selected':''}>cli — Claude Code / a registered engine</option><option value="openai" ${a.kind==='openai'?'selected':''}>openai — any OpenAI-compatible endpoint</option></select></div>
+        <div class="col-12"><div class="fld-label">Description</div><input class="form-control form-control-sm" id="ag-desc" value="${esc(a.description)}" placeholder="What this agent is for"></div>
+        <div class="col-6 ag-cli"><div class="fld-label">Engine</div><select class="form-select form-select-sm" id="ag-engine">${engOpts}</select></div>
+        <div class="col-6 ag-openai"><div class="fld-label">Endpoint <span class="req">*</span></div><input class="form-control form-control-sm" id="ag-endpoint" value="${esc(a.endpoint)}" placeholder="https://api.openai.com/v1"></div>
+        <div class="col-6"><div class="fld-label">Model</div><input class="form-control form-control-sm" id="ag-model" value="${esc(a.model)}" placeholder="cli: opus / sonnet / haiku · openai: the model id"></div>
+        <div class="col-6"><div class="fld-label">Timeout (s)</div><input type="number" class="form-control form-control-sm" id="ag-timeout" value="${a.timeout||600}" min="5" max="3600"></div>
+        <div class="col-12"><div class="fld-label">API key <span class="small" style="color:var(--bs-tertiary-color)">— ${esc(a.key_status==='set'?'a key is stored; type a new one to replace it':(a.key_status==='unreadable'?'the stored key cannot be decrypted — replace it':'none stored'))}</span></div>
+          <input type="password" class="form-control form-control-sm" id="ag-key" autocomplete="new-password" placeholder="${a.kind==='cli'?'optional — blank uses the install\'s credential chain':'sk-…'}">
+          ${a.key_status!=='unset'?`<label class="form-check-label small mt-1"><input type="checkbox" class="form-check-input" id="ag-clearkey"> clear the stored key</label>`:''}</div>
+        <div class="col-12"><div class="fld-label">Pre-prompt <span class="small" style="color:var(--bs-tertiary-color)">— the agent's system prompt; a step's own <code>system</code> is appended</span></div>
+          <textarea class="form-control form-control-sm code" id="ag-pre" rows="6">${esc(a.pre_prompt)}</textarea></div>
+        <div class="col-12"><label class="form-check-label small"><input type="checkbox" class="form-check-input" id="ag-default" ${a.is_default?'checked':''}> default agent (used by steps that name none)</label></div>
+      </div>
+      <div class="d-flex gap-2 mt-3 flex-wrap">
+        <button class="btn btn-sm btn-primary" onclick="saveAgent(${a.id})"><i class="bi bi-save"></i> Save</button>
+        ${a.id?`<button class="btn btn-sm btn-outline-success" onclick="testAgent(${a.id})"><i class="bi bi-chat-dots"></i> Test</button>`:''}
+        ${a.id?`<button class="btn btn-sm btn-outline-danger ms-auto" onclick="deleteAgent(${a.id})"><i class="bi bi-trash"></i></button>`:''}
+        <button class="btn btn-sm btn-outline-secondary" onclick="closeAgentForm()">Close</button>
+      </div>
+      <div id="agent-msg" class="small mt-2"></div>
+    </div>
+  </div>`;
+}
+function agentKindChanged(){ const k=document.getElementById('ag-kind').value; document.querySelectorAll('.ag-cli').forEach(e=>e.style.display=k==='cli'?'':'none'); document.querySelectorAll('.ag-openai').forEach(e=>e.style.display=k==='openai'?'':'none'); }
+function newAgent(){ document.getElementById('agent-slot').innerHTML=agentForm(null); agentKindChanged(); }
+function editAgent(id){ const a=AGENTS.find(x=>x.id===id); if(!a) return; document.getElementById('agent-slot').innerHTML=agentForm(a); agentKindChanged(); }
+function closeAgentForm(){ document.getElementById('agent-slot').innerHTML=''; }
+function agentMsg(t,cls){ const m=document.getElementById('agent-msg'); if(m){ m.className='small mt-2 '+(cls||''); m.textContent=t; } }
+async function saveAgent(id){
+  const g=x=>document.getElementById(x);
+  const body={ id, name:g('ag-name').value.trim(), description:g('ag-desc').value.trim(), kind:g('ag-kind').value,
+    engine:g('ag-engine').value, model:g('ag-model').value.trim(), endpoint:g('ag-endpoint').value.trim(),
+    timeout:g('ag-timeout').value, pre_prompt:g('ag-pre').value, api_key:g('ag-key').value,
+    clear_key:(g('ag-clearkey')&&g('ag-clearkey').checked)?'1':'0', is_default:g('ag-default').checked?'1':'0' };
+  try{ const d=await jpost('/pipelines/agentsave', body); if(!d.ok){ agentMsg((d.errors||[]).join(' · '),'text-danger'); return; }
+    await loadAgents(); editAgent(d.agent.id); agentMsg('Saved ✓','text-success'); }
+  catch(e){ agentMsg(e.message,'text-danger'); }
+}
+async function testAgent(id){
+  agentMsg('Running…',''); 
+  try{ const d=await jpost('/pipelines/agenttest',{id}); agentMsg((d.ok?'✓ ':'✗ ')+(d.ok?d.output:d.error)+' ('+d.ms+' ms'+(d.meta&&d.meta.model?', '+d.meta.model:'')+')', d.ok?'text-success':'text-danger'); }
+  catch(e){ agentMsg(e.message,'text-danger'); }
+}
+async function deleteAgent(id){
+  const a=AGENTS.find(x=>x.id===id); if(!a||!confirm('Delete agent '+a.name+'?')) return;
+  try{ await jpost('/pipelines/agentdelete',{id}); closeAgentForm(); await loadAgents(); }catch(e){ agentMsg(e.message,'text-danger'); }
+}
 function connStyle(type){ const c=CONNECTORS.find(x=>x.connector===type); return c?c.style:(type==='shopify'?'graphql':'rest'); }
 
 function normalize(def){
@@ -552,7 +639,12 @@ function renderField(f,val,i){
   if(f.type==='textarea'){ input=`<textarea class="form-control form-control-sm code" rows="2" ${da}>${esc(val||'')}</textarea>`; }
   else if(f.type==='number'){ input=`<input type="number" class="form-control form-control-sm" ${da} value="${val==null?'':esc(val)}">`; }
   else if(f.type==='bool'){ return `<div class="col-6"><div class="form-check form-switch mt-3"><input class="form-check-input" type="checkbox" ${da} ${val?'checked':''}><label class="form-check-label fld-label">${esc(f.label||f.name)}</label></div>${help}</div>`; }
-  else if(f.type==='select'){ input=`<select class="form-select form-select-sm" ${da}><option value="">—</option>${(f.options||[]).map(o=>`<option value="${esc(o)}" ${o===val?'selected':''}>${esc(o)}</option>`).join('')}</select>`; }
+  else if(f.type==='select'){
+    // A dynamic select takes its options from a list the page loaded (agents), not the schema.
+    const opts = f.dynamic==='agents' ? AGENTS.map(a=>a.name) : (f.options||[]);
+    const blank = f.dynamic==='agents' ? (AGENTS.some(a=>a.is_default) ? '— default: '+AGENTS.find(a=>a.is_default).name+' —' : (AGENTS.length?'— pick an agent —':'— no agents configured (install engine) —')) : '—';
+    input=`<select class="form-select form-select-sm" ${da}><option value="">${esc(blank)}</option>${opts.map(o=>`<option value="${esc(o)}" ${o===val?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  }
   else if(f.type==='keyval'){ input=`<textarea class="form-control form-control-sm code" rows="2" placeholder='{"key":"value"}' ${da}>${esc(val&&Object.keys(val).length?JSON.stringify(val):'')}</textarea>`; }
   else if(f.type==='list'){ input=`<textarea class="form-control form-control-sm code" rows="2" placeholder="one value per line" ${da}>${esc(Array.isArray(val)?val.join('\n'):'')}</textarea>`; }
   else { input=`<input class="form-control form-control-sm" ${da} value="${esc(val==null?'':val)}">`; }
@@ -937,5 +1029,5 @@ document.addEventListener('keydown', e=>{
 });
 
 // ---- boot ----
-loadList(); loadConnectors();
+loadList(); loadConnectors(); loadAgents();
 </script>

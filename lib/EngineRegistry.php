@@ -346,6 +346,8 @@ class EngineRegistry {
         if ((string)($e['cli_flavor'] ?? 'claude') === 'claude') {
             $cmd = escapeshellarg($bin) . ' --permission-mode bypassPermissions -p ' . escapeshellarg($prompt);
             if ($model) $cmd .= ' --model ' . escapeshellarg($model);
+            // opts['system']: an agent's pre-prompt (+ a step's own), as a REAL system prompt.
+            if (!empty($opts['system'])) $cmd .= ' --append-system-prompt ' . escapeshellarg((string) $opts['system']);
             if (!empty($opts['stream'])) $cmd .= ' --output-format stream-json --verbose';
             return $cmd;
         }

@@ -1242,7 +1242,7 @@ core into it`). First live minute: 6 ticked, lead-machine fired `outreach-poll-r
 the six dormant instances + `testfv` (unparseable config) skipped by name. The dormant six
 are unscheduled until merged — loud, by design, and the owner's call.
 
-### 5. Named agents for the app (planned 2026-09-22)
+### 5. Named agents for the app (built 2026-09-22)
 
 myctobot had it right: an `aiagents` row per agent (name, provider, model/endpoint/key,
 `system_prompt`, default flag), the step names the agent, the step's own system prompt is
@@ -1282,6 +1282,17 @@ and, where it is not Claude, its own endpoint and key.
   runs; unset → the install's chain (`.credentials.json` → `anthropic.key.enc` →
   connection). That gives the Data page the "set the app's key" card too: create the
   default Claude agent and paste the key there.
+
+**Built:** `services/Schema/Seeds/12_Agent.php`, `models/Model_Agent.php`,
+`lib/Pipeline/OpenAiChat.php`, the `agent` step's `agent` + `system` fields (a step
+without a name uses the default agent; an install with no agents runs exactly as before),
+`--append-system-prompt` on the CLI path, the Agents panel + Add/Edit/Test/Delete on the
+Data page. Tests: the bean's rules, the encrypted key round-trip (an undecryptable key is
+"unreadable", not "unset"), only-one-default, prompt composition, the CLI flag, and the
+openai path end to end against a local fake endpoint (key checked, 401/500 surfaced with
+the endpoint's words, missing agent named). Browser: created an openai agent on core, Test
+reached api.openai.com and showed its exact 401 for the bogus key, the step's dropdown
+offered "— default: humanizer —" and the `system` field.
 
 ### 6. Retire `pipelines.tiknix`
 

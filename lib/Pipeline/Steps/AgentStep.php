@@ -17,12 +17,15 @@ class AgentStep implements StepInterface {
 
     public static function schema(): array {
         return [
-            'summary' => 'Run an AI agent with a prompt; returns its text output.',
+            'summary' => 'Run one of the app\'s named agents (or the default) with a prompt; returns its text output.',
             'fields'  => [
+                ['name' => 'agent',   'label' => 'Agent',   'type' => 'select', 'options' => [], 'dynamic' => 'agents',
+                    'help' => 'One of this app\'s agents (Data page → Agents). Blank = the default agent; with no agents configured, the install\'s engine and credential.'],
                 ['name' => 'prompt',  'label' => 'Prompt',  'type' => 'textarea', 'required' => true, 'help' => 'The task/prompt for the agent. Use {context.x} / {step.output} variables.'],
-                ['name' => 'engine',  'label' => 'Engine',  'type' => 'text',     'help' => 'Optional — an EngineRegistry engine; default = the instance default.'],
-                ['name' => 'model',   'label' => 'Model',   'type' => 'text',     'help' => 'Optional — model tier override; default the engine worker tier.'],
-                ['name' => 'timeout', 'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — seconds; default 600.'],
+                ['name' => 'system',  'label' => 'System (this step)', 'type' => 'textarea', 'help' => 'Optional — appended to the agent\'s pre-prompt for this step only.'],
+                ['name' => 'engine',  'label' => 'Engine',  'type' => 'text',     'help' => 'Optional — overrides the agent\'s engine (cli agents).'],
+                ['name' => 'model',   'label' => 'Model',   'type' => 'text',     'help' => 'Optional — overrides the agent\'s model.'],
+                ['name' => 'timeout', 'label' => 'Timeout (s)', 'type' => 'number', 'help' => 'Optional — overrides the agent\'s timeout (default 600).'],
             ],
         ];
     }
@@ -31,12 +34,37 @@ class AgentStep implements StepInterface {
         $prompt = (string) ($config['prompt'] ?? '');
         if ($prompt === '') return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => 'no prompt', 'exit' => 1];
 
-        $engine = (string) ($config['engine'] ?? '');
+        // Which agent. A name → that agent; blank → the default agent; no agents at all →
+        // the install's engine + credential chain, exactly as before agents existed. A NAMED
+        // agent that does not exist is a fault, not a reason to run something else.
+        $agentName = trim((string) ($config['agent'] ?? ''));
+        $agent = null;
+        if ($agentName !== '') {
+            $agent = \Model_Agent::byName($agentName);
+            if (!$agent) return self::fail("agent '{$agentName}' is not configured on this app (Data page → Agents).");
+        } elseif (class_exists('\\Model_Agent')) {
+            try { $agent = \Model_Agent::defaultAgent(); } catch (\Throwable $e) { $agent = null; }   // no agent table yet: legacy path
+        }
+        $system = self::composeSystem($agent ? (string) $agent->prePrompt : '', (string) ($config['system'] ?? ''));
+
+        if ($agent && (string) $agent->kind === 'openai') {
+            try { $key = $agent->apiKey(); }
+            catch (\Throwable $e) { return self::fail("agent '{$agent->name}': its API key cannot be decrypted (rotated install key?): " . $e->getMessage()); }
+            $timeout = max(5, min(3600, (int) ($config['timeout'] ?? 0) ?: (int) ($agent->timeout ?: 600)));
+            $model   = (string) ($config['model'] ?? '') ?: (string) $agent->model;
+            $r = \app\Pipeline\OpenAiChat::complete((string) $agent->endpoint, $key, $model, $system, $prompt, $timeout);
+            if (!$r['ok']) return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => "agent '{$agent->name}': " . $r['error'], 'exit' => 1,
+                                   'meta' => ['agent' => (string) $agent->name, 'kind' => 'openai', 'model' => $model, 'http' => $r['http']]];
+            return ['ok' => true, 'output' => trim($r['text']), 'stdout' => $r['text'], 'stderr' => '', 'exit' => 0,
+                    'meta' => ['agent' => (string) $agent->name, 'kind' => 'openai', 'model' => $model, 'usage' => $r['usage']]];
+        }
+
+        $engine = (string) ($config['engine'] ?? '') ?: ($agent ? (string) $agent->engine : '');
         if (!class_exists('\\app\\EngineRegistry')) {
             return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => 'EngineRegistry unavailable', 'exit' => 1];
         }
         if ($engine === '' || !EngineRegistry::isValid($engine)) $engine = EngineRegistry::defaultEngine();
-        $model = (string) ($config['model'] ?? '') ?: EngineRegistry::model($engine, 'worker');
+        $model = (string) ($config['model'] ?? '') ?: ($agent && (string) $agent->model !== '' ? (string) $agent->model : EngineRegistry::model($engine, 'worker'));
 
         // Self-contained: the instance runs its OWN claude, <root>/bin/claude — a hard link to
         // the host install (app\ClaudeBinary), or a real install on a remote instance. An
@@ -73,6 +101,7 @@ class AgentStep implements StepInterface {
 
         // Build the headless agent command; engines without a proven headless launcher
         // fall back to claude (best-effort), matching the AI Builder's own posture.
+        if ($system !== '') $binOpt['system'] = $system;   // a real system prompt (--append-system-prompt)
         $inner = EngineRegistry::agentCommand($engine, $prompt, $model, $binOpt)
               ?? EngineRegistry::agentCommand('claude', $prompt, $model, $binOpt);
         if ($inner === null) return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => 'no agent launcher', 'exit' => 1];
@@ -81,9 +110,14 @@ class AgentStep implements StepInterface {
         // anthropic.key.enc -> 'anthropic' connection). Never the operator's creds. Passed via
         // the child ENV, not the command line, so the key never shows up in `ps`.
         [$env, $credErr] = self::agentEnv($engine, $root);
+        // An agent with its own key uses it; the install's chain is for agents without one.
+        if ($agent && (string) ($agent->apiKeyEnc ?? '') !== '') {
+            try { $env['ANTHROPIC_API_KEY'] = $agent->apiKey(); unset($env['CLAUDE_CONFIG_DIR']); $credErr = ''; }
+            catch (\Throwable $e) { return self::fail("agent '{$agent->name}': its API key cannot be decrypted (rotated install key?): " . $e->getMessage()); }
+        }
         if ($credErr !== '') return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $credErr, 'exit' => 1];
 
-        $timeout = max(5, min(3600, (int) ($config['timeout'] ?? 600)));
+        $timeout = max(5, min(3600, (int) ($config['timeout'] ?? 0) ?: ($agent ? (int) ($agent->timeout ?: 600) : 600)));
         $cwd = $runDir ?: getcwd();
         if (is_dir($cwd)) $env['HOME'] = $cwd;   // a writable, in-instance HOME for claude's cache
 
@@ -106,8 +140,18 @@ class AgentStep implements StepInterface {
             'ok'     => $exit === 0,
             'output' => trim($stdout),
             'stdout' => $stdout, 'stderr' => $stderr, 'exit' => (int) $exit,
-            'meta'   => ['engine' => $engine, 'model' => $model],
+            'meta'   => ['engine' => $engine, 'model' => $model, 'agent' => $agent ? (string) $agent->name : null, 'kind' => 'cli'],
         ];
+    }
+
+    /** The agent's pre-prompt, then the step's own system text, blank-line separated. */
+    public static function composeSystem(string $prePrompt, string $stepSystem): string {
+        $parts = array_values(array_filter([trim($prePrompt), trim($stepSystem)], fn($p) => $p !== ''));
+        return implode("\n\n", $parts);
+    }
+
+    private static function fail(string $why): array {
+        return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $why, 'exit' => 1];
     }
 
     /**

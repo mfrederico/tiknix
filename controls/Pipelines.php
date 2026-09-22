@@ -198,6 +198,69 @@ class Pipelines extends Control {
         Flight::json(Trace::varShapes((string) $this->getParam('slug')));
     }
 
+    // ---- agents (COMPONENTS_PLAN.md, "Named agents for the app") -----------------
+
+    /** GET /pipelines/agents — this app's agents, keys never included. */
+    public function agents($params = []) {
+        if (!$this->gate(true)) return;
+        $out = [];
+        foreach (\Model_Agent::all() as $a) $out[] = $a->box()->summary();
+        Flight::json(['agents' => $out, 'engines' => class_exists('\\app\\EngineRegistry') ? \app\EngineRegistry::names() : []]);
+    }
+
+    /** POST /pipelines/agentsave — create or update; api_key only when a new one is typed. */
+    public function agentsave($params = []) {
+        if (!$this->gate(true) || !$this->csrf()) return;
+        $in = [];
+        foreach (['name', 'description', 'kind', 'engine', 'model', 'endpoint', 'timeout', 'pre_prompt'] as $k) $in[$k] = (string) $this->getParam($k, '');
+        $id = (int) $this->getParam('id', 0);
+        $problems = \Model_Agent::problems($in, $id ?: null);
+        if ($problems) { Flight::json(['ok' => false, 'errors' => $problems]); return; }
+
+        $agent = $id > 0 ? Bean::load('agent', $id) : Bean::dispense('agent');
+        if ($id > 0 && !$agent->id) { Flight::jsonError('No such agent.', 404); return; }
+        $agent->box()->fill($in);
+        $key = (string) $this->getParam('api_key', '');
+        if ($key !== '') $agent->box()->setApiKey($key);                       // typed → stored
+        if ((string) $this->getParam('clear_key', '') === '1') $agent->box()->setApiKey('');
+        $agent->box()->setDefault((string) $this->getParam('is_default', '') === '1' || \Model_Agent::defaultAgent() === null);
+        Bean::store($agent);
+        $this->logger->info('Agent saved', ['agent' => $agent->name, 'kind' => $agent->kind, 'member_id' => $this->member->id]);
+        Flight::json(['ok' => true, 'agent' => $agent->box()->summary()]);
+    }
+
+    /** POST /pipelines/agentdelete — refused while a pipeline step names the agent. */
+    public function agentdelete($params = []) {
+        if (!$this->gate(true) || !$this->csrf()) return;
+        $agent = Bean::load('agent', (int) $this->getParam('id', 0));
+        if (!$agent->id) { Flight::jsonError('No such agent.', 404); return; }
+        $users = [];
+        foreach (Loader::forInstall(Runner::root())->all() as $slug => $def) {
+            foreach ($def['steps'] ?? [] as $st) {
+                if (($st['type'] ?? '') === 'agent' && trim((string) (($st['config'] ?? [])['agent'] ?? '')) === (string) $agent->name) $users[] = "{$slug}/{$st['name']}";
+            }
+        }
+        if ($users) { Flight::jsonError("Agent '{$agent->name}' is used by: " . implode(', ', $users) . '. Point those steps elsewhere first.', 409); return; }
+        $name = (string) $agent->name;
+        Bean::trash($agent);
+        $this->logger->info('Agent deleted', ['agent' => $name, 'member_id' => $this->member->id]);
+        Flight::json(['ok' => true]);
+    }
+
+    /** POST /pipelines/agenttest — run the agent once with a one-line prompt; answer or the exact failure. */
+    public function agenttest($params = []) {
+        if (!$this->gate(true) || !$this->csrf()) return;
+        $agent = Bean::load('agent', (int) $this->getParam('id', 0));
+        if (!$agent->id) { Flight::jsonError('No such agent.', 404); return; }
+        $prompt = trim((string) $this->getParam('prompt', '')) ?: 'Say hello in one short line and name the model you are.';
+        $step = new \app\Pipeline\Steps\AgentStep();
+        $t0 = microtime(true);
+        $r = $step->run(['agent' => (string) $agent->name, 'prompt' => $prompt, 'timeout' => 90],
+                        ['root' => Runner::root(), 'run_directory' => '', 'run_id' => 0, 'slug' => '(agent test)']);
+        Flight::json(['ok' => (bool) $r['ok'], 'output' => is_scalar($r['output']) ? (string) $r['output'] : json_encode($r['output']),
+                      'error' => (string) ($r['stderr'] ?? ''), 'meta' => $r['meta'] ?? [], 'ms' => (int) round((microtime(true) - $t0) * 1000)]);
+    }
+
     // ---- guards ------------------------------------------------------------
 
     /** Signed in and ADMIN. JSON callers get a JSON refusal instead of a redirect. */

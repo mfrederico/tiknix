@@ -90,7 +90,7 @@ $fmt = function (string $iso): string {
           </button>
           <div class="d-flex flex-wrap gap-1">
             <?php foreach (($cc['links'] ?? []) as $l): ?>
-              <a href="<?= htmlspecialchars($l['url']) ?>" class="btn btn-outline-secondary btn-sm">
+              <a href="<?= htmlspecialchars($l['url']) ?>" class="btn btn-outline-secondary btn-sm"<?= !empty($l['external']) ? ' target="_blank" rel="noopener"' : '' ?>>
                 <i class="bi bi-<?= htmlspecialchars($l['icon']) ?> me-1"></i><?= htmlspecialchars($l['label']) ?>
               </a>
             <?php endforeach; ?>

@@ -51,7 +51,9 @@ class Projects extends BaseControls\Control {
                 $currentCard['build'] = $this->buildState((string) $current->slug, (string) ($current->app ?: 'tiknix'));
                 $currentCard['links'] = array_values(array_filter([
                     ['url' => '/connections', 'label' => 'Connections', 'icon' => 'plug'],
-                    ($u = $this->pluginUrl('pipelines')) ? ['url' => $u, 'label' => 'Pipelines', 'icon' => 'diagram-2'] : null,
+                    // The project's OWN editor (every app has its own /pipelines); you sign in
+                    // there with your account on that app — no sidecar, no SSO handoff.
+                    ['url' => $current->url() . '/pipelines', 'label' => 'Pipelines', 'icon' => 'diagram-2', 'external' => true],
                     ($u = $this->pluginUrl('workbench')) ? ['url' => $u, 'label' => 'Builder', 'icon' => 'hammer'] : null,
                 ]));
             }

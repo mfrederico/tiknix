@@ -79,7 +79,7 @@ class Concepthub extends Control {
         $r = ConceptCatalog::queueInstall($name, $project, (int) $inst->memberId);
         if ($r['ok']) {
             $this->logger->info('Concept install queued by instance', ['concept' => $name, 'project' => $project['slug'], 'member_id' => (int) $inst->memberId]);
-            Flight::json(['queued' => true, 'message' => "Installing '{$name}' — a build with no agent, usually under a minute. Reload this page once it has merged, then switch it on."]);
+            Flight::json(['queued' => true, 'message' => "Installing '{$name}' — a build with no agent, usually under a minute, that commits the plugin to this project and switches it on. Reload this page in a minute."]);
         } else {
             $this->logger->warning('Concept install not queued (instance request)', ['concept' => $name, 'project' => $project['slug'], 'said' => $r['said']]);
             Flight::json(['queued' => false, 'message' => "Could not queue '{$name}': " . $r['said']]);

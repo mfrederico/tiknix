@@ -32,10 +32,8 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 
             <?php if (!$installed): ?>
                 <div class="alert alert-light border">
-                    No plugins are installed on this install. To add one to a project, use
-                    <strong>Install</strong> in the catalog below — it runs as a build (a commit and merge on that
-                    project), and once merged the plugin is switched on with
-                    <code>clitool --concept-enable=&lt;name&gt;</code> in that project, or on its Plugins page.
+                    No plugins are installed here. <strong>Install</strong> in the catalog below runs as a build
+                    (a commit and merge on the project) and switches the plugin on when it lands.
                 </div>
             <?php endif; ?>
 
@@ -163,7 +161,7 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                     <p class="small mb-2">
                         <i class="bi bi-box-arrow-in-down"></i>
                         Installs go into this project, <strong><?= $h($project['name']) ?></strong>: a build with no agent,
-                        run by the platform, that commits the plugin to this project. Reload once it has merged, then switch it on above.
+                        run by the platform, that commits the plugin to this project and switches it on. Reload in a minute.
                     </p>
                 <?php elseif ($project !== null): ?>
                     <p class="small mb-2">
@@ -195,15 +193,30 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                                     <td class="text-nowrap">
                                         <?php if ($project === null): ?>
                                             <span class="text-muted small">select a project</span>
-                                        <?php elseif (!empty($r['in_project'])): ?>
-                                            <span class="badge bg-success"><?= !empty($project['here']) ? 'installed' : 'in ' . $h($project['name']) ?></span>
-                                            <?php if (empty($installed[$r['name']]['enabled'])): ?>
-                                            <div class="small text-muted mt-1">switch on:
-                                                <code><?= $h('cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-enable=' . $r['name']) ?></code></div>
+                                        <?php elseif (!empty($r['in_project']) && !empty($project['here'])): ?>
+                                            <?php // Installed HERE. Enabled = live; otherwise the same Enable as the panel above,
+                                                  // so nobody is sent to a shell for a click. ?>
+                                            <?php $row = $installed[$r['name']] ?? null; ?>
+                                            <?php if ($row && !empty($row['enabled'])): ?>
+                                                <span class="badge bg-success">enabled</span>
+                                            <?php elseif ($row && empty($row['problems'])): ?>
+                                                <span class="badge bg-secondary">installed</span>
+                                                <form method="POST" action="/admin/conceptenable" class="d-inline ms-1"
+                                                      onsubmit="return confirm('Enable <?= $h($r['name']) ?>? Its seeds run against the database and its routes start answering.')">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="name" value="<?= $h($r['name']) ?>">
+                                                    <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-power"></i> Enable</button>
+                                                </form>
+                                            <?php else: ?>
+                                                <span class="badge bg-warning text-dark">installed, not ready</span>
+                                                <div class="small text-muted mt-1">see its problems in the Installed panel above</div>
                                             <?php endif; ?>
+                                        <?php elseif (!empty($r['in_project'])): ?>
+                                            <span class="badge bg-success">in <?= $h($project['name']) ?></span>
+                                            <div class="small text-muted mt-1">that project's Plugins page shows whether it is on</div>
                                         <?php else: ?>
                                             <form method="POST" action="/admin/conceptinstall" class="d-inline"
-                                                  onsubmit="return confirm('Install <?= $h($r['name']) ?> into <?= $h($project['name']) ?>? It runs now as a build with no agent — a commit and merge on that project, usually under a minute.')">
+                                                  onsubmit="return confirm('Install <?= $h($r['name']) ?> into <?= $h($project['name']) ?>? It runs now as a build with no agent — a commit and merge on that project, then switched on; usually under a minute.')">
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="name" value="<?= $h($r['name']) ?>">
                                                 <button type="submit" class="btn btn-primary btn-sm">

@@ -234,12 +234,12 @@ class ConceptCatalog {
         return [
             'title'   => "Install plugin: {$name}" . ($also ? ' (+ ' . implode(', ', $also) . ')' : ''),
             'summary' => trim("Installs from the concept catalog ({$this->where()}), copied into `concepts/`:\n\n" . implode("\n", $lines)
-                       . "\n\n{$main['blurb']}\n\nNo agent runs. The files are committed and merged like any task; "
-                       . 'afterwards the plugin is switched on from Admin → Plugins. It is a COPY — this project\'s own code from then on.'),
+                       . "\n\n{$main['blurb']}\n\nNo agent runs. The files are committed and merged like any task, "
+                       . 'then switched on in the project (seeds, permission rows, agent guidance). It is a COPY — this project\'s own code from then on.'),
             'subtasks' => [[
                 'id'          => 't1',
                 'title'       => 'Install ' . implode(', ', $order) . ' from the catalog',
-                'description' => "Copy into `concepts/`: " . implode(', ', $order) . '. Install-only — nothing is adapted or wired by this task.',
+                'description' => "Copy into `concepts/`: " . implode(', ', $order) . '. Copied and switched on — nothing is adapted or wired by this task.',
                 'task_type'   => 'install',
                 'adopts'      => $order,
                 'files'       => array_map(fn($n) => Concepts::DIR . "/{$n}/", $order),

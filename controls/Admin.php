@@ -941,9 +941,8 @@ class Admin extends Control {
         $r = \app\ConceptCatalog::queueInstall($name, $project, (int) $this->member->id);
         if ($r['ok']) {
             $this->logger->info('Concept install queued', ['concept' => $name, 'project' => $project['slug'], 'member_id' => $this->member->id]);
-            $enable = 'cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-enable=' . $name;
-            $this->flash('success', "Installing '{$name}' into {$project['name']} — a build with no agent, usually under a minute; "
-                . "watch it in Builder. Once it has merged, switch it on with: {$enable}  (or that project's Plugins page, where it has one).");
+            $this->flash('success', "Installing '{$name}' into {$project['name']} — a build with no agent, usually under a minute, "
+                . "that commits the plugin to the project and switches it on; watch it in Builder.");
         } else {
             $this->logger->warning('Concept install not queued', ['concept' => $name, 'project' => $project['slug'], 'said' => $r['said']]);
             $this->flash('error', "Could not queue '{$name}' for {$project['name']}: " . $r['said']);

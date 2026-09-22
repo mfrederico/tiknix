@@ -478,6 +478,37 @@ class PlanExecutor {
         else                                      $this->finish($t, 'failed', $merge['out']);
 
         $this->cleanupWorktree($wtRel, $branch, $merge['status'] === 'merged');
+
+        // An install that is merged but not switched on is half a job from the owner's
+        // side ("what does switch on mean?"). The files are in the live tree now, so the
+        // enable runs here, in the project's own process — its DB, its config, its CLAUDE.md.
+        if ($merge['status'] === 'merged' && (string) $t->taskType === 'install') {
+            $this->enableAdopted($t);
+        }
+    }
+
+    /**
+     * Switch on every concept an install task adopted, requirements first (that is the
+     * order installPlan wrote them in). Runs the project's own clitool so the seeds hit the
+     * project's database and its guidance regenerates. A concept that will not enable is
+     * reported on the task and left installed — the code is merged and nothing is undone;
+     * the Plugins page shows the problem and has the Enable button.
+     */
+    private function enableAdopted($t): void {
+        $names = json_decode((string) ($t->adopts ?? ''), true);
+        if (!is_array($names) || !$names) return;
+        foreach ($names as $name) {
+            $name = (string) $name;
+            $cmd = 'cd ' . escapeshellarg($this->instanceDir) . ' && php scripts/clitool.php --concept-enable=' . escapeshellarg($name) . ' 2>&1';
+            $out = [];
+            exec($cmd, $out, $code);
+            $said = trim(implode(' ', array_slice(array_filter(array_map('trim', $out)), -3)));
+            if ($code === 0) {
+                $this->logEvent($t, 'info', "Plugin '{$name}' switched on: {$said}");
+            } else {
+                $this->logEvent($t, 'warning', "Plugin '{$name}' is installed but could NOT be switched on (clitool --concept-enable exited {$code}): {$said}. It stays installed; enable it from Admin → Plugins once the problem is fixed.");
+            }
+        }
     }
 
     /**

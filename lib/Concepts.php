@@ -219,6 +219,12 @@ class Concepts {
                     if (!preg_match(self::PART_RE, $p)) return;
                 }
                 $rel = implode('/', $parts) . '.php';
+                // app\concepts\<n>\mcptools\<Tool> names its directory, as core's app\mcptools\ does.
+                if ($parts[0] === 'mcptools') {
+                    $file = $this->conceptsDir() . "/{$name}/{$rel}";
+                    if (is_file($file)) require_once $file;
+                    return;
+                }
                 foreach (['controls', 'lib'] as $sub) {
                     $file = $this->conceptsDir() . "/{$name}/{$sub}/{$rel}";
                     if (is_file($file)) { require_once $file; return; }
@@ -273,6 +279,34 @@ class Concepts {
             if ($dir !== false) $roots[] = $dir;
         }
         return $roots;
+    }
+
+    /* ---- MCP tools ------------------------------------------------------------------ */
+
+    /**
+     * The MCP tools enabled concepts offer, for mcptools\ToolLoader::register(). A disabled
+     * concept's tools are not in this list, so they are absent from tools/list rather than
+     * refused at tools/call: an agent that cannot see a tool never spends a step on it.
+     *
+     * @return array<int,array{class:string,level:int,concept:string}>  class is fully qualified
+     */
+    public function tools(): array {
+        $out = [];
+        foreach ($this->enabled() as $name => $m) {
+            foreach ($m->tools as $t) {
+                $out[] = ['class' => "app\\concepts\\{$name}\\mcptools\\{$t['class']}", 'level' => $t['level'], 'concept' => $name];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * The name a concept's tool must carry: "<concept>_<something>". Collisions with core
+     * tools are then impossible by construction, and an agent reading `tickets_hold` in a
+     * tools/list knows where it came from. Enforced here (verify) and by ConceptLint.
+     */
+    public static function toolNameOk(string $concept, string $toolName): bool {
+        return (bool) preg_match('/^' . preg_quote($concept, '/') . '_[a-z][a-z0-9_]*$/D', $toolName);
     }
 
     /** The views/ directory of the concept that owns $class, or null when it is not a concept class. */
@@ -504,6 +538,27 @@ class Concepts {
                     $problems[] = "provides.controllers lists '{$c}', but {$file} does not exist.";
                 } elseif (!class_exists("app\\concepts\\{$name}\\{$c}")) {
                     $problems[] = "{$file} does not define app\\concepts\\{$name}\\{$c}.";
+                }
+            }
+            foreach ($m->tools as $t) {
+                $c = $t['class'];
+                $file = "{$m->dir}/mcptools/{$c}.php";
+                $fqn  = "app\\concepts\\{$name}\\mcptools\\{$c}";
+                if (!is_file($file)) {
+                    $problems[] = "provides.tools lists '{$c}', but {$file} does not exist.";
+                    continue;
+                }
+                if (!class_exists($fqn)) {
+                    $problems[] = "{$file} does not define {$fqn}.";
+                    continue;
+                }
+                if (!is_subclass_of($fqn, 'app\\mcptools\\BaseTool')) {
+                    $problems[] = "{$fqn} must extend app\\mcptools\\BaseTool.";
+                    continue;
+                }
+                $toolName = (string) $fqn::$name;
+                if (!self::toolNameOk($name, $toolName)) {
+                    $problems[] = "{$fqn}::\$name is '{$toolName}'; a concept's tool must be named '{$name}_<something>' (lowercase).";
                 }
             }
             foreach ($m->beans as $bean) {

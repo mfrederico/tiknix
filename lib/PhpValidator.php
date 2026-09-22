@@ -99,13 +99,13 @@ class PhpValidator
 
         // Note: Syntax check is done by validateAll() before calling this method
 
-        // Check for namespace
-        if (!preg_match('/namespace\s+app\\\\mcptools/i', $code)) {
-            $errors[] = 'Missing or incorrect namespace. Expected: namespace app\mcptools;';
+        // Check for namespace: core's app\mcptools, or a concept's app\concepts\<name>\mcptools
+        if (!preg_match('/namespace\s+app\\\\(?:concepts\\\\[a-z][a-z0-9]*\\\\)?mcptools\s*;/i', $code)) {
+            $errors[] = 'Missing or incorrect namespace. Expected: namespace app\mcptools; (or app\concepts\<name>\mcptools; inside a concept)';
         }
 
-        // Check for class extending BaseTool
-        if (!preg_match('/class\s+\w+Tool\s+extends\s+BaseTool/i', $code)) {
+        // Check for class extending BaseTool (a concept tool names core's base class fully)
+        if (!preg_match('/class\s+\w+Tool\s+extends\s+(?:\\\\?app\\\\mcptools\\\\)?BaseTool/i', $code)) {
             $errors[] = 'Class must extend BaseTool and be named *Tool (e.g., MyFeatureTool)';
         }
 

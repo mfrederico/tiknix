@@ -23,6 +23,15 @@ class ToolLoader {
     private array $definitions = [];
 
     /**
+     * Gate for tools that are NOT for every caller: name => ['level' => int, 'concept' => string].
+     * Core tools have no entry and are visible to whoever reached the loader. A concept tool
+     * (concept.json provides.tools) is visible only to a member at or above its level, and to
+     * nobody without a member — a broker key reaches connectors, not the instance's features.
+     * @var array<string, array{level:int,concept:string}>
+     */
+    private array $meta = [];
+
+    /**
      * Base directory for tool files
      * @var string
      */
@@ -146,31 +155,49 @@ class ToolLoader {
     }
 
     /**
-     * Check if a tool exists
+     * Does this tool exist FOR THE CURRENT CALLER? A gated tool the caller may not use is
+     * absent, not refused: tools/list omits it and tools/call says "unknown", so an agent
+     * never spends a step on something it cannot have. Set the caller with setAuth() first.
+     */
+    private function visible(string $name): bool {
+        if (!isset($this->tools[$name])) return false;
+        $gate = $this->meta[$name] ?? null;
+        if ($gate === null) return true;
+        $level = $this->member->level ?? null;
+        return $level !== null && (int) $level <= $gate['level'];
+    }
+
+    /**
+     * Check if a tool exists (for the current caller — see visible()).
      *
      * @param string $name Tool name
      * @return bool
      */
     public function has(string $name): bool {
-        return isset($this->tools[$name]);
+        return $this->visible($name);
     }
 
     /**
-     * Get all tool definitions for tools/list response
+     * Get all tool definitions for tools/list response (the current caller's view)
      *
      * @return array Array of tool definitions
      */
     public function getDefinitions(): array {
-        return array_values($this->definitions);
+        return array_values(array_filter($this->definitions, fn(string $n) => $this->visible($n), ARRAY_FILTER_USE_KEY));
     }
 
     /**
-     * Get all tool names
+     * Get all tool names (the current caller's view)
      *
      * @return array
      */
     public function getNames(): array {
-        return array_keys($this->tools);
+        return array_values(array_filter(array_keys($this->tools), fn(string $n) => $this->visible($n)));
+    }
+
+    /** The concept a tool came from, or null for a core tool. */
+    public function conceptOf(string $name): ?string {
+        return $this->meta[$name]['concept'] ?? null;
     }
 
     /**
@@ -214,7 +241,7 @@ class ToolLoader {
      * @return array|null
      */
     public function getDefinition(string $name): ?array {
-        return $this->definitions[$name] ?? null;
+        return $this->visible($name) ? $this->definitions[$name] : null;
     }
 
     /**
@@ -237,19 +264,34 @@ class ToolLoader {
     }
 
     /**
-     * Register a tool class manually
+     * Register a tool class that discovery did not find — a concept's tool. Loud on every
+     * way it can be wrong: the caller is Concepts::tools(), which only names classes its
+     * manifests declared and verify() accepted, so a failure here is a real fault, not a
+     * file to skip.
      *
      * @param string $className Fully qualified class name
+     * @param array  $meta      ['level' => int, 'concept' => string] — required for a concept tool
      * @return self
      */
-    public function register(string $className): self {
-        if (is_subclass_of($className, BaseTool::class)) {
-            $name = $className::$name;
-            if ($name) {
-                $this->tools[$name] = $className;
-                $this->definitions[$name] = $className::getDefinition();
-            }
+    public function register(string $className, array $meta = []): self {
+        if (!class_exists($className) || !is_subclass_of($className, BaseTool::class)) {
+            throw new \RuntimeException("ToolLoader: {$className} is not a loadable subclass of " . BaseTool::class . '.');
         }
+        $name = (string) $className::$name;
+        if ($name === '') {
+            throw new \RuntimeException("ToolLoader: {$className} has no \$name.");
+        }
+        if (isset($this->tools[$name]) && $this->tools[$name] !== $className) {
+            throw new \RuntimeException("ToolLoader: tool name '{$name}' is already taken by {$this->tools[$name]}; {$className} cannot use it.");
+        }
+        if ($meta !== []) {
+            if (!isset($meta['level'], $meta['concept']) || !is_int($meta['level']) || !is_string($meta['concept'])) {
+                throw new \RuntimeException("ToolLoader: register({$className}) meta must carry int level and string concept.");
+            }
+            $this->meta[$name] = ['level' => $meta['level'], 'concept' => $meta['concept']];
+        }
+        $this->tools[$name] = $className;
+        $this->definitions[$name] = $this->normalizeDefinition($className::getDefinition());
         return $this;
     }
 }

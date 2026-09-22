@@ -189,6 +189,7 @@ class Introspector {
                 $bits = [];
                 if ($m->controllers)      $bits[] = 'controllers: ' . implode(', ', $m->controllers);
                 if ($m->beans)            $bits[] = 'beans: ' . implode(', ', $m->beans);
+                if ($m->tools)            $bits[] = 'MCP tools: ' . implode(', ', array_map(fn($t) => "{$t['class']} ({$lvl($t['level'])})", $m->tools));
                 if ($m->hostsSlots)       $bits[] = 'hosts slots: ' . implode(', ', array_keys($m->hostsSlots));
                 if ($m->slots)            $bits[] = 'fills slots: ' . implode(', ', array_keys($m->slots));
                 if ($m->requiresConcepts) $bits[] = 'requires: ' . implode(', ', $m->requiresConcepts);

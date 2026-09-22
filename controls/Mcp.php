@@ -354,6 +354,13 @@ class Mcp extends BaseControls\Control {
         // Initialize tool loader
         $this->toolLoader = new ToolLoader(dirname(__DIR__) . '/mcptools');
         $this->toolLoader->setMcp($this);
+
+        // Enabled concepts' tools (concept.json provides.tools), each carrying the level its
+        // manifest set. HTTP only: the stdio servers keep StdioAllowList as their sole gate,
+        // so no manifest can widen what an unidentified caller gets.
+        foreach (\app\Concepts::instance()->tools() as $t) {
+            $this->toolLoader->register($t['class'], ['level' => $t['level'], 'concept' => $t['concept']]);
+        }
     }
 
     /**
@@ -500,6 +507,10 @@ class Mcp extends BaseControls\Control {
             // Try to authenticate anyway for personalization, but don't require it
             $this->authenticate();
         }
+        // The caller is known from here on. The loader decides per caller which concept
+        // tools exist at all (level, and no member = none), so tools/list and tools/call
+        // must see the same identity — an unauthenticated tools/list lists core only.
+        $this->toolLoader->setAuth($this->authMember, $this->authApiKey);
 
         $this->logger->debug('MCP request received', [
             'method' => $method,
@@ -1145,7 +1156,9 @@ class Mcp extends BaseControls\Control {
                 $this->toolLoader->setAuth($this->authMember, $this->authApiKey);
 
                 $tools = $this->localMcpServer()->getTools();
-                if (isset($tools[$toolName])) {
+                // has() is the loader's per-caller view: a concept tool this caller is below
+                // the level for, or whose concept is disabled, is unknown — not forbidden.
+                if (isset($tools[$toolName]) && $this->toolLoader->has($toolName)) {
                     $toolResult = $tools[$toolName]->execute($arguments);
                     $result = $toolResult->content[0]->text ?? '';
                     $isError = $toolResult->isError;

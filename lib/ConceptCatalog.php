@@ -32,7 +32,7 @@ class ConceptCatalog {
 
     /** What a concept may contain. Anything else refuses to publish, naming the file. */
     private const TOP_FILES = ['concept.json', 'README.md', 'screenshot.jpg', 'screenshot.png'];
-    private const TOP_DIRS  = ['controls', 'lib', 'models', 'views', 'seeds', 'assets', 'tests'];
+    private const TOP_DIRS  = ['controls', 'lib', 'models', 'views', 'seeds', 'assets', 'tests', 'mcptools'];
     private const EXTENSIONS = ['php', 'json', 'md', 'txt', 'js', 'css', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
     private const PATH_RE = '#^[A-Za-z0-9_][A-Za-z0-9_\-.]*(?:/[A-Za-z0-9_][A-Za-z0-9_\-.]*)*$#D';
     private const NAME_RE = '/^[a-z][a-z0-9]*$/D';

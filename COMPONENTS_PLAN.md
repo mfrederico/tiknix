@@ -836,7 +836,7 @@ for that client. Before it enters a catalog other clients install from:
 
 Settle this before the first extraction, not after.
 
-## Concept MCP tools (planned 2026-09-21)
+## Concept MCP tools (built 2026-09-22)
 
 **The MCP server stays core; MCP tools become a concept part.** The server
 (`controls/Mcp.php`) is the door agents come through to find things — `reuse_digest`,
@@ -856,8 +856,15 @@ before `controllerRoots`. So the seam mirrors controllers and views.
 
 ```
 concepts/<name>/mcptools/<Class>.php      namespace app\concepts\<name>\mcptools
-concept.json:  "tools": ["TicketsListTool", "TicketsHoldTool"]
+concept.json:  "provides": {"tools": [{"class": "TicketsListTool", "level": "MEMBER"}]}
 ```
+
+Built as planned, with one refinement: `level` is **per tool**, not per concept, because
+the manifest has no concept-wide level — slots and collect entries each carry their own,
+and a tool is a door like a slot is. Proven over the real gateway on a scratch copy
+(`probe_echo` at ADMIN: listed and callable for ROOT; absent and "unknown" for MEMBER,
+for an unauthenticated tools/list, and after `--concept-disable`; never on stdio;
+`reuse_digest` lists it under the concept). `tests/unit/ConceptToolsTest.php`.
 
 - **Declared, not discovered.** The manifest names each tool class, as it names
   `controllers`. `verify()` checks the file exists, the class extends `app\mcptools\BaseTool`,

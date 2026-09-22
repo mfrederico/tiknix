@@ -25,7 +25,7 @@ class ConceptLint {
     public const WARN  = 'warn';
 
     /** Core classes every install has and no manifest needs to declare. */
-    private const ALWAYS_AVAILABLE = ['Bean', 'Concepts', 'ConceptException', 'PermissionCache'];
+    private const ALWAYS_AVAILABLE = ['Bean', 'Concepts', 'ConceptException', 'PermissionCache', 'mcptools'];
 
     private const SECRET_PATTERNS = [
         'Stripe key'        => '/\b[sr]k_(?:live|test)_[A-Za-z0-9]{8,}/',
@@ -94,7 +94,7 @@ class ConceptLint {
             $code = self::stripComments($raw);
             $top = explode('/', $rel)[0];
 
-            if (in_array($top, ['controls', 'lib'], true)) {
+            if (in_array($top, ['controls', 'lib', 'mcptools'], true)) {
                 $want = 'app\\concepts\\' . $name;
                 if (!preg_match('/^\s*namespace\s+([A-Za-z0-9_\\\\]+)\s*;/m', $code, $ns)
                     || ($ns[1] !== $want && strncmp($ns[1], $want . '\\', strlen($want) + 1) !== 0)) {
@@ -103,6 +103,20 @@ class ConceptLint {
             }
             if ($top === 'models' && preg_match('/^\s*namespace\s+/m', $code)) {
                 $out[] = self::finding(self::ERROR, $rel, 1, 'a FUSE model must be a global-namespace Model_* class — RedBean resolves it by that name.');
+            }
+            if ($top === 'mcptools') {
+                // An MCP tool's name is its identity on every tools/list: "<concept>_<x>", so
+                // it can never collide with a core tool and always says where it came from.
+                foreach (self::matches($code, '/static\s+string\s+\$name\s*=\s*([\'"])([^\'"]*)\1/') as [$ln, $tn]) {
+                    if (!Concepts::toolNameOk($name, $tn[2])) {
+                        $out[] = self::finding(self::ERROR, $rel, $ln, "tool name '{$tn[2]}' must be '{$name}_<something>' (lowercase).");
+                    }
+                }
+                $declared = array_column($m->tools, 'class');
+                $cls = basename($rel, '.php');
+                if (!in_array($cls, $declared, true)) {
+                    $out[] = self::finding(self::ERROR, $rel, 1, "is in mcptools/ but provides.tools does not declare '{$cls}'. A tool is declared, never discovered.");
+                }
             }
 
             foreach (self::linesMatching($code, '/(?<![A-Za-z0-9_\\\\])R::[a-zA-Z]+\s*\(/') as $ln) {

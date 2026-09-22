@@ -59,6 +59,13 @@ class ConceptManifest {
     public array $controllers = [];
     /** @var string[] bean types this concept claims */
     public array $beans = [];
+    /**
+     * MCP tools this concept offers, each {class, level}: mcptools/<class>.php defining
+     * app\concepts\<name>\mcptools\<class>. `level` is required for the same reason a slot's
+     * is — a tool is a door, and the caller's level decides whether it is even listed.
+     * @var array<int,array{class:string,level:int,where:string}>
+     */
+    public array $tools = [];
     /** @var string[] bean types it reads or writes but does NOT own (a host's `product`, core's `member`) */
     public array $usesBeans = [];
     /** @var string[] free-form capability words the catalog matches on ("ics", "add-to-calendar") */
@@ -140,6 +147,16 @@ class ConceptManifest {
         $m->controllers = self::stringList($provides['controllers'] ?? [], 'provides.controllers', $name, self::CLASS_RE);
         $m->beans       = self::stringList($provides['beans'] ?? [], 'provides.beans', $name, self::BEAN_RE);
         $m->capabilities = self::stringList($provides['capabilities'] ?? [], 'provides.capabilities', $name, null);
+        if (isset($provides['tools'])) {
+            foreach (self::entryList($provides['tools'], 'provides.tools', $name) as $i => $entry) {
+                $m->tools[] = $m->toolEntry($entry, "provides.tools[{$i}]");
+            }
+        }
+        $seen = [];
+        foreach ($m->tools as $t) {
+            if (isset($seen[$t['class']])) throw new ConceptException("Concept '{$name}': provides.tools lists '{$t['class']}' twice.");
+            $seen[$t['class']] = true;
+        }
 
         $uses = self::obj($raw['uses'] ?? [], 'uses', $name);
         $m->usesBeans = self::stringList($uses['beans'] ?? [], 'uses.beans', $name, self::BEAN_RE);
@@ -174,10 +191,10 @@ class ConceptManifest {
 
         // The instance hosts; it does not register. Its namespace is app\ itself, so letting
         // it name callables would reopen exactly the reach the relative-name rule closes.
-        if ($name === self::ROOT && ($m->slots || $m->collect || $m->controllers || $m->beans || $m->requiresConcepts)) {
+        if ($name === self::ROOT && ($m->slots || $m->collect || $m->controllers || $m->beans || $m->tools || $m->requiresConcepts)) {
             throw new ConceptException(
                 "Concept 'root': the root manifest may only declare \"hosts\". Core's own controllers, "
-              . "beans and views are not registered through a manifest.");
+              . "beans, tools and views are not registered through a manifest.");
         }
         return $m;
     }
@@ -237,6 +254,18 @@ class ConceptManifest {
             'order'   => $this->order($e, $where),
             'data'    => $data,
         ];
+    }
+
+    /** {"class": "TicketsListTool", "level": "MEMBER"} — the file and the class are checked by Concepts::verify(). */
+    private function toolEntry(array $e, string $where): array {
+        $this->noUnknownKeys($e, ['class', 'level'], $where);
+        $class = $e['class'] ?? null;
+        if (!is_string($class) || !preg_match(self::CLASS_RE, $class)) {
+            throw new ConceptException(
+                "Concept '{$this->name}': {$where}.class must be a class name (mcptools/<Class>.php, "
+              . "defining app\\concepts\\{$this->name}\\mcptools\\<Class>).");
+        }
+        return ['concept' => $this->name, 'where' => $where, 'class' => $class, 'level' => $this->level($e, $where)];
     }
 
     /** `level` is REQUIRED: a default of PUBLIC leaks an admin panel, a default of ADMIN hides a guest feature. */

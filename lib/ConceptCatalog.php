@@ -51,7 +51,7 @@ class ConceptCatalog {
     /**
      * @param string|null   $dir    a local catalog directory, or null
      * @param array|null    $broker ['base' => 'https://tiknix.com', 'key' => 'brk_…'], or null
-     * @param callable|null $http   GET transport, injectable for tests
+     * @param callable|null $http   transport (url, headers, post=false) → [status, body], injectable for tests
      */
     public function __construct(?string $dir, ?array $broker = null, ?callable $http = null) {
         $this->dir = $dir !== null ? rtrim($dir, '/') : null;
@@ -543,11 +543,65 @@ class ConceptCatalog {
         @rmdir($path);
     }
 
+    /* ---- installing into a project, as a build ------------------------------------- */
+
+    /**
+     * Queue an install of $name into a project, on the control plane. Runs
+     * scripts/concept-install.php, which writes the install plan into the project and
+     * hands it to plan-ingest.php — an ordinary no-agent build that installs, commits and
+     * merges. Never a copy into a live tree: worktrees are cut from the committed base, so
+     * a copy is invisible to every agent that runs afterwards.
+     *
+     * The project's registry row is resolved by plan-ingest in THIS install's database, so
+     * this only works where that registry lives: the control plane. An instance asks with
+     * requestInstall() instead.
+     *
+     * @param array{slug:string,dir:string} $project
+     * @return array{ok:bool,said:string}  said = the runner's last lines, for the person
+     */
+    public static function queueInstall(string $name, array $project, int $memberId): array {
+        self::assertName($name);
+        // 'php', never PHP_BINARY: under php-fpm that constant is php-fpm itself, which
+        // answers a script argument with its usage screen ("-R, --allow-to-run-as-root …").
+        // --autobuild=1: the approval gate exists for plans that spend agent time; an install
+        // plan has no agent and takes seconds, so the request IS the approval.
+        $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/concept-install.php')
+             . ' --concept=' . escapeshellarg($name)
+             . ' --slug='    . escapeshellarg((string) $project['slug'])
+             . ' --dir='     . escapeshellarg((string) $project['dir'])
+             . ' --member='  . (int) $memberId
+             . ' --autobuild=1'
+             . ' 2>&1';
+        $out = [];
+        exec($cmd, $out, $code);
+        $said = trim(implode(' ', array_slice(array_filter(array_map('trim', $out)), -2)));
+        return ['ok' => $code === 0, 'said' => $said !== '' ? $said : "the runner exited {$code}"];
+    }
+
+    /**
+     * An instance asking the control plane to install $name into it — the Plugins page's
+     * Install button on a project. The plane resolves the project from the broker key,
+     * queues the build as its owner, and answers with what it did.
+     *
+     * @return array{queued:bool,message:string}
+     */
+    public function requestInstall(string $name): array {
+        self::assertName($name);
+        if ($this->broker === null) {
+            throw new ConceptException("requestInstall('{$name}') is for an instance with a broker: this install serves the catalog itself — use queueInstall() with a project.");
+        }
+        $data = $this->remote('install', ['name' => $name], true);
+        if (!isset($data['queued'])) {
+            throw new ConceptException("Concept catalog at {$this->broker['base']} answered 'install' without a queued flag.");
+        }
+        return ['queued' => (bool) $data['queued'], 'message' => (string) ($data['message'] ?? '')];
+    }
+
     /* ---- remote --------------------------------------------------------------------- */
 
-    private function remote(string $action, array $query): array {
+    private function remote(string $action, array $query, bool $post = false): array {
         $url = $this->broker['base'] . '/concepthub/' . $action . '?' . http_build_query($query);
-        [$status, $body] = ($this->http)($url, ['Authorization: Bearer ' . $this->broker['key'], 'Accept: application/json']);
+        [$status, $body] = ($this->http)($url, ['Authorization: Bearer ' . $this->broker['key'], 'Accept: application/json'], $post);
         $data = json_decode($body, true);
         if ($status !== 200 || !is_array($data)) {
             $why = is_array($data) && isset($data['message']) ? (string) $data['message'] : ('HTTP ' . $status);
@@ -557,15 +611,16 @@ class ConceptCatalog {
     }
 
     /** @return array{0:int,1:string} */
-    private static function httpGet(string $url, array $headers): array {
+    private static function httpGet(string $url, array $headers, bool $post = false): array {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_TIMEOUT        => $post ? 120 : 30,   // an install answers after the build is queued and started
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_FOLLOWLOCATION => false,
         ]);
+        if ($post) curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => '']);
         $resp = curl_exec($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         if ($resp === false) {

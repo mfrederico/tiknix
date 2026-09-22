@@ -152,13 +152,18 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                     <div class="small mt-1"><?= $h($catalog['error']) ?></div>
                 </div>
             <?php else: ?>
-                <p class="text-muted small mb-2">Source: <code><?= $h($catalog['source']) ?></code></p>
+                <?php
+                    // A local source is a directory on this server; a remote one is the control
+                    // plane's API endpoint — a place this page talks to, not a page to visit.
+                    $srcIsUrl = preg_match('#^https?://#', (string) $catalog['source']);
+                    $srcHost  = $srcIsUrl ? (string) parse_url((string) $catalog['source'], PHP_URL_HOST) : (string) $catalog['source'];
+                ?>
+                <p class="text-muted small mb-2">Catalog: <code><?= $h($srcHost) ?></code><?= $srcIsUrl ? ' (the platform, over this project\'s broker key)' : '' ?></p>
                 <?php if ($project !== null && !empty($project['here'])): ?>
                     <p class="small mb-2">
                         <i class="bi bi-box-arrow-in-down"></i>
-                        This install, <strong><?= $h($project['name']) ?></strong>, is the project. A plugin is installed
-                        by a command run in its directory (it must end as a commit, so the web process never writes it),
-                        then switched on above.
+                        Installs go into this project, <strong><?= $h($project['name']) ?></strong>: a build with no agent,
+                        run by the platform, that commits the plugin to this project. Reload once it has merged, then switch it on above.
                     </p>
                 <?php elseif ($project !== null): ?>
                     <p class="small mb-2">
@@ -196,16 +201,13 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                                             <div class="small text-muted mt-1">switch on:
                                                 <code><?= $h('cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-enable=' . $r['name']) ?></code></div>
                                             <?php endif; ?>
-                                        <?php elseif (!empty($project['here'])): ?>
-                                            <div class="small">install here:
-                                                <code><?= $h('cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-install=' . $r['name']) ?></code></div>
                                         <?php else: ?>
                                             <form method="POST" action="/admin/conceptinstall" class="d-inline"
                                                   onsubmit="return confirm('Install <?= $h($r['name']) ?> into <?= $h($project['name']) ?>? It runs now as a build with no agent — a commit and merge on that project, usually under a minute.')">
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="name" value="<?= $h($r['name']) ?>">
                                                 <button type="submit" class="btn btn-primary btn-sm">
-                                                    <i class="bi bi-box-arrow-in-down"></i> Install into <?= $h($project['name']) ?>
+                                                    <i class="bi bi-box-arrow-in-down"></i> <?= !empty($project['here']) ? 'Install' : 'Install into ' . $h($project['name']) ?>
                                                 </button>
                                             </form>
                                         <?php endif; ?>

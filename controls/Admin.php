@@ -872,8 +872,8 @@ class Admin extends Control {
      * The project an install would go into. On core: the one selected in the header, or
      * null. On an instance there is nothing to select — the install IS the project
      * ('here' => true), and the catalog is judged against this tree. An instance cannot
-     * queue the build itself (plan-ingest resolves the project in core's registry), so the
-     * view shows the command that installs here, not a button that would fail.
+     * queue the build itself (plan-ingest resolves the project in core's registry), so its
+     * Install button asks the control plane (ConceptCatalog::requestInstall).
      */
     private function conceptProject(): ?array {
         if (!is_core_install()) {
@@ -922,37 +922,31 @@ class Admin extends Control {
             return;
         }
         if (!empty($project['here'])) {
-            // The web process never writes PHP into its own tree, and the build path lives in
-            // core. Name the command rather than pretend.
-            $this->flash('error', "On a project the install is a command run in its directory: cd {$project['dir']} && php scripts/clitool.php --concept-install={$name} — or install it from the platform's Plugins page with this project selected.");
+            // A project: the install must end as a commit on its branch, and the build runs
+            // on the control plane — so ask it, with this install's own broker key.
+            try {
+                $r = \app\ConceptCatalog::forInstall()->requestInstall($name);
+            } catch (\app\ConceptException $e) {
+                $this->logger->warning('Concept install request failed', ['concept' => $name, 'why' => $e->getMessage()]);
+                $this->flash('error', self::oneLine($e->getMessage()));
+                Flight::redirect('/admin/concepts');
+                return;
+            }
+            $this->logger->info('Concept install requested from the control plane', ['concept' => $name, 'queued' => $r['queued'], 'member_id' => $this->member->id]);
+            $this->flash($r['queued'] ? 'success' : 'error', self::oneLine($r['message']));
             Flight::redirect('/admin/concepts');
             return;
         }
 
-        // 'php', never PHP_BINARY: in this process that constant is php-fpm itself, which
-        // answers a script argument with its usage screen ("-R, --allow-to-run-as-root …").
-        // --autobuild=1: the approval gate exists for plans that spend agent time; an install
-        // plan has no agent and takes seconds, so the click IS the approval. It is still a
-        // build — worktree, commit, merge — never a copy made by this web process.
-        $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/concept-install.php')
-             . ' --concept=' . escapeshellarg($name)
-             . ' --slug='    . escapeshellarg($project['slug'])
-             . ' --dir='     . escapeshellarg($project['dir'])
-             . ' --member='  . (int) $this->member->id
-             . ' --autobuild=1'
-             . ' 2>&1';
-        $out = [];
-        exec($cmd, $out, $code);
-        $said = trim(implode(' ', array_slice(array_filter(array_map('trim', $out)), -2)));
-
-        if ($code === 0) {
+        $r = \app\ConceptCatalog::queueInstall($name, $project, (int) $this->member->id);
+        if ($r['ok']) {
             $this->logger->info('Concept install queued', ['concept' => $name, 'project' => $project['slug'], 'member_id' => $this->member->id]);
             $enable = 'cd ' . $project['dir'] . ' && php scripts/clitool.php --concept-enable=' . $name;
             $this->flash('success', "Installing '{$name}' into {$project['name']} — a build with no agent, usually under a minute; "
                 . "watch it in Builder. Once it has merged, switch it on with: {$enable}  (or that project's Plugins page, where it has one).");
         } else {
-            $this->logger->warning('Concept install not queued', ['concept' => $name, 'project' => $project['slug'], 'exit' => $code, 'output' => $out]);
-            $this->flash('error', "Could not queue '{$name}' for {$project['name']}: " . ($said !== '' ? $said : "the runner exited {$code}"));
+            $this->logger->warning('Concept install not queued', ['concept' => $name, 'project' => $project['slug'], 'said' => $r['said']]);
+            $this->flash('error', "Could not queue '{$name}' for {$project['name']}: " . $r['said']);
         }
         Flight::redirect('/admin/concepts');
     }

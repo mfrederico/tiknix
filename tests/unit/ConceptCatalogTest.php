@@ -308,6 +308,45 @@ class ConceptCatalogTest extends ConceptsTestCase {
         return [['../evil.php'], ['../../evil.php'], ['/etc/cron.d/evil'], ['lib/../../evil.php'], ['lib/shell.phtml'], ['.htaccess']];
     }
 
+    public function testAnInstanceAsksThePlatformToInstallWithAPost(): void {
+        $seen = [];
+        $remote = new ConceptCatalog(null, ['base' => 'https://core.test', 'key' => 'brk_test'],
+            function (string $url, array $headers, bool $post = false) use (&$seen) {
+                $seen = ['url' => $url, 'post' => $post, 'headers' => $headers];
+                return [200, json_encode(['queued' => true, 'message' => "Installing 'calendar' — a build with no agent."])];
+            });
+        $r = $remote->requestInstall('calendar');
+        $this->assertTrue($r['queued']);
+        $this->assertStringContainsString('build', $r['message']);
+        $this->assertTrue($seen['post'], 'an install is a state change: POST, never GET');
+        $this->assertStringStartsWith('https://core.test/concepthub/install?name=calendar', $seen['url']);
+        $this->assertContains('Authorization: Bearer brk_test', $seen['headers']);
+    }
+
+    public function testANotQueuedInstallIsReportedNotThrown(): void {
+        // The platform reached and answered "no" (a project with no owner, a runner that
+        // exited non-zero): that is an answer for the person, distinct from an outage.
+        $remote = new ConceptCatalog(null, ['base' => 'https://core.test', 'key' => 'brk_test'],
+            fn() => [200, json_encode(['queued' => false, 'message' => "Could not queue 'calendar': the runner exited 1"])]);
+        $r = $remote->requestInstall('calendar');
+        $this->assertFalse($r['queued']);
+        $this->assertStringContainsString('exited 1', $r['message']);
+    }
+
+    public function testAnInstallAnswerWithoutAVerdictIsAFailure(): void {
+        $remote = new ConceptCatalog(null, ['base' => 'https://core.test', 'key' => 'brk_test'],
+            fn() => [200, json_encode(['ok' => true])]);
+        $this->expectException(ConceptException::class);
+        $this->expectExceptionMessage('without a queued flag');
+        $remote->requestInstall('calendar');
+    }
+
+    public function testTheCatalogServerItselfCannotRequestAnInstall(): void {
+        $this->expectException(ConceptException::class);
+        $this->expectExceptionMessage('queueInstall');
+        $this->local()->requestInstall('calendar');
+    }
+
     public function testAnOutageIsAFailureNotAnEmptyResult(): void {
         $down = new ConceptCatalog(null, ['base' => 'https://core.test', 'key' => 'brk_test'],
             fn() => [0, json_encode(['message' => 'connection failed: timed out'])]);

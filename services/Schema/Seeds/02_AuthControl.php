@@ -131,6 +131,7 @@ $defaults = [
     ['concepthub', 'search', 101, 'Concept catalog search (self-authenticating broker key)'],
     ['concepthub', 'get',    101, 'Concept catalog detail (broker key)'],
     ['concepthub', 'bundle', 101, 'Concept catalog download (broker key)'],
+    ['concepthub', 'install', 101, 'Queue a concept install into the calling instance (broker key; POST)'],
     // This install's pipeline editor (COMPONENTS_PLAN.md, "Every app has its own /pipelines").
     // ADMIN: pipelines are the app's automations. The controller re-checks the level itself.
     ['pipelines', '*', 50, 'Pipeline editor: build, run, debug this install\'s pipelines'],

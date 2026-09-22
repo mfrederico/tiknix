@@ -10,8 +10,11 @@
  *   GET /concepthub/search?q=…&limit=…   ranked summaries
  *   GET /concepthub/get?name=…           one concept: summary, manifest, file list
  *   GET /concepthub/bundle?name=…        the concept itself, as {path: base64}
+ *   POST /concepthub/install?name=…      queue an install INTO the calling instance, as a
+ *                                        build owned by that instance's owner (the Install
+ *                                        button on a project's Plugins page)
  *
- * Read-only. Publishing is a CLI action on the control plane (clitool --concept-publish).
+ * Publishing is a CLI action on the control plane (clitool --concept-publish).
  *
  * authcontrol: concepthub::* = 101 — PUBLIC means reachable, not unprotected; every
  * method authenticates the broker key itself, exactly like Brokerinfo and Mcp.
@@ -45,6 +48,42 @@ class Concepthub extends Control {
             $this->logger->info('Concept bundle served', ['concept' => $name, 'version' => $bundle['version'], 'instance_id' => $this->instanceId]);
             return $bundle;
         });
+    }
+
+    /**
+     * POST /concepthub/install?name=… — the calling instance wants $name installed into
+     * itself. The instance cannot do this alone: the install must end as a commit and merge
+     * on its branch, and the build machinery (plan-ingest, PlanOrchestrator) resolves the
+     * project in THIS install's registry. So it asks, with the key that already proves which
+     * instance it is, and the build runs here as the instance's owner.
+     */
+    public function install($params = []) {
+        if (!($catalog = $this->catalog())) return;
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { $this->fail('POST only.', 405); return; }
+        $name = (string) $this->getParam('name', '');
+        if (!preg_match('/^[a-z][a-z0-9]*$/D', $name)) { $this->fail('That is not a plugin name.', 400); return; }
+
+        $inst = Bean::load('instance', $this->instanceId);
+        if (!$inst->id || (int) ($inst->memberId ?? 0) <= 0) {
+            $this->logger->error('ERROR Concepthub install: broker key names an instance with no registry row or no owner', ['instance_id' => $this->instanceId]);
+            $this->fail('This instance has no owner on record here, so nobody can own the build.', 409);
+            return;
+        }
+        $project = ['slug' => (string) $inst->slug, 'dir' => \Model_Instance::dirFrom((string) $inst->slug, (string) ($inst->app ?? ''))];
+        try {
+            $catalog->get($name);   // a name the catalog does not hold is a 404 in words, before anything runs
+        } catch (ConceptException $e) {
+            $this->fail($e->getMessage(), 404);
+            return;
+        }
+        $r = ConceptCatalog::queueInstall($name, $project, (int) $inst->memberId);
+        if ($r['ok']) {
+            $this->logger->info('Concept install queued by instance', ['concept' => $name, 'project' => $project['slug'], 'member_id' => (int) $inst->memberId]);
+            Flight::json(['queued' => true, 'message' => "Installing '{$name}' — a build with no agent, usually under a minute. Reload this page once it has merged, then switch it on."]);
+        } else {
+            $this->logger->warning('Concept install not queued (instance request)', ['concept' => $name, 'project' => $project['slug'], 'said' => $r['said']]);
+            Flight::json(['queued' => false, 'message' => "Could not queue '{$name}': " . $r['said']]);
+        }
     }
 
     private int $instanceId = 0;

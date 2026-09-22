@@ -91,7 +91,7 @@ class Bootstrap {
             }
         }
     }
-
+    
     /**
      * Warn loudly when the git-tracked conf/config.<slug>.ini has drifted from the live
      * conf/config.ini the app actually loads.
@@ -118,8 +118,11 @@ class Bootstrap {
             $tracked = "{$dir}/config.{$slug}.ini";
             if (!is_file($tracked) || !is_file("{$dir}/config.ini")) return;
 
-            $live = @parse_ini_file("{$dir}/config.ini", true) ?: [];
-            $snap = @parse_ini_file($tracked, true) ?: [];
+            // parse failure is a fault, not "empty config" — don't let it read as drift
+            $live = @parse_ini_file("{$dir}/config.ini", true);
+            if ($live === false) throw new \RuntimeException("could not parse {$dir}/config.ini");
+            $snap = @parse_ini_file($tracked, true);
+            if ($snap === false) throw new \RuntimeException("could not parse {$tracked}");
             if ($live == $snap) return;                     // in sync — nothing to say
 
             $diffs = [];
@@ -136,16 +139,18 @@ class Bootstrap {
                 }
             }
             $log = \Flight::get('log');
-            if ($log) {
-                $log->warning(
-                    "Config drift: the git-tracked conf/config.{$slug}.ini differs from the live "
-                    . "conf/config.ini the app loads — edits to the .{$slug}.ini file DO NOT take "
-                    . "effect. Reconcile them. Diverged: "
-                    . implode(', ', array_slice($diffs, 0, 20)) . (count($diffs) > 20 ? ' …' : '')
-                );
-            }
+            if (!$log) throw new \RuntimeException('logger not initialised (initLogging() must run first)');
+            $log->warning(
+                "Config drift: the git-tracked conf/config.{$slug}.ini differs from the live "
+                . "conf/config.ini the app loads — edits to the .{$slug}.ini file DO NOT take "
+                . "effect. Reconcile them. Diverged: "
+                . implode(', ', array_slice($diffs, 0, 20)) . (count($diffs) > 20 ? ' …' : '')
+            );
         } catch (\Throwable $e) {
-            // a diagnostic must never take down boot
+            // a diagnostic must never take down boot — but a broken one must say so.
+            // error_log, not the app logger: the logger itself may be what failed.
+            error_log('ERROR Bootstrap::warnOnConfigDrift failed: ' . $e->getMessage()
+                . ' (' . $e->getFile() . ':' . $e->getLine() . ')');
         }
     }
 

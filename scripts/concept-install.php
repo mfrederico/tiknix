@@ -76,7 +76,7 @@ $args = ['--slug=' . $slug, '--dir=' . $dir, '--member=' . $member];
 foreach (['autobuild', 'app', 'db', 'level'] as $k) {
     if (isset($o[$k]) && $o[$k] !== false) $args[] = "--{$k}=" . $o[$k];
 }
-$cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/plan-ingest.php') . ' ' . implode(' ', array_map('escapeshellarg', $args));
+$cmd = 'php ' . escapeshellarg(__DIR__ . '/plan-ingest.php') . ' ' . implode(' ', array_map('escapeshellarg', $args));
 passthru($cmd, $code);
 if ($code !== 0) {
     // The plan file may still be sitting there unclaimed; say so rather than leave a mystery.

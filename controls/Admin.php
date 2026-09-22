@@ -905,7 +905,9 @@ class Admin extends Control {
             return;
         }
 
-        $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(dirname(__DIR__) . '/scripts/concept-install.php')
+        // 'php', never PHP_BINARY: in this process that constant is php-fpm itself, which
+        // answers a script argument with its usage screen ("-R, --allow-to-run-as-root …").
+        $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/concept-install.php')
              . ' --concept=' . escapeshellarg($name)
              . ' --slug='    . escapeshellarg($project['slug'])
              . ' --dir='     . escapeshellarg($project['dir'])

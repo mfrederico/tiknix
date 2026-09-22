@@ -34,4 +34,20 @@ class CoreNamingTest extends TestCase {
             "These files declare the same class name as far as PHP is concerned (app\\ maps to both controls/ and lib/):\n  "
           . implode("\n  ", $clashes));
     }
+
+    /**
+     * Web code never launches PHP_BINARY: under php-fpm that constant is php-fpm itself,
+     * which answers a script argument with its usage screen — the Plugins page's "Install
+     * into <project>" failed with "-R, --allow-to-run-as-root" until it launched 'php' by
+     * name, like every other launcher here.
+     */
+    public function testWebCodeLaunchesPhpByNameNotPhpBinary(): void {
+        $root = dirname(__DIR__, 2);
+        $hits = [];
+        foreach (array_merge(glob("{$root}/controls/*.php"), glob("{$root}/lib/*.php"), glob("{$root}/lib/*/*.php")) as $f) {
+            $src = file_get_contents($f);
+            if (preg_match_all('/^(?!\s*(?:\/\/|\*|#)).*\bPHP_BINARY\b/m', $src, $m)) $hits[] = substr($f, strlen($root) + 1) . ': ' . trim($m[0][0]);
+        }
+        $this->assertSame([], $hits, "launch 'php', not PHP_BINARY (php-fpm in a web process)");
+    }
 }

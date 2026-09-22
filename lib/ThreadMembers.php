@@ -28,6 +28,23 @@ class ThreadMembers {
         return self::thread($threadId)?->addParticipants($memberIds, $role) ?? 0;
     }
 
+    /**
+     * Support threads follow the support team, at read time (Model_Thread::syncWithSupportTeam).
+     * For an ADMIN+ caller: seat them on every support thread they are not yet on. Returns
+     * how many threads gained them. Anyone else: nothing to do.
+     */
+    public static function syncSupportFor(int $memberId): int {
+        $m = Bean::load('member', $memberId);
+        if (!$m->id || (int) $m->level > LEVELS['ADMIN'] || !$m->canAuthenticate()) return 0;
+        // array_values: getCol is positional already, but the IN() trap is worth not risking.
+        $ids = array_values(Bean::getCol(
+            "SELECT id FROM thread WHERE related_type = 'contact' "
+          . 'AND id NOT IN (SELECT thread_id FROM threadmember WHERE member_id = ?)', [$memberId]));
+        $n = 0;
+        foreach ($ids as $t) $n += self::thread((int) $t)?->addParticipants([$memberId]) ?? 0;
+        return $n;
+    }
+
     public static function participants(int $threadId): array {
         return self::thread($threadId)?->participantIds() ?? [];
     }

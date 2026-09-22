@@ -10,6 +10,10 @@ namespace tests\unit;
 use app\Concepts;
 use PHPUnit\Framework\TestCase;
 
+// Defined by lib/FlightMap.php in the app; the suite does not load Flight, and models
+// (Model_Thread::canPost's default, ThreadMembers) read it. Same values, one place.
+if (!defined('LEVELS')) define('LEVELS', ['ROOT' => 1, 'ADMIN' => 50, 'MEMBER' => 100, 'PUBLIC' => 101]);
+
 abstract class ConceptsTestCase extends TestCase {
 
     protected string $root;

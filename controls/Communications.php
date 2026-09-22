@@ -31,6 +31,9 @@ class Communications extends BaseControls\Control {
         // on read means a room is correct after ANY change to a team — including changes
         // made by code that has never heard of rooms.
         \app\Rooms::syncForMember((int)$this->member->id);
+        // Support threads follow the support team the same way: an admin sees the site's
+        // mail whenever they became an admin, not only if they were one when it arrived.
+        \app\ThreadMembers::syncSupportFor((int)$this->member->id);
 
         $search = trim((string)$this->getParam('q', ''));
 
@@ -737,6 +740,9 @@ class Communications extends BaseControls\Control {
         if (Flight::hasLevel(LEVELS['ROOT'])) return true;   // only ROOT sees others' threads
         $mid = (int)$this->member->id;
         if ((int)$thread->ownerMemberId === $mid) return true;
+        // A support thread's roster is the support team, derived now — so a link to one
+        // works for an admin who has not opened the inbox since becoming one.
+        if ($thread->box()->isSupport()) $thread->box()->syncWithSupportTeam();
         return \app\ThreadMembers::isMember((int)$thread->id, $mid);
     }
 

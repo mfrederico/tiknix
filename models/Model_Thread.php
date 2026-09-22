@@ -23,6 +23,12 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
     // ---- identity --------------------------------------------------------------------
 
     public function isRoom(): bool  { return (string) $this->bean->kind === 'room'; }
+    /**
+     * A support thread: opened by the site's own forms (Contact::submit → openInboundThread
+     * with related_type 'contact'). It is addressed to the SITE, not to a person, so its
+     * roster is the support team — see syncWithSupportTeam().
+     */
+    public function isSupport(): bool { return (string) $this->bean->relatedType === 'contact'; }
     public function isDm(): bool    { return (string) $this->bean->kind === 'dm'; }
     public function isEmail(): bool { return !$this->isRoom() && !$this->isDm(); }
 
@@ -146,6 +152,22 @@ class Model_Thread extends \RedBeanPHP\SimpleModel {
             if ($this->removeParticipant((int) $gone)) $removed++;
         }
         return ['added' => $added, 'removed' => $removed];
+    }
+
+    /**
+     * Seat every active ADMIN+ on this support thread. Like syncWithTeam() for a room,
+     * derived at READ time: the roster was captured once, when the form was submitted, so
+     * an admin added afterwards never saw the site's mail (serenity: its shop admin was
+     * created four days after the first support threads and could see none of them).
+     * Adds only — a person deliberately seated by hand is never removed here.
+     */
+    public function syncWithSupportTeam(): int {
+        if (!$this->isSupport()) return 0;
+        $admins = array_values(array_map(
+            fn($m) => (int) $m->id,
+            \app\Bean::find('member', 'level <= ? AND status = ?', [LEVELS['ADMIN'], 'active'])
+        ));
+        return $this->addParticipants($admins);
     }
 
     // ---- unread ----------------------------------------------------------------------

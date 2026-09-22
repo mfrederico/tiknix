@@ -143,6 +143,20 @@ class Loader {
             $names[$n] = true;
             $type = (string) ($s['type'] ?? '');
             if (!StepRegistry::get($type)) $errors[] = "step '$n': unknown type '$type'";
+            // A `pipeline` step names its child by slug. Shape here; existence at run time
+            // (the Loader that runs it knows the install and its enabled concepts, a
+            // definition being validated in a catalog lint does not). A literal self-call
+            // is never right and is refused now.
+            if ($type === 'pipeline') {
+                $child = (string) (($s['config'] ?? [])['slug'] ?? '');
+                if ($child === '') {
+                    $errors[] = "step '$n': pipeline step needs a slug";
+                } elseif (strpos($child, '{') === false && self::safeSlug($child) === '') {
+                    $errors[] = "step '$n': '$child' is not a valid pipeline slug";
+                } elseif ($child === (string) ($def['slug'] ?? '')) {
+                    $errors[] = "step '$n': a pipeline may not call itself";
+                }
+            }
         }
         // A step that reaches OUT must say where to.
         //

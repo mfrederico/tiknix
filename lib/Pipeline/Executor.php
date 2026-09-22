@@ -29,6 +29,27 @@ class Executor {
     }
 
     /**
+     * The slugs of the runs above this one, outermost first — set by the `pipeline` step
+     * on the child executor. Carried into every step's $run as 'chain' (this run's own
+     * slug appended) so a child that calls again can refuse a cycle or a runaway depth.
+     * @var string[]
+     */
+    private array $chain = [];
+
+    public function withChain(array $chain): self {
+        $this->chain = array_values(array_map('strval', $chain));
+        return $this;
+    }
+
+    /** The run this one was started by (a `pipeline` step), for piperun.parent_run_id. */
+    private ?int $parentRunId = null;
+
+    public function withParentRun(int $parentRunId): self {
+        $this->parentRunId = $parentRunId > 0 ? $parentRunId : null;
+        return $this;
+    }
+
+    /**
      * Sync run: create the piperun, execute from the start. $extra is merged into the
      * variable bag (durable objects inject state/message/trigger; normal runs pass []).
      */
@@ -123,7 +144,9 @@ class Executor {
         $byName = [];
         foreach ($steps as $k => $s) $byName[(string) $s['name']] = $k;
         $runMeta = ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid,
-                    'run_directory' => (string) $run->runDir, 'root' => $this->root];
+                    'run_directory' => (string) $run->runDir, 'root' => $this->root,
+                    // For the `pipeline` step: who is above us, and who we are.
+                    'slug' => (string) ($def['slug'] ?? ''), 'chain' => array_merge($this->chain, [(string) ($def['slug'] ?? '')])];
 
         $status = 'completed'; $error = ''; $done = (int) $run->stepsDone; $guard = 0; $lastName = '';
 
@@ -306,6 +329,7 @@ class Executor {
         }
         $run = Bean::dispense('piperun');
         $run->slug = $slug; $run->runUid = $uid; $run->status = $status; $run->source = $source;
+        if ($this->parentRunId !== null) $run->parentRunId = $this->parentRunId;
         $run->contextJson = json_encode($context, JSON_UNESCAPED_SLASHES);
         $run->stepsTotal = count($def['steps'] ?? []); $run->stepsDone = 0;
         $run->runDir = $dir; $run->createdAt = date('Y-m-d H:i:s');

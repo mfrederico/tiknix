@@ -1213,7 +1213,28 @@ carries their email). Owner's decision 2026-09-22: once the editor is tied to th
 itself there is nothing to hand off — a core member id is not an instance member id, and
 inventing a mapping would only reintroduce the coupling the move removes.
 
-### 4. Retire `pipelines.tiknix`
+### 4. The app schedules itself; the platform only ticks
+
+Core's `scripts/pipeline-cron.php` reads every install's `pipelines/*.json` (and, since
+today, its enabled concepts' by opening its sqlite for the flags), decides what is due,
+and POSTs `/pipeline/trigger/<slug>` with that install's secret — then a separate
+`/pipeline/objecttick`. Once each app owns its pipelines that is backwards: the platform is
+reading other installs' files to make a decision only the app can make, and a self-hosted
+tenant on its own LXC gets no cron at all.
+
+- **`POST /pipeline/tick`** on every install (bearer = its trigger_secret): the app loads
+  its own definitions through `Loader::forInstall()`, fires every cron trigger due this
+  minute (same once-per-minute claim file, now under its own `cache/`), runs the durable
+  object tick, and answers with what it did. One endpoint replaces trigger-by-slug and
+  objecttick for scheduling; `trigger` stays for webhooks and the editor's Run.
+- **Core's cron becomes a heartbeat**: for each instance it knows (the `instance` table,
+  not a directory glob), POST `/pipeline/tick` once a minute. No reading of files, no
+  flags, no slugs. A tenant elsewhere puts the same one-liner in its own crontab.
+- `Cron::due` and the claim file move from the script into the tick endpoint (a class,
+  `Pipeline\Scheduler`, so the unit tests can drive a minute).
+- Order: after the editor lands (the tick is what the editor's "schedule" field talks to).
+
+### 5. Retire `pipelines.tiknix`
 
 After 2 and 3 are live on core and the six instances: remove `[sidecar.pipelines]` from
 core's config, the `pipelines` entry from `Feature::CATALOG`, the sidecar's vhost, and its
@@ -1222,11 +1243,12 @@ untouched throughout.
 
 ### Order and proof
 
-1 first (runtime, tested in `tests/unit/` with an in-memory run: sync output flows back,
-async yields a run id, the self-call is refused). Then 2 on core, proven in the browser
+1 — **built 2026-09-22 (core 632e860)**: sync output flows back, async yields a run id,
+self-call refused at validation, cycle and depth at run time, missing child by name; the
+child is its own `piperun` with `parent_run_id`. Then 2 on core, proven in the browser
 against core's own `demo-hello` and `counter` (Playwright: list, open a row, edit a field,
 save, run, debug to a breakpoint, inject, continue). Then the six instances by merge, and
-lead-machine's before/after diff again. Then 3, then 4.
+lead-machine's before/after diff again. Then 3, then 4 (the tick), then 5.
 
 ## Observation tools (planned 2026-09-22)
 

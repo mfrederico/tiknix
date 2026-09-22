@@ -86,11 +86,8 @@ class Feature {
         // sections: this catalog names the same plugins on the feature-toggle pages,
         // and a toggle called "Publisher" governing a nav item called "Deploy" reads
         // as two different things.
-        'pipelines' => [
-            'label'     => 'Data',
-            'blurb'     => 'Build, edit, run + schedule deterministic pipelines in your instances. Runs as the pipelines.tiknix sidecar.',
-            'min_level' => 100, // MEMBER and above — they own the instances whose pipelines they edit
-        ],
+        // 'pipelines' (the pipelines.tiknix sidecar, nav label "Data") retired 2026-09-22:
+        // every install has its own /pipelines editor now, under Admin.
         'publisher' => [
             'label'     => 'Deploy',
             'blurb'     => 'Decide where and how a project goes live. Publishing runs as a pipeline in the project itself, so it schedules and debugs like any other. Runs as the publisher.tiknix sidecar — deliberately outside the app, since a finished application should not ship its deployment tooling.',

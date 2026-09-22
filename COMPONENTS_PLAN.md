@@ -1144,7 +1144,7 @@ the step's trace and the log), and each step type has its own output shape
 object smoke) and `garbagecollector` (runtime housekeeping). No instance ran the removed
 demos except partsdna's four August test runs; instances drop them on their next merge.
 
-## Every app has its own /pipelines (planned 2026-09-22)
+## Every app has its own /pipelines (built 2026-09-22 — steps 1–3; the tick and the full sidecar teardown remain)
 
 **Today the runtime lives in every install and the editor only in core.** An instance runs,
 triggers, debugs and exposes its pipelines, and its agent writes them through `pipeline_set`
@@ -1240,6 +1240,18 @@ After 2 and 3 are live on core and the six instances: remove `[sidecar.pipelines
 core's config, the `pipelines` entry from `Feature::CATALOG`, the sidecar's vhost, and its
 directory — the shop retirement's checklist. `pipeline_*` MCP tools and the cron are
 untouched throughout.
+
+### As built (2026-09-22)
+
+2 — core 3b3ea8a: `controls/Pipelines.php` + `views/pipelines/index.php` + `Pipeline\Trace`
+(the run/breakpoint/varshapes shapes shared with the machine endpoints), `pipelines::* = 50`,
+*Data* in the Admin nav group (owner's placement). Proven in the browser on core (list, open,
+edit, save to disk, run, debug → inject → step → continue) and on lead-machine (Data in its
+Admin nav, its 14 pipelines listed, `lead-discovery` opens with 9 steps and validates), then
+merged into all six (partsdna keeps its no-sidebar header with Data in its avatar dropdown;
+collectiq keeps its own admin links beside it). 3 — core's *Data* no longer launches the
+sidecar: `[sidecar.pipelines]` and the `pipelines` feature entry are gone, so the Build
+group lists four sidecars. Still to do: the tick (4) and the sidecar's vhost + directory (5).
 
 ### Order and proof
 

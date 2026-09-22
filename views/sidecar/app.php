@@ -7,12 +7,19 @@
  *
  * @var string $plugin  registered plugin key
  * @var string $label   plugin display label
+ * @var string $origin  the plugin's origin (scheme://host), e.g. https://workbench.tiknix.com
+ *
+ * allow= MUST name the plugin's origin. Without one the allowlist is 'src' — the
+ * origin of the src attribute, i.e. tiknix.com — and the browser does not follow the
+ * launch redirect into the plugin when computing it. Verified in Chromium: the
+ * implicit form leaves the plugin with clipboard-read/write=false; naming the origin
+ * (or pointing src straight at the plugin) grants them.
  */
 ?>
 <div class="sidecar-embed">
   <iframe src="/sidecar/launch/<?= htmlspecialchars($plugin) ?>"
           title="<?= htmlspecialchars($label) ?>"
-          allow="clipboard-read; clipboard-write"
+          allow="clipboard-read <?= htmlspecialchars($origin) ?>; clipboard-write <?= htmlspecialchars($origin) ?>"
           referrerpolicy="same-origin"></iframe>
 </div>
 

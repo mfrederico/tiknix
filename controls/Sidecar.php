@@ -74,6 +74,26 @@ class Sidecar extends Control {
             return;
         }
 
-        $this->render('sidecar/app', ['title' => $plugin['label'], 'plugin' => $name, 'label' => $plugin['label']]);
+        // The plugin's ORIGIN goes into the iframe's allow= list. An allow= with no origin
+        // means 'src' — the origin of the src attribute, which is tiknix.com — and the
+        // browser does not follow /sidecar/launch's redirect into the plugin when it
+        // computes the allowlist. So the plugin's document got clipboard-read/write
+        // DENIED, and the terminal's Ctrl+Shift+C/V silently did nothing. Name it.
+        $origin = $plugin['url'] !== '' ? self::origin($plugin['url']) : '';
+        if ($origin === '') {
+            error_log('ERROR Sidecar::app: [sidecar.' . $name . '] url is missing or not an absolute URL in conf/config.ini — cannot embed');
+            $this->flash('error', $plugin['label'] . ' is not configured on this server yet.');
+            Flight::redirect('/dashboard');
+            return;
+        }
+
+        $this->render('sidecar/app', ['title' => $plugin['label'], 'plugin' => $name, 'label' => $plugin['label'], 'origin' => $origin]);
+    }
+
+    /** scheme://host[:port] of an absolute URL, or '' when it has no scheme+host. */
+    private static function origin(string $url): string {
+        $p = parse_url($url);
+        if (empty($p['scheme']) || empty($p['host'])) return '';
+        return $p['scheme'] . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '');
     }
 }

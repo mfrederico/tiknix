@@ -1144,7 +1144,7 @@ the step's trace and the log), and each step type has its own output shape
 object smoke) and `garbagecollector` (runtime housekeeping). No instance ran the removed
 demos except partsdna's four August test runs; instances drop them on their next merge.
 
-## Every app has its own /pipelines (built 2026-09-22 — steps 1–3; the tick and the full sidecar teardown remain)
+## Every app has its own /pipelines (built 2026-09-22 — steps 1–4; the sidecar's vhost + directory remain)
 
 **Today the runtime lives in every install and the editor only in core.** An instance runs,
 triggers, debugs and exposes its pipelines, and its agent writes them through `pipeline_set`
@@ -1234,12 +1234,34 @@ tenant on its own LXC gets no cron at all.
   `Pipeline\Scheduler`, so the unit tests can drive a minute).
 - Order: after the editor lands (the tick is what the editor's "schedule" field talks to).
 
-### 5. Retire `pipelines.tiknix`
+**Built (core abbd624):** `Pipeline\Scheduler::tick` + `POST /pipeline/tick` (`pipeline::tick = 101`,
+self-authenticating); `scripts/pipeline-cron.php` is the heartbeat — ticks core in-process,
+POSTs each active instance from the `instance` table with its own secret, one log line per
+answer, and names every install it cannot tick (`[skip] pd: no /pipeline/tick yet — merge
+core into it`). First live minute: 6 ticked, lead-machine fired `outreach-poll-replies`,
+the six dormant instances + `testfv` (unparseable config) skipped by name. The dormant six
+are unscheduled until merged — loud, by design, and the owner's call.
 
-After 2 and 3 are live on core and the six instances: remove `[sidecar.pipelines]` from
-core's config, the `pipelines` entry from `Feature::CATALOG`, the sidecar's vhost, and its
-directory — the shop retirement's checklist. `pipeline_*` MCP tools and the cron are
-untouched throughout.
+### 5. Agent settings for the app (next)
+
+Two things an app owner needs that only a file edit gives them today:
+
+- **The agent credential.** `AgentStep::agentEnv()` reads `.aibuilder/state/<engine>/
+  .credentials.json` → `secure/anthropic.key.enc` → an `anthropic` connection → fails.
+  Nothing in the app writes the key file; `/agentsetup` is MCP config. A card on the
+  Data page: paste an Anthropic key, stored as `secure/anthropic.key.enc` with the
+  install's own key (the ConnectionStore rule: no chmod on an isolated instance), status
+  shown as set/unset/unreadable, never echoed back.
+- **The agent pre-prompt.** A per-install default that every `agent` step is prefixed
+  with ("you are working inside <site>; never write to the database directly; …"), set on
+  the same card, plus a per-step `system` field in the step's config card that is appended
+  to it. `AgentStep` composes `pre-prompt + step system + prompt`; the trace's resolved
+  input shows the whole thing so a run is reproducible.
+
+### 6. Retire `pipelines.tiknix`
+
+Config and feature entry: done (core 595999b). Remaining: the sidecar's vhost (nginx, the
+owner's sudo) and its directory `pipelines.tiknix`. `pipeline_*` MCP tools are untouched.
 
 ### As built (2026-09-22)
 

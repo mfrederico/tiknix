@@ -1048,6 +1048,87 @@ and the two framework READMEs, scored with the catalog's weights, would cover it
 embeddings — after this lands. Per-IDE agent writers (Cursor, Codex, Gemini, Junie): we
 have one CLI flavour.
 
+## Pipeline definitions as a concept part (planned 2026-09-22)
+
+**The pipeline runtime stays core. Pipeline definitions become a concept part.** The runtime
+(`lib/Pipeline/`, 25 files; `controls/Pipeline.php`; 8 MCP tools; `pipeline-cron.php`; the
+`piperun`/`pipesteprun`/`dobject`/`pipeapikey` beans) is load-bearing for core: `Mcp.php`
+exposes `expose_as_tool` pipelines, `InstanceAutomations` reads every instance's pipelines
+for the Projects UI, `ManifestConnector` feeds pipeline sources, publishing is a pipeline,
+the durable-object tick is the pipeline tick, and core's cron triggers every instance over
+HTTP. And every active instance uses it (8–18 definitions each; 145–6,419 runs). A concept
+must be optional and the root manifest may only host, so a runtime nobody can switch off
+is not a concept — same verdict as the MCP server.
+
+What people would adopt is lead-machine's lead-discovery pipeline, or the Shopify inventory
+pull: JSON files plus guidance. That is a concept's shape.
+
+### Shape
+
+```
+concepts/leadgen/
+  concept.json      "provides": {"pipelines": ["leadgen-discovery", "leadgen-outreach"]}
+  pipelines/leadgen-discovery.json
+  pipelines/leadgen-outreach.json
+  guidelines.md     what it needs (which connections, a claude credential), how to run it
+```
+
+- **Declared, not discovered**, like tools: `provides.pipelines` lists slugs; the file is
+  `pipelines/<slug>.json` and its `"slug"` must agree. `verify()` checks the file, the
+  JSON, the slug, and `Loader::validate()` (every step type exists on this install).
+- **Slug carries the concept: `<concept>-<something>`.** Slugs are public — `/pipeline/
+  trigger/<slug>`, `tiknix:pipe_<slug>`, cron config — so provenance in the name and
+  collisions impossible by construction, as for tools. `verify()` also refuses a slug the
+  instance's own `pipelines/` already has.
+- **The instance's own `pipelines/` is unchanged and wins.** `Loader` reads `<root>/pipelines/`
+  exactly as today, first; enabled concepts' declared pipelines are appended. A disabled
+  concept's pipelines are absent — not listed, not triggerable, not exposed as tools.
+- **A concept pipeline is the project's own code once adopted** (copy, don't link):
+  `pipeline_set` / the editor save to the concept's file; `pipeline_delete` refuses a
+  concept pipeline and says to remove it from `provides.pipelines` or disable the concept.
+- **Provenance is visible**: `pipeline_list`, `reuse_digest` and the Projects UI say
+  `concept: leadgen` beside such a pipeline.
+
+### lead-machine must not notice
+
+lead-machine runs 18 instance-own pipelines in production, hourly, and its own controllers
+(`Client`, `Campaign`, `Prospects`) call `app\Pipeline\Runner` directly. The design keeps
+that path byte-for-byte:
+
+- No class moves, no namespace changes, no bean changes.
+- `Loader::__construct(string $root, array $conceptSources = [])` — the existing
+  one-argument construction everywhere means "no concept sources", and `all()`/`get()`/
+  `save()`/`delete()` behave as now. Only `Runner::loader()`, `Executor`, `ObjectRunner` and
+  the two MCP write tools pass this install's enabled concepts' sources
+  (`Concepts::instance()->pipelineSources()`); `InstanceAutomations`, `Introspector` and
+  `pipeline-cron.php` read another install's directory, and pass sources derived from that
+  install's own flags (the `install.concept.%` settings rows Introspector already reads).
+- Tests pin the no-concept path: `LoaderTest` asserts identical `all()` output with and
+  without the argument on a fixture with only instance pipelines.
+- Proof on lead-machine, before and after the merge: `pipeline_list` output diffed, a
+  `Runner::debugRun('demo-hello')` round-trip, and its cron tick (`/pipeline/trigger`,
+  `objecttick` every minute) still clean in the log.
+
+### Changes
+
+| Where | What |
+|---|---|
+| `lib/ConceptManifest.php` | `provides.pipelines` (slug list, `Loader::safeSlug` shape); root may not declare. |
+| `lib/Concepts.php` | `pipelineSources()` for enabled concepts; `verify()` file/JSON/slug/validate/collision/prefix checks; `pipelineSourcesFor($dir, $enabledNames)` (pure, for readers of other installs). |
+| `lib/Pipeline/Loader.php` | Optional `$conceptSources`; instance first, concepts appended; `originOf($slug)`; `delete()` refuses a concept pipeline. |
+| `lib/Pipeline/Runner.php`, `Executor.php`, `ObjectRunner.php`, `mcptools/PipelineSetTool.php`, `PipelineDeleteTool.php` | Construct the loader with this install's sources. |
+| `lib/InstanceAutomations.php`, `mcptools/Introspector.php`, `scripts/pipeline-cron.php` | Sources from the target install's flags. |
+| `mcptools/PipelineListTool.php`, `Introspector::digest()` | Show `concept: <name>`. |
+| `lib/ConceptLint.php`, `ConceptCatalog.php` | `pipelines/` in `TOP_DIRS`; JSON must parse; declared ⇔ present; slug rule. |
+| `tests/unit/ConceptPipelinesTest.php` | Manifest, verify (missing file, bad JSON, slug mismatch, invalid step, collision, prefix), Loader precedence and the no-concept pin, delete refusal, lint. |
+
+### Proving case
+
+Extract one of lead-machine's pipelines (the least connection-bound one) into a `leadgen`
+concept in the catalog with `guidelines.md`; adopt it into a scratch install; `--concept-enable`;
+`pipeline_list` shows it with provenance; `Runner::debugRun` runs it; `--concept-disable`
+removes it. Then the lead-machine before/after diff above.
+
 ## Observation tools (planned 2026-09-22)
 
 The other half of what Boost has and we do not. Our tools answer *what exists* (`reuse_digest`,
@@ -1096,7 +1177,10 @@ hook in the layout and a sink, and Playwright covers the case for now.
 8. **Browsable catalog page** with screenshots (myctobot's registry views as the start).
 9. ~~**Concept MCP tools**~~ — built 2026-09-22 ("Concept MCP tools" above).
 10. ~~**Concept guidance**~~ — built 2026-09-22 ("Concept guidance" above).
-11. **Observation tools** — `last_error`, `read_log_entries`, `database_schema`,
+11. **Pipeline definitions as a concept part** — `provides.pipelines`, concept-aware `Loader`
+    with the instance's own `pipelines/` unchanged and first; lead-machine before/after proof
+    ("Pipeline definitions as a concept part" above).
+12. **Observation tools** — `last_error`, `read_log_entries`, `database_schema`,
     `application_info` on stdio; `database_query` HTTP-only ("Observation tools" above).
 
 Step 1 includes teaching `Introspector`, `check-duplicates.php` and the validation hook to

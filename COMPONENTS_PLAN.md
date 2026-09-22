@@ -1242,21 +1242,46 @@ core into it`). First live minute: 6 ticked, lead-machine fired `outreach-poll-r
 the six dormant instances + `testfv` (unparseable config) skipped by name. The dormant six
 are unscheduled until merged — loud, by design, and the owner's call.
 
-### 5. Agent settings for the app (next)
+### 5. Named agents for the app (planned 2026-09-22)
 
-Two things an app owner needs that only a file edit gives them today:
+myctobot had it right: an `aiagents` row per agent (name, provider, model/endpoint/key,
+`system_prompt`, default flag), the step names the agent, the step's own system prompt is
+layered on the agent's, and "run this agent" worked from anywhere. tiknix's `agent` step
+has only `prompt / engine / model / timeout` and the install's credential chain, with no
+UI for any of it. One app wants several agents — one that appends data, one that makes
+LinkedIn posts sound human — each with its own name, pre-prompt, engine, model, timeout
+and, where it is not Claude, its own endpoint and key.
 
-- **The agent credential.** `AgentStep::agentEnv()` reads `.aibuilder/state/<engine>/
-  .credentials.json` → `secure/anthropic.key.enc` → an `anthropic` connection → fails.
-  Nothing in the app writes the key file; `/agentsetup` is MCP config. A card on the
-  Data page: paste an Anthropic key, stored as `secure/anthropic.key.enc` with the
-  install's own key (the ConnectionStore rule: no chmod on an isolated instance), status
-  shown as set/unset/unreadable, never echoed back.
-- **The agent pre-prompt.** A per-install default that every `agent` step is prefixed
-  with ("you are working inside <site>; never write to the database directly; …"), set on
-  the same card, plus a per-step `system` field in the step's config card that is appended
-  to it. `AgentStep` composes `pre-prompt + step system + prompt`; the trace's resolved
-  input shows the whole thing so a run is reproducible.
+- **`agent` bean** (seeded, frozen-safe): `name` (unique, `[a-z0-9-]`), `description`,
+  `kind` = `cli` (an `EngineRegistry` engine: claude, zai — the install's `bin/claude`) or
+  `openai` (any OpenAI-compatible chat-completions endpoint: OpenAI, Groq, Ollama, a local
+  server), `engine`, `model`, `endpoint`, `api_key_enc` (encrypted with the install's own
+  key, never echoed; empty on a `cli` agent means the install's credential chain),
+  `timeout`, `pre_prompt`, `is_default`. `Model_Agent::byName()`, `defaultAgent()`,
+  `keyStatus()` (set / unset / unreadable — a key that will not decrypt is a fault, not
+  "unset").
+- **The `agent` step** gains `agent` (a dropdown of the app's agents; blank = the default
+  agent; no agents at all = today's behaviour, unchanged, so every existing pipeline runs
+  exactly as before) and `system` (a step-level addition). The system prompt is
+  `agent.pre_prompt` + step `system`; on the CLI path it is a real system prompt
+  (`--append-system-prompt`), on the openai path the `system` message. `engine`, `model`
+  and `timeout` on the step override the agent's. The trace's resolved input shows the
+  whole composed prompt.
+- **`Pipeline\OpenAiChat`**: POST `<endpoint>/chat/completions`, bearer = the agent's key,
+  `messages` = [system, user], timeout = the agent's; output = the assistant text plus
+  usage; a non-200, a body that is not JSON, or a missing choice fails the step with the
+  HTTP code and the body's first line. No retries, no model fallback.
+- **The card, on the Data page**: an *Agents* panel — each agent as a row (name, kind ·
+  engine/model, timeout, default badge, key status), Add/Edit form (name, description,
+  kind, engine, model, endpoint, key, timeout, pre-prompt, default), *Test* (runs the
+  agent with "Say hello in one line" and shows the answer or the exact failure), Delete
+  (refused while a pipeline step names it). Endpoints on `controls/Pipelines.php`, ADMIN,
+  CSRF. The step's config card in the editor gets the agent dropdown and the `system`
+  field from the same list.
+- **Credential on a `cli` agent**: optional. Set → `ANTHROPIC_API_KEY` for that agent's
+  runs; unset → the install's chain (`.credentials.json` → `anthropic.key.enc` →
+  connection). That gives the Data page the "set the app's key" card too: create the
+  default Claude agent and paste the key there.
 
 ### 6. Retire `pipelines.tiknix`
 

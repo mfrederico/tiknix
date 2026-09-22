@@ -208,6 +208,10 @@ if ($__loggedIn) {
           <?php if ($__level <= LEVELS['ROOT']): ?>
             <a class="ui-nav-link<?= $__onPlugins ? ' active' : '' ?>" href="/admin/concepts"><i class="bi bi-puzzle"></i> Plugins</a>
           <?php endif; ?>
+          <?php /* This install's own pipelines — the editor that used to be the pipelines.tiknix
+                   sidecar (COMPONENTS_PLAN.md, "Every app has its own /pipelines"). ADMIN, like
+                   the rest of this group: pipelines are the app's automations. */ ?>
+          <a class="ui-nav-link<?= $__active('/pipelines') ?>" href="/pipelines"><i class="bi bi-diagram-2"></i> Data</a>
           <a class="ui-nav-link<?= $__active('/security') ?>" href="/security"><i class="bi bi-shield-check"></i> Security</a>
         <?php endif; ?>
       <?php endif; ?>

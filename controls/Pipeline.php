@@ -18,6 +18,7 @@ use \Flight as Flight;
 use app\BaseControls\Control;
 use app\Pipeline\Runner;
 use app\Pipeline\ApiKey;
+use app\Pipeline\Trace;
 
 class Pipeline extends Control {
 
@@ -116,7 +117,7 @@ class Pipeline extends Control {
         if (!Runner::get($slug)) { Flight::jsonError('No such pipeline.', 404); return; }
         try {
             $r = Runner::debugRun($slug, $this->jsonBody());
-            Flight::json($this->breakpoint((int) $r['run_id'], $r));
+            Flight::json(Trace::breakpoint((int) $r['run_id'], $r));
         } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
     }
 
@@ -132,7 +133,7 @@ class Pipeline extends Control {
             if ($action === 'abort')    { $r = Runner::debugAbort($runId); }
             elseif ($action === 'end')  { $r = Runner::debugContinueToEnd($runId, $patch); }
             else                        { $r = Runner::debugStep($runId, $patch); }
-            Flight::json($this->breakpoint($runId, $r));
+            Flight::json(Trace::breakpoint($runId, $r));
         } catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 400); }
     }
 
@@ -144,40 +145,7 @@ class Pipeline extends Control {
      * never run (the editor then falls back to static per-step-type hints). */
     public function varshapes($params = []) {
         if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
-        $slug = $this->slugArg();
-        $run  = Bean::findOne('piperun', 'slug = ? ORDER BY id DESC', [$slug]);
-        $shapes = [];
-        if ($run && $run->id) {
-            foreach (Bean::find('pipesteprun', 'run_id = ? ORDER BY id', [(int) $run->id]) as $s) {
-                $name = (string) $s->stepName;
-                if ($name === '') continue;
-                $shapes[$name] = $this->shapeOf(json_decode((string) $s->outputJson, true), 0);
-            }
-        }
-        Flight::json(['ok' => true, 'run_id' => $run && $run->id ? (int) $run->id : 0, 'shapes' => $shapes]);
-    }
-
-    /**
-     * Reduce a value to a walkable, PII-safe shape: objects keep their keys, lists expose their
-     * element shape, scalars become just a type (no value). Depth/breadth capped — PII never crosses the wire.
-     */
-    private function shapeOf($v, int $depth) {
-        if ($depth > 6) return ['t' => 'deep'];
-        if (is_array($v)) {
-            if ($v !== [] && array_keys($v) === range(0, count($v) - 1)) {
-                return ['t' => 'array', 'n' => count($v), 'of' => $this->shapeOf($v[0], $depth + 1)];
-            }
-            $keys = []; $i = 0;
-            foreach ($v as $k => $vv) {
-                if (++$i > 60) { $keys['…'] = ['t' => 'more']; break; }
-                $keys[(string) $k] = $this->shapeOf($vv, $depth + 1);
-            }
-            return ['t' => 'object', 'keys' => $keys];
-        }
-        // Type only — NO value crosses this team-shared boundary. A short sample would still
-        // leak short PII (emails, names), so the autocomplete gets structure, never data. The
-        // current user still sees real values in their own live debug trace.
-        return ['t' => is_bool($v) ? 'bool' : (is_int($v) ? 'int' : (is_float($v) ? 'float' : (is_null($v) ? 'null' : 'string')))];
+        Flight::json(Trace::varShapes($this->slugArg()));
     }
 
     /** POST /pipeline/object/<slug>?key=<key> — deliver a message to a durable object (bearer = trigger_secret). */
@@ -270,36 +238,6 @@ class Pipeline extends Control {
     private function trustedTrigger(): bool {
         $secret = (string) (Flight::get('pipeline.trigger_secret') ?? '');
         return $secret !== '' && hash_equals($secret, $this->bearer());
-    }
-
-    /**
-     * Assemble a debugger breakpoint payload: run status, each step-run (with its
-     * RESOLVED input + output/stdout/stderr), the live variable bag (so the UI can
-     * show + inject data), and which step ran last / runs next.
-     */
-    private function breakpoint(int $runId, array $r): array {
-        $run = Bean::load('piperun', $runId);
-        $steps = [];
-        foreach (Bean::find('pipesteprun', 'run_id = ? ORDER BY id', [$runId]) as $s) {
-            $steps[] = ['step' => $s->stepName, 'type' => $s->stepType, 'status' => $s->status,
-                'input' => json_decode((string) $s->inputJson, true), 'output' => json_decode((string) $s->outputJson, true),
-                'stdout' => (string) $s->stdout, 'stderr' => (string) $s->stderr,
-                'exit' => (int) $s->exitCode, 'duration_ms' => (int) $s->durationMs];
-        }
-        $state = json_decode((string) $run->stateJson, true) ?: [];
-        return [
-            'run_id'      => $runId,
-            'status'      => (string) $run->status,
-            'debug'       => ($state['kind'] ?? '') === 'debug' && $run->status === 'paused',
-            'steps_total' => (int) $run->stepsTotal,
-            'steps_done'  => (int) $run->stepsDone,
-            'error'       => (string) $run->error,
-            'output'      => json_decode((string) $run->outputJson, true),
-            'last_step'   => $r['last_step'] ?? ($state['last'] ?? null),
-            'next_step'   => $r['next_step'] ?? null,
-            'bag'         => $run->status === 'paused' ? ($state['bag'] ?? null) : null,
-            'steps'       => $steps,
-        ];
     }
 
     /** The trailing URL segment (slug or run id) via the auto-router op param. */

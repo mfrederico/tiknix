@@ -129,6 +129,9 @@ $defaults = [
     ['concepthub', 'search', 101, 'Concept catalog search (self-authenticating broker key)'],
     ['concepthub', 'get',    101, 'Concept catalog detail (broker key)'],
     ['concepthub', 'bundle', 101, 'Concept catalog download (broker key)'],
+    // This install's pipeline editor (COMPONENTS_PLAN.md, "Every app has its own /pipelines").
+    // ADMIN: pipelines are the app's automations. The controller re-checks the level itself.
+    ['pipelines', '*', 50, 'Pipeline editor: build, run, debug this install\'s pipelines'],
     // The inverse door: core (or a sidecar) calling THIS install about its own
     // connectors, authenticated by this install's conf/broker.ini key. PUBLIC means
     // reachable, not unprotected — Connectorapi::authed() closes it when no key is

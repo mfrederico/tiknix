@@ -81,6 +81,7 @@ $defaults = [
     ['pipeline', 'debugstep', 101, 'Pipeline step-trace advance (trigger_secret)'],
     ['pipeline', 'object', 101, 'Durable object onMessage (trigger_secret)'],
     ['pipeline', 'objecttick', 101, 'Durable object alarm tick (trigger_secret)'],
+    ['pipeline', 'tick', 101, 'Minute heartbeat: this install fires its own due cron pipelines + object alarms (trigger_secret)'],
     ['pipeline', 'keys', 50, 'Pipeline API key management (ADMIN)'],
     ['pipeline', 'mykey', 100, 'Self-service: mint a REST test key for the current member'],
     ['pipeline', 'mintkey', 101, 'Editor-driven pk_ REST key mint (self-auth via trigger_secret)'],

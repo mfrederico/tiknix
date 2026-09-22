@@ -169,6 +169,18 @@ class Pipeline extends Control {
     }
 
     /**
+     * POST /pipeline/tick — the minute heartbeat (bearer = trigger_secret). THIS install
+     * decides what is due: its own cron pipelines and its durable objects' alarms
+     * (Pipeline\Scheduler). Core's cron only knocks; a tenant elsewhere puts the same
+     * one-liner in its own crontab. Answers with what it did.
+     */
+    public function tick($params = []) {
+        if (!$this->trustedTrigger()) { Flight::jsonError('Forbidden.', 403); return; }
+        try { Flight::json(\app\Pipeline\Scheduler::tick(Runner::root())); }
+        catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 500); }
+    }
+
+    /**
      * POST /pipeline/mykey — self-service: mint a REST key for the CURRENT member on
      * THIS app, revealed once. Lets an owner grab a `pk_…` to test their expose_as_api
      * pipelines without the ADMIN keys screen. The key is scoped to this workspace.

@@ -10,9 +10,10 @@
 # Touches nothing live: the tests build throwaway installs under /tmp and use an
 # in-memory SQLite. Safe to run on the working tree that serves the site.
 #
-# error_reporting=0 is the PHP 8.5 / PHPUnit 9.6 combination: the vendored PHPUnit
-# raises deprecation notices, and failOnWarning in phpunit.xml would count them as
-# failures. The tests' own assertions are unaffected.
+# The error_reporting value is E_ALL minus E_DEPRECATED and E_USER_DEPRECATED (8191):
+# the vendored PHPUnit 9.6 raises deprecations on PHP 8.5, and failOnWarning in
+# phpunit.xml would count them as failures. Everything else still reports — a fatal
+# in a test file must be SEEN, not swallowed into a bare exit 255.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,4 +35,4 @@ for a in "$@"; do
 done
 
 cd "$ROOT"
-exec php -d error_reporting=0 "$PHPUNIT" "${args[@]}"
+exec php -d error_reporting=8191 "$PHPUNIT" "${args[@]}"

@@ -57,7 +57,7 @@ $longopts = [
     // i18n
     'i18n-scan',
     // concepts (COMPONENTS_PLAN.md)
-    'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'force',
+    'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'force', 'agent-sync',
     'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
@@ -172,6 +172,32 @@ if (isset($opt['build'])) {
     exit(0);
 }
 
+// --- Agent guidance: --agent-sync (also run by --concept-enable / --concept-disable) ---
+// CLAUDE.md is generated: core's agent/guidelines/ sections plus each enabled concept's
+// guidelines.md, in one managed block. Whatever is above the block is left alone.
+function agentSync(): void {
+    $enabled = [];
+    foreach (\app\Concepts::instance()->enabled() as $name => $m) {
+        $enabled[$name] = ['version' => $m->version, 'dir' => $m->dir];
+    }
+    $r = \app\AgentGuidance::sync(dirname(__DIR__), $enabled);
+    foreach ($r['notes'] as $n) err("warning: {$n}");
+    out('# ' . \app\AgentGuidance::FILE . ': ' . ($r['changed'] ? ($r['migrated'] ? 'migrated to the managed block' : 'regenerated') : 'unchanged')
+        . ' (' . count($enabled) . ' enabled concept(s))');
+}
+if (isset($opt['agent-sync'])) {
+    if ($DRYRUN) {
+        $enabled = [];
+        foreach (\app\Concepts::instance()->enabled() as $name => $m) $enabled[$name] = ['version' => $m->version, 'dir' => $m->dir];
+        $c = \app\AgentGuidance::compose(dirname(__DIR__), $enabled);
+        $cur = (string) @file_get_contents(dirname(__DIR__) . '/' . \app\AgentGuidance::FILE);
+        out('# dry-run: ' . \app\AgentGuidance::FILE . ' would be ' . ($cur === $c['text'] ? 'unchanged' : 'rewritten') . ' (' . count($enabled) . ' enabled concept(s))');
+        exit(0);
+    }
+    try { agentSync(); } catch (\RuntimeException $e) { bail($e->getMessage()); }
+    exit(0);
+}
+
 // --- Concepts: --concepts | --concept-verify | --concept-enable | --concept-disable ---
 // Switching a concept on or off is an operator action, from here. INSTALLING one (putting
 // its directory in concepts/) is a build task — worktree, review, merge — never a web
@@ -212,6 +238,7 @@ if (isset($opt['concept-enable'])) {
         bail($e->getMessage());
     }
     if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
+    try { agentSync(); } catch (\RuntimeException $e) { err("warning: agent guidance not synced — " . $e->getMessage()); }
     out("# concept '{$name}' enabled");
     exit(0);
 }
@@ -223,6 +250,7 @@ if (isset($opt['concept-disable'])) {
     } catch (\app\ConceptException $e) {
         bail($e->getMessage());
     }
+    try { agentSync(); } catch (\RuntimeException $e) { err("warning: agent guidance not synced — " . $e->getMessage()); }
     out("# concept '{$name}' disabled — its tables and rows are kept");
     exit(0);
 }
@@ -584,6 +612,8 @@ CONCEPTS (pluggable features — see COMPONENTS_PLAN.md)
   --concept-verify=NAME          Everything that would stop NAME being enabled
   --concept-enable=NAME          Verify, run concepts/NAME/seeds (thawed), then switch on
   --concept-disable=NAME [--force]
+  --agent-sync                   Regenerate CLAUDE.md's managed block (core agent/guidelines/ +
+                                 enabled concepts' guidelines.md); enable/disable run it too
                                  Switch off. Refused while another concept requires it, or
                                  while its beans hold rows (--force overrides the rows check;
                                  data is always kept)

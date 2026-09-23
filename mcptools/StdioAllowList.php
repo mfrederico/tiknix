@@ -88,6 +88,16 @@ class StdioAllowList {
         'validate_php',
         'full_validation',
 
+        // Observation (COMPONENTS_PLAN.md "Observation tools"): what is HAPPENING, not what
+        // exists. CLAUDE.md rule #1 is "check logs first" and until these the jailed agent
+        // had no tool that could. Read-only, no identity needed, no member data: log text
+        // is scrubbed of credential shapes (Redact), the schema is column names and types.
+        // database_query is deliberately NOT here — it returns rows, so it stays HTTP + ADMIN.
+        'last_error',
+        'read_log_entries',
+        'database_schema',
+        'application_info',
+
         // How a planner returns its plan.
         'submit_plan',
     ];

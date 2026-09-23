@@ -10,6 +10,16 @@ primitives — prefer them over scanning the tree:
 
 They return pointers, not file bodies — `Read` the file at the pointer for detail. Use these before grepping.
 
+### Observation tools — what is HAPPENING (not what exists)
+
+- `last_error` — the newest ERROR/CRITICAL in `log/app-<date>.log` with the entries logged just before it, plus the newest PHP fatal when readable. **Rule #1: call this first when something misbehaves.**
+- `read_log_entries(count, level, contains, file)` — the newest entries, filtered by minimum level and substring; stack traces stay with their entry; `log/` only.
+- `database_schema(table?)` — the tables and columns the database ACTUALLY has (RedBean adds columns fluidly on first store, so `models/` is not the schema); with `table`, its indexes and foreign keys too.
+- `application_info` — PHP and tiknix versions, core vs project, isolated pool or not, app name and URL, database driver, engines, every plugin with its state.
+- `database_query(sql)` — ADMIN and HTTP only (not for jailed agents): ONE read-only statement (SELECT / WITH / EXPLAIN / read-only PRAGMA), capped at 200 rows, credential columns withheld.
+
+Every string these return is scrubbed of credential shapes (`Redact`). A value that reads `[redacted …]` was there and was withheld — that is not the same as empty.
+
 ### Reuse first (MANDATORY when adding functionality)
 
 Before creating any controller, model, or lib service, call `reuse_digest` and MATCH the

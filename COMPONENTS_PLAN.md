@@ -1377,8 +1377,11 @@ hook in the layout and a sink, and Playwright covers the case for now.
     moved from the sidecar into `controls/Pipelines.php` + `views/pipelines/` on every
     install at ADMIN, core's Data link becomes a plain link, `pipelines.tiknix` retires
     ("Every app has its own /pipelines" above).
-13. **Observation tools** — `last_error`, `read_log_entries`, `database_schema`,
-    `application_info` on stdio; `database_query` HTTP-only ("Observation tools" above).
+13. ~~**Observation tools**~~ — built 2026-09-23: `lib/LogReader.php` (entries, not lines;
+    `log/` only), `lib/Redact.php` (credential shapes scrubbed, credential columns withheld
+    by name), the five `mcptools/*Tool.php`; the four read-only ones on `StdioAllowList`,
+    `database_query` ADMIN + HTTP with a wrapped 200-row cap. `tests/unit/ObservationToolsTest.php`.
+    The first live `last_error` call surfaced a real error on core (`Mcp->config()`).
 
 Step 1 includes teaching `Introspector`, `check-duplicates.php` and the validation hook to
 walk enabled concepts — otherwise the first installed concept is invisible to the planner.

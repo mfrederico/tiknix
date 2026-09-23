@@ -28,7 +28,7 @@ class ConceptLint {
     /** Core classes every install has and no manifest needs to declare. Pipeline: the runtime is core by design (COMPONENTS_PLAN.md). */
     private const ALWAYS_AVAILABLE = ['Bean', 'Concepts', 'ConceptException', 'PermissionCache', 'mcptools', 'Pipeline'];
 
-    private const SECRET_PATTERNS = [
+    public const SECRET_PATTERNS = [
         'Stripe key'        => '/\b[sr]k_(?:live|test)_[A-Za-z0-9]{8,}/',
         'broker key'        => '/\bbrk_[A-Za-z0-9]{12,}/',
         'API key'           => '/\btk_[A-Za-z0-9]{16,}/',

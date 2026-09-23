@@ -129,9 +129,14 @@ class PermissionCache {
         // No permission found - check if we're in build mode
         if (Flight::get('build')) {
             self::logAccess('build', $key);
-            // Auto-create permission in build mode
-            self::createPermission($control, $method);
-            return true; // Allow access in build mode
+            // Auto-create the row, then judge THIS request by it like any other. It used
+            // to `return true` here: the row was created at ADMIN and the request that
+            // created it was let through whoever sent it — one free request per new route
+            // for anyone, including anonymous. Build mode is "the row appears", not "the
+            // first caller is trusted"; nobody moves faster because of the free pass.
+            $level = self::createPermission($control, $method);
+            if ($level !== null) return $userLevel <= $level;
+            // Not a real route (no such controller/method): fall through to the default rule.
         }
 
         /* Deny by default. A route with no authcontrol row is one nobody has classified
@@ -342,32 +347,34 @@ class PermissionCache {
     }
 
     /**
-     * Create a new permission entry (build mode only)
-     * Only creates if the controller and method actually exist
+     * Create a new permission entry (build mode only). Only creates if the controller and
+     * method actually exist. Returns the row's LEVEL (the existing row's when one already
+     * exists), or null when nothing was created, so check() can judge the current request
+     * against it instead of waving it through.
      */
-    private static function createPermission($control, $method) {
+    private static function createPermission($control, $method): ?int {
         if (!Flight::get('build')) {
-            return false;
+            return null;
         }
 
         // Verify controller class exists (use ucfirst to match routing convention)
         $className = "app\\" . ucfirst($control);
         if (!class_exists($className)) {
             Flight::get('log')->debug("PermissionCache: Controller class not found: {$className}");
-            return false;
+            return null;
         }
 
         // Verify method exists in the controller
         if (!method_exists($className, $method)) {
             Flight::get('log')->debug("PermissionCache: Method not found: {$className}::{$method}");
-            return false;
+            return null;
         }
 
         // Check if method is public (required for routing)
         $reflection = new \ReflectionMethod($className, $method);
         if (!$reflection->isPublic()) {
             Flight::get('log')->debug("PermissionCache: Method is not public: {$className}::{$method}");
-            return false;
+            return null;
         }
 
         try {
@@ -409,12 +416,12 @@ class PermissionCache {
                 apcu_delete(self::getCacheKey());
             }
 
-            return true;
+            return (int) $level;
         } catch (\Exception $e) {
             Flight::get('log')->error('PermissionCache: Failed to create permission', [
                 'error' => $e->getMessage()
             ]);
-            return false;
+            return null;   // nothing created: check() applies the default rule, never a free pass
         }
     }
 

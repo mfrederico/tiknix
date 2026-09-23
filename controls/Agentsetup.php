@@ -135,7 +135,7 @@ class Agentsetup extends Control {
     /** Flash a message and redirect back to an agent-setup tab (optionally its edit view). */
     private function flashTo(string $tab, string $type, string $message, ?string $edit = null): void {
         $_SESSION['flash'][] = ['type' => $type, 'message' => $message];
-        Flight::redirect('/agent-setup?tab=' . $tab . ($edit !== null ? '&edit=' . urlencode($edit) : ''));
+        Flight::redirect('/agentsetup?tab=' . $tab . ($edit !== null ? '&edit=' . urlencode($edit) : ''));
     }
 
     /** Add or update an MCP server via Mcp:: and flash the outcome. $mode = 'add' | 'update'. */
@@ -223,7 +223,7 @@ class Agentsetup extends Control {
         } catch (Exception $e) {
             $this->flashTo('servers', 'error', 'Error: ' . $e->getMessage()); return;
         }
-        Flight::redirect('/agent-setup?tab=servers');
+        Flight::redirect('/agentsetup?tab=servers');
     }
 
     // ==================== MCP TOOL ACTIONS ====================
@@ -317,7 +317,7 @@ class Agentsetup extends Control {
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid JSON'];
-            Flight::redirect('/agent-setup?tab=hooks');
+            Flight::redirect('/agentsetup?tab=hooks');
             return;
         }
 
@@ -332,7 +332,7 @@ class Agentsetup extends Control {
             $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
         }
 
-        Flight::redirect('/agent-setup?tab=hooks');
+        Flight::redirect('/agentsetup?tab=hooks');
     }
 
     // ==================== HELPERS ====================

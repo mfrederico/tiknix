@@ -31,9 +31,23 @@ class TwoFactorAuth {
     // Number of recovery codes to generate
     public const RECOVERY_CODE_COUNT = 10;
 
-    // Secret key for signing trust tokens (uses app secret or fallback)
+    /**
+     * The key trust tokens are signed with: [security] app_key, the install's one secret.
+     *
+     * This read `app.secret ?? 'tiknix-2fa-trust-default-key'` — and no config anywhere
+     * defines app.secret, so every install signed every "trusted device" token with a
+     * string printed in the source, which is no signature at all: anyone who had read
+     * this file could mint a 30-day 2FA bypass for any member id. No fallback: a missing
+     * app_key is an install with no secrets at all, and it throws, naming the key.
+     * (Rotating app_key invalidates existing trust tokens — every admin is asked for a
+     * code once. That is the correct consequence of a key change.)
+     */
     private static function getTrustSecret(): string {
-        return Flight::get('app.secret') ?? 'tiknix-2fa-trust-default-key';
+        $hexKey = (string) (Flight::get('security.app_key') ?? '');
+        if ($hexKey === '') {
+            throw new \RuntimeException('2FA trust tokens cannot be signed: [security] app_key is not set in conf/config.ini (see EncryptionService::generateKey()).');
+        }
+        return hash('sha256', '2fa-trust|' . $hexKey, true);   // derived, so the raw key never leaves EncryptionService's use
     }
 
     // Levels that require 2FA (ADMIN and above)

@@ -358,8 +358,16 @@ class PlanExecutor {
         // headless launcher fails the task below rather than quietly running elsewhere.
         // One resolution for engine and model (app\AgentContext). buildRunnerScript
         // derives the credential store from the same engine value below.
-        $ctx       = AgentContext::for($this->planMemberId(), 'worker', $this->instanceDir,
-                                       (string) ($t->engine ?? ''), (string) ($t->model ?? ''));
+        try {
+            $ctx = AgentContext::for($this->planMemberId(), 'worker', $this->instanceDir,
+                                     (string) ($t->engine ?? ''), (string) ($t->model ?? ''));
+        } catch (\RuntimeException $e) {
+            // No owning member, or no credential store for them (AgentState): the task
+            // fails saying so. It never runs on the project's leftover credential.
+            $this->fail($t, $e->getMessage());
+            $this->cleanupWorktree($wtRel, $branch, false);
+            return false;
+        }
         $reqEngine = $ctx->engine;
         $prompt = 'Read .aibuilder/task.md and implement it fully in this working directory, following the codebase conventions. Do not touch files outside your task. When finished, stop.';
         /* The model must come from the SAME engine this task runs on. A single model for
@@ -389,7 +397,15 @@ class PlanExecutor {
         // Project-scoped: plan ids AND subtask ids both come from this instance's own
         // workbench.db, so the unscoped name collided across every project at once.
         $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int)$t->id, $this->slug);
-        $script  = $this->buildRunnerScript($inner, $wtAbs, $session, $ranOn);
+        try {
+            $script = $this->buildRunnerScript($inner, $wtAbs, $session, $ranOn);
+        } catch (\RuntimeException $e) {
+            // Credentials could not be resolved for this run (AgentState): the task fails
+            // with the reason, and nothing runs on a credential nobody chose.
+            $this->fail($t, $e->getMessage());
+            $this->cleanupWorktree($wtRel, $branch, false);
+            return false;
+        }
         $scriptFile = $wtAbs . '/.aibuilder/run-agent.sh';
         file_put_contents($scriptFile, $script);
         @chmod($scriptFile, 0755);
@@ -1160,12 +1176,18 @@ MD;
         return $session !== '' && TmuxManager::exists($session);
     }
 
-    /** The member this plan belongs to — whose credentials its agents run with. */
+    /**
+     * The member this plan belongs to — whose credentials its agents run with. A plan
+     * with no member is refused, not run as 0: AgentState::resolve(0) used to mean "the
+     * project's credential store", i.e. whichever account that folder happened to hold.
+     */
     private function planMemberId(): int {
-        try {
-            $plan = Bean::load('workbenchtask', $this->planId);
-            return (int) ($plan->memberId ?? 0);
-        } catch (\Throwable $e) { return 0; }
+        $plan = Bean::load('workbenchtask', $this->planId);
+        $id = (int) ($plan->memberId ?? 0);
+        if (!$plan->id || $id <= 0) {
+            throw new \RuntimeException("plan-{$this->planId}: no plan row or no member_id on it, so its agents have no account to run as.");
+        }
+        return $id;
     }
 
     /** jail-run.sh path when the instance is jailable, else '' (mirrors ClaudeRunner). */

@@ -34,7 +34,7 @@ class AgentState {
         return preg_replace('/[^a-z0-9_-]/i', '', $engine) ?: 'claude';
     }
 
-    /** The per-PROJECT store — the old location, still the fallback. */
+    /** The per-PROJECT store — the old location; read only to MIGRATE a login from, never run from. */
     public static function projectDir(string $instanceDir, string $engine): string {
         return rtrim($instanceDir, '/') . '/.aibuilder/state/' . self::engine($engine);
     }
@@ -53,11 +53,19 @@ class AgentState {
      * already run agents in.
      */
     public static function resolve(int $memberId, string $engine, string $instanceDir): string {
-        if ($memberId <= 0) return self::projectDir($instanceDir, $engine);   // no member: old behaviour
+        // No member = nobody's credentials. This used to hand back the PROJECT's store —
+        // "old behaviour" — which is precisely the account-nobody-agreed-to problem the
+        // header describes. A run with no owner does not run.
+        if ($memberId <= 0) {
+            throw new \RuntimeException("Agent credentials: this run has no member (id {$memberId}), so there is no account to run it as. The plan/task row must carry member_id.");
+        }
 
         $mine = self::memberDir($memberId, $engine);
         if (!is_dir($mine) && !@mkdir($mine, 0700, true) && !is_dir($mine)) {
-            return self::projectDir($instanceDir, $engine);   // cannot create it; do not break the run
+            // "Do not break the run" here meant: run on whatever credential the project
+            // holds. Breaking the run is the correct outcome; the cause is a permissions
+            // problem on the state base, and it is named.
+            throw new \RuntimeException("Agent credentials: cannot create the member's credential store {$mine} (check [agent] state_base and its permissions for this process).");
         }
         @chmod($mine, 0700);
 

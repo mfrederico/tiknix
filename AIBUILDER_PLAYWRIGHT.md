@@ -20,7 +20,7 @@ test the layout/design it just built:
 `tiknix` is **HTTP, not stdio**, and that is deliberate — over HTTP the agent gets the
 instance's full tool set (~27 tools) instead of the 9-tool stdio allow-list, and the
 server keeps working if the instance moves hosts or sits behind a load balancer. (This
-doc previously showed `{"command": "php", "args": ["mcptools/mcp-stdio.php"]}` here.
+doc previously showed a `mcptools/mcp-stdio.php` entry here (that server was removed 2026-09-23; `mcp-fastmcp.php` is the only stdio server).
 That is core's own config, not what a provisioned instance receives.) See the long note
 at `scripts/aibuilder-provision.php` §4. `playwright` stays stdio: it is a browser the
 agent launches, not a service.

@@ -2,11 +2,10 @@
 /**
  * StdioAllowList — which tools the JAILED AGENT gets over stdio.
  *
- * One list, read by both stdio servers (mcp-fastmcp.php and the dependency-free
- * mcp-stdio.php fallback). They previously wrote the same four names out twice,
- * which is a promise the code cannot keep: a tool added to one would silently not
- * appear in the other, and "the two servers are interchangeable" would quietly
- * stop being true.
+ * One list, read by the stdio server (mcp-fastmcp.php). It once served two stdio
+ * servers — a fastmcphp one and a hand-rolled fallback that nothing selected; the
+ * fallback is gone (2026-09-23), the list stays because it is the policy, not the
+ * plumbing.
  *
  * WHY AN ALLOW-LIST AT ALL, when ToolLoader discovers 27.
  *

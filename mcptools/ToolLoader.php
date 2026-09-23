@@ -249,7 +249,7 @@ class ToolLoader {
      * array json-encodes to [] (array), which strict MCP clients reject with
      * "expected record, received array". Normalize the no-argument case to {}
      * here — the single point every hand-rolled tools/list consumer
-     * (mcp-stdio.php, the HTTP Mcp controller, admin UIs) flows through.
+     * (mcp-fastmcp.php, the HTTP Mcp controller, admin UIs) flows through.
      *
      * @param array $def Tool definition from BaseTool::getDefinition()
      * @return array Definition with an object (not array) empty properties

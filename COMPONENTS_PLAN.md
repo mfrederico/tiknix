@@ -911,7 +911,7 @@ for an unauthenticated tools/list, and after `--concept-disable`; never on stdio
 The `probe` fixture concept (used to prove routing and slots over HTTP) gains
 `mcptools/ProbeEchoTool.php` (`probe_echo`). On a scratch copy, over the real gateway:
 `tools/list` shows `tiknix:probe_echo` when the concept is enabled and the caller is at its
-level; absent when disabled or below level; `tools/call` round-trips; `mcp-stdio.php` never
+level; absent when disabled or below level; `tools/call` round-trips; the stdio server never
 lists it. `concepts_search`/`concepts_get` stay core-shipped: the catalog is core, and a
 tool that lists the catalog belongs beside it.
 

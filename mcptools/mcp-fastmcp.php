@@ -1,21 +1,19 @@
 #!/usr/bin/env php
 <?php
 /**
- * mcp-fastmcp.php — fastmcphp-backed stdio MCP server (codebase introspection).
+ * mcp-fastmcp.php — THE stdio MCP server (what .mcp.json launches for the jailed agent).
  *
- * Functional equivalent of mcp-stdio.php, but the JSON-RPC plumbing
- * (initialize / tools/list / tools/call framing, schema encoding) is handled by
- * fastmcphp instead of the hand-rolled loop. The tool bodies stay identical:
- * each fastmcphp tool delegates to the existing app\mcptools\*Tool::execute(),
- * so output is byte-for-byte the same and Introspector remains the one source
- * of truth.
+ * fastmcphp does the protocol — initialize / tools/list / tools/call framing, schema
+ * encoding — and each registered tool delegates to app\mcptools\*Tool::execute(), the
+ * same classes the HTTP gateway (controls/Mcp.php → LocalMcpServer::build) serves. One
+ * registration path, two transports.
  *
- * Selected by the provisioner (aibuilder-provision.php) as the "tiknix" MCP
- * server whenever fastmcphp is vendored (vendor/fastmcphp present); otherwise
- * the dependency-free mcp-stdio.php is used. Requires the upstream fastmcphp
- * change that makes react/http optional (require → require-dev/suggest) so it
- * can be `composer require --dev`'d without dragging psr/http-message ^1.0 into
- * tiknix's tree; the stdio transport itself never touches react/http.
+ * There is no fallback server. fastmcphp is a hard composer requirement of every
+ * install; if vendor/fastmcphp is missing this process says so (log/mcp-<date>.log,
+ * stderr) and exits 1 rather than running anything else. A dependency-free
+ * mcp-stdio.php with a hand-rolled JSON-RPC loop used to sit beside this file "in
+ * case" — nothing ever selected it, and a second implementation of the protocol that
+ * nobody runs is a divergence waiting to be believed. Removed 2026-09-23.
  *
  * Test:
  *   echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | php mcptools/mcp-fastmcp.php
@@ -98,17 +96,13 @@ if (!class_exists(Fastmcphp::class)) {
 }
 if (!class_exists(Fastmcphp::class)) {
     $mcpLog('FATAL', 'fastmcphp not found (vendor/fastmcphp missing?)');
-    fwrite(STDERR, "fastmcphp not found. Run: composer require --dev fastmcphp/fastmcphp\n");
+    fwrite(STDERR, "fastmcphp not found (vendor/fastmcphp). It is a hard requirement: run composer install in the project root.\n");
     exit(1);
 }
 
 // Register tiknix's local tools via the shared builder (same registration path
-// the HTTP Mcp gateway uses). Scoped to the read-only introspection + plan tools
-// — the same allow-list as mcp-stdio.php, so the two servers are interchangeable.
-//
-// The list lives in mcptools/StdioAllowList.php so the two stdio servers cannot
-// drift from each other: they had the same four names written out twice, and a
-// tool added to one would silently not appear in the other.
+// the HTTP Mcp gateway uses), scoped to StdioAllowList: what is safe to hand to a
+// caller with no identity.
 try {
     $loader = new ToolLoader($root . '/mcptools');
     $mcp = LocalMcpServer::build($loader, [

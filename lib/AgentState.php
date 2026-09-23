@@ -139,25 +139,26 @@ class AgentState {
          * with "this project has not signed in to Claude" while the terminal was happily
          * running on that very engine.
          *
-         * For those engines, "signed in" means a key is reachable: the member's own key
-         * (their setting, the authoritative record), the token file the builder writes into
-         * the state dir the jail binds, or the operator's environment variable. Any one of
-         * the three is what jail-run.sh will find, so any one of the three is a yes.
+         * For those engines, "signed in" means the operator's environment key is set — what
+         * jail-run.sh will find. (A member's own key was a setting until 2026-09-23; it is a
+         * model connection now, handled first below.)
          */
+        /* A member who builds on their OWN model connection (Connections → Models) is
+           "signed in" when that connection can run — AgentContext swaps it in for claude, so
+           asking about claude's OAuth file here would refuse a build that would start fine. */
+        if ($engine === 'claude' && $memberId > 0) {
+            $mine = \Model_Modelconnection::chosenFor($memberId);   // throws when the choice is broken: said, not "no"
+            if ($mine) $engine = $mine->box()->engineName();
+        }
+        if (\Model_Modelconnection::idFromEngine($engine) !== null) {
+            $c = \Model_Modelconnection::byId((int) \Model_Modelconnection::idFromEngine($engine));
+            return $c !== null && (int) $c->memberId === $memberId && $c->box()->runProblems() === [];
+        }
+
+        // A platform engine that authenticates by key (z.ai): the operator's environment key.
+        // A member's OWN key for such a provider is a model connection now (above).
         $envVar = EngineRegistry::authTokenEnv($engine);
         if ($envVar !== '') {
-            if ($memberId > 0) {
-                // Member settings live in CORE's database; a sidecar's default connection
-                // is the instance's own, so ask core directly. A failure here is "cannot
-                // tell", which must not read as "signed in" — fall through to the files.
-                $key = (string) CoreDb::with(
-                    fn() => MemberEnginePrefs::token($memberId, $engine),
-                    ''
-                );
-                if (trim($key) !== '') return true;
-                if (is_file(self::memberDir($memberId, $engine) . '/auth-token')) return true;
-            }
-            if (is_file(self::projectDir($instanceDir, $engine) . '/auth-token')) return true;
             return trim((string) getenv($envVar)) !== '';
         }
 

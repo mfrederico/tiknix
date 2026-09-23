@@ -107,6 +107,14 @@ Connections → Models moved from Settings (owner's choice) + the opt-in checkbo
 has "owner's model". Proven live from serenity: call answered in 3.5 s with pre-prompt + step
 system delivered; opt-out → 403 naming the checkbox.
 
-**Not yet:** phase 5 (remove
+**Phase 5 done (2026-09-23):** the per-engine key in Settings is gone (`MemberEnginePrefs` token
+functions, the Settings field, `AgentState::signedIn`'s member-token checks); seed 15 migrated the
+one stored key (member 1's z.ai) into a model connection, not chosen for builds. CORRECTION to
+the table at the top: that key DID reach a run — the workbench sidecar's Builder terminal wrote it
+into the state dir for z.ai. The terminal now resolves through `AgentContext` (so it honours a
+member's chosen connection), the bridge accepts `mc-<id>`, and the z.ai prompt is a non-blocking
+note pointing at Connections → Models.
+
+**Not yet:** (was phase 5: remove
 `MemberEnginePrefs::setToken` + migrate), OpenAI-protocol build agents (qwen-code), per-project
 "always use my connection X" opt-in.

@@ -225,8 +225,8 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                                             <span class="badge bg-success">in <?= $h($project['name']) ?></span>
                                             <div class="small text-muted mt-1">that project's Plugins page shows whether it is on</div>
                                         <?php else: ?>
-                                            <form method="POST" action="/admin/conceptinstall" class="d-inline"
-                                                  onsubmit="return confirm('Install <?= $h($r['name']) ?> into <?= $h($project['name']) ?>? It runs now as a build with no agent — a commit and merge on that project, then switched on; usually under a minute.')">
+                                            <?php // No confirm: the click is the decision, and the spinner row that follows says what is happening. ?>
+                                            <form method="POST" action="/admin/conceptinstall" class="d-inline">
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="name" value="<?= $h($r['name']) ?>">
                                                 <button type="submit" class="btn btn-primary btn-sm">

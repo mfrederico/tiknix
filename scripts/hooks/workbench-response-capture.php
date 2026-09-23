@@ -33,8 +33,12 @@ if (!$taskId) {
 // CLAUDE_PROJECT_DIR may point to isolated workspace (no vendor there)
 $mainProject = getenv('TIKNIX_PROJECT_ROOT');
 if (!$mainProject) {
-    // Fallback: derive from script location
-    $mainProject = dirname(__DIR__, 2);
+    // No guessing the project root from the script's location: this file is copied into
+    // every worktree, and "the tree beside me" is the mistake plan-ingest and
+    // plan-orchestrate both made. A hook must not stop the agent, so it says so and does
+    // nothing.
+    fwrite(STDERR, "workbench-response-capture: TIKNIX_PROJECT_ROOT is not set; the response is NOT captured to the task.\n");
+    exit(0);
 }
 
 // Load the application for database access from main project
@@ -55,7 +59,8 @@ try {
         // the same mistake plan-ingest and plan-orchestrate both made.
         $dbPath = trim((string) (getenv('TIKNIX_WORKBENCH_DB') ?: ''));
         if ($dbPath === '') {
-            $dbPath = $mainProject . '/' . ($config['database']['path'] ?? 'database/tiknix.db');
+            $dbPath = $mainProject . '/' . ($config['database']['path'] ?? '');
+            if (($config['database']['path'] ?? '') === '') { fwrite(STDERR, "workbench-response-capture: no TIKNIX_WORKBENCH_DB and no [database] path in {$configPath}; NOT captured.\n"); exit(0); }
         }
         if (!Bean::hasDatabase('default')) {
             R::setup('sqlite:' . $dbPath);
@@ -189,7 +194,8 @@ function addTaskLog(string $taskId, string $message): bool {
         Bean::store($comment);
         return true;
     } catch (Exception $e) {
-        // Silently fail - don't interrupt Claude's work
+        // Never interrupt the agent — but never silently either.
+        fwrite(STDERR, 'workbench-response-capture: comment NOT saved: ' . $e->getMessage() . "\n");
         return false;
     }
 }
@@ -213,7 +219,7 @@ function updateTaskStatus(string $taskId): bool {
         }
         return true;
     } catch (Exception $e) {
-        // Silently fail - don't interrupt Claude's work
+        fwrite(STDERR, 'workbench-response-capture: task NOT updated: ' . $e->getMessage() . "\n");
         return false;
     }
 }

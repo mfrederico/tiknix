@@ -98,7 +98,7 @@ class AuditReporter {
             $plan->auditFailures = count($failures);
             $plan->updatedAt     = date('Y-m-d H:i:s');
             Bean::store($plan);
-        } catch (\Throwable $e) { /* best-effort */ }
+        } catch (\Throwable $e) { error_log('ERROR AuditReporter: could not stamp the plan with its audit result: ' . $e->getMessage()); }
 
         // 6) Cap terminus: a fix that failed its audit AT the cap gets no further
         //    auto-retry, so flip the source detected error to a distinct 'capped'
@@ -115,7 +115,7 @@ class AuditReporter {
                     $err->updatedAt   = date('Y-m-d H:i:s');
                     Bean::store($err);
                 }
-            } catch (\Throwable $e) { /* best-effort */ }
+            } catch (\Throwable $e) { error_log('ERROR AuditReporter: could not mark the firehose errors this plan capped: ' . $e->getMessage()); }
         }
 
         return ['passed' => $passed, 'failures' => count($failures), 'firehose' => $reported, 'emailed' => $emailed];
@@ -176,7 +176,7 @@ class AuditReporter {
             $c->isInternal   = 0;
             $c->createdAt    = date('Y-m-d H:i:s');
             Bean::store($c);
-        } catch (\Throwable $e) { /* best-effort */ }
+        } catch (\Throwable $e) { error_log('ERROR AuditReporter: could not post the audit comment on the task: ' . $e->getMessage()); }
     }
 
     // --- firehose -------------------------------------------------------------
@@ -213,9 +213,9 @@ class AuditReporter {
             ]);
             curl_exec($ch);
             $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
+            if ($code < 200 || $code >= 300) error_log("ERROR AuditReporter: firehose report answered HTTP {$code} (" . (curl_error($ch) ?: 'no curl error') . ') — the audit report is not recorded');
             return $code >= 200 && $code < 300;
-        } catch (\Throwable $e) { return false; }
+        } catch (\Throwable $e) { error_log('ERROR AuditReporter: firehose report failed: ' . $e->getMessage()); return false; }
     }
 
     // --- email ----------------------------------------------------------------
@@ -275,7 +275,7 @@ class AuditReporter {
                     if (is_file($path)) $mailer->attach($path, basename($path));
                 }
                 if ($mailer->send($html)) $sent++;
-            } catch (\Throwable $e) { /* keep going */ }
+            } catch (\Throwable $e) { error_log("ERROR AuditReporter: audit mail to {$email} failed: " . $e->getMessage()); }
         }
         return $sent;
     }
@@ -298,7 +298,7 @@ class AuditReporter {
                     if (!empty($row['email'])) $out[strtolower((string)$row['email'])] = (string)($row['username'] ?: $row['email']);
                 }
             }
-        } catch (\Throwable $e) { /* best-effort */ }
+        } catch (\Throwable $e) { error_log('ERROR AuditReporter: could not read the team members to notify — the audit mail will go to fewer people: ' . $e->getMessage()); }
         return $out;
     }
 

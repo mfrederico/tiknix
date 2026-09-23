@@ -24,7 +24,7 @@
             <div class="card">
                 <div class="card-body">
                     <h5 class="card-title">Active Sessions</h5>
-                    <h2 class="text-info"><?= $stats['active_sessions'] ?></h2>
+                    <h2 class="text-info" title="<?= $stats['active_sessions'] === null ? 'session directory not readable' : 'session files on disk' ?>"><?= $stats['active_sessions'] === null ? '—' : (int) $stats['active_sessions'] ?></h2>
                 </div>
             </div>
         </div>

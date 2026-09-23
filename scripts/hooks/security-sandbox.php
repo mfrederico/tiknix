@@ -39,7 +39,13 @@ $projectDir = rtrim(realpath($projectDir) ?: $projectDir, '/');
 
 // Get member level from environment (set by ClaudeRunner)
 // Levels: 1=ROOT, 50=ADMIN, 100=MEMBER, 101=PUBLIC
-$memberLevel = (int)(getenv('TIKNIX_MEMBER_LEVEL') ?: 100);
+$memberLevel = (int)(getenv('TIKNIX_MEMBER_LEVEL') ?: 0);
+if ($memberLevel <= 0) {
+    // The runner always exports this. Without it the guard is deciding on an invented
+    // number; MEMBER is the least-privileged real level, so it fails safe — and says so.
+    fwrite(STDERR, "security-sandbox: TIKNIX_MEMBER_LEVEL is not set; guarding as MEMBER (100).\n");
+    $memberLevel = 100;
+}
 $memberId = (int)(getenv('TIKNIX_MEMBER_ID') ?: 0);
 $taskId = (int)(getenv('TIKNIX_TASK_ID') ?: 0);
 

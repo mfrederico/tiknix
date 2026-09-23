@@ -342,8 +342,14 @@ $useOllama = isset($args['ollama']) || getenv('USE_OLLAMA_ANALYSIS');
 if ($useOllama) {
     echo "=== Ollama Semantic Analysis ===\n\n";
 
-    $ollamaUrl = getenv('OLLAMA_URL') ?: 'http://localhost:11434';
-    $ollamaModel = getenv('OLLAMA_MODEL') ?: 'gpt-oss:120b-cloud';
+    $ollamaUrl   = (string) getenv('OLLAMA_URL');
+    $ollamaModel = (string) getenv('OLLAMA_MODEL');
+    if ($ollamaUrl === '' || $ollamaModel === '') {
+        echo "Ollama analysis was requested but OLLAMA_URL and/or OLLAMA_MODEL are not set — skipped. (No endpoint or model is guessed.)\n\n";
+        $useOllama = false;
+    }
+}
+if ($useOllama) {
 
     // Extract function signatures for analysis
     $functions = [];

@@ -61,7 +61,10 @@ class Firehose extends Control {
                         $st->execute([(int)$e->taskId]);
                         $row = $st->fetch(\PDO::FETCH_ASSOC) ?: null;
                         if ($row) $task = (object)['id' => (int)$row['id'], 'status' => (string)$row['status']];
-                    } catch (\Throwable $ex) { $task = null; }
+                    } catch (\Throwable $ex) {
+                        $task = null;   // rendered as "not on board" — so say here that it was not LOOKED UP
+                        $this->logger->warning('Firehose: could not look up a task on the board', ['slug' => $slug, 'task_id' => (int) $e->taskId, 'err' => $ex->getMessage()]);
+                    }
                 }
             }
             $errors[] = ['e' => $e, 'task' => $task, 'slug' => $slug];

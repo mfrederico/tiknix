@@ -1112,9 +1112,14 @@ MD;
             $file = dirname(__DIR__) . '/mcptools/Introspector.php';
             if (is_file($file)) require_once $file;
             $cls = 'app\\mcptools\\Introspector';
-            if (!class_exists($cls)) return '';
+            if (!class_exists($cls)) throw new \RuntimeException('mcptools/Introspector.php is missing from this project');
             $intro = new $cls($this->instanceDir);
-        } catch (\Throwable $e) { return ''; }
+        } catch (\Throwable $e) {
+            // The agent was told to EXTEND these; an empty brief would let it re-invent
+            // them. Say what is missing so the brief itself carries the instruction.
+            $this->logEvent($t, 'warning', 'Reuse brief unavailable: ' . $e->getMessage());
+            return "- **Reuse inventory unavailable** (" . $e->getMessage() . "). Before adding any controller, model or lib, call reuse_digest / describe yourself — the items this task must extend were: " . implode(', ', array_map('strval', $reuses)) . "\n";
+        }
 
         $lines = [];
         foreach ($reuses as $r) {

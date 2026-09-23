@@ -176,7 +176,12 @@ class InstanceAutomations {
         if ($path === '') return null;
         $abs = $path[0] === '/' ? $path : $dir . '/' . $path;
         if (!is_file($abs)) return null;
-        try { $pdo = new \PDO('sqlite:' . $abs); $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_SILENT); return $pdo; }
-        catch (\Throwable $e) { return null; }
+        try { $pdo = new \PDO('sqlite:' . $abs); $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION); return $pdo; }
+        catch (\Throwable $e) {
+            // Null reads as "no automations here" upstream; a database that exists but will
+            // not open is not that, so it is named.
+            error_log("ERROR InstanceAutomations: {$abs} exists but could not be opened — automations for this instance will NOT fire: " . $e->getMessage());
+            return null;
+        }
     }
 }

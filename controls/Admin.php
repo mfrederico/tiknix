@@ -560,17 +560,14 @@ class Admin extends Control {
     /**
      * Get active sessions count
      */
-    private function getActiveSessions() {
-        // This is a simple implementation - you might want to track sessions in database
-        try {
-            $sessionPath = session_save_path();
-            if (is_readable($sessionPath)) {
-                return count(scandir($sessionPath)) - 2; // Subtract . and ..
-            }
-        } catch (Exception $e) {
-            // If we can't read session directory, just return estimate
+    /** Session files on disk, or null when they cannot be counted — never a made-up "1". */
+    private function getActiveSessions(): ?int {
+        $sessionPath = (string) session_save_path();
+        if ($sessionPath === '' || !is_readable($sessionPath)) {
+            $this->logger->warning('Admin: session directory is not readable; active sessions not counted', ['path' => $sessionPath]);
+            return null;
         }
-        return 1; // At least current user is active
+        return max(0, count(scandir($sessionPath) ?: []) - 2); // minus . and ..
     }
     
     /**

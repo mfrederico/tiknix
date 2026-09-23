@@ -93,9 +93,14 @@ class InstagramConnector extends AbstractConnector {
             'access_token'  => $shortToken,
         ]));
         $j2 = json_decode($b2, true);
-        // Fall back to the short-lived token if the exchange is unavailable (still usable ~1h).
-        $token     = ($s2 >= 200 && $s2 < 300 && !empty($j2['access_token'])) ? (string)$j2['access_token'] : $shortToken;
-        $expiresIn = (int)($j2['expires_in'] ?? 3600);
+        // No short-lived stand-in: it "worked" for an hour and then the connection died with
+        // nothing in the record saying why. A failed exchange fails the connect, with what
+        // Instagram said, so it is fixed now rather than diagnosed in sixty minutes.
+        if ($s2 < 200 || $s2 >= 300 || empty($j2['access_token'])) {
+            throw new \Exception('Instagram long-lived token exchange failed (HTTP ' . $s2 . '): ' . mb_substr((string) ($j2['error']['message'] ?? strtok((string) $b2, "\n") ?: 'no body'), 0, 200));
+        }
+        $token     = (string)$j2['access_token'];
+        $expiresIn = (int)($j2['expires_in'] ?? 0) ?: 60 * 86400;   // Instagram documents 60 days for this grant
         $expiresAt = time() + $expiresIn;
 
         // 3) profile (username, account type). ig user id may already be known from step 1.

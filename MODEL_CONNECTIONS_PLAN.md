@@ -97,6 +97,16 @@ member was refused; inside `jail-run.sh` the env was exactly the member's endpoi
 empty `ANTHROPIC_API_KEY`, tier models, and the endpoint was reachable. A full Claude Code session
 on the tiny CPU model was not watched to completion (16 tokens took 92 s on this CPU).
 
-**Not yet:** phase 4 (pipeline steps naming a member's connection), phase 5 (remove
+**Phase 4 built (2026-09-23, core a93a2de + e4ea2a9):** pipeline agent kind `member` names one of the
+project OWNER's connections (`agent.connection_ref`, a core row id). The key never leaves core:
+the step POSTs `/brokerinfo/modelcall` over the app's broker key, core answers `{job}` at once
+and finishes the call after the response (flushed by hand — Flight buffers its body), the step
+polls `/brokerinfo/modelresult`. Core resolves the payer from `instance.member_id` and requires
+the owner's per-connection opt-in (`allow_pipelines`). Every call is a `modelcall` row. UI:
+Connections → Models moved from Settings (owner's choice) + the opt-in checkbox; Data → Agents
+has "owner's model". Proven live from serenity: call answered in 3.5 s with pre-prompt + step
+system delivered; opt-out → 403 naming the checkbox.
+
+**Not yet:** phase 5 (remove
 `MemberEnginePrefs::setToken` + migrate), OpenAI-protocol build agents (qwen-code), per-project
 "always use my connection X" opt-in.

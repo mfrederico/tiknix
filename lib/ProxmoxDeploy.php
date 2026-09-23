@@ -772,8 +772,13 @@ class ProxmoxDeploy {
         // app.baseurl is publisher.tiknix.com — so a blank domain field would have stood a
         // container up on <slug>.publisher.tiknix.com, a name nothing resolves to and no
         // certificate covers.
-        $src  = (string) (\Flight::get('sidecar.core_url') ?: \Flight::get('app.baseurl') ?: 'https://tiknix.com');
-        $host = strtolower((string) (parse_url($src, PHP_URL_HOST) ?: 'tiknix.com'));
+        $src  = (string) (\Flight::get('sidecar.core_url') ?: \Flight::get('app.baseurl') ?: '');
+        $host = strtolower((string) parse_url($src, PHP_URL_HOST));
+        if ($host === '') {
+            // No literal host here: a self-hosted install would otherwise stand its tenants
+            // up under a domain it does not own, with a name nothing resolves.
+            throw new \RuntimeException("Cannot derive a tenant domain for '{$slug}': set [sidecar] core_url (or [app] baseurl on the control plane) in conf/config.ini to the control plane's URL.");
+        }
         return $slug . '.' . $host;
     }
 

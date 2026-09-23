@@ -51,42 +51,6 @@ class PortManager {
     }
 
     /**
-     * Get port status information
-     *
-     * @param int $port Port number
-     * @return array Status info with 'available' and 'message' keys
-     */
-    public static function getPortStatus(int $port): array {
-        $available = self::isPortAvailable($port);
-
-        return [
-            'port' => $port,
-            'available' => $available,
-            'message' => $available
-                ? "Port {$port} is available"
-                : "Port {$port} is already in use"
-        ];
-    }
-
-    /**
-     * Find next available port starting from a base
-     *
-     * @param int $startPort Starting port to check
-     * @param int $maxAttempts Maximum ports to try
-     * @return int|null Available port or null if none found
-     */
-    public static function findAvailablePort(int $startPort, int $maxAttempts = 100): ?int {
-        for ($i = 0; $i < $maxAttempts; $i++) {
-            $port = $startPort + $i;
-            if (self::isPortAvailable($port)) {
-                return $port;
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Get port info for a task
      *
      * @param int $memberId Member ID
@@ -110,24 +74,8 @@ class PortManager {
         return self::BASE_PORT + ($h % self::PORT_RANGE) + 1;
     }
 
-    public static function getTaskPortInfo(int $memberId, string $scope = '', int $taskId = 0): array {
-        $assignedPort = $taskId > 0
-            ? self::getPortForTask($scope, $taskId)
-            : self::getPortForMember($memberId);
-        $available = self::isPortAvailable($assignedPort);
-
-        $result = [
-            'port' => $assignedPort,
-            'available' => $available,
-            'fallback' => null
-        ];
-
-        // If assigned port is busy, try to find an alternative
-        if (!$available) {
-            $fallback = self::findAvailablePort($assignedPort + 1, 50);
-            $result['fallback'] = $fallback;
-        }
-
-        return $result;
-    }
+    /* getTaskPortInfo() — "if the assigned port is busy, find another" — was removed
+       2026-09-23: nothing called it, and a port nobody assigned is a fallback (the task
+       would run somewhere its own record does not say). The one caller of this class is
+       TmuxManager::getPortForTask, which is deterministic. */
 }

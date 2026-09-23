@@ -48,8 +48,26 @@ class CoreDb {
      * database, and there is no second one to reach for.
      */
     public static function path(): string {
+        $root = dirname(__DIR__);
+        /* A SIDECAR is not its own registry. The Sidecar Kit loads the SIDECAR's config into
+           Flight, so database.path there is the sidecar's own file (data/workbench.db) — and
+           resolved against core's root it named tiknix/data/workbench.db, an empty file. In
+           fluid mode a lookup on a missing table returns "no row" rather than failing, so
+           every sidecar CoreDb read (model connections, member settings) quietly answered
+           "none" from the wrong database (found 2026-09-23). In a sidecar, core's database
+           comes from CORE's config. */
+        if (\Flight::get('sidecar.core_root')) {
+            $coreRoot = rtrim((string) \Flight::get('sidecar.core_root'), '/');
+            $ini = @parse_ini_file($coreRoot . '/conf/config.ini', true);
+            $corePath = is_array($ini) ? trim((string) ($ini['database']['path'] ?? '')) : '';
+            if ($corePath === '') {
+                self::$lastError = "sidecar: no [database] path in {$coreRoot}/conf/config.ini";
+                self::warn(self::$lastError);
+                return $coreRoot . '/conf/config.ini#no-database-path';   // not a file: with() reports it, never guesses
+            }
+            return $corePath[0] === '/' ? $corePath : $coreRoot . '/' . ltrim($corePath, '/');
+        }
         $configured = trim((string) \Flight::get('database.path'));
-        $root       = dirname(__DIR__);
 
         if ($configured === '') return $root . '/database/tiknix.db';
 

@@ -262,6 +262,93 @@ class Brokerinfo extends Control {
         ]);
     }
 
+    /* ---- the owner's model connections, for this project's pipelines --------------
+     * MODEL_CONNECTIONS_PLAN.md phase 4. The key never leaves core: a pipeline agent step
+     * asks core to make the call. The payer is the project's OWNER (instance.member_id, read
+     * here — never taken from the request), and only for connections the owner opted in
+     * ("let my projects' pipelines use this"). */
+
+    /** The owner's connection by id, if this instance may use it; else null. */
+    private function pipelineConnection(int $instanceId, int $connectionId) {
+        $inst = Bean::load('instance', $instanceId);
+        $owner = (int) ($inst->memberId ?? 0);
+        if (!$inst->id || $owner <= 0 || $connectionId <= 0) return null;
+        $c = \Model_Modelconnection::byId($connectionId);
+        if (!$c || (int) $c->memberId !== $owner || (int) ($c->allowPipelines ?? 0) !== 1) return null;
+        return $c;
+    }
+
+    /** GET /brokerinfo/modelconnections — the owner's opted-in connections (no keys, no endpoints). */
+    public function modelconnections($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        $inst = Bean::load('instance', $iid);
+        $owner = (int) ($inst->memberId ?? 0);
+        $out = [];
+        if ($owner > 0) {
+            foreach (\Model_Modelconnection::forMember($owner) as $c) {
+                if ((int) ($c->allowPipelines ?? 0) !== 1) continue;
+                $out[] = $c->box()->publicInfo();
+            }
+        }
+        Flight::json(['instance_id' => $iid, 'connections' => $out]);
+    }
+
+    /**
+     * POST /brokerinfo/modelcall — {connection, model?, system?, prompt, max_tokens?, timeout?}.
+     * Answers {job} at once and finishes the call after the response, because a model can take
+     * longer than the 60 s nginx allows a request. Poll /brokerinfo/modelresult?job=.
+     */
+    public function modelcall($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { Flight::jsonError('POST only.', 405); return; }
+        $d = $this->jsonBody();
+        $cid = (int) ($d['connection'] ?? 0);
+        $c = $this->pipelineConnection($iid, $cid);
+        if (!$c) { Flight::jsonError("Model connection #{$cid} is not available to this project's pipelines (it must be the project owner's, with 'let my projects' pipelines use this' ticked on Connections → Models).", 403); return; }
+        $prompt = (string) ($d['prompt'] ?? '');
+        if (trim($prompt) === '') { Flight::jsonError('No prompt.', 400); return; }
+        if ($p = $c->box()->callProblems()) { Flight::jsonError(implode('; ', $p), 409); return; }
+        $timeout = max(5, min(3600, (int) ($d['timeout'] ?? 600)));
+
+        $job = Bean::dispense('modelcall');
+        $job->instanceRef = $iid; $job->connectionRef = (int) $c->id; $job->memberRef = (int) $c->memberId;
+        $job->model = (string) ($d['model'] ?? ''); $job->status = 'running'; $job->createdAt = date('Y-m-d H:i:s');
+        $jobId = (int) Bean::store($job);
+
+        Flight::json(['job' => $jobId, 'status' => 'running']);
+        // Everything below runs after the caller has its answer.
+        ignore_user_abort(true);
+        @set_time_limit($timeout + 60);
+        if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+
+        $r = $c->box()->call((string) ($d['system'] ?? ''), $prompt, (string) ($d['model'] ?? ''), (int) ($d['max_tokens'] ?? 4096), $timeout);
+        $job = Bean::load('modelcall', $jobId);
+        $job->status = $r['ok'] ? 'done' : 'failed';
+        $job->model = $r['model'];
+        $job->resultText = $r['text'];
+        $job->usageJson = json_encode($r['usage']);
+        $job->error = mb_substr($r['error'], 0, 1000);
+        $job->http = $r['http'];
+        $job->finishedAt = date('Y-m-d H:i:s');
+        Bean::store($job);
+        $this->logger->info('Pipeline model call', ['job' => $jobId, 'instance' => $iid, 'connection' => (int) $c->id, 'ok' => $r['ok'], 'model' => $r['model'], 'usage' => $r['usage']]);
+    }
+
+    /** GET /brokerinfo/modelresult?job= — a call this instance started. */
+    public function modelresult($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        $job = Bean::load('modelcall', (int) $this->getParam('job', 0));
+        if (!$job->id || (int) $job->instanceRef !== $iid) { Flight::jsonError('No such call for this project.', 404); return; }
+        Flight::json([
+            'job' => (int) $job->id, 'status' => (string) $job->status, 'model' => (string) $job->model,
+            'text' => (string) $job->resultText, 'usage' => json_decode((string) $job->usageJson, true) ?: (object) [],
+            'error' => (string) $job->error, 'http' => (int) $job->http,
+        ]);
+    }
+
     /** Decode the JSON request body (broker calls are server-to-server JSON). */
     private function jsonBody(): array {
         $raw = file_get_contents('php://input') ?: '';

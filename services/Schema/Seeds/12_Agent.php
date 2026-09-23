@@ -23,9 +23,15 @@ if (!$_tableCheck('agent')) {
     $s->timeout     = 600;
     $s->pre_prompt  = str_repeat('x', 8000);
     $s->is_default  = 0;
+    $s->connection_ref = 0;
     $s->created_at  = date('Y-m-d H:i:s');
     $s->updated_at  = date('Y-m-d H:i:s');
     R::store($s);
     $_defer($s);
     unset($s);
+}
+
+// Added with the 'member' kind: which of the owner's model connections (a row id on core).
+if ($_tableCheck('agent') && !array_key_exists('connection_ref', R::inspect('agent'))) {
+    R::exec('ALTER TABLE agent ADD COLUMN connection_ref INTEGER DEFAULT 0');
 }

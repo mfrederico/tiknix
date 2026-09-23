@@ -47,6 +47,20 @@ class AgentStep implements StepInterface {
         }
         $system = self::composeSystem($agent ? (string) $agent->prePrompt : '', (string) ($config['system'] ?? ''));
 
+        if ($agent && (string) $agent->kind === 'member') {
+            // The project owner's model connection: core makes the call with the owner's key
+            // (which never comes here) — Pipeline\MemberModel.
+            $timeout = max(5, min(3600, (int) ($config['timeout'] ?? 0) ?: (int) ($agent->timeout ?: 600)));
+            $model   = (string) ($config['model'] ?? '') ?: (string) $agent->model;   // blank = the connection's build model, chosen on core
+            $meta    = ['agent' => (string) $agent->name, 'kind' => 'member', 'connection' => (int) $agent->connectionRef];
+            try { $client = \app\Pipeline\MemberModel::forInstall((string) ($run['root'] ?? '') ?: null); }
+            catch (\RuntimeException $e) { return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => "agent '{$agent->name}': " . $e->getMessage(), 'exit' => 1, 'meta' => $meta]; }
+            $r = $client->call((int) $agent->connectionRef, $model, $system, $prompt, $timeout);
+            $meta += ['model' => $r['model'], 'job' => $r['job']];
+            if (!$r['ok']) return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => "agent '{$agent->name}': " . $r['error'], 'exit' => 1, 'meta' => $meta];
+            return ['ok' => true, 'output' => trim($r['text']), 'stdout' => $r['text'], 'stderr' => '', 'exit' => 0, 'meta' => $meta + ['usage' => $r['usage']]];
+        }
+
         if ($agent && (string) $agent->kind === 'openai') {
             try { $key = $agent->apiKey(); }
             catch (\Throwable $e) { return self::fail("agent '{$agent->name}': its API key cannot be decrypted (rotated install key?): " . $e->getMessage()); }

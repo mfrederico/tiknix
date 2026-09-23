@@ -26,6 +26,7 @@ if (!$_tableCheck('modelconnection')) {
     $s->auditor_model  = str_repeat('x', 160);
     $s->resolver_model = str_repeat('x', 160);
     $s->haiku_model    = str_repeat('x', 160);
+    $s->allow_pipelines = 0;
     $s->last_test_at   = date('Y-m-d H:i:s');
     $s->last_test_ok   = 0;
     $s->last_test_msg  = str_repeat('x', 500);
@@ -34,4 +35,10 @@ if (!$_tableCheck('modelconnection')) {
     R::store($s);
     $_defer($s);
     unset($s);
+}
+
+// Added after the table first shipped: the owner's opt-in for their projects' pipelines.
+// An existing table gets the column explicitly (never left to a request's fluid write).
+if ($_tableCheck('modelconnection') && !array_key_exists('allow_pipelines', R::inspect('modelconnection'))) {
+    R::exec('ALTER TABLE modelconnection ADD COLUMN allow_pipelines INTEGER DEFAULT 0');
 }

@@ -99,7 +99,7 @@ class Model_Modelconnection extends \RedBeanPHP\SimpleModel {
         if ($val === '') return null;
         $c = self::byId((int) $val);
         if (!$c || (int) $c->memberId !== $memberId) {
-            throw new \RuntimeException("Member #{$memberId} builds with model connection #{$val}, which no longer exists or is not theirs. Choose again in Settings → Models.");
+            throw new \RuntimeException("Member #{$memberId} builds with model connection #{$val}, which no longer exists or is not theirs. Choose again in Connections → Models.");
         }
         return $c;
     }
@@ -155,6 +155,9 @@ class Model_Modelconnection extends \RedBeanPHP\SimpleModel {
         $b->baseUrl  = rtrim(trim((string) $in['base_url']), '/');
         $b->auth     = (string) $in['auth'];
         foreach (self::TIERS as $t) $b->{$t . 'Model'} = trim((string) ($in[$t . '_model'] ?? ''));
+        // The owner's opt-in: may the pipelines of projects they OWN spend this key? Off
+        // unless ticked — an unattended job billing someone's account is never a default.
+        $b->allowPipelines = !empty($in['allow_pipelines']) ? 1 : 0;
         if (!$b->createdAt) $b->createdAt = date('Y-m-d H:i:s');
         $b->updatedAt = date('Y-m-d H:i:s');
     }
@@ -186,9 +189,63 @@ class Model_Modelconnection extends \RedBeanPHP\SimpleModel {
         $p = [];
         $st = $this->keyStatus();
         if ($st === 'unreadable') $p[] = "the stored key for '{$this->bean->name}' cannot be decrypted (core [security] app_key changed?) — re-enter it";
-        if ($st === 'unset' && (string) $this->bean->auth !== 'none') $p[] = "'{$this->bean->name}' has no key; add one in Settings → Models";
+        if ($st === 'unset' && (string) $this->bean->auth !== 'none') $p[] = "'{$this->bean->name}' has no key; add one in Connections → Models";
         if ((string) $this->bean->protocol !== 'anthropic') $p[] = "'{$this->bean->name}' is an OpenAI-compatible (chat only) endpoint; build agents need an Anthropic-compatible one";
         return $p;
+    }
+
+    /** Can it answer a single call (pipeline step)? Unlike runProblems(), chat-only is fine here. [] when ready. */
+    public function callProblems(): array {
+        $p = [];
+        $st = $this->keyStatus();
+        if ($st === 'unreadable') $p[] = "the stored key for '{$this->bean->name}' cannot be decrypted (core [security] app_key changed?) — re-enter it on Connections → Models";
+        if ($st === 'unset' && (string) $this->bean->auth !== 'none') $p[] = "'{$this->bean->name}' has no key; add one on Connections → Models";
+        return $p;
+    }
+
+    /** What a project's pipeline editor may know: never the key, never the endpoint. */
+    public function publicInfo(): array {
+        $b = $this->bean;
+        $models = [];
+        foreach (self::TIERS as $t) { $m = trim((string) ($b->{$t . 'Model'} ?? '')); if ($m !== '') $models[$t] = $m; }
+        return ['id' => (int) $b->id, 'name' => (string) $b->name, 'protocol' => (string) $b->protocol,
+                'models' => $models, 'ready' => $this->callProblems() === [], 'problems' => $this->callProblems()];
+    }
+
+    /**
+     * One model call — what a pipeline agent step asks for. anthropic: POST /v1/messages;
+     * openai: chat/completions (Pipeline\OpenAiChat). Never throws: the result says what the
+     * endpoint said, with its HTTP code. No retries, no model substitution.
+     *
+     * @return array{ok:bool,text:string,usage:array,error:string,http:int,model:string}
+     */
+    public function call(string $system, string $prompt, string $model, int $maxTokens, int $timeout, ?callable $http = null): array {
+        $b = $this->bean;
+        $model = trim($model) !== '' ? trim($model) : (string) $b->workerModel;
+        $out = ['ok' => false, 'text' => '', 'usage' => [], 'error' => '', 'http' => 0, 'model' => $model];
+        if ($p = $this->callProblems()) { $out['error'] = implode('; ', $p); return $out; }
+        if (!preg_match(self::MODEL_RE, $model)) { $out['error'] = "model '{$model}' is not a valid model id"; return $out; }
+        $timeout = max(5, min(3600, $timeout));
+        try {
+            if ((string) $b->protocol === 'openai') {
+                $r = \app\Pipeline\OpenAiChat::complete((string) $b->baseUrl, $this->apiKey(), $model, $system, $prompt, $timeout);
+                return ['ok' => $r['ok'], 'text' => $r['text'], 'usage' => $r['usage'], 'error' => $r['error'], 'http' => $r['http'], 'model' => $model];
+            }
+            $payload = ['model' => $model, 'max_tokens' => max(1, min(64000, $maxTokens)), 'messages' => [['role' => 'user', 'content' => $prompt]]];
+            if (trim($system) !== '') $payload['system'] = $system;
+            $url = rtrim((string) $b->baseUrl, '/') . '/v1/messages';
+            [$code, $body] = ($http ?? [self::class, 'httpCall'])('POST', $url, $this->headers(true), json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $timeout);
+            $d = json_decode((string) $body, true);
+            $out['http'] = $code;
+            if ($code !== 200 || !is_array($d)) { $out['error'] = "POST {$url} answered HTTP {$code}: " . self::said($body, $d); return $out; }
+            $text = '';
+            foreach ((array) ($d['content'] ?? []) as $blk) if (($blk['type'] ?? '') === 'text') $text .= (string) ($blk['text'] ?? '');
+            if ($text === '' && ($d['stop_reason'] ?? '') === 'max_tokens') { $out['error'] = "the model used all {$payload['max_tokens']} tokens before writing any text (raise max tokens)"; return $out; }
+            return ['ok' => true, 'text' => $text, 'usage' => is_array($d['usage'] ?? null) ? $d['usage'] : [], 'error' => '', 'http' => $code, 'model' => $model];
+        } catch (\Throwable $e) {
+            $out['error'] = $e->getMessage();
+            return $out;
+        }
     }
 
     public function engineName(): string {
@@ -339,11 +396,11 @@ class Model_Modelconnection extends \RedBeanPHP\SimpleModel {
     }
 
     /** @return array{0:int,1:string} */
-    public static function httpCall(string $method, string $url, array $headers, ?string $body): array {
+    public static function httpCall(string $method, string $url, array $headers, ?string $body, int $timeout = 60): array {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_TIMEOUT => 60, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_FOLLOWLOCATION => false,
         ]);
         if ($method === 'POST') curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => (string) $body]);
         $resp = curl_exec($ch);

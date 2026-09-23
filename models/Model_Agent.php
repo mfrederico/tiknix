@@ -5,6 +5,9 @@
  *   name         unique, [a-z0-9-], what a pipeline's `agent` step says
  *   kind         cli    → an EngineRegistry engine, run through the install's bin/claude
  *                openai → any OpenAI-compatible chat-completions endpoint
+ *                member → the project OWNER's model connection on core (Connections → Models),
+ *                         by id in connection_ref; core makes the call, the key never comes
+ *                         here (Pipeline\MemberModel, MODEL_CONNECTIONS_PLAN.md phase 4)
  *   engine/model cli: the engine + model tier; openai: model is the endpoint's model id
  *   endpoint     openai only: base URL (…/v1), chat/completions is appended
  *   api_key_enc  the key, encrypted with the install's own key (ConnectionStore::ownKey).
@@ -18,7 +21,7 @@
 
 class Model_Agent extends \RedBeanPHP\SimpleModel {
 
-    public const KINDS = ['cli', 'openai'];
+    public const KINDS = ['cli', 'openai', 'member'];
     public const NAME_RE = '/^[a-z0-9][a-z0-9-]{0,62}$/D';
     public const DEFAULT_TIMEOUT = 600;
 
@@ -51,7 +54,8 @@ class Model_Agent extends \RedBeanPHP\SimpleModel {
         if (!preg_match(self::NAME_RE, $name)) $p[] = 'name must be lowercase letters, digits and dashes (2–63 chars), e.g. data-append';
         elseif (($dup = self::byName($name)) && (int) $dup->id !== (int) $exceptId) $p[] = "an agent named '{$name}' already exists";
         $kind = (string) ($in['kind'] ?? '');
-        if (!in_array($kind, self::KINDS, true)) $p[] = 'kind must be cli or openai';
+        if (!in_array($kind, self::KINDS, true)) $p[] = 'kind must be cli, openai or member';
+        if ($kind === 'member' && (int) ($in['connection_ref'] ?? 0) <= 0) $p[] = "pick one of the owner's model connections";
         if ($kind === 'cli') {
             $engine = (string) ($in['engine'] ?? '');
             if ($engine !== '' && class_exists('\\app\\EngineRegistry') && !\app\EngineRegistry::isValid($engine)) {
@@ -77,6 +81,8 @@ class Model_Agent extends \RedBeanPHP\SimpleModel {
         $b->engine      = $b->kind === 'cli' ? trim((string) ($in['engine'] ?? '')) : '';
         $b->model       = trim((string) ($in['model'] ?? ''));
         $b->endpoint    = $b->kind === 'openai' ? rtrim(trim((string) ($in['endpoint'] ?? '')), '/') : '';
+        // A row id on CORE (_ref: no local table, no foreign key). 0 for every other kind.
+        $b->connectionRef = $b->kind === 'member' ? (int) ($in['connection_ref'] ?? 0) : 0;
         $b->timeout     = max(5, min(3600, (int) ($in['timeout'] ?? self::DEFAULT_TIMEOUT)));
         $b->prePrompt   = (string) ($in['pre_prompt'] ?? '');
         if (!$b->createdAt) $b->createdAt = date('Y-m-d H:i:s');
@@ -124,6 +130,7 @@ class Model_Agent extends \RedBeanPHP\SimpleModel {
             'kind' => (string) $b->kind, 'engine' => (string) $b->engine, 'model' => (string) $b->model,
             'endpoint' => (string) $b->endpoint, 'timeout' => (int) $b->timeout, 'pre_prompt' => (string) $b->prePrompt,
             'is_default' => (bool) $b->isDefault, 'key_status' => $this->keyStatus(),
+            'connection_ref' => (int) ($b->connectionRef ?? 0),
         ];
     }
 }

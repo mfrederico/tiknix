@@ -575,7 +575,7 @@ class Connections extends Control {
         $m = $c->box();
         $out = ['id' => (int) $c->id, 'name' => (string) $c->name, 'preset' => (string) $c->preset,
                 'protocol' => (string) $c->protocol, 'base_url' => (string) $c->baseUrl, 'auth' => (string) $c->auth,
-                'key_status' => $m->keyStatus(), 'engine' => $m->engineName(),
+                'key_status' => $m->keyStatus(), 'engine' => $m->engineName(), 'allow_pipelines' => (int) ($c->allowPipelines ?? 0) === 1,
                 'last_test_at' => (string) $c->lastTestAt, 'last_test_ok' => (bool) $c->lastTestOk, 'last_test_msg' => (string) $c->lastTestMsg];
         foreach (\Model_Modelconnection::TIERS as $t) $out[$t . '_model'] = (string) ($c->{$t . 'Model'} ?? '');
         return $out;

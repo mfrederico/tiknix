@@ -205,14 +205,20 @@ class Pipelines extends Control {
         if (!$this->gate(true)) return;
         $out = [];
         foreach (\Model_Agent::all() as $a) $out[] = $a->box()->summary();
-        Flight::json(['agents' => $out, 'engines' => class_exists('\\app\\EngineRegistry') ? \app\EngineRegistry::names() : []]);
+        // The owner's opted-in model connections, for the 'member' kind. Reaching core is a
+        // separate fact from "there are none": an unreachable core is reported, not emptied.
+        $conns = []; $connErr = '';
+        try { $conns = \app\Pipeline\MemberModel::forInstall(Runner::root())->connections(); }
+        catch (\Throwable $e) { $connErr = $e->getMessage(); }
+        Flight::json(['agents' => $out, 'engines' => class_exists('\\app\\EngineRegistry') ? \app\EngineRegistry::names() : [],
+                      'connections' => $conns, 'connections_error' => $connErr]);
     }
 
     /** POST /pipelines/agentsave — create or update; api_key only when a new one is typed. */
     public function agentsave($params = []) {
         if (!$this->gate(true) || !$this->csrf()) return;
         $in = [];
-        foreach (['name', 'description', 'kind', 'engine', 'model', 'endpoint', 'timeout', 'pre_prompt'] as $k) $in[$k] = (string) $this->getParam($k, '');
+        foreach (['name', 'description', 'kind', 'engine', 'model', 'endpoint', 'timeout', 'pre_prompt', 'connection_ref'] as $k) $in[$k] = (string) $this->getParam($k, '');
         $id = (int) $this->getParam('id', 0);
         $problems = \Model_Agent::problems($in, $id ?: null);
         if ($problems) { Flight::json(['ok' => false, 'errors' => $problems]); return; }

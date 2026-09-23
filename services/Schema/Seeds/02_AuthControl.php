@@ -126,6 +126,9 @@ $defaults = [
     ['brokerinfo', 'connectkey', 101, 'Instance-driven api_key connect (broker key)'],
     ['brokerinfo', 'disconnect', 101, 'Instance-driven disconnect (broker key)'],
     ['brokerinfo', 'connectintent', 101, 'Instance-driven OAuth connect handoff (broker key)'],
+    ['brokerinfo', 'modelconnections', 101, "The project owner's opted-in model connections, for pipeline agents (broker key)"],
+    ['brokerinfo', 'modelcall',        101, "Start a model call on the owner's connection; key stays in core (broker key)"],
+    ['brokerinfo', 'modelresult',      101, 'Poll a pipeline model call this project started (broker key)'],
     // The concept catalog, served to instances (COMPONENTS_PLAN.md). Same shape as
     // brokerinfo: reachable at 101, and every method authenticates the broker key itself.
     ['concepthub', 'search', 101, 'Concept catalog search (self-authenticating broker key)'],

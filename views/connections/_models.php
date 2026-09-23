@@ -47,6 +47,7 @@ $chosen = $mc['chosen'];
           <strong><?= $h($c['name']) ?></strong>
           <code class="small"><?= $h($c['base_url']) ?></code>
           <?php if ($c['protocol'] === 'openai'): ?><span class="badge bg-secondary">chat only</span><?php endif; ?>
+          <?php if (!empty($c['allow_pipelines'])): ?><span class="badge bg-info text-dark">pipelines may use</span><?php endif; ?>
           <?php if ($c['key_status'] === 'set'): ?><span class="badge bg-light text-dark border">key set</span>
           <?php elseif ($c['key_status'] === 'unreadable'): ?><span class="badge bg-danger">key unreadable — re-enter it</span>
           <?php elseif ($c['auth'] !== 'none'): ?><span class="badge bg-warning text-dark">no key</span><?php endif; ?>

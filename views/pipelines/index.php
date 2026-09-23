@@ -183,7 +183,7 @@ function pkCurl(){
   const url=(base||'')+'/pipeline/api/'+slug; const key=SELECTED_PK||'pk_YOUR_KEY';
   return 'curl -X POST '+url+' \\\n  -H "Authorization: Bearer '+key+'" \\\n  -H "Content-Type: application/json" \\\n  -d \'{}\'';
 }
-let DEF = null, CURRENT = null, watchTimer = null, DEBUG = null, OPEN = null, sortable = null, UIDSEQ = 1, schedForceCustom = false, CONNECTORS = [], AGENTS = [], ENGINES = [];
+let DEF = null, CURRENT = null, watchTimer = null, DEBUG = null, OPEN = null, sortable = null, UIDSEQ = 1, schedForceCustom = false, CONNECTORS = [], AGENTS = [], ENGINES = [], CONNS = [], CONNS_ERR = "";
 
 // ---- theme toggle (shares the tiknix 'ui-theme' key) ----
 $('#themeToggle') && ($('#themeToggle').onclick = () => {
@@ -237,7 +237,7 @@ async function loadConnectors(){ try{ const d=await jget('/pipelines/connectors'
 
 // ---- agents: the app's named agents (Data page → Agents). Keys never arrive here. ----
 async function loadAgents(){
-  try{ const d=await jget('/pipelines/agents'); AGENTS=d.agents||[]; ENGINES=d.engines||[]; }
+  try{ const d=await jget('/pipelines/agents'); AGENTS=d.agents||[]; ENGINES=d.engines||[]; CONNS=d.connections||[]; CONNS_ERR=d.connections_error||''; }
   catch(e){ AGENTS=[]; ENGINES=[]; document.getElementById('agents-list').innerHTML=`<div class="small text-danger">${esc(e.message)}</div>`; return; }
   renderAgents(); if(DEF) renderBuilder();
 }
@@ -251,12 +251,13 @@ function renderAgents(){
         ${a.is_default?'<span class="ui-chip">default</span>':''}
         <span class="ui-chip ${a.key_status==='unreadable'?'text-danger':''}" title="API key">${esc(a.key_status==='set'?'key':(a.key_status==='unreadable'?'key unreadable':'no key'))}</span>
       </div>
-      <div class="small" style="color:var(--bs-secondary-color)">${esc(a.kind)} · ${esc(a.kind==='openai'?a.model:((a.engine||'install default')+(a.model?' / '+a.model:'')))} · ${a.timeout}s</div>
+      <div class="small" style="color:var(--bs-secondary-color)">${esc(a.kind==='member'?'owner\'s model':a.kind)} · ${esc(a.kind==='openai'?a.model:(a.kind==='member'?(((CONNS.find(c=>c.id===a.connection_ref)||{}).name||('connection #'+a.connection_ref+' — not available'))+(a.model?' / '+a.model:'')):((a.engine||'install default')+(a.model?' / '+a.model:''))))} · ${a.timeout}s</div>
       ${a.description?`<div class="small text-truncate" style="color:var(--bs-tertiary-color)">${esc(a.description)}</div>`:''}
     </div>`).join('');
 }
 function agentForm(a){
-  a = a || {id:0,name:'',description:'',kind:'cli',engine:'',model:'',endpoint:'',timeout:600,pre_prompt:'',is_default:!AGENTS.length,key_status:'unset'};
+  a = a || {id:0,name:'',description:'',kind:'cli',engine:'',model:'',endpoint:'',timeout:600,pre_prompt:'',is_default:!AGENTS.length,key_status:'unset',connection_ref:0};
+  const connOpts = CONNS.map(c=>`<option value="${c.id}" ${c.id===a.connection_ref?'selected':''} ${c.ready?'':'disabled'}>${esc(c.name)} (${esc(c.protocol)})${c.ready?'':' — '+esc((c.problems||[]).join('; '))}</option>`).join('');
   const engOpts = ['',...ENGINES].map(e=>`<option value="${esc(e)}" ${e===a.engine?'selected':''}>${e||'— install default —'}</option>`).join('');
   return `
   <div class="ui-panel mt-2" id="agent-form">
@@ -264,9 +265,13 @@ function agentForm(a){
     <div class="ui-panel-body">
       <div class="row g-2">
         <div class="col-6"><div class="fld-label">Name <span class="req">*</span></div><input class="form-control form-control-sm" id="ag-name" value="${esc(a.name)}" placeholder="data-append"></div>
-        <div class="col-6"><div class="fld-label">Kind</div><select class="form-select form-select-sm" id="ag-kind" onchange="agentKindChanged()"><option value="cli" ${a.kind==='cli'?'selected':''}>cli — Claude Code / a registered engine</option><option value="openai" ${a.kind==='openai'?'selected':''}>openai — any OpenAI-compatible endpoint</option></select></div>
+        <div class="col-6"><div class="fld-label">Kind</div><select class="form-select form-select-sm" id="ag-kind" onchange="agentKindChanged()"><option value="cli" ${a.kind==='cli'?'selected':''}>cli — Claude Code / a registered engine</option><option value="openai" ${a.kind==='openai'?'selected':''}>openai — any OpenAI-compatible endpoint</option><option value="member" ${a.kind==='member'?'selected':''}>owner's model — a model connection of the project owner (their key)</option></select></div>
         <div class="col-12"><div class="fld-label">Description</div><input class="form-control form-control-sm" id="ag-desc" value="${esc(a.description)}" placeholder="What this agent is for"></div>
         <div class="col-6 ag-cli"><div class="fld-label">Engine</div><select class="form-select form-select-sm" id="ag-engine">${engOpts}</select></div>
+        <div class="col-12 ag-member"><div class="fld-label">Owner's model connection <span class="req">*</span></div>
+          ${CONNS.length?`<select class="form-select form-select-sm" id="ag-conn"><option value="0">— choose —</option>${connOpts}</select>`
+            :`<div class="small text-danger">${esc(CONNS_ERR||'The project owner has no model connections opted in for pipelines. On the platform: Connections → Models → tick "let my projects\' pipelines use this".')}</div><input type="hidden" id="ag-conn" value="0">`}
+          <div class="small mt-1" style="color:var(--bs-tertiary-color)">Calls run on core with the owner's key — it is never stored in this app. Model blank = the connection's build model.</div></div>
         <div class="col-6 ag-openai"><div class="fld-label">Endpoint <span class="req">*</span></div><input class="form-control form-control-sm" id="ag-endpoint" value="${esc(a.endpoint)}" placeholder="https://api.openai.com/v1"></div>
         <div class="col-6"><div class="fld-label">Model</div><input class="form-control form-control-sm" id="ag-model" value="${esc(a.model)}" placeholder="cli: claude-opus-5-5 / opus / sonnet / haiku · openai: the model id"></div>
         <div class="col-6"><div class="fld-label">Timeout (s)</div><input type="number" class="form-control form-control-sm" id="ag-timeout" value="${a.timeout||600}" min="5" max="3600"></div>
@@ -287,7 +292,7 @@ function agentForm(a){
     </div>
   </div>`;
 }
-function agentKindChanged(){ const k=document.getElementById('ag-kind').value; document.querySelectorAll('.ag-cli').forEach(e=>e.style.display=k==='cli'?'':'none'); document.querySelectorAll('.ag-openai').forEach(e=>e.style.display=k==='openai'?'':'none'); }
+function agentKindChanged(){ const k=document.getElementById('ag-kind').value; document.querySelectorAll('.ag-cli').forEach(e=>e.style.display=k==='cli'?'':'none'); document.querySelectorAll('.ag-openai').forEach(e=>e.style.display=k==='openai'?'':'none'); document.querySelectorAll('.ag-member').forEach(e=>e.style.display=k==='member'?'':'none'); const key=document.getElementById('ag-key'); if(key) key.closest('.col-12').style.display=k==='member'?'none':''; }
 function newAgent(){ document.getElementById('agent-slot').innerHTML=agentForm(null); agentKindChanged(); }
 function editAgent(id){ const a=AGENTS.find(x=>x.id===id); if(!a) return; document.getElementById('agent-slot').innerHTML=agentForm(a); agentKindChanged(); }
 function closeAgentForm(){ document.getElementById('agent-slot').innerHTML=''; }
@@ -296,7 +301,7 @@ async function saveAgent(id){
   const g=x=>document.getElementById(x);
   const body={ id, name:g('ag-name').value.trim(), description:g('ag-desc').value.trim(), kind:g('ag-kind').value,
     engine:g('ag-engine').value, model:g('ag-model').value.trim(), endpoint:g('ag-endpoint').value.trim(),
-    timeout:g('ag-timeout').value, pre_prompt:g('ag-pre').value, api_key:g('ag-key').value,
+    timeout:g('ag-timeout').value, pre_prompt:g('ag-pre').value, api_key:g('ag-key').value, connection_ref:(g('ag-conn')?g('ag-conn').value:'0'),
     clear_key:(g('ag-clearkey')&&g('ag-clearkey').checked)?'1':'0', is_default:g('ag-default').checked?'1':'0' };
   try{ const d=await jpost('/pipelines/agentsave', body); if(!d.ok){ agentMsg((d.errors||[]).join(' · '),'text-danger'); return; }
     await loadAgents(); editAgent(d.agent.id); agentMsg('Saved ✓','text-success'); }

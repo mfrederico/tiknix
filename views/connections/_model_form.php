@@ -57,6 +57,12 @@
     </div>
   <?php endforeach; ?>
   <div class="col-12">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="allow_pipelines" value="1" id="mc-pipe-<?= $h($formId) ?>" <?= !empty($form['allow_pipelines']) ? 'checked' : '' ?>>
+      <label class="form-check-label" for="mc-pipe-<?= $h($formId) ?>">Let my projects' pipelines use this — agent steps in apps I own may run on this key (billed to it)</label>
+    </div>
+  </div>
+  <div class="col-12">
     <button class="btn btn-sm btn-primary" type="submit"><?= (int) $form['id'] > 0 ? 'Save changes' : 'Add connection' ?></button>
     <?php if ((int) $form['id'] > 0): ?><span class="text-muted ms-2">Then Test to list this endpoint's models.</span><?php endif; ?>
   </div>

@@ -392,6 +392,8 @@ class EngineRegistry {
             if ($model) $cmd .= ' --model ' . escapeshellarg($model);
             // opts['system']: an agent's pre-prompt (+ a step's own), as a REAL system prompt.
             if (!empty($opts['system'])) $cmd .= ' --append-system-prompt ' . escapeshellarg((string) $opts['system']);
+            // opts['mcp_config']: a project's .mcp.json for a run whose cwd is not the project root.
+            if (!empty($opts['mcp_config'])) $cmd .= ' --mcp-config ' . escapeshellarg((string) $opts['mcp_config']);
             if (!empty($opts['stream'])) $cmd .= ' --output-format stream-json --verbose';
             return $cmd;
         }

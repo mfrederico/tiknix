@@ -124,6 +124,9 @@ class AgentStep implements StepInterface {
         // to run claude instead, with a model resolved for the other engine and whichever
         // Anthropic credential the chain found: work done by a provider nobody chose.
         if ($system !== '') $binOpt['system'] = $system;   // a real system prompt (--append-system-prompt)
+        // The project's MCP servers (Agent Setup → Servers write <root>/.mcp.json). The step
+        // runs in its run directory, where Claude would not find that file on its own.
+        if ($root !== '' && is_file($root . '/.mcp.json')) $binOpt['mcp_config'] = $root . '/.mcp.json';
         $inner = EngineRegistry::agentCommand($engine, $prompt, $model, $binOpt);
         if ($inner === null) return self::fail("engine '{$engine}' has no headless launcher (headless_ready in [engine.{$engine}]), so this step cannot run; choose an engine that has one");
 

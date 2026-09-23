@@ -860,11 +860,13 @@ class Admin extends Control {
         }
         unset($row);
 
+        $installing = (string) $this->getParam('installing', '');
         $this->render('admin/concepts', [
-            'title'     => 'Plugins',
-            'installed' => $installed,
-            'catalog'   => $catalog,
-            'project'   => $project,
+            'title'      => 'Plugins',
+            'installed'  => $installed,
+            'catalog'    => $catalog,
+            'project'    => $project,
+            'installing' => preg_match('/^[a-z][a-z0-9]*$/D', $installing) ? $installing : '',
         ]);
     }
 
@@ -934,7 +936,8 @@ class Admin extends Control {
             }
             $this->logger->info('Concept install requested from the control plane', ['concept' => $name, 'queued' => $r['queued'], 'member_id' => $this->member->id]);
             $this->flash($r['queued'] ? 'success' : 'error', self::oneLine($r['message']));
-            Flight::redirect('/admin/concepts');
+            // ?installing= makes the page watch that row (conceptstatus) until it is enabled.
+            Flight::redirect('/admin/concepts' . ($r['queued'] ? '?installing=' . rawurlencode($name) : ''));
             return;
         }
 
@@ -943,11 +946,36 @@ class Admin extends Control {
             $this->logger->info('Concept install queued', ['concept' => $name, 'project' => $project['slug'], 'member_id' => $this->member->id]);
             $this->flash('success', "Installing '{$name}' into {$project['name']} — a build with no agent, usually under a minute, "
                 . "that commits the plugin to the project and switches it on; watch it in Builder.");
+            Flight::redirect('/admin/concepts?installing=' . rawurlencode($name));
+            return;
         } else {
             $this->logger->warning('Concept install not queued', ['concept' => $name, 'project' => $project['slug'], 'said' => $r['said']]);
             $this->flash('error', "Could not queue '{$name}' for {$project['name']}: " . $r['said']);
         }
         Flight::redirect('/admin/concepts');
+    }
+
+    /**
+     * GET /admin/conceptstatus?name=… — where an install stands, for the page's spinner.
+     * Here (a project): installed = the directory exists in this tree, enabled = the flag,
+     * problems = what verify() says. On core for a selected project only 'installed' is
+     * knowable from here (the flag lives in that project's database), so enabled is null.
+     */
+    public function conceptstatus($params = []) {
+        if (!$this->requireLevel(self::ROOT_LEVEL)) return;
+        $name = (string) $this->getParam('name', '');
+        if (!preg_match('/^[a-z][a-z0-9]*$/D', $name)) { Flight::jsonError('That is not a plugin name.', 400); return; }
+        $project = $this->conceptProject();
+        if ($project === null) { Flight::jsonError('No project selected.', 409); return; }
+        $installed = is_dir($project['dir'] . '/' . \app\Concepts::DIR . '/' . $name);
+        if (empty($project['here'])) {
+            Flight::json(['name' => $name, 'installed' => $installed, 'enabled' => null, 'problems' => []]);
+            return;
+        }
+        $registry = \app\Concepts::instance();
+        $row = $installed ? ($registry->scan()[$name] ?? null) : null;
+        $problems = ($row && $row['manifest'] !== null) ? $registry->verify($name) : ($row ? [(string) $row['error']] : []);
+        Flight::json(['name' => $name, 'installed' => $installed, 'enabled' => (bool) ($row['enabled'] ?? false), 'problems' => $problems]);
     }
 
     /** POST /admin/conceptenable — verify, run the concept's seeds, switch it on. */

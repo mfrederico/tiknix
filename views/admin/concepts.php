@@ -5,9 +5,13 @@
  * Vars: $installed — name => [manifest, error, enabled, problems[], provenance]
  *       $catalog   — [results[], broken[], source, error]
  *
- * This page switches concepts. It cannot install one: that is a build task
- * (clitool --concept-install in a worktree), because the web process must never write
- * executable PHP into its own tree.
+ *       $project   — the install target (core: the selected project; a project: itself, 'here')
+ *       $installing — a name just queued by Install: that row shows a spinner and polls
+ *                     /admin/conceptstatus until it is on, then reloads
+ *
+ * This page switches concepts and queues installs. It never copies one in: an install is a
+ * build (adopt → commit → merge → enable) because the web process must never write
+ * executable PHP into its own tree, and worktrees only see committed code.
  */
 $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 ?>
@@ -191,7 +195,13 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                                     </td>
                                     <td class="small"><?= $h(implode(', ', array_merge($r['requires']['concepts'], $r['requires']['lib'])) ?: '—') ?></td>
                                     <td class="text-nowrap">
-                                        <?php if ($project === null): ?>
+                                        <?php if ($project !== null && $installing === $r['name'] && empty($installed[$r['name']]['enabled'])): ?>
+                                            <?php // Just queued: watch it land. conceptstatus is polled; the row reloads the page when enabled. ?>
+                                            <div class="d-flex align-items-center gap-2" id="concept-installing" data-name="<?= $h($r['name']) ?>" data-here="<?= !empty($project['here']) ? 1 : 0 ?>">
+                                                <div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Installing</span></div>
+                                                <span class="small" id="concept-installing-text">Installing — building…</span>
+                                            </div>
+                                        <?php elseif ($project === null): ?>
                                             <span class="text-muted small">select a project</span>
                                         <?php elseif (!empty($r['in_project']) && !empty($project['here'])): ?>
                                             <?php // Installed HERE. Enabled = live; otherwise the same Enable as the panel above,
@@ -245,3 +255,38 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         </div>
     </div>
 </div>
+
+<?php if ($installing !== ''): ?>
+<script>
+(function () {
+    // The install is a build on the platform: adopt → commit → merge → enable. Poll where it
+    // stands; reload once it is on (a project) or in the tree (core, where the flag is that
+    // project's). Give up loudly after 4 minutes — "usually under a minute" has a bound.
+    var box = document.getElementById('concept-installing');
+    if (!box) return;
+    var name = box.dataset.name, here = box.dataset.here === '1', text = document.getElementById('concept-installing-text');
+    var started = Date.now(), tries = 0;
+    function say(s) { text.textContent = s; }
+    function stopWith(msg, cls) { box.querySelector('.spinner-border').remove(); say(msg); box.classList.add(cls || 'text-danger'); }
+    function tick() {
+        tries++;
+        fetch('/admin/conceptstatus?name=' + encodeURIComponent(name), {headers: {'Accept': 'application/json'}, credentials: 'same-origin'})
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var st = d.data || d;
+                if (st.problems && st.problems.length) { stopWith('Installed, but it will not enable: ' + st.problems.join('; '), 'text-warning'); return; }
+                if (st.enabled === true || (st.enabled === null && st.installed)) {
+                    say(st.enabled ? 'Installed and switched on — reloading…' : 'Installed — reloading…');
+                    setTimeout(function () { location.href = '/admin/concepts'; }, 600);
+                    return;
+                }
+                say(st.installed ? 'Installed — switching on…' : (tries < 4 ? 'Installing — building…' : 'Installing — committing and merging…'));
+                if (Date.now() - started > 240000) { stopWith('Still not there after 4 minutes. The build may have stalled — check it in Builder, then reload.', 'text-danger'); return; }
+                setTimeout(tick, 3000);
+            })
+            .catch(function () { say('Installing — (status check failed, retrying)'); setTimeout(tick, 5000); });
+    }
+    setTimeout(tick, 2000);
+})();
+</script>
+<?php endif; ?>

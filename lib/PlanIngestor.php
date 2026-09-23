@@ -122,7 +122,7 @@ class PlanIngestor
             $t->parentTaskId = (int)$parent->id;
             $t->instanceId   = (int)$inst->id;
             $t->instanceTag  = $tag;
-            $t->engine       = EngineRegistry::coerce($st['engine'] ?? null, (string)$inst->engine);
+            $t->engine       = self::engineFor($st, (string) $inst->engine);
             $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
             $t->reuses       = json_encode(is_array($st['reuses'] ?? null) ? array_values($st['reuses']) : []);
             $t->adopts       = json_encode(self::adopts($st['adopts'] ?? null, (string) $st['title']));
@@ -161,6 +161,27 @@ class PlanIngestor
             'checkpoint' => $checkpointTag,
             'subtasks'   => $subs,
         ];
+    }
+
+    /**
+     * The engine a subtask runs on: the one the planner named, else the project's own.
+     * A planner that names an engine nobody registered is refused here, at ingest, with
+     * the valid names — not quietly moved to another provider (No Fallbacks: that is how a
+     * plan once completed "successfully" on an account nobody chose).
+     */
+    private static function engineFor(array $st, string $instanceEngine): string {
+        $named = trim((string) ($st['engine'] ?? ''));
+        if ($named === '') {
+            if ($instanceEngine === '') return EngineRegistry::defaultEngine();   // never chosen: the provisioning default
+            if (!EngineRegistry::isValid($instanceEngine)) {
+                throw new \RuntimeException("This project's engine '{$instanceEngine}' is not a registered engine (" . implode(', ', EngineRegistry::names()) . '); fix it on the project before planning.');
+            }
+            return $instanceEngine;
+        }
+        if (!EngineRegistry::isValid($named)) {
+            throw new \RuntimeException("Plan task \"{$st['title']}\": engine '{$named}' is not a registered engine (" . implode(', ', EngineRegistry::names()) . ').');
+        }
+        return $named;
     }
 
     /**

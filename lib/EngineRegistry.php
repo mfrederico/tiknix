@@ -207,19 +207,19 @@ class EngineRegistry {
         return $name !== null && $name !== '' && isset(self::all()[$name]);
     }
 
-    /** The instance-provisioning default ([engine] default, falling back to claude). */
-    public static function defaultEngine(): string {
-        $d = (string)(self::ini()['engine']['default'] ?? 'claude');
-        return self::isValid($d) ? $d : 'claude';
-    }
-
     /**
-     * Coerce an arbitrary engine value to a valid one so an unknown engine never
-     * persists. Falls back to $fallback (when valid) else the instance default.
+     * The instance-provisioning default: [engine] default in conf/aibuilder.ini, or claude
+     * (the built-in engine) when the key is absent. A key that IS set to an engine nobody
+     * registered is a broken config and throws naming it — it used to become claude
+     * silently, which is the first row of CLAUDE.md's No-Fallbacks table.
      */
-    public static function coerce(?string $name, ?string $fallback = null): string {
-        if (self::isValid($name)) return (string)$name;
-        return ($fallback !== null && self::isValid($fallback)) ? $fallback : self::defaultEngine();
+    public static function defaultEngine(): string {
+        $d = self::ini()['engine']['default'] ?? null;
+        if ($d === null || $d === '') return 'claude';
+        if (!self::isValid((string) $d)) {
+            throw new \RuntimeException("[engine] default = '{$d}' in conf/aibuilder.ini is not a registered engine (" . implode(', ', self::names()) . ').');
+        }
+        return (string) $d;
     }
 
     /** Resolve a model tier (planner|worker|auditor) for an engine. */
@@ -353,7 +353,8 @@ class EngineRegistry {
         }
         // Non-claude flavors (openai-compatible qwen-code, ACP engines, …) declare
         // their own headless invocation once wired into jail dispatch (Phase A/B).
-        // Until then, fall back so a task is never failed over engine choice.
+        // Until then: null, and the caller FAILS the task naming the engine (PlanExecutor)
+        // — never runs it elsewhere. That is the second row of the No-Fallbacks table.
         return null;
     }
 

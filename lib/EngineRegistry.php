@@ -37,10 +37,13 @@ class EngineRegistry {
             'command'        => 'claude',
             'cli_flavor'     => 'claude',
             'headless_ready' => true,
-            'planner_model'  => 'opus',
+            // Planning and conflict resolution run on Opus 5.5, pinned by id rather than the
+            // `opus` alias so a CLI update cannot move them silently. Workers/audit stay on
+            // the sonnet alias.
+            'planner_model'  => 'claude-opus-5-5',
             'worker_model'   => 'sonnet',
             'auditor_model'  => 'sonnet',
-            'resolver_model' => 'opus',
+            'resolver_model' => 'claude-opus-5-5',
         ],
     ];
 

@@ -75,9 +75,10 @@
                         <p class="text-muted small mb-3">
                             Choose which model each stage uses for runs <em>you</em> trigger. Leave a field
                             blank to inherit the system default (shown as the placeholder); type a model name
-                            (e.g. <code>opus</code>, <code>sonnet</code>, <code>haiku</code>) to override it.
+                            (e.g. <code>claude-opus-5-5</code>, <code>opus</code>, <code>sonnet</code>, <code>haiku</code>) to override it.
                         </p>
                         <datalist id="ai-model-options">
+                            <option value="claude-opus-5-5">Claude Opus 5.5</option>
                             <option value="opus"></option>
                             <option value="sonnet"></option>
                             <option value="haiku"></option>

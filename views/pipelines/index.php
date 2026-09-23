@@ -268,7 +268,7 @@ function agentForm(a){
         <div class="col-12"><div class="fld-label">Description</div><input class="form-control form-control-sm" id="ag-desc" value="${esc(a.description)}" placeholder="What this agent is for"></div>
         <div class="col-6 ag-cli"><div class="fld-label">Engine</div><select class="form-select form-select-sm" id="ag-engine">${engOpts}</select></div>
         <div class="col-6 ag-openai"><div class="fld-label">Endpoint <span class="req">*</span></div><input class="form-control form-control-sm" id="ag-endpoint" value="${esc(a.endpoint)}" placeholder="https://api.openai.com/v1"></div>
-        <div class="col-6"><div class="fld-label">Model</div><input class="form-control form-control-sm" id="ag-model" value="${esc(a.model)}" placeholder="cli: opus / sonnet / haiku · openai: the model id"></div>
+        <div class="col-6"><div class="fld-label">Model</div><input class="form-control form-control-sm" id="ag-model" value="${esc(a.model)}" placeholder="cli: claude-opus-5-5 / opus / sonnet / haiku · openai: the model id"></div>
         <div class="col-6"><div class="fld-label">Timeout (s)</div><input type="number" class="form-control form-control-sm" id="ag-timeout" value="${a.timeout||600}" min="5" max="3600"></div>
         <div class="col-12"><div class="fld-label">API key <span class="small" style="color:var(--bs-tertiary-color)">— ${esc(a.key_status==='set'?'a key is stored; type a new one to replace it':(a.key_status==='unreadable'?'the stored key cannot be decrypted — replace it':'none stored'))}</span></div>
           <input type="password" class="form-control form-control-sm" id="ag-key" autocomplete="new-password" placeholder="${a.kind==='cli'?'optional — blank uses the install\'s credential chain':'sk-…'}">

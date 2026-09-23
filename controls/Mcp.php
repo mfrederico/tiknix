@@ -47,7 +47,9 @@
  * - This allows MCP clients to reach the endpoint
  *
  * LAYER 2: Controller-Level (API Key Auth)
- * - tools/call requires valid API key
+ * - tools/call requires a valid API key from the apikey table (tk_…); Basic auth
+ *   (username:password) reaches /mcp/config only. There is no legacy member.api_token
+ *   path any more (removed 2026-09-23 — it granted every scope and every server).
  * - API keys can be restricted to specific backend servers
  * - All calls are logged to mcpusage table
  *
@@ -503,6 +505,16 @@ class Mcp extends BaseControls\Control {
                 $this->sendError(-32000, 'Authentication required', null, 401);
                 return;
             }
+            // A credential, but not a KEY: Basic auth (username:password) is for fetching
+            // /mcp/config. Tool execution is scoped, server-restricted and logged per key,
+            // none of which exists for a password — so a password does not call tools.
+            // (It used to: the no-key branches granted every scope and every server.)
+            if (!$this->authApiKey) {
+                $this->mcpFileLog('ERROR', sprintf('%s REJECTED (credential is not an API key) member=%d ip=%s',
+                    $method, (int) ($this->authMember->id ?? 0), $_SERVER['REMOTE_ADDR'] ?? '-'));
+                $this->sendError(-32000, 'An API key is required to call tools (create one at /apikeys); Basic auth only reaches /mcp/config', null, 401);
+                return;
+            }
         } else {
             // Try to authenticate anyway for personalization, but don't require it
             $this->authenticate();
@@ -683,7 +695,8 @@ class Mcp extends BaseControls\Control {
         ];
 
         if ($hasAuth && $this->authMember) {
-            // Get API key token (prefer new apikey table, fall back to legacy)
+            // The caller's API key (apikey table). Basic auth reaches this page with no key:
+            // the config it gets back then carries a placeholder, and /apikeys is where a key comes from.
             $token = null;
             $keyName = null;
             $keyScopes = [];
@@ -693,13 +706,13 @@ class Mcp extends BaseControls\Control {
                 // Using new API key system
                 $token = $this->authApiKey->token;
                 $keyName = $this->authApiKey->name;
-                $keyScopes = json_decode(($this->authApiKey->scopes) ?? '', true) ?: [];
-                $allowedServerSlugs = json_decode(($this->authApiKey->allowedServers) ?? '', true) ?: [];
-            } elseif (!empty($this->authMember->api_token)) {
-                // Legacy api_token
-                $token = $this->authMember->api_token;
-                $keyName = 'Legacy Token';
-                $keyScopes = ['mcp:*'];
+                try {
+                    $keyScopes          = \app\services\ApiAuthService::decodeList($this->authApiKey->scopes ?? null, "apikey #{$this->authApiKey->id} scopes");
+                    $allowedServerSlugs = \app\services\ApiAuthService::decodeList($this->authApiKey->allowedServers ?? null, "apikey #{$this->authApiKey->id} allowed_servers");
+                } catch (\RuntimeException $e) {
+                    $this->logger->error('ERROR Mcp: ' . $e->getMessage());
+                    $keyScopes = ['UNREADABLE: ' . $e->getMessage()]; $allowedServerSlugs = ['UNREADABLE'];
+                }
             }
 
             if ($token) {
@@ -759,54 +772,9 @@ class Mcp extends BaseControls\Control {
         echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
-    /**
-     * Generate API token for current user
-     * POST /mcp/token
-     */
-    public function token($params = null): void {
-        header('Content-Type: application/json');
-
-        if (!$this->authenticate()) {
-            http_response_code(401);
-            echo json_encode(['error' => 'Authentication required']);
-            return;
-        }
-
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            http_response_code(405);
-            echo json_encode(['error' => 'Use POST to generate a new token']);
-            return;
-        }
-
-        // Generate new token
-        $token = bin2hex(random_bytes(32));
-        $this->authMember->api_token = $token;
-        Bean::store($this->authMember);
-
-        $this->logger->info('MCP token generated', ['member_id' => $this->authMember->id]);
-
-        // Cast mcpServers to object to ensure JSON {} not []
-        echo json_encode([
-            'success' => true,
-            'api_token' => $token,
-            'config' => [
-                'mcpServers' => (object)[
-                    self::SERVER_NAME => [
-                        'type' => 'http',
-                        'url' => $this->getMcpUrl(),
-                        'headers' => [
-                            'Authorization' => 'Bearer ' . $token
-                        ]
-                    ]
-                ]
-            ]
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-    }
-
-    // =========================================
-    // MCP Protocol Handlers
-    // =========================================
-
+    /* POST /mcp/token — the legacy member.api_token generator — was removed 2026-09-23.
+       Keys come from /apikeys (the apikey table: scoped, revocable, server-restricted).
+       No member row on this platform held an api_token when the path was removed. */
     /**
      * Handle initialize request
      */
@@ -940,20 +908,23 @@ class Mcp extends BaseControls\Control {
         // Get proxy-enabled active servers
         $servers = Bean::find('mcpserver', 'status = ? AND is_proxy_enabled = ? ORDER BY featured DESC, sort_order ASC', ['active', 1]);
 
-        // Filter by API key permissions if applicable
-        if ($this->authApiKey) {
-            $allowedSlugs = json_decode(($this->authApiKey->allowedServers) ?? '', true) ?: [];
-
-            // If no restrictions, return all
-            if (empty($allowedSlugs)) {
-                return $servers;
-            }
-
-            // Filter to only allowed servers
-            return array_filter($servers, fn($s) => in_array($s->slug, $allowedSlugs));
+        // Filter by API key permissions. No key = no backend servers: Basic auth reaches
+        // /mcp/config, never a backend (this used to return every server).
+        if (!$this->authApiKey) return [];
+        try {
+            $allowedSlugs = \app\services\ApiAuthService::decodeList($this->authApiKey->allowedServers ?? null, "apikey #{$this->authApiKey->id} allowed_servers");
+        } catch (\RuntimeException $e) {
+            $this->logger->error('ERROR Mcp: ' . $e->getMessage());
+            return [];   // an unreadable restriction list restricts to nothing
         }
 
-        return $servers;
+        // No restrictions on the key: every proxy-enabled server
+        if (empty($allowedSlugs)) {
+            return $servers;
+        }
+
+        // Filter to only allowed servers
+        return array_filter($servers, fn($s) => in_array($s->slug, $allowedSlugs));
     }
 
     /**
@@ -1867,8 +1838,7 @@ class Mcp extends BaseControls\Control {
     }
 
     /**
-     * Bearer Token: Authorization: Bearer <token>
-     * Checks apikey table first, then falls back to member.api_token
+     * Bearer Token: Authorization: Bearer <token> — an apikey-table key (tk_…)
      */
     private function authenticateBearer(): bool {
         $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
@@ -1884,28 +1854,15 @@ class Mcp extends BaseControls\Control {
             return true;
         }
 
-        // Fall back to legacy member.api_token field
-        $member = Bean::findOne('member', 'api_token = ? AND api_token IS NOT NULL', [$token]);
-
-        if (!$member) {
-            $this->logger->warning('MCP auth failed: invalid bearer token');
-            return false;
-        }
-
-        if (!$member->canAuthenticate()) {
-            $this->logger->warning('MCP auth failed: account not active',
-                ['member_id' => (int) $member->id, 'status' => (string) $member->status]);
-            return false;
-        }
-
-        $this->authMember = $member;
-        $this->logger->debug('MCP authenticated via Bearer token (legacy)', ['member_id' => $member->id]);
-        return true;
+        // apikey table only. The member.api_token fallback that stood here gave a legacy
+        // token FULL access (no scopes, no server restrictions) — the cheaper credential
+        // was the unlimited one. Those tokens are no longer issued; none exist.
+        $this->logger->warning('MCP auth failed: invalid bearer token');
+        return false;
     }
 
     /**
-     * Custom Header: X-MCP-Token: <token>
-     * Checks apikey table first, then falls back to member.api_token
+     * Custom Header: X-MCP-Token: <token> — an apikey-table key (tk_…)
      */
     private function authenticateCustomHeader(): bool {
         $token = $_SERVER['HTTP_X_MCP_TOKEN'] ?? '';
@@ -1919,23 +1876,11 @@ class Mcp extends BaseControls\Control {
             return true;
         }
 
-        // Fall back to legacy member.api_token field
-        $member = Bean::findOne('member', 'api_token = ? AND api_token IS NOT NULL', [$token]);
-
-        if (!$member) {
-            $this->logger->warning('MCP auth failed: invalid X-MCP-Token');
-            return false;
-        }
-
-        if (!$member->canAuthenticate()) {
-            $this->logger->warning('MCP auth failed: account not active',
-                ['member_id' => (int) $member->id, 'status' => (string) $member->status]);
-            return false;
-        }
-
-        $this->authMember = $member;
-        $this->logger->debug('MCP authenticated via X-MCP-Token (legacy)', ['member_id' => $member->id]);
-        return true;
+        // apikey table only. The member.api_token fallback that stood here gave a legacy
+        // token FULL access (no scopes, no server restrictions) — the cheaper credential
+        // was the unlimited one. Those tokens are no longer issued; none exist.
+        $this->logger->warning('MCP auth failed: invalid X-MCP-Token');
+        return false;
     }
 
     /**
@@ -2005,9 +1950,10 @@ class Mcp extends BaseControls\Control {
      * Check if current API key has access to a specific server
      */
     public function hasServerAccess(string $serverSlug): bool {
-        // If no API key (using legacy auth), allow all
+        // No API key = no server access. Basic auth reaches /mcp/config to fetch a
+        // config; it never reaches a backend. (This used to be "allow all".)
         if (!$this->authApiKey) {
-            return true;
+            return false;
         }
 
         // A column that will not decode denies. It used to read as [] — "no restrictions".
@@ -2038,7 +1984,7 @@ class Mcp extends BaseControls\Control {
      */
     public function getKeyScopes(): array {
         if (!$this->authApiKey) {
-            return ['mcp:*']; // Legacy auth has full access
+            return [];   // no key, no scopes (was mcp:* for the legacy token)
         }
 
         try {

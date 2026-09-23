@@ -106,16 +106,12 @@
   }
 }</code></pre>
 
-            <h6 class="mt-4">Authentication Methods</h6>
+            <h6 class="mt-4">Authentication</h6>
             <ul>
-                <li><strong>Basic Auth:</strong> <code>Authorization: Basic base64(username:password)</code></li>
-                <li><strong>Bearer Token:</strong> <code>Authorization: Bearer &lt;api_token&gt;</code></li>
-                <li><strong>Custom Header:</strong> <code>X-MCP-Token: &lt;api_token&gt;</code></li>
+                <li><strong>Bearer:</strong> <code>Authorization: Bearer &lt;api key&gt;</code> — an API key from <a href="/apikeys">/apikeys</a> (scoped, revocable, optionally restricted to servers)</li>
+                <li><strong>Custom header:</strong> <code>X-MCP-Token: &lt;api key&gt;</code> — the same key, for clients that cannot set Authorization</li>
+                <li><strong>Basic Auth</strong> (<code>username:password</code>) reaches <code>/mcp/config</code> to fetch your config; it cannot call tools.</li>
             </ul>
-
-            <h6 class="mt-4">Generate API Token</h6>
-            <p>Generate a new API token (POST with Basic Auth):</p>
-            <pre class="bg-dark text-light p-3 rounded"><code>curl -X POST -u username:password <?= htmlspecialchars(dirname($mcpUrl ?? '')) ?>/token</code></pre>
         </div>
     </div>
 

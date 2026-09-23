@@ -672,9 +672,12 @@ class Mcp extends BaseControls\Control {
             'url' => $mcpUrl
         ];
 
-        // Response structure - cast to object to ensure JSON {} not []
+        // A plain associative array: it always has the SERVER_NAME key, so json_encode emits
+        // {} without a cast — and the (object) cast that was here made every
+        // $response['mcpServers'][…] write below a fatal ("Cannot use object of type
+        // stdClass as array"), which took /mcp/config down for eight months unnoticed.
         $response = [
-            'mcpServers' => (object)[
+            'mcpServers' => [
                 self::SERVER_NAME => $serverConfig
             ]
         ];

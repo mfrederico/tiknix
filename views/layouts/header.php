@@ -239,96 +239,27 @@ if ($__loggedIn) {
     <?php endif; ?>
   </aside>
 
-  <div class="ui-main">
+  <?php
+  /* WHICH PROJECT AM I IN — the project bar under the top bar. Resolved here, before
+     .ui-main opens, because the bar's presence sets --ui-projectbar-height, which the
+     sidecar iframe subtracts from the viewport. It used to be a chip squeezed into the
+     top bar, where it wrapped into two ragged rows on a phone. */
+  $__pbar = null;   // 'project' | 'none' | null (no bar)
+  $__proj = null;
+  if ($__hasProject) {
+      $__proj = \app\ProjectContext::current((int) (\Flight::getMember()->id ?? 0));
+      if ($__proj) $__pbar = 'project';
+  } elseif ($__loggedIn && builder_tools_enabled()) {
+      $__pbar = 'none';
+  }
+  ?>
+  <div class="ui-main<?= $__pbar ? ' has-projectbar' : '' ?>">
     <header class="ui-topbar">
       <button class="ui-btn-icon d-lg-none" type="button" onclick="uiToggleSidebar(true)" aria-label="Open menu"><i class="bi bi-list"></i></button>
       <div class="ui-topbar-title">
         <span class="ui-eyebrow"><?= htmlspecialchars($topbar_eyebrow ?? ($site_name ?? 'Tiknix')) ?></span>
         <strong><?= htmlspecialchars($title ?? 'App') ?></strong>
       </div>
-
-      <?php
-      /* WHICH PROJECT AM I IN. Present on every page, because the answer used to be
-         inferable only from whichever tool you happened to be looking at — and when a
-         surface guessed differently from the one before it, you had no way to notice.
-         Clicking it goes to the picker, the single place the choice is made. */
-      if ($__hasProject):
-          $__proj = \app\ProjectContext::current((int) (\Flight::getMember()->id ?? 0));
-          if ($__proj):
-      ?>
-        <?php
-        /* The AI Builder grew this chip because it was the only surface that knew which
-           instance you were in. Now the shell knows, so it lives here — one chip, always
-           in the same place, instead of one per plugin that can disagree with the others.
-
-           This links to the WORKING instance — the thing you are building, always at
-           <slug>.<host> — never to wherever it is published. A published URL is a
-           property of a publish target, not of the project: it can differ per target,
-           change when a target is reconfigured, or not exist yet. Sending you there from
-           the chip would mean the one control that says "you are working on X" points
-           somewhere X is not being edited. */
-        $__phost   = app_host() ?: 'tiknix.com';
-        $__pdomain = $__proj->slug . '.' . $__phost;
-        ?>
-        <div class="ui-project-chip d-flex align-items-center gap-2 px-3 py-1 rounded-3 bg-primary-subtle ms-3 flex-wrap">
-          <i class="bi bi-hdd-network-fill text-primary"></i>
-          <span class="lh-sm">
-            <span class="d-block text-uppercase text-body-secondary fw-semibold" style="font-size:.6rem;letter-spacing:.06em">Working on</span>
-            <span class="d-block fw-bold" style="font-size:.85rem">
-              <a href="https://<?= htmlspecialchars($__pdomain) ?>" target="_blank" rel="noopener"
-                 class="link-body-emphasis text-decoration-none"
-                 title="Open the working instance — <?= htmlspecialchars($__pdomain) ?>"><?= htmlspecialchars($__proj->displayName ?: $__proj->slug) ?><i class="bi bi-box-arrow-up-right ms-1 small opacity-75"></i></a>
-              <?php if (!empty($__proj->isDefault)): ?><span class="badge text-bg-warning" style="font-size:.62rem">default · core</span><?php endif; ?>
-            </span>
-          </span>
-          <?php
-          /* The actions that belong to the PROJECT, not to any one page. They lived on
-             the AI Builder because that was the only surface that knew which instance you
-             were in — so publishing meant navigating to a build tool first. In the shell
-             they follow you everywhere, which is the point of the chip.
-
-             Publish is a destination now, not an inline action: the Publisher sidecar owns
-             where and how a project goes live, so this links there rather than firing a
-             deploy from a dropdown. */
-          ?>
-          <span class="vr mx-1 d-none d-sm-block"></span>
-          <?php
-          /* Feature-gated like every other sidecar: offering Publish to someone without
-             the flag would land them on a plugin they cannot launch.
-
-             This used to go missing after a grant: Feature::stored() cached the flags in
-             $_SESSION, and setEnabled() busted that copy in the GRANTING ADMIN's session
-             rather than the recipient's, so the member kept whatever they had at login.
-             The cache is a per-request static now — a grant lands on their next page
-             load, with no re-login and nothing to re-save. */
-          if (\app\Feature::isEnabled('publisher', (int) (\Flight::getMember()->id ?? 0), $__level)): ?>
-            <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm py-0 px-2" style="font-size:.72rem"
-               title="Where and how this project goes live"><i class="bi bi-cloud-upload me-1"></i>Publish</a>
-          <?php endif; ?>
-          <a href="/connections" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.72rem"
-             title="Store &amp; service connections for this project"><i class="bi bi-plug me-1"></i>Connections</a>
-          <a href="/teams" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.72rem"
-             title="Share this project with a team"><i class="bi bi-people me-1"></i>Share</a>
-          <a href="/projects" class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle text-decoration-none"
-             style="font-size:.62rem" title="Change project"><i class="bi bi-grid-3x3-gap me-1"></i>Change</a>
-        </div>
-      <?php endif; ?>
-      <?php elseif ($__loggedIn && builder_tools_enabled()): ?>
-        <?php
-        /* No project selected. Say so, here, where the chip normally is — because
-           everything that works on a project quietly does nothing until one is chosen,
-           and an empty space explains none of that. This is the state a new account
-           starts in, and the state you land in after deleting the project you were on. */
-        ?>
-        <a href="/projects"
-           class="ui-project-chip d-flex align-items-center gap-2 px-3 py-1 rounded-3 bg-warning-subtle ms-3 text-decoration-none">
-          <i class="bi bi-signpost-split-fill text-warning-emphasis"></i>
-          <span class="lh-sm">
-            <span class="d-block text-uppercase text-body-secondary fw-semibold" style="font-size:.6rem;letter-spacing:.06em">No project selected</span>
-            <span class="d-block fw-bold link-body-emphasis" style="font-size:.85rem">Create or choose one to begin</span>
-          </span>
-        </a>
-      <?php endif; ?>
 
       <ul class="navbar-nav flex-row align-items-center gap-2 ms-auto mb-0">
         <li class="nav-item">
@@ -376,6 +307,40 @@ if ($__loggedIn) {
         <?php endif; ?>
       </ul>
     </header>
+
+    <?php if ($__pbar === 'project'):
+        /* Links to the WORKING instance — the thing you are building — never to wherever it
+           is published: a published URL belongs to a publish target, not to the project. */
+        $__purl  = $__proj->box()->url();
+        $__pname = $__proj->displayName ?: $__proj->slug;
+        $__pmid  = (int) (\Flight::getMember()->id ?? 0);
+    ?>
+      <div class="ui-projectbar" role="region" aria-label="Current project">
+        <i class="bi bi-hdd-network-fill text-primary flex-none"></i>
+        <span class="ui-pb-eyebrow d-none d-sm-inline">Working on</span>
+        <a href="<?= htmlspecialchars($__purl) ?>" target="_blank" rel="noopener" class="ui-pb-name link-body-emphasis text-decoration-none"
+           title="Open the working instance — <?= htmlspecialchars($__purl) ?>"><?= htmlspecialchars($__pname) ?><i class="bi bi-box-arrow-up-right ms-1 small opacity-75"></i></a>
+        <?php if (!empty($__proj->isDefault)): ?><span class="badge text-bg-warning flex-none" style="font-size:.62rem">default · core</span><?php endif; ?>
+        <nav class="ui-pb-actions" aria-label="Project actions">
+          <?php /* Feature-gated like every sidecar: offering Publish without the flag lands on a plugin they cannot open. */ ?>
+          <?php if (\app\Feature::isEnabled('publisher', $__pmid, $__level)): ?>
+            <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm" title="Where and how this project goes live"><i class="bi bi-cloud-upload"></i><span class="ui-pb-label">Publish</span></a>
+          <?php endif; ?>
+          <a href="/connections" class="btn btn-outline-secondary btn-sm" title="Store &amp; service connections for this project"><i class="bi bi-plug"></i><span class="ui-pb-label">Connections</span></a>
+          <a href="/teams" class="btn btn-outline-secondary btn-sm" title="Share this project with a team"><i class="bi bi-people"></i><span class="ui-pb-label">Share</span></a>
+          <a href="/projects" class="btn btn-outline-primary btn-sm" title="Change project"><i class="bi bi-grid-3x3-gap"></i><span class="ui-pb-label">Change</span></a>
+        </nav>
+      </div>
+    <?php elseif ($__pbar === 'none'):
+        /* No project selected. Said here, where the project normally is — everything that
+           works on a project quietly does nothing until one is chosen. The state a new
+           account starts in, and the one after deleting the project you were on. */ ?>
+      <a href="/projects" class="ui-projectbar ui-projectbar-empty text-decoration-none">
+        <i class="bi bi-signpost-split-fill text-warning-emphasis flex-none"></i>
+        <span class="ui-pb-name link-body-emphasis">No project selected — create or choose one to begin</span>
+        <span class="ui-pb-actions"><span class="btn btn-warning btn-sm"><i class="bi bi-grid-3x3-gap"></i><span class="ui-pb-label">Projects</span></span></span>
+      </a>
+    <?php endif; ?>
 
     <?php if (!empty($breadcrumbs)): ?>
     <nav aria-label="breadcrumb" class="px-4 pt-3">

@@ -26,9 +26,9 @@
 <style>
   /* Edge-to-edge below the sticky topbar; :has() cancels the .ui-content padding where supported. */
   .ui-content:has(.sidecar-embed) { padding: 0 !important; }
-  .sidecar-embed { height: calc(100vh - var(--ui-topbar-height, 62px)); background: var(--bs-body-bg); }
+  .sidecar-embed { height: calc(100vh - var(--ui-topbar-height, 62px) - var(--ui-projectbar-height, 0px)); background: var(--bs-body-bg); }
   .sidecar-embed iframe { width: 100%; height: 100%; border: 0; display: block; }
-  @media (max-width: 991.98px) { .sidecar-embed { height: calc(100vh - var(--ui-topbar-height, 62px)); } }
+  @media (max-width: 991.98px) { .sidecar-embed { height: calc(100vh - var(--ui-topbar-height, 62px) - var(--ui-projectbar-height, 0px)); } }
 </style>
 
 <script>

@@ -116,6 +116,21 @@ h2,h3,h4,.h2,.h3,.h4{font-family:var(--ui-ff-display);letter-spacing:-0.02em;fon
 .ui-topbar-title{line-height:1.1;}
 .ui-topbar-title .ui-eyebrow{display:block;margin-bottom:1px;}
 .ui-topbar-title strong{font-family:var(--ui-ff-display);font-weight:600;font-size:1.02rem;letter-spacing:-.01em;}
+/* project bar: which project you are working on + its actions, a second sticky bar under the topbar */
+.ui-main{--ui-projectbar-height:0px;}
+.ui-main.has-projectbar{--ui-projectbar-height:44px;}
+.ui-projectbar{height:var(--ui-projectbar-height);flex:0 0 auto;position:sticky;top:var(--ui-topbar-height);z-index:19;display:flex;align-items:center;gap:.5rem;padding:0 1.5rem;background:color-mix(in srgb,var(--bs-primary-bg-subtle) 88%,var(--bs-body-bg));border-bottom:1px solid var(--bs-border-color);font-size:.85rem;min-width:0;}
+.ui-projectbar-empty{background:var(--bs-warning-bg-subtle);}
+.ui-projectbar .flex-none{flex:none;}
+.ui-pb-eyebrow{flex:none;text-transform:uppercase;font-weight:600;font-size:.62rem;letter-spacing:.06em;color:var(--bs-secondary-color);}
+.ui-pb-name{font-weight:700;min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ui-pb-actions{margin-left:auto;display:flex;align-items:center;gap:.35rem;flex:none;}
+.ui-pb-actions .btn{padding:.15rem .5rem;font-size:.75rem;display:inline-flex;align-items:center;gap:.3rem;}
+@media (max-width:575.98px){
+  .ui-projectbar{padding:0 .75rem;gap:.4rem;}
+  .ui-pb-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}  /* icon-only on phones; still read by screen readers */
+  .ui-pb-actions .btn{padding:.2rem .45rem;font-size:.85rem;}
+}
 .ui-content{padding:1.75rem;width:100%;}
 /* Opt-in readable width for text-heavy pages: <div class="ui-content"><div class="ui-narrow">…</div></div> */
 .ui-narrow{max-width:1180px;margin-inline:auto;}

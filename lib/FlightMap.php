@@ -221,10 +221,13 @@ Flight::map('getMember', function() {
         $guest = PUBLIC_USER_ID > 0 ? Bean::load('member', PUBLIC_USER_ID) : null;
         if ($guest && $guest->id) return $guest;
 
-        Flight::get('log')?->error(
-            'No public-user-entity row in the current database; falling back to a '
-          . 'PUBLIC-level guest. Normal in a sidecar, a broken seed on core.'
-        );
+        // A sidecar sets sidecar.core_url and has no member table of its own; there this is
+        // every anonymous request, and logging it at ERROR buried real errors. On core (and
+        // on a project) the row is seeded, so its absence stays an ERROR.
+        $inSidecar = Flight::get('sidecar.core_url') !== null;
+        $msg = 'No public-user-entity row in the current database; using a PUBLIC-level guest.';
+        if ($inSidecar) Flight::get('log')?->debug($msg . ' (sidecar: expected)');
+        else            Flight::get('log')?->error($msg . ' On core/a project this is a broken seed (services/Schema/Seeds).');
 
         $guest = Bean::dispense('member');
         $guest->level    = LEVELS['PUBLIC'];

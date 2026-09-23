@@ -10,7 +10,11 @@ use \RedBeanPHP\R;
 
 if (!$_tableCheck('modelconnection')) {
     $s = R::dispense('modelconnection');
-    $s->member_id      = 0;
+    // member_id is a real FK to member (connections are member-owned). The ghost must point
+    // at a row that exists: 0 failed "FOREIGN KEY constraint" on installs that enforce it.
+    // It is trashed right after ($_defer). No member yet → the column arrives on first save.
+    $anyMember = (int) R::getCell('SELECT MIN(id) FROM member');
+    if ($anyMember > 0) $s->member_id = $anyMember;
     $s->name           = '__schema_seed_' . str_repeat('x', 60);
     $s->preset         = str_repeat('x', 32);
     $s->protocol       = str_repeat('x', 16);

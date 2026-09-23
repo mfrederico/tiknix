@@ -2,7 +2,7 @@
 /**
  * PlanRunner — headless "decompose a goal into a multi-agent plan" pass.
  *
- * Unlike ClaudeRunner (interactive TUI in the browser terminal), this runs
+ * Headless: this runs
  * `claude -p` (print / non-interactive) in a detached tmux session against a
  * single instance. The planner is instructed to ground itself with the tiknix
  * MCP (codebase_map / whatprovides / describe) and then call the submit_plan
@@ -13,7 +13,7 @@
  * build anything. Execution of the plan is a separate step (the worktree
  * orchestrator, Phase 2).
  *
- * Jailing mirrors ClaudeRunner exactly: when the workspace is a capricorn
+ * Jailing: when the workspace is a capricorn
  * instance we run inside jail-run.sh; otherwise (an isolated clone) we run
  * direct, relying on the PreToolUse security-sandbox hook for confinement.
  */
@@ -283,7 +283,7 @@ class PlanRunner {
 
     /**
      * jail-run.sh path when the workspace is a jailable capricorn instance,
-     * else '' (run direct). Mirrors ClaudeRunner::jailFor.
+     * else '' (run direct).
      */
     private function jailFor(): string {
         // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
@@ -336,7 +336,7 @@ class PlanRunner {
             // ENGINE decides which provider the jail points the CLI at, and it MUST be sent
             // alongside --model: the model above comes from this engine's registry tier, so
             // without it the jail ran on the default provider and handed it another
-            // provider's model id. ClaudeRunner already did this; the planner did not, which
+            // provider's model id. The executor already did this; the planner did not, which
             // made "decompose on z.ai" a claude run asking Anthropic for glm-5.3.
             $enginePrefix = 'ENGINE=' . escapeshellarg($engine) . ' ';
             $runBlock = $enginePrefix . escapeshellarg($jail) . ' ' . escapeshellarg($ws)

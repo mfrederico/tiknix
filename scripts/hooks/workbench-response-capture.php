@@ -6,7 +6,7 @@
  * Captures Claude's responses and logs them to the workbench task.
  * Also updates task status to "awaiting" when Claude finishes responding.
  *
- * Environment variables (set by ClaudeRunner wrapper script):
+ * Environment variables (exported by the runner script that launched the agent):
  * - TIKNIX_TASK_ID: The workbench task ID
  * - TIKNIX_PROJECT_ROOT: The project root directory
  * - TIKNIX_MEMBER_ID: The member who started the task

@@ -1195,7 +1195,7 @@ MD;
         return $id;
     }
 
-    /** jail-run.sh path when the instance is jailable, else '' (mirrors ClaudeRunner). */
+    /** jail-run.sh path when the instance is jailable, else '' (mirrors PlanRunner). */
     private function jailFor(): string {
         // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
         // is outside the boundary (is_file() would throw) and re-jailing is redundant. Direct.

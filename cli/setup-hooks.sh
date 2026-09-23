@@ -170,18 +170,6 @@ create_settings_file() {
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/bin/php \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/log-activity.php",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "",

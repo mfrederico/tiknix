@@ -12,7 +12,6 @@
  *
  *   PlanRunner    engine from the caller,        planner tier
  *   PlanExecutor  engine from the task row,      worker tier
- *   ClaudeRunner  engine from the task, then a file in the WORKSPACE
  *   AuditRunner   engine from the instance file, auditor tier
  *
  * They differ legitimately in WHERE the hint comes from and WHICH tier they want. They do

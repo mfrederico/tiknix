@@ -94,15 +94,9 @@ class ToolLoader {
      */
     private function discover(): void {
         $this->discoverInDir($this->baseDir);
-
-        // Discover in subdirectories
-        $subdirs = ['workbench'];
-        foreach ($subdirs as $subdir) {
-            $path = $this->baseDir . '/' . $subdir;
-            if (is_dir($path)) {
-                $this->discoverInDir($path);
-            }
-        }
+        // No subdirectories: mcptools/workbench/ (the task tools of the in-core Workbench)
+        // was removed 2026-09-23 — the Workbench lives in its sidecar, and those tools had
+        // not been called since 2026-08-11. Concept tools register through register().
     }
 
     /**

@@ -3,7 +3,8 @@
  * TmuxManager - Centralized tmux session management
  *
  * Provides a clean abstraction layer for tmux operations.
- * Used by ClaudeRunner (for Claude sessions) and Workbench (for test servers).
+ * Used by the plan runners (PlanRunner / PlanExecutor sessions). The in-core ClaudeRunner
+ * and Workbench that also used it were removed 2026-09-23 (the Workbench is a sidecar).
  *
  * Session Types:
  * - Claude tasks: tiknix-{member_id}-task-{task_id} or tiknix-team-{team_id}-task-{task_id}
@@ -431,7 +432,7 @@ class TmuxManager {
         // being reaped — which is the failure that produced this bug's symptom.
         //
         // The member stays too: parseSessionName reports it and
-        // ClaudeRunner::findByTaskId rebuilds a runner from it.
+        // (ClaudeRunner, which rebuilt a runner from it, was removed 2026-09-23.)
         $where = self::slugPart($slug);
 
         if ($teamId) {
@@ -529,7 +530,7 @@ class TmuxManager {
      * Matches the scoped shape AND the legacy unscoped one, because agent_session is
      * PERSISTED on the task row: rows written before the rename still carry
      * tiknix-plan26-task76, and callers use this to decide that a task is plan-managed
-     * rather than ClaudeRunner-managed. Failing to recognise an old name there would
+     * rather than managed by the old in-core runner. Failing to recognise an old name there would
      * hand a live subtask to the poller that force-fails sessions it cannot find.
      */
     public static function isPlanSession(string $sessionName): bool {

@@ -29,12 +29,7 @@
  *
  * WHAT IS DELIBERATELY STILL OUT.
  *
- *   workbench/*  (get_task, update_task, complete_task, add_task_log,
- *                ask_question, upload_screenshot)
- *       They read $this->member and $this->apiKey — five references in
- *       CompleteTaskTool alone — and neither exists over stdio. They would fail,
- *       or worse, act as nobody. Giving the agent a way to close its own task is
- *       worth doing, but it needs an identity first, not a wider list.
+ *   (workbench/* — the in-core task tools — no longer exist; removed 2026-09-23.)
  *
  *   pipeline_set / pipeline_delete / pipeline_run / pipeline_continue
  *       These change an instance's automations. Mutating an instance is not

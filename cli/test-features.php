@@ -45,7 +45,6 @@ require_once BASE_PATH . '/lib/Bean.php';
 // Load additional lib files
 require_once BASE_PATH . '/lib/ValidationService.php';
 require_once BASE_PATH . '/lib/TaskAccessControl.php';
-require_once BASE_PATH . '/lib/ClaudeRunner.php';
 
 // Define LEVELS if not defined
 if (!defined('LEVELS')) {
@@ -57,7 +56,6 @@ $projectRoot = BASE_PATH;
 use \app\Bean;
 use \app\ValidationService;
 use \app\TaskAccessControl;
-use \app\ClaudeRunner;
 
 // Parse command line arguments
 $options = getopt('', ['base-url::', 'api-key::', 'verbose', 'help']);
@@ -221,30 +219,6 @@ try {
 }
 
 // =========================================
-// Test: ClaudeRunner
-// =========================================
-printHeader("ClaudeRunner Tests");
-
-try {
-    // Test static methods (don't actually spawn sessions)
-    $sessions = ClaudeRunner::listAllSessions();
-    printTest("ClaudeRunner::listAllSessions()", is_array($sessions), "Found " . count($sessions) . " sessions");
-
-    // Test instantiation
-    $runner = new ClaudeRunner(9999, 1, null);
-    printTest("ClaudeRunner instantiation", true);
-    printTest("ClaudeRunner session name", $runner->getSessionName() === 'tiknix-1-task-9999');
-    printTest("ClaudeRunner work dir", strpos($runner->getWorkDir(), 'tiknix-1-task-9999') !== false);
-
-    // Test exists() on non-existent session
-    $exists = $runner->exists();
-    printTest("ClaudeRunner::exists() (non-existent)", !$exists, "Correctly reports not exists");
-
-} catch (Exception $e) {
-    printTest("ClaudeRunner", false, $e->getMessage());
-}
-
-// =========================================
 // Test: MCP Endpoint
 // =========================================
 printHeader("MCP Endpoint Tests (HTTP)");
@@ -317,19 +291,19 @@ try {
         $toolNames = array_column($tools, 'name');
         printTest("Tool: validate_php exists", in_array('validate_php', $toolNames));
         printTest("Tool: security_scan exists", in_array('security_scan', $toolNames));
-        printTest("Tool: list_tasks exists", in_array('list_tasks', $toolNames));
+        printTest("Tool: reuse_digest exists", in_array('reuse_digest', $toolNames));
     }
 
     // Test tools/call without auth (should fail for protected tools)
     $response = mcpRequest($baseUrl, 'tools/call', [
-        'name' => 'list_tasks',
+        'name' => 'application_info',
         'arguments' => []
     ]);
     if (isset($response['error']) && $response['http_code'] === 0) {
         printSkipped("MCP auth check", "Cannot connect");
     } else {
         $isError = isset($response['error']);
-        printTest("MCP auth required for list_tasks", $isError, "Protected tools require authentication");
+        printTest("MCP auth required for application_info", $isError, "tools/call requires an API key");
     }
 
     // Test tools/call with auth (if API key provided)

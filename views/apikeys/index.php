@@ -178,9 +178,9 @@
                     <ul class="small text-muted mb-2">
                         <li><code>tiknix:list_users</code> - List users</li>
                         <li><code>tiknix:list_mcp_servers</code> - List servers</li>
-                        <li><code>tiknix:list_tasks</code> - Projects tasks</li>
-                        <li><code>tiknix:get_task</code> - Task details</li>
-                        <li><code>tiknix:update_task</code> - Update task</li>
+                        <li><code>tiknix:application_info</code> - What this install is</li>
+                        <li><code>tiknix:last_error</code> - Newest error in the log</li>
+                        <li><code>tiknix:database_schema</code> - The real schema</li>
                     </ul>
                 </div>
             </div>

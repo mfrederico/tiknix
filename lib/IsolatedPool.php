@@ -7,8 +7,8 @@
  * wrap what it launches in jail-run.sh: the script is outside the boundary, it is built to be
  * run by the operator, and jailing a jail is redundant at best.
  *
- * Five launchers ask this question (Pipeline\Dispatcher, ClaudeRunner, PlanExecutor,
- * AuditRunner, PlanRunner) and each used to answer it alone, with
+ * Four launchers ask this question (Pipeline\Dispatcher, PlanExecutor, AuditRunner,
+ * PlanRunner) and each used to answer it alone, with
  *
  *     ini_get('open_basedir') !== ''
  *

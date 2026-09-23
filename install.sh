@@ -926,29 +926,22 @@ setup_mcp_connection() {
         if command_exists jq; then
             # Use jq to add/update the tiknix MCP server and hooks
             local temp_file=$(mktemp)
-            local hook_path="$SCRIPT_DIR/cli/log-activity.sh"
-            jq --arg url "$mcp_url" --arg token "$api_token" --arg hookPath "$hook_path" '
+            # MCP server only. This used to also wire a PostToolUse hook at
+            # cli/log-activity.sh — a file that never existed in the repo, so every edit
+            # ran a hook that failed. The activity-log hook is gone (2026-09-23).
+            jq --arg url "$mcp_url" --arg token "$api_token" '
                 .mcpServers.tiknix = {
                     "type": "http",
                     "url": $url,
                     "headers": {
                         "Authorization": ("Bearer " + $token)
                     }
-                } |
-                .hooks.PostToolUse = (
-                    (.hooks.PostToolUse // []) |
-                    map(select(.command != $hookPath)) +
-                    [{
-                        "matcher": "Edit|Write",
-                        "command": $hookPath
-                    }]
-                )
+                }
             ' "$claude_settings_file" > "$temp_file" 2>/dev/null
 
             if [ $? -eq 0 ]; then
                 mv "$temp_file" "$claude_settings_file"
                 success "Updated Claude settings.json with Tiknix MCP server"
-                success "Configured Claude Code hooks for task activity logging"
             else
                 rm -f "$temp_file"
                 warn "Could not update settings.json automatically"
@@ -960,8 +953,7 @@ setup_mcp_connection() {
             use_claude_mcp_add=true
         fi
     else
-        # Create new settings.json with MCP server and hooks
-        local hook_path="$SCRIPT_DIR/cli/log-activity.sh"
+        # Create new settings.json with the MCP server
         cat > "$claude_settings_file" << SETTINGS_EOF
 {
   "mcpServers": {
@@ -972,19 +964,10 @@ setup_mcp_connection() {
         "Authorization": "Bearer $api_token"
       }
     }
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "command": "$hook_path"
-      }
-    ]
   }
 }
 SETTINGS_EOF
         success "Created Claude settings.json with Tiknix MCP server"
-        success "Configured Claude Code hooks for task activity logging"
     fi
 
     # If we need to use claude mcp add command
@@ -1002,21 +985,6 @@ SETTINGS_EOF
             echo ""
         fi
 
-        # Note about manual hooks setup
-        local hook_path="$SCRIPT_DIR/cli/log-activity.sh"
-        echo ""
-        warn "Hooks could not be configured automatically"
-        info "To enable task activity logging, add this to ~/.claude/settings.json:"
-        echo ""
-        echo -e "${CYAN}\"hooks\": {"
-        echo -e "  \"PostToolUse\": ["
-        echo -e "    {"
-        echo -e "      \"matcher\": \"Edit|Write\","
-        echo -e "      \"command\": \"$hook_path\""
-        echo -e "    }"
-        echo -e "  ]"
-        echo -e "}${NC}"
-        echo ""
     fi
 
     echo ""
@@ -1140,7 +1108,7 @@ print_completion() {
         echo -e "  ${GREEN}✓ MCP server configured for Claude Code${NC}"
         echo "  Restart Claude to load tools:"
         echo "    tiknix:hello, tiknix:validate_php, tiknix:security_scan"
-        echo "    tiknix:list_tasks, tiknix:get_task, tiknix:update_task"
+        echo "    tiknix:reuse_digest, tiknix:describe, tiknix:last_error"
         echo "  Verify with: claude mcp list"
     else
         echo "  Configure MCP at: http://${DEFAULT_HOST}:${DEFAULT_PORT}/apikeys"

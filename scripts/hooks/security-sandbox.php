@@ -37,7 +37,7 @@ $toolInput = $data['tool_input'] ?? [];
 $projectDir = getenv('CLAUDE_PROJECT_DIR') ?: dirname(dirname(__DIR__));
 $projectDir = rtrim(realpath($projectDir) ?: $projectDir, '/');
 
-// Get member level from environment (set by ClaudeRunner)
+// Get member level from environment (exported by the runner script)
 // Levels: 1=ROOT, 50=ADMIN, 100=MEMBER, 101=PUBLIC
 $memberLevel = (int)(getenv('TIKNIX_MEMBER_LEVEL') ?: 0);
 if ($memberLevel <= 0) {
@@ -58,7 +58,7 @@ if ($workspaceRoot) {
 // Are we running INSIDE the bubblewrap jail? jail-run.sh mounts a tmpfs at
 // /aibhome and exports AIBUILDER_INSTANCE; neither exists on the host.
 //
-// This matters because not every agent is jailed. ClaudeRunner::jailFor() returns
+// This matters because not every agent is jailed. The plan runners' jailFor() returns
 // no jail for an isolated task workspace (no dot in the basename, or outside
 // /var/www/html/default, or no public/index.php) — those run on the HOST, where
 // this hook is the only boundary there is. So rules are not deleted for being

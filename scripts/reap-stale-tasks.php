@@ -340,8 +340,8 @@ foreach (array_keys($live) as $name) {
  * is the failure this whole file was written for, repeated one level down.
  *
  * IDENTITY COMES FROM THE PROCESS'S OWN ENVIRONMENT, never from a pattern over
- * ps output. Each runner exports TIKNIX_SESSION_NAME (ClaudeRunner through
- * run-claude.sh, AuditRunner through run-audit.sh), so the tree states which
+ * ps output. Each runner exports TIKNIX_SESSION_NAME (PlanExecutor through its
+ * run-agent.sh, AuditRunner through run-audit.sh), so the tree states which
  * session owns it. When that cannot be read the tree is REPORTED AND LEFT
  * RUNNING: killing a process we could not identify is how a cleaner becomes the
  * outage, and this file already carries four comments about exactly that.

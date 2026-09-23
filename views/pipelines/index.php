@@ -251,10 +251,12 @@ function renderAgents(){
         ${a.is_default?'<span class="ui-chip">default</span>':''}
         <span class="ui-chip ${a.key_status==='unreadable'?'text-danger':''}" title="API key">${esc(a.key_status==='set'?'key':(a.key_status==='unreadable'?'key unreadable':'no key'))}</span>
       </div>
-      <div class="small" style="color:var(--bs-secondary-color)">${esc(a.kind==='member'?'owner\'s model':a.kind)} · ${esc(a.kind==='openai'?a.model:(a.kind==='member'?(((CONNS.find(c=>c.id===a.connection_ref)||{}).name||('connection #'+a.connection_ref+' — not available'))+(a.model?' / '+a.model:'')):((a.engine||'install default')+(a.model?' / '+a.model:''))))} · ${a.timeout}s</div>
+      <div class="small" style="color:var(--bs-secondary-color)">${esc(a.kind==='member'?'owner\'s model':a.kind)} · ${esc(a.kind==='openai'?a.model:(a.kind==='member'?(((CONNS.find(c=>c.id===a.connection_ref)||{}).name||('connection #'+a.connection_ref+' — not available'))+(a.model?' / '+a.model:'')):((a.engine||'install default')+(a.endpoint?' @ '+a.endpoint.replace(/^https?:\/\//,''):'')+(a.model?' / '+a.model:''))))} · ${a.timeout}s</div>
       ${a.description?`<div class="small text-truncate" style="color:var(--bs-tertiary-color)">${esc(a.description)}</div>`:''}
     </div>`).join('');
 }
+// What an agent step ran on: model and whose credential ("claude login (pro)", "agent 'x' key → openrouter.ai").
+function stepMeta(s){ const m=s.meta||{}; const parts=[m.model,m.credential||(m.connection?'owner\'s connection #'+m.connection:'')].filter(Boolean); return parts.length?' · '+esc(parts.join(' on ')):''; }
 function agentForm(a){
   a = a || {id:0,name:'',description:'',kind:'cli',engine:'',model:'',endpoint:'',timeout:600,pre_prompt:'',is_default:!AGENTS.length,key_status:'unset',connection_ref:0};
   const connOpts = CONNS.map(c=>`<option value="${c.id}" ${c.id===a.connection_ref?'selected':''} ${c.ready?'':'disabled'}>${esc(c.name)} (${esc(c.protocol)})${c.ready?'':' — '+esc((c.problems||[]).join('; '))}</option>`).join('');
@@ -272,11 +274,12 @@ function agentForm(a){
           ${CONNS.length?`<select class="form-select form-select-sm" id="ag-conn"><option value="0">— choose —</option>${connOpts}</select>`
             :`<div class="small text-danger">${esc(CONNS_ERR||'The project owner has no model connections opted in for pipelines. On the platform: Connections → Models → tick "let my projects\' pipelines use this".')}</div><input type="hidden" id="ag-conn" value="0">`}
           <div class="small mt-1" style="color:var(--bs-tertiary-color)">Calls run on core with the owner's key — it is never stored in this app. Model blank = the connection's build model.</div></div>
-        <div class="col-6 ag-openai"><div class="fld-label">Endpoint <span class="req">*</span></div><input class="form-control form-control-sm" id="ag-endpoint" value="${esc(a.endpoint)}" placeholder="https://api.openai.com/v1"></div>
+        <div class="col-6 ag-ep"><div class="fld-label">Endpoint <span class="req ag-openai">*</span><span class="small ag-cli" style="color:var(--bs-tertiary-color)">— optional, Anthropic-compatible</span></div><input class="form-control form-control-sm" id="ag-endpoint" value="${esc(a.endpoint)}" placeholder="https://api.openai.com/v1">
+          <div class="small mt-1 ag-cli" style="color:var(--bs-tertiary-color)">Blank = Anthropic. Set it to run Claude Code on another provider — e.g. <code>https://openrouter.ai/api</code>, <code>http://your-host:11434</code> (Ollama), <code>https://api.z.ai/api/anthropic</code> — with that provider's key below.</div></div>
         <div class="col-6"><div class="fld-label">Model</div><input class="form-control form-control-sm" id="ag-model" value="${esc(a.model)}" placeholder="cli: claude-opus-5-5 / opus / sonnet / haiku · openai: the model id"></div>
         <div class="col-6"><div class="fld-label">Timeout (s)</div><input type="number" class="form-control form-control-sm" id="ag-timeout" value="${a.timeout||600}" min="5" max="3600"></div>
         <div class="col-12"><div class="fld-label">API key <span class="small" style="color:var(--bs-tertiary-color)">— ${esc(a.key_status==='set'?'a key is stored; type a new one to replace it':(a.key_status==='unreadable'?'the stored key cannot be decrypted — replace it':'none stored'))}</span></div>
-          <input type="password" class="form-control form-control-sm" id="ag-key" autocomplete="new-password" placeholder="${a.kind==='cli'?'optional — blank uses the install\'s credential chain':'sk-…'}">
+          <input type="password" class="form-control form-control-sm" id="ag-key" autocomplete="new-password" placeholder="${a.kind==='cli'?'optional — blank uses the project\'s Claude login / Anthropic key; required with an endpoint':'sk-…'}">
           ${a.key_status!=='unset'?`<label class="form-check-label small mt-1"><input type="checkbox" class="form-check-input" id="ag-clearkey"> clear the stored key</label>`:''}</div>
         <div class="col-12"><div class="fld-label">Pre-prompt <span class="small" style="color:var(--bs-tertiary-color)">— the agent's system prompt; a step's own <code>system</code> is appended</span></div>
           <textarea class="form-control form-control-sm code" id="ag-pre" rows="6">${esc(a.pre_prompt)}</textarea></div>
@@ -292,7 +295,7 @@ function agentForm(a){
     </div>
   </div>`;
 }
-function agentKindChanged(){ const k=document.getElementById('ag-kind').value; document.querySelectorAll('.ag-cli').forEach(e=>e.style.display=k==='cli'?'':'none'); document.querySelectorAll('.ag-openai').forEach(e=>e.style.display=k==='openai'?'':'none'); document.querySelectorAll('.ag-member').forEach(e=>e.style.display=k==='member'?'':'none'); const key=document.getElementById('ag-key'); if(key) key.closest('.col-12').style.display=k==='member'?'none':''; }
+function agentKindChanged(){ const k=document.getElementById('ag-kind').value; document.querySelectorAll('.ag-cli').forEach(e=>e.style.display=k==='cli'?'':'none'); document.querySelectorAll('.ag-openai').forEach(e=>e.style.display=k==='openai'?'':'none'); document.querySelectorAll('.ag-member').forEach(e=>e.style.display=k==='member'?'':'none'); document.querySelectorAll('.ag-ep').forEach(e=>e.style.display=(k==='cli'||k==='openai')?'':'none'); const ep=document.getElementById('ag-endpoint'); if(ep) ep.placeholder=k==='cli'?'https://openrouter.ai/api':'https://api.openai.com/v1'; const key=document.getElementById('ag-key'); if(key) key.closest('.col-12').style.display=k==='member'?'none':''; }
 function newAgent(){ document.getElementById('agent-slot').innerHTML=agentForm(null); agentKindChanged(); }
 function editAgent(id){ const a=AGENTS.find(x=>x.id===id); if(!a) return; document.getElementById('agent-slot').innerHTML=agentForm(a); agentKindChanged(); }
 function closeAgentForm(){ document.getElementById('agent-slot').innerHTML=''; }
@@ -309,7 +312,7 @@ async function saveAgent(id){
 }
 async function testAgent(id){
   agentMsg('Running…',''); 
-  try{ const d=await jpost('/pipelines/agenttest',{id}); agentMsg((d.ok?'✓ ':'✗ ')+(d.ok?d.output:d.error)+' ('+d.ms+' ms'+(d.meta&&d.meta.model?', '+d.meta.model:'')+')', d.ok?'text-success':'text-danger'); }
+  try{ const d=await jpost('/pipelines/agenttest',{id}); agentMsg((d.ok?'✓ ':'✗ ')+(d.ok?d.output:d.error)+' ('+d.ms+' ms'+(d.meta&&d.meta.model?', '+d.meta.model:'')+(d.meta&&d.meta.credential?', on '+d.meta.credential:'')+')', d.ok?'text-success':'text-danger'); }
   catch(e){ agentMsg(e.message,'text-danger'); }
 }
 async function deleteAgent(id){
@@ -807,7 +810,7 @@ function watchRun(runId){
   if(watchTimer) clearInterval(watchTimer); DEBUG=null;
   const render=r=>{ let h=`<div class="mb-1"><b>Run #${runId}</b> <span class="st-${r.status}">${esc(r.status)}</span> <span style="color:var(--bs-tertiary-color)">${r.steps_done}/${r.steps_total}</span></div>`;
     (r.steps||[]).forEach(s=>{
-      h+=`<div class="st-${s.status}">${s.status==='completed'?'✓':s.status==='failed'?'✗':'…'} <b>${esc(s.step)}</b> <span style="color:var(--bs-tertiary-color)">[${esc(s.type)}]${s.exit?' exit '+s.exit:''} ${s.duration_ms||0}ms</span></div>`;
+      h+=`<div class="st-${s.status}">${s.status==='completed'?'✓':s.status==='failed'?'✗':'…'} <b>${esc(s.step)}</b> <span style="color:var(--bs-tertiary-color)">[${esc(s.type)}]${s.exit?' exit '+s.exit:''} ${s.duration_ms||0}ms${stepMeta(s)}</span></div>`;
       if(s.stderr && (s.status==='failed'||s.exit)) h+=`<pre class="io st-failed">${esc(s.stderr)}</pre>`;   // WHY it failed
     });
     if(r.await_prompt) h+=`<div class="st-awaiting mt-1">⏸ awaiting: ${esc(r.await_prompt)}</div>`;
@@ -841,7 +844,7 @@ function renderDebug(bp){
   let h=`<div class="mb-2"><b>Debug #${bp.run_id}</b> <span class="st-${bp.status}">${esc(bp.status)}</span> <span style="color:var(--bs-tertiary-color)">${bp.steps_done}/${bp.steps_total}</span></div>`;
   (bp.steps||[]).forEach(s=>{
     const cur=paused && s.step===bp.last_step;
-    h+=`<div class="trace-step ${cur?'cur':''}"><div><span class="st-${s.status}">${s.status==='completed'?'✓':s.status==='failed'?'✗':'…'}</span> <b>${esc(s.step)}</b> <span style="color:var(--bs-tertiary-color)">[${esc(s.type)}] ${s.duration_ms||0}ms</span></div>`;
+    h+=`<div class="trace-step ${cur?'cur':''}"><div><span class="st-${s.status}">${s.status==='completed'?'✓':s.status==='failed'?'✗':'…'}</span> <b>${esc(s.step)}</b> <span style="color:var(--bs-tertiary-color)">[${esc(s.type)}] ${s.duration_ms||0}ms${stepMeta(s)}</span></div>`;
     if(cur){
       if(s.input!=null) h+=`<div class="small mt-1" style="color:var(--bs-tertiary-color)">resolved input</div><pre class="io">${esc(JSON.stringify(s.input,null,2))}</pre>`;
       if(s.output!=null) h+=`<div class="small" style="color:var(--bs-tertiary-color)">output</div><pre class="io">${esc(JSON.stringify(s.output,null,2))}</pre>`;

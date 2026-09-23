@@ -9,7 +9,11 @@
  *                         by id in connection_ref; core makes the call, the key never comes
  *                         here (Pipeline\MemberModel, MODEL_CONNECTIONS_PLAN.md phase 4)
  *   engine/model cli: the engine + model tier; openai: model is the endpoint's model id
- *   endpoint     openai only: base URL (…/v1), chat/completions is appended
+ *   endpoint     openai: base URL (…/v1), chat/completions is appended
+ *                cli:    optional ANTHROPIC-COMPATIBLE base URL (OpenRouter, Ollama, z.ai, a
+ *                        server of your own). Blank = Anthropic, or the engine's own endpoint.
+ *                        Set = Claude Code runs against it with THIS agent's key, never the
+ *                        install's Claude login or Anthropic key (runProblems()).
  *   api_key_enc  the key, encrypted with the install's own key (ConnectionStore::ownKey).
  *                Never returned to a page. On a cli agent, empty = the install's chain.
  *   timeout      seconds
@@ -61,6 +65,8 @@ class Model_Agent extends \RedBeanPHP\SimpleModel {
             if ($engine !== '' && class_exists('\\app\\EngineRegistry') && !\app\EngineRegistry::isValid($engine)) {
                 $p[] = "engine '{$engine}' is not registered (conf/aibuilder.ini [engine.*])";
             }
+            $ep = trim((string) ($in['endpoint'] ?? ''));
+            if ($ep !== '' && !preg_match('#^https?://[^\s/]+#i', $ep)) $p[] = 'endpoint must be an absolute http(s) URL, e.g. https://openrouter.ai/api';
         }
         if ($kind === 'openai') {
             $ep = trim((string) ($in['endpoint'] ?? ''));
@@ -80,13 +86,26 @@ class Model_Agent extends \RedBeanPHP\SimpleModel {
         $b->kind        = (string) ($in['kind'] ?? 'cli');
         $b->engine      = $b->kind === 'cli' ? trim((string) ($in['engine'] ?? '')) : '';
         $b->model       = trim((string) ($in['model'] ?? ''));
-        $b->endpoint    = $b->kind === 'openai' ? rtrim(trim((string) ($in['endpoint'] ?? '')), '/') : '';
+        $b->endpoint    = in_array($b->kind, ['openai', 'cli'], true) ? rtrim(trim((string) ($in['endpoint'] ?? '')), '/') : '';
         // A row id on CORE (_ref: no local table, no foreign key). 0 for every other kind.
         $b->connectionRef = $b->kind === 'member' ? (int) ($in['connection_ref'] ?? 0) : 0;
         $b->timeout     = max(5, min(3600, (int) ($in['timeout'] ?? self::DEFAULT_TIMEOUT)));
         $b->prePrompt   = (string) ($in['pre_prompt'] ?? '');
         if (!$b->createdAt) $b->createdAt = date('Y-m-d H:i:s');
         $b->updatedAt   = date('Y-m-d H:i:s');
+    }
+
+    /**
+     * Problems only visible once the key is applied: a cli agent pointed at another provider
+     * must carry that provider's key. The install's Claude login and Anthropic key belong to
+     * Anthropic and are never sent anywhere else.
+     */
+    public function runProblems(): array {
+        $b = $this->bean;
+        if ((string) $b->kind === 'cli' && (string) $b->endpoint !== '' && $this->keyStatus() !== 'set') {
+            return ["an agent with its own endpoint needs that provider's API key (the project's Claude login and Anthropic key are never sent to {$b->endpoint})"];
+        }
+        return [];
     }
 
     /** Make this the default; only one can be. */

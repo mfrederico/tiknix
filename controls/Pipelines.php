@@ -229,6 +229,7 @@ class Pipelines extends Control {
         $key = (string) $this->getParam('api_key', '');
         if ($key !== '') $agent->box()->setApiKey($key);                       // typed → stored
         if ((string) $this->getParam('clear_key', '') === '1') $agent->box()->setApiKey('');
+        if ($late = $agent->box()->runProblems()) { Flight::json(['ok' => false, 'errors' => $late]); return; }
         $agent->box()->setDefault((string) $this->getParam('is_default', '') === '1' || \Model_Agent::defaultAgent() === null);
         Bean::store($agent);
         $this->logger->info('Agent saved', ['agent' => $agent->name, 'kind' => $agent->kind, 'member_id' => $this->member->id]);

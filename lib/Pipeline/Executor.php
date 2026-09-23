@@ -301,6 +301,9 @@ class Executor {
 
         $sr->status     = !empty($res['await']) ? 'awaiting' : ($res['ok'] ? 'completed' : 'failed');
         $sr->outputJson = json_encode($res['output'], JSON_UNESCAPED_SLASHES);
+        // What the step ran on (agent: engine, model, which credential), so a run says
+        // whose account it spent. Never a secret: steps put names here, not keys.
+        $sr->metaJson   = !empty($res['meta']) ? json_encode($res['meta'], JSON_UNESCAPED_SLASHES) : '';
         $sr->stdout     = mb_substr((string) $res['stdout'], 0, 65535);
         $sr->stderr     = mb_substr((string) $res['stderr'], 0, 65535);
         $sr->exitCode   = (int) $res['exit'];

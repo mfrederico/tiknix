@@ -130,6 +130,68 @@ PHP);
         $this->assertStringContainsString("agent 'ghost' is not configured on this app", $r['stderr']);
     }
 
+    /* ---- the cli path: which endpoint and whose credential ---- */
+
+    /**
+     * A run directory inside $this->root with a fake bin/claude that prints what it was
+     * given — the base URL, and whether each credential variable is set (never its value).
+     */
+    private function cliRun(): array {
+        @mkdir($this->root . '/bin', 0700, true);
+        file_put_contents($this->root . '/bin/claude', "#!/bin/sh\necho \"BASE=\$ANTHROPIC_BASE_URL TOKEN=\${ANTHROPIC_AUTH_TOKEN:+set} KEY=\${ANTHROPIC_API_KEY:+set} CFG=\${CLAUDE_CONFIG_DIR:+set}\"\n");
+        chmod($this->root . '/bin/claude', 0700);
+        $dir = $this->root . '/data/pipe-runs/t-' . bin2hex(random_bytes(3));
+        @mkdir($dir, 0700, true);
+        return ['root' => $this->root, 'run_directory' => $dir];
+    }
+
+    private function signIn(string $plan): void {
+        @mkdir($this->root . '/.aibuilder/state/claude', 0700, true);
+        file_put_contents($this->root . '/.aibuilder/state/claude/.credentials.json', json_encode(['claudeAiOauth' => ['subscriptionType' => $plan]]));
+    }
+
+    public function testACliAgentWithAnEndpointRunsOnlyOnItsOwnKey(): void {
+        $this->signIn('pro');   // the project's Claude login is there, and must NOT be used
+        $this->agent(['name' => 'router', 'endpoint' => 'https://openrouter.ai/api/'], 'or-key');
+        $r = (new AgentStep())->run(['agent' => 'router', 'prompt' => 'hi', 'model' => 'm'], $this->cliRun());
+        $this->assertTrue($r['ok'], $r['stderr']);
+        $this->assertSame('BASE=https://openrouter.ai/api TOKEN=set KEY= CFG=', $r['output']);
+        $this->assertSame("agent 'router' key → openrouter.ai", $r['meta']['credential']);
+    }
+
+    public function testAnEndpointWithoutAKeyIsRefusedAtSaveAndAtRun(): void {
+        $this->signIn('pro');
+        $a = $this->agent(['name' => 'nokey', 'endpoint' => 'http://gpu-box:11434']);
+        $this->assertStringContainsString('never sent to http://gpu-box:11434', implode(' ', $a->box()->runProblems()));
+        $r = (new AgentStep())->run(['agent' => 'nokey', 'prompt' => 'hi'], $this->cliRun());
+        $this->assertFalse($r['ok']);
+        $this->assertStringContainsString("needs that provider's API key", $r['stderr']);
+        $this->assertNotEmpty(\Model_Agent::problems(['name' => 'x', 'kind' => 'cli', 'endpoint' => 'gpu-box:11434', 'timeout' => 60]), 'a relative endpoint is refused');
+    }
+
+    public function testNoAgentRunsOnTheProjectsLoginAndSaysSo(): void {
+        $this->signIn('max');
+        $r = (new AgentStep())->run(['prompt' => 'hi', 'engine' => 'claude', 'model' => 'm'], $this->cliRun());
+        $this->assertTrue($r['ok'], $r['stderr']);
+        $this->assertSame('BASE= TOKEN= KEY= CFG=set', $r['output']);
+        $this->assertSame('claude login (max)', $r['meta']['credential']);
+    }
+
+    public function testAnEngineWithItsOwnEndpointNeverGetsTheAnthropicChain(): void {
+        if (!EngineRegistry::isValid('zai')) $this->markTestSkipped('no [engine.zai] in conf/aibuilder.ini');
+        $this->signIn('pro');
+        $r = (new AgentStep())->run(['prompt' => 'hi', 'engine' => 'zai', 'model' => 'm'], $this->cliRun());
+        $this->assertFalse($r['ok']);
+        $this->assertStringContainsString('api.z.ai', $r['stderr']);
+        $this->assertStringContainsString('never sent to another provider', $r['stderr']);
+    }
+
+    public function testAMembersPersonalConnectionCannotRunInAPipeline(): void {
+        $r = (new AgentStep())->run(['prompt' => 'hi', 'engine' => 'mc-3'], $this->cliRun());
+        $this->assertFalse($r['ok']);
+        $this->assertStringContainsString("member's personal model connection", $r['stderr']);
+    }
+
     public function testParseRules(): void {
         $this->assertFalse(OpenAiChat::parse('{"choices":[]}', 200, 'u')['ok']);
         $this->assertFalse(OpenAiChat::parse('not json', 200, 'u')['ok']);

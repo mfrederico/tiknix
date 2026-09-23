@@ -81,6 +81,10 @@ class AgentStep implements StepInterface {
         // engine, and the step fails naming it — it does not run on some other provider.
         if ($engine === '') {
             $engine = EngineRegistry::defaultEngine();
+        } elseif (str_starts_with($engine, 'mc-')) {
+            // A member's personal model connection lives on core and runs only in that member's
+            // own builds, where core checks they own it. A pipeline belongs to the project.
+            return self::fail("engine '{$engine}' is a member's personal model connection and cannot run in a pipeline. Give a cli agent this provider's endpoint and key (Data page → Agents), or use an agent of kind 'owner's model'.");
         } elseif (!EngineRegistry::isValid($engine)) {
             return self::fail("engine '{$engine}' is not a registered engine (" . implode(', ', EngineRegistry::names()) . ') — fix the step or the agent');
         }
@@ -130,16 +134,36 @@ class AgentStep implements StepInterface {
         $inner = EngineRegistry::agentCommand($engine, $prompt, $model, $binOpt);
         if ($inner === null) return self::fail("engine '{$engine}' has no headless launcher (headless_ready in [engine.{$engine}]), so this step cannot run; choose an engine that has one");
 
-        // Credentials: the instance's OWN, resolved in precedence order (login token ->
-        // anthropic.key.enc -> 'anthropic' connection). Never the operator's creds. Passed via
-        // the child ENV, not the command line, so the key never shows up in `ps`.
-        [$env, $credErr] = self::agentEnv($engine, $root);
-        // An agent with its own key uses it; the install's chain is for agents without one.
-        if ($agent && (string) ($agent->apiKeyEnc ?? '') !== '') {
-            try { $env['ANTHROPIC_API_KEY'] = $agent->apiKey(); unset($env['CLAUDE_CONFIG_DIR']); $credErr = ''; }
-            catch (\Throwable $e) { return self::fail("agent '{$agent->name}': its API key cannot be decrypted (rotated install key?): " . $e->getMessage()); }
+        // Credentials, passed via the child ENV (never the command line, so no key in `ps`):
+        //   another provider (the agent's endpoint, or the engine's own, e.g. z.ai) → the
+        //     agent's key for THAT provider, and nothing else;
+        //   Anthropic → the agent's key, else the instance's chain (login token →
+        //     anthropic.key.enc → 'anthropic' connection). Never the operator's creds.
+        // $credential names what was used; it goes in the step's record.
+        $meta = ['engine' => $engine, 'model' => $model, 'agent' => $agent ? (string) $agent->name : null, 'kind' => 'cli'];
+        $base = $agent ? (string) $agent->endpoint : '';
+        if ($base === '') $base = rtrim((string) ((EngineRegistry::def($engine) ?? [])['anthropic_base_url'] ?? ''), '/');
+        try { $agentKey = $agent ? $agent->apiKey() : ''; }
+        catch (\Throwable $e) { return self::fail("agent '{$agent->name}': its API key cannot be decrypted (rotated install key?): " . $e->getMessage()); }
+        if ($base !== '') {
+            if ($agentKey === '') {
+                return self::fail(($agent ? "agent '{$agent->name}'" : "engine '{$engine}'") . " runs against {$base}, which needs that provider's API key on the agent (Data page → Agents). "
+                    . "The project's Claude login and Anthropic key are never sent to another provider.");
+            }
+            [$env] = self::agentEnv('', $root);
+            $env['ANTHROPIC_BASE_URL'] = $base;
+            $env['ANTHROPIC_AUTH_TOKEN'] = $agentKey;
+            unset($env['ANTHROPIC_API_KEY'], $env['CLAUDE_CONFIG_DIR']);
+            $credential = "agent '{$agent->name}' key → " . (parse_url($base, PHP_URL_HOST) ?: $base);
+        } elseif ($agentKey !== '') {
+            [$env] = self::agentEnv('', $root);
+            $env['ANTHROPIC_API_KEY'] = $agentKey;
+            $credential = "agent '{$agent->name}' key (Anthropic)";
+        } else {
+            [$env, $credErr, $credential] = self::agentEnv($engine, $root);
+            if ($credErr !== '') return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $credErr, 'exit' => 1, 'meta' => $meta];
         }
-        if ($credErr !== '') return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $credErr, 'exit' => 1];
+        $meta['credential'] = $credential;
 
         $timeout = max(5, min(3600, (int) ($config['timeout'] ?? 0) ?: ($agent ? (int) ($agent->timeout ?: 600) : 600)));
         $cwd = $runDir ?: getcwd();
@@ -164,7 +188,7 @@ class AgentStep implements StepInterface {
             'ok'     => $exit === 0,
             'output' => trim($stdout),
             'stdout' => $stdout, 'stderr' => $stderr, 'exit' => (int) $exit,
-            'meta'   => ['engine' => $engine, 'model' => $model, 'agent' => $agent ? (string) $agent->name : null, 'kind' => 'cli'],
+            'meta'   => $meta,
         ];
     }
 
@@ -182,19 +206,29 @@ class AgentStep implements StepInterface {
      * Child environment carrying the instance's OWN claude credential, resolved in precedence
      * order: (1) a persisted per-instance login token, (2) the instance's encrypted
      * anthropic.key.enc, (3) an 'anthropic' connection in the instance's ConnectionStore.
-     * Never the operator's credentials. Returns [$env, $error]; a non-empty error = none found.
+     * Never the operator's credentials. Returns [$env, $error, $credential]: a non-empty error =
+     * none found; $credential says which one was used. $engine '' = the base env only.
      */
     private static function agentEnv(string $engine, string $root): array {
         $env = getenv();
         $env['PATH'] = '/usr/local/bin:/usr/bin:/bin' . (!empty($env['PATH']) ? ':' . $env['PATH'] : '');
+        // Anthropic credentials from the caller's environment never reach the child: the
+        // step runs on the project's own, chosen below.
+        unset($env['ANTHROPIC_API_KEY'], $env['ANTHROPIC_AUTH_TOKEN'], $env['ANTHROPIC_BASE_URL'], $env['CLAUDE_CONFIG_DIR']);
+        if ($engine === '') return [$env, '', ''];
 
-        // Only claude / anthropic-compatible engines take the anthropic credential chain.
-        if ($engine !== 'claude' && $engine !== 'zai') return [$env, ''];
-        if ($root === '') return [$env, 'agent: cannot resolve the instance root to load its claude credential'];
+        // The chain is Anthropic's: only the claude engine takes it. An engine with its own
+        // endpoint (z.ai) is handled by the caller with the agent's key.
+        if ($engine !== 'claude') return [$env, "agent: engine '{$engine}' has no Anthropic credential chain — give the agent that provider's key", ''];
+        if ($root === '') return [$env, 'agent: cannot resolve the instance root to load its claude credential', ''];
 
         // 1) persisted per-instance login token (claude setup-token / /login)
         $stateDir = $root . '/.aibuilder/state/' . $engine;
-        if (@is_file($stateDir . '/.credentials.json')) { $env['CLAUDE_CONFIG_DIR'] = $stateDir; return [$env, '']; }
+        if (@is_file($stateDir . '/.credentials.json')) {
+            $env['CLAUDE_CONFIG_DIR'] = $stateDir;
+            $plan = (string) ((json_decode((string) @file_get_contents($stateDir . '/.credentials.json'), true)['claudeAiOauth']['subscriptionType'] ?? ''));
+            return [$env, '', 'claude login' . ($plan !== '' ? " ({$plan})" : '')];
+        }
 
         // 2) the instance's own encrypted API key
         $keyFile = $root . '/secure/anthropic.key.enc';
@@ -206,11 +240,11 @@ class AgentStep implements StepInterface {
                 \app\ConnectionStore::useInstall($root);
                 $k = \app\EncryptionService::decryptWith((string) file_get_contents($keyFile), \app\ConnectionStore::ownKey());
             } catch (\Throwable $e) {
-                return [$env, "agent: {$keyFile} exists but cannot be decrypted with this install's key (rotated? corrupt?): " . $e->getMessage()];
+                return [$env, "agent: {$keyFile} exists but cannot be decrypted with this install's key (rotated? corrupt?): " . $e->getMessage(), ''];
             }
-            if (!is_string($k) || $k === '') return [$env, "agent: {$keyFile} decrypted to an empty key; re-save it or delete the file"];
+            if (!is_string($k) || $k === '') return [$env, "agent: {$keyFile} decrypted to an empty key; re-save it or delete the file", ''];
             $env['ANTHROPIC_API_KEY'] = $k;
-            return [$env, ''];
+            return [$env, '', 'secure/anthropic.key.enc'];
         }
 
         // 3) an 'anthropic' connection in the instance's ConnectionStore
@@ -218,19 +252,19 @@ class AgentStep implements StepInterface {
             \app\ConnectionStore::useInstall($root);
             $conn = \app\ConnectionStore::for('anthropic');
         } catch (\Throwable $e) {
-            return [$env, 'agent: the connection store could not be read: ' . $e->getMessage()];
+            return [$env, 'agent: the connection store could not be read: ' . $e->getMessage(), ''];
         }
         if ($conn) {
             try {
                 $sec = \app\ConnectionStore::ownSecret($conn, 'accessToken');
             } catch (\Throwable $e) {
-                return [$env, "agent: the 'anthropic' connection exists but its token cannot be decrypted (rotated install key?): " . $e->getMessage()];
+                return [$env, "agent: the 'anthropic' connection exists but its token cannot be decrypted (rotated install key?): " . $e->getMessage(), ''];
             }
-            if (!is_string($sec) || $sec === '') return [$env, "agent: the 'anthropic' connection exists but holds no token; reconnect it"];
+            if (!is_string($sec) || $sec === '') return [$env, "agent: the 'anthropic' connection exists but holds no token; reconnect it", ''];
             $env['ANTHROPIC_API_KEY'] = $sec;
-            return [$env, ''];
+            return [$env, '', "'anthropic' connection"];
         }
 
-        return [$env, 'agent: no claude credential for this instance — set one via /login, secure/anthropic.key.enc, or an anthropic connection'];
+        return [$env, 'agent: no claude credential for this instance — set one via /login, secure/anthropic.key.enc, or an anthropic connection', ''];
     }
 }

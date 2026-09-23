@@ -26,7 +26,7 @@ class Trace {
             $steps[] = ['step' => (string) $s->stepName, 'type' => (string) $s->stepType, 'status' => (string) $s->status,
                 'exit' => (int) $s->exitCode, 'duration_ms' => (int) $s->durationMs,
                 'stdout' => (string) $s->stdout, 'stderr' => (string) $s->stderr,
-                'output' => json_decode((string) $s->outputJson, true)];
+                'output' => json_decode((string) $s->outputJson, true), 'meta' => json_decode((string) ($s->metaJson ?? ''), true)];
         }
         return ['run_id' => (int) $run->id, 'slug' => (string) $run->slug, 'status' => (string) $run->status,
             'source' => (string) $run->source, 'parent_run_id' => (int) ($run->parentRunId ?? 0),
@@ -47,7 +47,7 @@ class Trace {
             $steps[] = ['step' => (string) $s->stepName, 'type' => (string) $s->stepType, 'status' => (string) $s->status,
                 'input' => json_decode((string) $s->inputJson, true), 'output' => json_decode((string) $s->outputJson, true),
                 'stdout' => (string) $s->stdout, 'stderr' => (string) $s->stderr,
-                'exit' => (int) $s->exitCode, 'duration_ms' => (int) $s->durationMs];
+                'exit' => (int) $s->exitCode, 'duration_ms' => (int) $s->durationMs, 'meta' => json_decode((string) ($s->metaJson ?? ''), true)];
         }
         $state = json_decode((string) $run->stateJson, true) ?: [];
         return [

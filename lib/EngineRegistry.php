@@ -225,6 +225,23 @@ class EngineRegistry {
         return (string) $d;
     }
 
+    /**
+     * An engine from a form or request: empty = $default (itself validated); a NAMED engine
+     * must be registered or this throws naming the valid ones. Removed once as unused —
+     * the workbench sidecar calls it through core's autoloader, so it came back, strict.
+     */
+    public static function coerce(?string $name, ?string $default = null): string {
+        $name = trim((string) $name);
+        if ($name === '') {
+            $d = trim((string) $default);
+            if ($d === '') return self::defaultEngine();
+            if (!self::isValid($d)) throw new \RuntimeException("Engine default '{$d}' is not a registered engine (" . implode(', ', self::names()) . ').');
+            return $d;
+        }
+        if (!self::isValid($name)) throw new \RuntimeException("Engine '{$name}' is not a registered engine (" . implode(', ', self::names()) . ').');
+        return $name;
+    }
+
     /** Resolve a model tier (planner|worker|auditor) for an engine. */
     /**
      * The model an engine uses for a tier. RAISES when it declares none.

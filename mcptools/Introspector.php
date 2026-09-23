@@ -550,10 +550,13 @@ class Introspector {
         if (isset($this->_concepts)) return $this->_concepts;
         $on = null;
         if ($this->db) {
-            $st = $this->db->query("SELECT setting_key FROM settings WHERE setting_key LIKE 'install.concept.%' AND setting_value = '1'");
-            if ($st !== false) {
+            try {
+                $st = $this->db->query("SELECT setting_key FROM settings WHERE setting_key LIKE 'install.concept.%' AND setting_value = '1'");
                 $on = [];
                 foreach ($st->fetchAll(\PDO::FETCH_COLUMN) as $key) $on[substr((string) $key, strlen('install.concept.'))] = true;
+            } catch (\Throwable $e) {
+                $on = null;   // enabled state UNKNOWN (reported as such below), not "none enabled"
+                $this->problem(__FUNCTION__, $e);
             }
         }
         $out = [];

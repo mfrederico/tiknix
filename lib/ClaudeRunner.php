@@ -1,0 +1,1231 @@
+<?php
+/**
+ * ClaudeRunner - Tmux-based Claude Code Execution
+ *
+ * Manages isolated tmux sessions for running Claude Code tasks.
+ * Each task gets its own session with a unique work directory.
+ *
+ * Session Naming:
+ * - Personal tasks: tiknix-{member_id}-task-{task_id}
+ * - Team tasks: tiknix-team-{team_id}-task-{task_id}
+ *
+ * Uses TmuxManager for low-level tmux operations.
+ */
+
+namespace app;
+
+use \Exception as Exception;
+
+class ClaudeRunner {
+
+    private int $taskId;
+    private int $memberId;
+    private ?int $teamId;
+    private int $memberLevel;
+    private string $sessionName;
+    private string $workDir;
+    private ?string $projectPath = null;
+    /** Optional model override (e.g. a decorrelated resolver tier for conflict resolution, §5). */
+    private ?string $modelOverride = null;
+
+    /** The project dir this task belongs to; null for a task with no instance tag. */
+    private ?string $instanceDir = null;
+
+    /**
+     * Which ENGINE this run uses — the provider, not the model.
+     *
+     * The two are different choices and both reach the agent by different routes: the model
+     * is a CLI flag (--model), while the engine decides the endpoint, the credential and
+     * the state directory, all of which jail-run.sh resolves from $ENGINE before the CLI
+     * starts. Null means "whatever the instance is set to", which is the existing behaviour
+     * and stays the default.
+     */
+    private ?string $engine = null;
+
+    /**
+     * Create a new ClaudeRunner instance
+     *
+     * @param int $taskId The task ID
+     * @param int $memberId The member who owns/triggered the task
+     * @param int|null $teamId The team ID (null for personal tasks)
+     * @param string|null $projectPath Custom project path (workspace clone location)
+     * @param int $memberLevel The member's permission level (default 100 = MEMBER)
+     */
+    public function __construct(int $taskId, int $memberId, ?int $teamId = null, ?string $projectPath = null, int $memberLevel = 100) {
+        $this->taskId = $taskId;
+        $this->memberId = $memberId;
+        $this->teamId = $teamId;
+        $this->memberLevel = $memberLevel;
+        $this->projectPath = $projectPath;
+
+        /* The task's own engine, resolved HERE rather than at the six places that construct
+           a runner. Asking every caller to remember setEngine() is asking for the one that
+           forgets, and that one would run on the default provider while the board showed
+           something else — a wrong answer with nothing on screen to contradict it.
+           Read from the task row on whatever connection is current, which in the sidecar is
+           the project's own workbench.db where the task lives. Unreadable or unset leaves it
+           null, which is the previous behaviour: jail-run.sh falls back to the instance's
+           .aibuilder/engine and then the conf default. */
+        try {
+            $row = \app\Bean::load('workbenchtask', $taskId);
+            if ($row && $row->id) {
+                $this->setEngine((string) ($row->engine ?? ''));
+                /* The model travels with the engine because they were chosen together, as
+                   one pair. Applied only when the engine came from the same row: a model
+                   without its engine is how you end up asking Anthropic for glm-5.3.
+                   A caller that has already set an override wins — conflict resolution
+                   picks a decorrelated tier deliberately (§5) and must not be undone by
+                   whatever the task was created with. */
+                $model = trim((string) ($row->model ?? ''));
+                if ($model !== '' && $this->engine !== null && $this->modelOverride === null) {
+                    $this->setModelOverride($model);
+                }
+                /* The PROJECT this task belongs to. Every other runner resolves credentials
+                   and the engine file from the instance directory; this one had only the
+                   task workspace, which is a git clone with no .aibuilder/ in it. Left null
+                   when the row carries no tag (older tasks), which keeps the previous
+                   behaviour of using the workspace. */
+                $tag = trim((string) ($row->instanceTag ?? ''));
+                if ($tag !== '' && preg_match('/^[a-z0-9][a-z0-9.\-]*$/i', $tag)) {
+                    $this->instanceDir = '/var/www/html/default/' . $tag;
+                }
+            }
+        } catch (\Throwable $e) {
+            // No task table here (a bare workspace, a test harness). Not an error: the
+            // instance default is a perfectly good answer.
+        }
+
+        // Use TmuxManager to build session name.
+        //
+        // The project slug comes out of the workspace path, which GitService now
+        // scopes by instance (projects/<member>/<slug>.tiknix/<task>). Taking it
+        // from there rather than adding a constructor argument means every existing
+        // caller gets the scoping for free — and the two can never disagree about
+        // which project a session belongs to, because they read the same string.
+        // Just the slug, not the whole instance tag: the directory is named
+        // "mileage.tiknix" and the session already begins with tiknix-, so the app
+        // namespace would say it twice — tiknix-mileage-tiknix-1-task-26.
+        $slug = '';
+        if ($projectPath) {
+            $parent = basename(dirname(rtrim($projectPath, '/')));
+            if ($parent !== '' && !ctype_digit($parent)) $slug = explode('.', $parent)[0];
+        }
+        $this->sessionName = TmuxManager::buildTaskSessionName($memberId, $taskId, $teamId, $slug);
+
+        // Work directory based on ownership
+        if ($teamId) {
+            $this->workDir = "/tmp/tiknix-team-{$teamId}-task-{$taskId}";
+        } else {
+            $this->workDir = "/tmp/tiknix-{$memberId}-task-{$taskId}";
+        }
+    }
+
+    /**
+     * Get the project path (workspace or default)
+     */
+    public function getProjectPath(): string {
+        return $this->projectPath ?? dirname(__DIR__);
+    }
+
+    /**
+     * Override the model this session runs on (claude `--model <X>`). Used by conflict
+     * resolution to run a decorrelated tier — a resolver that differs from the worker
+     * that authored the branch (AGENT_ORCHESTRATION.md §5). Null = claude default.
+     */
+    public function setModelOverride(?string $model): void {
+        $this->modelOverride = ($model !== null && $model !== '') ? $model : null;
+    }
+
+    /**
+     * Run this session on a specific engine (provider), e.g. a task marked `zai`.
+     *
+     * Only reaches the agent when jailed, because jail-run.sh is what reads $ENGINE and
+     * turns it into an endpoint, a credential and a per-engine state dir. An unjailed run
+     * executes `claude` directly against whatever the ambient environment holds, so there
+     * is nothing to point elsewhere — setting this there would look like it worked and
+     * quietly run on the default provider.
+     *
+     * Validated against the registry rather than trusted: this value becomes a shell
+     * assignment, and an unknown engine should fail here rather than in bwrap.
+     */
+    public function setEngine(?string $engine): void {
+        $engine = trim((string) $engine);
+        $this->engine = ($engine !== '' && \app\EngineRegistry::isValid($engine)) ? $engine : null;
+    }
+
+    /**
+     * Get the session name
+     */
+    public function getSessionName(): string {
+        return $this->sessionName;
+    }
+
+    /**
+     * Record this workspace as trusted in the agent's own config, so it does not open on a
+     * confirmation dialog nobody is there to answer.
+     *
+     * Writes `projects[<path>].hasTrustDialogAccepted = true` into the .claude.json inside
+     * the credential store the jail binds as the agent's home — the same file the CLI reads
+     * and the same place it would record the answer had a human clicked "Yes, I trust this
+     * folder".
+     *
+     * Failures here are logged and swallowed on purpose: an unwritable config must not stop
+     * a run. The consequence is the dialog appears and the agent exits, which is loud on its
+     * own and already carries its own error path.
+     */
+    private function trustWorkspace(string $workspaceRoot): void {
+        $stateDir = AgentContext::for(
+            (int) $this->memberId,
+            'worker',
+            $this->instanceDir ?: rtrim($workspaceRoot, '/'),
+            $this->engine,
+            $this->modelOverride
+        )->stateDir;
+
+        $file = rtrim($stateDir, '/') . '/.claude.json';
+        $cfg  = [];
+        if (is_file($file)) {
+            $decoded = json_decode((string) @file_get_contents($file), true);
+            if (is_array($decoded)) {
+                $cfg = $decoded;
+            } else {
+                // Do not silently replace a config we could not read — that would discard a
+                // member's credentials-adjacent settings to fix a dialog.
+                \Flight::get('log')?->error('ClaudeRunner: .claude.json is unreadable; not trusting workspace', [
+                    'file' => $file, 'task' => $this->taskId,
+                ]);
+                return;
+            }
+        }
+
+        $path = rtrim($workspaceRoot, '/');
+        if (!isset($cfg['projects']) || !is_array($cfg['projects'])) $cfg['projects'] = [];
+        if (!isset($cfg['projects'][$path]) || !is_array($cfg['projects'][$path])) $cfg['projects'][$path] = [];
+        if (!empty($cfg['projects'][$path]['hasTrustDialogAccepted'])) return;   // already trusted
+
+        $cfg['projects'][$path]['hasTrustDialogAccepted'] = true;
+
+        if (@file_put_contents($file, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) {
+            \Flight::get('log')?->error('ClaudeRunner: could not write .claude.json to trust the workspace', [
+                'file' => $file, 'task' => $this->taskId,
+            ]);
+            return;
+        }
+        @chmod($file, 0600);
+    }
+
+    /**
+     * The engine this runner will ACTUALLY dispatch on — resolved, not guessed.
+     *
+     * Callers were reading $task->engine directly to report what ran, then substituting a
+     * generic word when the row was empty. But an empty row does not mean "unknown": the
+     * task still runs, on the project's engine, and printing "Agent" hid which provider did
+     * the work. Same resolution AgentContext gives the launcher, so the log and the run can
+     * never disagree.
+     */
+    public function resolvedEngine(): string {
+        return AgentContext::for(
+            (int) $this->memberId,
+            'worker',
+            $this->instanceDir ?: rtrim($this->getProjectPath(), '/'),
+            $this->engine,
+            $this->modelOverride
+        )->engine;
+    }
+
+    /**
+     * Get the work directory
+     */
+    public function getWorkDir(): string {
+        return $this->workDir;
+    }
+
+    /**
+     * The URL this task's progress hooks call back on.
+     *
+     * @throws \RuntimeException when the task's data is project-owned but the project
+     *                           cannot say where it lives
+     */
+    private function getHookUrl(string $projectRoot): string {
+        // Sidecar regime: the AI Projects sidecar set TIKNIX_WORKBENCH_DB, so this task's
+        // data lives in the INSTANCE's workbench.db — point progress hooks at the INSTANCE's
+        // OWN /mcp/message (its baseurl + its .mcp_token, both already in the workspace) so
+        // add_task_log writes to that workbench.db. INERT for core (env unset).
+        if (getenv('TIKNIX_WORKBENCH_DB')) {
+            $cfg  = @parse_ini_file($this->getProjectPath() . '/conf/config.ini', true) ?: [];
+            $base = rtrim((string) ($cfg['app']['baseurl'] ?? ''), '/');
+            if ($base !== '') return $base . '/mcp/message';
+
+            // AND STOP IF IT IS NOT THERE. Falling past this point sent a project's
+            // progress hooks down the .mcp_url / localhost:8080 path below, and on a
+            // co-located box localhost:8080 IS core — so add_task_log would write to the
+            // control plane's tables under an id that means something else there. The env
+            // var already told us these tasks are not core's; a missing baseurl makes the
+            // destination unknowable, not defaultable.
+            $msg = 'Task data for this run lives in a project workbench.db (TIKNIX_WORKBENCH_DB '
+                 . 'is set) but the project has no [app] baseurl, so its progress hooks have '
+                 . 'nowhere to report. Refusing rather than posting them to core.';
+            \Flight::get('log')->error($msg, ['project' => $this->getProjectPath()]);
+            throw new \RuntimeException($msg);
+        }
+
+        // CORE's own tasks from here down: core's hooks calling core's own MCP, which is
+        // what localhost:8080 legitimately is.
+        $mcpUrlFile = $projectRoot . '/.mcp_url';
+        if (file_exists($mcpUrlFile)) {
+            $url = trim(file_get_contents($mcpUrlFile));
+            if (!empty($url)) {
+                return $url . '/mcp/message';
+            }
+        }
+
+        return 'http://localhost:8080/mcp/message';   // nginx -> php-fpm, this install
+    }
+
+    /**
+     * Spawn a new tmux session with Claude Code running interactively
+     *
+     * @param bool $skipPermissions Use --dangerously-skip-permissions flag
+     * @return bool Success
+     */
+    public function spawn(bool $skipPermissions = true): bool {
+        // Create work directory for task files
+        if (!is_dir($this->workDir)) {
+            if (!mkdir($this->workDir, 0755, true)) {
+                throw new Exception("Failed to create work directory: {$this->workDir}");
+            }
+        }
+
+        // Check if session already exists
+        if ($this->exists()) {
+            throw new Exception("Session already exists: {$this->sessionName}");
+        }
+
+        // Use custom project path (workspace) if provided, otherwise default to main project
+        $workspaceRoot = $this->getProjectPath();
+
+        /* Pre-answer the CLI's folder-trust dialog for this workspace.
+         *
+         * Every task gets a FRESH workspace directory, and the CLI opens on "Is this a
+         * project you trust?" for any directory it has not seen — with "No, exit" selected.
+         * The runner's Enter keypress therefore chose exit, and the agent died three seconds
+         * in with code 1. On every standalone task, every time. Plan subtasks were immune
+         * because they run headless (`-p`), which shows no dialog — which is exactly why
+         * plan builds worked while single-task runs never did.
+         *
+         * Answering it for the agent is a real decision, and it is defensible here: this
+         * directory was created by our own provisioning as a clone of the member's own
+         * instance, the agent runs inside a bwrap jail confined to it, and a person pressed
+         * Run. It is not a folder of unknown origin, which is the case the prompt exists for.
+         */
+        $this->trustWorkspace($workspaceRoot);
+
+        // SECURITY: never run a task agent against the live source app. A task must
+        // operate on an isolated instance/workspace — never the main tree.
+        $mainRoot = dirname(__DIR__);
+        if ((realpath($workspaceRoot) ?: $workspaceRoot) === (realpath($mainRoot) ?: $mainRoot)) {
+            throw new Exception("Refusing to run a task agent on the main app ({$mainRoot}). Assign the task an isolated instance/workspace.");
+        }
+
+        // Jail by default: when the workspace is a capricorn instance, run inside bwrap.
+        $jail = $this->jailFor($workspaceRoot);
+
+        // Build Claude command to run interactively
+        $claudeCmd = 'claude --debug';
+        if ($skipPermissions) {
+            $claudeCmd .= ' --dangerously-skip-permissions';
+        }
+        if ($this->modelOverride) {
+            $claudeCmd .= ' --model ' . escapeshellarg($this->modelOverride);
+        }
+
+        // Build a wrapper script that shows invocation info then runs Claude
+        $invocationScript = $this->buildInvocationScript($claudeCmd, $workspaceRoot, $jail);
+        $scriptFile = $this->workDir . '/run-claude.sh';
+        file_put_contents($scriptFile, $invocationScript);
+        chmod($scriptFile, 0755);
+
+        // Use TmuxManager to create the session
+        TmuxManager::create($this->sessionName, $scriptFile, $workspaceRoot);
+
+        // Verify session was created
+        if (!$this->exists()) {
+            throw new Exception("Session created but not found: {$this->sessionName}");
+        }
+
+        // WAIT FOR THE UI, DO NOT GUESS AT IT.
+        //
+        // This was a flat usleep(500000) "wait for Claude to initialize". The prompt is
+        // pasted into the pane immediately afterwards, so if the UI is not up yet the
+        // paste goes nowhere and the agent sits at an empty prompt for ever — the task
+        // reads `running` while nothing runs. 500ms was already optimistic; under bwrap,
+        // namespace setup and node startup blow straight past it, which is how the first
+        // jailed run came up idle.
+        $this->waitUntilReady();
+
+        return true;
+    }
+
+    /**
+     * Block until the agent's UI is accepting input, or the timeout expires.
+     *
+     * Readiness is observed, not assumed: the pane is polled for the footer Claude Code
+     * draws once it is interactive. Returns false on timeout so the caller can say the
+     * agent never came up rather than pasting into nothing.
+     */
+    private function waitUntilReady(int $timeoutSeconds = 90): bool {
+        $deadline = time() + $timeoutSeconds;
+
+        while (time() < $deadline) {
+            $pane = TmuxManager::capture($this->sessionName, 40);
+            // Either marker means the input box is drawn and focused.
+            if (stripos($pane, 'bypass permissions') !== false
+                || strpos($pane, '❯') !== false) {
+                return true;
+            }
+            if (!$this->exists()) return false;   // died during startup
+            usleep(500000);
+        }
+
+        return false;
+    }
+
+    /**
+     * Return the jail-run.sh path when $workspace can be jailed, else ''.
+     *
+     * Jailable = a tiknix app root under /var/www/html/default whose identity jail-run.sh
+     * can resolve: either the instance itself (<sub>.<app>) or a TASK WORKSPACE beneath
+     * one (…/projects/<member>/<sub>.<app>/<taskId>), which carries the identity on its
+     * parent.
+     *
+     * Task workspaces used to be excluded here, by requiring a dot in the leaf name — so
+     * every board-run agent ran unjailed, as the operator's own uid, with permission
+     * prompts off, while the wrapper it generated announced itself as jailed.
+     */
+    private function jailFor(string $workspace): string {
+        // Already running inside an isolated instance's pool? open_basedir confines this
+        // process to the instance tree, so we ARE the jail: jail-run.sh lives outside that
+        // boundary (an is_file() on it throws an open_basedir warning and breaks the caller)
+        // and re-jailing as the same isolated uid is neither possible nor needed. Run direct.
+        // (IsolatedPool, not a bare open_basedir test: a CLI process started BY the pool — a
+        // pipeline worker fanning out child runs — has no open_basedir and still IS the pool.)
+        if (\app\IsolatedPool::inside($workspace)) return '';
+
+        $root = '/var/www/html/default';
+        $real = realpath($workspace) ?: $workspace;
+        if (strpos($real, $root . '/') !== 0) return '';
+        if (!is_file("$real/public/index.php")) return '';
+        // jail-run.sh needs <sub>.<app> from the leaf or its parent; anything else it
+        // cannot name, and it refuses rather than guessing.
+        if (strpos(basename($real), '.') === false
+            && strpos(basename(dirname($real)), '.') === false) return '';
+        $cfg = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
+        $binDir = rtrim($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin', '/');
+        $script = "$binDir/jail-run.sh";
+        return is_file($script) ? $script : '';
+    }
+
+    /**
+     * Build the invocation script that displays info and runs Claude
+     *
+     * @param string $claudeCmd The claude command to run
+     * @param string $workspaceRoot The workspace root directory (may differ from main project for isolated tasks)
+     * @param string $jail jail-run.sh path when the workspace is a jailable instance, else ''
+     * @return string Shell script content
+     */
+    private function buildInvocationScript(string $claudeCmd, string $workspaceRoot, string $jail = ''): string {
+        // TIKNIX_PROJECT_ROOT always points to main project (for vendor, hooks, DB)
+        // The workspace may be different for isolated tasks
+        $mainProjectRoot = dirname(__DIR__);
+        $timestamp = date('Y-m-d H:i:s');
+        $teamInfo = $this->teamId ? "Team ID: {$this->teamId}" : "Personal task";
+        $taskId = $this->taskId;
+        $callbackScript = $mainProjectRoot . '/cli/task-complete.php';
+        $sessionName = $this->sessionName;
+
+        // Determine internal URL for hooks - check .mcp_url first, then use localhost
+        $hookUrl = $this->getHookUrl($mainProjectRoot);
+
+        // Run jailed (bwrap) on an instance; else direct (an isolated clone, hook-sandboxed).
+        // In the jail path the `-- <args>` are appended to jail-run.sh's own
+        // `claude --permission-mode bypassPermissions` wrapper, so pass --model through here.
+        // INSIDE THE JAIL, CORE IS NOT MOUNTED. jail-run.sh binds the workspace and its
+        // vendor and nothing else, so a TIKNIX_PROJECT_ROOT pointing at core names a
+        // directory the agent cannot see — and the PreToolUse hooks are launched from
+        // exactly that path. The workspace is a full clone and ships its own
+        // scripts/hooks, so it is the right root there. Unjailed, core stays correct.
+        if ($jail !== '') {
+            $projectRootForAgent = $workspaceRoot;
+            $jailArgs = '--debug';
+            if ($this->modelOverride) $jailArgs .= ' --model ' . escapeshellarg($this->modelOverride);
+            $runComment = '# Run the agent under bwrap — the jail is the security boundary';
+            /* ENGINE selects the PROVIDER, and jail-run.sh reads it first — ahead of the
+               instance's .aibuilder/engine file and the conf default — so a task marked for
+               one provider runs there without changing the project's setting for everyone
+               else. Omitted when unset, which leaves exactly the previous behaviour.
+               Printed in the banner too: "which provider ran this" is the first question
+               asked when comparing output between engines, and reconstructing it afterwards
+               from a session name is guesswork. */
+            $enginePrefix = $this->engine ? 'ENGINE=' . escapeshellarg($this->engine) . ' ' : '';
+            $engineNote   = $this->engine ? " engine=" . $this->engine : '';
+            $runBlock = "echo \"  [jailed: " . addslashes($jail) . addslashes($engineNote) . "]\"\n"
+                      . $enginePrefix . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . ' -- ' . $jailArgs . "\nEXIT_CODE=\$?";
+        } else {
+            $projectRootForAgent = $mainProjectRoot;
+            $runComment = '# Run the agent directly — NOT jailed; the PreToolUse hooks are the only guard';
+            $runBlock = 'cd ' . escapeshellarg($workspaceRoot) . "\n{$claudeCmd}\nEXIT_CODE=\$?";
+        }
+
+        // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
+        // Projects sidecar via putenv) so the child's bootstrap writes task state THERE, not
+        // core's db. INERT for core's own /workbench — the env is unset there. See bootstrap.php.
+        // Credentials follow the PERSON, not the project — see app\AgentState.
+        // The engine is recorded per instance by provisioning (.aibuilder/engine).
+        $ws       = rtrim($this->getProjectPath(), '/');
+        /* THE TASK'S ENGINE DECIDES, not a file in the workspace.
+         *
+         * This read `.aibuilder/engine` out of $ws — which for a task is a per-task git
+         * CLONE, where that file does not exist. It fell back to 'claude' and bound
+         * claude's credential store while the agent ran on the task's actual engine, so a
+         * zai task looked for its key in agent-state/<member>/claude, found none, and the
+         * jail refused: "$ZAI_API_KEY is empty in the operator environment".
+         *
+         * $this->engine is set from the task row in the constructor, which is the same
+         * value the run is dispatched on. The instance file is consulted only for a task
+         * that names no engine, and is the PROJECT default rather than a guess. */
+        /* One resolution for engine, model and credential store (app\AgentContext), from
+           the PROJECT directory rather than this task's workspace clone. */
+        $ctx      = AgentContext::for(
+            (int) $this->memberId,
+            'worker',
+            $this->instanceDir ?: $ws,
+            $this->engine,
+            $this->modelOverride
+        );
+        $engine   = $ctx->engine;
+        $agentStateArg = escapeshellarg($ctx->stateDir);
+        $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
+        $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
+            ? 'export TIKNIX_WORKBENCH_DB=' . escapeshellarg($wsDbEnv) . "\n" : '';
+
+        return <<<BASH
+#!/bin/bash
+#
+# Tiknix Claude Worker Session
+#
+
+# Export task ID for hooks and child processes
+export TIKNIX_TASK_ID={$this->taskId}
+export TIKNIX_MEMBER_ID={$this->memberId}
+export TIKNIX_AGENT_STATE={$agentStateArg}
+export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
+export TIKNIX_SESSION_NAME="{$sessionName}"
+export TIKNIX_PROJECT_ROOT="{$projectRootForAgent}"
+export TIKNIX_WORKSPACE="{$workspaceRoot}"
+export TIKNIX_HOOK_URL="{$hookUrl}"
+{$wsExport}
+# Allow larger Claude outputs (default is 32000, set to ~250k tokens = ~1MB text)
+export CLAUDE_CODE_MAX_OUTPUT_TOKENS=250000
+
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║                    TIKNIX CLAUDE WORKER                          ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
+echo ""
+echo "  Session:     {$sessionName}"
+echo "  Task ID:     {$this->taskId}"
+echo "  Member ID:   {$this->memberId}"
+echo "  {$teamInfo}"
+echo "  Started:     {$timestamp}"
+echo ""
+echo "  Project:     {$mainProjectRoot}"
+echo "  Workspace:   {$workspaceRoot}"
+echo "  Work Dir:    {$this->workDir}"
+echo ""
+echo "────────────────────────────────────────────────────────────────────"
+echo "  Invoking: {$claudeCmd}"
+echo "────────────────────────────────────────────────────────────────────"
+echo ""
+
+# Function to auto-accept bypass permissions dialog
+auto_accept_permissions() {
+    local session="{$sessionName}"
+    local max_attempts=10
+    local attempt=0
+
+    while [ \$attempt -lt \$max_attempts ]; do
+        sleep 0.5
+        # Check if the bypass permissions dialog is showing
+        local content=\$(tmux capture-pane -t "\$session" -p 2>/dev/null)
+        if echo "\$content" | grep -q "Bypass Permissions mode"; then
+            # Dialog is showing - send Down arrow then Enter to select "Yes, I accept"
+            sleep 0.3
+            tmux send-keys -t "\$session" Down 2>/dev/null
+            sleep 0.1
+            tmux send-keys -t "\$session" Enter 2>/dev/null
+            echo "  [Auto-accepted bypass permissions dialog]"
+            return 0
+        fi
+        # Check if Claude is already running (no dialog)
+        if echo "\$content" | grep -q "Claude Code"; then
+            return 0
+        fi
+        attempt=\$((attempt + 1))
+    done
+}
+
+# Start the auto-accept watcher in background
+auto_accept_permissions &
+WATCHER_PID=\$!
+
+{$runComment}
+{$runBlock}
+
+# Kill the watcher if still running
+kill \$WATCHER_PID 2>/dev/null
+
+echo ""
+echo "────────────────────────────────────────────────────────────────────"
+echo "  Claude exited with code: \$EXIT_CODE"
+echo "  Updating task status..."
+echo "────────────────────────────────────────────────────────────────────"
+
+# Update task status based on exit code
+if [ \$EXIT_CODE -eq 0 ]; then
+    php "{$callbackScript}" --task={$taskId} --status=completed
+else
+    php "{$callbackScript}" --task={$taskId} --status=failed --error="Claude exited with code \$EXIT_CODE"
+fi
+
+echo ""
+echo "Session complete. Press Enter to close."
+read
+BASH;
+    }
+
+    /**
+     * Send a prompt to the running Claude session
+     *
+     * @param string $prompt The prompt to send
+     * @return bool Success
+     */
+    public function sendPrompt(string $prompt): bool {
+        if (!$this->exists()) {
+            return false;
+        }
+
+        // Write prompt to a temp file to avoid shell escaping issues with long prompts
+        $promptFile = $this->workDir . '/prompt.txt';
+        file_put_contents($promptFile, $prompt);
+
+        // THE ONLY OUTCOME THAT MATTERS IS THAT THE AGENT STARTED WORKING.
+        //
+        // Four attempts at this problem guessed at a step instead of checking the result:
+        // a 500ms sleep in spawn(), then 2s in the caller, then polling for the footer
+        // (drawn before the box is live), then confirming the paste ARRIVED. The last one
+        // is why task 2 on infinia read `running` for three days having never begun — the
+        // text was sitting in the input box, unsubmitted, and the log said prompt_sent.
+        //
+        // Text in a box is not a running agent. Two observable states, checked separately:
+        // it landed, and then it went.
+        if (!$this->pasteUntilLanded($prompt)) {
+            if (!$this->exists()) return false;
+            // The session is alive and never took the text — say how long we waited, since
+            // that is the number anyone diagnosing this needs.
+            \Flight::get('log')->error('Prompt never reached the agent', [
+                'session' => $this->sessionName, 'task' => $this->taskId,
+                'waited_sec' => self::PROMPT_DEADLINE_SEC,
+            ]);
+            return false;
+        }
+
+        if ($this->submitUntilStarted()) return true;
+
+        /* \Flight, not Flight. This file is in `namespace app;` and imports only Exception,
+           so a bare Flight:: resolves to app\Flight and fatals. Both of these sit on the
+           FAILURE path, so they never ran until a prompt genuinely failed to land — and
+           then the error logger crashed while logging the error, turning a recoverable
+           "the agent did not start" into a fatal that returned an HTML error page to a
+           fetch() expecting JSON. Line 127 had it right all along. */
+        \Flight::get('log')->error('Prompt landed but the agent never started', [
+            'session' => $this->sessionName, 'task' => $this->taskId,
+            'attempts' => self::SUBMIT_ATTEMPTS,
+        ]);
+        return false;
+    }
+
+    /**
+     * How long to keep offering the prompt before giving up, in seconds.
+     *
+     * This was a count — 8 attempts, about 18 seconds — tuned when every agent was claude
+     * starting outside a jail. A bwrap-jailed session on another provider takes longer to
+     * reach the point where it accepts input, so all eight failed, sendPrompt returned
+     * false, and the task sat `queued` with a live agent idling beside its brief on disk.
+     * Task #110 did exactly that.
+     *
+     * A DEADLINE rather than a bigger count, because the count was never the question. The
+     * loop already exits the moment the session dies, so waiting longer costs nothing when
+     * something is genuinely wrong — it only stops giving up on an agent that is merely
+     * slow. Raising 8 to 20 would have been the same guess with a different number.
+     */
+    private const PROMPT_DEADLINE_SEC = 120;
+
+    /** How many times to press Enter before giving up and saying so. */
+    private const SUBMIT_ATTEMPTS = 6;
+
+    /** Paste until the text is visibly in the input box, or the deadline passes. */
+    private function pasteUntilLanded(string $prompt): bool {
+        $deadline = time() + self::PROMPT_DEADLINE_SEC;
+        $attempt  = 0;
+        while (time() < $deadline) {
+            $attempt++;
+            if (!TmuxManager::sendTextViaBuffer($this->sessionName, $prompt, 'tiknix-prompt')) {
+                return $this->sendMessage($prompt);   // buffer paste unavailable
+            }
+            usleep(300000);
+            if ($this->promptLanded($prompt)) {
+                // Worth knowing how long a cold start actually takes on this engine —
+                // otherwise the next person tuning this is guessing too.
+                if ($attempt > 3) {
+                    \Flight::get('log')?->info('Prompt landed after a slow agent start', [
+                        'task' => $this->taskId, 'attempts' => $attempt,
+                        'waited_sec' => self::PROMPT_DEADLINE_SEC - ($deadline - time()),
+                    ]);
+                }
+                return true;
+            }
+            if (!$this->exists()) return false;       // session died while we waited
+            sleep(2);                                 // still starting up — try again
+        }
+        return false;
+    }
+
+    /**
+     * Press Enter until the agent is observably working.
+     *
+     * ONE Enter is not reliably enough. The original code already suspected this and sent
+     * a second "in case Claude needs confirmation" — but both went out ~50ms apart, faster
+     * than a UI still painting its startup notices can accept either. Task 2 was revived by
+     * hand with exactly this: Enter, look, Enter again.
+     */
+    private function submitUntilStarted(): bool {
+        for ($attempt = 1; $attempt <= self::SUBMIT_ATTEMPTS; $attempt++) {
+            TmuxManager::sendKeys($this->sessionName, 'Enter');
+
+            for ($wait = 0; $wait < 6; $wait++) {     // ~3s of looking, per press
+                usleep(500000);
+                if ($this->agentStarted()) return true;
+            }
+            if (!$this->exists()) return false;
+        }
+        return false;
+    }
+
+    /**
+     * Did the paste actually land in the input box?
+     *
+     * An empty box still shows Claude's placeholder ("Try ..."); once text is in it the
+     * placeholder is gone, and a long paste collapses to a "paste again to expand" hint.
+     * Either of those means the terminal took the input.
+     */
+    private function promptLanded(string $prompt = ''): bool {
+        /* 60 lines, not 20. The CLI prints a startup notice — 2.1.247 added a
+           "Keep working from anywhere / run /remote-control" block — which pushed the empty
+           box's placeholder out of a 20-line window. */
+        $pane = TmuxManager::capture($this->sessionName, 60);
+        if ($pane === '') return false;
+
+        /* POSITIVE evidence first. A long paste collapses to a chip rather than showing the
+           text, so the chip is the strongest signal the terminal took it. */
+        if (stripos($pane, 'paste again to expand') !== false) return true;
+        if (stripos($pane, 'Pasted text') !== false) return true;
+
+        // A short prompt appears literally: look for its own opening words.
+        $head = trim(substr(preg_replace('/\s+/', ' ', $prompt), 0, 40));
+        if ($head !== '' && stripos($pane, $head) !== false) return true;
+
+        /* The placeholder being ABSENT used to be enough on its own. It is not evidence of
+           anything — the CLI hides it while drawing a notice, and a task was marked running
+           against a session sitting at an empty prompt. Require it gone AND the box to be
+           the only thing on screen worth trusting: no notice, no placeholder. */
+        $placeholderGone = stripos($pane, 'Try "') === false && stripos($pane, "Try '") === false;
+        $noticeShowing   = stripos($pane, 'Keep working from anywhere') !== false
+                        || stripos($pane, '/remote-control') !== false;
+        return $placeholderGone && !$noticeShowing;
+    }
+
+    /**
+     * Did the submit take — is the agent working on the prompt?
+     *
+     * ONE signal: "esc to interrupt", which Claude draws only while a turn is in flight.
+     *
+     * An empty box was briefly treated as a second signal — the reasoning being that we
+     * only get here after the paste landed, so the placeholder returning meant the text
+     * was consumed. That is not what an empty box means. It means the box is empty, which
+     * is equally true when a startup notice repaints over the paste and throws it away.
+     * pd task 4 was reported started on exactly that inference and sat idle at its prompt;
+     * the failure it was meant to catch is the one it caused.
+     *
+     * Tool-result markers were tried too and dropped: a turn answering in prose shows none
+     * even 120 lines back, so they false-negative a healthy agent.
+     *
+     * The cost of one signal is a turn that finishes inside the poll window looking like it
+     * never began — we then press Enter into an idle agent, which submits nothing. A stray
+     * keystroke is a cheaper mistake than a task that claims to be running and is not.
+     */
+    private function agentStarted(): bool {
+        $pane = TmuxManager::capture($this->sessionName, 30);
+        if ($pane === '') return false;
+        return stripos($pane, 'esc to interrupt') !== false;
+    }
+
+    /**
+     * Kill the tmux session
+     *
+     * @return bool Success
+     */
+    public function kill(): bool {
+        return TmuxManager::kill($this->sessionName);
+    }
+
+    /**
+     * Check if the tmux session exists
+     *
+     * @return bool
+     */
+    public function exists(): bool {
+        return TmuxManager::exists($this->sessionName);
+    }
+
+    /**
+     * Check if Claude Code is currently running in the session
+     *
+     * @return bool
+     */
+    public function isRunning(): bool {
+        if (!$this->exists()) {
+            return false;
+        }
+
+        return TmuxManager::isProcessRunning($this->sessionName, 'claude');
+    }
+
+    /**
+     * Send a message/input to the running session
+     *
+     * @param string $message The message to send
+     * @return bool Success
+     */
+    public function sendMessage(string $message): bool {
+        if (!$this->exists()) {
+            return false;
+        }
+
+        // Paste via a tmux buffer (reliable for any length / special chars), then
+        // submit. This mirrors sendPrompt(): a plain send-keys + single immediate
+        // Enter races the TUI and often leaves the text sitting unsubmitted in the
+        // composer (looks "stuck on working"). Buffer-paste + delay + a confirming
+        // second Enter is the robust path.
+        if (!TmuxManager::sendTextViaBuffer($this->sessionName, $message, 'tiknix-msg')) {
+            // Fallback: escaped send-keys for environments without buffer paste.
+            $escaped = str_replace(
+                ["'", '"', '\\', '$', '`'],
+                ["\\'", '\\"', '\\\\', '\\$', '\\`'],
+                $message
+            );
+            if (!TmuxManager::sendKeys($this->sessionName, $escaped)) {
+                return false;
+            }
+        }
+
+        usleep(150000); // 150ms — let the paste settle before submitting
+        if (!TmuxManager::sendKeys($this->sessionName, 'Enter')) {
+            return false;
+        }
+        usleep(50000);  // 50ms
+        TmuxManager::sendKeys($this->sessionName, 'Enter'); // confirming Enter (TUI may need it)
+        return true;
+    }
+
+    /**
+     * Capture a snapshot of the current tmux pane content
+     *
+     * @param int $lines Number of lines to capture
+     * @return string The captured content
+     */
+    public function captureSnapshot(int $lines = 100): string {
+        return TmuxManager::capture($this->sessionName, $lines);
+    }
+
+    /**
+     * Get progress information from the session
+     *
+     * @return array Progress data
+     */
+    public function getProgress(): array {
+        $snapshot = $this->captureSnapshot(50);
+
+        if (empty($snapshot)) {
+            return [
+                'status' => 'unknown',
+                'last_activity' => null,
+                'current_task' => null,
+                'files_changed' => [],
+                'last_lines' => []
+            ];
+        }
+
+        $lines = array_filter(array_map('trim', explode("\n", $snapshot)));
+        $lastLines = array_slice($lines, -10);
+
+        // Detect current activity
+        $currentTask = $this->detectCurrentTask($lines);
+        $filesChanged = $this->detectFilesChanged($lines);
+        $status = $this->detectStatus($lines);
+
+        return [
+            'status' => $status,
+            'last_activity' => date('Y-m-d H:i:s'),
+            'current_task' => $currentTask,
+            'files_changed' => $filesChanged,
+            'last_lines' => $lastLines
+        ];
+    }
+
+    /**
+     * Detect current task from output lines
+     */
+    private function detectCurrentTask(array $lines): ?string {
+        // More specific patterns to avoid false positives
+        // These match Claude's actual tool usage output
+        $patterns = [
+            '/gh pr create/i' => 'Creating pull request',
+            '/git push /i' => 'Pushing changes',
+            '/git commit /i' => 'Committing changes',
+            '/Read\s+tool|Reading\s+\S+\.(php|js|ts|json)/i' => 'Reading files',
+            '/Write\s+tool|Writing\s+to\s+\S+/i' => 'Writing files',
+            '/Edit\s+tool|Editing\s+\S+\.(php|js|ts|json)/i' => 'Editing files',
+            '/Grep\s+tool|Glob\s+tool/i' => 'Searching codebase',
+            '/Bash\s+tool|Running\s+command/i' => 'Running command',
+            '/npm test|pytest|phpunit/i' => 'Running tests',
+            '/TodoWrite/i' => 'Planning tasks',
+            '/⏺\s*Task\(|Task\s+tool\b/' => 'Running sub-agent',   // NOT bare "Agent": it matched the "← for agents" footer chrome → permanent false positive
+        ];
+
+        // Search from bottom up (most recent first), only last 20 lines
+        $recentLines = array_slice($lines, -20);
+        foreach (array_reverse($recentLines) as $line) {
+            foreach ($patterns as $pattern => $task) {
+                if (preg_match($pattern, $line)) {
+                    return $task;
+                }
+            }
+        }
+
+        // Check for thinking indicator
+        $allText = implode("\n", $recentLines);
+        if (preg_match('/esc to interrupt/i', $allText)) {
+            return 'Thinking...';
+        }
+
+        // If Claude is running, show generic status
+        if ($this->isRunning()) {
+            return 'Working...';
+        }
+
+        return null;
+    }
+
+    /**
+     * Detect files that have been changed
+     */
+    private function detectFilesChanged(array $lines): array {
+        $files = [];
+        $pattern = '/(editing|wrote|modified|created|Writing to|Editing)\s+[\'"]?([^\s\'"]+\.(php|js|ts|json|md|css|html|vue|py))[\'"]?/i';
+
+        foreach ($lines as $line) {
+            if (preg_match($pattern, $line, $matches)) {
+                $file = $matches[2];
+                if (!in_array($file, $files)) {
+                    $files[] = $file;
+                }
+            }
+        }
+
+        return array_slice($files, -10); // Last 10 files
+    }
+
+    /**
+     * Detect overall status
+     */
+    public function detectStatus(array $lines = []): string {
+        // If no lines provided, capture from tmux
+        if (empty($lines)) {
+            $content = TmuxManager::capture($this->sessionName, 50);
+            $lines = explode("\n", $content);
+        }
+
+        // Check last few lines for status indicators
+        $recentLines = array_slice($lines, -15);
+
+        // Look for Claude's status line: "✶ Determining… (esc to interrupt · 12m 3s · ...)"
+        // The pattern matches any spinner char + status text + (esc to interrupt · info)
+        foreach ($recentLines as $line) {
+            if (preg_match('/^.\s+(.+?)\s+\(esc to interrupt\s*·\s*(.+)\)/u', $line, $matches)) {
+                $statusText = trim($matches[1], '…. '); // Remove trailing ellipsis/dots
+                // Map common status texts to simple status codes
+                $statusMap = [
+                    'determining' => 'determining',
+                    'thinking' => 'thinking',
+                    'processing' => 'processing',
+                    'analyzing' => 'analyzing',
+                    'exploring' => 'exploring',
+                    'searching' => 'searching',
+                    'reading' => 'reading',
+                    'writing' => 'writing',
+                ];
+                $lower = strtolower($statusText);
+                foreach ($statusMap as $key => $status) {
+                    if (str_starts_with($lower, $key)) {
+                        return $status;
+                    }
+                }
+                // Return first word if no match
+                return preg_match('/^(\w+)/', $lower, $m) ? $m[1] : 'working';
+            }
+        }
+
+        $lastLines = implode("\n", $recentLines);
+
+        // Check for "In progress" tool execution
+        if (preg_match('/In progress.*tool uses/i', $lastLines)) {
+            return 'executing';
+        }
+
+        // "esc to interrupt" means Claude is actively working (fallback)
+        if (preg_match('/esc to interrupt/i', $lastLines)) {
+            return 'working';
+        }
+
+        // Check for session complete message (from our wrapper script)
+        if (preg_match('/Session complete|Claude exited with code: 0/i', $lastLines)) {
+            return 'completed';
+        }
+
+        // Check for actual error exit or API errors
+        if (preg_match('/Claude exited with code: [1-9]|Fatal error:|PHP Parse error:|API Error:/i', $lastLines)) {
+            return 'error';
+        }
+
+        // Check for waiting prompts (Claude's actual prompt indicators)
+        // Look for: ">" prompt, "↵ send" indicator, or question mark at end
+        if (preg_match('/↵ send|^\s*>\s|>\s*$|Press Enter|waiting for (your |user )?input/im', $lastLines)) {
+            return 'waiting';
+        }
+
+        // If Claude process is running, it's working
+        if ($this->isRunning()) {
+            return 'running';
+        }
+
+        // If session exists but Claude not running, it completed
+        if ($this->exists()) {
+            return 'completed';
+        }
+
+        return 'unknown';
+    }
+
+    /**
+     * Check if the session is hung (error + waiting at prompt)
+     *
+     * @return bool True if session appears hung
+     */
+    public function isHung(): bool {
+        if (!$this->exists()) {
+            return false;
+        }
+
+        $progress = $this->getProgress();
+
+        // Session is hung if it's in error state or waiting after an error
+        if ($progress['status'] === 'error') {
+            return true;
+        }
+
+        // Check if waiting at prompt after an API error
+        if ($progress['status'] === 'waiting') {
+            $snapshot = $this->captureSnapshot(100);
+            if (preg_match('/API Error:/i', $snapshot)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Extract error message from session output if present
+     *
+     * @return string|null Error message or null
+     */
+    public function getErrorMessage(): ?string {
+        if (!$this->exists()) {
+            return null;
+        }
+
+        $snapshot = $this->captureSnapshot(100);
+
+        // Look for API Error
+        if (preg_match('/API Error:\s*(.+?)(?:\.\s*To configure|$)/i', $snapshot, $matches)) {
+            return 'API Error: ' . trim($matches[1]);
+        }
+
+        // Look for Claude exit code
+        if (preg_match('/Claude exited with code:\s*(\d+)/i', $snapshot, $matches)) {
+            return 'Claude exited with code: ' . $matches[1];
+        }
+
+        // Look for PHP errors
+        if (preg_match('/(Fatal error:|PHP Parse error:)\s*(.+)/i', $snapshot, $matches)) {
+            return $matches[1] . ' ' . trim($matches[2]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Check and update task status if session is hung or errored
+     *
+     * @return array Status info with 'is_hung', 'error_message', 'updated'
+     */
+    public function checkHealth(): array {
+        $result = [
+            'is_hung' => false,
+            'error_message' => null,
+            'status' => 'running',
+            'updated' => false
+        ];
+
+        if (!$this->exists()) {
+            $result['status'] = 'session_not_found';
+            return $result;
+        }
+
+        $progress = $this->getProgress();
+        $result['status'] = $progress['status'];
+
+        if ($this->isHung()) {
+            $result['is_hung'] = true;
+            $result['error_message'] = $this->getErrorMessage();
+        }
+
+        return $result;
+    }
+
+    /**
+     * List all active tiknix task sessions
+     *
+     * @return array Session info
+     */
+    public static function listAllSessions(): array {
+        return TmuxManager::listTaskSessions();
+    }
+
+    /**
+     * List sessions for a specific member
+     *
+     * @param int $memberId Member ID
+     * @return array Sessions
+     */
+    public static function listMemberSessions(int $memberId): array {
+        $all = self::listAllSessions();
+        $prefix = "tiknix-{$memberId}-";
+
+        return array_filter($all, function($s) use ($prefix) {
+            return strpos($s['name'], $prefix) === 0;
+        });
+    }
+
+    /**
+     * List sessions for a specific team
+     *
+     * @param int $teamId Team ID
+     * @return array Sessions
+     */
+    public static function listTeamSessions(int $teamId): array {
+        $all = self::listAllSessions();
+        $prefix = "tiknix-team-{$teamId}-";
+
+        return array_filter($all, function($s) use ($prefix) {
+            return strpos($s['name'], $prefix) === 0;
+        });
+    }
+
+    /**
+     * Find a runner by task ID
+     *
+     * @param int $taskId Task ID
+     * @return ClaudeRunner|null
+     */
+    public static function findByTaskId(int $taskId): ?ClaudeRunner {
+        $all = self::listAllSessions();
+
+        foreach ($all as $session) {
+            $parsed = TmuxManager::parseSessionName($session['name']);
+            if ($parsed && $parsed['task_id'] === $taskId && $parsed['type'] === 'task') {
+                $memberId = $parsed['member_id'] ?? 0;
+                $teamId = $parsed['team_id'];
+                return new self($taskId, $memberId, $teamId);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Clean up old work directories
+     *
+     * @param int $maxAgeSeconds Max age in seconds (default 24 hours)
+     */
+    public static function cleanupWorkDirs(int $maxAgeSeconds = 86400): void {
+        $pattern = '/tmp/tiknix-*';
+        $dirs = glob($pattern, GLOB_ONLYDIR);
+
+        if (!$dirs) return;
+
+        $cutoff = time() - $maxAgeSeconds;
+
+        foreach ($dirs as $dir) {
+            $mtime = filemtime($dir);
+            if ($mtime && $mtime < $cutoff) {
+                // Check if there's an active session for this dir
+                $sessionName = basename($dir);
+                if (!TmuxManager::exists($sessionName)) {
+                    // No active session, safe to remove
+                    self::removeDirectory($dir);
+                }
+            }
+        }
+    }
+
+    /**
+     * Recursively remove a directory
+     */
+    private static function removeDirectory(string $dir): void {
+        // Never follow a symlink: is_dir() resolves through links, so a symlink to a
+        // directory (e.g. a composer path-repository package under vendor/) would be
+        // recursed INTO — deleting the link target's files outside this workspace — and
+        // then rmdir() on the link fails with "Not a directory". Unlink links, don't follow.
+        if (is_link($dir)) { @unlink($dir); return; }
+        if (!is_dir($dir)) return;
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . '/' . $file;
+            if (is_link($path)) unlink($path);
+            elseif (is_dir($path)) self::removeDirectory($path);
+            else unlink($path);
+        }
+        rmdir($dir);
+    }
+}

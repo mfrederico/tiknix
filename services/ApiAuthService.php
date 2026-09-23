@@ -18,6 +18,24 @@ class ApiAuthService {
     /**
      * @return array{success:bool, member_id:?int, member?:object, key?:object, error:?string}
      */
+    /**
+     * A JSON list column (scopes, allowed_servers) as an array. NULL / '' / '[]' is "no
+     * entries". Anything else that does not decode to a list is a FAULT, not an empty list:
+     * a corrupt scopes column used to read as [] — and [] means "unrestricted" to every
+     * check downstream, so the broken key was the most permissive one.
+     *
+     * @throws \RuntimeException naming the column
+     */
+    public static function decodeList($json, string $what): array {
+        $json = trim((string) $json);
+        if ($json === '') return [];
+        $v = json_decode($json, true);
+        if (!is_array($v)) {
+            throw new \RuntimeException("{$what} is not a JSON list (" . json_last_error_msg() . '): ' . substr($json, 0, 60));
+        }
+        return array_values($v);
+    }
+
     public static function authenticate(string $bean = '', string $action = 'read'): array {
         $token = self::extractToken();
         if ($token === '') {
@@ -44,7 +62,12 @@ class ApiAuthService {
             return ['success' => false, 'member_id' => null, 'error' => 'API token owner is not active'];
         }
 
-        $scopes = json_decode(((string)$key->scopes) ?? '', true) ?: [];
+        try {
+            $scopes = self::decodeList($key->scopes ?? null, "apikey #{$key->id} scopes");
+        } catch (\RuntimeException $e) {
+            \Flight::get('log')->error('ERROR ' . $e->getMessage());
+            return ['success' => false, 'member_id' => null, 'error' => 'API token scopes are unreadable; the key must be re-issued'];
+        }
         if ($bean !== '' && $scopes && !self::allows($scopes, $bean, $action)) {
             return ['success' => false, 'member_id' => null, 'error' => "API token lacks scope {$bean}.{$action}"];
         }

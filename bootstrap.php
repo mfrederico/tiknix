@@ -267,8 +267,15 @@ class Bootstrap {
             }
 
             if (!$alreadyConnected) {
-                // Construct DSN based on database type
-                $type = $dbConfig['type'] ?? 'mysql';
+                // Construct DSN based on database type. Nothing in [database] is guessed:
+                // a typo'd key used to yield a working-looking EMPTY install (sqlite creates
+                // the file it is pointed at), which is the "(0 rows)" trap at install scope.
+                $need = static function (string $key) use ($dbConfig) {
+                    $v = trim((string) ($dbConfig[$key] ?? ''));
+                    if ($v === '') die("conf/config.ini [database] {$key} is not set — the app cannot know which database is its own.");
+                    return $v;
+                };
+                $type = $need('type');
 
 
                 // Deploy-time override: a single DB_DSN env var (e.g. Hyperlift) drives
@@ -284,7 +291,7 @@ class Bootstrap {
                     }
                 } elseif ($type === 'sqlite') {
                     // SQLite configuration - use absolute path relative to project root
-                    $dbPath = $dbConfig['path'] ?? 'database/tiknix.db';
+                    $dbPath = $need('path');
                     if ($dbPath[0] !== '/') {
                         $dbPath = __DIR__ . '/' . $dbPath;
                     }
@@ -298,11 +305,11 @@ class Bootstrap {
                     R::setup($dsn);
                 } else {
                     // MySQL/PostgreSQL configuration
-                    $host = $dbConfig['host'] ?? 'localhost';
-                    $port = $dbConfig['port'] ?? 3306;
-                    $name = $dbConfig['name'] ?? 'app';
-                    $user = $dbConfig['user'] ?? 'root';
-                    $pass = $dbConfig['pass'] ?? '';
+                    $host = $need('host');
+                    $port = (int) ($dbConfig['port'] ?? 0) ?: ($type === 'pgsql' ? 5432 : 3306);   // the protocol default is a fact, not a guess
+                    $name = $need('name');
+                    $user = $need('user');
+                    $pass = (string) ($dbConfig['pass'] ?? '');   // empty is a legitimate (if unwise) password
 
                     $dsn = "{$type}:host={$host};port={$port};dbname={$name}";
 

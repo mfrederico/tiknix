@@ -97,8 +97,12 @@ class BrokerService {
     /** The control-plane MCP endpoint an instance calls to reach its stores. */
     public static function endpoint(): string {
         $host = strtolower(trim((string)(\Flight::get('app.control_plane_host') ?? '')));
+        if ($host === '') $host = (string) app_host();
         if ($host === '') {
-            $host = app_host() ?: 'tiknix.com';
+            // This address is written into an instance's broker.ini beside a CREDENTIAL;
+            // inventing it hands someone a working key pointed at an install that is not
+            // theirs (see Connections::requestHost's note on the sibling path).
+            throw new \RuntimeException('Broker endpoint: set [app] control_plane_host (or [app] baseurl) in conf/config.ini; the control plane cannot guess its own address.');
         }
         return 'https://' . $host . '/mcp/message';
     }

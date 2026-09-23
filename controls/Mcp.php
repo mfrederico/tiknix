@@ -2010,8 +2010,14 @@ class Mcp extends BaseControls\Control {
             return true;
         }
 
-        $scopes = json_decode(($this->authApiKey->scopes) ?? '', true) ?: [];
-        $allowedServers = json_decode(($this->authApiKey->allowedServers) ?? '', true) ?: [];
+        // A column that will not decode denies. It used to read as [] — "no restrictions".
+        try {
+            $scopes         = \app\services\ApiAuthService::decodeList($this->authApiKey->scopes ?? null, "apikey #{$this->authApiKey->id} scopes");
+            $allowedServers = \app\services\ApiAuthService::decodeList($this->authApiKey->allowedServers ?? null, "apikey #{$this->authApiKey->id} allowed_servers");
+        } catch (\RuntimeException $e) {
+            $this->logger->error('ERROR Mcp: ' . $e->getMessage());
+            return false;
+        }
 
         // Full access scope allows everything
         if (in_array('mcp:*', $scopes)) {
@@ -2035,7 +2041,12 @@ class Mcp extends BaseControls\Control {
             return ['mcp:*']; // Legacy auth has full access
         }
 
-        return json_decode(($this->authApiKey->scopes) ?? '', true) ?: [];
+        try {
+            return \app\services\ApiAuthService::decodeList($this->authApiKey->scopes ?? null, "apikey #{$this->authApiKey->id} scopes");
+        } catch (\RuntimeException $e) {
+            $this->logger->error('ERROR Mcp: ' . $e->getMessage());
+            return [];   // no scopes = nothing granted; the scope checks deny
+        }
     }
 
     // =========================================

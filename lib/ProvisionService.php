@@ -308,7 +308,9 @@ class ProvisionService {
         $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
         if (!$this->canAccessInstance($memberId, $srcId)) return ['ok' => false, 'error' => 'No such source instance', 'code' => 404];
         $srcSlug = (string) Bean::getCell('SELECT slug FROM instance WHERE id = ?', [$srcId]);
-        $engine  = (string) (Bean::getCell('SELECT engine FROM instance WHERE id = ?', [$srcId]) ?: 'claude');
+        // Copied as-is, including empty: an unset engine means "the default at run time"
+        // (PlanIngestor::engineFor); stamping claude here would make it look chosen.
+        $engine  = (string) Bean::getCell('SELECT engine FROM instance WHERE id = ?', [$srcId]);
         if (!preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $ckpt)) return ['ok' => false, 'error' => 'Invalid checkpoint name', 'code' => 400];
         if (trim($this->gitInstance($srcSlug, ['tag', '-l', $ckpt])['out']) !== $ckpt)
             return ['ok' => false, 'error' => 'Checkpoint not found in source instance', 'code' => 404];

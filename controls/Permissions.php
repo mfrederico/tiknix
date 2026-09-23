@@ -12,86 +12,11 @@ use \Exception as Exception;
 
 class Permissions extends BaseControls\Control {
     
-    private static $cache = [];
-    
-    /**
-     * Check permission for a controller/method combination
-     */
-    public function permFor($control, $method, $level = LEVELS['PUBLIC'], $wholeclass = false) {
-        // Normalize names
-        $control = strtolower($control);
-        $method = strtolower($method);
-        
-        // Check cache first
-        $cacheKey = "{$control}:{$method}:{$level}";
-        if (isset(self::$cache[$cacheKey])) {
-            return self::$cache[$cacheKey];
-        }
-        
-        // Some routes are always public
-        $publicRoutes = [
-            'index:index',
-            'auth:login',
-            'auth:dologin',
-            'auth:logout',  // Logout should always be accessible
-            'auth:register',
-            'auth:doregister',
-            'auth:forgot',
-            'auth:doforgot',
-            'auth:reset',
-            'auth:doreset',
-            'error:notfound',
-            'error:forbidden',
-            'error:servererror'
-        ];
-        
-        if (in_array("{$control}:{$method}", $publicRoutes)) {
-            self::$cache[$cacheKey] = true;
-            return true;
-        }
-        
-        // Check database for permission
-        $auth = Bean::findOne('authcontrol', 'control = ? AND method = ?', [$control, $method]);
+    /* permFor() lived here: a second permission check beside PermissionCache::check(),
+       with no callers, reachable as a route, and a `level ?? LEVELS['PUBLIC']` that read an
+       unclassified row as world-open. Removed 2026-09-23; FlightMap routes through
+       PermissionCache::check(), the one implementation. */
 
-        if (!$auth) {
-            // Check for wildcard permission (entire controller)
-            $auth = Bean::findOne('authcontrol', 'control = ? AND method = ?', [$control, '*']);
-        }
-        
-        if ($auth) {
-            // Use level field
-            $requiredLevel = $auth->level ?? LEVELS['PUBLIC'];
-            $hasPermission = $level <= $requiredLevel;
-            self::$cache[$cacheKey] = $hasPermission;
-            return $hasPermission;
-        }
-        
-        // In build mode, auto-create permission
-        if (Flight::get('build')) {
-            $this->logger->info("Build mode: Creating permission for {$control}:{$method}");
-
-            $auth = Bean::dispense('authcontrol');
-            $auth->control = $control;
-            $auth->method = $method;
-            $auth->level = LEVELS['ADMIN']; // Default to admin
-            $auth->description = "Auto-generated permission for {$control}:{$method}";
-            $auth->createdAt = date('Y-m-d H:i:s');
-            Bean::store($auth);
-
-            // Clear cache after creating permission
-            \app\PermissionCache::clear();
-
-            // Admin level required by default
-            $hasPermission = $level <= LEVELS['ADMIN'];
-            self::$cache[$cacheKey] = $hasPermission;
-            return $hasPermission;
-        }
-        
-        // Default deny
-        self::$cache[$cacheKey] = false;
-        return false;
-    }
-    
     /**
      * Admin interface for managing permissions
      */

@@ -30,8 +30,12 @@ class AgentState {
         return rtrim((string) ($cfg['agent']['state_base'] ?? self::DEFAULT_BASE), '/');
     }
 
+    /** The engine as a directory name. Empty or malformed is refused: it would bind claude's store. */
     private static function engine(string $engine): string {
-        return preg_replace('/[^a-z0-9_-]/i', '', $engine) ?: 'claude';
+        if (!preg_match('/^[a-z0-9_-]+$/iD', $engine)) {
+            throw new \RuntimeException("Agent credentials: engine '{$engine}' is not a usable name, so there is no credential store for it.");
+        }
+        return $engine;
     }
 
     /** The per-PROJECT store — the old location; read only to MIGRATE a login from, never run from. */

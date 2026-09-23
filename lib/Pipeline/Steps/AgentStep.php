@@ -63,7 +63,13 @@ class AgentStep implements StepInterface {
         if (!class_exists('\\app\\EngineRegistry')) {
             return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => 'EngineRegistry unavailable', 'exit' => 1];
         }
-        if ($engine === '' || !EngineRegistry::isValid($engine)) $engine = EngineRegistry::defaultEngine();
+        // Unset = the install's default. A NAME that is not registered is a typo or a removed
+        // engine, and the step fails naming it — it does not run on some other provider.
+        if ($engine === '') {
+            $engine = EngineRegistry::defaultEngine();
+        } elseif (!EngineRegistry::isValid($engine)) {
+            return self::fail("engine '{$engine}' is not a registered engine (" . implode(', ', EngineRegistry::names()) . ') — fix the step or the agent');
+        }
         $model = (string) ($config['model'] ?? '') ?: ($agent && (string) $agent->model !== '' ? (string) $agent->model : EngineRegistry::model($engine, 'worker'));
 
         // Self-contained: the instance runs its OWN claude, <root>/bin/claude — a hard link to
@@ -99,12 +105,13 @@ class AgentStep implements StepInterface {
             $binOpt = ['bin' => $instBin];
         }
 
-        // Build the headless agent command; engines without a proven headless launcher
-        // fall back to claude (best-effort), matching the AI Builder's own posture.
+        // The headless command for THIS engine. None = the engine has no proven headless
+        // launcher, and the step fails saying so — the same posture as PlanExecutor. It used
+        // to run claude instead, with a model resolved for the other engine and whichever
+        // Anthropic credential the chain found: work done by a provider nobody chose.
         if ($system !== '') $binOpt['system'] = $system;   // a real system prompt (--append-system-prompt)
-        $inner = EngineRegistry::agentCommand($engine, $prompt, $model, $binOpt)
-              ?? EngineRegistry::agentCommand('claude', $prompt, $model, $binOpt);
-        if ($inner === null) return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => 'no agent launcher', 'exit' => 1];
+        $inner = EngineRegistry::agentCommand($engine, $prompt, $model, $binOpt);
+        if ($inner === null) return self::fail("engine '{$engine}' has no headless launcher (headless_ready in [engine.{$engine}]), so this step cannot run; choose an engine that has one");
 
         // Credentials: the instance's OWN, resolved in precedence order (login token ->
         // anthropic.key.enc -> 'anthropic' connection). Never the operator's creds. Passed via
@@ -175,22 +182,37 @@ class AgentStep implements StepInterface {
         // 2) the instance's own encrypted API key
         $keyFile = $root . '/secure/anthropic.key.enc';
         if (@is_file($keyFile)) {
+            // A key that is THERE but will not decrypt is a fault (rotated install key,
+            // corrupt file), not "no key": it stops here, named. Falling through to the
+            // connection would run this step on a different account than the one stored.
             try {
                 \app\ConnectionStore::useInstall($root);
-                $k = \app\EncryptionService::decryptWith((string) @file_get_contents($keyFile), \app\ConnectionStore::ownKey());
-                if (is_string($k) && $k !== '') { $env['ANTHROPIC_API_KEY'] = $k; return [$env, '']; }
-            } catch (\Throwable $e) { /* fall through to connections */ }
+                $k = \app\EncryptionService::decryptWith((string) file_get_contents($keyFile), \app\ConnectionStore::ownKey());
+            } catch (\Throwable $e) {
+                return [$env, "agent: {$keyFile} exists but cannot be decrypted with this install's key (rotated? corrupt?): " . $e->getMessage()];
+            }
+            if (!is_string($k) || $k === '') return [$env, "agent: {$keyFile} decrypted to an empty key; re-save it or delete the file"];
+            $env['ANTHROPIC_API_KEY'] = $k;
+            return [$env, ''];
         }
 
         // 3) an 'anthropic' connection in the instance's ConnectionStore
         try {
             \app\ConnectionStore::useInstall($root);
             $conn = \app\ConnectionStore::for('anthropic');
-            if ($conn) {
+        } catch (\Throwable $e) {
+            return [$env, 'agent: the connection store could not be read: ' . $e->getMessage()];
+        }
+        if ($conn) {
+            try {
                 $sec = \app\ConnectionStore::ownSecret($conn, 'accessToken');
-                if (is_string($sec) && $sec !== '') { $env['ANTHROPIC_API_KEY'] = $sec; return [$env, '']; }
+            } catch (\Throwable $e) {
+                return [$env, "agent: the 'anthropic' connection exists but its token cannot be decrypted (rotated install key?): " . $e->getMessage()];
             }
-        } catch (\Throwable $e) { /* fall through */ }
+            if (!is_string($sec) || $sec === '') return [$env, "agent: the 'anthropic' connection exists but holds no token; reconnect it"];
+            $env['ANTHROPIC_API_KEY'] = $sec;
+            return [$env, ''];
+        }
 
         return [$env, 'agent: no claude credential for this instance — set one via /login, secure/anthropic.key.enc, or an anthropic connection'];
     }

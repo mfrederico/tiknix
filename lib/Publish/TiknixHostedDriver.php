@@ -83,8 +83,13 @@ class TiknixHostedDriver implements PublishDriver {
      * loaded by the publisher SIDECAR, where app.baseurl is publisher.tiknix.com.
      */
     public static function cnameTarget(?string $slug = null): string {
-        $u    = (string) (\Flight::get('sidecar.core_url') ?: \Flight::get('app.baseurl') ?: 'https://tiknix.com');
-        $host = (string) (parse_url($u, PHP_URL_HOST) ?: 'tiknix.com');
+        $u    = (string) (\Flight::get('sidecar.core_url') ?: \Flight::get('app.baseurl') ?: '');
+        $host = (string) parse_url($u, PHP_URL_HOST);
+        if ($host === '') {
+            // The CNAME target customers are told to point their domain at. Never a literal:
+            // a self-hosted install would send its customers' DNS to somebody else's server.
+            throw new \RuntimeException('Cannot derive the hosted-publish domain: set [sidecar] core_url (or [app] baseurl on the control plane) in conf/config.ini.');
+        }
         $slug = trim((string) $slug);
         return $slug !== '' ? $slug . '.' . $host : $host;
     }

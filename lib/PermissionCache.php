@@ -22,6 +22,8 @@ class PermissionCache {
 
     // Process-local cache (fastest access)
     private static $localCache = null;
+    /** Why the last load failed, or null. Set = every check() denies until a load succeeds. */
+    private static ?string $loadFailed = null;
 
     // Cache configuration - Use unique keys per installation
     private static $CACHE_KEY = null;
@@ -89,6 +91,10 @@ class PermissionCache {
     public static function check($control, $method, $userLevel) {
         // Ensure cache is loaded
         self::ensureLoaded();
+        if (self::$loadFailed !== null) {
+            self::logAccess('denied-unreadable', strtolower("{$control}::{$method}"));
+            return false;
+        }
 
         // Check specific method permission
         $key = strtolower("{$control}::{$method}");
@@ -197,13 +203,18 @@ class PermissionCache {
             ]);
 
             self::incrementStat('db_loads');
+            self::$loadFailed = null;
 
         } catch (\Exception $e) {
             Flight::get('log')->error('PermissionCache: Failed to load', [
                 'error' => $e->getMessage()
             ]);
-            // Initialize empty cache to prevent repeated failures
+            // Not an empty cache: an empty cache means "no rows", and check() then resolves
+            // every route through defaultLevelFor() — which re-opens /install and the other
+            // public-by-design routes. "authcontrol unreadable" must deny, and keep denying
+            // until a load succeeds; the ERROR above says why.
             self::$localCache = [];
+            self::$loadFailed = $e->getMessage();
         }
     }
 
@@ -214,6 +225,7 @@ class PermissionCache {
     public static function clear() {
         // Clear local cache
         self::$localCache = null;
+        self::$loadFailed = null;
 
         // Clear APCu stats counters before changing version
         if (self::hasAPCu()) {

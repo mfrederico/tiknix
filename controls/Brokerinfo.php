@@ -317,11 +317,25 @@ class Brokerinfo extends Control {
         $job->model = (string) ($d['model'] ?? ''); $job->status = 'running'; $job->createdAt = date('Y-m-d H:i:s');
         $jobId = (int) Bean::store($job);
 
-        Flight::json(['job' => $jobId, 'status' => 'running']);
-        // Everything below runs after the caller has its answer.
+        // Send the job id NOW and close the request; everything below runs after the caller
+        // has its answer. Not Flight::json(): Flight buffers the body until the route returns,
+        // so finishing the request after it sent an empty 200 (seen live).
+        $payload = json_encode(['job' => $jobId, 'status' => 'running']);
+        while (ob_get_level() > 0) ob_end_clean();
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Length: ' . strlen($payload));
+        echo $payload;
+        flush();
         ignore_user_abort(true);
         @set_time_limit($timeout + 60);
-        if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+        if (!function_exists('fastcgi_finish_request')) {
+            // CLI / non-FPM: there is no "after the response"; the caller would wait the whole
+            // call. Say so instead of pretending the job ran in the background.
+            $this->logger->error('ERROR Brokerinfo::modelcall: fastcgi_finish_request unavailable (not PHP-FPM); the call runs inside the request');
+        } else {
+            fastcgi_finish_request();
+        }
 
         $r = $c->box()->call((string) ($d['system'] ?? ''), $prompt, (string) ($d['model'] ?? ''), (int) ($d['max_tokens'] ?? 4096), $timeout);
         $job = Bean::load('modelcall', $jobId);
@@ -334,6 +348,7 @@ class Brokerinfo extends Control {
         $job->finishedAt = date('Y-m-d H:i:s');
         Bean::store($job);
         $this->logger->info('Pipeline model call', ['job' => $jobId, 'instance' => $iid, 'connection' => (int) $c->id, 'ok' => $r['ok'], 'model' => $r['model'], 'usage' => $r['usage']]);
+        exit;   // the response went out above; Flight must not send a second (empty) one
     }
 
     /** GET /brokerinfo/modelresult?job= — a call this instance started. */

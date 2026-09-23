@@ -148,6 +148,12 @@ $defaults = [
     // The instance-side read-only Integrations view (runs IN the instance).
     ['integrations', 'index', 100, 'Integrations/automations view (owner on control plane; ADMIN enforced in-controller inside an instance)'],
     ['connections', 'index', 100, 'Integrations hub (owner-scoped)'],
+    // The member's own model connections (MODEL_CONNECTIONS_PLAN.md) — each action checks
+    // the row is the caller's own; MEMBER so everyone with a builder can bring a model.
+    ['connections', 'modelsave',   100, 'Model connections: create / edit my own'],
+    ['connections', 'modeldelete', 100, 'Model connections: delete my own'],
+    ['connections', 'modelchoose', 100, 'Model connections: choose which one my builds use'],
+    ['connections', 'modeltest',   100, 'Model connections: test my own (lists its models)'],
     ['connections', 'pipelinerun', 100, 'Trigger one of the instance pipelines (owner)'],
     ['connections', 'githubwebhook', 100, 'Provision the GitHub deploy webhook (owner)'],
     ['connections', 'handoff', 101, 'Instance-driven OAuth connect handoff (self-auth via signed intent)'],

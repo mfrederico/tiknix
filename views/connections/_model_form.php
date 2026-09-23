@@ -4,7 +4,7 @@
  * $form (a summary, or blanks for new), $formId, $presets, $tiers, $h.
  */
 ?>
-<form method="POST" action="/member/modelsave" class="row g-2 small">
+<form method="POST" action="/connections/modelsave" class="row g-2 small">
   <?= csrf_field() ?>
   <input type="hidden" name="id" value="<?= (int) $form['id'] ?>">
   <div class="col-md-4">

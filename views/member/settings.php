@@ -238,7 +238,6 @@
                     </form>
                 </div>
             </div>
-            <?php if (!empty($mc)) include __DIR__ . '/_models.php'; ?>
         </div>
         
         <div class="col-md-4">

@@ -62,6 +62,13 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
   include __DIR__ . '/_turnstile.php';
   ?>
 
+  <?php
+  /* Models: the MEMBER's own model endpoints + keys (MODEL_CONNECTIONS_PLAN.md). Like the
+     Security card, not a per-project connector: the same list shows whichever project is
+     selected, because a model connection belongs to the person, not the project. */
+  include __DIR__ . '/_models.php';
+  ?>
+
   <?php if (!empty($publishDrivers)): ?>
     <!--
       Hosting. First on the hub because it answers the question everything else assumes:

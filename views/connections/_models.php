@@ -13,16 +13,22 @@ $presets = $mc['presets'];
 if (!$mc['is_root']) unset($presets['local']);   // localhost/LAN endpoints are root-only
 $chosen = $mc['chosen'];
 ?>
-<div class="card mt-4" id="models">
+<h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em" id="models">Models</h2>
+<div class="card shadow-sm mb-2">
   <div class="card-body">
-    <h5 class="mb-1"><i class="bi bi-cpu me-1"></i>Models — bring your own</h5>
+    <h5 class="mb-1"><i class="bi bi-cpu me-1"></i>Bring your own model</h5>
     <p class="text-muted small mb-3">
       Connect your own model endpoint and key — Anthropic, Ollama, OpenRouter, z.ai, or anything that speaks the
       Anthropic Messages API. The builds <em>you</em> start run on the one you choose below, in every project you can
-      reach; teammates' runs use their own. Keys are encrypted and never shown again.
+      reach; teammates' runs use their own. These are yours, not this project's — the same list shows
+      whichever project is selected. Keys are encrypted and never shown again.
     </p>
 
-    <form method="POST" action="/member/modelchoose" class="d-flex align-items-center gap-2 flex-wrap mb-3">
+    <?php if (!empty($mc['problem'])): ?>
+      <div class="alert alert-danger small py-2"><?= $h($mc['problem']) ?></div>
+    <?php endif; ?>
+
+    <form method="POST" action="/connections/modelchoose" class="d-flex align-items-center gap-2 flex-wrap mb-3">
       <?= csrf_field() ?>
       <label class="fw-semibold small mb-0" for="mc-choose">Build with</label>
       <select class="form-select form-select-sm w-auto" id="mc-choose" name="id">
@@ -51,7 +57,7 @@ $chosen = $mc['chosen'];
           <span class="ms-auto d-flex gap-1">
             <button type="button" class="btn btn-sm btn-outline-primary mc-test" data-id="<?= (int) $c['id'] ?>">Test</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#mc-edit-<?= (int) $c['id'] ?>">Edit</button>
-            <form method="POST" action="/member/modeldelete" class="d-inline" onsubmit="return confirm('Delete <?= $h($c['name']) ?>? Its key is deleted with it.')">
+            <form method="POST" action="/connections/modeldelete" class="d-inline" onsubmit="return confirm('Delete <?= $h($c['name']) ?>? Its key is deleted with it.')">
               <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
               <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
             </form>
@@ -103,7 +109,7 @@ $chosen = $mc['chosen'];
       var id = btn.dataset.id, out = document.getElementById('mc-test-' + id);
       out.className = 'small mt-1 text-muted'; out.textContent = 'Testing…'; btn.disabled = true;
       var body = new URLSearchParams({id: id, _csrf_token: csrf});
-      fetch('/member/modeltest', {method: 'POST', body: body, credentials: 'same-origin', headers: {'Accept': 'application/json', 'X-CSRF-TOKEN': csrf}})
+      fetch('/connections/modeltest', {method: 'POST', body: body, credentials: 'same-origin', headers: {'Accept': 'application/json', 'X-CSRF-TOKEN': csrf}})
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var r = d.data || d;

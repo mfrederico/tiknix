@@ -1296,8 +1296,10 @@ offered "— default: humanizer —" and the `system` field.
 
 ### 6. Retire `pipelines.tiknix`
 
-Config and feature entry: done (core 595999b). Remaining: the sidecar's vhost (nginx, the
-owner's sudo) and its directory `pipelines.tiknix`. `pipeline_*` MCP tools are untouched.
+Done. Config and feature entry removed (core 595999b); `[sidecar.pipelines]` and
+`[sidecar.shop]` dropped from the active instances' config.ini (2026-09-22). Owner's call:
+the vhost and the `pipelines.tiknix` directory stay as they are — nothing references them,
+and that is the whole requirement. `pipeline_*` MCP tools are untouched.
 
 ### As built (2026-09-22)
 

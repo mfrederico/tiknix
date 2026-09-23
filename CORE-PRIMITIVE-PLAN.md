@@ -13,7 +13,7 @@ The runtime is **already core-native**, not just instance plumbing:
 - Core invokes it: `controls/Pipeline.php` (`api`/`trigger`/`status`/`debug`/**`object`**/**`objecttick`**/`keys`), the MCP tools `mcptools/Pipeline*Tool.php`, `controls/Mcp.php` (`Runner::list/get/run`), and `scripts/pipeline-cron.php` (which also fires one `objecttick` per instance each minute).
 
 What's **missing** — the runtime has **no visible surface in core**:
-- The only core view is `views/pipeline/keys.php` (ADMIN key mgmt). The authoring/visual editor is a **sidecar** (`pipelines.tiknix`, gated by the `pipelines` Feature flag) that edits pipelines *in instances*.
+- The only core view is `views/pipeline/keys.php` (ADMIN key mgmt). ~~The authoring/visual editor is a sidecar (`pipelines.tiknix`)~~ — **superseded 2026-09-22:** the editor lives in every install at `/pipelines` (`controls/Pipelines.php`, ADMIN, nav "Data" under Admin). The sidecar is retired and referenced nowhere; its vhost is left in place, unused.
 - `/connections` (`controls/Connections.php`) is today a **per-instance connector hub**: it resolves the member's selected instance and renders a `$cards` array (GitHub + one card per `ConnectorRegistry::all()`) grouped by `categoryOrder = ['Deploy','Payments','Stores','Social','Other']`. ADMIN-gated. **The cards+categories array is the natural seam to add "Pipelines" and "Durable Objects" groups.**
 - The build agents (PlanRunner → PlanExecutor, the `reuse_digest`) don't yet treat pipelines/objects as *building blocks* they can emit into a generated app.
 
@@ -43,7 +43,7 @@ Let the planner/agents add pipelines, durable objects, and connector wiring as *
 3. **Level:** `/connections` is ADMIN today; pipelines/objects there stay ADMIN, or drop to MEMBER (owners of the instance)?
 
 ## Non-goals / guardrails
-- Don't rebuild the editor in core — link to the `pipelines.tiknix` sidecar for authoring.
+- ~~Don't rebuild the editor in core — link to the `pipelines.tiknix` sidecar for authoring.~~ Superseded: the editor was moved into core (`/pipelines`), not rebuilt; there is no sidecar to link to.
 - Reuse the broker/trigger_secret custody model for any actions (no secrets in the browser).
 - Files-in-repo stays the pipeline source of truth; the DB stays run/object state.
 

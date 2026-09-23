@@ -394,7 +394,7 @@ class TmuxManager {
         // session and hand back somebody else's site, on somebody else's port,
         // with nothing announcing the swap.
         //
-        // Ports were given a scope earlier (PortManager::getPortForTask) and task
+        // Ports were given a scope earlier (a PortManager that no longer exists) and task
         // sessions were given a slug; this namer was missed, so it kept the bug
         // both of those were fixed for.
         //

@@ -233,11 +233,10 @@ class TwoFactorAuth {
     }
 
     /**
-     * Check if device is trusted (within 30-day window)
-     * Checks both session and localStorage token (via request parameter)
+     * Is this device trusted (within the 30-day window)? Session-scoped: the localStorage
+     * token path is validateTrustToken(), which the login controller calls separately.
      */
     public static function isDeviceTrusted(): bool {
-        // Check session first (legacy/fallback)
         $trustedUntil = $_SESSION['2fa_trusted_until'] ?? 0;
         if (time() < $trustedUntil) {
             return true;

@@ -9,7 +9,7 @@
  *
  * Collision safety (see controls/Firehose.php for the control-plane half):
  *   Layer 1 (here) — origin gate: only reports when [firehose] role = "live".
- *   Task workspaces are stamped role = "workspace" by WorkspaceManager, so an
+ *   Task workspaces were stamped role = "workspace" (by a WorkspaceManager since removed), so an
  *   agent's mid-build/test errors are muted and can never spawn a duplicate fix.
  *   Layers 2 (active-build guard) + 3 (signature dedup) live on the ingest side.
  *

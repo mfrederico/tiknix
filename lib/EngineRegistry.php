@@ -330,8 +330,9 @@ class EngineRegistry {
     /**
      * Build the inner headless agent command (the part after `cd <wt> &&`), or
      * NULL when the engine has no proven headless launcher — in which case the
-     * caller runs claude with the resolved model and logs a warning (the honest
-     * version of the old hardcoded path). See AGENT_ORCHESTRATION.md §7 + Status.
+     * caller FAILS the task/step naming the engine (PlanExecutor, AgentStep). It
+     * never runs claude instead: that substitution is what the No-Fallbacks rule
+     * was written about. See AGENT_ORCHESTRATION.md §7 + Status.
      *
      * $opts: ['stream' => bool]  add stream-json + --verbose (live agent.log tail).
      */

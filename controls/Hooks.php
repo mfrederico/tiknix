@@ -18,10 +18,30 @@ class Hooks extends Control {
     private string $hooksDir;
     private string $settingsFile;
 
+    /** @var array|null the project whose hooks these are (app\ProjectTarget) */
+    private ?array $project = null;
+
     public function __construct() {
         parent::__construct();
-        $this->hooksDir = dirname(__DIR__) . '/scripts/hooks';
-        $this->settingsFile = dirname(__DIR__) . '/.claude/settings.json';
+    }
+
+    /**
+     * The selected project's hooks (core: the header's project; a project: itself) — the
+     * same rule as Agent Setup, whose Hooks tab links here. Never core's own tree by
+     * default. No selection on core → Projects.
+     */
+    private function bind(): bool {
+        $this->project = \app\ProjectTarget::forMember((int) $this->member->id);
+        if ($this->project === null) {
+            $this->flash('info', 'Choose a project first — hooks belong to the selected project.');
+            Flight::redirect('/projects');
+            return false;
+        }
+        $dir = rtrim($this->project['dir'], '/');
+        $this->hooksDir     = $dir . '/scripts/hooks';
+        $this->settingsFile = $dir . '/.claude/settings.json';
+        $this->viewData['project'] = $this->project;
+        return true;
     }
 
     /**
@@ -29,6 +49,7 @@ class Hooks extends Control {
      */
     public function index($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         // Get hook files
         $hookFiles = glob($this->hooksDir . '/*.php');
@@ -61,6 +82,7 @@ class Hooks extends Control {
      */
     public function create($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         $template = $this->getHookTemplate();
 
@@ -78,6 +100,7 @@ class Hooks extends Control {
      */
     public function edit($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         $name = $this->getParam('name', '');
         if (empty($name)) {
@@ -109,6 +132,7 @@ class Hooks extends Control {
      */
     public function store($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         $request = Flight::request();
         if ($request->method !== 'POST') {
@@ -183,6 +207,7 @@ class Hooks extends Control {
      */
     public function update($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         $request = Flight::request();
         if ($request->method !== 'POST') {
@@ -256,6 +281,7 @@ class Hooks extends Control {
      */
     public function delete($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         $request = Flight::request();
         if ($request->method !== 'POST') {
@@ -300,6 +326,7 @@ class Hooks extends Control {
      */
     public function config($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         $settings = $this->loadSettings();
         $hooksJson = json_encode($settings['hooks'] ?? new \stdClass(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
@@ -316,6 +343,7 @@ class Hooks extends Control {
      */
     public function saveConfig($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         $request = Flight::request();
         if ($request->method !== 'POST') {

@@ -2209,9 +2209,12 @@ class Mcp extends BaseControls\Control {
      * Returns servers from project .mcp.json plus system tiknix server.
      * Each server includes: slug, type, isSystem flag, and full config.
      *
+     * @param string $baseUrl    whose tiknix MCP this is — the project's URL (app\ProjectTarget).
+     *                           buildMcpUrl() refuses to guess.
+     * @param string $projectDir that project's directory; its .mcp.json lists the rest.
      * @return array Array of server configurations
      */
-    public static function getAvailableServers(): array {
+    public static function getAvailableServers(string $baseUrl, string $projectDir): array {
         $servers = [];
 
         // Add system tiknix server
@@ -2222,14 +2225,14 @@ class Mcp extends BaseControls\Control {
             'description' => 'Tiknix MCP Server - PHP validation, workbench tools',
             'config' => [
                 'type' => 'http',
-                'url' => self::buildMcpUrl(),
+                'url' => self::buildMcpUrl($baseUrl),
                 'headers' => ['Authorization' => 'Bearer {API_KEY}']
             ]
         ];
 
-        // Load user-defined servers from project .mcp.json
-        $projectRoot = \Flight::get('project.root') ?? dirname(__DIR__);
-        $configPath = $projectRoot . '/.mcp.json';
+        // User-defined servers from THAT project's .mcp.json (the caller names the project;
+        // 'project.root' was read here and nothing ever set it, so it always meant core).
+        $configPath = rtrim($projectDir, '/') . '/.mcp.json';
         $config = self::loadMcpConfig($configPath);
 
         if (!empty($config['mcpServers'])) {

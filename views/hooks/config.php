@@ -29,7 +29,7 @@
                         Changes take effect immediately for new Claude sessions.
                     </div>
 
-                    <form method="POST" action="/hooks/save-config" id="configForm">
+                    <form method="POST" action="/hooks/saveConfig" id="configForm">
                         <?php foreach ($csrf as $name => $value): ?>
                             <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                         <?php endforeach; ?>

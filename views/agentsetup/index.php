@@ -11,7 +11,15 @@
     <?php endforeach; ?>
 
     <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
         <h2><i class="bi bi-robot me-2"></i>Agent Setup</h2>
+        <?php if (!empty($project)): ?>
+          <div class="text-muted small">
+            Configuring <strong><?= htmlspecialchars($project['name']) ?></strong>
+            (<code><?= htmlspecialchars($project['url']) ?></code>)<?= $project['here'] ? '' : ' — change it from the project switcher in the header' ?>.
+          </div>
+        <?php endif; ?>
+        </div>
     </div>
 
     <!-- Tabs Navigation -->
@@ -237,7 +245,7 @@
 <div class="modal fade" id="addServerModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/agent-setup/store-server">
+            <form method="POST" action="/agentsetup/storeServer">
                 <?php foreach ($csrf as $name => $value): ?>
                     <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                 <?php endforeach; ?>
@@ -292,7 +300,7 @@
 <div class="modal fade" id="editServerModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/agent-setup/update-server">
+            <form method="POST" action="/agentsetup/updateServer">
                 <?php foreach ($csrf as $name => $value): ?>
                     <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                 <?php endforeach; ?>
@@ -352,7 +360,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form method="POST" action="/agent-setup/delete-server" class="d-inline">
+                <form method="POST" action="/agentsetup/deleteServer" class="d-inline">
                     <?php foreach ($csrf as $name => $value): ?>
                         <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                     <?php endforeach; ?>

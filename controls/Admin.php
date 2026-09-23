@@ -875,25 +875,7 @@ class Admin extends Control {
      * Install button asks the control plane (ConceptCatalog::requestInstall).
      */
     private function conceptProject(): ?array {
-        if (!is_core_install()) {
-            $dir = dirname(__DIR__);
-            return [
-                'id'   => 0,
-                'slug' => explode('.', basename($dir), 2)[0],
-                'name' => Flight::siteName(),
-                'dir'  => $dir,
-                'here' => true,
-            ];
-        }
-        $inst = \app\ProjectContext::current((int) $this->member->id);
-        if ($inst === null) return null;
-        return [
-            'id'   => (int) $inst->id,
-            'slug' => (string) $inst->slug,
-            'name' => (string) ($inst->displayName ?? '') !== '' ? (string) $inst->displayName : (string) $inst->slug,
-            'dir'  => \Model_Instance::dirFrom((string) $inst->slug, (string) ($inst->app ?? '')),
-            'here' => false,
-        ];
+        return \app\ProjectTarget::forMember((int) $this->member->id);   // the one rule (lib/ProjectTarget.php)
     }
 
     /**

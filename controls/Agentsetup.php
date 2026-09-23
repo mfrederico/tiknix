@@ -50,12 +50,36 @@ class Agentsetup extends Control {
         Flight::renderView('error/403', ['title' => '403 - Forbidden']);
     }
 
+    /** @var array{id:int,slug:string,name:string,dir:string,url:string,here:bool}|null the project this page configures */
+    private ?array $project = null;
+
     public function __construct() {
         parent::__construct();
-        $this->toolsDir = dirname(__DIR__) . '/mcptools';
-        $this->hooksDir = dirname(__DIR__) . '/scripts/hooks';
-        $this->settingsFile = dirname(__DIR__) . '/.claude/settings.json';
         $this->requireBuilderTools('Agent Setup');
+    }
+
+    /**
+     * Point this page at the project it configures: the one selected in the header on core,
+     * the install itself on a project (app\ProjectTarget) — never core's own tree by
+     * default. Every path below (.mcp.json, mcptools/, scripts/hooks/, .claude/settings.json)
+     * is inside that project. No selection on core → Projects.
+     */
+    private function bind(): bool {
+        $this->project = \app\ProjectTarget::forMember((int) $this->member->id);
+        if ($this->project === null) {
+            $this->flash('info', 'Choose a project first — Agent Setup configures the selected project.');
+            Flight::redirect('/projects');
+            return false;
+        }
+        $dir = rtrim($this->project['dir'], '/');
+        $this->toolsDir     = $dir . '/mcptools';
+        $this->hooksDir     = $dir . '/scripts/hooks';
+        $this->settingsFile = $dir . '/.claude/settings.json';
+        return true;
+    }
+
+    private function mcpJsonPath(): string {
+        return rtrim($this->project['dir'], '/') . '/.mcp.json';
     }
 
     /**
@@ -63,12 +87,13 @@ class Agentsetup extends Control {
      */
     public function index($params = []) {
         if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
+        if (!$this->bind()) return;
 
         $activeTab = $this->getParam('tab', 'servers');
         $isRoot = ($this->viewData['member']['level'] ?? 100) <= 1;
 
         // Load MCP Servers data
-        $servers = Mcp::getAvailableServers();
+        $servers = Mcp::getAvailableServers($this->project['url'], $this->project['dir']);
         $systemServers = [];
         $userServers = [];
         foreach ($servers as $slug => $server) {
@@ -118,6 +143,7 @@ class Agentsetup extends Control {
         }
 
         $this->viewData['title'] = 'Agent Setup';
+        $this->viewData['project'] = $this->project;
         $this->viewData['activeTab'] = $activeTab;
         $this->viewData['isRoot'] = $isRoot;
         $this->viewData['systemServers'] = $systemServers;
@@ -139,14 +165,22 @@ class Agentsetup extends Control {
     }
 
     /** Add or update an MCP server via Mcp:: and flash the outcome. $mode = 'add' | 'update'. */
+    /**
+     * Add or update one server in the project's .mcp.json. The tiknix entry is the platform's
+     * (regenerated with the project's own key) and is never written here. Provisioning's
+     * regeneration merges, so servers added here survive it.
+     */
     private function saveServer(string $mode, string $slug, array $config): void {
-        try {
-            $ok = $mode === 'add' ? Mcp::addServer($slug, $config) : Mcp::updateServer($slug, $config);
-            $this->flashTo('servers', $ok ? 'success' : 'error',
-                $ok ? 'Server ' . ($mode === 'add' ? 'added' : 'updated') . ': ' . $slug : 'Failed to save');
-        } catch (Exception $e) {
-            $this->flashTo('servers', 'error', 'Error: ' . $e->getMessage());
-        }
+        $path = $this->mcpJsonPath();
+        $cfg = Mcp::loadMcpConfig($path);
+        if (!isset($cfg['mcpServers']) || !is_array($cfg['mcpServers'])) $cfg['mcpServers'] = [];
+        $exists = isset($cfg['mcpServers'][$slug]);
+        if ($mode === 'add' && $exists) { $this->flashTo('servers', 'error', "A server named '{$slug}' already exists in {$this->project['name']}"); return; }
+        if ($mode === 'update' && !$exists) { $this->flashTo('servers', 'error', "No server named '{$slug}' in {$this->project['name']}"); return; }
+        $cfg['mcpServers'][$slug] = $config;
+        if (!Mcp::saveMcpConfig($path, $cfg)) { $this->flashTo('servers', 'error', "Could not write {$path}"); return; }
+        $this->logger->info('Agent Setup: MCP server ' . $mode, ['project' => $this->project['slug'], 'server' => $slug, 'member_id' => $this->member->id]);
+        $this->flashTo('servers', 'success', 'Server ' . ($mode === 'add' ? 'added' : 'updated') . " in {$this->project['name']}: {$slug}");
     }
 
     /** Create a NEW managed PHP file (tool/hook): reject if it exists, validate, write. */
@@ -190,6 +224,7 @@ class Agentsetup extends Control {
     /** Store new MCP server */
     public function storeServer($params = []) {
         if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $slug = $this->sanitize($this->getParam('slug', ''));
@@ -202,6 +237,7 @@ class Agentsetup extends Control {
     /** Update MCP server */
     public function updateServer($params = []) {
         if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $slug = $this->sanitize($this->getParam('slug', ''));
@@ -213,17 +249,19 @@ class Agentsetup extends Control {
     /** Delete MCP server */
     public function deleteServer($params = []) {
         if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $slug = $this->sanitize($this->getParam('slug', ''));
         if (in_array($slug, ['tiknix', 'playwright'])) { $this->flashTo('servers', 'error', 'Cannot delete system server'); return; }
 
-        try {
-            if (Mcp::removeServer($slug)) { $this->flashTo('servers', 'success', 'Server removed: ' . $slug); return; }
-        } catch (Exception $e) {
-            $this->flashTo('servers', 'error', 'Error: ' . $e->getMessage()); return;
-        }
-        Flight::redirect('/agentsetup?tab=servers');
+        $path = $this->mcpJsonPath();
+        $cfg = Mcp::loadMcpConfig($path);
+        if (!isset($cfg['mcpServers'][$slug])) { $this->flashTo('servers', 'error', "No server named '{$slug}' in {$this->project['name']}"); return; }
+        unset($cfg['mcpServers'][$slug]);
+        if (!Mcp::saveMcpConfig($path, $cfg)) { $this->flashTo('servers', 'error', "Could not write {$path}"); return; }
+        $this->logger->info('Agent Setup: MCP server removed', ['project' => $this->project['slug'], 'server' => $slug, 'member_id' => $this->member->id]);
+        $this->flashTo('servers', 'success', "Server removed from {$this->project['name']}: {$slug}");
     }
 
     // ==================== MCP TOOL ACTIONS ====================
@@ -231,6 +269,7 @@ class Agentsetup extends Control {
     /** Store new tool */
     public function storeTool($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $code     = $this->getParam('code', '');
@@ -245,6 +284,7 @@ class Agentsetup extends Control {
     /** Update tool */
     public function updateTool($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $code = $this->getParam('code', '');
@@ -255,6 +295,7 @@ class Agentsetup extends Control {
     /** Delete tool */
     public function deleteTool($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $name     = $this->sanitize($this->getParam('name', ''));
@@ -271,6 +312,7 @@ class Agentsetup extends Control {
     /** Store new hook */
     public function storeHook($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $code     = $this->getParam('code', '');
@@ -285,6 +327,7 @@ class Agentsetup extends Control {
     /** Update hook */
     public function updateHook($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $code = $this->getParam('code', '');
@@ -295,6 +338,7 @@ class Agentsetup extends Control {
     /** Delete hook */
     public function deleteHook($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
         if (!$this->validatePost()) return;
 
         $name     = $this->sanitize($this->getParam('name', ''));
@@ -309,6 +353,7 @@ class Agentsetup extends Control {
      */
     public function saveHookConfig($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
+        if (!$this->bind()) return;
 
         if (!$this->validatePost()) return;
 
@@ -339,12 +384,12 @@ class Agentsetup extends Control {
 
     private function validatePost(): bool {
         if (Flight::request()->method !== 'POST') {
-            Flight::redirect('/agent-setup');
+            Flight::redirect('/agentsetup');
             return false;
         }
         if (!SimpleCsrf::validate()) {
             $_SESSION['flash'][] = ['type' => 'error', 'message' => 'CSRF validation failed'];
-            Flight::redirect('/agent-setup');
+            Flight::redirect('/agentsetup');
             return false;
         }
         return true;
@@ -388,4 +433,5 @@ class Agentsetup extends Control {
         $settings = json_decode(($content) ?? '', true);
         return is_array($settings) ? $settings : ['hooks' => []];
     }
+
 }

@@ -182,7 +182,10 @@ class GitHubService {
             $this->request('GET', "/repos/{$this->owner}/{$this->repo}/branches/{$branch}");
             return true;
         } catch (\Exception $e) {
-            return false;
+            // Only "not found" means no. A 401/403/5xx/network failure is not an answer,
+            // and callers of false go on to CREATE the branch.
+            if (preg_match('/GitHub API error \(404\)/', $e->getMessage())) return false;
+            throw $e;
         }
     }
 

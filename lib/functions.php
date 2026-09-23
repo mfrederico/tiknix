@@ -57,7 +57,14 @@ function is_control_plane(): bool {
  */
 function control_plane_state(): string {
     $root = strtolower(trim((string)(\Flight::get('app.control_plane_host') ?? '')));
-    if ($root === '') $root = 'tiknix.com';
+    if ($root === '') {
+        // A project knows its control plane by the credential it holds: conf/broker.ini
+        // names the endpoint it spends its broker key at. That is a fact about this
+        // install, unlike the literal 'tiknix.com' that used to stand here.
+        $b = @parse_ini_file(dirname(__DIR__) . '/conf/broker.ini', true) ?: [];
+        $root = strtolower((string) (parse_url((string) ($b['broker']['endpoint'] ?? ''), PHP_URL_HOST) ?: ''));
+    }
+    if ($root === '') return 'unknown';   // cannot say who it is: never 'core' by assumption (see above)
 
     $host = strtolower((string)(parse_url((string)\Flight::get('app.baseurl'), PHP_URL_HOST) ?: ''));
     if ($host === '') return 'unknown';

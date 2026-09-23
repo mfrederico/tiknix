@@ -13,7 +13,8 @@ class CodebaseMapTool extends BaseTool {
     public static array $inputSchema = ['type' => 'object', 'properties' => [], 'required' => []];
 
     public function execute(array $args): string {
-        $m = (new Introspector())->map();
+        $intro = new Introspector();
+        $m = $intro->map();
         $out  = "# Codebase map\n";
         $out .= "{$m['routeCount']} routes across " . count($m['controllers']) . " controllers, " . count($m['models']) . " models.\n\n";
         $out .= "## Controllers (route = /name/method)\n";
@@ -23,6 +24,6 @@ class CodebaseMapTool extends BaseTool {
         $out .= "\n## Lib classes\n- " . implode(', ', $m['libs']) . "\n";
         $out .= "\n## Config sections\n- " . implode(', ', $m['config']) . "\n";
         $out .= "\nNext: describe(\"<controller|model|lib>\") or whatprovides(\"<concept>\").\n";
-        return $out;
+        return $out . $intro->problemsBlock();
     }
 }

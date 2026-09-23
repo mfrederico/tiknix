@@ -31,13 +31,36 @@ class Introspector {
         if ($type !== 'sqlite' || $path === '') return;
         $abs = $path[0] === '/' ? $path : "{$this->root}/{$path}";
         if (!is_file($abs)) return;
-        try { $this->db = new \PDO('sqlite:' . $abs); $this->db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_SILENT); }
-        catch (\Throwable $e) { $this->db = null; }
+        try { $this->db = new \PDO('sqlite:' . $abs); $this->db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION); }
+        catch (\Throwable $e) { $this->db = null; $this->problem('open ' . $abs, $e); }
     }
 
     // === public API ==========================================================
 
     /** Lean table-of-contents: names + counts, no detail. */
+    /** @var string[] what could not be read while answering — shown, never hidden */
+    private array $problems = [];
+
+    /**
+     * A read that failed is recorded, logged at ERROR, and printed with the answer. It
+     * used to be swallowed: a broken query rendered as "(none yet)" and the build agent,
+     * told the project had no pipelines / no routes / no columns, wrote duplicates.
+     */
+    private function problem(string $where, \Throwable $e): void {
+        $msg = "Introspector: {$where} failed — " . $e->getMessage();
+        $this->problems[] = $msg;
+        error_log('ERROR ' . $msg);
+    }
+
+    /** @return string[] */
+    public function problems(): array { return $this->problems; }
+
+    /** The problems as a block to append to any rendered answer; '' when there were none. */
+    public function problemsBlock(): string {
+        if (!$this->problems) return '';
+        return "\n## Introspection problems (these answers are INCOMPLETE — do not treat a missing item as absent)\n\n- " . implode("\n- ", array_unique($this->problems)) . "\n";
+    }
+
     public function map(): array {
         $controllers = array_map(fn($c) => ['name' => $c['name'], 'routes' => count($c['methods'])], $this->controllers());
         $models = array_map(fn($m) => ['name' => $m['name'], 'table' => $m['table']], $this->models());
@@ -352,7 +375,7 @@ class Introspector {
                 $origin = $loader->originOf((string) $slug);
                 $pipes[] = $slug . $tag . ($origin !== null ? " [concept: {$origin}]" : '');
             }
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
         $out[] = '- **Existing pipelines** (reuse/extend before adding): ' . ($pipes ? implode(', ', $pipes) : '(none yet)');
         $out[] = '- A pipeline can set `expose_as_tool` (→ an MCP tool), `expose_as_api` (→ a per-member REST endpoint), or `trigger.cron` (scheduled) — reach for these instead of a hand-written controller for scheduled jobs, webhooks, or agent tools.';
         $out[] = '- **Durable object** = a pipeline with `stateful:true` — an addressable (id-keyed) actor with persisted `{state.*}`, incoming `{message.*}`, and alarms (a `__alarm` output key re-schedules it). Use for chat/session/agent state, counters, anything long-lived; delivered via `POST /pipeline/object/<slug>?key=<id>`.';
@@ -360,7 +383,7 @@ class Introspector {
             $out[] = '- **Connectors**: this instance has a broker configured — add a `connection` step to call its connected accounts (Stripe/Shopify/…) with the key injected server-side. Accounts are wired at the platform Integrations page.';
         }
 
-        return implode("\n", $out);
+        return implode("\n", $out) . $this->problemsBlock();
     }
 
     // === public accessors for the Architecture Explorer ======================
@@ -404,7 +427,7 @@ class Introspector {
                 foreach ($cols as $c) $row[$c] = $r[$c] ?? null;
                 $out['rows'][] = $row;
             }
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
         return $out;
     }
 
@@ -638,7 +661,7 @@ class Introspector {
             foreach ($this->db->query("PRAGMA table_info(" . $table . ")") ?: [] as $r) {
                 $out[] = ['name' => $r['name'], 'type' => $r['type']];
             }
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
         return $out;
     }
 
@@ -659,7 +682,7 @@ class Introspector {
         $this->_tables = [];
         if ($this->db) {
             try { foreach ($this->db->query("SELECT name FROM sqlite_master WHERE type='table'") ?: [] as $r) $this->_tables[] = $r['name']; }
-            catch (\Throwable $e) {}
+            catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
         }
         return $this->_tables;
     }
@@ -673,7 +696,7 @@ class Introspector {
                 foreach ($this->db->query("SELECT control, method, level FROM authcontrol") ?: [] as $r) {
                     $this->_levels[strtolower($r['control']) . '::' . strtolower($r['method'])] = (int)$r['level'];
                 }
-            } catch (\Throwable $e) { $this->_levels = []; }
+            } catch (\Throwable $e) { $this->_levels = []; $this->problem(__FUNCTION__, $e); }
         }
         return $this->_levels["{$control}::{$method}"] ?? $this->_levels["{$control}::*"] ?? null;
     }
@@ -686,7 +709,7 @@ class Introspector {
             foreach ($this->db->query("SELECT control, method, level FROM authcontrol ORDER BY level, control") ?: [] as $r) {
                 $out[] = ['control' => $r['control'], 'method' => $r['method'], 'level' => (int)$r['level']];
             }
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
         return $out;
     }
 

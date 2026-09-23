@@ -120,7 +120,11 @@ class AgentState {
                 $at = (int) @filemtime($file);
                 if ($at > $bestAt) { $best = $cand; $bestAt = $at; }
             }
-        } catch (\Throwable $e) { /* no registry reachable: nothing to adopt */ }
+        } catch (\Throwable $e) {
+            // "Nothing to adopt" and "could not look" are different answers; this one means
+            // the member will be asked to /login again, so say why.
+            error_log('ERROR AgentState: could not read the instance registry to adopt an existing login (' . dirname(__DIR__) . '/database/tiknix.db): ' . $e->getMessage());
+        }
 
         return $best;
     }

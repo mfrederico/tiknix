@@ -491,6 +491,7 @@ class TaskAccessControl {
             }
             return array_values($out);
         } catch (\Throwable $e) {
+            \Flight::get('log')?->error('ERROR TaskAccessControl: could not read the instance registry — the member\'s project list will look EMPTY', ['member_id' => $memberId, 'err' => $e->getMessage()]);
             return [];
         }
     }

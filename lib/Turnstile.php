@@ -84,9 +84,21 @@ class Turnstile
         return trim((string) (Flight::get('turnstile.secret_key') ?? ''));
     }
 
-    /** Enforced only when BOTH keys are configured (from a connection or config). */
+    /** A stored secret this install can no longer decrypt (rotated app_key, corrupt row). */
+    public static function secretBroken(): bool
+    {
+        return (bool) (self::connection()['secret_broken'] ?? false);
+    }
+
+    /**
+     * Enforced when BOTH keys are configured (from a connection or config) — and ALSO when
+     * a secret is stored but unreadable: that used to read as "not configured", which
+     * switched the bot gate OFF on every form while the Connections page still showed it
+     * as set. Enabled-but-broken means verify() refuses; the fix is on the Security card.
+     */
     public static function enabled(): bool
     {
+        if (self::secretBroken()) return true;
         return self::siteKey() !== '' && self::secretKey() !== '';
     }
 
@@ -108,9 +120,14 @@ class Turnstile
             $c = Bean::findOne('connections', "connector_type = 'turnstile' AND enabled = 1 ORDER BY id DESC");
             if (!$c || !$c->id) return [];
             $meta = json_decode((string) ($c->metadataJson ?: '{}'), true) ?: [];
+            $secret = ConnectionStore::ownToken($c);   // decrypts with this install's key; '' + ERROR log when it cannot
+            // Stored-but-unreadable is a FAULT, kept apart from "no secret stored": the
+            // former must fail closed (verify() refuses), the latter is the feature off.
+            $stored = (string) ($c->accessToken ?? '') !== '' && (string) ($c->authType ?? '') !== ConnectionStore::AUTH_SEALED;
             return [
-                'site_key'   => (string) ($meta['site_key'] ?? ''),
-                'secret_key' => ConnectionStore::ownToken($c),   // decrypts with this install's key
+                'site_key'      => (string) ($meta['site_key'] ?? ''),
+                'secret_key'    => $secret,
+                'secret_broken' => $stored && $secret === '',
             ];
         }, []);
         return self::$memo = (is_array($res) ? $res : []);
@@ -131,6 +148,7 @@ class Turnstile
         $site     = self::siteKey();
         return [
             'configured'  => self::enabled(),
+            'broken'      => (bool) ($c['secret_broken'] ?? false),   // stored, unreadable: verification refuses
             'source'      => $fromConn ? 'connection' : ($fromCfg ? 'config' : 'none'),
             'site_masked' => $site === '' ? '' : (substr($site, 0, 6) . '…' . substr($site, -4)),
         ];
@@ -216,6 +234,10 @@ class Turnstile
     public static function verify(?string $token, ?string $ip = null): bool
     {
         if (!self::enabled()) return true;                 // not configured → feature off
+        if (self::secretBroken()) {
+            Flight::get('log')?->error('ERROR Turnstile: a secret is stored for this install but cannot be decrypted (rotated [security] app_key?). Verification REFUSED until it is re-saved on Connections → Security.');
+            return false;
+        }
         $token = trim((string) $token);
         if ($token === '') return false;
 

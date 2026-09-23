@@ -24,7 +24,9 @@ $tsCsrf    = function_exists('csrf_token') ? csrf_token() : '';
       <div class="flex-grow-1">
         <div class="d-flex align-items-center gap-2 flex-wrap">
           <span class="fw-semibold">Human verification</span>
-          <?php if ($tsOn && $tsSource === 'connection'): ?>
+          <?php if (!empty($ts['broken'])): ?>
+            <span class="badge text-bg-danger">Stored key unreadable — every verification is REFUSED</span>
+          <?php elseif ($tsOn && $tsSource === 'connection'): ?>
             <span class="badge text-bg-success">On</span>
           <?php elseif ($tsOn && $tsSource === 'config'): ?>
             <span class="badge text-bg-warning">On — from config seed</span>
@@ -36,6 +38,12 @@ $tsCsrf    = function_exists('csrf_token') ? csrf_token() : '';
           Cloudflare Turnstile challenges the sign-up form so bots can't create accounts.
           Keys are stored here, encrypted with this install's own key.
         </div>
+        <?php if (!empty($ts['broken'])): ?>
+          <div class="alert alert-danger small mt-2 mb-0">
+            The secret stored here cannot be decrypted with this install's current <code>[security] app_key</code>
+            (rotated?). Forms that use human verification are refusing every submission until you save the keys again below.
+          </div>
+        <?php endif; ?>
 
         <?php if ($tsOn && $tsSource === 'connection'): ?>
           <div class="small mt-2">Site key <code><?= htmlspecialchars($tsMasked) ?></code> — verified against Cloudflare.</div>

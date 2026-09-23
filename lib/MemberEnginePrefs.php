@@ -58,7 +58,11 @@ class MemberEnginePrefs {
                 $row = \app\Bean::findOne('settings', 'member_id = ? AND setting_key = ?', [$memberId, $key]);
                 return $row && $row->id ? (string) $row->settingValue : '';
             } catch (\Throwable $e2) {
-                return '';   // no settings table on this connection (a per-instance tasks db)
+                // A per-instance tasks db has no settings table — expected there. Anything
+                // else is a read failure that would silently drop the member's chosen model
+                // (a paid build on the wrong model), so it is named either way.
+                error_log(sprintf('ERROR MemberEnginePrefs::stored member=%d key=%s: could not read settings (%s); answering "no override"', $memberId, $key, $e2->getMessage()));
+                return '';
             }
         }
     }

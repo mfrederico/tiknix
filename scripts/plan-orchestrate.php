@@ -196,7 +196,9 @@ try {
             'status'    => (string) $parent->planStatus,
             'counts'    => $res['counts'] ?? [],
             'base_url'  => $baseUrl,
-            'board_url' => rtrim((string) ($aibCfg['sidecar']['workbench_url'] ?? 'https://workbench.tiknix.com'), '/') . '/workbench',
+            // No literal host: a self-hosted install would mail its people a link to
+            // somebody else's board. Unset = no link in the notification.
+            'board_url' => ($u = trim((string) ($aibCfg['sidecar']['workbench_url'] ?? ''))) !== '' ? rtrim($u, '/') . '/workbench' : '',
             'failures'  => $failures,
             'remedy'    => $remedy,
         ]

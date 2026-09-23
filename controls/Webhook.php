@@ -232,9 +232,18 @@ class Webhook extends Control {
         }
 
         // HMAC verify — MANDATORY (public endpoint, no dev bypass).
-        $secret = '';
-        try { $secret = (string) \app\EncryptionService::decrypt((string) ($conn->webhookSecret ?? '')); } catch (\Throwable $e) {}
-        if ($secret === '') { \Flight::json(['error' => 'no webhook secret set for this connection'], 403); return; }
+        $stored = (string) ($conn->webhookSecret ?? '');
+        if ($stored === '') { \Flight::json(['error' => 'no webhook secret set for this connection'], 403); return; }
+        try {
+            $secret = (string) \app\EncryptionService::decrypt($stored);
+        } catch (\Throwable $e) {
+            // Stored but unreadable (rotated app_key?) is not "not set": the operator would
+            // otherwise re-paste secrets into GitHub for an afternoon. Still 403.
+            \Flight::get('log')?->error('ERROR Webhook: the stored webhook secret cannot be decrypted', ['connection' => (int) $conn->id, 'err' => $e->getMessage()]);
+            \Flight::json(['error' => 'the stored webhook secret cannot be decrypted with this install\'s key — re-save it on the connection'], 403);
+            return;
+        }
+        if ($secret === '') { \Flight::json(['error' => 'the stored webhook secret is empty — re-save it on the connection'], 403); return; }
         $expected = 'sha256=' . hash_hmac('sha256', $raw, $secret);
         if ($sig === '' || !hash_equals($expected, $sig)) {
             $this->logger?->warning('Webhook/github: HMAC mismatch', ['repo' => $repo]);

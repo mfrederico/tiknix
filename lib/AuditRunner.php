@@ -154,7 +154,7 @@ class AuditRunner {
         } else {
             $claude = 'claude -p ' . escapeshellarg($shortPrompt)
                     . ' --model ' . escapeshellarg($model) . ' --dangerously-skip-permissions';
-            $runBlock = 'cd ' . escapeshellarg($ws) . " && " . $claude;
+            $runBlock = AgentContext::directEnvShell($engine, $ctx->stateDir) . 'cd ' . escapeshellarg($ws) . " && " . $claude;
         }
 
         $logArg = escapeshellarg($log);

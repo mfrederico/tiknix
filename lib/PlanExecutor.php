@@ -878,8 +878,9 @@ class PlanExecutor {
             // whatever the project defaulted to.
             $run = 'ENGINE=' . escapeshellarg($engine) . ' JAIL_CMD=' . escapeshellarg($inner) . ' ' . escapeshellarg($jail) . ' ' . escapeshellarg($this->instanceDir);
         } else {
-            // Non-jailed fallback (isolated clone): run inner directly in the instance.
-            $run = 'cd ' . escapeshellarg($this->instanceDir) . ' && ' . $inner;
+            // Non-jailed (isolated clone): run inner directly in the instance.
+            $run = AgentContext::directEnvShell($engine, AgentState::resolve($this->planMemberId(), $engine, $this->instanceDir))
+                 . 'cd ' . escapeshellarg($this->instanceDir) . ' && ' . $inner;
         }
         $logArg = escapeshellarg($log);
         // Credentials follow the PERSON who owns this plan, not the project — the build

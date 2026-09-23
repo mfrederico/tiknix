@@ -230,6 +230,23 @@ class Member extends Control {
         $this->viewData['ai_engines'] = $engines;
         $this->viewData['ai_engine_keys'] = $engineKeys;
 
+        // Model connections (MODEL_CONNECTIONS_PLAN.md): the member's own endpoints + keys,
+        // one of which may replace the platform's Claude in the builds they trigger.
+        $this->viewData['mc'] = null;
+        if (builder_tools_enabled()) {
+            $mine = [];
+            foreach (\Model_Modelconnection::forMember((int) $this->member->id) as $c) $mine[] = $this->mcSummary($c);
+            $chosen = null;
+            try { $ch = \Model_Modelconnection::chosenFor((int) $this->member->id); $chosen = $ch ? (int) $ch->id : null; }
+            catch (\RuntimeException $e) { $this->viewData['error'] = $e->getMessage(); }
+            $this->viewData['mc'] = [
+                'connections' => $mine,
+                'presets'     => \Model_Modelconnection::PRESETS,
+                'chosen'      => $chosen,
+                'is_root'     => Flight::hasLevel(LEVELS['ROOT']),
+            ];
+        }
+
         // Get user settings
         $this->viewData['settings'] = Bean::findAll('settings', 'member_id = ?', [$this->member->id]);
 
@@ -241,6 +258,100 @@ class Member extends Control {
 
         $this->viewData['title'] = 'Settings';
         $this->render('member/settings', $this->viewData);
+    }
+
+    /* ---- model connections (MODEL_CONNECTIONS_PLAN.md) -------------------------- */
+
+    /** What a page may see of a connection: never the key. */
+    private function mcSummary($c): array {
+        $m = $c->box();
+        $out = ['id' => (int) $c->id, 'name' => (string) $c->name, 'preset' => (string) $c->preset,
+                'protocol' => (string) $c->protocol, 'base_url' => (string) $c->baseUrl, 'auth' => (string) $c->auth,
+                'key_status' => $m->keyStatus(), 'engine' => $m->engineName(),
+                'last_test_at' => (string) $c->lastTestAt, 'last_test_ok' => (bool) $c->lastTestOk, 'last_test_msg' => (string) $c->lastTestMsg];
+        foreach (\Model_Modelconnection::TIERS as $t) $out[$t . '_model'] = (string) ($c->{$t . 'Model'} ?? '');
+        return $out;
+    }
+
+    /** The caller's own connection by posted id, or null (flash already set). */
+    private function mcOwned(int $id) {
+        $c = $id > 0 ? \Model_Modelconnection::byId($id) : null;
+        if (!$c || (int) $c->memberId !== (int) $this->member->id) return null;
+        return $c;
+    }
+
+    private function mcGate(bool $json = false): bool {
+        if (!builder_tools_enabled()) { $json ? Flight::jsonError('Model connections are a builder feature.', 403) : Flight::redirect('/member/settings'); return false; }
+        if (Flight::request()->method !== 'POST') { $json ? Flight::jsonError('POST only.', 405) : Flight::redirect('/member/settings'); return false; }
+        if (!Flight::csrf()->validateRequest()) { $json ? Flight::jsonError('Invalid CSRF token.', 403) : $this->flash('error', 'Invalid CSRF token.'); if (!$json) Flight::redirect('/member/settings#models'); return false; }
+        return true;
+    }
+
+    /** POST /member/modelsave — create or update one of my model connections. */
+    public function modelsave($params = []) {
+        if (!$this->mcGate()) return;
+        $d = Flight::request()->data->getData();
+        $id = (int) ($d['id'] ?? 0);
+        $isRoot = Flight::hasLevel(LEVELS['ROOT']);
+        if ($id > 0 && !$this->mcOwned($id)) { $this->flash('error', 'That model connection is not yours.'); Flight::redirect('/member/settings#models'); return; }
+        if ($p = \Model_Modelconnection::problems($d, $isRoot, $id ?: null, (int) $this->member->id)) {
+            $this->flash('error', 'Not saved: ' . implode('; ', $p) . '.');
+            Flight::redirect('/member/settings#models');
+            return;
+        }
+        $memberId = (int) $this->member->id;
+        $raw = (string) ($d['api_key'] ?? '');
+        $saved = \app\CoreDb::with(function () use ($id, $d, $memberId, $raw) {
+            $c = $id > 0 ? \app\Bean::load('modelconnection', $id) : \app\Bean::dispense('modelconnection');
+            $c->box()->fill($d, $memberId);
+            if (!empty($d['clear_key'])) $c->box()->setKey('');
+            elseif (trim($raw) !== '' && !str_contains($raw, '…')) $c->box()->setKey($raw);   // blank / the mask = keep
+            return (int) \app\Bean::store($c);
+        });
+        if (!$saved) { $this->flash('error', 'Could not save: ' . \app\CoreDb::lastError()); Flight::redirect('/member/settings#models'); return; }
+        $this->logger->info('Model connection saved', ['id' => $saved, 'member_id' => $memberId]);
+        $this->flash('success', 'Model connection saved. Use Test to check it and list its models.');
+        Flight::redirect('/member/settings#models');
+    }
+
+    /** POST /member/modeldelete — delete one of mine (clears it as my build connection if it was). */
+    public function modeldelete($params = []) {
+        if (!$this->mcGate()) return;
+        $c = $this->mcOwned((int) (Flight::request()->data->id ?? 0));
+        if (!$c) { $this->flash('error', 'That model connection is not yours.'); Flight::redirect('/member/settings#models'); return; }
+        $memberId = (int) $this->member->id;
+        try { $ch = \Model_Modelconnection::chosenFor($memberId); } catch (\RuntimeException $e) { $ch = null; }
+        if ($ch && (int) $ch->id === (int) $c->id) \Model_Modelconnection::choose($memberId, 0);
+        $id = (int) $c->id;
+        \app\CoreDb::with(fn() => \app\Bean::trash(\app\Bean::load('modelconnection', $id)) ?? true);
+        $this->flash('success', "Deleted '{$c->name}'." . ($ch && (int) $ch->id === $id ? ' Your builds use the platform\'s Claude again.' : ''));
+        Flight::redirect('/member/settings#models');
+    }
+
+    /** POST /member/modelchoose — build with this connection (id) or the platform's Claude (0). */
+    public function modelchoose($params = []) {
+        if (!$this->mcGate()) return;
+        $id = (int) (Flight::request()->data->id ?? 0);
+        $memberId = (int) $this->member->id;
+        if ($id > 0) {
+            $c = $this->mcOwned($id);
+            if (!$c) { $this->flash('error', 'That model connection is not yours.'); Flight::redirect('/member/settings#models'); return; }
+            if ($p = $c->box()->runProblems()) { $this->flash('error', 'Cannot build with it: ' . implode('; ', $p) . '.'); Flight::redirect('/member/settings#models'); return; }
+        }
+        \Model_Modelconnection::choose($memberId, $id);
+        $this->flash('success', $id > 0 ? "Your builds now run on '{$c->name}'." : 'Your builds run on the platform\'s Claude.');
+        Flight::redirect('/member/settings#models');
+    }
+
+    /** POST /member/modeltest — list the endpoint's models and make one tiny call. JSON. */
+    public function modeltest($params = []) {
+        if (!$this->mcGate(true)) return;
+        $c = $this->mcOwned((int) (Flight::request()->data->id ?? 0));
+        if (!$c) { Flight::jsonError('That model connection is not yours.', 404); return; }
+        try { $r = $c->box()->test(); }
+        catch (\Throwable $e) { $r = ['ok' => false, 'message' => $e->getMessage(), 'models' => []]; }
+        \app\CoreDb::with(fn() => \app\Bean::store($c));
+        Flight::json($r);
     }
 
     /**

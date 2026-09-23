@@ -73,10 +73,30 @@ then the builder picker shows them as "chat only", never silently runs something
 5. Remove `MemberEnginePrefs::setToken` (superseded; migrate any stored tokens into
    connections), and the dead `$STATE_DIR/auth-token` read.
 
-## Open decisions (owner)
+## Decisions (owner, 2026-09-23)
 
-1. Member-owned on core (recommended — one key, every project you can reach) vs per-project.
-2. Should a project **owner** be able to pin "this project always builds on my connection X",
-   so teammates' runs spend the owner's key? (Recommended **no** by default — opt-in per project.)
-3. Localhost/LAN endpoints: allow for everyone, or only ROOT (the box's owner)? Recommended:
-   ROOT only — a member pointing a builder at `127.0.0.1:…` reaches this server's internals.
+1. **Member-owned on core** — add a key once, it works in every project you can reach.
+2. **Whoever triggers pays** — each person's run uses their own connection; a project owner may
+   opt a project into "always use my connection X" (later, opt-in).
+3. **Localhost/LAN endpoints: ROOT only** — members use public endpoints.
+
+## Status (2026-09-23)
+
+**Built — phases 1, 2 and 3:** `modelconnection` (seed 13), `Model_Modelconnection` (presets, validation with
+ROOT-only local endpoints, key encrypted with core `app_key`, `test()` = list models + 1-token
+Messages call, `materialize()` → `endpoint.env` + `auth-token` 0600 in the member's state dir),
+`EngineRegistry::def()` resolves `mc-<id>`, `AgentContext` substitutes the member's chosen
+connection for the platform's Claude and refuses another member's connection, runners' direct
+paths source the files (`directEnvShell`), capricorn `jail-run.sh` reads them for `mc-*` and never
+passes the operator's key. UI: Settings → Models (add / edit / Test / delete, "Build with").
+`[engine.qwen]` retired (`available = false`) in favour of the Ollama Cloud preset.
+
+**Proven live:** ROOT connection to this box's Ollama → Test listed 3 models and a Messages call
+answered; choice resolved a planner run to `mc-1` with the right model and state dir; another
+member was refused; inside `jail-run.sh` the env was exactly the member's endpoint, `none` token,
+empty `ANTHROPIC_API_KEY`, tier models, and the endpoint was reachable. A full Claude Code session
+on the tiny CPU model was not watched to completion (16 tokens took 92 s on this CPU).
+
+**Not yet:** phase 4 (pipeline steps naming a member's connection), phase 5 (remove
+`MemberEnginePrefs::setToken` + migrate), OpenAI-protocol build agents (qwen-code), per-project
+"always use my connection X" opt-in.

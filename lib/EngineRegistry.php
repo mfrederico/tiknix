@@ -116,12 +116,35 @@ class EngineRegistry {
         return self::$cache = $engines;
     }
 
+    /** @var array<string,?array> mc-<id> definitions resolved this process */
+    private static array $mc = [];
+
+    /**
+     * One engine's definition: an [engine.*] row, or a member's model connection
+     * ("mc-<id>", MODEL_CONNECTIONS_PLAN.md) read from core's db. Null = no such engine.
+     *
+     * Model connections are deliberately NOT in all()/names()/menu(): those are the
+     * platform's engines, offered to everyone; a connection belongs to one member, and
+     * AgentContext checks the caller owns it before any run uses it.
+     */
+    public static function def(string $engine): ?array {
+        $all = self::all();
+        if (isset($all[$engine])) return $all[$engine];
+        $id = \Model_Modelconnection::idFromEngine($engine);
+        if ($id === null) return null;
+        if (!array_key_exists($engine, self::$mc)) {
+            $c = \Model_Modelconnection::byId($id);   // throws when core is unreachable — not "no such engine"
+            self::$mc[$engine] = $c ? $c->box()->engineDef() : null;
+        }
+        return self::$mc[$engine];
+    }
+
     /** Registered engine names — the source of truth for validation + UI menus. */
     public static function names(): array { return array_keys(self::all()); }
 
     /** Human-friendly label for an engine (falls back to the name itself). */
     public static function label(string $engine): string {
-        $l = (string)(self::all()[$engine]['label'] ?? '');
+        $l = (string)(self::def($engine)['label'] ?? '');
         return $l !== '' ? $l : $engine;
     }
 
@@ -132,7 +155,7 @@ class EngineRegistry {
      * Available unless the row sets `available = false`.
      */
     public static function available(string $engine): bool {
-        $e = self::all()[$engine] ?? null;
+        $e = self::def($engine) ?? null;
         if ($e === null) return false;
         return !array_key_exists('available', $e) || self::truthy($e['available']);
     }
@@ -207,7 +230,7 @@ class EngineRegistry {
 
     /** True when $name is a registered engine. */
     public static function isValid(?string $name): bool {
-        return $name !== null && $name !== '' && isset(self::all()[$name]);
+        return $name !== null && $name !== '' && self::def((string) $name) !== null;
     }
 
     /**
@@ -255,7 +278,7 @@ class EngineRegistry {
      * engine declares all four tiers; adding a new one means declaring them too.
      */
     public static function model(string $engine, string $tier): string {
-        $e = self::all()[$engine] ?? null;
+        $e = self::def($engine) ?? null;
         if ($e === null) {
             throw new \RuntimeException("EngineRegistry::model: no such engine '{$engine}'.");
         }
@@ -278,7 +301,7 @@ class EngineRegistry {
      * is why /login can never reach another provider.
      */
     public static function authTokenEnv(string $engine): string {
-        $e = self::all()[$engine] ?? null;
+        $e = self::def($engine) ?? null;
         return $e === null ? '' : trim((string)($e['auth_token_env'] ?? ''));
     }
 
@@ -288,7 +311,7 @@ class EngineRegistry {
      * Config, not a constant in code: the provider owns this URL and it is theirs to move.
      */
     public static function keyUrl(string $engine): string {
-        $e = self::all()[$engine] ?? null;
+        $e = self::def($engine) ?? null;
         return $e === null ? '' : trim((string)($e['key_url'] ?? ''));
     }
 
@@ -306,7 +329,7 @@ class EngineRegistry {
      * the retry storm.
      */
     public static function maxConcurrency(string $engine, string $model = ''): int {
-        $e = self::all()[$engine] ?? null;
+        $e = self::def($engine) ?? null;
         if ($e === null) return 0;
 
         /* PER MODEL first, because that is what the provider actually limits. z.ai allows
@@ -334,13 +357,13 @@ class EngineRegistry {
      * worse than letting the jail refuse loudly with the variable's name, which it does.
      */
     public static function operatorKeyEnv(string $engine): string {
-        $e = self::all()[$engine] ?? null;
+        $e = self::def($engine) ?? null;
         return $e === null ? '' : trim((string)($e['operator_key_env'] ?? ''));
     }
 
     /** True when this engine can be launched headless (`-p`) TODAY. */
     public static function supportsHeadless(string $engine): bool {
-        $e = self::all()[$engine] ?? null;
+        $e = self::def($engine) ?? null;
         return $e !== null
             && ($e['transport'] ?? '') === 'cli-headless'
             && !empty($e['headless_ready'])
@@ -358,7 +381,7 @@ class EngineRegistry {
      */
     public static function agentCommand(string $engine, string $prompt, ?string $model, array $opts = []): ?string {
         if (!self::supportsHeadless($engine)) return null;
-        $e   = self::all()[$engine];
+        $e   = self::def($engine);
         // opts['bin'] lets the caller pass the instance's OWN binary (e.g. <root>/bin/claude,
         // a symlink to the host install locally or a real install on a remote instance) so a
         // self-contained instance runs its own claude instead of relying on PATH.
@@ -380,5 +403,5 @@ class EngineRegistry {
     }
 
     /** Reset the in-process cache (tests / after an ini edit). */
-    public static function flush(): void { self::$cache = null; }
+    public static function flush(): void { self::$cache = null; self::$mc = []; }
 }

@@ -137,7 +137,7 @@ class MemberEnginePrefs {
      *
      * dirname(__DIR__) is core's root by construction: this file lives in core's lib/.
      */
-    private static function coreKey(): string {
+    public static function coreKey(): string {
         $cfg = @parse_ini_file(dirname(__DIR__) . '/conf/config.ini', true) ?: [];
         $key = trim((string) ($cfg['security']['app_key'] ?? ''));
         if ($key === '') {

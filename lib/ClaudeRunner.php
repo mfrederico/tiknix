@@ -18,6 +18,21 @@ use \Exception as Exception;
 
 class ClaudeRunner {
 
+    /**
+     * Prefix for the AGENT's command: TIKNIX_WORKBENCH_DB stripped.
+     *
+     * bootstrap.php switches ANY process that carries that variable onto the task database
+     * as its default connection. Inherited by the agent, it reached every command the agent
+     * ran — clitool, tests, php -r. Jailed, the file is not mounted and each one died with
+     * "Could not connect to database" (Serenity task #122); unjailed, they would have read
+     * and written the app's data in the TASK database while reporting success. The agent
+     * builds the app, it does not write the task board. Only this script's own
+     * task-complete.php step needs the variable, and keeps it. The agent's stop hook
+     * (workbench-response-capture) still gets the path, as TIKNIX_TASK_DB, which
+     * bootstrap.php does not read.
+     */
+    private const AGENT_ENV = 'env -u TIKNIX_WORKBENCH_DB ${TIKNIX_WORKBENCH_DB:+TIKNIX_TASK_DB="$TIKNIX_WORKBENCH_DB"} ';
+
     private int $taskId;
     private int $memberId;
     private ?int $teamId;
@@ -469,16 +484,16 @@ class ClaudeRunner {
             $enginePrefix = $this->engine ? 'ENGINE=' . escapeshellarg($this->engine) . ' ' : '';
             $engineNote   = $this->engine ? " engine=" . $this->engine : '';
             $runBlock = "echo \"  [jailed: " . addslashes($jail) . addslashes($engineNote) . "]\"\n"
-                      . $enginePrefix . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . ' -- ' . $jailArgs . "\nEXIT_CODE=\$?";
+                      . self::AGENT_ENV . $enginePrefix . escapeshellarg($jail) . ' ' . escapeshellarg($workspaceRoot) . ' -- ' . $jailArgs . "\nEXIT_CODE=\$?";
         } else {
             $projectRootForAgent = $mainProjectRoot;
             $runComment = '# Run the agent directly — NOT jailed; the PreToolUse hooks are the only guard';
-            $runBlock = 'cd ' . escapeshellarg($workspaceRoot) . "\n{$claudeCmd}\nEXIT_CODE=\$?";
+            $runBlock = 'cd ' . escapeshellarg($workspaceRoot) . "\n" . self::AGENT_ENV . "{$claudeCmd}\nEXIT_CODE=\$?";
         }
 
-        // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
-        // Projects sidecar via putenv) so the child's bootstrap writes task state THERE, not
-        // core's db. INERT for core's own /workbench — the env is unset there. See bootstrap.php.
+        // Sidecar workspace DB: exported for THIS SCRIPT's own steps — task-complete.php after
+        // the agent exits writes the task's status into the project's workbench.db — and
+        // stripped from the agent itself (AGENT_ENV). See bootstrap.php.
         // Credentials follow the PERSON, not the project — see app\AgentState.
         // The engine is recorded per instance by provisioning (.aibuilder/engine).
         $ws       = rtrim($this->getProjectPath(), '/');

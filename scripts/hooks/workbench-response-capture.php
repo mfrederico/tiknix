@@ -57,7 +57,18 @@ try {
         // the agent's environment already carries that path. Falling straight through to
         // core's db means loading a workbenchtask id that means something else there —
         // the same mistake plan-ingest and plan-orchestrate both made.
-        $dbPath = trim((string) (getenv('TIKNIX_WORKBENCH_DB') ?: ''));
+        //
+        // TIKNIX_TASK_DB is the agent's copy of that path: ClaudeRunner strips
+        // TIKNIX_WORKBENCH_DB from the agent (bootstrap.php would move every command the agent
+        // runs onto the task database) and hands this hook the path under a name bootstrap
+        // ignores. The old name is still read for sessions started before that change.
+        $dbPath = trim((string) (getenv('TIKNIX_TASK_DB') ?: getenv('TIKNIX_WORKBENCH_DB') ?: ''));
+        if ($dbPath !== '' && !is_readable($dbPath)) {
+            // Jailed: the task database is outside the jail. Say so — never fall through to
+            // the project's own database under a task id that means something else there.
+            fwrite(STDERR, "workbench-response-capture: the task database {$dbPath} is not visible here (jailed session); the response is NOT captured to task {$taskId}.\n");
+            exit(0);
+        }
         if ($dbPath === '') {
             $dbPath = $mainProject . '/' . ($config['database']['path'] ?? '');
             if (($config['database']['path'] ?? '') === '') { fwrite(STDERR, "workbench-response-capture: no TIKNIX_WORKBENCH_DB and no [database] path in {$configPath}; NOT captured.\n"); exit(0); }

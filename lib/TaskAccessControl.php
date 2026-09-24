@@ -58,8 +58,16 @@ class TaskAccessControl {
      * itself.
      */
     public const STATUS_BUCKETS = [
-        'running' => ['running', 'queued'],
+        'running'  => ['running', 'queued'],
+        // Done with: the work landed or was judged not needed. Failed and conflict are NOT
+        // here — they still need someone.
+        'finished' => self::FINISHED,
+        // What is live right now: the agent has it, or it is waiting on its person.
+        'live'     => ['running', 'queued', 'awaiting'],
     ];
+
+    /** Statuses that are done with — hidden from the board's default "Active" view. */
+    public const FINISHED = ['merged', 'completed', 'resolved'];
 
     /**
      * Check if member can view a task
@@ -372,7 +380,11 @@ class TaskAccessControl {
            and the list show nothing — the count and the filter were two different ideas of
            the same word, and only the count was right.
            Expanded here, next to the query, so the two cannot drift again. */
-        if (!empty($filters['status'])) {
+        if (($filters['status'] ?? '') === 'active') {
+            // Everything not finished — the board's default view.
+            $conditions[] = 'status NOT IN (' . implode(',', array_fill(0, count(self::FINISHED), '?')) . ')';
+            foreach (self::FINISHED as $w) $params[] = $w;
+        } elseif (!empty($filters['status'])) {
             $wanted = self::STATUS_BUCKETS[$filters['status']] ?? [$filters['status']];
             $conditions[] = 'status IN (' . implode(',', array_fill(0, count($wanted), '?')) . ')';
             foreach ($wanted as $w) $params[] = $w;
@@ -614,6 +626,11 @@ class TaskAccessControl {
             $counts[$row['status']] = (int)$row['count'];
             $counts['total'] += (int)$row['count'];
         }
+        // The board's buckets, counted from the same rows so a tab and its badge agree.
+        $counts['finished'] = 0;
+        foreach (self::FINISHED as $st) $counts['finished'] += (int) ($counts[$st] ?? 0);
+        $counts['active'] = $counts['total'] - $counts['finished'];
+        $counts['awaiting'] = (int) ($counts['awaiting'] ?? 0);
 
         return $counts;
     }

@@ -134,7 +134,7 @@ class WorkspaceManager
      * @param bool $copyFullVendor If true, copy entire vendor (for remote)
      * @return array Workspace info ['subdomain' => string, 'baseurl' => string]
      */
-    public function initialize(string $workspacePath, string $baseUrl, bool $copyFullVendor = false, ?string $liveDbPath = null): array
+    public function initialize(string $workspacePath, string $baseUrl, string $controlPlaneHost, bool $copyFullVendor = false, ?string $liveDbPath = null): array
     {
         if (!is_dir($workspacePath)) {
             throw new \RuntimeException("Workspace path does not exist: {$workspacePath}");
@@ -150,10 +150,19 @@ class WorkspaceManager
         }
         $baseUrl = rtrim($baseUrl, '/');
         $subdomain = (string) parse_url($baseUrl, PHP_URL_HOST);
+        // Which install is the CONTROL PLANE, so this one knows it is not. A workspace has no
+        // conf/broker.ini (gitignored, and it carries the project's broker key), so
+        // control_plane_state() said "unknown" and is_control_plane() — which answers unknown
+        // as "core" — told every project's task workspace it WAS tiknix.com: Serenity's
+        // test server rendered the flagship page instead of its storefront.
+        $controlPlaneHost = strtolower(trim($controlPlaneHost));
+        if (!preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/', $controlPlaneHost)) {
+            throw new \RuntimeException("Workspace control plane host must be a host name like tiknix.com, got '{$controlPlaneHost}'");
+        }
 
         // Setup the workspace
         $this->setupVendor($workspacePath, $copyFullVendor);
-        $this->updateConfig($workspacePath, $baseUrl);
+        $this->updateConfig($workspacePath, $baseUrl, $controlPlaneHost);
         // Seed the workspace DB from the instance's live DB (real data, higher-fidelity
         // testing) when a source is given; otherwise a fresh empty schema DB. The
         // workspace DB is gitignored, so this copy never merges back.
@@ -317,7 +326,7 @@ class WorkspaceManager
     /**
      * Update config.ini for the workspace
      */
-    public function updateConfig(string $workspacePath, string $baseUrl): void
+    public function updateConfig(string $workspacePath, string $baseUrl, ?string $controlPlaneHost = null): void
     {
         $configPath = $workspacePath . '/conf/config.ini';
         $configExamplePath = $workspacePath . '/conf/config.ini.example';
@@ -330,6 +339,9 @@ class WorkspaceManager
         if (!file_exists($configPath)) {
             // Create minimal config for workspace
             $this->createMinimalConfig($configPath, $baseUrl);
+            if ($controlPlaneHost !== null) {
+                file_put_contents($configPath, self::setAppKey((string) file_get_contents($configPath), 'control_plane_host', $controlPlaneHost));
+            }
             return;
         }
 
@@ -349,6 +361,10 @@ class WorkspaceManager
             'path = "database/tiknix.db"',
             $config
         );
+
+        if ($controlPlaneHost !== null) {
+            $config = self::setAppKey($config, 'control_plane_host', $controlPlaneHost);
+        }
 
         // Set environment to development
         $config = preg_replace(
@@ -376,6 +392,18 @@ class WorkspaceManager
     /**
      * Create minimal config file for workspace
      */
+    /** Set [app] $key = "$value" in INI text: replace it where it is, else add it under [app]. */
+    private static function setAppKey(string $ini, string $key, string $value): string {
+        $line = $key . ' = "' . $value . '"';
+        if (preg_match('/^' . preg_quote($key, '/') . '\s*=.*$/m', $ini)) {
+            return preg_replace('/^' . preg_quote($key, '/') . '\s*=.*$/m', $line, $ini, 1);
+        }
+        if (preg_match('/^\[app\]\s*$/m', $ini)) {
+            return preg_replace('/^\[app\]\s*$/m', "[app]\n{$line}", $ini, 1);
+        }
+        return "[app]\n{$line}\n\n" . $ini;
+    }
+
     private function createMinimalConfig(string $configPath, string $baseUrl): void
     {
         $config = <<<INI

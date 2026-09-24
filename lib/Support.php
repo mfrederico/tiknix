@@ -90,7 +90,7 @@ class Support {
      * Where support mail should land: an explicitly configured address, or failing that
      * the most senior active admin. Returns '' when there is nobody to tell.
      */
-    private static function address(): string {
+    public static function address(): string {
         $configured = trim((string) (Flight::get('mail.support_email') ?? ''));
         if ($configured !== '' && filter_var($configured, FILTER_VALIDATE_EMAIL)) return $configured;
 

@@ -208,7 +208,6 @@ class SignupFlow {
         $member->updatedAt        = date('Y-m-d H:i:s');
         $member->billingTenantEid = (string) $pending->billingTenantEid;
         $member->planTier         = 'free';
-        $member->planProjectCap   = ProjectQuota::FREE_CAP;
         $member->cardValidatedAt  = date('Y-m-d H:i:s');
         $memberId = (int) Bean::store($member);
 

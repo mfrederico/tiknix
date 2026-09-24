@@ -168,8 +168,11 @@ class Admin extends Control {
                         // Per-member FREE-project allowance (ProjectQuota::freeCapFor). 0 = the
                         // global default. NOT gated by the system-account check above — the
                         // operator's own account is exactly the one they raise to "unlimited".
+                        // Through the model: the number and its audit row (who, when, why)
+                        // are written together — a grant is money not collected.
                         if (isset($request->data->free_projects)) {
-                            $member->freeProjects = max(0, (int) $request->data->free_projects);
+                            $member->box()->setFreeProjects((int) $request->data->free_projects,
+                                (int) $this->member->id, (string) ($request->data->free_projects_note ?? ''));
                         }
 
                         // Update password if provided
@@ -258,6 +261,13 @@ class Admin extends Control {
         // inviter in the first place.
         $this->viewData['invitedCount'] = Bean::count('member', 'invited_by = ?', [(int) $member->id]);
         $this->viewData['twofaEnabled'] = \app\TwoFactorAuth::isEnabled($member);
+        // Projects: what they hold, what is free, what is billed — and who granted the free
+        // ones. The same snapshot the invoice is answered with, so the page cannot disagree.
+        $this->viewData['projectQuota'] = \app\ProjectQuota::snapshot((int) $member->id);
+        $this->viewData['freeGrants'] = array_map(fn($a) => [
+            'row' => $a,
+            'by'  => Bean::load('member', (int) $a->byRef)->displayName('member #' . (int) $a->byRef),
+        ], $member->box()->audits('free_projects', 10));
 
         $this->viewData['featureFlags'] = [];
         foreach (\app\Feature::catalogForLevel((int)$member->level) as $fkey => $fmeta) {
@@ -322,7 +332,6 @@ class Admin extends Control {
                         // Stamped like every other creation path: a NULL tier reads as
                         // "unset", and the grandfather migration would sweep it into legacy.
                         $member->planTier = 'free';
-                        $member->planProjectCap = \app\ProjectQuota::FREE_CAP;
                         $member->createdAt = date('Y-m-d H:i:s');
                         $member->updatedAt = date('Y-m-d H:i:s');
 

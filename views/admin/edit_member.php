@@ -94,6 +94,7 @@ $when = function ($v, string $fmt = 'Y-m-d H:i') {
                         </div>
 
                         <div class="row">
+                            <?php $__q = $projectQuota; ?>
                             <div class="col-sm-6 mb-3">
                                 <label for="free_projects" class="form-label">Free projects</label>
                                 <input type="number" class="form-control" id="free_projects" name="free_projects"
@@ -101,8 +102,33 @@ $when = function ($v, string $fmt = 'Y-m-d H:i') {
                                 <small class="form-text text-muted">
                                     Projects this member gets free. <strong>0 = the default (<?= (int)\app\ProjectQuota::FREE_CAP ?>)</strong>;
                                     raise it to grant more — e.g. 99 for effectively unlimited. Anything past this is billed.
+                                    Does not unlock Teams (that stays a paid-plan perk).
                                 </small>
                             </div>
+                            <div class="col-sm-6 mb-3">
+                                <label for="free_projects_note" class="form-label">Why <span class="text-muted small">(kept with the change)</span></label>
+                                <input type="text" class="form-control" id="free_projects_note" name="free_projects_note" maxlength="500"
+                                       placeholder="e.g. beta tester, partner, making up for downtime">
+                                <small class="form-text text-muted">
+                                    Now: holds <strong><?= (int)$__q['count'] ?></strong> ·
+                                    free <strong><?= (int)$__q['free'] ?></strong><?= $__q['tier'] === 'legacy' ? ' (legacy: never billed)' : '' ?> ·
+                                    billed <strong><?= (int)$__q['billable'] ?></strong> ·
+                                    may hold <strong><?= $__q['cap'] >= PHP_INT_MAX ? 'any number' : (int)$__q['cap'] ?></strong>
+                                    <span class="text-muted">(<?= htmlspecialchars((string)$__q['tier']) ?> plan)</span>
+                                </small>
+                            </div>
+                            <?php if (!empty($freeGrants)): ?>
+                            <div class="col-12 mb-3">
+                                <div class="small text-muted mb-1">Free-project history</div>
+                                <ul class="list-unstyled small mb-0">
+                                <?php foreach ($freeGrants as $g): $r = $g['row']; ?>
+                                    <li><?= htmlspecialchars(substr((string)$r->createdAt, 0, 16)) ?> —
+                                        <?= (int)$r->oldValue ?> → <strong><?= (int)$r->newValue ?></strong>
+                                        by <?= htmlspecialchars($g['by']) ?><?= (string)$r->note !== '' ? ': ' . htmlspecialchars((string)$r->note) : '' ?></li>
+                                <?php endforeach; ?>
+                                </ul>
+                            </div>
+                            <?php endif; ?>
                         </div>
 
                         <hr class="my-4">

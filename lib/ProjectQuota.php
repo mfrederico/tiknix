@@ -90,18 +90,34 @@ class ProjectQuota {
         return $n > 0 ? $n : self::FREE_CAP;
     }
 
-    /** How many projects this account may hold. */
+    /**
+     * How many projects this account may hold.
+     *
+     *   pro     uncapped — everything past the free allowance is billed
+     *   free    the free allowance (freeCapFor: the admin-granted number, default 1)
+     *   legacy  its grandfathered cap, or the free allowance if an admin granted more
+     *
+     * plan_project_cap means something ONLY for legacy. It used to be read first for every
+     * tier, and every signup stamped it with FREE_CAP — so raising a member's free
+     * projects changed their invoice but not what they could create: the gate still said 1.
+     */
     public static function capFor(int $memberId): int {
         $member = Bean::load('member', $memberId);
         if (!$member->id) throw new \RuntimeException('ProjectQuota: no such member ' . $memberId);
+        $tier = self::tierOf($memberId);
+        if ($tier === 'pro') return self::PRO_CAP;
+        if ($tier === 'legacy') return max((int) ($member->planProjectCap ?? 0), self::freeCapFor($memberId));
+        return self::freeCapFor($memberId);
+    }
 
-        // A grandfathered account carries its own cap, set when it was migrated.
-        $cap = (int) ($member->planProjectCap ?? 0);
-        if ($cap > 0) return $cap;
-
-        // Pro is uncapped (billed past the free allowance); a free account may hold up to its
-        // free allowance (the admin-editable per-member number, default 1).
-        return self::tierOf($memberId) === 'pro' ? self::PRO_CAP : self::freeCapFor($memberId);
+    /**
+     * Projects this account holds that are NOT billed — the complimentary ones, which the
+     * invoice lists at $0 beside the billed ones. Legacy: all of them.
+     */
+    public static function complimentaryProjects(int $memberId): int {
+        $count = self::countFor($memberId);
+        if (self::tierOf($memberId) === 'legacy') return $count;
+        return min($count, self::freeCapFor($memberId));
     }
 
     /**
@@ -351,6 +367,8 @@ class ProjectQuota {
             // how a page and an invoice come to disagree about what somebody owes.
             'needs_paid' => self::needsPaidPlan($memberId),
             'billable'   => self::billableProjects($memberId),
+            'free'       => self::freeCapFor($memberId),
+            'complimentary' => self::complimentaryProjects($memberId),
             'over'       => $count > $cap,
         ];
     }

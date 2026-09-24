@@ -291,4 +291,41 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
             $identity->box()->unlink();
         }
     }
+
+    /**
+     * Grant (or take back) free projects — ProjectQuota::freeCapFor reads this, the invoice
+     * bills only what is past it. 0 = the platform default (ProjectQuota::FREE_CAP).
+     *
+     * On the model, not in the controller, so the number and its audit row cannot come
+     * apart (the same rule as Model_Instance::setAutoTriage): a grant is money not
+     * collected, so who gave it and why stays answerable. No row when unchanged.
+     * Returns true when something changed.
+     */
+    public function setFreeProjects(int $n, int $byMemberId, string $note = ''): bool {
+        $n = max(0, $n);
+        $was = (int) ($this->bean->freeProjects ?? 0);
+        if ($was === $n) return false;
+
+        $this->bean->freeProjects = $n;
+        \app\Bean::store($this->bean);
+
+        $row = \app\Bean::dispense('memberaudit');
+        $row->memberRef = (int) $this->bean->id;
+        $row->byRef     = $byMemberId;
+        $row->field     = 'free_projects';
+        $row->oldValue  = (string) $was;
+        $row->newValue  = (string) $n;
+        $row->note      = mb_substr(trim($note), 0, 500);
+        $row->createdAt = date('Y-m-d H:i:s');
+        \app\Bean::store($row);
+
+        \Flight::get('log')?->info('free_projects changed', ['member' => (int) $this->bean->id, 'from' => $was, 'to' => $n, 'by' => $byMemberId]);
+        return true;
+    }
+
+    /** This member's audited setting changes, newest first. */
+    public function audits(string $field = 'free_projects', int $limit = 20): array {
+        return array_values(\app\Bean::find('memberaudit', 'member_ref = ? AND field = ? ORDER BY id DESC LIMIT ' . max(1, $limit),
+            [(int) $this->bean->id, $field]));
+    }
 }

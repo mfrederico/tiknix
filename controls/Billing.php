@@ -73,7 +73,7 @@ class Billing extends BaseControls\Control {
             'title'        => 'Billing',
             'error'        => '',
             'snapshot'     => $snapshot,
-            'freeCap'      => ProjectQuota::FREE_CAP,
+            'freeCap'      => $snapshot['free'],   // this member's allowance, not the global default
             'perProject'   => ProjectQuota::PRICE_PER_PROJECT,
             'projects'     => $this->projectBreakdown($memberId),
             // Empty until a member is registered with the billing service, which does not
@@ -184,12 +184,17 @@ class Billing extends BaseControls\Control {
                     // flag: pricing is per project now, so the rate engine multiplies this
                     // by the unit price and there is no ceiling to encode anywhere.
                     'billable_projects' => $snapshot['billable'],
+                    // Priced at $0 (conf/rates/tiknix.php 'info'): the projects covered free —
+                    // the allowance, plus any an admin granted — so the invoice shows the gift
+                    // beside the charge instead of just a smaller number.
+                    'complimentary_projects' => $snapshot['complimentary'],
                 ],
                 // Not priced — carried so an invoice can be explained without re-deriving
                 // it here weeks later, and so a surprised customer can be answered.
                 'meta' => [
                     'projects' => $snapshot['count'],
                     'cap'      => $snapshot['cap'],
+                    'free'     => $snapshot['free'],
                     'tier'     => $snapshot['tier'],
                 ],
             ],

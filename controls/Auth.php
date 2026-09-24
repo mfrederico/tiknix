@@ -263,7 +263,6 @@ class Auth extends BaseControls\Control {
             $member->level     = LEVELS['MEMBER'];
             $member->status    = 'active';
             $member->planTier  = 'free';
-            $member->planProjectCap = \app\ProjectQuota::FREE_CAP;
             $member->createdAt = date('Y-m-d H:i:s');
             // ACCEPTING AN INVITE IS A LOGIN. The line below signs them straight in, so
             // the same two columns dologin() and GoogleAuth stamp have to be stamped here
@@ -456,7 +455,6 @@ class Auth extends BaseControls\Control {
             // Stamped, not left blank: a NULL tier reads as "unset" and the grandfather
             // migration used to sweep it into legacy, handing new signups a free cap.
             $member->planTier = 'free';
-            $member->planProjectCap = \app\ProjectQuota::FREE_CAP;
             $member->createdAt = date('Y-m-d H:i:s');
             
             $id = Bean::store($member);

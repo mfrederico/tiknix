@@ -273,7 +273,6 @@ class GoogleAuth {
         // Stamped like every other creation path. A NULL tier reads as "unset", and the
         // grandfather migration would sweep it into legacy — a free cap for a new signup.
         $member->planTier = 'free';
-        $member->planProjectCap = \app\ProjectQuota::FREE_CAP;
         $member->createdAt = date('Y-m-d H:i:s');
         $member->lastLogin = date('Y-m-d H:i:s');
         $member->loginCount = 1;

@@ -109,14 +109,13 @@ $fmt = function (string $iso): string {
         Pick one to work on — it stays selected everywhere until you come back here.
       </div>
     </div>
-    <div class="d-flex gap-2 ms-auto align-items-start">
+    <div class="d-flex flex-wrap gap-2 ms-auto align-items-start">
       <div style="min-width:16rem">
         <input id="proj-search" class="form-control" type="search" autocomplete="off"
                placeholder="Search projects…" aria-label="Search projects">
       </div>
-      <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#proj-new"
-              aria-label="New project" title="New project">
-        <i class="bi bi-plus-lg"></i>
+      <button class="btn btn-primary text-nowrap" type="button" data-bs-toggle="collapse" data-bs-target="#proj-new">
+        <i class="bi bi-plus-lg me-1"></i>New Project
       </button>
     </div>
   </div>

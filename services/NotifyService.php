@@ -372,47 +372,13 @@ class NotifyService {
                 'thread' => (int)$thread->id,
             ]);
         } else {
-            // ---- live send via Mailgun -------------------------------------
-            $params = [
-                'from'         => "{$this->fromName} <{$this->fromEmail}>",
-                'to'           => "{$this->toName} <{$this->toEmail}>",
-                'subject'      => $this->subjectLine,
-                'html'         => $this->wrapInTemplate($content),
-                'h:Message-Id' => $messageId,
-                'h:Reply-To'   => "reply-{$thread->replyToken}@{$this->inboundDomain}",
-            ];
-            if ($this->inReplyTo) {
-                $params['h:In-Reply-To'] = $this->inReplyTo;
-            }
-            if (!empty($this->referencesList)) {
-                $params['h:References'] = implode(' ', $this->referencesList);
-            }
-            if (!empty($this->ccList))  { $params['cc']  = implode(', ', $this->ccList); }
-            if (!empty($this->bccList)) { $params['bcc'] = implode(', ', $this->bccList); }
-
-            $attached = $this->collectAttachments($attachments);
-            if (!empty($attached)) {
-                $params['attachment'] = $attached;
-            }
-
-            try {
-                $result = $this->client->messages()->send($this->domain, $params);
-                $notify->status = 'sent';
+            [$status, $providerId, $error] = $this->deliver($thread, $messageId, $content, $attachments);
+            $notify->status = $status;
+            if ($status === 'sent') {
                 $notify->sentAt = date('Y-m-d H:i:s');
-                if (is_object($result) && method_exists($result, 'getId')) {
-                    $notify->providerId = $result->getId();
-                }
-                $this->logger?->info("NotifyService: sent to {$this->toEmail} Re: {$this->subjectLine}", [
-                    'thread'    => (int)$thread->id,
-                    'cc_count'  => count($this->ccList),
-                    'bcc_count' => count($this->bccList),
-                    'attach'    => count($attached),
-                ]);
-            } catch (\Throwable $e) {
-                $error = $e->getMessage();
-                $notify->status       = 'failed';
+                if ($providerId !== null) $notify->providerId = $providerId;
+            } else {
                 $notify->errorMessage = $error;
-                $this->logger?->error("NotifyService: send failed — {$error}");
             }
         }
 
@@ -438,6 +404,94 @@ class NotifyService {
             'message_id' => $messageId,
             'error'      => $error,
         ];
+    }
+
+    /**
+     * The Mailgun call for one message on $thread: Reply-To carries the thread's token, so
+     * an answer from the recipient's mail client lands back in the same conversation.
+     *
+     * @return array{0:string,1:?string,2:?string} [status sent|failed, provider id, error]
+     */
+    private function deliver(object $thread, string $messageId, string $content, array $attachments = []): array {
+        $params = [
+            'from'         => "{$this->fromName} <{$this->fromEmail}>",
+            'to'           => "{$this->toName} <{$this->toEmail}>",
+            'subject'      => $this->subjectLine,
+            'html'         => $this->wrapInTemplate($content),
+            'h:Message-Id' => $messageId,
+            'h:Reply-To'   => "reply-{$thread->replyToken}@{$this->inboundDomain}",
+        ];
+        if ($this->inReplyTo) {
+            $params['h:In-Reply-To'] = $this->inReplyTo;
+        }
+        if (!empty($this->referencesList)) {
+            $params['h:References'] = implode(' ', $this->referencesList);
+        }
+        if (!empty($this->ccList))  { $params['cc']  = implode(', ', $this->ccList); }
+        if (!empty($this->bccList)) { $params['bcc'] = implode(', ', $this->bccList); }
+
+        $attached = $this->collectAttachments($attachments);
+        if (!empty($attached)) {
+            $params['attachment'] = $attached;
+        }
+
+        try {
+            $result = $this->client->messages()->send($this->domain, $params);
+            $this->logger?->info("NotifyService: sent to {$this->toEmail} Re: {$this->subjectLine}", [
+                'thread'    => (int)$thread->id,
+                'cc_count'  => count($this->ccList),
+                'bcc_count' => count($this->bccList),
+                'attach'    => count($attached),
+            ]);
+            return ['sent', (is_object($result) && method_exists($result, 'getId')) ? $result->getId() : null, null];
+        } catch (\Throwable $e) {
+            $this->logger?->error("NotifyService: send failed — {$e->getMessage()}");
+            return ['failed', null, $e->getMessage()];
+        }
+    }
+
+    /**
+     * Email a copy of a message that is ALREADY in a conversation (an in-app note), onto
+     * the same row: one message, delivered in the app and by email. Unlike send(), it
+     * writes no second row, and it never reports an email that did not go out as sent —
+     * with mail off the answer is 'off', saying why.
+     *
+     * Set to()/subject()/fromName() first.
+     *
+     * @return array{status:string,error:?string}  status sent | failed | off
+     */
+    public function emailCopy(int $messageId): array {
+        $msg = Bean::load('message', $messageId);
+        if (!$msg->id) return ['status' => 'failed', 'error' => "no message #{$messageId}"];
+        if ($this->toEmail === '' || !filter_var($this->toEmail, FILTER_VALIDATE_EMAIL)) {
+            return ['status' => 'failed', 'error' => 'No valid recipient'];
+        }
+        $thread = Bean::load('thread', (int) $msg->threadId);
+        if (!$thread->id) return ['status' => 'failed', 'error' => "message #{$messageId} has no conversation"];
+
+        $msg->toEmail = $this->toEmail;
+        $msg->toName  = $this->toName;
+        if ($this->demoMode || !$this->client || $this->domain === '' || $this->inboundDomain === '') {
+            $why = $this->demoMode ? 'demo mode is on ([app] demo_mode)'
+                 : ($this->inboundDomain === '' && $this->client && $this->domain !== '' ? 'conf/mailgun.ini has no inboundDomain, so a reply could not come back'
+                 : 'mail is not configured (conf/mailgun.ini key + domain)');
+            $msg->emailStatus = 'off';
+            $msg->emailError  = $why;
+            Bean::store($msg);
+            return ['status' => 'off', 'error' => $why];
+        }
+
+        $msgDomain = $this->domain ?: $this->inboundDomain;
+        $eid = sprintf('<tk.%d.%s@%s>', (int) $thread->id, bin2hex(random_bytes(8)), $msgDomain);
+        [$status, $providerId, $error] = $this->deliver($thread, $eid, (string) $msg->content);
+        $msg->emailStatus = $status;
+        $msg->emailError  = (string) $error;
+        if ($status === 'sent') {
+            $msg->messageEid = $eid;
+            if ($providerId !== null) $msg->providerId = $providerId;
+        }
+        Bean::store($msg);
+        return ['status' => $status, 'error' => $error];
     }
 
     /**

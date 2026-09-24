@@ -55,6 +55,7 @@ $defaults = [
     ['help', '*', 101, 'Help pages'],
     ['contact', 'index', 101, 'Contact form'],
     ['contact', 'submit', 101, 'Submit contact form'],
+    ['contact', 'ask', 100, 'A signed-in member writes to support'],
     ['terms', 'index', 101, 'Terms of service'],
     ['privacy', 'index', 101, 'Privacy policy'],
     // Marketing pricing page. Public so guests can view it; the controller itself
@@ -112,6 +113,7 @@ $defaults = [
     ['contact', 'admin', 50, 'View contact messages'],
     ['contact', 'view', 50, 'View single message'],
     ['contact', 'respond', 50, 'Respond to message'],
+    ['communications', 'note', 50, 'Admin sends a member a note (in-app + email)'],
     ['lead', 'admin', 50, 'View captured leads'],
     ['lead', 'delete', 50, 'Delete a lead'],
     ['lead', 'export', 50, 'Export leads CSV'],

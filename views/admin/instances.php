@@ -42,7 +42,15 @@ $when = fn(?string $s) => $s ? date('M j, Y g:i A', strtotime($s)) : '—';
                     <span class="fw-semibold"><?= htmlspecialchars((string) $b->slug) ?></span>
                     <div class="small text-secondary"><?= htmlspecialchars((string) ($b->displayName ?: '')) ?></div>
                 </td>
-                <td class="small text-secondary"><?= htmlspecialchars($r['owner']) ?></td>
+                <td class="small text-secondary">
+                    <?= htmlspecialchars($r['owner']) ?>
+                    <?php if ((int) $b->memberId > 0 && (int) $b->memberId !== (int) (\Flight::getMember()->id ?? 0)): ?>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" title="Message owner"
+                                onclick="noteOpen(<?= (int) $b->memberId ?>, <?= htmlspecialchars(json_encode($r['owner'] . ' (' . $b->slug . ')'), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode((string) ($b->displayName ?: $b->slug)), ENT_QUOTES) ?>)">
+                            <i class="bi bi-chat-left-text"></i><span class="visually-hidden">Message owner</span>
+                        </button>
+                    <?php endif; ?>
+                </td>
                 <td>
                     <?php if ($r['on']): ?>
                         <span class="badge text-bg-warning">ON — builds unattended</span>
@@ -116,3 +124,54 @@ $when = fn(?string $s) => $s ? date('M j, Y g:i A', strtotime($s)) : '—';
     </table>
     </div>
 </div>
+
+<?php /* Message owner: lib/Notes.php via /communications/note — in the app and by email,
+         signed by you; their reply comes back into the same conversation. */ ?>
+<div class="modal fade" id="noteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h2 class="modal-title h6">Message <span id="noteTo"></span></h2>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="noteMember">
+      <label class="form-label small" for="noteSubject">Subject</label>
+      <input class="form-control form-control-sm mb-2" id="noteSubject">
+      <label class="form-label small" for="noteBody">Message</label>
+      <textarea class="form-control form-control-sm" id="noteBody" rows="8"></textarea>
+      <div class="small text-secondary mt-2">Goes to their Communications and their email, from you. Their reply comes back to the same conversation.</div>
+      <div id="noteMsg" class="small mt-2"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" id="noteSend" onclick="noteSend()"><i class="bi bi-send"></i> Send</button>
+    </div>
+  </div></div>
+</div>
+<script>
+function noteOpen(member, label, project){
+  document.getElementById('noteMember').value = member;
+  document.getElementById('noteTo').textContent = label;
+  document.getElementById('noteSubject').value = project;
+  document.getElementById('noteBody').value = '';
+  document.getElementById('noteMsg').textContent = '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('noteModal')).show();
+}
+async function noteSend(){
+  const msg = document.getElementById('noteMsg'), btn = document.getElementById('noteSend');
+  const fd = new FormData();
+  fd.append('_csrf_token', <?= json_encode(csrf_token()) ?>);
+  fd.append('to_member', document.getElementById('noteMember').value);
+  fd.append('subject', document.getElementById('noteSubject').value);
+  fd.append('body', document.getElementById('noteBody').value);
+  btn.disabled = true; msg.className = 'small mt-2'; msg.textContent = 'Sending…';
+  try {
+    const d = await (await fetch('/communications/note', {method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'}})).json();
+    if (!d.ok) { msg.className = 'small mt-2 text-danger'; msg.textContent = d.error || 'Not sent.'; return; }
+    const email = d.email === 'sent' ? 'and by email' : 'in the app only — the email was not sent (' + d.email + (d.email_error ? ': ' + d.email_error : '') + ')';
+    msg.className = 'small mt-2 ' + (d.email === 'sent' ? 'text-success' : 'text-warning');
+    msg.innerHTML = '';
+    msg.append('Sent ' + email + '. ');
+    const a = document.createElement('a'); a.href = d.url; a.textContent = 'Open conversation'; msg.append(a);
+  } catch (e) { msg.className = 'small mt-2 text-danger'; msg.textContent = e.message; }
+  finally { btn.disabled = false; }
+}
+</script>

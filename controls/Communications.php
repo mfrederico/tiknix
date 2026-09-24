@@ -101,6 +101,30 @@ class Communications extends BaseControls\Control {
         ]);
     }
 
+    /**
+     * POST /communications/note — an ADMIN writes to a member: in the app and by email,
+     * signed by the admin, replies back into the same conversation (lib/Notes.php).
+     * JSON, for the "Message owner" box on /admin/instances.
+     */
+    public function note() {
+        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
+        if (!$this->validateCSRF()) return;
+        $to      = (int) $this->getParam('to_member', 0);
+        $subject = trim((string) $this->getParam('subject', ''));
+        $body    = (string) $this->getParam('body', '');
+        // A plain-text box: keep its line breaks, escape everything else.
+        if (!str_contains($body, '<')) $body = nl2br(htmlspecialchars($body, ENT_QUOTES));
+        try {
+            $r = \app\Notes::toMember((int) $this->member->id, $to, $subject, $body);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Note not sent', ['from' => (int) $this->member->id, 'to' => $to, 'error' => $e->getMessage()]);
+            Flight::json(['ok' => false, 'error' => $e->getMessage()]);
+            return;
+        }
+        $this->logger->info('Note sent', ['from' => (int) $this->member->id, 'to' => $to] + $r);
+        Flight::json(['ok' => true] + $r + ['url' => '/communications/thread/' . $r['thread']]);
+    }
+
     /** Start a new conversation (POST, CSRF) from the compose modal. */
     public function create() {
         if (!$this->requireLogin()) return;
@@ -348,51 +372,27 @@ class Communications extends BaseControls\Control {
             return;
         }
 
-        // Recipient: thread's stored recipient, else the first outbound notify.
-        $toEmail = $thread->recipientEmail ?: '';
-        $toName  = $thread->recipientName  ?: '';
-        if ($toEmail === '') {
-            $firstOut = Bean::findOne('message', 'thread_id = ? AND direction = ? ORDER BY created_at ASC', [$id, 'out']);
-            if ($firstOut) { $toEmail = $firstOut->toEmail; $toName = $firstOut->toName; }
-        }
-        if ($toEmail === '') {
-            $this->flash('error', 'No recipient on this conversation');
+        // An email conversation (a support ticket, an outside contact): the reply goes in
+        // the app, signed by whoever wrote it, and by email to the outside recipient, with
+        // the conversation's reply token — lib/Notes.php. The recipient replying on their
+        // own conversation is not emailed their own words.
+        try {
+            $r = \app\Notes::onThread((int)$this->member->id, $id, $bodyHtml, $this->replySubject($thread->subject ?: 'Conversation'));
+        } catch (\Throwable $e) {
+            $this->logger->error('Reply failed', ['thread' => $id, 'from' => (int)$this->member->id, 'error' => $e->getMessage()]);
+            $this->flash('error', 'Could not send that reply: ' . $e->getMessage());
             Flight::redirect('/communications/thread/' . $id);
             return;
         }
-
-        // Thread the reply off the most recent message that carries a Message-ID.
-        $last = Bean::findOne(
-            'message',
-            "thread_id = ? AND message_eid != '' ORDER BY created_at DESC, id DESC",
-            [$id]
-        );
-        $inReplyTo = $last->messageEid ?? null;
-        $prevRefs  = ($last && $last->referencesList) ? preg_split('/\s+/', trim($last->referencesList)) : [];
-
-        $subject = $this->replySubject($thread->subject ?: 'Conversation');
-
-        // No envelope-from override — send as the verified Mailgun sender so
-        // the Reply-To (reply-{token}@) keeps routing responses back in-app.
-        $svc = NotifyService::create()
-            ->to($toEmail, $toName)
-            ->subject($subject)
-            ->owner((int)$thread->ownerMemberId)
-            ->fromName($this->senderName())
-            ->onThread($id)
-            ->inReplyTo($inReplyTo, $prevRefs);
-
-        // Preserve the polymorphic related-entity link on the outbound row.
-        if ($thread->relatedType && $thread->relatedId) {
-            $svc->relatedTo((string)$thread->relatedType, (int)$thread->relatedId);
+        // A member following up on their support ticket puts it back in the queue.
+        if ((string)$thread->relatedType === 'contact' && !Flight::hasLevel(LEVELS['ADMIN'])) {
+            $ticket = Bean::load('contact', (int)$thread->relatedId);
+            if ($ticket->id) { $ticket->status = 'new'; Bean::store($ticket); }
         }
-
-        $result = $svc->send($bodyHtml);
-
-        if ($result['sent']) {
+        if (in_array($r['email'], ['sent', 'none'], true)) {
             $this->flash('success', 'Reply sent');
         } else {
-            $this->flash('error', 'Reply saved but delivery failed: ' . ($result['error'] ?? 'unknown'));
+            $this->flash('error', 'Reply posted here, but the email copy was not sent (' . $r['email'] . '): ' . ($r['email_error'] ?? 'unknown'));
         }
         Flight::redirect('/communications/thread/' . $id);
     }

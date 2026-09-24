@@ -16,6 +16,19 @@ class Contact extends BaseControls\Control {
      * Display contact form
      */
     public function index() {
+        // A signed-in member asks from inside the app: no name, email or bot check to fill
+        // in (they are signed in), and the answer comes back to their Communications.
+        if (!empty($this->member->id)) {
+            $this->render('contact/member', [
+                'title'   => 'Support',
+                'project' => ProjectContext::current((int) $this->member->id),
+                'tickets' => array_map(fn($c) => [
+                    'ticket' => $c,
+                    'thread' => (int) (Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['contact', (int) $c->id])->id ?? 0),
+                ], array_values(Bean::find('contact', 'member_id = ? ORDER BY id DESC LIMIT 20', [(int) $this->member->id]))),
+            ]);
+            return;
+        }
         $this->render('contact/form', [
             'title' => 'Contact Support',
             'success' => false
@@ -198,6 +211,59 @@ class Contact extends BaseControls\Control {
     }
     
     /**
+     * POST /contact/ask — a signed-in member writes to support. Same queue as the public
+     * form (/contact/admin, the Support badge, the alert email), but the member is seated
+     * in the conversation, so the answer and any follow-up happen in Communications.
+     * No Turnstile: they are signed in, and the form carries a CSRF token.
+     */
+    public function ask() {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $subject  = trim((string) $this->getParam('subject', ''));
+        $message  = trim((string) $this->getParam('message', ''));
+        $category = (string) $this->getParam('category', 'general');
+        if (!in_array($category, ['general', 'problem', 'billing', 'feature'], true)) $category = 'general';
+        if ($subject === '' || $message === '') {
+            $this->flash('error', 'A subject and a message are both needed.');
+            Flight::redirect('/contact');
+            return;
+        }
+        $mid = (int) $this->member->id;
+        // Which project it is about, when one is selected: said in the message, so whoever
+        // answers does not have to ask.
+        $project = ProjectContext::current($mid);
+        if ($project && (int) $this->getParam('about_project', 0) === (int) $project->id) {
+            $message = "Project: " . ($project->displayName ?: $project->slug) . " ({$project->slug})\n\n" . $message;
+        }
+
+        $contact = Bean::dispense('contact');
+        $contact->name      = $this->member->displayName('Member #' . $mid);
+        $contact->email     = (string) $this->member->email;
+        $contact->subject   = $subject;
+        $contact->message   = $message;
+        $contact->category  = $category;
+        $contact->status    = 'new';
+        $contact->memberId  = $mid;
+        $contact->ipAddress = $_SERVER['REMOTE_ADDR'] ?? '';
+        $contact->userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $contact->createdAt = date('Y-m-d H:i:s');
+        $contactId = (int) Bean::store($contact);
+        Flight::get('log')->info('Member support message', ['member' => $mid, 'contact_id' => $contactId, 'subject' => $subject]);
+
+        $threadId = $this->alertOperators($contactId, (string) $contact->name, (string) $contact->email, $subject, $message, $category, true);
+        if (!$threadId) {
+            // Stored and in the admin queue, but not a conversation the member can open.
+            $this->flash('warning', 'Your message reached support, but its conversation could not be opened — you will get the answer by email.');
+            Flight::redirect('/contact');
+            return;
+        }
+        \app\ThreadMembers::ensure($threadId, [$mid]);
+        \app\ThreadMembers::markRead($threadId, $mid);
+        $this->flash('success', 'Sent to support. The answer will appear here and in your email.');
+        Flight::redirect('/communications/thread/' . $threadId);
+    }
+
+    /**
      * Which operator's inbox support threads land in: the most senior active admin.
      *
      * Deliberately the same person the alert email goes to when [mail] support_email is
@@ -230,11 +296,14 @@ class Contact extends BaseControls\Control {
      * message is already stored, so the visitor is done either way — but a failure here is
      * logged at ERROR, because "we could not tell anyone" is exactly the kind of quiet
      * breakage that let this table fill up unread in the first place.
+     *
+     * @return int|null the support conversation's id, null when none could be opened
      */
     private function alertOperators(
         int $contactId, string $name, string $email, string $subject,
         string $message, string $category, bool $fromMember
-    ): void {
+    ): ?int {
+        $threadId = null;
         // First, into the inbox. A support message IS a message, and Communications is
         // where messages live — an emailed alert about a row in a table is a notification
         // ABOUT the thing rather than the thing itself. The thread is owned by the
@@ -250,6 +319,7 @@ class Contact extends BaseControls\Control {
                     'contact', $contactId
                 );
                 if ($threadId) {
+                    $threadId = (int) $threadId;
                     // Seat the whole support team, not just one operator. Support is a
                     // queue somebody answers, not one person's mail — and per-person
                     // unread means each of them tracks their own reading of it without
@@ -288,13 +358,13 @@ class Contact extends BaseControls\Control {
                     'contact_id' => $contactId,
                     'hint' => 'set [mail] support_email, or give an admin account a valid email',
                 ]);
-                return;
+                return $threadId ?: null;
             }
             if (!Mailer::isConfigured()) {
                 Flight::get('log')->error('Support message saved but mail is not configured', [
                     'contact_id' => $contactId, 'would_have_told' => $to,
                 ]);
-                return;
+                return $threadId ?: null;
             }
 
             $sent = Mailer::sendContactAlert($to, $name, $email, $category, $subject,
@@ -313,6 +383,7 @@ class Contact extends BaseControls\Control {
                 'contact_id' => $contactId, 'error' => $e->getMessage(),
             ]);
         }
+        return $threadId ?: null;
     }
 
     /**
@@ -439,29 +510,24 @@ class Contact extends BaseControls\Control {
             $message->respondedBy = $_SESSION['member']['id'];
             Bean::store($message);
 
-            // Reply ON THE THREAD, not as a standalone email.
+            // Reply ON THE THREAD this ticket owns (lib/Notes.php): in the app, signed by
+            // the admin, and by email with the conversation's reply token, so their answer
+            // comes back into the same conversation. A member who asked from inside the app
+            // is seated in it and sees the reply in Communications too.
             //
-            // This used to go out through Mailer::sendContactResponse(), which sends a
-            // perfectly good message carrying no reply token. controls/Webhook.php routes
-            // inbound mail back to a conversation by matching reply-{token}@ — so with no
-            // token, when the person answered, their answer matched nothing and was lost.
-            // Support was one-way and did not look it.
-            //
-            // NotifyService puts the reply on the thread this contact row already owns
-            // (relatedTo finds it), which means the outbound carries the token and their
-            // reply comes back into the same conversation by itself.
-            $adminName = member_display_name($_SESSION['member'] ?? null, 'Support');
-            $html = nl2br(htmlspecialchars($responseText, ENT_QUOTES));
+            // A ticket with no conversation (its threading failed when it arrived) gets one
+            // now, from its original message, so the reply still has a place to live.
+            $thread = Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['contact', (int)$message->id]);
+            $threadId = $thread && $thread->id ? (int)$thread->id : (int)\app\services\NotifyService::openInboundThread(
+                (int)$_SESSION['member']['id'], (string)$message->email, (string)$message->name,
+                '[' . ((string)$message->category ?: 'general') . '] ' . (string)$message->subject,
+                nl2br(htmlspecialchars((string)$message->message, ENT_QUOTES)), 'contact', (int)$message->id);
+            if ($threadId <= 0) throw new \RuntimeException("support ticket #{$message->id} has no conversation and one could not be opened");
 
-            $result = \app\services\NotifyService::create()
-                ->to((string)$message->email, (string)$message->name)
-                ->subject((string)$message->subject)
-                ->owner((int)($_SESSION['member']['id'] ?? 0))
-                ->relatedTo('contact', (int)$message->id)
-                ->fromName($adminName)
-                ->send($html);
+            $result = \app\Notes::onThread((int)$_SESSION['member']['id'], $threadId,
+                nl2br(htmlspecialchars($responseText, ENT_QUOTES)), (string)$message->subject);
 
-            $sent = !empty($result['sent']);
+            $sent = $result['email'] === 'sent';
             if ($sent) {
                 $response->emailSent   = 1;
                 $response->emailSentAt = date('Y-m-d H:i:s');
@@ -469,21 +535,21 @@ class Contact extends BaseControls\Control {
             } else {
                 // Saved but not delivered is a state somebody has to know about — the
                 // person is waiting on an answer that never left the building.
-                Flight::get('log')->error('Support reply saved but NOT delivered', [
+                Flight::get('log')->error('Support reply saved but NOT emailed', [
                     'contact' => (int)$message->id,
-                    'thread'  => (int)($result['thread'] ?? 0),
-                    'error'   => (string)($result['error'] ?? 'unknown'),
+                    'thread'  => $threadId,
+                    'email'   => $result['email'],
+                    'error'   => (string)($result['email_error'] ?? ''),
                 ]);
             }
-
             $this->flash($sent ? 'success' : 'error', $sent
                 ? 'Response sent'
-                : 'Your response was saved but could NOT be delivered: ' . (string)($result['error'] ?? 'unknown'));
+                : 'Your response is in the conversation, but the email was NOT sent (' . $result['email'] . '): ' . (string)($result['email_error'] ?? 'no address on the ticket'));
             Flight::redirect('/contact/view?id=' . $messageId);
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Flight::get('log')->error('Contact response error: ' . $e->getMessage());
-            $this->flash('error', 'Failed to save response');
+            $this->flash('error', 'Failed to send the response: ' . $e->getMessage());
             Flight::redirect('/contact/view?id=' . $messageId);
         }
     }

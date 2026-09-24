@@ -106,6 +106,12 @@ if ($__loggedIn) {
         try { $__supportNew = (int)\app\Bean::count('contact', 'status = ?', ['new']); } catch (\Throwable $e) {}
         $__sections['Main'][] = ['url' => '/contact/admin', 'label' => 'Support', 'icon' => 'life-preserver', 'badge' => $__supportNew];
     }
+    /* Members write to support from inside the app (Contact::ask) instead of by email; the
+       answer comes back to their Communications. Platform only: on a customer's own app
+       this would add a nav item to THEIR users that nobody there asked for. */
+    if (!$__isAdmin && is_core_install() && !isset($__have['/contact'])) {
+        $__sections['Main'][] = ['url' => '/contact', 'label' => 'Support', 'icon' => 'life-preserver'];
+    }
 }
 ?>
 <div class="ui-shell">

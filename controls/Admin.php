@@ -89,6 +89,16 @@ class Admin extends Control {
         
         // Get all members
         $this->viewData['members'] = Bean::findAll('member', 'ORDER BY created_at DESC');
+        // Projects held / allowed per member — the same snapshot the invoice and the create
+        // gate use, so this column cannot disagree with them. Platform only: on a customer's
+        // app there are no projects to count.
+        $this->viewData['quotas'] = [];
+        if (is_core_install()) {
+            foreach ($this->viewData['members'] as $m) {
+                try { $this->viewData['quotas'][(int) $m->id] = \app\ProjectQuota::snapshot((int) $m->id); }
+                catch (\Throwable $e) { $this->viewData['quotas'][(int) $m->id] = ['error' => $e->getMessage()]; }
+            }
+        }
         
         $this->render('admin/members', $this->viewData);
     }

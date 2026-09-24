@@ -49,6 +49,10 @@
                     <th>Email</th>
                     <th>Level</th>
                     <th>Status</th>
+                    <?php if ($quotas): ?>
+                    <th class="text-nowrap"><a href="#" class="text-reset text-decoration-none" onclick="sortByProjects(); return false;"
+                           title="Projects held / allowed — click to sort, fullest first">Projects <i class="bi bi-arrow-down-up small"></i></a></th>
+                    <?php endif; ?>
                     <th>Created</th>
                     <th>Last Login</th>
                     <th>Actions</th>
@@ -93,6 +97,24 @@
                                 <?= htmlspecialchars(($status) ?? '') ?>
                             </span>
                         </td>
+                        <?php if ($quotas): $q = $quotas[(int) $member->id] ?? null; ?>
+                        <?php if (!$q || isset($q['error'])): ?>
+                        <td data-projects="-1"><span class="text-danger small" title="<?= htmlspecialchars((string) ($q['error'] ?? 'not counted')) ?>">cannot count</span></td>
+                        <?php else:
+                            $unlimited = $q['cap'] >= PHP_INT_MAX;
+                            $full = !$unlimited && $q['count'] >= $q['cap'];
+                            // fullest first when sorted: share of the allowance in use (unlimited sorts by count, below any full one)
+                            $fill = $unlimited ? $q['count'] / 1000 : ($q['cap'] > 0 ? $q['count'] / $q['cap'] : 0);
+                            $tip = "holds {$q['count']} · " . ($q['tier'] === 'legacy' ? 'all free (legacy)' : "free {$q['free']} · billed {$q['billable']}") . " · {$q['tier']} plan";
+                        ?>
+                        <td data-projects="<?= htmlspecialchars((string) $fill) ?>">
+                            <a href="/admin/editMember?id=<?= (int) $member->id ?>" title="<?= htmlspecialchars($tip) ?> — edit to grant more"
+                               class="text-decoration-none <?= $q['over'] ? 'text-danger fw-bold' : ($full ? 'text-warning-emphasis fw-semibold' : 'text-reset') ?>">
+                                <?= (int) $q['count'] ?> / <?= $unlimited ? 'any' : (int) $q['cap'] ?></a>
+                            <?php if ((int) ($member->freeProjects ?? 0) > 0): ?><i class="bi bi-gift small text-success" title="granted free projects"></i><?php endif; ?>
+                        </td>
+                        <?php endif; ?>
+                        <?php endif; ?>
                         <td>
                             <?php 
                             if (!empty($member->created_at) && strtotime($member->created_at) !== false) {
@@ -204,17 +226,30 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Export members to CSV
+// Projects column: fullest first, click again to reverse.
+let __projDesc = false;
+function sortByProjects() {
+    const tbody = document.querySelector('.table tbody');
+    __projDesc = !__projDesc;
+    const rows = Array.from(tbody.children);
+    const val = r => parseFloat((r.querySelector('[data-projects]') || {}).dataset?.projects ?? '-1');
+    rows.sort((a, b) => __projDesc ? val(b) - val(a) : val(a) - val(b)).forEach(r => tbody.appendChild(r));
+}
+
 function exportMembers() {
     const table = document.querySelector('.table');
-    const rows = Array.from(table.querySelectorAll('tr')).filter(row => 
+    // Columns from the table's own header (all but Actions), so a new column — Projects —
+    // lands under its own name instead of shifting everything after it.
+    const heads = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim()).filter(h => h !== 'Actions');
+    const rows = Array.from(table.querySelectorAll('tbody tr')).filter(row =>
         row.style.display !== 'none' && row.cells.length > 1
     );
-    
-    let csv = 'ID,Username,Email,Level,Status,Created,Last Login\n';
-    
+
+    let csv = heads.map(h => '"' + h.replace(/"/g, '""') + '"').join(',') + '\n';
+
     rows.forEach(row => {
-        if (row.cells.length >= 7) {
-            const cells = Array.from(row.cells).slice(0, 7);
+        if (row.cells.length >= heads.length) {
+            const cells = Array.from(row.cells).slice(0, heads.length);
             const rowData = cells.map(cell => {
                 let text = cell.textContent.trim();
                 // Clean up badge text

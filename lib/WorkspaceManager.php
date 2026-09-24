@@ -104,14 +104,17 @@ class WorkspaceManager
             $this->cloneFromLocal($workspacePath, $branchName);
         }
 
-        // Build subdomain
-        $baseUrl = Flight::get('baseurl') ?? 'https://localhost';
+        // Build subdomain — from this install's own baseurl; none is a fault, not localhost.
+        $baseUrl = (string) (Flight::get('baseurl') ?? '');
+        if ($baseUrl === '') {
+            throw new \RuntimeException('WorkspaceManager::create: no baseurl configured, so the workspace has no address to be given');
+        }
         $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
         $subdomain = "{$proxyHash}.{$baseDomain}";
 
         // Setup the workspace
         $this->setupVendor($workspacePath);
-        $this->updateConfig($workspacePath, $subdomain);
+        $this->updateConfig($workspacePath, "https://{$subdomain}");
         $this->initDatabase($workspacePath);
         $this->createRequiredDirs($workspacePath);
 
@@ -127,24 +130,30 @@ class WorkspaceManager
      * Sets up database, config, and vendor for isolated testing
      *
      * @param string $workspacePath Path to existing workspace
-     * @param string $proxyHash Hash for subdomain routing
+     * @param string $baseUrl The absolute URL the workspace is served at (its [app] baseurl)
      * @param bool $copyFullVendor If true, copy entire vendor (for remote)
      * @return array Workspace info ['subdomain' => string, 'baseurl' => string]
      */
-    public function initialize(string $workspacePath, string $proxyHash, bool $copyFullVendor = false, ?string $liveDbPath = null): array
+    public function initialize(string $workspacePath, string $baseUrl, bool $copyFullVendor = false, ?string $liveDbPath = null): array
     {
         if (!is_dir($workspacePath)) {
             throw new \RuntimeException("Workspace path does not exist: {$workspacePath}");
         }
-
-        // Build subdomain
-        $baseUrl = Flight::get('baseurl') ?? 'https://localhost';
-        $baseDomain = preg_replace('#^https?://#', '', $baseUrl);
-        $subdomain = "{$proxyHash}.{$baseDomain}";
+        // The address the workspace is REALLY served at, from the caller — the Task Board's
+        // test-server preview (preview-<slug>-<hash>.<domain>, which openresty forwards to the
+        // task's port) or its Preview host. This used to be built here as
+        // "<hash>.<baseurl>", with baseurl falling back to https://localhost: in the sidecar
+        // baseurl is unset, so every workspace said https://<hash>.localhost, an address
+        // nothing answers, and agents testing their work went looking for the right one.
+        if (!preg_match('#^https?://[^/\s]+#', $baseUrl)) {
+            throw new \RuntimeException("Workspace base URL must be an absolute http(s) URL, got '{$baseUrl}'");
+        }
+        $baseUrl = rtrim($baseUrl, '/');
+        $subdomain = (string) parse_url($baseUrl, PHP_URL_HOST);
 
         // Setup the workspace
         $this->setupVendor($workspacePath, $copyFullVendor);
-        $this->updateConfig($workspacePath, $subdomain);
+        $this->updateConfig($workspacePath, $baseUrl);
         // Seed the workspace DB from the instance's live DB (real data, higher-fidelity
         // testing) when a source is given; otherwise a fresh empty schema DB. The
         // workspace DB is gitignored, so this copy never merges back.
@@ -157,7 +166,7 @@ class WorkspaceManager
 
         return [
             'subdomain' => $subdomain,
-            'baseurl' => "https://{$subdomain}",
+            'baseurl' => $baseUrl,
         ];
     }
 
@@ -308,7 +317,7 @@ class WorkspaceManager
     /**
      * Update config.ini for the workspace
      */
-    public function updateConfig(string $workspacePath, string $subdomain): void
+    public function updateConfig(string $workspacePath, string $baseUrl): void
     {
         $configPath = $workspacePath . '/conf/config.ini';
         $configExamplePath = $workspacePath . '/conf/config.ini.example';
@@ -320,7 +329,7 @@ class WorkspaceManager
 
         if (!file_exists($configPath)) {
             // Create minimal config for workspace
-            $this->createMinimalConfig($configPath, $subdomain);
+            $this->createMinimalConfig($configPath, $baseUrl);
             return;
         }
 
@@ -330,7 +339,7 @@ class WorkspaceManager
         // Update baseurl
         $config = preg_replace(
             '/^baseurl\s*=\s*"[^"]*"/m',
-            'baseurl = "https://' . $subdomain . '"',
+            'baseurl = "' . $baseUrl . '"',
             $config
         );
 
@@ -367,7 +376,7 @@ class WorkspaceManager
     /**
      * Create minimal config file for workspace
      */
-    private function createMinimalConfig(string $configPath, string $subdomain): void
+    private function createMinimalConfig(string $configPath, string $baseUrl): void
     {
         $config = <<<INI
 ; Tiknix Workspace Configuration
@@ -380,7 +389,7 @@ debug = true
 build_mode = true
 session_name = "WORKSPACE_SESSION"
 session_lifetime = 28800
-baseurl = "https://{$subdomain}"
+baseurl = "{$baseUrl}"
 timezone = "UTC"
 
 [database]

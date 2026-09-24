@@ -131,6 +131,7 @@ $defaults = [
     ['brokerinfo', 'modelconnections', 101, "The project owner's opted-in model connections, for pipeline agents (broker key)"],
     ['brokerinfo', 'modelcall',        101, "Start a model call on the owner's connection; key stays in core (broker key)"],
     ['brokerinfo', 'modelresult',      101, 'Poll a pipeline model call this project started (broker key)'],
+    ['brokerinfo', 'support',          101, "A project's AI agent escalates to Tiknix support, member agreed (broker key)"],
     // The concept catalog, served to instances (COMPONENTS_PLAN.md). Same shape as
     // brokerinfo: reachable at 101, and every method authenticates the broker key itself.
     ['concepthub', 'search', 101, 'Concept catalog search (self-authenticating broker key)'],

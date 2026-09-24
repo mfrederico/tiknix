@@ -91,6 +91,16 @@ They return pointers, not file bodies — `Read` the file at the pointer for det
 
 Every string these return is scrubbed of credential shapes (`Redact`). A value that reads `[redacted …]` was there and was withheld — that is not the same as empty.
 
+### When the platform is at fault — offer to escalate, then ask
+
+If, while working out why something does not work, the cause looks like the **Tiknix
+platform** (the builder, pipelines runtime, hosting, connectors, billing) rather than this
+app's own code, ASK the user: **"Should I escalate this to Tiknix support?"** Only on a yes,
+call `send_to_tiknix_support(user_agreed: true, subject, message)` — the message written for
+a support engineer: what was attempted, what happened (exact errors, URLs, times), what you
+already checked, what you suspect. The ticket names this project; the answer reaches the
+user in Communications and by email. Never send one without asking; 5 per hour at most.
+
 ### Reuse first (MANDATORY when adding functionality)
 
 Before creating any controller, model, or lib service, call `reuse_digest` and MATCH the

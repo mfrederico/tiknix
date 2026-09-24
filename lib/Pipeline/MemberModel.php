@@ -39,14 +39,25 @@ class MemberModel {
 
     /** This install's broker (conf/broker.ini). Throws naming the file when it is missing or incomplete. */
     public static function forInstall(?string $root = null): self {
+        [$base, $key] = self::broker($root);
+        return new self($base, $key);
+    }
+
+    /**
+     * Core's origin and this install's broker key, from conf/broker.ini — how a project
+     * reaches core as ITSELF (model calls, support escalation).
+     *
+     * @return array{0:string,1:string} [origin, key]
+     */
+    public static function broker(?string $root = null): array {
         $root = rtrim($root ?? dirname(__DIR__, 2), '/');
         $file = "{$root}/conf/broker.ini";
         $ini = is_file($file) ? parse_ini_file($file, true) : false;
-        if ($ini === false) throw new \RuntimeException("Owner's model connections need {$file} ([broker] endpoint + key) — this install has none, so it cannot reach core.");
+        if ($ini === false) throw new \RuntimeException("{$file} ([broker] endpoint + key) is missing, so this install cannot reach core.");
         $u = parse_url((string) ($ini['broker']['endpoint'] ?? ''));
         $key = (string) ($ini['broker']['key'] ?? '');
         if ($key === '' || empty($u['scheme']) || empty($u['host'])) throw new \RuntimeException("{$file}: [broker] endpoint and key are both required.");
-        return new self($u['scheme'] . '://' . $u['host'] . (isset($u['port']) ? ':' . $u['port'] : ''), $key);
+        return [$u['scheme'] . '://' . $u['host'] . (isset($u['port']) ? ':' . $u['port'] : ''), $key];
     }
 
     /** @return array<int,array{id:int,name:string,protocol:string,models:array,ready:bool,problems:array}> */

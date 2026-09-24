@@ -23,7 +23,7 @@ class Contact extends BaseControls\Control {
         if (!empty($this->member->id) && is_core_install()) {
             $this->render('contact/member', [
                 'title'   => 'Support',
-                'project' => ProjectContext::current((int) $this->member->id),
+                'project' => $this->projectParam((string) $this->getParam('project', '')) ?? ProjectContext::current((int) $this->member->id),
                 'tickets' => array_map(fn($c) => [
                     'ticket' => $c,
                     'thread' => (int) (Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['contact', (int) $c->id])->id ?? 0),
@@ -193,7 +193,7 @@ class Contact extends BaseControls\Control {
 
             // ...and tell somebody. Saving the row is not delivery: this table held five
             // months of messages at status "new" because arrival was announced nowhere.
-            $this->alertOperators($contactId, $name, $email, $subject, $message,
+            Support::announce($contactId, $name, $email, $subject, $message,
                                   $category ?: 'general', !empty($contact->memberId));
 
             // Show success message
@@ -213,6 +213,17 @@ class Contact extends BaseControls\Control {
     }
     
     /**
+     * A project named by id or slug that this member can reach — the ticket is about it.
+     * Anything else (unknown, someone else's) is null: it is never named on a ticket.
+     */
+    private function projectParam(int|string $ref): ?object {
+        if ($ref === 0 || $ref === '') return null;
+        $inst = is_int($ref) ? Bean::load('instance', $ref) : Bean::findOne('instance', 'slug = ?', [$ref]);
+        if (!$inst || !$inst->id) return null;
+        return ProjectContext::canAccess((int) $this->member->id, $inst) ? $inst : null;
+    }
+
+    /**
      * POST /contact/ask — a signed-in member writes to support. Same queue as the public
      * form (/contact/admin, the Support badge, the alert email), but the member is seated
      * in the conversation, so the answer and any follow-up happen in Communications.
@@ -225,168 +236,28 @@ class Contact extends BaseControls\Control {
         $subject  = trim((string) $this->getParam('subject', ''));
         $message  = trim((string) $this->getParam('message', ''));
         $category = (string) $this->getParam('category', 'general');
-        if (!in_array($category, ['general', 'problem', 'billing', 'feature'], true)) $category = 'general';
         if ($subject === '' || $message === '') {
             $this->flash('error', 'A subject and a message are both needed.');
             Flight::redirect('/contact');
             return;
         }
         $mid = (int) $this->member->id;
-        // Which project it is about, when one is selected: said in the message, so whoever
-        // answers does not have to ask.
-        $project = ProjectContext::current($mid);
-        if ($project && (int) $this->getParam('about_project', 0) === (int) $project->id) {
-            $message = "Project: " . ($project->displayName ?: $project->slug) . " ({$project->slug})\n\n" . $message;
+        try {
+            $r = Support::open($mid, $subject, $message, $category, $this->projectParam((int) $this->getParam('about_project', 0)), 'app');
+        } catch (\Throwable $e) {
+            $this->flash('error', $e->getMessage());
+            Flight::redirect('/contact');
+            return;
         }
-
-        $contact = Bean::dispense('contact');
-        $contact->name      = $this->member->displayName('Member #' . $mid);
-        $contact->email     = (string) $this->member->email;
-        $contact->subject   = $subject;
-        $contact->message   = $message;
-        $contact->category  = $category;
-        $contact->status    = 'new';
-        $contact->memberId  = $mid;
-        $contact->ipAddress = $_SERVER['REMOTE_ADDR'] ?? '';
-        $contact->userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        $contact->createdAt = date('Y-m-d H:i:s');
-        $contactId = (int) Bean::store($contact);
-        Flight::get('log')->info('Member support message', ['member' => $mid, 'contact_id' => $contactId, 'subject' => $subject]);
-
-        $threadId = $this->alertOperators($contactId, (string) $contact->name, (string) $contact->email, $subject, $message, $category, true);
+        $threadId = $r['thread'];
         if (!$threadId) {
             // Stored and in the admin queue, but not a conversation the member can open.
             $this->flash('warning', 'Your message reached support, but its conversation could not be opened — you will get the answer by email.');
             Flight::redirect('/contact');
             return;
         }
-        \app\ThreadMembers::ensure($threadId, [$mid]);
-        \app\ThreadMembers::markRead($threadId, $mid);
         $this->flash('success', 'Sent to support. The answer will appear here and in your email.');
         Flight::redirect('/communications/thread/' . $threadId);
-    }
-
-    /**
-     * Which operator's inbox support threads land in: the most senior active admin.
-     *
-     * Deliberately the same person the alert email goes to when [mail] support_email is
-     * unset, so the mail and the thread do not end up with different owners.
-     */
-    private function supportOwnerId(): int {
-        $admin = Bean::findOne('member',
-            'level <= ? AND status = ? ORDER BY level ASC, id ASC',
-            [LEVELS['ADMIN'], 'active']);
-        return (int) ($admin->id ?? 0);
-    }
-
-    /**
-     * Where support mail should land: an explicitly configured address, or failing that
-     * the most senior active admin. Returns '' when there is nobody to tell.
-     */
-    private function supportAddress(): string {
-        $configured = trim((string) (Flight::get('mail.support_email') ?? ''));
-        if ($configured !== '' && filter_var($configured, FILTER_VALIDATE_EMAIL)) return $configured;
-
-        $admin = Bean::findOne('member',
-            'level <= ? AND status = ? ORDER BY level ASC, id ASC',
-            [LEVELS['ADMIN'], 'active']);
-        $email = trim((string) ($admin->email ?? ''));
-        return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : '';
-    }
-
-    /**
-     * Announce a new support message. Never throws and never blocks the submission — the
-     * message is already stored, so the visitor is done either way — but a failure here is
-     * logged at ERROR, because "we could not tell anyone" is exactly the kind of quiet
-     * breakage that let this table fill up unread in the first place.
-     *
-     * @return int|null the support conversation's id, null when none could be opened
-     */
-    private function alertOperators(
-        int $contactId, string $name, string $email, string $subject,
-        string $message, string $category, bool $fromMember
-    ): ?int {
-        $threadId = null;
-        // First, into the inbox. A support message IS a message, and Communications is
-        // where messages live — an emailed alert about a row in a table is a notification
-        // ABOUT the thing rather than the thing itself. The thread is owned by the
-        // operator and addressed to the sender, so replying to it answers them through
-        // the ordinary reply path.
-        try {
-            $owner = $this->supportOwnerId();
-            if ($owner > 0) {
-                $threadId = \app\services\NotifyService::openInboundThread(
-                    $owner, $email, $name,
-                    '[' . $category . '] ' . $subject,
-                    nl2br(htmlspecialchars($message, ENT_QUOTES)),
-                    'contact', $contactId
-                );
-                if ($threadId) {
-                    $threadId = (int) $threadId;
-                    // Seat the whole support team, not just one operator. Support is a
-                    // queue somebody answers, not one person's mail — and per-person
-                    // unread means each of them tracks their own reading of it without
-                    // clearing anybody else's.
-                    $admins = array_values(array_map(
-                        fn($a) => (int) $a->id,
-                        Bean::find('member', 'level <= ? AND status = ?', [LEVELS['ADMIN'], 'active'])
-                    ));
-                    \app\ThreadMembers::ensure($threadId, $admins);
-
-                    Flight::get('log')->info('Support message threaded into Communications', [
-                        'contact_id' => $contactId, 'thread' => $threadId, 'owner' => $owner,
-                        'team' => count($admins),
-                    ]);
-                } else {
-                    Flight::get('log')->error('Support message could not open a thread', [
-                        'contact_id' => $contactId, 'owner' => $owner,
-                    ]);
-                }
-            } else {
-                Flight::get('log')->error('Support message saved but there is no operator to own it', [
-                    'contact_id' => $contactId,
-                ]);
-            }
-        } catch (\Throwable $e) {
-            Flight::get('log')->error('Support message threading threw', [
-                'contact_id' => $contactId, 'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Then the email, because nobody watches an inbox they are not signed into.
-        try {
-            $to = $this->supportAddress();
-            if ($to === '') {
-                Flight::get('log')->error('Support message saved but nobody to notify', [
-                    'contact_id' => $contactId,
-                    'hint' => 'set [mail] support_email, or give an admin account a valid email',
-                ]);
-                return $threadId ?: null;
-            }
-            if (!Mailer::isConfigured()) {
-                Flight::get('log')->error('Support message saved but mail is not configured', [
-                    'contact_id' => $contactId, 'would_have_told' => $to,
-                ]);
-                return $threadId ?: null;
-            }
-
-            $sent = Mailer::sendContactAlert($to, $name, $email, $category, $subject,
-                                             $message, $contactId, $fromMember);
-            if ($sent) {
-                Flight::get('log')->info('Support message notification sent', [
-                    'contact_id' => $contactId, 'to' => $to,
-                ]);
-            } else {
-                Flight::get('log')->error('Support message notification FAILED to send', [
-                    'contact_id' => $contactId, 'to' => $to,
-                ]);
-            }
-        } catch (\Throwable $e) {
-            Flight::get('log')->error('Support message notification threw', [
-                'contact_id' => $contactId, 'error' => $e->getMessage(),
-            ]);
-        }
-        return $threadId ?: null;
     }
 
     /**

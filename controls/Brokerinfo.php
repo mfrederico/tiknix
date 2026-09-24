@@ -351,6 +351,31 @@ class Brokerinfo extends Control {
         exit;   // the response went out above; Flight must not send a second (empty) one
     }
 
+    /**
+     * POST /brokerinfo/support — {subject, message, category?} from a project's AI agent,
+     * sent after the member agreed to escalate (the send_to_tiknix_support MCP tool). The
+     * ticket is the project OWNER's and names the project; the key decides both, never the
+     * body. lib/Support.php limits agent tickets per member per hour.
+     */
+    public function support($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { Flight::jsonError('POST only.', 405); return; }
+        $inst = Bean::load('instance', $iid);
+        $owner = (int) ($inst->memberId ?? 0);
+        if (!$inst->id || $owner <= 0) { Flight::jsonError("Project #{$iid} has no owner on core to open a ticket for.", 409); return; }
+        $d = $this->jsonBody();
+        try {
+            $r = Support::open($owner, (string) ($d['subject'] ?? ''), (string) ($d['message'] ?? ''), (string) ($d['category'] ?? 'problem'), $inst, 'agent');
+        } catch (\InvalidArgumentException $e) {
+            Flight::jsonError($e->getMessage(), 400); return;
+        } catch (\RuntimeException $e) {
+            Flight::jsonError($e->getMessage(), 429); return;
+        }
+        Flight::json(['ok' => true, 'ticket' => $r['contact'], 'thread' => $r['thread'],
+                      'url' => rtrim((string) Flight::get('app.baseurl'), '/') . ($r['thread'] ? '/communications/thread/' . $r['thread'] : '/contact')]);
+    }
+
     /** GET /brokerinfo/modelresult?job= — a call this instance started. */
     public function modelresult($params = []) {
         [$key, $iid] = $this->requireBroker();

@@ -58,7 +58,7 @@ $chosen = $mc['chosen'];
           <span class="ms-auto d-flex gap-1">
             <button type="button" class="btn btn-sm btn-outline-primary mc-test" data-id="<?= (int) $c['id'] ?>">Test</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#mc-edit-<?= (int) $c['id'] ?>">Edit</button>
-            <form method="POST" action="/connections/modeldelete" class="d-inline" onsubmit="return confirm('Delete <?= $h($c['name']) ?>? Its key is deleted with it.')">
+            <form method="POST" action="/connections/modeldelete" class="d-inline" data-confirm="Delete <?= $h($c['name']) ?>? Its key is deleted with it." data-confirm-ok="Delete" data-confirm-danger>
               <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
               <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
             </form>

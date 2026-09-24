@@ -521,12 +521,12 @@ $backUrl = $scope === 'file' ? '/settings/ini' : ($isAdmin ? '/admin/settings' :
     // sections[<sec>][deletes][] = <key>, hide the row, and disable any
     // value/meta inputs so they don't compete with the delete on the server.
     document.querySelectorAll('.ini-row-delete').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             var row = btn.closest('.ini-key-row');
             if (!row) return;
             var keyName = row.dataset.key;
             var secName = row.dataset.section;
-            if (!confirm('<?= htmlspecialchars(t('Delete key \":name\"? Saves take effect when you submit the form.'), ENT_QUOTES, 'UTF-8') ?>'.replace(':name', keyName))) return;
+            if (!await tkConfirm('<?= htmlspecialchars(t('Delete key \":name\"? Saves take effect when you submit the form.'), ENT_QUOTES, 'UTF-8') ?>'.replace(':name', keyName), {okText: 'Delete', danger: true})) return;
             // Disable inputs in this row so they're skipped on submit.
             row.querySelectorAll('input, select, textarea').forEach(el => el.disabled = true);
             // Append the hidden delete marker — outside the row so it's

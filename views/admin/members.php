@@ -150,7 +150,7 @@
                             <?php if ($member->id != PUBLIC_USER_ID && $member->id != SYSTEM_ADMIN_ID && $member->id != $_SESSION['member']['id']): ?>
                                 <a href="/admin/members?delete=<?= $member->id ?>" 
                                    class="btn btn-sm btn-outline-danger"
-                                   onclick="return confirm('Delete this member?')">Delete</a>
+                                   data-confirm="Delete this member?" data-confirm-ok="Delete" data-confirm-danger>Delete</a>
                             <?php endif; ?>
                         </td>
                     </tr>

@@ -426,15 +426,17 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
       .catch(() => { state.textContent = 'Could not read hosting state.'; });
     load();
 
-    dep.addEventListener('click', function(){
+    dep.addEventListener('click', async function(){
       const redeploy = dep.textContent.indexOf('Redeploy') !== -1;
       let recreate = false;
       if (redeploy) {
-        // Recreate purges the data volumes, so it is opt-in and spelled out; cancelling
-        // falls through to the safe path rather than doing nothing. The server refuses
-        // it anyway once the tenant is past first-run setup.
-        recreate = confirm('Rebuild the container from scratch?\n\nOK = rebuild (DESTROYS its database and uploads).\nCancel = re-apply settings and restart, keeping data.');
-        if (!recreate) { ref.click(); return; }
+        // Recreate purges the data volumes, so it is opt-in and spelled out; the second
+        // button is the safe path, and closing the dialog does nothing at all. The server
+        // refuses a recreate anyway once the tenant is past first-run setup.
+        const choice = await tkConfirm('Rebuild the container from scratch?\n\nRebuild DESTROYS its database and uploads.\nRe-apply keeps data: it re-applies settings and restarts.', {title: 'Redeploy', okText: 'Rebuild (destroys data)', cancelText: 'Re-apply & restart', danger: true});
+        if (choice === null) return;
+        if (choice === false) { ref.click(); return; }
+        recreate = true;
       }
       dep.disabled = true;
       say('Deploying… first boot clones the code and installs dependencies, so this takes a minute.');
@@ -467,21 +469,21 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
         body: new URLSearchParams(new FormData(form)).toString()
       }).then(r=>r.json()).then(function(j){
         if (j && j.success) { location.reload(); }
-        else { alert((j && j.message) || 'Could not connect'); if (btn) btn.disabled = false; }
-      }).catch(function(){ alert('Could not connect'); if (btn) btn.disabled = false; });
+        else { tkAlert((j && j.message) || 'Could not connect', {type: 'error'}); if (btn) btn.disabled = false; }
+      }).catch(function(){ tkAlert('Could not connect', {type: 'error'}); if (btn) btn.disabled = false; });
     });
   });
   document.querySelectorAll('[data-disconnect]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      if (!confirm('Disconnect this connection? This app will no longer be able to use it.')) return;
+    btn.addEventListener('click', async function(){
+      if (!await tkConfirm('Disconnect this connection? This app will no longer be able to use it.', {okText: 'Disconnect', danger: true})) return;
       fetch('/connections/disconnect', {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
         body: new URLSearchParams({csrf_token: csrf, id: iid, cid: btn.getAttribute('data-disconnect')}).toString()
       }).then(r=>r.json()).then(function(j){
         if (j && j.success) { location.reload(); }
-        else { alert((j && j.message) || 'Could not disconnect'); }
-      }).catch(function(){ alert('Could not disconnect'); });
+        else { tkAlert((j && j.message) || 'Could not disconnect', {type: 'error'}); }
+      }).catch(function(){ tkAlert('Could not disconnect', {type: 'error'}); });
     });
   });
   document.querySelectorAll('form[data-whsec]').forEach(function(form){
@@ -495,8 +497,8 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
         body: new URLSearchParams(fdW).toString()
       }).then(r=>r.json()).then(function(j){
         if (j && j.success) { location.reload(); }
-        else { alert((j && j.message) || 'Could not save'); if (btn) btn.disabled = false; }
-      }).catch(function(){ alert('Could not save'); if (btn) btn.disabled = false; });
+        else { tkAlert((j && j.message) || 'Could not save', {type: 'error'}); if (btn) btn.disabled = false; }
+      }).catch(function(){ tkAlert('Could not save', {type: 'error'}); if (btn) btn.disabled = false; });
     });
   });
   document.querySelectorAll('form[data-social-publish]').forEach(function(form){
@@ -513,9 +515,9 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
         if (j && j.success) {
           var a = form.querySelector('[data-social-url]');
           if (a && j.data && j.data.url) { a.href = j.data.url; a.textContent = j.data.url; a.style.display = ''; }
-          alert((j.message || 'Published') + (j.data && typeof j.data.items === 'number' ? ' — ' + j.data.items + ' item(s).' : ''));
-        } else { alert((j && j.message) || 'Could not publish'); }
-      }).catch(function(){ if (btn) btn.disabled = false; alert('Could not publish'); });
+          showToast('success', (j.message || 'Published') + (j.data && typeof j.data.items === 'number' ? ' — ' + j.data.items + ' item(s).' : ''));
+        } else { tkAlert((j && j.message) || 'Could not publish', {type: 'error'}); }
+      }).catch(function(){ if (btn) btn.disabled = false; tkAlert('Could not publish', {type: 'error'}); });
     });
   });
   document.querySelectorAll('[data-github-webhook]').forEach(function(btn){
@@ -529,29 +531,29 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
         body: new URLSearchParams({csrf_token: csrf, id: iid}).toString()
       }).then(r=>r.json()).then(function(j){
         if (j && j.success) { location.reload(); }
-        else { alert((j && j.message) || 'Could not set up the webhook'); btn.disabled = false; btn.innerHTML = orig; }
-      }).catch(function(){ alert('Could not set up the webhook'); btn.disabled = false; btn.innerHTML = orig; });
+        else { tkAlert((j && j.message) || 'Could not set up the webhook', {type: 'error'}); btn.disabled = false; btn.innerHTML = orig; }
+      }).catch(function(){ tkAlert('Could not set up the webhook', {type: 'error'}); btn.disabled = false; btn.innerHTML = orig; });
     });
   });
   document.querySelectorAll('[data-copy]').forEach(function(btn){
     btn.addEventListener('click', function(){
       var txt = btn.getAttribute('data-copy') || '';
       var done = function(){ var i = btn.querySelector('i'); if (i){ i.className = 'bi bi-check-lg'; setTimeout(function(){ i.className = 'bi bi-clipboard'; }, 1200); } };
-      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function(){ window.prompt('Copy endpoint URL:', txt); }); }
-      else { window.prompt('Copy endpoint URL:', txt); }
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function(){ tkPrompt('Copy endpoint URL:', {value: txt, title: 'Copy'}); }); }
+      else { tkPrompt('Copy endpoint URL:', {value: txt, title: 'Copy'}); }
     });
   });
   document.querySelectorAll('[data-whsec-clear]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      if (!confirm('Remove this webhook secret?')) return;
+    btn.addEventListener('click', async function(){
+      if (!await tkConfirm('Remove this webhook secret?', {okText: 'Remove', danger: true})) return;
       fetch('/connections/webhooksecret', {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
         body: new URLSearchParams({csrf_token: csrf, id: iid, cid: btn.getAttribute('data-whsec-clear'), clear: '1'}).toString()
       }).then(r=>r.json()).then(function(j){
         if (j && j.success) { location.reload(); }
-        else { alert((j && j.message) || 'Could not clear'); }
-      }).catch(function(){ alert('Could not clear'); });
+        else { tkAlert((j && j.message) || 'Could not clear', {type: 'error'}); }
+      }).catch(function(){ tkAlert('Could not clear', {type: 'error'}); });
     });
   });
 })();

@@ -240,7 +240,7 @@ usort($__rooms, fn($a, $b) => [$a['team'], $a['slug']] <=> [$b['team'], $b['slug
     }
 
     // Row actions. Delegated, so rows the poll re-orders keep working.
-    rail.addEventListener('click', function (e) {
+    rail.addEventListener('click', async function (e) {
         var btn = e.target.closest('.comms-act');
         if (!btn) return;
         e.preventDefault();          // the row is a stretched-link; don't follow it
@@ -254,17 +254,17 @@ usort($__rooms, fn($a, $b) => [$a['team'], $a['slug']] <=> [$b['team'], $b['slug
         if (csrf) fd.append('_csrf_token', csrf.content);
 
         if (btn.dataset.act === 'del') {
-            if (!confirm('Delete this conversation and its messages? This cannot be undone.')) return;
+            if (!await tkConfirm('Delete this conversation and its messages? This cannot be undone.', {okText: 'Delete', danger: true})) return;
             btn.disabled = true;
             fetch('/communications/remove', { method: 'POST', body: fd })
                 .then(function (r) { return r.json(); })
                 .then(function (j) {
-                    if (!j.success) { alert(j.message || 'Could not delete that conversation.'); btn.disabled = false; return; }
+                    if (!j.success) { tkAlert(j.message || 'Could not delete that conversation.', {type: 'error'}); btn.disabled = false; return; }
                     if (row) row.remove();
                     // If the deleted thread is the one on screen, there is nothing left to show.
                     if (window.location.pathname === '/communications/thread/' + id) window.location = '/communications';
                 })
-                .catch(function (err) { alert('Could not delete that conversation: ' + err); btn.disabled = false; });
+                .catch(function (err) { tkAlert('Could not delete that conversation: ' + err, {type: 'error'}); btn.disabled = false; });
             return;
         }
 
@@ -276,7 +276,7 @@ usort($__rooms, fn($a, $b) => [$a['team'], $a['slug']] <=> [$b['team'], $b['slug
             .then(function (r) { return r.json(); })
             .then(function (j) {
                 btn.disabled = false;
-                if (!j.success) { alert(j.message || 'Could not update that conversation.'); return; }
+                if (!j.success) { tkAlert(j.message || 'Could not update that conversation.', {type: 'error'}); return; }
                 var unread = (j.data && j.data.unread) > 0;
                 if (row) row.classList.toggle('unread', unread);
                 var badge = row && row.querySelector('.comms-unread-badge');
@@ -286,7 +286,7 @@ usort($__rooms, fn($a, $b) => [$a['team'], $a['slug']] <=> [$b['team'], $b['slug
                 var ic = btn.querySelector('i');
                 if (ic) ic.className = 'bi ' + (unread ? 'bi-envelope-open' : 'bi-envelope');
             })
-            .catch(function (err) { btn.disabled = false; alert('Could not update that conversation: ' + err); });
+            .catch(function (err) { btn.disabled = false; tkAlert('Could not update that conversation: ' + err, {type: 'error'}); });
     });
 
     document.addEventListener('comms:threads', function (e) { update(e.detail); });

@@ -10,7 +10,7 @@
         <div class="col-12">
             <div class="btn-group" role="group">
                 <a href="/admin/cache?action=clear" class="btn btn-danger"
-                   onclick="return confirm('Clear all caches? This will temporarily slow down the site.')">
+                   data-confirm="Clear all caches? This will temporarily slow down the site." data-confirm-ok="Clear caches" data-confirm-danger>
                     <i class="bi bi-trash"></i> Clear All Caches
                 </a>
                 <a href="/admin/cache?action=clear_query" class="btn btn-warning">

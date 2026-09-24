@@ -122,7 +122,7 @@
                         Once you delete a team, there is no going back. All memberships and invitations will be removed.
                         Tasks will be converted to personal tasks for their original creators.
                     </p>
-                    <form method="POST" action="/teams/delete" onsubmit="return confirmDelete();">
+                    <form method="POST" action="/teams/delete" onsubmit="return confirmDelete(this);">
                         <?php foreach ($csrf as $name => $value): ?>
                             <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                         <?php endforeach; ?>
@@ -138,12 +138,14 @@
 </div>
 
 <script>
-function confirmDelete() {
+// Two questions, asked in modals; the form submits itself once both are answered yes.
+function confirmDelete(form) {
     const teamName = <?= json_encode($team->name) ?>;
-    const confirm1 = confirm('Are you sure you want to delete "' + teamName + '"?');
-    if (!confirm1) return false;
-
-    const confirm2 = confirm('This action cannot be undone. All members will be removed. Continue?');
-    return confirm2;
+    (async () => {
+        if (!await tkConfirm('Are you sure you want to delete "' + teamName + '"?', {okText: 'Delete', danger: true})) return;
+        if (!await tkConfirm('This action cannot be undone. All members will be removed. Continue?', {okText: 'Delete team', danger: true})) return;
+        form.submit();
+    })();
+    return false;
 }
 </script>

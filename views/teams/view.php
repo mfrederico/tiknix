@@ -358,7 +358,7 @@
             <?php if (!$isOwner): ?>
                 <div class="card mt-4 border-danger">
                     <div class="card-body">
-                        <form method="POST" action="/teams/leave" onsubmit="return confirm('Are you sure you want to leave this team?');">
+                        <form method="POST" action="/teams/leave" data-confirm="Are you sure you want to leave this team?" data-confirm-ok="Leave team" data-confirm-danger>
                             <?= csrf_field() ?>
                             <input type="hidden" name="id" value="<?= $team->id ?>">
                             <button type="submit" class="btn btn-outline-danger btn-sm w-100">
@@ -384,20 +384,20 @@
   }).then(r => r.json());
 
   // Remove a member from the team (admins only; owner/self are never shown a button).
-  document.querySelectorAll('.team-remove-member').forEach(btn => btn.addEventListener('click', function(){
-    if (!confirm('Remove this member from the team? They will lose access to shared instances and tasks.')) return;
+  document.querySelectorAll('.team-remove-member').forEach(btn => btn.addEventListener('click', async function(){
+    if (!await tkConfirm('Remove this member from the team? They will lose access to shared instances and tasks.', {okText: 'Remove', danger: true})) return;
     const b = this; b.disabled = true;
     post('/teams/removemember', {member_id: b.dataset.member})
-      .then(j => { if (j && j.success) { location.reload(); } else { b.disabled = false; alert((j && j.message) || 'Could not remove member'); } })
-      .catch(() => { b.disabled = false; alert('Could not remove member'); });
+      .then(j => { if (j && j.success) { location.reload(); } else { b.disabled = false; tkAlert((j && j.message) || 'Could not remove member', {type: 'error'}); } })
+      .catch(() => { b.disabled = false; tkAlert('Could not remove member', {type: 'error'}); });
   }));
 
   // Resend a pending invitation email (refreshes its expiry, keeps the same link).
   document.querySelectorAll('.team-resend-invite').forEach(btn => btn.addEventListener('click', function(){
     const b = this, orig = b.innerHTML; b.disabled = true; b.textContent = 'Sending…';
     post('/teams/resendinvite', {invitation_id: b.dataset.invite})
-      .then(j => { b.disabled = false; b.innerHTML = orig; alert((j && j.message) || (j && j.success ? 'Invitation resent' : 'Could not resend invitation')); })
-      .catch(() => { b.disabled = false; b.innerHTML = orig; alert('Could not resend invitation'); });
+      .then(j => { b.disabled = false; b.innerHTML = orig; if (j && j.success) showToast('success', j.message || 'Invitation resent'); else tkAlert((j && j.message) || 'Could not resend invitation', {type: 'error'}); })
+      .catch(() => { b.disabled = false; b.innerHTML = orig; tkAlert('Could not resend invitation', {type: 'error'}); });
   }));
 })();
 </script>
@@ -457,7 +457,7 @@ async function sendInvite() {
     const btn = document.getElementById('sendInviteBtn');
 
     if (!email) {
-        alert('Please enter an email address');
+        tkAlert('Please enter an email address', {type: 'warning'});
         return;
     }
 
@@ -484,10 +484,10 @@ async function sendInvite() {
             document.getElementById('inviteLink').value = data.join_url;
             btn.style.display = 'none';
         } else {
-            alert('Error: ' + data.message);
+            tkAlert('Error: ' + data.message, {type: 'error'});
         }
     } catch (e) {
-        alert('Error sending invitation: ' + e.message);
+        tkAlert('Error sending invitation: ' + e.message, {type: 'error'});
     }
 
     btn.disabled = false;

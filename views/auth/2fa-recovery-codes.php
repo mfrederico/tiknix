@@ -79,7 +79,7 @@ function copyRecoveryCodes() {
         codes.push(el.textContent.trim());
     });
     navigator.clipboard.writeText(codes.join('\n')).then(() => {
-        alert('Recovery codes copied to clipboard!');
+        showToast('success', 'Recovery codes copied to clipboard!');
     });
 }
 

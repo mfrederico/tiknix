@@ -153,7 +153,7 @@ function copyText(t,btn){
   const done=()=>{ if(btn){ const i=btn.querySelector('i'); if(i){ const p=i.className; i.className='bi bi-check2'; setTimeout(()=>i.className=p,1200);} } };
   // execCommand fallback works inside the sidecar iframe where the async Clipboard API
   // is often blocked; prompt only as a last resort.
-  const fallback=()=>{ try{ const ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.top='-1000px'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); const ok=document.execCommand('copy'); document.body.removeChild(ta); if(ok){ done(); return; } }catch(e){} window.prompt('Copy:',t); };
+  const fallback=()=>{ try{ const ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.top='-1000px'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); const ok=document.execCommand('copy'); document.body.removeChild(ta); if(ok){ done(); return; } }catch(e){} tkPrompt('Copy:',{value:t,title:'Copy'}); };
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done).catch(fallback); } else { fallback(); }
 }
 // --- REST test keys (client-side): paste a pk_ key once, saved per instance in this
@@ -162,9 +162,9 @@ let SELECTED_PK = '';
 function pkStoreKey(){ return 'pipe_pk_' + (inst() || '_'); }
 function pkList(){ try{ return JSON.parse(sessionStorage.getItem(pkStoreKey()) || '[]'); }catch(e){ return []; } }
 function pkSave(list){ try{ sessionStorage.setItem(pkStoreKey(), JSON.stringify(list)); }catch(e){} }
-function pkAdd(){
-  const k=(window.prompt('Paste a pk_ key for this instance (stored only in this browser tab):')||'').trim(); if(!k) return;
-  const label=(window.prompt('Label for this key (optional):','key '+(pkList().length+1))||'').trim() || ('key '+(pkList().length+1));
+async function pkAdd(){
+  const k=((await tkPrompt('Paste a pk_ key for this instance (stored only in this browser tab):',{title:'Add a test key'}))||'').trim(); if(!k) return;
+  const label=((await tkPrompt('Label for this key (optional):',{value:'key '+(pkList().length+1),title:'Add a test key'}))||'').trim() || ('key '+(pkList().length+1));
   const list=pkList(); list.push({label:label,key:k}); pkSave(list); SELECTED_PK=k; renderBuilder();
 }
 function pkForget(){ if(!SELECTED_PK) return; const list=pkList().filter(x=>x.key!==SELECTED_PK); pkSave(list); SELECTED_PK=list.length?list[0].key:''; renderBuilder(); }
@@ -316,7 +316,7 @@ async function testAgent(id){
   catch(e){ agentMsg(e.message,'text-danger'); }
 }
 async function deleteAgent(id){
-  const a=AGENTS.find(x=>x.id===id); if(!a||!confirm('Delete agent '+a.name+'?')) return;
+  const a=AGENTS.find(x=>x.id===id); if(!a||!await tkConfirm('Delete agent '+a.name+'?',{okText:'Delete',danger:true})) return;
   try{ await jpost('/pipelines/agentdelete',{id}); closeAgentForm(); await loadAgents(); }catch(e){ agentMsg(e.message,'text-danger'); }
 }
 function connStyle(type){ const c=CONNECTORS.find(x=>x.connector===type); return c?c.style:(type==='shopify'?'graphql':'rest'); }
@@ -779,7 +779,7 @@ async function saveDef(){ if(!DEF) return;
   try{ const d=await jpost('/pipelines/save',{def:JSON.stringify(DEF)});
     if(d.ok){ CURRENT=DEF.slug; msg('Saved '+d.file+' ✓','success'); loadList(); } else msg('Not saved: '+(d.errors||[]).join('; '),'danger');
   }catch(e){ msg(e.message,'danger'); } }
-async function deleteDef(){ if(!CURRENT||!confirm('Delete '+CURRENT+'?')) return;
+async function deleteDef(){ if(!CURRENT||!await tkConfirm('Delete '+CURRENT+'?',{okText:'Delete',danger:true})) return;
   try{ await jpost('/pipelines/delete',{slug:CURRENT}); CURRENT=null; DEF=null; $('#builder').innerHTML=''; loadList(); msg('Deleted.','secondary'); }catch(e){ msg(e.message,'danger'); } }
 
 // ---- durable object: deliver a message / alarm ----

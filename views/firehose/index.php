@@ -113,8 +113,8 @@ async function fhResolve(id, status, btn) {
         const r = await fetch('/firehose/resolve', { method: 'POST', body: fd, headers: { 'X-CSRF-TOKEN': '<?= csrf_token() ?>' } });
         const j = await r.json();
         if (j && j.success) { fhApply(id, status); }
-        else { alert('Error: ' + (j && j.message || 'failed')); btn.disabled = false; }
-    } catch (e) { alert('Error: ' + e.message); btn.disabled = false; }
+        else { tkAlert('Error: ' + (j && j.message || 'failed'), {type: 'error'}); btn.disabled = false; }
+    } catch (e) { tkAlert('Error: ' + e.message, {type: 'error'}); btn.disabled = false; }
 }
 
 /* Show the change on the row instead of reloading.

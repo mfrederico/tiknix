@@ -129,11 +129,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Invite a lead to create an account. The button is also the resend: the server
     // re-sends an outstanding invitation rather than issuing a second one.
-    document.addEventListener('click', function (e) {
+    document.addEventListener('click', async function (e) {
         var btn = e.target.closest('.lead-invite-btn');
         if (!btn) return;
         var email = btn.getAttribute('data-email') || 'this lead';
-        if (!confirm('Email an invitation to ' + email + '?\n\nThey will be able to create an account with this address.')) return;
+        if (!await tkConfirm('Email an invitation to ' + email + '?\n\nThey will be able to create an account with this address.', {okText: 'Send invitation'})) return;
         btn.disabled = true;
         var original = btn.innerHTML;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
@@ -150,42 +150,42 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function (j) {
             // A created-but-unemailed invite is a partial success, not a failure — the
             // link works, so show it rather than reporting the whole thing as broken.
-            alert((j && (j.message || j.error)) || 'Could not send the invitation.');
+            tkAlert((j && (j.message || j.error)) || 'Could not send the invitation.', {type: (j && j.success) ? 'success' : 'error', title: (j && j.success) ? 'Invitation' : undefined});
             if (j && j.success) { reloadTable(); }
             else { btn.disabled = false; btn.innerHTML = original; }
         })
         .catch(function () {
             btn.disabled = false; btn.innerHTML = original;
-            alert('Could not send the invitation.');
+            tkAlert('Could not send the invitation.', {type: 'error'});
         });
     });
 
     // Single-row delete
-    document.addEventListener('click', function (e) {
+    document.addEventListener('click', async function (e) {
         var btn = e.target.closest('.lead-delete-btn');
         if (!btn) return;
         var name = btn.getAttribute('data-name') || 'this lead';
-        if (!confirm('Delete ' + name + '? This cannot be undone.')) return;
+        if (!await tkConfirm('Delete ' + name + '? This cannot be undone.', {okText: 'Delete', danger: true})) return;
         btn.disabled = true;
         leadDelete({ _csrf_token: CSRF, id: btn.getAttribute('data-id') })
             .then(function (j) {
                 if (j && j.success) { reloadTable(); }
-                else { btn.disabled = false; alert((j && (j.message || j.error)) || 'Could not delete lead.'); }
+                else { btn.disabled = false; tkAlert((j && (j.message || j.error)) || 'Could not delete lead.', {type: 'error'}); }
             })
-            .catch(function () { btn.disabled = false; alert('Could not delete lead.'); });
+            .catch(function () { btn.disabled = false; tkAlert('Could not delete lead.', {type: 'error'}); });
     });
 
     // Bulk purge of every bot-flagged lead
     var purgeBtn = document.getElementById('leadsPurgeFlagged');
     if (purgeBtn) {
-        purgeBtn.addEventListener('click', function () {
+        purgeBtn.addEventListener('click', async function () {
             var n = purgeBtn.getAttribute('data-count') || 'the';
-            if (!confirm('Delete all ' + n + ' flagged (likely-bot) leads? This cannot be undone.')) return;
+            if (!await tkConfirm('Delete all ' + n + ' flagged (likely-bot) leads? This cannot be undone.', {okText: 'Delete all', danger: true})) return;
             purgeBtn.disabled = true;
             purgeBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Purging…';
             leadDelete({ _csrf_token: CSRF, mode: 'flagged' })
-                .then(function (j) {
-                    alert((j && j.message) || (j && j.success ? 'Done.' : 'Could not purge.'));
+                .then(async function (j) {
+                    await tkAlert((j && j.message) || (j && j.success ? 'Done.' : 'Could not purge.'), {type: (j && j.success) ? 'success' : 'error'});
                     window.location.reload();
                 })
                 .catch(function () { window.location.reload(); });

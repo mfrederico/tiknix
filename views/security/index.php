@@ -155,7 +155,7 @@
                                        aria-label="Edit rule" title="Edit rule">
                                         <i class="bi bi-pencil"></i>
                                     </a>
-                                    <form method="POST" action="/security/delete" class="d-inline" onsubmit="return confirm('Delete this rule?');">
+                                    <form method="POST" action="/security/delete" class="d-inline" data-confirm="Delete this rule?" data-confirm-ok="Delete" data-confirm-danger>
                                         <?php foreach ($csrf as $name => $value): ?>
                                             <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                                         <?php endforeach; ?>
@@ -240,7 +240,7 @@
                                        aria-label="Edit rule" title="Edit rule">
                                         <i class="bi bi-pencil"></i>
                                     </a>
-                                    <form method="POST" action="/security/delete" class="d-inline" onsubmit="return confirm('Delete this rule?');">
+                                    <form method="POST" action="/security/delete" class="d-inline" data-confirm="Delete this rule?" data-confirm-ok="Delete" data-confirm-danger>
                                         <?php foreach ($csrf as $name => $value): ?>
                                             <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                                         <?php endforeach; ?>
@@ -285,11 +285,11 @@ document.querySelectorAll('.toggle-active').forEach(checkbox => {
                 row.classList.toggle('table-secondary', !data.is_active);
                 row.classList.toggle('text-muted', !data.is_active);
             } else {
-                alert('Error: ' + data.message);
+                tkAlert('Error: ' + data.message, {type: 'error'});
                 this.checked = !this.checked;
             }
         } catch (e) {
-            alert('Error toggling rule');
+            tkAlert('Error toggling rule', {type: 'error'});
             this.checked = !this.checked;
         }
     });
@@ -338,7 +338,7 @@ document.getElementById('testForm').addEventListener('submit', async function(e)
 
         resultDiv.style.display = 'block';
     } catch (e) {
-        alert('Error testing rules: ' + e.message);
+        tkAlert('Error testing rules: ' + e.message, {type: 'error'});
     }
 });
 </script>

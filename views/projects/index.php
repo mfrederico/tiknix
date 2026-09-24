@@ -401,8 +401,8 @@ $fmt = function (string $iso): string {
       }).then(r => r.json()).then(function (j) {
         // Choosing a project is a means, not an end — go where the work is.
         if (j && j.success) window.location.href = workUrl;
-        else { btn.disabled = false; alert((j && j.message) || 'Could not select that project.'); }
-      }).catch(function () { btn.disabled = false; alert('Network error.'); });
+        else { btn.disabled = false; tkAlert((j && j.message) || 'Could not select that project.', {type: 'error'}); }
+      }).catch(function () { btn.disabled = false; tkAlert('Network error.', {type: 'error'}); });
     });
   });
 

@@ -44,7 +44,7 @@
                             </td>
                             <td class="text-end">
                                 <form method="post" action="/lead/delete" class="d-inline"
-                                      onsubmit="return confirm('Delete this lead?');">
+                                      data-confirm="Delete this lead?" data-confirm-ok="Delete" data-confirm-danger>
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= (int)$lead->id ?>">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete lead">

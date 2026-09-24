@@ -120,8 +120,8 @@ $canMintKey = $base === '' || ($epHost !== '' && strcasecmp($epHost, $curHost) =
       var btn = e.target.closest('[data-copy]'); if (!btn) return;
       var txt = btn.getAttribute('data-copy') || '';
       var done = function(){ var i = btn.querySelector('i'); if (i){ var p = i.className; i.className = 'bi bi-check-lg'; setTimeout(function(){ i.className = p; }, 1200); } };
-      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function(){ window.prompt('Copy:', txt); }); }
-      else { window.prompt('Copy:', txt); }
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function(){ tkPrompt('Copy:', {value: txt, title: 'Copy'}); }); }
+      else { tkPrompt('Copy:', {value: txt, title: 'Copy'}); }
     });
   }
 
@@ -192,8 +192,8 @@ $canMintKey = $base === '' || ($epHost !== '' && strcasecmp($epHost, $curHost) =
       if (curlCopy) curlCopy.addEventListener('click', function(){
         var t = (document.getElementById('ep-curl') || {}).textContent || '';
         var done = function(){ var i = curlCopy.querySelector('i'); i.className = 'bi bi-check-lg'; setTimeout(function(){ i.className = 'bi bi-clipboard'; }, 1200); };
-        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done).catch(function(){ window.prompt('Copy:', t); }); }
-        else { window.prompt('Copy:', t); }
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done).catch(function(){ tkPrompt('Copy:', {value: t, title: 'Copy'}); }); }
+        else { tkPrompt('Copy:', {value: t, title: 'Copy'}); }
       });
       var pasteUse = document.getElementById('ep-pasteuse');
       if (pasteUse) pasteUse.addEventListener('click', function(){ setCurlKey(document.getElementById('ep-pastekey').value); });
@@ -214,8 +214,8 @@ $canMintKey = $base === '' || ($epHost !== '' && strcasecmp($epHost, $curHost) =
               setCurlKey(j.data.key);   // drop the real key into the curl above
               var kc = document.getElementById('ep-keycopy');
               kc.addEventListener('click', function(){ var v = document.getElementById('ep-keyval'); v.select(); if (navigator.clipboard){ navigator.clipboard.writeText(v.value); } var i = kc.querySelector('i'); i.className='bi bi-check-lg'; setTimeout(function(){ i.className='bi bi-clipboard'; },1200); });
-            } else { gen.disabled = false; gen.innerHTML = '<i class="bi bi-key me-1"></i>Generate a test key'; alert((j && j.message) || 'Could not mint a key'); }
-          }).catch(function(){ gen.disabled = false; gen.innerHTML = '<i class="bi bi-key me-1"></i>Generate a test key'; alert('Could not mint a key'); });
+            } else { gen.disabled = false; gen.innerHTML = '<i class="bi bi-key me-1"></i>Generate a test key'; tkAlert((j && j.message) || 'Could not mint a key', {type: 'error'}); }
+          }).catch(function(){ gen.disabled = false; gen.innerHTML = '<i class="bi bi-key me-1"></i>Generate a test key'; tkAlert('Could not mint a key', {type: 'error'}); });
         });
       }
     });
@@ -232,8 +232,8 @@ $canMintKey = $base === '' || ($epHost !== '' && strcasecmp($epHost, $curHost) =
       }).then(function(r){ return r.json(); }).then(function(j){
         btn.disabled = false;
         if (j && j.success) { btn.className = 'btn btn-sm btn-success'; btn.innerHTML = '<i class="bi bi-check-lg"></i> Queued #' + (j.data && j.data.run_id ? j.data.run_id : ''); }
-        else { alert((j && j.message) || 'Run failed'); }
-      }).catch(function(){ btn.disabled = false; alert('Run failed'); });
+        else { tkAlert((j && j.message) || 'Run failed', {type: 'error'}); }
+      }).catch(function(){ btn.disabled = false; tkAlert('Run failed', {type: 'error'}); });
     });
   });
 <?php endif; ?>

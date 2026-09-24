@@ -20,12 +20,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Users can close alerts using the X button
 
     // Confirm delete actions
-    document.querySelectorAll('.confirm-delete').forEach(function(element) {
-        element.addEventListener('click', function(e) {
-            if (!confirm('Are you sure you want to delete this item?')) {
-                e.preventDefault();
-            }
-        });
+    // (dialogs.js asks for anything carrying data-confirm, in a modal)
+    document.querySelectorAll('.confirm-delete:not([data-confirm])').forEach(function(element) {
+        element.setAttribute('data-confirm', 'Are you sure you want to delete this item?');
+        element.setAttribute('data-confirm-ok', 'Delete');
+        element.setAttribute('data-confirm-danger', '');
     });
     
     // AJAX form submission

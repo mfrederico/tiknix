@@ -149,8 +149,8 @@ document.getElementById('selectAll')?.addEventListener('change', function() {
 
 // Quick status update
 document.querySelectorAll('.quick-status').forEach(btn => {
-    btn.addEventListener('click', function() {
-        if (confirm('Mark this message as responded?')) {
+    btn.addEventListener('click', async function() {
+        if (await tkConfirm('Mark this message as responded?', {okText: 'Mark responded'})) {
             const id = this.dataset.id;
             const status = this.dataset.status;
             
@@ -167,7 +167,7 @@ document.querySelectorAll('.quick-status').forEach(btn => {
                 if (data.success) {
                     location.reload();
                 } else {
-                    alert('Error: ' + data.error);
+                    tkAlert('Error: ' + data.error, {type: 'error'});
                 }
             });
         }
@@ -176,8 +176,8 @@ document.querySelectorAll('.quick-status').forEach(btn => {
 
 // Delete message
 document.querySelectorAll('.delete-message').forEach(btn => {
-    btn.addEventListener('click', function() {
-        if (confirm('Are you sure you want to delete this message?')) {
+    btn.addEventListener('click', async function() {
+        if (await tkConfirm('Are you sure you want to delete this message?', {okText: 'Delete', danger: true})) {
             const id = this.dataset.id;
             
             const form = document.createElement('form');

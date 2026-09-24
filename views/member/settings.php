@@ -315,13 +315,13 @@
   if (!btn) return;
   var csrf = <?= json_encode(function_exists('csrf_token') ? csrf_token() : '') ?>;
   var busy = '<i class="bi bi-trash"></i> Permanently close account';
-  btn.addEventListener('click', function(){
+  btn.addEventListener('click', async function(){
     var email = (document.getElementById('ca_email').value || '').trim();
     var pass = document.getElementById('ca_password').value || '';
     var msg = document.getElementById('ca_msg');
     msg.textContent = '';
     if (!email || !pass) { msg.textContent = 'Enter your email and password.'; return; }
-    if (!confirm('This permanently deletes your account and all your projects. Continue?')) return;
+    if (!await tkConfirm('This permanently deletes your account and all your projects. Continue?', {okText: 'Delete my account', danger: true, title: 'Close your account'})) return;
     btn.disabled = true; btn.textContent = 'Closing…';
     fetch('/member/closeaccount', {
       method: 'POST',

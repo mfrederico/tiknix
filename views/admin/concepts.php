@@ -71,14 +71,14 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                             <?php if (!$broken): ?>
                                 <?php if ($c['enabled']): ?>
                                     <form method="POST" action="/admin/conceptdisable"
-                                          onsubmit="return confirm('Disable <?= $h($name) ?>? Its routes stop answering immediately. Its data is kept.')">
+                                          data-confirm="Disable <?= $h($name) ?>? Its routes stop answering immediately. Its data is kept." data-confirm-ok="Disable" data-confirm-danger>
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="name" value="<?= $h($name) ?>">
                                         <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-power"></i> Disable</button>
                                     </form>
                                 <?php else: ?>
                                     <form method="POST" action="/admin/conceptenable"
-                                          onsubmit="return confirm('Enable <?= $h($name) ?>? Its seeds run against the database and its routes start answering.')">
+                                          data-confirm="Enable <?= $h($name) ?>? Its seeds run against the database and its routes start answering." data-confirm-ok="Enable">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="name" value="<?= $h($name) ?>">
                                         <button type="submit" class="btn btn-success btn-sm" <?= $ready ? '' : 'disabled' ?>
@@ -212,7 +212,7 @@ $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
                                             <?php elseif ($row && empty($row['problems'])): ?>
                                                 <span class="badge bg-secondary">installed</span>
                                                 <form method="POST" action="/admin/conceptenable" class="d-inline ms-1"
-                                                      onsubmit="return confirm('Enable <?= $h($r['name']) ?>? Its seeds run against the database and its routes start answering.')">
+                                                      data-confirm="Enable <?= $h($r['name']) ?>? Its seeds run against the database and its routes start answering." data-confirm-ok="Enable">
                                                     <?= csrf_field() ?>
                                                     <input type="hidden" name="name" value="<?= $h($r['name']) ?>">
                                                     <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-power"></i> Enable</button>

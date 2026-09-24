@@ -110,12 +110,12 @@ $tsCsrf    = function_exists('csrf_token') ? csrf_token() : '';
     }).catch(function(){ if (msg) { msg.className = 'small mt-1 text-danger'; msg.textContent = 'Could not save the keys.'; } });
   });
   var forget = document.getElementById('ts-forget');
-  if (forget) forget.addEventListener('click', function(){
-    if (!confirm('Turn off human verification for this site? The sign-up form will no longer challenge bots.')) return;
+  if (forget) forget.addEventListener('click', async function(){
+    if (!await tkConfirm('Turn off human verification for this site? The sign-up form will no longer challenge bots.', {okText: 'Turn off', danger: true})) return;
     post('/connections/turnstileforget', {csrf_token: csrf}, forget).then(function(j){
       if (j && j.success) { location.reload(); }
-      else alert((j && j.message) || 'Could not disable.');
-    }).catch(function(){ alert('Could not disable.'); });
+      else tkAlert((j && j.message) || 'Could not disable.', {type: 'error'});
+    }).catch(function(){ tkAlert('Could not disable.', {type: 'error'}); });
   });
 })();
 </script>

@@ -200,7 +200,7 @@
     var csrf = document.querySelector('meta[name="csrf-token"]');
     document.querySelectorAll('.inv-revoke').forEach(function (b) {
         b.addEventListener('click', async function () {
-            if (!confirm('Withdraw this invitation? The link stops working immediately.')) return;
+            if (!await tkConfirm('Withdraw this invitation? The link stops working immediately.', {okText: 'Withdraw', danger: true})) return;
             var was = b.innerHTML;
             b.disabled = true; b.textContent = '…';
             try {
@@ -210,9 +210,9 @@
                 var r = await fetch('/invites/revoke', { method: 'POST', body: fd });
                 var j = await r.json();
                 if (j.success) { location.reload(); return; }
-                alert(j.message || 'Could not withdraw that invitation.');
+                tkAlert(j.message || 'Could not withdraw that invitation.', {type: 'error'});
             } catch (e) {
-                alert('Could not withdraw that invitation: ' + e);
+                tkAlert('Could not withdraw that invitation: ' + e, {type: 'error'});
             }
             b.disabled = false; b.innerHTML = was;
         });

@@ -215,8 +215,8 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
 
   // Disconnect
   const dc = document.getElementById('gh-disconnect');
-  if(dc) dc.addEventListener('click', function(){
-    if(!confirm('Disconnect this GitHub repo?')) return;
+  if(dc) dc.addEventListener('click', async function(){
+    if(!await tkConfirm('Disconnect this GitHub repo?', {okText: 'Disconnect', danger: true})) return;
     post('/connections/disconnect', {id:iid, cid:this.dataset.cid}).then(()=>location.reload());
   });
 
@@ -267,7 +267,7 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
       }).catch(()=>setMsg('Network error.','text-danger'));
     });
 
-    list.addEventListener('click', function(e){
+    list.addEventListener('click', async function(e){
       const vb=e.target.closest('.rt-verify'), db=e.target.closest('.rt-del'), pb=e.target.closest('.rt-deploy');
       if(vb){ const d=vb.dataset.d; vb.disabled=true; setMsg('Checking DNS for '+d+'…','text-body-secondary');
         post('/connections/resolveverify',{id:iid,domain:d}).then(j=>{ vb.disabled=false;
@@ -275,13 +275,13 @@ $pfUrl = (!empty($pf['owner']) && !empty($pf['repo'])) ? 'https://github.com/' .
           else setMsg(j.message||'Not verified yet.','text-danger');
         }).catch(()=>{ vb.disabled=false; setMsg('Network error.','text-danger'); }); }
       if(pb){ const d=pb.dataset.d;
-        if(!confirm('Deploy '+d+' now? Clones/updates its branch into /hosted/'+d+' (your DB is preserved).')) return;
+        if(!await tkConfirm('Deploy '+d+' now? Clones/updates its branch into /hosted/'+d+' (your DB is preserved).', {okText: 'Deploy'})) return;
         pb.disabled=true; setMsg('Deploying '+d+'… (clone/reset + seeders)','text-body-secondary');
         post('/connections/deploy',{id:iid,domain:d}).then(j=>{ pb.disabled=false;
           if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); setMsg((j.message||'Deployed.')+' '+((j.data.steps||[]).join(' · ')),'text-success'); }
           else setMsg(j.message||'Deploy failed.','text-danger');
         }).catch(()=>{ pb.disabled=false; setMsg('Network error.','text-danger'); }); }
-      if(db){ const d=db.dataset.d; if(!confirm('Remove '+d+'?')) return;
+      if(db){ const d=db.dataset.d; if(!await tkConfirm('Remove '+d+'?', {okText: 'Remove', danger: true})) return;
         post('/connections/resolveremove',{id:iid,domain:d}).then(j=>{ if(j.success){ RT=j.data.resolvesTo||RT; renderRT(); setMsg('Removed.','text-body-secondary'); } }); }
     });
   }

@@ -140,8 +140,8 @@
                                         b.addEventListener('click', function(){
                                             var k = b.getAttribute('data-key') || '';
                                             var done = function(){ b.innerHTML = '<i class="bi bi-check-lg"></i> Copied'; setTimeout(function(){ b.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 1400); };
-                                            if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(k).then(done).catch(function(){ window.prompt('Copy your key:', k); }); }
-                                            else { window.prompt('Copy your key:', k); }
+                                            if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(k).then(done).catch(function(){ tkPrompt('Copy your key:', {value: k, title: 'Copy'}); }); }
+                                            else { tkPrompt('Copy your key:', {value: k, title: 'Copy'}); }
                                         });
                                     })();
                                     </script>

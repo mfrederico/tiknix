@@ -187,21 +187,21 @@ $flash = $_SESSION['flash'] ?? []; unset($_SESSION['flash']);
         body: new URLSearchParams(new FormData(form)).toString()
       }).then(function(r){ return r.json(); }).then(function(j){
         if (j && j.success) { location.reload(); }
-        else { alert((j && j.message) || 'Could not connect'); if (btn) btn.disabled = false; }
-      }).catch(function(){ alert('Could not connect'); if (btn) btn.disabled = false; });
+        else { tkAlert((j && j.message) || 'Could not connect', {type: 'error'}); if (btn) btn.disabled = false; }
+      }).catch(function(){ tkAlert('Could not connect', {type: 'error'}); if (btn) btn.disabled = false; });
     });
   });
   document.querySelectorAll('[data-disconnect]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      if (!confirm('Disconnect this account? This app will no longer be able to use it.')) return;
+    btn.addEventListener('click', async function(){
+      if (!await tkConfirm('Disconnect this account? This app will no longer be able to use it.', {okText: 'Disconnect', danger: true})) return;
       fetch('/connections/instancedisconnect', {
         method: 'POST',
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
         body: new URLSearchParams({csrf_token: csrf, cid: btn.getAttribute('data-disconnect')}).toString()
       }).then(function(r){ return r.json(); }).then(function(j){
         if (j && j.success) { location.reload(); }
-        else { alert((j && j.message) || 'Could not disconnect'); }
-      }).catch(function(){ alert('Could not disconnect'); });
+        else { tkAlert((j && j.message) || 'Could not disconnect', {type: 'error'}); }
+      }).catch(function(){ tkAlert('Could not disconnect', {type: 'error'}); });
     });
   });
 })();

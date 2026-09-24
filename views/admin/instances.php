@@ -73,7 +73,7 @@ $when = fn(?string $s) => $s ? date('M j, Y g:i A', strtotime($s)) : '—';
                 </td>
                 <td class="text-end">
                     <form method="POST" action="/admin/instances" class="d-inline-flex gap-2 justify-content-end"
-                          <?= $r['on'] ? '' : 'onsubmit="return confirm(\'Let the control plane build against ' . htmlspecialchars((string) $b->slug, ENT_QUOTES) . ' with nobody watching?\')"' ?>>
+                          <?= $r['on'] ? '' : 'data-confirm="Let the control plane build against ' . htmlspecialchars((string) $b->slug, ENT_QUOTES) . ' with nobody watching?"' ?>>
                         <?= csrf_field() ?>
                         <input type="hidden" name="instance_id" value="<?= (int) $b->id ?>">
                         <input type="hidden" name="enabled" value="<?= $r['on'] ? '' : '1' ?>">

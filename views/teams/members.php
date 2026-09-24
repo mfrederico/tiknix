@@ -225,15 +225,15 @@ async function updateRole(memberId, newRole) {
         if (data.success) {
             location.reload();
         } else {
-            alert('Error: ' + data.message);
+            tkAlert('Error: ' + data.message, {type: 'error'});
         }
     } catch (e) {
-        alert('Error updating role: ' + e.message);
+        tkAlert('Error updating role: ' + e.message, {type: 'error'});
     }
 }
 
 async function removeMember(memberId, memberName) {
-    if (!confirm('Remove ' + memberName + ' from the team?')) {
+    if (!await tkConfirm('Remove ' + memberName + ' from the team?', {okText: 'Remove', danger: true})) {
         return;
     }
 
@@ -253,10 +253,10 @@ async function removeMember(memberId, memberName) {
         if (data.success) {
             location.reload();
         } else {
-            alert('Error: ' + data.message);
+            tkAlert('Error: ' + data.message, {type: 'error'});
         }
     } catch (e) {
-        alert('Error removing member: ' + e.message);
+        tkAlert('Error removing member: ' + e.message, {type: 'error'});
     }
 }
 
@@ -277,9 +277,10 @@ async function resendInvite(btn, invitationId) {
         });
 
         const data = await response.json();
-        alert(data.message || (data.success ? 'Invitation resent' : 'Could not resend invitation'));
+        if (data.success) showToast('success', data.message || 'Invitation resent');
+        else tkAlert(data.message || 'Could not resend invitation', {type: 'error'});
     } catch (e) {
-        alert('Error resending invitation: ' + e.message);
+        tkAlert('Error resending invitation: ' + e.message, {type: 'error'});
     } finally {
         btn.disabled = false;
         btn.innerHTML = orig;
@@ -292,7 +293,7 @@ async function sendInvite() {
     const btn = document.getElementById('sendInviteBtn');
 
     if (!email) {
-        alert('Please enter an email address');
+        tkAlert('Please enter an email address', {type: 'warning'});
         return;
     }
 
@@ -319,10 +320,10 @@ async function sendInvite() {
             document.getElementById('inviteLink').value = data.join_url;
             btn.style.display = 'none';
         } else {
-            alert('Error: ' + data.message);
+            tkAlert('Error: ' + data.message, {type: 'error'});
         }
     } catch (e) {
-        alert('Error sending invitation: ' + e.message);
+        tkAlert('Error sending invitation: ' + e.message, {type: 'error'});
     }
 
     btn.disabled = false;

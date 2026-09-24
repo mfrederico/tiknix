@@ -57,7 +57,7 @@
               <td><?= $k['revoked'] ? '<span class="badge text-bg-secondary">revoked</span>' : '<span class="badge text-bg-success">active</span>' ?></td>
               <td class="text-end">
                 <?php if (!$k['revoked']): ?>
-                  <form method="post" action="/pipeline/keys" onsubmit="return confirm('Revoke this key?')">
+                  <form method="post" action="/pipeline/keys" data-confirm="Revoke this key?" data-confirm-ok="Revoke" data-confirm-danger>
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="revoke">
                     <input type="hidden" name="id" value="<?= (int)$k['id'] ?>">

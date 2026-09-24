@@ -128,7 +128,7 @@
                                         <a href="/apikeys/edit?id=<?= $key->id ?>" class="btn btn-sm btn-outline-primary">Edit</a>
                                         <a href="/apikeys/delete?id=<?= $key->id ?>"
                                            class="btn btn-sm btn-outline-danger"
-                                           onclick="return confirm('Delete this API key? This cannot be undone.')">Delete</a>
+                                           data-confirm="Delete this API key? This cannot be undone." data-confirm-ok="Delete" data-confirm-danger>Delete</a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -423,10 +423,10 @@ async function confirmRegenerate() {
             document.getElementById('regeneratedToken').value = data.token;
             btn.style.display = 'none';
         } else {
-            alert('Error: ' + data.message);
+            tkAlert('Error: ' + data.message, {type: 'error'});
         }
     } catch (e) {
-        alert('Error regenerating token: ' + e.message);
+        tkAlert('Error regenerating token: ' + e.message, {type: 'error'});
     }
 
     btn.disabled = false;

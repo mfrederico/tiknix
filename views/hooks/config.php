@@ -123,7 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const obj = JSON.parse(textarea.value);
             textarea.value = JSON.stringify(obj, null, 2);
         } catch (e) {
-            alert('Invalid JSON: ' + e.message);
+            tkAlert('Invalid JSON: ' + e.message, {type: 'warning', title: 'Invalid JSON'});
         }
     });
 
@@ -157,12 +157,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             if (errors.length > 0) {
-                alert('Validation errors:\n- ' + errors.join('\n- '));
+                tkAlert('Validation errors:\n- ' + errors.join('\n- '), {type: 'warning', title: 'Validation errors'});
             } else {
-                alert('JSON is valid!');
+                showToast('success', 'JSON is valid!');
             }
         } catch (e) {
-            alert('Invalid JSON: ' + e.message);
+            tkAlert('Invalid JSON: ' + e.message, {type: 'warning', title: 'Invalid JSON'});
         }
     });
 });

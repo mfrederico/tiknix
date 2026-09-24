@@ -42,7 +42,7 @@
                                         <td>
                                             <a href="/admin/editPermission?id=<?= $perm['id'] ?>" class="btn btn-sm btn-outline-primary">Edit</a>
                                             <form method="post" action="/admin/permissions" class="d-inline"
-                                                  onsubmit="return confirm('Delete this permission?')">
+                                                  data-confirm="Delete this permission?" data-confirm-ok="Delete" data-confirm-danger>
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="delete" value="<?= (int)$perm['id'] ?>">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>

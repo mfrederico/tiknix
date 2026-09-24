@@ -180,8 +180,8 @@
 </style>
 
 <script>
-function updateStatus(status) {
-    if (confirm(`Mark this message as ${status}?`)) {
+async function updateStatus(status) {
+    if (await tkConfirm(`Mark this message as ${status}?`, {okText: 'Mark ' + status})) {
         fetch('/contact/status', {
             method: 'POST',
             headers: {
@@ -195,7 +195,7 @@ function updateStatus(status) {
             if (data.success) {
                 location.reload();
             } else {
-                alert('Error: ' + data.error);
+                tkAlert('Error: ' + data.error, {type: 'error'});
             }
         });
     }

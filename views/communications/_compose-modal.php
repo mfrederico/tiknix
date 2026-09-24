@@ -183,7 +183,7 @@ $__canRoom = !empty($__rooms);
         });
         if (!any) {
             e.preventDefault();
-            alert('Choose a room, someone on your team, or an email address.');
+            tkAlert('Choose a room, someone on your team, or an email address.', {type: 'warning', title: 'Who is it to?'});
         }
     });
 })();

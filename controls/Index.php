@@ -37,9 +37,11 @@ class Index extends BaseControls\Control {
         // page — no confusion about which is the real Tiknix, and no marketing pitch
         // on someone else's project.
         if (self::isFlagship()) {
+            $showcase = $this->showcaseItems();
             $this->render('index/landing', [
                 'title'    => 'tiknix — build a real app for every client',
-                'showcase' => $this->showcaseItems(),
+                'showcase' => $showcase,
+                'stories'  => \Model_Showcase::stories($showcase),
             ], false);
             return;
         }
@@ -96,6 +98,19 @@ class Index extends BaseControls\Control {
         } catch (\Throwable $e) {
             return [];   // table not seeded yet — landing still renders
         }
+    }
+
+    /**
+     * Founder stories — PRIMARY site only (/stories aliases here). The long form of the
+     * landing's founder section: who built what on tiknix, what they started with and what
+     * it does now. Stories are showcase entries carrying a story (scripts/seed-showcase.php).
+     */
+    public function stories($params = []) {
+        if (!self::isFlagship()) { Flight::redirect('/'); return; }
+        $this->render('index/stories', [
+            'title'   => 'Founder stories — tiknix',
+            'stories' => \Model_Showcase::stories(Bean::find('showcase', 'enabled = 1 ORDER BY sort_order ASC, id ASC')),
+        ], false);
     }
 
     /**

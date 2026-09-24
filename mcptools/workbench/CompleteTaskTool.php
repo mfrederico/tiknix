@@ -56,6 +56,7 @@ class CompleteTaskTool extends BaseTool {
 
         // Update task - set to awaiting (not completed - user must explicitly complete)
         $task->status = 'awaiting';
+        $task->progressMessage = 'Work done — awaiting your review';   // not the run's stale "Working..."
         $task->updatedAt = date('Y-m-d H:i:s');
 
         if (isset($args['pr_url'])) {

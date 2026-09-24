@@ -29,7 +29,12 @@
  *
  * WHAT IS DELIBERATELY STILL OUT.
  *
- *   (workbench/* — the in-core task tools — no longer exist; removed 2026-09-23.)
+ *   workbench/*  (get_task, update_task, complete_task, add_task_log, ask_question,
+ *                upload_screenshot, …) — HTTP only. They read $this->member and
+ *                $this->apiKey, and neither exists over stdio: they would fail, or act as
+ *                nobody. A Task Board agent reaches them through its project's HTTP MCP
+ *                server, with that project's key. (Removed by mistake 2026-09-23 — tasks
+ *                could no longer close themselves — and restored the next day.)
  *
  *   pipeline_set / pipeline_delete / pipeline_run / pipeline_continue
  *       These change an instance's automations. Mutating an instance is not

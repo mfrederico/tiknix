@@ -94,9 +94,14 @@ class ToolLoader {
      */
     private function discover(): void {
         $this->discoverInDir($this->baseDir);
-        // No subdirectories: mcptools/workbench/ (the task tools of the in-core Workbench)
-        // was removed 2026-09-23 — the Workbench lives in its sidecar, and those tools had
-        // not been called since 2026-08-11. Concept tools register through register().
+        // mcptools/workbench/: the task tools (get_task, update_task, complete_task, …) a
+        // Task Board agent uses to report on and close its own task, through its PROJECT's
+        // MCP server. Removed 2026-09-23 on the belief they were unused — core's log had no
+        // calls since August, but the calls land in each project's log, and every task run
+        // after the removal finished its work and then stayed "running" forever. Restored.
+        // Concept tools register through register().
+        $path = $this->baseDir . '/workbench';
+        if (is_dir($path)) $this->discoverInDir($path);
     }
 
     /**

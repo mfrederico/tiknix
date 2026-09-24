@@ -98,7 +98,9 @@
                             </span>
                         </td>
                         <?php if ($quotas): $q = $quotas[(int) $member->id] ?? null; ?>
-                        <?php if (!$q || isset($q['error'])): ?>
+                        <?php if ((int) $member->id === PUBLIC_USER_ID): /* logged-out visitors: no projects, no allowance */ ?>
+                        <td data-projects="-2"><span class="text-muted" title="System account — no project allowance">—</span></td>
+                        <?php elseif (!$q || isset($q['error'])): ?>
                         <td data-projects="-1"><span class="text-danger small" title="<?= htmlspecialchars((string) ($q['error'] ?? 'not counted')) ?>">cannot count</span></td>
                         <?php else:
                             $unlimited = $q['cap'] >= PHP_INT_MAX;

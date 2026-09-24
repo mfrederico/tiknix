@@ -95,6 +95,8 @@ class Admin extends Control {
         $this->viewData['quotas'] = [];
         if (is_core_install()) {
             foreach ($this->viewData['members'] as $m) {
+                // The logged-out visitor's account has no projects and gets no allowance.
+                if ((int) $m->id === PUBLIC_USER_ID) continue;
                 try { $this->viewData['quotas'][(int) $m->id] = \app\ProjectQuota::snapshot((int) $m->id); }
                 catch (\Throwable $e) { $this->viewData['quotas'][(int) $m->id] = ['error' => $e->getMessage()]; }
             }
@@ -180,7 +182,7 @@ class Admin extends Control {
                         // operator's own account is exactly the one they raise to "unlimited".
                         // Through the model: the number and its audit row (who, when, why)
                         // are written together — a grant is money not collected.
-                        if (is_core_install() && isset($request->data->free_projects)) {
+                        if (is_core_install() && (int) $member->id !== PUBLIC_USER_ID && isset($request->data->free_projects)) {
                             $member->box()->setFreeProjects((int) $request->data->free_projects,
                                 (int) $this->member->id, (string) ($request->data->free_projects_note ?? ''));
                         }
@@ -275,8 +277,9 @@ class Admin extends Control {
         // ones. The same snapshot the invoice is answered with, so the page cannot disagree.
         // Platform only: projects, and paying for them, exist on tiknix.com — on a customer's
         // app this member edit screen is theirs (Serenity puts its member types here).
-        $this->viewData['projectQuota'] = is_core_install() ? \app\ProjectQuota::snapshot((int) $member->id) : null;
-        $this->viewData['freeGrants'] = is_core_install() ? array_map(fn($a) => [
+        $quotaApplies = is_core_install() && (int) $member->id !== PUBLIC_USER_ID;   // not the logged-out visitor's account
+        $this->viewData['projectQuota'] = $quotaApplies ? \app\ProjectQuota::snapshot((int) $member->id) : null;
+        $this->viewData['freeGrants'] = $quotaApplies ? array_map(fn($a) => [
             'row' => $a,
             'by'  => Bean::load('member', (int) $a->byRef)->displayName('member #' . (int) $a->byRef),
         ], $member->box()->audits('free_projects', 10)) : [];

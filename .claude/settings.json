@@ -33,18 +33,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/bin/php \"${TIKNIX_PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}\"/scripts/hooks/log-activity.php",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "matcher": "",

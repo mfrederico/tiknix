@@ -228,6 +228,41 @@ class WorkspaceManager
      * @param string $workspacePath Path to workspace
      * @param bool $runComposer If true, run composer install instead of copying
      */
+    /**
+     * A task worktree's vendor/: its OWN autoload map, the project's packages by symlink.
+     *
+     * Not a symlink of the whole vendor/: Composer finds the app's own classes relative to
+     * the vendor directory's REAL location, so a linked vendor/ made the worktree load the
+     * LIVE project's lib/Bean.php instead of the agent's edited copy — its tests would have
+     * run the wrong code. Not a copy either (42 MB a task): vendor/composer/ and
+     * vendor/autoload.php are generated here (~1 MB), every package directory is a symlink
+     * into the project's vendor/, which the jail mounts read-only.
+     */
+    private function linkVendor(string $sourceVendor, string $targetVendor, string $workspacePath): void {
+        if (is_link($targetVendor)) {
+            unlink($targetVendor);
+        } elseif (is_dir($targetVendor)) {
+            exec('rm -rf ' . escapeshellarg($targetVendor));
+        }
+        if (!@mkdir($targetVendor . '/composer', 0775, true)) {
+            throw new \RuntimeException("Could not create {$targetVendor}/composer");
+        }
+        foreach (scandir($sourceVendor) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..' || $entry === 'composer' || $entry === 'autoload.php') continue;
+            if (!@symlink($sourceVendor . '/' . $entry, $targetVendor . '/' . $entry)) {
+                throw new \RuntimeException("Could not link {$targetVendor}/{$entry} to {$sourceVendor}/{$entry}");
+            }
+        }
+        // What is installed — dump-autoload reads it to map the packages' own autoloaders.
+        foreach (['installed.json', 'installed.php'] as $f) {
+            if (is_file($sourceVendor . '/composer/' . $f)) copy($sourceVendor . '/composer/' . $f, $targetVendor . '/composer/' . $f);
+        }
+        exec('cd ' . escapeshellarg($workspacePath) . ' && composer dump-autoload -q 2>&1', $output, $code);
+        if ($code !== 0) {
+            throw new \RuntimeException("composer dump-autoload failed in {$workspacePath}: " . implode("\n", $output));
+        }
+    }
+
     public function setupVendor(string $workspacePath, bool $runComposer = false): void
     {
         $sourceVendor = $this->sourceProject . '/vendor';
@@ -245,6 +280,11 @@ class WorkspaceManager
 
         if (!is_dir($sourceVendor)) {
             throw new \RuntimeException("Source vendor directory not found: {$sourceVendor}");
+        }
+
+        if (\app\GitService::isTaskWorktree($workspacePath)) {
+            $this->linkVendor($sourceVendor, $targetVendor, $workspacePath);
+            return;
         }
 
         // Remove existing vendor if present (might be stale symlinks)

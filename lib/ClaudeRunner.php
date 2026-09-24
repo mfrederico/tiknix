@@ -122,7 +122,12 @@ class ClaudeRunner {
         // namespace would say it twice — tiknix-mileage-tiknix-1-task-26.
         $slug = '';
         if ($projectPath) {
-            $parent = basename(dirname(rtrim($projectPath, '/')));
+            // A task worktree names its project three levels up (<slug>.<app>/.aibuilder/wt/
+            // solo-<id>); its parent is 'wt', which would give every project's task the same
+            // session name.
+            $parent = GitService::isTaskWorktree($projectPath)
+                ? basename(dirname(rtrim($projectPath, '/'), 3))
+                : basename(dirname(rtrim($projectPath, '/')));
             if ($parent !== '' && !ctype_digit($parent)) $slug = explode('.', $parent)[0];
         }
         $this->sessionName = TmuxManager::buildTaskSessionName($memberId, $taskId, $teamId, $slug);
@@ -430,9 +435,12 @@ class ClaudeRunner {
         $real = realpath($workspace) ?: $workspace;
         if (strpos($real, $root . '/') !== 0) return '';
         if (!is_file("$real/public/index.php")) return '';
-        // jail-run.sh needs <sub>.<app> from the leaf or its parent; anything else it
-        // cannot name, and it refuses rather than guessing.
-        if (strpos(basename($real), '.') === false
+        // jail-run.sh needs <sub>.<app> from the leaf or its parent — or a task worktree
+        // (<sub>.<app>/.aibuilder/wt/solo-<id>), whose project it reads from the path.
+        // Without the worktree case this returned '' for every worktree and the agent ran
+        // UNJAILED, with nothing saying so.
+        if (!GitService::isTaskWorktree($real)
+            && strpos(basename($real), '.') === false
             && strpos(basename(dirname($real)), '.') === false) return '';
         $cfg = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
         $binDir = rtrim($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin', '/');

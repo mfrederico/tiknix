@@ -66,6 +66,95 @@ class GitService {
              . "/{$memberId}" . ($tag !== '' ? "/{$tag}" : '') . "/{$taskId}";
     }
 
+    /** Where a standalone task's worktree lives inside its project (plan tasks use task-<id>). */
+    public static function taskWorktreePath(string $projectDir, int $taskId): string {
+        return rtrim($projectDir, '/') . '/.aibuilder/wt/solo-' . $taskId;
+    }
+
+    /**
+     * A standalone task's workspace: a git WORKTREE inside its project, on its own branch.
+     *
+     * Inside the project, not a clone in core's projects/ tree: the project's MCP server
+     * and its preview run walled to the project (open_basedir), so a workspace in core's
+     * tree could not be read by the project's validators or served by its preview. Plan
+     * tasks have always used .aibuilder/wt/task-<id>; this is the same mechanism.
+     * .aibuilder/ is gitignored in every project, so the worktree is never committed or
+     * published, and the jail (jail-run.sh) mounts only the worktree plus the project's .git.
+     *
+     * An existing $branch (a task rebuilt after its workspace was removed) is checked out
+     * as it is — never reset to $base, which would throw away its commits.
+     *
+     * @throws \RuntimeException with git's own words
+     */
+    public static function addTaskWorktree(string $projectDir, int $taskId, string $branch, string $base): string {
+        $projectDir = rtrim($projectDir, '/');
+        $rel = '.aibuilder/wt/solo-' . $taskId;
+        $git = fn(array $args) => self::gitIn($projectDir, $args);
+
+        // A leftover from an earlier run of this task id (removed dir, stale registration).
+        $git(['worktree', 'remove', '--force', $rel]);
+        $git(['worktree', 'prune']);
+        if (is_dir($projectDir . '/' . $rel)) {
+            throw new \RuntimeException("{$projectDir}/{$rel} exists and is not a worktree git knows about; remove it before running this task.");
+        }
+        @mkdir($projectDir . '/.aibuilder/wt', 0775, true);
+
+        $exists = $git(['rev-parse', '--verify', '--quiet', 'refs/heads/' . $branch])['code'] === 0;
+        $add = $exists
+            ? $git(['worktree', 'add', $rel, $branch])
+            : $git(['worktree', 'add', '-b', $branch, $rel, $base]);
+        if ($add['code'] !== 0) {
+            throw new \RuntimeException("git worktree add in {$projectDir} failed: " . trim($add['out']));
+        }
+        Mcp::ensureMcpConfig($projectDir . '/' . $rel);   // API key set later if needed
+        return $projectDir . '/' . $rel;
+    }
+
+    /**
+     * Is there a git working tree at $path? A clone has a .git DIRECTORY, a worktree a .git
+     * FILE (a pointer into its project's .git) — is_dir('.git') called every worktree gone,
+     * and the Task Board then "rebuilt" it on every run.
+     */
+    public static function isWorkspace(?string $path): bool {
+        return $path !== null && $path !== '' && file_exists(rtrim($path, '/') . '/.git');
+    }
+
+    /** Is $path a task worktree inside a project (vs a legacy clone in core's projects/)? */
+    public static function isTaskWorktree(?string $path): bool {
+        return $path !== null && (bool) preg_match('#/\.aibuilder/wt/solo-\d+/?$#', $path);
+    }
+
+    /**
+     * Remove a task's workspace. A worktree is unregistered through git (its branch stays —
+     * it holds the task's commits until merged); a legacy clone is deleted, and only inside
+     * core's projects/ tree.
+     */
+    public static function removeTaskWorkspace(string $path): void {
+        $path = rtrim($path, '/');
+        if (self::isTaskWorktree($path)) {
+            $project = substr($path, 0, strpos($path, '/.aibuilder/wt/'));
+            $r = self::gitIn($project, ['worktree', 'remove', '--force', $path]);
+            self::gitIn($project, ['worktree', 'prune']);
+            if ($r['code'] !== 0 && is_dir($path)) {
+                throw new \RuntimeException("git worktree remove {$path} failed: " . trim($r['out']));
+            }
+            return;
+        }
+        $base = realpath(self::getProjectsBasePath());
+        $real = realpath($path);
+        if ($base === false || $real === false || !str_starts_with($real, $base . '/')) {
+            throw new \RuntimeException("Refusing to delete {$path}: not a task worktree and not under " . self::getProjectsBasePath());
+        }
+        (new self())->removeDirectory($real);
+    }
+
+    /** @return array{code:int,out:string} */
+    private static function gitIn(string $dir, array $args): array {
+        $cmd = 'git -C ' . escapeshellarg($dir) . ' ' . implode(' ', array_map('escapeshellarg', $args)) . ' 2>&1';
+        exec($cmd, $out, $code);
+        return ['code' => (int) $code, 'out' => implode("\n", $out)];
+    }
+
     /**
      * Clone repository into a project workspace (shallow clone)
      *

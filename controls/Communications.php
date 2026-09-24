@@ -2,8 +2,9 @@
 /**
  * Communications — the in-app inbox for the threaded comms subsystem.
  *
- * Role-scoped: ROOT (level 1) sees every thread; everyone else — INCLUDING admins
- * (level 50) — sees only threads they own (emailthread.owner_member_id = me).
+ * Scoped to the conversations you are IN (a participant, or the owner). ROOT can also
+ * look at every member's with ?scope=all ("Everyone") — but it is not the default: the
+ * default list is your own, so other members' build notices and DMs do not bury yours.
  * Communications are private per member; only ROOT has the cross-member view.
  * Reading a thread zeroes
  * its unread badge; replying sends a threaded outbound via NotifyService so the
@@ -42,7 +43,8 @@ class Communications extends BaseControls\Control {
             'threads'     => $this->railRows($this->fetchThreads($search), (int)$this->member->id),
             'search'      => $search,
             'activeId'    => 0,
-            'isAdmin'     => Flight::hasLevel(LEVELS['ROOT']),   // "sees all" is ROOT-only
+            'isAdmin'     => Flight::hasLevel(LEVELS['ROOT']),   // may switch to Everyone (ROOT-only)
+            'everyone'    => $this->everyone(),
             'unreadTotal' => $this->unreadTotal(),
         ]);
     }
@@ -96,7 +98,8 @@ class Communications extends BaseControls\Control {
             'messages'    => $messages,
             'attachments' => $attachments,
             'related'     => $related,
-            'isAdmin'     => Flight::hasLevel(LEVELS['ROOT']),   // "sees all" is ROOT-only
+            'isAdmin'     => Flight::hasLevel(LEVELS['ROOT']),   // may switch to Everyone (ROOT-only)
+            'everyone'    => $this->everyone(),
             'unreadTotal' => $this->unreadTotal(),
         ]);
     }
@@ -482,7 +485,8 @@ class Communications extends BaseControls\Control {
     public function unreadjson() {
         if (!$this->requireLogin()) { Flight::json(['unread' => 0, 'threads' => []]); return; }
 
-        [$where, $params] = $this->scopeClause();
+        // The bell is always YOUR conversations, whatever the list is showing.
+        [$where, $params] = $this->scopeClause(false);
         $threads = Bean::find('thread', $where . ' ORDER BY last_message_at DESC, id DESC LIMIT 8', $params);
 
         $out = [];
@@ -522,7 +526,7 @@ class Communications extends BaseControls\Control {
 
     /** Scoped, optionally-searched thread list for the sidebar rail. */
     private function fetchThreads(string $search = ''): array {
-        [$where, $params] = $this->scopeClause();
+        [$where, $params] = $this->scopeClause($this->everyone());
         if ($search !== '') {
             $where .= ' AND (subject LIKE ? OR recipient_email LIKE ? OR recipient_name LIKE ?)';
             $like = '%' . $search . '%';
@@ -637,10 +641,14 @@ class Communications extends BaseControls\Control {
         return $rows;
     }
 
-    /** WHERE fragment scoping threads to the viewer's role. */
-    private function scopeClause(): array {
-        // Only ROOT sees every member's threads.
-        if (Flight::hasLevel(LEVELS['ROOT'])) {
+    /** ROOT asked for every member's conversations (?scope=all). Nobody else can. */
+    private function everyone(): bool {
+        return Flight::hasLevel(LEVELS['ROOT']) && (string)$this->getParam('scope', '') === 'all';
+    }
+
+    /** WHERE fragment: the viewer's own conversations, or with $everyone (ROOT only) all of them. */
+    private function scopeClause(bool $everyone): array {
+        if ($everyone && Flight::hasLevel(LEVELS['ROOT'])) {
             return ['1=1', []];
         }
         // PARTICIPATION, not ownership. A DM has two people in it and a room has many;

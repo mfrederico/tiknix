@@ -5,7 +5,8 @@
  * @var array  $threads
  * @var int    $activeId  (0 here)
  * @var string $search
- * @var bool   $isAdmin
+ * @var bool   $isAdmin   ROOT: may switch to Everyone
+ * @var bool   $everyone  showing every member's conversations (?scope=all, ROOT only)
  * @var int    $unreadTotal
  */
 ?>
@@ -23,7 +24,7 @@
             </h1>
             <span class="text-muted small">
                 Email conversations
-                <?= !empty($isAdmin) ? '— all conversations (root)' : '— your conversations' ?>
+                <?= !empty($everyone) ? '— every member\'s conversations (root)' : '— your conversations' ?>
             </span>
         </div>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#comms-compose-modal">

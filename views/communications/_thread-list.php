@@ -41,18 +41,27 @@ usort($__rooms, fn($a, $b) => [$a['team'], $a['slug']] <=> [$b['team'], $b['slug
          rail and the conversation stack instead of sitting side by side. */ ?>
 <div class="col-lg-4 <?= htmlspecialchars($railClass ?? '') ?>">
     <div class="card border-0 shadow-sm comms-panel">
+        <?php $__sc = !empty($everyone) ? '?scope=all' : ''; ?>
         <div class="card-header bg-body-tertiary d-flex justify-content-between align-items-center">
             <span class="fw-semibold"><i class="bi bi-inbox me-1"></i>Messages</span>
-            <span class="text-muted small"><?= count($threads ?? []) ?></span>
+            <?php if (!empty($isAdmin)): /* ROOT: your conversations by default, everyone's on request */ ?>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Whose conversations">
+                    <a href="/communications" class="btn <?= empty($everyone) ? 'btn-secondary' : 'btn-outline-secondary' ?>">Mine</a>
+                    <a href="/communications?scope=all" class="btn <?= !empty($everyone) ? 'btn-secondary' : 'btn-outline-secondary' ?>">Everyone</a>
+                </div>
+            <?php else: ?>
+                <span class="text-muted small"><?= count($threads ?? []) ?></span>
+            <?php endif; ?>
         </div>
 
         <div class="p-2 border-bottom">
             <form method="get" action="/communications" class="input-group input-group-sm">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <?php if (!empty($everyone)): ?><input type="hidden" name="scope" value="all"><?php endif; ?>
                 <input type="text" name="q" class="form-control" placeholder="Search…"
                        value="<?= htmlspecialchars($search ?? '') ?>">
                 <?php if (!empty($search)): ?>
-                    <a href="/communications" class="btn btn-outline-secondary">&times;</a>
+                    <a href="/communications<?= $__sc ?>" class="btn btn-outline-secondary">&times;</a>
                 <?php endif; ?>
             </form>
         </div>
@@ -93,7 +102,7 @@ usort($__rooms, fn($a, $b) => [$a['team'], $a['slug']] <=> [$b['team'], $b['slug
                              the buttons, which sit above it. */ ?>
                     <div data-thread-id="<?= (int)$t['id'] ?>"
                          class="comms-thread-row position-relative <?= $t['unread'] ? 'unread' : '' ?> <?= $active ? 'active' : '' ?>">
-                        <a href="/communications/thread/<?= (int)$t['id'] ?>"
+                        <a href="/communications/thread/<?= (int)$t['id'] ?><?= $__sc ?>"
                            class="stretched-link" aria-label="Open conversation"></a>
                         <div class="comms-thread-actions">
                             <button type="button" class="btn btn-sm btn-link p-0 comms-act" data-act="read"

@@ -8,6 +8,7 @@
  * @var string $plugin  registered plugin key
  * @var string $label   plugin display label
  * @var string $origin  the plugin's origin (scheme://host), e.g. https://workbench.tiknix.com
+ * @var string $to      a page to open inside the plugin ('' = its landing), already checked by Sidecar::landingPath
  *
  * allow= MUST name the plugin's origin. Without one the allowlist is 'src' — the
  * origin of the src attribute, i.e. tiknix.com — and the browser does not follow the
@@ -17,7 +18,7 @@
  */
 ?>
 <div class="sidecar-embed">
-  <iframe src="/sidecar/launch/<?= htmlspecialchars($plugin) ?>"
+  <iframe src="/sidecar/launch/<?= htmlspecialchars($plugin) ?><?= ($to ?? '') !== '' ? '?to=' . htmlspecialchars(rawurlencode($to)) : '' ?>"
           title="<?= htmlspecialchars($label) ?>"
           allow="clipboard-read <?= htmlspecialchars($origin) ?>; clipboard-write <?= htmlspecialchars($origin) ?>"
           referrerpolicy="same-origin"></iframe>

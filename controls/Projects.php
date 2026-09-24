@@ -83,40 +83,61 @@ class Projects extends BaseControls\Control {
      * Read-only, with a plain PDO rather than RedBean: this is a web request whose
      * connection belongs to core, and pointing the ORM at another database mid-request to
      * read three numbers is how plans ended up written to the wrong one twice today.
-     * Every failure is silent by design — a project with no builds yet has no file, and
-     * that is not an error worth showing anyone.
+     * A project with no builds yet has no file (or an empty one) — that is not an error.
+     * A board that exists and cannot be read IS one, and is logged.
      */
     private function buildState(string $slug, string $app): array {
-        $out = ['plan' => '', 'status' => '', 'done' => 0, 'total' => 0, 'running' => [], 'at' => ''];
+        $out = ['plan' => '', 'planId' => 0, 'status' => '', 'done' => 0, 'total' => 0, 'running' => [], 'live' => 0, 'at' => ''];
         $file = \Model_Instance::dirForSlug((string) $slug, (string) $app) . '/data/workbench.db';
         if (!is_file($file)) return $out;
 
         try {
             $pdo = new \PDO('sqlite:' . $file);
             $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $cols = array_flip(array_column($pdo->query("SELECT name FROM pragma_table_info('workbenchtask')")->fetchAll(\PDO::FETCH_ASSOC), 'name'));
+            if (!$cols) return $out;   // an empty board file: nothing built yet
 
-            $plan = $pdo->query('SELECT id, title, plan_status, status, updated_at
-                                 FROM workbenchtask WHERE parent_task_id IS NULL
-                                 ORDER BY id DESC LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
-            if (!$plan) return $out;
+            // The plan, where the board has plans. Older boards (created before plans) have
+            // no parent_task_id — they still have tasks, and those are shown below; this used
+            // to throw here and the catch turned eleven awaiting tasks into "No builds yet".
+            if (isset($cols['parent_task_id'])) {
+                $plan = $pdo->query('SELECT id, title, ' . (isset($cols['plan_status']) ? 'plan_status' : "'' AS plan_status") . ', status, updated_at
+                                     FROM workbenchtask WHERE parent_task_id IS NULL
+                                     ORDER BY id DESC LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
+                if ($plan) {
+                    $out['plan']   = (string) $plan['title'];
+                    $out['planId'] = (int) $plan['id'];
+                    $out['status'] = (string) ($plan['plan_status'] ?: $plan['status']);
+                    $out['at']     = (string) ($plan['updated_at'] ?? '');
 
-            $out['plan']   = (string) $plan['title'];
-            $out['status'] = (string) ($plan['plan_status'] ?: $plan['status']);
-            $out['at']     = (string) ($plan['updated_at'] ?? '');
-
-            $st = $pdo->prepare('SELECT status, COUNT(*) c FROM workbenchtask
-                                 WHERE parent_task_id = ? GROUP BY status');
-            $st->execute([(int) $plan['id']]);
-            foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $row) {
-                $out['total'] += (int) $row['c'];
-                if (preg_match('/merged|completed|done/i', (string) $row['status'])) $out['done'] += (int) $row['c'];
+                    $st = $pdo->prepare('SELECT status, COUNT(*) c FROM workbenchtask
+                                         WHERE parent_task_id = ? GROUP BY status');
+                    $st->execute([(int) $plan['id']]);
+                    foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+                        $out['total'] += (int) $row['c'];
+                        if (preg_match('/merged|completed|done/i', (string) $row['status'])) $out['done'] += (int) $row['c'];
+                    }
+                }
             }
 
-            $st = $pdo->prepare('SELECT title FROM workbenchtask
-                                 WHERE parent_task_id = ? AND status = ? ORDER BY id LIMIT 3');
-            $st->execute([(int) $plan['id'], 'running']);
-            $out['running'] = array_map('strval', $st->fetchAll(\PDO::FETCH_COLUMN));
-        } catch (\Throwable $e) { /* no board yet, or mid-write; the row just shows less */ }
+            // What is live right now — running, or awaiting the member — anywhere in the
+            // project, not only in the latest plan: an awaiting task from an older plan, or a
+            // standalone one, is exactly what someone opening this page needs to get to.
+            // Each keeps its id so the page can link straight to it.
+            $st = $pdo->prepare("SELECT id, title, status FROM workbenchtask
+                                 WHERE status IN ('running', 'awaiting') AND id != ?
+                                 ORDER BY CASE status WHEN 'awaiting' THEN 0 ELSE 1 END, id DESC LIMIT 4");
+            $st->execute([$out['planId']]);
+            $live = $pdo->prepare("SELECT COUNT(*) FROM workbenchtask WHERE status IN ('running', 'awaiting') AND id != ?");
+            $live->execute([$out['planId']]);
+            $out['live'] = (int) $live->fetchColumn();   // all of them; the card lists the first few
+            $out['running'] = array_map(fn($r) => ['id' => (int) $r['id'], 'title' => (string) $r['title'], 'status' => (string) $r['status']],
+                                        $st->fetchAll(\PDO::FETCH_ASSOC));
+        } catch (\Throwable $e) {
+            // Not "no builds yet": a board that exists and cannot be read is a fault, and the
+            // card would otherwise say something untrue about the project. Logged, named.
+            error_log("ERROR Projects::buildState: {$file} could not be read: " . $e->getMessage());
+        }
 
         return $out;
     }

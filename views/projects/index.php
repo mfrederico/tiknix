@@ -45,13 +45,17 @@ $fmt = function (string $iso): string {
             <code class="text-body-secondary"><?= htmlspecialchars($cc['slug']) ?></code>
           </div>
 
+          <?php /* Tasks open on the Task Board inside the shell (Sidecar::app ?to=). */
+                $__taskUrl = fn(int $id) => '/sidecar/app/workbench?to=' . rawurlencode('/workbench/view?id=' . $id); ?>
           <?php if (!empty($b['plan'])): ?>
             <div class="mt-2">
               <div class="d-flex align-items-center gap-2 flex-wrap">
-                <span class="badge text-bg-<?= $b['status'] === 'done' ? 'success' : ($b['status'] === 'stalled' ? 'danger' : 'primary') ?>">
-                  <?= htmlspecialchars($b['status'] ?: 'draft') ?>
-                </span>
-                <span class="fw-semibold"><?= htmlspecialchars($b['plan']) ?></span>
+                <a href="<?= htmlspecialchars($__taskUrl((int) $b['planId'])) ?>" class="text-decoration-none d-inline-flex align-items-center gap-2" title="Open this plan">
+                  <span class="badge text-bg-<?= $b['status'] === 'done' ? 'success' : ($b['status'] === 'stalled' ? 'danger' : 'primary') ?>">
+                    <?= htmlspecialchars($b['status'] ?: 'draft') ?>
+                  </span>
+                  <span class="fw-semibold text-body"><?= htmlspecialchars($b['plan']) ?></span>
+                </a>
               </div>
               <?php if (!empty($b['total'])): ?>
                 <div class="d-flex align-items-center gap-2 mt-2" style="max-width:26rem">
@@ -64,16 +68,28 @@ $fmt = function (string $iso): string {
                   </span>
                 </div>
               <?php endif; ?>
-              <?php if (!empty($b['running'])): ?>
-                <div class="small text-body-secondary mt-1">
-                  <span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem" role="status"></span>
-                  now: <?= htmlspecialchars(implode(' · ', $b['running'])) ?>
-                </div>
-              <?php endif; ?>
             </div>
-          <?php else: ?>
+          <?php elseif (empty($b['running'])): ?>
             <div class="text-body-secondary small mt-2">No builds yet — open the Builder to start one.</div>
           <?php endif; ?>
+          <?php if (!empty($b['running'])): ?>
+            <div class="small text-body-secondary mt-1 d-flex flex-wrap align-items-center gap-1">
+              <?php if (in_array('running', array_column($b['running'], 'status'), true)): ?>
+              <span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem" role="status"></span>
+              <?php else: ?><i class="bi bi-pause-circle me-1" title="Waiting on you"></i><?php endif; ?>
+              now:
+              <?php foreach ($b['running'] as $i => $t): ?>
+                <?= $i ? '<span aria-hidden="true">·</span>' : '' ?>
+                <a href="<?= htmlspecialchars($__taskUrl($t['id'])) ?>" title="Open this task">
+                  <?= htmlspecialchars($t['title']) ?></a><?php if ($t['status'] === 'awaiting'): ?>
+                  <span class="badge text-bg-warning" title="Waiting on you">awaiting</span><?php endif; ?>
+              <?php endforeach; ?>
+              <?php if ($b['live'] > count($b['running'])): ?>
+                <a href="/sidecar/app/workbench" class="ms-1">+<?= (int) ($b['live'] - count($b['running'])) ?> more</a>
+              <?php endif; ?>
+            </div>
+          <?php endif; ?>
+
 
           <div class="text-body-secondary small mt-2">
             Last change <?= htmlspecialchars($fmt($cc['lastUpdate'])) ?>

@@ -46,6 +46,9 @@ class Sidecar extends Control {
             'email' => (string) ($this->member->email ?? ''),
             'instance' => $project ? (int) $project->id : 0,
             'slug'     => $project ? (string) $project->slug : '',
+            // Open a page inside the plugin instead of its landing (e.g. one task). Signed
+            // into the handoff; the plugin re-checks it is a path on its own host.
+            'to'       => self::landingPath((string) $this->getParam('to', '')),
         ]);
         if (!$url) { $this->flash('error', $plugin['label'] . ' is not configured on this server yet.'); Flight::redirect('/dashboard'); return; }
 
@@ -87,7 +90,18 @@ class Sidecar extends Control {
             return;
         }
 
-        $this->render('sidecar/app', ['title' => $plugin['label'], 'plugin' => $name, 'label' => $plugin['label'], 'origin' => $origin]);
+        $this->render('sidecar/app', ['title' => $plugin['label'], 'plugin' => $name, 'label' => $plugin['label'], 'origin' => $origin,
+            'to' => self::landingPath((string) $this->getParam('to', ''))]);
+    }
+
+    /**
+     * A page to open inside the plugin: a path on the plugin's own host ("/workbench/view?id=12"),
+     * never another host ("//…", "/\…"), a URL with a scheme, or anything with whitespace.
+     * Anything else is '' — the plugin's normal landing.
+     */
+    public static function landingPath(string $to): string {
+        $to = trim($to);
+        return preg_match('#^/(?![/\\\\])[^\s]*$#D', $to) ? $to : '';
     }
 
     /** scheme://host[:port] of an absolute URL, or '' when it has no scheme+host. */

@@ -112,7 +112,11 @@ $when = function ($v, string $fmt = 'Y-m-d H:i') {
                                        placeholder="e.g. beta tester, partner, making up for downtime">
                                 <small class="form-text text-muted">
                                     Now: holds <strong><?= (int)$__q['count'] ?></strong> ·
-                                    free <strong><?= (int)$__q['free'] ?></strong><?= $__q['tier'] === 'legacy' ? ' (legacy: never billed)' : '' ?> ·
+                                    <?php if ($__q['tier'] === 'legacy'): ?>
+                                    free <strong>all</strong> (legacy: never billed; raising this above <?= (int)$__q['cap'] ?> raises the cap) ·
+                                    <?php else: ?>
+                                    free <strong><?= (int)$__q['free'] ?></strong> ·
+                                    <?php endif; ?>
                                     billed <strong><?= (int)$__q['billable'] ?></strong> ·
                                     may hold <strong><?= $__q['cap'] >= PHP_INT_MAX ? 'any number' : (int)$__q['cap'] ?></strong>
                                     <span class="text-muted">(<?= htmlspecialchars((string)$__q['tier']) ?> plan)</span>

@@ -132,14 +132,18 @@ class PlanNotifier {
         try {
             $now = date('Y-m-d H:i:s');
 
-            // One thread per plan: a rebuild of the same plan continues the conversation
-            // rather than starting a new one beside it.
-            $thread = Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['plan', $planId]);
+            // One thread per plan OF ONE PROJECT: a rebuild of the same plan continues the
+            // conversation rather than starting a new one beside it. Plan ids are per
+            // project (each has its own workbench.db), so the id alone is not a key: keyed
+            // on it, every project's plan #32 shared one conversation, owned by whichever
+            // finished first — Serenity's notices landed in fabian's thread and his in yours.
+            $thread = Bean::findOne('thread', 'related_type = ? AND related_id = ? AND project_slug = ?', ['plan', $planId, $slug]);
             if (!$thread || !$thread->id) {
                 $thread = Bean::dispense('thread');
                 $thread->subject       = $subject;
                 $thread->relatedType   = 'plan';
                 $thread->relatedId     = $planId;
+                $thread->projectSlug   = $slug;
                 $thread->ownerMemberId = $memberId;
                 $thread->messageCount  = 0;
                 $thread->status        = 'open';
@@ -153,6 +157,9 @@ class PlanNotifier {
             // is unread, so there is no counter to bump. See Model_Thread::unreadFor().
             $thread->updatedAt     = $now;
             Bean::store($thread);
+            // The owner is IN the conversation, not just named on it: participation is what
+            // Communications scopes by, and what the unread bell is derived from.
+            ThreadMembers::ensure((int) $thread->id, [$memberId], ThreadMembers::ROLE_OWNER);
 
             $msg = Bean::dispense('message');
             $msg->threadId   = (int) $thread->id;
@@ -252,14 +259,16 @@ class PlanNotifier {
 
             // One thread per prompt: a retry of the same request continues it rather than
             // stacking a new failure notice beside the last.
+            // Prompt ids are per project too — keyed with the project, as plans are.
             $thread = $promptId > 0
-                ? Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['promptfail', $promptId])
+                ? Bean::findOne('thread', 'related_type = ? AND related_id = ? AND project_slug = ?', ['promptfail', $promptId, $slug])
                 : null;
             if (!$thread || !$thread->id) {
                 $thread = Bean::dispense('thread');
                 $thread->subject       = $subject;
                 $thread->relatedType   = 'promptfail';
                 $thread->relatedId     = $promptId;
+                $thread->projectSlug   = $slug;
                 $thread->ownerMemberId = $memberId;
                 $thread->messageCount  = 0;
                 $thread->status        = 'open';
@@ -271,6 +280,9 @@ class PlanNotifier {
             $thread->messageCount  = (int) $thread->messageCount + 1;
             $thread->updatedAt     = $now;
             Bean::store($thread);
+            // The owner is IN the conversation, not just named on it: participation is what
+            // Communications scopes by, and what the unread bell is derived from.
+            ThreadMembers::ensure((int) $thread->id, [$memberId], ThreadMembers::ROLE_OWNER);
 
             $msg = Bean::dispense('message');
             $msg->threadId   = (int) $thread->id;

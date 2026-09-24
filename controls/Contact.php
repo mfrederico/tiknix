@@ -18,7 +18,9 @@ class Contact extends BaseControls\Control {
     public function index() {
         // A signed-in member asks from inside the app: no name, email or bot check to fill
         // in (they are signed in), and the answer comes back to their Communications.
-        if (!empty($this->member->id)) {
+        // Platform only: a customer's app owns its /contact (Serenity's is its order and
+        // session inquiry form, for signed-in customers too).
+        if (!empty($this->member->id) && is_core_install()) {
             $this->render('contact/member', [
                 'title'   => 'Support',
                 'project' => ProjectContext::current((int) $this->member->id),
@@ -218,6 +220,7 @@ class Contact extends BaseControls\Control {
      */
     public function ask() {
         if (!$this->requireLogin()) return;
+        if (!is_core_install()) { Flight::redirect('/contact'); return; }
         if (!$this->validateCSRF()) return;
         $subject  = trim((string) $this->getParam('subject', ''));
         $message  = trim((string) $this->getParam('message', ''));

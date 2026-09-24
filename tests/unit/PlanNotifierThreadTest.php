@@ -15,8 +15,15 @@ use PHPUnit\Framework\TestCase;
 class PlanNotifierThreadTest extends TestCase {
 
     private string $db;
+    private $savedLog = null;
 
     protected function setUp(): void {
+        // PlanNotifier installs a FILE logger when Flight has none (it runs in a bare CLI);
+        // put back what was there, or later tests write into the real log/app-*.log.
+        $this->savedLog = \Flight::get('log');
+        $quiet = new \Monolog\Logger('test');
+        $quiet->pushHandler(new \Monolog\Handler\NullHandler());
+        \Flight::set('log', $quiet);
         $this->db = sys_get_temp_dir() . '/plannotify-test-' . getmypid() . '-' . bin2hex(random_bytes(3)) . '.db';
         $pdo = new \PDO('sqlite:' . $this->db);
         // No email on the members: the notifier emails only an address it has, so nothing leaves.
@@ -28,6 +35,7 @@ class PlanNotifierThreadTest extends TestCase {
     }
 
     protected function tearDown(): void {
+        \Flight::set('log', $this->savedLog);
         if (Bean::hasDatabase('default')) Bean::selectDatabase('default');
         @unlink($this->db);
     }

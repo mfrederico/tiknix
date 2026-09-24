@@ -8,6 +8,10 @@
  *
  * lib/Support.php limits agent tickets per member per hour by source, so the column has to
  * exist before the first one arrives. Existing rows came from the public form.
+ *
+ *   message.email_status  the email copy of an in-app note (NotifyService::emailCopy):
+ *                         sent | failed | off — '' when none was attempted
+ *   message.email_error   why it did not go out
  */
 use \RedBeanPHP\R;
 
@@ -20,5 +24,15 @@ if ($_tableCheck('contact')) {
     if (!array_key_exists('project_slug', $cols)) {
         R::exec("ALTER TABLE contact ADD COLUMN project_slug TEXT DEFAULT ''");
         echo "  contact.project_slug added\n";
+    }
+}
+
+if ($_tableCheck('message')) {
+    $cols = R::inspect('message');
+    foreach (['email_status', 'email_error'] as $col) {
+        if (!array_key_exists($col, $cols)) {
+            R::exec("ALTER TABLE message ADD COLUMN {$col} TEXT DEFAULT ''");
+            echo "  message.{$col} added\n";
+        }
     }
 }

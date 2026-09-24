@@ -170,7 +170,7 @@ class Admin extends Control {
                         // operator's own account is exactly the one they raise to "unlimited".
                         // Through the model: the number and its audit row (who, when, why)
                         // are written together — a grant is money not collected.
-                        if (isset($request->data->free_projects)) {
+                        if (is_core_install() && isset($request->data->free_projects)) {
                             $member->box()->setFreeProjects((int) $request->data->free_projects,
                                 (int) $this->member->id, (string) ($request->data->free_projects_note ?? ''));
                         }
@@ -263,11 +263,13 @@ class Admin extends Control {
         $this->viewData['twofaEnabled'] = \app\TwoFactorAuth::isEnabled($member);
         // Projects: what they hold, what is free, what is billed — and who granted the free
         // ones. The same snapshot the invoice is answered with, so the page cannot disagree.
-        $this->viewData['projectQuota'] = \app\ProjectQuota::snapshot((int) $member->id);
-        $this->viewData['freeGrants'] = array_map(fn($a) => [
+        // Platform only: projects, and paying for them, exist on tiknix.com — on a customer's
+        // app this member edit screen is theirs (Serenity puts its member types here).
+        $this->viewData['projectQuota'] = is_core_install() ? \app\ProjectQuota::snapshot((int) $member->id) : null;
+        $this->viewData['freeGrants'] = is_core_install() ? array_map(fn($a) => [
             'row' => $a,
             'by'  => Bean::load('member', (int) $a->byRef)->displayName('member #' . (int) $a->byRef),
-        ], $member->box()->audits('free_projects', 10));
+        ], $member->box()->audits('free_projects', 10)) : [];
 
         $this->viewData['featureFlags'] = [];
         foreach (\app\Feature::catalogForLevel((int)$member->level) as $fkey => $fmeta) {

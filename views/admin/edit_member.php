@@ -93,6 +93,7 @@ $when = function ($v, string $fmt = 'Y-m-d H:i') {
                             </div>
                         </div>
 
+                        <?php if ($projectQuota !== null): /* platform only — see Admin::editMember */ ?>
                         <div class="row">
                             <?php $__q = $projectQuota; ?>
                             <div class="col-sm-6 mb-3">
@@ -130,6 +131,7 @@ $when = function ($v, string $fmt = 'Y-m-d H:i') {
                             </div>
                             <?php endif; ?>
                         </div>
+                        <?php endif; ?>
 
                         <hr class="my-4">
                         <h5 class="mb-3">Profile</h5>

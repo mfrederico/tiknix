@@ -456,7 +456,7 @@ class NotifyService {
         if ($memberA <= 0 || $memberB <= 0 || $memberA === $memberB) return null;
 
         $existing = (int) Bean::getCell(
-            'SELECT t.id FROM emailthread t '
+            'SELECT t.id FROM thread t '
           . 'JOIN threadmember ma ON ma.thread_id = t.id AND ma.member_id = ? '
           . 'JOIN threadmember mb ON mb.thread_id = t.id AND mb.member_id = ? '
           . "WHERE t.kind = 'dm' LIMIT 1",

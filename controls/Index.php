@@ -101,19 +101,6 @@ class Index extends BaseControls\Control {
     }
 
     /**
-     * Founder stories — PRIMARY site only (/stories aliases here). The long form of the
-     * landing's founder section: who built what on tiknix, what they started with and what
-     * it does now. Stories are showcase entries carrying a story (scripts/seed-showcase.php).
-     */
-    public function stories($params = []) {
-        if (!self::isFlagship()) { Flight::redirect('/'); return; }
-        $this->render('index/stories', [
-            'title'   => 'Founder stories — tiknix',
-            'stories' => \Model_Showcase::stories(Bean::find('showcase', 'enabled = 1 ORDER BY sort_order ASC, id ASC')),
-        ], false);
-    }
-
-    /**
      * Public pricing page — PRIMARY site only. On a provisioned instance this
      * redirects to the plain landing page so instance visitors never see it.
      * Pre-launch gate: the CTA is the same lead-capture as the landing hero

@@ -1,7 +1,7 @@
 <?php
 /**
  * Founder stories — the long form of the landing's founder section. Standalone like the
- * landing (no app layout), rendered by Index::stories() on the flagship host only.
+ * landing (no app layout), rendered by Stories::index() on the flagship host only.
  *
  * Vars: $stories (Model_Showcase::stories() — founder, role, headline, startedWith,
  *       summary, body[], built[], stats[{v,k}], image, slug, title, url)

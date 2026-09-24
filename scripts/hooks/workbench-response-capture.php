@@ -3,234 +3,80 @@
 /**
  * Workbench Response Capture Hook (Stop Hook)
  *
- * Captures Claude's responses and logs them to the workbench task.
- * Also updates task status to "awaiting" when Claude finishes responding.
+ * When a Task Board agent finishes a turn: its reply goes into the task's conversation,
+ * and a task still marked `running` becomes `awaiting` (the user's turn). Both through ONE
+ * call — add_task_log with as_reply: true — on the PROJECT's MCP server, with the key the
+ * agent itself uses (the workspace's .mcp.json, server "tiknix").
  *
- * Environment variables (exported by the runner script that launched the agent):
- * - TIKNIX_TASK_ID: The workbench task ID
- * - TIKNIX_PROJECT_ROOT: The project root directory
- * - TIKNIX_MEMBER_ID: The member who started the task
+ * Through the MCP server, not the database. This hook used to open workbench.db directly
+ * (TIKNIX_WORKBENCH_DB), which a JAILED session cannot see: jailed, nothing was saved and
+ * no task was ever handed back by it. It also read the reply from `stop_hook_response`,
+ * which Claude Code does not send — the reply is `last_assistant_message`, or the last
+ * assistant turn in `transcript_path`.
  *
- * This hook only activates when running inside a workbench task session.
+ * Environment (exported by the runner script that launched the agent):
+ *   TIKNIX_TASK_ID       the workbench task — absent = not a task session, do nothing
+ *   TIKNIX_PROJECT_ROOT  the workspace, whose .mcp.json names the project's MCP server
+ *
+ * A hook must never stop the agent: every failure is said on stderr and the hook exits 0.
  */
 
-// Debug log for troubleshooting
-$debugLog = '/tmp/stop-hook-debug.log';
-file_put_contents($debugLog, date('Y-m-d H:i:s') . " - Stop hook fired\n", FILE_APPEND);
+$taskId = (int) (getenv('TIKNIX_TASK_ID') ?: 0);
+if ($taskId <= 0) { echo '{}'; exit(0); }   // not a Task Board session (e.g. a developer's own Claude Code)
 
-// Check if we're in a workbench task context
-$taskId = getenv('TIKNIX_TASK_ID');
-file_put_contents($debugLog, "TIKNIX_TASK_ID: " . ($taskId ?: 'NOT SET') . "\n", FILE_APPEND);
+$say = function (string $msg) use ($taskId): void {
+    fwrite(STDERR, "workbench-response-capture (task {$taskId}): {$msg}\n");
+};
 
-if (!$taskId) {
-    // Not in a workbench context, exit silently
-    file_put_contents($debugLog, "Exiting - no task ID\n\n", FILE_APPEND);
-    echo json_encode(new stdClass());
-    exit(0);
+// ---- the project's MCP server, as the agent reaches it -----------------------------
+$root = rtrim((string) (getenv('TIKNIX_PROJECT_ROOT') ?: ''), '/');
+$mcp  = $root !== '' ? json_decode((string) @file_get_contents($root . '/.mcp.json'), true) : null;
+$srv  = is_array($mcp) ? ($mcp['mcpServers']['tiknix'] ?? null) : null;
+$url  = is_array($srv) ? (string) ($srv['url'] ?? '') : '';
+if ($url === '') {
+    $say("no 'tiknix' MCP server in " . ($root !== '' ? "{$root}/.mcp.json" : '(TIKNIX_PROJECT_ROOT unset)') . '; the reply is NOT saved and the task is NOT handed back');
+    echo '{}'; exit(0);
 }
+$headers = ['Content-Type: application/json', 'Accept: application/json, text/event-stream'];
+foreach ((array) ($srv['headers'] ?? []) as $k => $v) $headers[] = "{$k}: {$v}";
 
-// TIKNIX_PROJECT_ROOT must point to main project (for vendor, bootstrap, DB)
-// CLAUDE_PROJECT_DIR may point to isolated workspace (no vendor there)
-$mainProject = getenv('TIKNIX_PROJECT_ROOT');
-if (!$mainProject) {
-    // No guessing the project root from the script's location: this file is copied into
-    // every worktree, and "the tree beside me" is the mistake plan-ingest and
-    // plan-orchestrate both made. A hook must not stop the agent, so it says so and does
-    // nothing.
-    fwrite(STDERR, "workbench-response-capture: TIKNIX_PROJECT_ROOT is not set; the response is NOT captured to the task.\n");
-    exit(0);
-}
-
-// Load the application for database access from main project
-require_once $mainProject . '/vendor/autoload.php';
-require_once $mainProject . '/bootstrap.php';
-
-use RedBeanPHP\R as R;
-use \app\Bean;
-
-// Initialize database
-try {
-    $configPath = $mainProject . '/conf/config.ini';
-    if (file_exists($configPath)) {
-        $config = parse_ini_file($configPath, true);
-        // Task data lives in the INSTANCE'S workbench.db under the sidecar regime, and
-        // the agent's environment already carries that path. Falling straight through to
-        // core's db means loading a workbenchtask id that means something else there —
-        // the same mistake plan-ingest and plan-orchestrate both made.
-        //
-        // TIKNIX_TASK_DB is the agent's copy of that path: ClaudeRunner strips
-        // TIKNIX_WORKBENCH_DB from the agent (bootstrap.php would move every command the agent
-        // runs onto the task database) and hands this hook the path under a name bootstrap
-        // ignores. The old name is still read for sessions started before that change.
-        $dbPath = trim((string) (getenv('TIKNIX_TASK_DB') ?: getenv('TIKNIX_WORKBENCH_DB') ?: ''));
-        if ($dbPath !== '' && !is_readable($dbPath)) {
-            // Jailed: the task database is outside the jail. Say so — never fall through to
-            // the project's own database under a task id that means something else there.
-            fwrite(STDERR, "workbench-response-capture: the task database {$dbPath} is not visible here (jailed session); the response is NOT captured to task {$taskId}.\n");
-            exit(0);
+// ---- the reply ---------------------------------------------------------------------
+$in = json_decode((string) file_get_contents('php://stdin'), true);
+$text = is_array($in) ? trim((string) ($in['last_assistant_message'] ?? '')) : '';
+if ($text === '' && is_array($in) && !empty($in['transcript_path']) && is_readable($in['transcript_path'])) {
+    // Newest assistant turn that has text (tool-only turns have none).
+    $lines = file($in['transcript_path'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+    for ($i = count($lines) - 1; $i >= 0 && $text === ''; $i--) {
+        $e = json_decode($lines[$i], true);
+        if (($e['type'] ?? '') !== 'assistant') continue;
+        $parts = [];
+        foreach ((array) ($e['message']['content'] ?? []) as $b) {
+            if (is_array($b) && ($b['type'] ?? '') === 'text') $parts[] = (string) $b['text'];
         }
-        if ($dbPath === '') {
-            $dbPath = $mainProject . '/' . ($config['database']['path'] ?? '');
-            if (($config['database']['path'] ?? '') === '') { fwrite(STDERR, "workbench-response-capture: no TIKNIX_WORKBENCH_DB and no [database] path in {$configPath}; NOT captured.\n"); exit(0); }
-        }
-        if (!Bean::hasDatabase('default')) {
-            R::setup('sqlite:' . $dbPath);
-        }
+        $text = trim(implode("\n", $parts));
     }
-} catch (Exception $e) {
-    // Can't connect to DB, exit silently
-    echo json_encode(new stdClass());
-    exit(0);
 }
+// Nothing worth keeping is still a turn that ended: the task is handed back all the same.
+if (strlen($text) < 10 || str_starts_with($text, '{') || str_starts_with($text, '[')) $text = '';
 
-// THE STATUS TRANSITION HAPPENS FIRST, before anything that can bail out.
-//
-// This used to run at the very end, after five silent exit(0) guards belonging to
-// the TRANSCRIPT capture — stdin not being valid JSON, no message, a reply under
-// ten characters, a reply that starts with { or [. So "mark the task no longer
-// running" was gated behind "successfully record what Claude said", which are two
-// unrelated jobs, and any of those conditions left the task showing `running`
-// forever with the agent sitting idle at its prompt.
-//
-// That is the bug behind "the task still thinks it is running": the agent had
-// finished, the hook had fired, and the one line that mattered was never reached.
-// Capturing the reply is a convenience. Releasing the task is the contract.
-$statusResult = updateTaskStatus($taskId);
-file_put_contents($debugLog, "updateTaskStatus (early): " . ($statusResult ? 'ok' : 'FAILED') . "\n", FILE_APPEND);
-
-// Read the hook input from stdin
-$input = file_get_contents('php://stdin');
-$hookInput = json_decode(($input) ?? '', true);
-
-if (!$hookInput) {
-    file_put_contents($debugLog, "no usable stdin payload — status already handled\n\n", FILE_APPEND);
-    echo json_encode(new stdClass());
-    exit(0);
+// ---- one call: save the reply, hand the task back ---------------------------------
+$body = json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => [
+    'name' => 'add_task_log', 'arguments' => ['task_id' => $taskId, 'message' => $text, 'as_reply' => true],
+]], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+$ch = curl_init($url);
+curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => $headers,
+                        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 5]);
+$resp = curl_exec($ch);
+$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+if ($resp === false) {
+    $say("could not reach {$url}: " . curl_error($ch) . '; the reply is NOT saved and the task is NOT handed back');
+    echo '{}'; exit(0);
 }
+// The server may answer as SSE (data: …) or plain JSON.
+$json = preg_match('/^data:\s*(\{.*\})\s*$/m', (string) $resp, $m) ? $m[1] : (string) $resp;
+$r = json_decode($json, true);
+$err = $code !== 200 ? "HTTP {$code}" : ($r['error']['message'] ?? (!empty($r['result']['isError']) ? (string) ($r['result']['content'][0]['text'] ?? 'tool error') : ''));
+if ($err !== '') $say("add_task_log refused: {$err}");
 
-// Extract the stop_hook_response (Claude's message)
-$stopResponse = $hookInput['stop_hook_response'] ?? [];
-$message = $stopResponse['message'] ?? null;
-
-if (!$message) {
-    echo json_encode(new stdClass());
-    exit(0);
-}
-
-// Extract text content from the message
-$textContent = extractTextContent($message);
-
-if (!$textContent || strlen(trim($textContent)) < 10) {
-    // Skip very short or empty responses
-    echo json_encode(new stdClass());
-    exit(0);
-}
-
-// Skip if it's mostly JSON (tool output)
-$trimmed = trim($textContent);
-if (str_starts_with($trimmed, '{') || str_starts_with($trimmed, '[')) {
-    echo json_encode(new stdClass());
-    exit(0);
-}
-
-// Post the response as a task log entry
-$logResult = addTaskLog($taskId, $textContent);
-file_put_contents($debugLog, "addTaskLog result: " . ($logResult ? 'success' : 'failed') . "\n", FILE_APPEND);
-
-// Status was already released at the top, before any guard that can exit — see
-// the note there. Not repeated here: updateTaskStatus only acts on a task still
-// marked `running`, so a second call is a no-op, but calling it twice invites
-// somebody to move the first one back down.
-file_put_contents($debugLog, "Content length: " . strlen($textContent) . "\n\n", FILE_APPEND);
-
-// Always return success to not block Claude
-echo json_encode(new stdClass());
+echo '{}';
 exit(0);
-
-
-/**
- * Extract text content from Claude's response message
- */
-function extractTextContent(array $message): ?string {
-    $content = $message['content'] ?? [];
-
-    if (is_string($content)) {
-        return $content;
-    }
-
-    // Content is an array of content blocks
-    $textParts = [];
-    foreach ($content as $block) {
-        if (is_array($block) && ($block['type'] ?? '') === 'text') {
-            $textParts[] = $block['text'] ?? '';
-        } elseif (is_string($block)) {
-            $textParts[] = $block;
-        }
-    }
-
-    return $textParts ? implode("\n", $textParts) : null;
-}
-
-/**
- * Truncate message to avoid overwhelming the log system
- */
-function truncateMessage(string $text, int $maxLength = 2000): string {
-    if (strlen($text) <= $maxLength) {
-        return $text;
-    }
-    return substr($text, 0, $maxLength) . "\n\n... [truncated]";
-}
-
-/**
- * Add Claude's response to the conversation (taskcomment table)
- */
-function addTaskLog(string $taskId, string $message): bool {
-    try {
-        // Get the task to find the member_id
-        $task = Bean::load('workbenchtask', (int)$taskId);
-        if (!$task->id) {
-            // Say so on stderr: a hook cannot show a user anything, and silently dropping
-            // the agent's reply is how a wrong database looks like "no response captured".
-            fwrite(STDERR, "[response-capture] no workbenchtask #{$taskId} in {$GLOBALS['dbPath']}\n");
-            return false;
-        }
-
-        $comment = Bean::dispense('taskcomment');
-        $comment->taskId = (int)$taskId;
-        $comment->memberId = $task->memberId; // Use task owner as author
-        $comment->content = truncateMessage($message);
-        $comment->isFromClaude = 1; // Mark as Claude's response
-        $comment->isInternal = 0;
-        $comment->createdAt = date('Y-m-d H:i:s');
-        Bean::store($comment);
-        return true;
-    } catch (Exception $e) {
-        // Never interrupt the agent — but never silently either.
-        fwrite(STDERR, 'workbench-response-capture: comment NOT saved: ' . $e->getMessage() . "\n");
-        return false;
-    }
-}
-
-/**
- * Update task status to "awaiting" (user's turn to respond)
- */
-function updateTaskStatus(string $taskId): bool {
-    try {
-        $task = Bean::load('workbenchtask', (int)$taskId);
-        if (!$task->id) {
-            return false;
-        }
-
-        // Only update to awaiting if currently running
-        if ($task->status === 'running') {
-            $task->status = 'awaiting';
-            $task->progressMessage = 'Waiting for user input';
-            $task->updatedAt = date('Y-m-d H:i:s');
-            Bean::store($task);
-        }
-        return true;
-    } catch (Exception $e) {
-        fwrite(STDERR, 'workbench-response-capture: task NOT updated: ' . $e->getMessage() . "\n");
-        return false;
-    }
-}

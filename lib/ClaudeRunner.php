@@ -28,10 +28,10 @@ class ClaudeRunner {
      * and written the app's data in the TASK database while reporting success. The agent
      * builds the app, it does not write the task board. Only this script's own
      * task-complete.php step needs the variable, and keeps it. The agent's stop hook
-     * (workbench-response-capture) still gets the path, as TIKNIX_TASK_DB, which
-     * bootstrap.php does not read.
+     * (workbench-response-capture) reports through the project's MCP server, not the
+     * database, so it needs neither.
      */
-    private const AGENT_ENV = 'env -u TIKNIX_WORKBENCH_DB ${TIKNIX_WORKBENCH_DB:+TIKNIX_TASK_DB="$TIKNIX_WORKBENCH_DB"} ';
+    private const AGENT_ENV = 'env -u TIKNIX_WORKBENCH_DB ';
 
     private int $taskId;
     private int $memberId;

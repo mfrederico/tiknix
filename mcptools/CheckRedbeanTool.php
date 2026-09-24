@@ -5,7 +5,7 @@ class CheckRedbeanTool extends BaseTool {
 
     public static string $name = 'check_redbean';
 
-    public static string $description = 'Check PHP code for RedBeanPHP convention violations (raw R:: instead of the Bean wrapper, bean naming, associations, exec usage).';
+    public static string $description = 'Check PHP code for RedBeanPHP convention violations (raw R:: instead of the Bean wrapper, bean naming, associations, exec usage). A path must be inside this install; from a Task Board agent\'s workspace pass `code` instead (the server cannot read the workspace).';
 
     public static array $inputSchema = [
         'type' => 'object',
@@ -30,15 +30,10 @@ class CheckRedbeanTool extends BaseTool {
             throw new \Exception("Either 'path' or 'code' is required");
         }
 
-        $projectRoot = \Flight::get('project_root') ?? dirname(dirname(__DIR__));
-        $validator = new \app\ValidationService($projectRoot);
+        $validator = new \app\ValidationService($this->installRoot());
 
         if ($path) {
-            $fullPath = $this->resolvePath($path, $projectRoot);
-            if (!file_exists($fullPath)) {
-                throw new \Exception("File not found: {$path}");
-            }
-            $code = file_get_contents($fullPath);
+            $code = file_get_contents($this->readablePath($path));
         }
 
         $result = $validator->checkRedBeanConventions($code, $path ?? 'inline');
@@ -48,12 +43,5 @@ class CheckRedbeanTool extends BaseTool {
             'errors' => $result['errors'] ?? [],
             'warnings' => $result['warnings'] ?? []
         ], JSON_PRETTY_PRINT);
-    }
-
-    private function resolvePath(string $path, string $projectRoot): string {
-        if (strpos($path, '/') === 0) {
-            return $path;
-        }
-        return $projectRoot . '/' . ltrim($path, './');
     }
 }

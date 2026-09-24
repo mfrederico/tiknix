@@ -5,7 +5,7 @@ class CheckFlightphpTool extends BaseTool {
 
     public static string $name = 'check_flightphp';
 
-    public static string $description = 'Check PHP code for FlightPHP pattern compliance (controller conventions, routing).';
+    public static string $description = 'Check PHP code for FlightPHP pattern compliance (controller conventions, routing). A path must be inside this install; from a Task Board agent\'s workspace pass `code` instead (the server cannot read the workspace).';
 
     public static array $inputSchema = [
         'type' => 'object',
@@ -30,15 +30,10 @@ class CheckFlightphpTool extends BaseTool {
             throw new \Exception("Either 'path' or 'code' is required");
         }
 
-        $projectRoot = \Flight::get('project_root') ?? dirname(dirname(__DIR__));
-        $validator = new \app\ValidationService($projectRoot);
+        $validator = new \app\ValidationService($this->installRoot());
 
         if ($path) {
-            $fullPath = $this->resolvePath($path, $projectRoot);
-            if (!file_exists($fullPath)) {
-                throw new \Exception("File not found: {$path}");
-            }
-            $code = file_get_contents($fullPath);
+            $code = file_get_contents($this->readablePath($path));
         }
 
         $result = $validator->checkFlightPhpPatterns($code, $path ?? 'inline');
@@ -48,12 +43,5 @@ class CheckFlightphpTool extends BaseTool {
             'warnings' => $result['warnings'] ?? [],
             'info' => $result['info'] ?? []
         ], JSON_PRETTY_PRINT);
-    }
-
-    private function resolvePath(string $path, string $projectRoot): string {
-        if (strpos($path, '/') === 0) {
-            return $path;
-        }
-        return $projectRoot . '/' . ltrim($path, './');
     }
 }

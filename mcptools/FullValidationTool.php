@@ -5,32 +5,41 @@ class FullValidationTool extends BaseTool {
 
     public static string $name = 'full_validation';
 
-    public static string $description = 'Run all validators (PHP syntax, security, RedBeanPHP, FlightPHP) on code.';
+    public static string $description = 'Run all validators (PHP syntax, security, RedBeanPHP, FlightPHP) on code. Also takes source as `code`. A path must be inside this install; from a Task Board agent\'s workspace pass `code` instead (the server cannot read the workspace).';
 
     public static array $inputSchema = [
         'type' => 'object',
         'properties' => [
             'path' => [
                 'type' => 'string',
-                'description' => 'Path to PHP file or directory to validate'
+                'description' => 'Path to a PHP file or directory in this install'
+            ],
+            'code' => [
+                'type' => 'string',
+                'description' => 'PHP source to validate directly (alternative to path)'
+            ],
+            'label' => [
+                'type' => 'string',
+                'description' => 'With code: the file it came from, used in messages (e.g. controls/Img.php)'
             ]
         ],
-        'required' => ['path']
+        'required' => []
     ];
 
     public function execute(array $args): string {
         $this->validateArgs($args);
 
         $path = $args['path'] ?? null;
-        if (!$path) {
-            throw new \Exception("Path is required");
+        $code = $args['code'] ?? null;
+        if (!$path && ($code === null || $code === '')) {
+            throw new \Exception("Either 'path' or 'code' is required");
         }
 
-        $projectRoot = \Flight::get('project_root') ?? dirname(dirname(__DIR__));
-        $fullPath = $this->resolvePath($path, $projectRoot);
-
-        $validator = new \app\ValidationService($projectRoot);
-        $result = $validator->fullValidation($fullPath);
+        $validator = new \app\ValidationService($this->installRoot());
+        $result = $path
+            ? $validator->fullValidation($this->readablePath($path))
+            : $validator->validateCode((string) $code, (string) ($args['label'] ?? 'inline'));
+        $path = $path ?? ($args['label'] ?? 'inline');
 
         return json_encode([
             'path' => $path,
@@ -39,12 +48,5 @@ class FullValidationTool extends BaseTool {
             'warnings' => $result['warnings'],
             'info' => $result['info']
         ], JSON_PRETTY_PRINT);
-    }
-
-    private function resolvePath(string $path, string $projectRoot): string {
-        if (strpos($path, '/') === 0) {
-            return $path;
-        }
-        return $projectRoot . '/' . ltrim($path, './');
     }
 }

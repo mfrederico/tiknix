@@ -91,38 +91,65 @@ class ValidationService {
         $files = $this->getPhpFiles($path);
 
         foreach ($files as $file) {
-            // PHP Syntax
-            $syntax = $this->validatePhpSyntax($file);
-            if (!$syntax['valid']) {
-                $results['valid'] = false;
-                $results['errors'] = array_merge($results['errors'], $syntax['errors']);
-            }
-
-            // Read file content
-            $content = file_get_contents($file);
-            $relativePath = str_replace($this->projectRoot . '/', '', $file);
-
-            // Security
-            $security = $this->scanSecurity($content, $relativePath);
-            if (!empty($security['critical'])) {
-                $results['valid'] = false;
-            }
-            $results['errors'] = array_merge($results['errors'], $security['critical'] ?? []);
-            $results['warnings'] = array_merge($results['warnings'], $security['high'] ?? []);
-            $results['warnings'] = array_merge($results['warnings'], $security['medium'] ?? []);
-
-            // RedBeanPHP
-            $redbean = $this->checkRedBeanConventions($content, $relativePath);
-            $results['errors'] = array_merge($results['errors'], $redbean['errors'] ?? []);
-            $results['warnings'] = array_merge($results['warnings'], $redbean['warnings'] ?? []);
-
-            // FlightPHP
-            $flight = $this->checkFlightPhpPatterns($content, $relativePath);
-            $results['warnings'] = array_merge($results['warnings'], $flight['warnings'] ?? []);
-            $results['info'] = array_merge($results['info'], $flight['info'] ?? []);
+            $this->mergeContentChecks($results, $this->validatePhpSyntax($file), (string) file_get_contents($file),
+                str_replace($this->projectRoot . '/', '', $file));
         }
 
         return $results;
+    }
+
+    /**
+     * Full validation of PHP SOURCE rather than a path — syntax, security, RedBeanPHP,
+     * FlightPHP, exactly as fullValidation() does per file.
+     *
+     * For a caller whose files this process cannot read: a Task Board agent works in a
+     * task workspace outside its project, and the project's MCP server runs in a pool
+     * walled to the project (open_basedir), so a path from the agent is unreadable here.
+     */
+    public function validateCode(string $code, string $label = 'inline'): array {
+        $results = ['valid' => true, 'errors' => [], 'warnings' => [], 'info' => []];
+        $this->mergeContentChecks($results, $this->validatePhpCode($code, $label), $code, $label);
+        return $results;
+    }
+
+    /** php -l on source: a temp file in the system temp dir (inside any open_basedir), then removed. */
+    public function validatePhpCode(string $code, string $label = 'inline'): array {
+        $tmp = tempnam(sys_get_temp_dir(), 'tkval');
+        if ($tmp === false || file_put_contents($tmp, $code) === false) {
+            return ['valid' => false, 'errors' => ['Could not write a temporary file to check syntax in ' . sys_get_temp_dir()]];
+        }
+        try {
+            $r = $this->validatePhpSyntax($tmp);
+        } finally {
+            @unlink($tmp);
+        }
+        // Name the caller's file, not the temp file, in any message.
+        $r['errors'] = array_map(fn($e) => str_replace($tmp, $label, (string) $e), $r['errors']);
+        return $r;
+    }
+
+    /** One file's checks folded into $results — shared by fullValidation() and validateCode(). */
+    private function mergeContentChecks(array &$results, array $syntax, string $content, string $relativePath): void {
+        if (!$syntax['valid']) {
+            $results['valid'] = false;
+            $results['errors'] = array_merge($results['errors'], $syntax['errors']);
+        }
+
+        $security = $this->scanSecurity($content, $relativePath);
+        if (!empty($security['critical'])) {
+            $results['valid'] = false;
+        }
+        $results['errors'] = array_merge($results['errors'], $security['critical'] ?? []);
+        $results['warnings'] = array_merge($results['warnings'], $security['high'] ?? []);
+        $results['warnings'] = array_merge($results['warnings'], $security['medium'] ?? []);
+
+        $redbean = $this->checkRedBeanConventions($content, $relativePath);
+        $results['errors'] = array_merge($results['errors'], $redbean['errors'] ?? []);
+        $results['warnings'] = array_merge($results['warnings'], $redbean['warnings'] ?? []);
+
+        $flight = $this->checkFlightPhpPatterns($content, $relativePath);
+        $results['warnings'] = array_merge($results['warnings'], $flight['warnings'] ?? []);
+        $results['info'] = array_merge($results['info'], $flight['info'] ?? []);
     }
 
     /**
@@ -470,6 +497,11 @@ class ValidationService {
     /**
      * Get PHP files from path
      */
+    /** The PHP files at $path — the file itself, or every one under a directory. */
+    public function phpFilesIn(string $path): array {
+        return $this->getPhpFiles($path);
+    }
+
     private function getPhpFiles(string $path): array {
         if (is_file($path)) {
             return pathinfo($path, PATHINFO_EXTENSION) === 'php' ? [$path] : [];

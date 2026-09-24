@@ -193,6 +193,36 @@ abstract class BaseTool {
      * @param array $args Arguments to validate
      * @throws \Exception if validation fails
      */
+    /** The install this tool runs in — the project for a project's MCP server, core for core's. */
+    protected function installRoot(): string {
+        return dirname(__DIR__);
+    }
+
+    /**
+     * A file path an agent passed, as one this server can read — or a refusal that says
+     * what to do instead.
+     *
+     * Relative = relative to THIS install. (The tools used to fall back to
+     * dirname(dirname(__DIR__)), one level too high: '/var/www/html/default/controls/…'.)
+     * Absolute paths must be inside the install: a Task Board agent works in a task
+     * workspace outside its project, and a project's MCP server runs in a pool walled to the
+     * project (open_basedir), so such a path cannot be opened here — and reading arbitrary
+     * files off the server was never these tools' job. The agent passes the source as
+     * `code` instead.
+     */
+    protected function readablePath(string $path): string {
+        $root = $this->installRoot();
+        $full = str_starts_with($path, '/') ? $path : $root . '/' . preg_replace('#^\./#', '', $path);
+        $real = @realpath($full);   // @: outside open_basedir it warns, and the refusal below says it better
+        $inside = fn(string $p) => $p === $root || str_starts_with($p, $root . '/');
+        if ($real === false ? !$inside($full) : !$inside($real)) {
+            throw new \Exception("{$path} is outside this install ({$root}), so this server cannot read it — a task "
+                . "workspace is not the project. Pass the file's contents as `code` instead.");
+        }
+        if ($real === false) throw new \Exception("File not found: {$path} (resolved to {$full})");
+        return $real;
+    }
+
     protected function validateArgs(array $args): void {
         $required = static::$inputSchema['required'] ?? [];
 

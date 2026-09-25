@@ -79,16 +79,17 @@ class Leads extends Control {
             ['db' => 'first_name', 'search' => 'like'],   // 0  First Name
             ['db' => 'last_name',  'search' => 'like'],   // 1  Last Name
             ['db' => 'email',      'search' => 'like'],   // 2  Email
-            ['db' => 'created_at', 'search' => null],     // 3  Signed Up
-            ['db' => null,         'orderable' => false], // 4  Invite state (derived)
-            ['db' => null,         'orderable' => false], // 5  Actions
+            ['db' => 'source',     'search' => 'like'],   // 3  Source (Model_Lead::capture)
+            ['db' => 'created_at', 'search' => null],     // 4  Signed Up
+            ['db' => null,         'orderable' => false], // 5  Invite state (derived)
+            ['db' => null,         'orderable' => false], // 6  Actions
         ];
 
         // Read once, outside the row callback, instead of a query per rendered row.
         $invites = $this->inviteStates();
 
         $resp = DataTableResponse::build('lead', $columns, $this->getParams(), [
-            'globalCols' => ['first_name', 'last_name', 'email'],
+            'globalCols' => ['first_name', 'last_name', 'email', 'source'],
             'row' => function (array $r) use ($invites): array {
                 $id    = (int)($r['id'] ?? 0);
                 $email = h($r['email'] ?? '');
@@ -145,6 +146,8 @@ class Leads extends Control {
                     h($first) . $flag,
                     h($last),
                     $email !== '' ? '<a href="mailto:' . $email . '">' . $email . '</a>' : '—',
+                    // '' on rows from before the source column: shown as a dash, not guessed
+                    trim((string) ($r['source'] ?? '')) !== '' ? '<span class="badge bg-light text-dark border">' . h($r['source']) . '</span>' : '<span class="text-secondary small">—</span>',
                     '<span class="ui-mono small text-secondary">' . h($r['created_at'] ?? '') . '</span>',
                     $stateCell,
                     '<div class="text-end text-nowrap">' . $inviteBtn . $emailBtn . $deleteBtn . '</div>',

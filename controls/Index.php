@@ -182,22 +182,22 @@ class Index extends BaseControls\Control {
         }
 
         try {
-            $lead = Bean::dispense('lead');
-            $lead->firstName = $firstName;
-            $lead->lastName  = $lastName;
-            $lead->email     = $email;
-            $lead->createdAt = date('Y-m-d H:i:s');
             /* Recorded, not refused. A bot told "rejected" tries again differently until
                something works; one told "thank you" stops thinking about you. Marking it
                also keeps the evidence — a filter that silently deletes cannot be checked,
-               and the first question about any spam filter is what it caught by mistake. */
-            $lead->status     = $spam ? 'spam' : 'new';
-            $lead->spamReason = $spam ? implode(', ', $spam) : '';
-            // Stored because there was nothing to look at: no IP, no agent, no way to tell
-            // one source from many. Whatever comes next needs this to be measurable.
-            $lead->ipAddress = mb_substr((string) (Flight::request()->ip ?? ''), 0, 45);
-            $lead->userAgent = mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
-            Bean::store($lead);
+               and the first question about any spam filter is what it caught by mistake.
+               One lead per email (Model_Lead::capture): a person who signs up twice fills in
+               their one row rather than adding another, and a returning lead is never
+               re-marked by a later, worse-looking submission. IP and agent are stored
+               because there was nothing to look at before: no way to tell one source from
+               many. */
+            $lead = \Model_Lead::capture($email, $firstName, $lastName, [
+                'source'     => 'website',
+                'status'     => $spam ? \Model_Lead::STATUS_SPAM : \Model_Lead::STATUS_NEW,
+                'spamReason' => $spam ? implode(', ', $spam) : '',
+                'ip'         => (string) (Flight::request()->ip ?? ''),
+                'userAgent'  => (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''),
+            ]);
 
             if ($spam) {
                 Flight::get('log')->info('Lead flagged as spam', [

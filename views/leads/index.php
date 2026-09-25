@@ -36,6 +36,7 @@
                                         <th>First Name</th>
                                         <th>Last Name</th>
                                         <th>Email</th>
+                                        <th>Source</th>
                                         <th>Signed Up</th>
                                         <th data-dt-noorder data-dt-nosearch>Account</th>
                                         <th data-dt-noorder data-dt-nosearch data-dt-class="text-end">Actions</th>

@@ -444,6 +444,21 @@ class PlanExecutor {
         if (is_file($this->instanceDir . '/.mcp.json')) {
             @copy($this->instanceDir . '/.mcp.json', $wtAbs . '/.mcp.json');
         }
+        // The worktree gets what a standalone task's workspace gets: its own vendor/ (own
+        // autoload map, the project's packages by symlink) and a conf/config.ini. Until
+        // 2026-09-25 a plan task had neither — git carries no vendor — so an agent that
+        // needed to run tests improvised: task 136 on Serenity symlinked the LIVE vendor
+        // into its worktree and ran composer dump-autoload through it, which rewrote the
+        // live autoloader with worktree paths and took the site down (500 on every page).
+        try {
+            $wm = new WorkspaceManager(null, $this->instanceDir);
+            $wm->setupVendor($wtAbs);
+            $wm->updateConfig($wtAbs, $this->instanceBaseUrl());
+        } catch (\Throwable $e) {
+            $this->fail($t, 'workspace preparation failed: ' . $e->getMessage());
+            $this->cleanupWorktree($wtRel, $branch, false);
+            return false;
+        }
 
         // Resolve the per-task engine through the registry (§7). An engine with no proven
         // headless launcher fails the task below rather than quietly running elsewhere.
@@ -483,7 +498,9 @@ class PlanExecutor {
             Bean::store($t);
             return false;
         }
-        $inner = 'cd ' . $wtRel . ' && ' . $inner;
+        // Absolute: the worktree is bound at its own path inside the jail (and is the cwd
+        // there), and the direct path starts wherever the shell happens to be.
+        $inner = 'cd ' . escapeshellarg($wtAbs) . ' && ' . $inner;
 
         // Project-scoped: plan ids AND subtask ids both come from this instance's own
         // workbench.db, so the unscoped name collided across every project at once.
@@ -972,11 +989,19 @@ class PlanExecutor {
             // ENGINE selects the provider inside the jail. Without it the jail fell back to
             // the project's engine file, so a task assigned another engine still built on
             // whatever the project defaulted to.
-            $run = 'ENGINE=' . escapeshellarg($engine) . ' JAIL_CMD=' . escapeshellarg($inner) . ' ' . escapeshellarg($jail) . ' ' . escapeshellarg($this->instanceDir);
+            //
+            // The jail's root is the WORKTREE, as it is for a standalone task: jail-run.sh
+            // recognises <project>/.aibuilder/wt/<task> and binds that read-write, the
+            // project's .git read-write, the project's vendor/ read-only — and nothing
+            // else of the project. Until 2026-09-25 this passed the instance directory, so
+            // a plan task's agent had the whole LIVE project read-write with the worktree
+            // as a mere subdirectory: task 136 on Serenity rewrote the live vendor's
+            // autoloader from inside its "jail" and took the site down.
+            $run = 'ENGINE=' . escapeshellarg($engine) . ' JAIL_CMD=' . escapeshellarg($inner) . ' ' . escapeshellarg($jail) . ' ' . escapeshellarg($wtAbs);
         } else {
-            // Non-jailed (isolated clone): run inner directly in the instance.
+            // Non-jailed (isolated clone): run inner directly, from the worktree.
             $run = AgentContext::directEnvShell($engine, AgentState::resolve($this->planMemberId(), $engine, $this->instanceDir))
-                 . 'cd ' . escapeshellarg($this->instanceDir) . ' && ' . $inner;
+                 . 'cd ' . escapeshellarg($wtAbs) . ' && ' . $inner;
         }
         $logArg = escapeshellarg($log);
         // Credentials follow the PERSON who owns this plan, not the project — the build
@@ -1294,8 +1319,19 @@ MD;
         return $id;
     }
 
+    /**
+     * The live project's [app] baseurl, for the worktree's own config. Required: a
+     * worktree whose config carries no address has agents guessing where hooks report.
+     */
+    private function instanceBaseUrl(): string {
+        $cfg = @parse_ini_file($this->instanceDir . '/conf/config.ini', true) ?: [];
+        $url = trim((string) ($cfg['app']['baseurl'] ?? ''));
+        if ($url === '') throw new \RuntimeException("{$this->instanceDir}/conf/config.ini has no [app] baseurl");
+        return $url;
+    }
+
     /** jail-run.sh path when the instance is jailable, else '' (mirrors PlanRunner). */
-    private function jailFor(): string {
+    protected function jailFor(): string {
         // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
         // is outside the boundary (is_file() would throw) and re-jailing is redundant. Direct.
         // (IsolatedPool, not a bare open_basedir test: a CLI process started BY the pool — a

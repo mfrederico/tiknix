@@ -648,6 +648,19 @@ class Concepts {
             }
         }
 
+        // Reported, not blocking: a storefront must be able to render its "connect Stripe" state.
+        foreach ($m->requiresConnectors as $type) {
+            try {
+                $connected = ConnectionStore::for($type) !== null;
+            } catch (\RuntimeException $e) {
+                $connected = true; // several connections of that type: it IS connected, the caller must name one
+            }
+            if (!$connected) {
+                $problems[] = "requires.connectors needs a '{$type}' connection, and this install has none. "
+                    . "Connect it under Connections → {$type}; enabling is not blocked.";
+            }
+        }
+
         $this->verifying[$name] = true;
         try {
             foreach ($m->controllers as $c) {

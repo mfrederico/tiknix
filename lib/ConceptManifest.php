@@ -46,6 +46,8 @@ class ConceptManifest {
     private const COMMAND_RE  = '/^[A-Za-z0-9][A-Za-z0-9._+-]*(?:\|[A-Za-z0-9][A-Za-z0-9._+-]*)*$/D';
     /** extension names as extension_loaded() knows them, alternatives separated by '|' */
     private const EXTENSION_RE = '/^[a-z][a-z0-9_]*(?:\|[a-z][a-z0-9_]*)*$/D';
+    /** connector type names as ConnectionStore knows them (connections.connector_type) */
+    private const CONNECTOR_RE = '/^[a-z][a-z0-9_]*$/D';
     private const CALLABLE_RE = '/^(?:([a-z][a-z0-9]*):)?([A-Z][A-Za-z0-9]*)::([a-z][A-Za-z0-9]*)$/D';
     private const VIEW_RE     = '/^[A-Za-z0-9][A-Za-z0-9_\-]*(?:\/[A-Za-z0-9][A-Za-z0-9_\-]*)*\.php$/D';
     private const MATCH_KEY_RE = '/^[a-z][A-Za-z0-9]*$/D';
@@ -68,6 +70,11 @@ class ConceptManifest {
     public array $requiresCommands = [];
     /** @var string[] PHP extensions that must be loaded; alternatives joined with '|' ("imagick|gd") */
     public array $requiresExtensions = [];
+    /**
+     * @var string[] connector types ("stripe") this concept wants connected on the install.
+     *      Reported by Concepts::verify() when missing; never blocks enabling.
+     */
+    public array $requiresConnectors = [];
     /** @var string[] controller class names this concept claims */
     public array $controllers = [];
     /** @var string[] bean types this concept claims */
@@ -160,6 +167,7 @@ class ConceptManifest {
         $m->requiresLib      = self::stringList($requires['lib'] ?? [], 'requires.lib', $name, self::CLASS_RE);
         $m->requiresCommands = self::stringList($requires['commands'] ?? [], 'requires.commands', $name, self::COMMAND_RE);
         $m->requiresExtensions = self::stringList($requires['extensions'] ?? [], 'requires.extensions', $name, self::EXTENSION_RE);
+        $m->requiresConnectors = self::stringList($requires['connectors'] ?? [], 'requires.connectors', $name, self::CONNECTOR_RE);
         if (in_array($name, $m->requiresConcepts, true)) {
             throw new ConceptException("Concept '{$name}': requires.concepts lists the concept itself.");
         }

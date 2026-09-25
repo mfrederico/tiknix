@@ -307,6 +307,18 @@ function conceptFromRoot(array $opt): ?string {
     if ($root === false || !is_dir($root)) bail("--from='{$opt['from']}' is not a directory.");
     return $root;
 }
+/**
+ * Where NAME's source is under a --from root (or this install): ROOT/concepts/NAME, or — for an
+ * authoring tree like concepts-src/ — ROOT/NAME when it holds a concept.json.
+ */
+function conceptSourceDir(?string $from, string $name): string {
+    $root = $from ?? dirname(__DIR__);
+    $installed = $root . '/' . \app\Concepts::DIR . '/' . $name;
+    if (!is_dir($installed) && is_file($root . '/' . $name . '/' . \app\ConceptManifest::FILE)) {
+        return $root . '/' . $name;
+    }
+    return $installed;
+}
 function printConceptFindings(array $findings): void {
     foreach ($findings as $f) {
         $at = $f['file'] . ($f['line'] ? ':' . $f['line'] : '');
@@ -330,7 +342,7 @@ if (isset($opt['concept-search'])) {
 if (isset($opt['concept-lint'])) {
     $name = (string) $opt['concept-lint'];
     $from = conceptFromRoot($opt);
-    $dir = ($from ?? dirname(__DIR__)) . '/' . \app\Concepts::DIR . '/' . $name;
+    $dir = conceptSourceDir($from, $name);
     $forbid = conceptOriginStrings($from, $opt);
     if ($forbid) out('# origin strings that must not appear: ' . implode(', ', $forbid));
     $findings = \app\ConceptLint::check($dir, $forbid);
@@ -341,7 +353,7 @@ if (isset($opt['concept-lint'])) {
 if (isset($opt['concept-publish'])) {
     $name = (string) $opt['concept-publish'];
     $from = conceptFromRoot($opt);
-    $dir = ($from ?? dirname(__DIR__)) . '/' . \app\Concepts::DIR . '/' . $name;
+    $dir = conceptSourceDir($from, $name);
     $forbid = conceptOriginStrings($from, $opt);
     if ($DRYRUN) {
         $findings = \app\ConceptLint::check($dir, $forbid);
@@ -638,7 +650,9 @@ CONCEPTS (pluggable features — see COMPONENTS_PLAN.md)
   --concept-lint=NAME [--from=ROOT] [--origin=INSTALL_ROOT] [--forbid=a,b]
                                  Is it fit to publish? Origin leakage, secrets, absolute
                                  paths, R::, undeclared core classes and beans.
-                                 --from   where ROOT/concepts/NAME is (default: this install)
+                                 --from   where ROOT/concepts/NAME is (default: this install);
+                                          an authoring tree works too: ROOT/NAME/concept.json
+                                          (e.g. --from=concepts-src)
                                  --origin the instance it was extracted from — its slug,
                                           [app] name and hostname must not appear anywhere
   --concept-publish=NAME [--from=ROOT] [--origin=INSTALL_ROOT] [--forbid=a,b]

@@ -50,6 +50,51 @@ class StripeGateway {
     public function createCheckoutSession(array $args): array { return $this->call('create_checkout_session', $args); }
     public function listSubscriptions(array $args = []): array { return $this->call('list_subscriptions', $args); }
 
+    /** Fetch a Checkout session by id (cs_...), to confirm payment_status server-side. */
+    public function retrieveCheckoutSession(string $id): array {
+        $id = trim($id);
+        if ($id === '') throw new \InvalidArgumentException('retrieveCheckoutSession requires a session id.');
+        if ($this->driver === 'direct') return $this->call('retrieve_checkout_session', ['id' => $id]);
+        try {
+            return $this->call('retrieve_checkout_session', ['id' => $id]);
+        } catch (\Exception $e) {
+            if (preg_match('/unknown tool|tool not found|not found/i', $e->getMessage())) {
+                throw new \Exception('retrieve_checkout_session is not supported by the broker driver: ' . $e->getMessage(), 0, $e);
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Verify a Stripe webhook (Stripe-Signature header) and return the decoded event.
+     * Throws \RuntimeException naming the check that failed.
+     */
+    public static function verifyWebhook(string $payload, string $sigHeader, string $secret, int $tolerance = 300, ?int $now = null): array {
+        if ($secret === '') throw new \RuntimeException('Stripe webhook secret is not set (STRIPE_WEBHOOK_SECRET); cannot verify webhook.');
+        if (trim($sigHeader) === '') throw new \RuntimeException('Stripe webhook rejected: Stripe-Signature header is missing.');
+        $t = null;
+        $v1 = [];
+        foreach (explode(',', $sigHeader) as $part) {
+            $kv = explode('=', trim($part), 2);
+            if (count($kv) !== 2) continue;
+            if ($kv[0] === 't') $t = $kv[1];
+            elseif ($kv[0] === 'v1') $v1[] = $kv[1];
+        }
+        if ($t === null || !ctype_digit($t)) throw new \RuntimeException('Stripe webhook rejected: Stripe-Signature has no valid t= timestamp.');
+        if (!$v1) throw new \RuntimeException('Stripe webhook rejected: Stripe-Signature has no v1= signature.');
+        $expected = hash_hmac('sha256', $t . '.' . $payload, $secret);
+        $ok = false;
+        foreach ($v1 as $sig) {
+            if (hash_equals($expected, $sig)) { $ok = true; break; }
+        }
+        if (!$ok) throw new \RuntimeException('Stripe webhook rejected: signature mismatch.');
+        $age = abs(($now ?? time()) - (int)$t);
+        if ($age > $tolerance) throw new \RuntimeException("Stripe webhook rejected: timestamp is stale ({$age}s outside the {$tolerance}s tolerance).");
+        $event = json_decode($payload, true);
+        if (!is_array($event)) throw new \RuntimeException('Stripe webhook rejected: payload is not valid JSON.');
+        return $event;
+    }
+
     private function call(string $tool, array $args): array {
         return $this->driver === 'direct' ? $this->direct($tool, $args) : $this->broker($tool, $args);
     }
@@ -104,6 +149,8 @@ class StripeGateway {
                 return self::api($secret, 'POST', 'customers', $f);
             case 'create_checkout_session':
                 return self::api($secret, 'POST', 'checkout/sessions', self::checkoutFields($args));
+            case 'retrieve_checkout_session':
+                return self::api($secret, 'GET', 'checkout/sessions/' . rawurlencode((string)$args['id']));
             case 'list_subscriptions':
                 $set = ['all', 'active', 'trialing', 'past_due', 'canceled', 'unpaid', 'paused',
                         'incomplete', 'incomplete_expired', 'ended'];
@@ -117,7 +164,7 @@ class StripeGateway {
     }
 
     /** Validate + build Checkout session fields (bracket syntax via http_build_query). */
-    private static function checkoutFields(array $args): array {
+    public static function checkoutFields(array $args): array {
         $successUrl = trim((string)($args['success_url'] ?? ''));
         $cancelUrl  = trim((string)($args['cancel_url'] ?? ''));
         if ($successUrl === '') throw new \Exception('create_checkout_session requires a success_url.');
@@ -126,9 +173,25 @@ class StripeGateway {
         if (!in_array($mode, ['payment', 'subscription'], true)) $mode = 'payment';
         $items = [];
         if (!empty($args['line_items']) && is_array($args['line_items'])) {
-            foreach (array_values($args['line_items']) as $li) {
-                if (!is_array($li) || empty($li['price'])) continue;
-                $items[] = ['price' => (string)$li['price'], 'quantity' => max(1, (int)($li['quantity'] ?? 1))];
+            foreach (array_values($args['line_items']) as $i => $li) {
+                if (!is_array($li)) throw new \Exception("create_checkout_session line_items[$i] is not an object.");
+                $qty = max(1, (int)($li['quantity'] ?? 1));
+                if (!empty($li['price'])) {
+                    $items[] = ['price' => (string)$li['price'], 'quantity' => $qty];
+                } elseif (!empty($li['price_data']) && is_array($li['price_data'])) {
+                    $pd = $li['price_data'];
+                    $currency = strtolower(trim((string)($pd['currency'] ?? '')));
+                    $name = trim((string)($pd['product_data']['name'] ?? ''));
+                    if ($currency === '') throw new \Exception("create_checkout_session line_items[$i].price_data requires a currency.");
+                    if (!isset($pd['unit_amount']) || !is_numeric($pd['unit_amount'])) throw new \Exception("create_checkout_session line_items[$i].price_data requires an integer unit_amount.");
+                    if ($name === '') throw new \Exception("create_checkout_session line_items[$i].price_data requires product_data.name.");
+                    $items[] = ['price_data' => [
+                        'currency' => $currency, 'unit_amount' => (int)$pd['unit_amount'],
+                        'product_data' => ['name' => $name],
+                    ], 'quantity' => $qty];
+                } else {
+                    throw new \Exception("create_checkout_session line_items[$i] has neither a price nor price_data.");
+                }
             }
         } elseif (!empty($args['price'])) {
             $items[] = ['price' => (string)$args['price'], 'quantity' => max(1, (int)($args['quantity'] ?? 1))];
@@ -136,7 +199,9 @@ class StripeGateway {
         if (empty($items)) throw new \Exception('create_checkout_session requires line_items (or a single price).');
         $f = ['mode' => $mode, 'success_url' => $successUrl, 'cancel_url' => $cancelUrl, 'line_items' => $items];
         if (!empty($args['customer']))            $f['customer'] = (string)$args['customer'];
+        if (!empty($args['customer_email']))      $f['customer_email'] = (string)$args['customer_email'];
         if (!empty($args['client_reference_id'])) $f['client_reference_id'] = (string)$args['client_reference_id'];
+        if (!empty($args['metadata']) && is_array($args['metadata'])) $f['metadata'] = array_map('strval', $args['metadata']);
         return $f;
     }
 

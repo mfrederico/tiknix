@@ -386,8 +386,9 @@ class Teams extends Control {
         if (!\app\ProjectQuota::canUseTeams((int) $team->ownerId)) {
             return $this->fail(
                 'Team collaboration comes with any paid project. Add a project to your account '
-              . '(the first is free, then $49/mo each) and you can invite your whole team — '
-              . 'no per-seat fees.',
+              . '(the first is free, then $' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0)
+              . '/mo each, $' . number_format(\app\ProjectQuota::PRICE_PER_CLIENT_PROJECT, 0)
+              . ' for a client project) and you can invite your whole team — no per-seat fees.',
                 402);
         }
 

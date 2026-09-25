@@ -187,6 +187,21 @@ class Admin extends Control {
                                 (int) $this->member->id, (string) ($request->data->free_projects_note ?? ''));
                         }
 
+                        // Plan tier. 'agency' is the one tier a card cannot imply, so an admin
+                        // sets it here (self-serve comes later). SignupFlow::syncPlanTier
+                        // leaves 'agency' and 'legacy' alone; a removed card still drops to free.
+                        if (is_core_install() && (int) $member->id !== PUBLIC_USER_ID && isset($request->data->plan_tier)) {
+                            $wantTier = strtolower(trim((string) $request->data->plan_tier));
+                            $haveTier = strtolower(trim((string) ($member->planTier ?: 'free')));
+                            if (in_array($wantTier, ['free', 'pro', 'agency', 'legacy'], true) && $wantTier !== $haveTier) {
+                                $member->planTier = $wantTier;
+                                $member->planProjectCap = 0;
+                                Flight::get('log')->info('admin changed plan tier', [
+                                    'member' => (int) $member->id, 'from' => $haveTier, 'to' => $wantTier, 'by' => (int) $this->member->id,
+                                ]);
+                            }
+                        }
+
                         // Update password if provided
                         if (!empty($request->data->password)) {
                             if (strlen($request->data->password) < 8) {

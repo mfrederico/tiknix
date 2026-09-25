@@ -15,11 +15,17 @@ use app\Bean;
 
 class Projects extends BaseControls\Control {
 
+    /** @var list<int> ids inside the free allowance, for the cards (set in index). */
+    private array $freeIds = [];
+
     /** The picker. Search and sort are client-side; the list is small by nature. */
     public function index($params = []): void {
         if (!$this->requireLogin()) return;
 
         $memberId = (int) $this->member->id;
+        // Which projects are free right now, so a card can say so. A failed count must not
+        // take the page down: fall back to "none marked", the safe direction for a label.
+        try { $this->freeIds = ProjectQuota::breakdown($memberId)['free_ids']; } catch (\Throwable $e) { $this->freeIds = []; }
         $projects = [];
         foreach (ProjectContext::accessible($memberId) as $inst) {
             $projects[] = $this->card($inst, $memberId);
@@ -159,6 +165,7 @@ class Projects extends BaseControls\Control {
             'slug'    => (string) $this->getParam('slug', ''),
             'name'    => (string) $this->getParam('name', ''),
             'engine'  => (string) $this->getParam('engine', 'claude'),
+            'plan'    => (string) $this->getParam('plan', 'project'),
             'is_root' => (int) $this->member->level === LEVELS['ROOT'],
         ]);
         if (empty($res['ok'])) {
@@ -207,6 +214,22 @@ class Projects extends BaseControls\Control {
      * (or be ROOT), and you must type its domain back exactly. The (default) instance
      * cannot be deleted at all.
      */
+    /**
+     * POST /projects/plan {id, plan} — make a project a Client project, or back to a plain
+     * one. The price follows: see ProjectQuota::breakdown and the Billing page.
+     */
+    public function plan($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $res = (new ProvisionService())->setPlan((int) $this->member->id, [
+            'id'   => (int) $this->getParam('id', 0),
+            'plan' => (string) $this->getParam('plan', ''),
+        ]);
+        if (empty($res['ok'])) { $this->jsonError((string) ($res['error'] ?? 'Could not change the project kind.'), (int) ($res['code'] ?? 400)); return; }
+        $this->jsonSuccess(['id' => $res['id'], 'plan' => $res['plan'], 'changed' => !empty($res['changed'])],
+            $res['plan'] === 'client' ? 'Now a client project.' : 'Now a plain project.');
+    }
+
     public function delete($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
@@ -273,6 +296,9 @@ class Projects extends BaseControls\Control {
             'confirm'      => (new ProvisionService())->confirmPhrase((string) $inst->slug),
             'name'         => (string) ($inst->displayName ?: $inst->slug),
             'owned'        => $owned,
+            // Priced kind, and whether this one falls inside the free allowance right now.
+            'kind'         => ProjectQuota::kindOf($inst->plan ?? null),
+            'free'         => in_array((int) $inst->id, $this->freeIds, true),
             'status'       => (string) $inst->status,
             // Async per-instance isolation state, so the picker can say "finishing setup" vs
             // "isolated" instead of the member wondering whether provisioning worked.

@@ -1,3 +1,27 @@
+# Billing — where it stands (2026-09-25)
+
+**The plan below is historical.** What is built and live:
+
+| Tier | Price | How it is decided |
+|---|---|---|
+| First project | free | the member's OLDEST counted projects, up to `member.free_projects` (default 1) |
+| Project | $49/mo | `instance.plan = 'project'` (default), member on `pro` (a card on file) |
+| Client project | $99/mo | `instance.plan = 'client'` (chosen at creation or toggled on /projects) |
+| Agency | $499/mo for 10, then $49 each | `member.plan_tier = 'agency'` (set by an admin; needs a card) |
+| Legacy | never billed | grandfathered accounts |
+
+Customers bring their own model; nothing meters builds.
+
+- The arithmetic lives in ONE place, `ProjectQuota::breakdown()`; the usage callback
+  (`/billing/usage/{tenant}`) reports its counts and `billing-service/conf/rates/tiknix.php`
+  prices them (`project`, `client_project`, `agency`, `agency_extra`).
+- Custom domains and containers are a paid-tier perk (`ProjectQuota::canUseCustomDomain`),
+  like teams (`canUseTeams`).
+- Not built yet: **client preview access** (a per-project guest link) and a **cancel-but-keep**
+  state (today delete archives a tombstone; "keep the app" means publish to GitHub first).
+
+---
+
 # Paid Release: card-on-file signup, 1 free project, $499/mo for 10
 
 Status: **plan for review — nothing built, nothing enabled.**

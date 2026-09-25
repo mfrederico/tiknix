@@ -403,6 +403,14 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        // Custom domains and containers come with a PAID project (pricing page); the free
+        // project lives on its tiknix subdomain. One predicate, ProjectQuota::canUseCustomDomain,
+        // which also respects the enforcement flag.
+        if (!\app\ProjectQuota::canUseCustomDomain((int)$inst->memberId)) {
+            $this->jsonError('Custom domains come with a paid project ($' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0)
+                . '/mo). Add a card on the Billing page and this unlocks.', 402);
+            return;
+        }
         $conn = $this->githubConn((int)$inst->id);
         if (!$conn || !$conn->id) { $this->jsonError('Connect a GitHub repo first.', 400); return; }
         $domain = strtolower(trim((string)$this->getParam('domain', '')));
@@ -468,6 +476,14 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        // Custom domains and containers come with a PAID project (pricing page); the free
+        // project lives on its tiknix subdomain. One predicate, ProjectQuota::canUseCustomDomain,
+        // which also respects the enforcement flag.
+        if (!\app\ProjectQuota::canUseCustomDomain((int)$inst->memberId)) {
+            $this->jsonError('Custom domains come with a paid project ($' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0)
+                . '/mo). Add a card on the Billing page and this unlocks.', 402);
+            return;
+        }
         $conn = $this->githubConn((int)$inst->id);
         if (!$conn || !$conn->id) { $this->jsonError('Connect a GitHub repo first.', 400); return; }
         $domain = strtolower(trim((string)$this->getParam('domain', '')));
@@ -519,6 +535,14 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        // Custom domains and containers come with a PAID project (pricing page); the free
+        // project lives on its tiknix subdomain. One predicate, ProjectQuota::canUseCustomDomain,
+        // which also respects the enforcement flag.
+        if (!\app\ProjectQuota::canUseCustomDomain((int)$inst->memberId)) {
+            $this->jsonError('Custom domains come with a paid project ($' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0)
+                . '/mo). Add a card on the Billing page and this unlocks.', 402);
+            return;
+        }
 
         $domain = strtolower(trim((string) $this->getParam('domain', '')));
         if ($domain !== '' && !$this->validHost($domain)) { $this->jsonError('Invalid domain.', 400); return; }

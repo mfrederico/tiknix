@@ -383,6 +383,9 @@ class SignupFlow {
         }
 
         $want = $card['has_method'] ? 'pro' : 'free';
+        // Agency is chosen, not implied by a card: a card on file keeps it; no card still
+        // drops it to free, because there is nothing to bill the plan to.
+        if ($tier === 'agency' && $card['has_method']) $want = 'agency';
         if ($want === $tier) return ['ok' => true, 'tier' => $tier, 'changed' => false, 'error' => ''];
 
         $member->planTier = $want;

@@ -75,7 +75,11 @@ class Billing extends BaseControls\Control {
             'snapshot'     => $snapshot,
             'freeCap'      => $snapshot['free'],   // this member's allowance, not the global default
             'perProject'   => ProjectQuota::PRICE_PER_PROJECT,
-            'projects'     => $this->projectBreakdown($memberId),
+            'perClient'    => ProjectQuota::PRICE_PER_CLIENT_PROJECT,
+            'agencyPrice'  => ProjectQuota::PRICE_AGENCY,
+            'agencyPool'   => ProjectQuota::AGENCY_POOL,
+            'agencyExtra'  => ProjectQuota::PRICE_AGENCY_EXTRA,
+            'projects'     => $this->projectBreakdown($memberId, $snapshot['free_ids']),
             // Empty until a member is registered with the billing service, which does not
             // happen until phase 3. The view says so plainly rather than showing a dead link.
             // One SSO builder, shared with the refusal link on the projects page. Two
@@ -92,10 +96,15 @@ class Billing extends BaseControls\Control {
      * that arrived through somebody else's team ends it, and it is the same question
      * support would otherwise have to answer by hand.
      */
-    private function projectBreakdown(int $memberId): array {
+    private function projectBreakdown(int $memberId, array $freeIds = []): array {
+        // Only name the column when it exists: this page can render before the schema
+        // seed has run, and a query naming a missing column comes back EMPTY in fluid mode.
+        $hasPlan = in_array('plan', array_column(Bean::getAll('PRAGMA table_info(instance)'), 'name'), true);
+        $planCol = $hasPlan ? 'i.plan' : 'NULL';
         $sql = "SELECT i.id,
                        i.display_name,
                        i.slug,
+                       {$planCol} AS plan,
                        CASE WHEN i.member_id = ? THEN 'owned' ELSE 'shared' END AS via,
                        t.name AS team_name
                 FROM instance i
@@ -110,7 +119,13 @@ class Billing extends BaseControls\Control {
                 GROUP BY i.id
                 ORDER BY via, i.display_name";
         try {
-            return Bean::getAll($sql, array_fill(0, 5, $memberId));
+            $rows = Bean::getAll($sql, array_fill(0, 5, $memberId));
+            foreach ($rows as &$r) {
+                $r['kind'] = ProjectQuota::kindOf($r['plan'] ?? null);
+                $r['free'] = in_array((int) $r['id'], $freeIds, true);
+            }
+            unset($r);
+            return $rows;
         } catch (\Throwable $e) {
             // The count above already succeeded, so the page is still truthful without
             // this. Log it and show the total alone rather than failing the whole page.
@@ -130,10 +145,10 @@ class Billing extends BaseControls\Control {
      * URL that already carried a query string would be mangled into `...?tenant=x?period_start=…`.
      * The app-level `{tenant}` pattern substitutes into the path, which stays valid.
      *
-     * Reports ONE number — whether this account needs the paid plan. The stairstep ($0 for
-     * one project, a flat fee for two through ten) is not a per-unit rate, and tiknix has
-     * to know where the line is anyway in order to gate. Sending the conclusion keeps that
-     * rule in one place instead of half-expressing it in a rate table on another server.
+     * Reports COUNTS, one per rate line: plain projects, client projects, the Agency plan
+     * flag and its overage. tiknix has to know the tier rule anyway in order to gate, so
+     * sending the conclusion keeps it in one place (ProjectQuota::breakdown) instead of
+     * half-expressing it in a rate table on another server.
      */
     public function usage($params = []) {
         if (!$this->billingCallerAuthorised()) {
@@ -180,22 +195,29 @@ class Billing extends BaseControls\Control {
                 'period_start' => $periodStart,
                 'period_end'   => $periodEnd,
                 'usage'        => [
-                    // Maps to the 'project' rate in conf/rates/tiknix.php. A COUNT, not a
-                    // flag: pricing is per project now, so the rate engine multiplies this
-                    // by the unit price and there is no ceiling to encode anywhere.
-                    'billable_projects' => $snapshot['billable'],
-                    // Priced at $0 (conf/rates/tiknix.php 'info'): the projects covered free —
-                    // the allowance, plus any an admin granted — so the invoice shows the gift
+                    // COUNTS per rate line in conf/rates/tiknix.php — the four tiers on the
+                    // pricing page. The arithmetic (which projects are free, what the Agency
+                    // pool covers) is ProjectQuota::breakdown, so a page and an invoice can
+                    // never disagree about it. Under Agency the two per-project counts are
+                    // zero and the pool lines carry the charge; nothing is billed twice.
+                    'billable_projects'        => $snapshot['billable'],          // × $49
+                    'billable_client_projects' => $snapshot['billable_client'],   // × $99
+                    'agency_plan'              => $snapshot['agency_plan'],       // 0/1 × $499
+                    'agency_extra_projects'    => $snapshot['agency_extra'],      // × $49
+                    // Priced at $0 (conf/rates/tiknix.php 'info'): what was covered, shown
                     // beside the charge instead of just a smaller number.
-                    'complimentary_projects' => $snapshot['complimentary'],
+                    'complimentary_projects'   => $snapshot['complimentary'],
+                    'agency_pooled_projects'   => $snapshot['agency_pooled'],
                 ],
                 // Not priced — carried so an invoice can be explained without re-deriving
                 // it here weeks later, and so a surprised customer can be answered.
                 'meta' => [
                     'projects' => $snapshot['count'],
+                    'kinds'    => $snapshot['kinds'],
                     'cap'      => $snapshot['cap'],
                     'free'     => $snapshot['free'],
                     'tier'     => $snapshot['tier'],
+                    'monthly_estimate' => $snapshot['monthly'],
                 ],
             ],
         ]);

@@ -162,6 +162,21 @@ $fmt = function (string $iso): string {
           <div class="col-4 col-sm-3">
             <button class="btn btn-primary btn-sm w-100" type="submit">Create &amp; work on it</button>
           </div>
+          <div class="col-12">
+            <?php /* The priced kind. Your first project is free whichever you pick; after
+                     that the price follows the kind (pricing page). Changeable later. */ ?>
+            <div class="d-flex flex-wrap gap-3 small">
+              <label class="form-check-label d-flex align-items-center gap-1">
+                <input class="form-check-input mt-0" type="radio" name="proj-new-plan" value="project" checked>
+                Mine <span class="text-body-secondary">— an app I run · $<?= number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0) ?>/mo after your free project</span>
+              </label>
+              <label class="form-check-label d-flex align-items-center gap-1">
+                <input class="form-check-input mt-0" type="radio" name="proj-new-plan" value="client">
+                For a client <span class="text-body-secondary">— hand-off to their domain and GitHub · $<?= number_format(\app\ProjectQuota::PRICE_PER_CLIENT_PROJECT, 0) ?>/mo</span>
+              </label>
+            </div>
+            <div class="form-text">You bring your own model on every plan. Nothing meters your builds.</div>
+          </div>
           <div class="col-12"><div id="proj-new-msg" class="form-text"></div></div>
         </form>
       </div>
@@ -183,11 +198,18 @@ $fmt = function (string $iso): string {
                   <div class="fw-semibold fs-5"><?= htmlspecialchars($p['name']) ?></div>
                   <div class="text-body-secondary small"><code><?= htmlspecialchars($p['slug']) ?></code></div>
                 </div>
+                <div class="d-flex flex-column align-items-end gap-1">
                 <?php if ($active): ?>
                   <span class="badge bg-primary">Working on</span>
                 <?php elseif (!$p['owned']): ?>
                   <span class="badge bg-secondary-subtle text-secondary">Shared</span>
                 <?php endif; ?>
+                <?php if (!empty($p['free'])): ?>
+                  <span class="badge bg-success-subtle text-success" title="Inside your free allowance">Free</span>
+                <?php elseif (($p['kind'] ?? 'project') === 'client'): ?>
+                  <span class="badge bg-info-subtle text-info" title="Client project">Client</span>
+                <?php endif; ?>
+                </div>
               </div>
 
               <dl class="row row-cols-1 g-0 small mb-3 mt-1">
@@ -256,6 +278,17 @@ $fmt = function (string $iso): string {
                         data-id="<?= (int) $p['id'] ?>" type="button">
                   <?= $active ? 'Continue' : 'Work on this' ?>
                 </button>
+                <?php if (!empty($p['owned'])): ?>
+                  <?php /* Flip the priced kind. Quiet, because it is a billing setting, not
+                           a build action; the badge above and the Billing page show the result. */ ?>
+                  <button class="btn btn-outline-secondary proj-plan" type="button"
+                          data-id="<?= (int) $p['id'] ?>"
+                          data-plan="<?= ($p['kind'] ?? 'project') === 'client' ? 'project' : 'client' ?>"
+                          title="<?= ($p['kind'] ?? 'project') === 'client' ? 'Make this a plain project ($' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0) . '/mo)' : 'Make this a client project ($' . number_format(\app\ProjectQuota::PRICE_PER_CLIENT_PROJECT, 0) . '/mo)' ?>"
+                          aria-label="Change the kind of <?= htmlspecialchars($p['name']) ?>">
+                    <i class="bi bi-briefcase"></i>
+                  </button>
+                <?php endif; ?>
                 <?php if (!empty($p['deletable'])): ?>
                   <?php /* Deliberately small and quiet next to the thing you came here to
                            do. It opens a dialogue rather than acting — see the modal. */ ?>
@@ -339,12 +372,29 @@ $fmt = function (string $iso): string {
     });
   }
 
+  // Kind toggle: one POST, then reload so the badge, the title and the Billing page agree.
+  document.querySelectorAll('.proj-plan').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.disabled = true;
+      fetch('/projects/plan', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'},
+        body: new URLSearchParams({csrf_token: csrf, id: b.dataset.id, plan: b.dataset.plan}).toString()
+      }).then(r => r.json()).then(function (j) {
+        if (j && j.success) { window.location.reload(); return; }
+        b.disabled = false;
+        alert((j && j.message) || 'Could not change the project kind.');
+      }).catch(function () { b.disabled = false; });
+    });
+  });
+
   const newForm = document.getElementById('proj-new-form');
   if (newForm) {
     newForm.addEventListener('submit', function (e) {
       e.preventDefault();
       const slug = document.getElementById('proj-new-slug').value.trim().toLowerCase(),
             eng  = document.getElementById('proj-new-engine').value,
+            plan = (newForm.querySelector('input[name=proj-new-plan]:checked') || {value: 'project'}).value,
             msg  = document.getElementById('proj-new-msg'),
             btn  = newForm.querySelector('button[type=submit]');
       if (!slug) return;
@@ -354,7 +404,7 @@ $fmt = function (string $iso): string {
       fetch('/projects/create', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'},
-        body: new URLSearchParams({csrf_token: csrf, slug: slug, engine: eng}).toString()
+        body: new URLSearchParams({csrf_token: csrf, slug: slug, engine: eng, plan: plan}).toString()
       }).then(r => r.json()).then(function (j) {
         // Created AND selected, so go straight to work rather than back to a list — the
         // button says "Create & work on it", and it should mean it —

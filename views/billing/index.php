@@ -34,6 +34,11 @@
     $tier      = (string) $snapshot['tier'];
     $needsPaid = (bool) $snapshot['needs_paid'];
     $billable  = (int) $snapshot['billable'];
+    $billableClient = (int) ($snapshot['billable_client'] ?? 0);
+    $agency    = !empty($snapshot['agency_plan']);
+    $agencyExtraN = (int) ($snapshot['agency_extra'] ?? 0);
+    $monthly   = (float) ($snapshot['monthly'] ?? 0);
+    $kinds     = $snapshot['kinds'] ?? ['project' => $count, 'client' => 0];
     $over      = (bool) $snapshot['over'];
     $owned     = array_values(array_filter($projects, fn($p) => ($p['via'] ?? '') === 'owned'));
     $shared    = array_values(array_filter($projects, fn($p) => ($p['via'] ?? '') === 'shared'));
@@ -71,11 +76,15 @@
       <div class="card h-100">
         <div class="card-body">
           <div class="text-muted small text-uppercase" style="letter-spacing:.06em;">Plan</div>
-          <div class="fs-4 mb-0 text-capitalize"><?= htmlspecialchars($tier) ?></div>
+          <div class="fs-4 mb-0 text-capitalize"><?= htmlspecialchars($tier === 'pro' ? 'per project' : $tier) ?></div>
           <div class="small text-muted">
-            <?= $grandfathered
-                  ? 'early account, kept at no charge'
-                  : (int) $freeCap . ' free, then $' . number_format($perProject, 0) . ' each' ?>
+            <?php if ($grandfathered): ?>
+              early account, kept at no charge
+            <?php elseif ($agency): ?>
+              $<?= number_format($agencyPrice, 0) ?> covers <?= (int) $agencyPool ?> projects, then $<?= number_format($agencyExtra, 0) ?> each
+            <?php else: ?>
+              <?= (int) $freeCap ?> free, then $<?= number_format($perProject, 0) ?> a project · $<?= number_format($perClient, 0) ?> a client project
+            <?php endif; ?>
           </div>
         </div>
       </div>
@@ -90,12 +99,19 @@
             <?= $count ?> project<?= $count === 1 ? '' : 's' ?>, covered
           </div>
 <?php else: ?>
-          <div class="fs-4 mb-0">$<?= number_format($billable * $perProject, 2) ?></div>
+          <div class="fs-4 mb-0">$<?= number_format($monthly, 2) ?></div>
           <div class="small text-muted">
-            <?php /* Show the arithmetic. "$147" invites a query; "3 x $49" answers it. */ ?>
-            <?= $billable > 0
-                  ? $billable . ' &times; $' . number_format($perProject, 0) . ' a month'
-                  : 'free tier' ?>
+            <?php /* Show the arithmetic. "$147" invites a query; "3 x $49" answers it. */
+              $parts = [];
+              if ($agency) {
+                  $parts[] = 'Agency $' . number_format($agencyPrice, 0);
+                  if ($agencyExtraN > 0) $parts[] = $agencyExtraN . ' &times; $' . number_format($agencyExtra, 0) . ' past the pool';
+              } else {
+                  if ($billable > 0)       $parts[] = $billable . ' &times; $' . number_format($perProject, 0);
+                  if ($billableClient > 0) $parts[] = $billableClient . ' client &times; $' . number_format($perClient, 0);
+              }
+              echo $parts ? implode(' + ', $parts) . ' a month' : 'free tier';
+            ?>
           </div>
 <?php endif; ?>
         </div>
@@ -135,7 +151,9 @@
   <h2 class="h5 mt-4 mb-2">What is being counted</h2>
   <p class="text-muted small mb-3">
     Projects shared into a team you own count once, against you — the people you invite do
-    not each need their own plan.
+    not each need their own plan. Your oldest project<?= (int) $freeCap === 1 ? ' is' : 's are' ?> the free
+    one<?= (int) $freeCap === 1 ? '' : 's' ?>; change a project's kind from the Projects page.
+    You bring your own model on every plan, so nothing here meters your builds.
   </p>
 
   <div class="table-responsive">
@@ -143,6 +161,7 @@
       <thead>
         <tr class="text-muted small text-uppercase">
           <th scope="col">Project</th>
+          <th scope="col">Kind</th>
           <th scope="col">Counted because</th>
         </tr>
       </thead>
@@ -152,6 +171,17 @@
           <td>
             <?= htmlspecialchars((string) ($p['display_name'] ?: $p['slug'])) ?>
             <div class="small text-muted font-monospace"><?= htmlspecialchars((string) $p['slug']) ?></div>
+          </td>
+          <td>
+<?php if (!empty($p['free'])): ?>
+            <span class="badge text-bg-success">Free</span>
+<?php elseif (($p['kind'] ?? 'project') === 'client'): ?>
+            <span class="badge text-bg-info">Client project</span>
+            <span class="small text-muted">$<?= number_format($perClient, 0) ?>/mo</span>
+<?php else: ?>
+            <span class="badge text-bg-light border">Project</span>
+            <span class="small text-muted">$<?= number_format($perProject, 0) ?>/mo</span>
+<?php endif; ?>
           </td>
           <td>
 <?php if (($p['via'] ?? '') === 'owned'): ?>

@@ -43,10 +43,12 @@ class ProjectQuotaTest extends ConceptsTestCase {
         return (int) Bean::store($m);
     }
 
-    private function projects(int $memberId, int $n): void {
+    private function projects(int $memberId, int $n, string $kind = 'project'): void {
         for ($i = 0; $i < $n; $i++) {
             $p = Bean::dispense('instance');
-            $p->slug = "p{$memberId}-{$i}"; $p->memberId = $memberId; $p->status = 'active';
+            $p->slug = "p{$memberId}-{$kind}-{$i}"; $p->memberId = $memberId; $p->status = 'active';
+            $p->plan = $kind;
+            $p->createdAt = sprintf('2026-01-%02d 00:00:00', min(28, 1 + Bean::count('instance')));
             Bean::store($p);
         }
     }
@@ -91,5 +93,90 @@ class ProjectQuotaTest extends ConceptsTestCase {
         $r = reset($rows);
         $this->assertSame(['0', '4', 'beta tester', $admin], [(string) $r->oldValue, (string) $r->newValue, (string) $r->note, (int) $r->byRef]);
         $this->assertSame(4, ProjectQuota::capFor($m));
+    }
+    /* ---- the four published tiers (pricing page, 2026-09-25) ---- */
+
+    public function testTheOldestProjectIsTheFreeOneWhateverItsKind(): void {
+        $m = $this->member('pro');
+        $this->projects($m, 1, 'client');   // first made: a client project
+        $this->projects($m, 2, 'project');
+        $b = ProjectQuota::breakdown($m);
+        $this->assertSame(1, $b['complimentary']);
+        $this->assertSame(['project' => 2, 'client' => 1], $b['kinds']);
+        $this->assertSame(2, $b['billable_projects'], 'both plain projects are past the allowance');
+        $this->assertSame(0, $b['billable_client_projects'], 'the client project was the free one');
+        $this->assertSame(2 * ProjectQuota::PRICE_PER_PROJECT, $b['monthly']);
+        $this->assertCount(1, $b['free_ids']);
+    }
+
+    public function testClientProjectsBillAtTheClientRate(): void {
+        $m = $this->member('pro');
+        $this->projects($m, 1, 'project');  // free
+        $this->projects($m, 1, 'project');  // $49
+        $this->projects($m, 2, 'client');   // 2 × $99
+        $b = ProjectQuota::breakdown($m);
+        $this->assertSame([1, 2], [$b['billable_projects'], $b['billable_client_projects']]);
+        $this->assertSame(ProjectQuota::PRICE_PER_PROJECT + 2 * ProjectQuota::PRICE_PER_CLIENT_PROJECT, $b['monthly']);
+        $this->assertSame(0, $b['agency_plan']);
+        $this->assertSame(2, ProjectQuota::billableClientProjects($m));
+    }
+
+    public function testAgencyPoolsTenThenChargesExtras(): void {
+        $m = $this->member('agency');
+        $this->projects($m, 1, 'project');   // free
+        $this->projects($m, 8, 'client');    // pooled
+        $this->projects($m, 4, 'project');   // 2 more pooled, 2 extra
+        $b = ProjectQuota::breakdown($m);
+        $this->assertSame(1, $b['agency_plan']);
+        $this->assertSame(ProjectQuota::AGENCY_POOL, $b['agency_pooled']);
+        $this->assertSame(2, $b['agency_extra']);
+        $this->assertSame([0, 0], [$b['billable_projects'], $b['billable_client_projects']], 'nothing billed twice under Agency');
+        $this->assertSame(ProjectQuota::PRICE_AGENCY + 2 * ProjectQuota::PRICE_AGENCY_EXTRA, $b['monthly']);
+        $this->assertSame(ProjectQuota::PRO_CAP, ProjectQuota::capFor($m), 'agency is uncapped');
+        $this->assertFalse(ProjectQuota::isOverCap($m));
+    }
+
+    public function testAgencyUnderThePoolPaysTheFlatFeeOnly(): void {
+        $m = $this->member('agency');
+        $this->projects($m, 4, 'client');
+        $b = ProjectQuota::breakdown($m);
+        $this->assertSame([1, 3, 0], [$b['agency_plan'], $b['agency_pooled'], $b['agency_extra']]);
+        $this->assertSame(ProjectQuota::PRICE_AGENCY, $b['monthly']);
+    }
+
+    public function testLegacyIsNeverBilledWhateverTheKinds(): void {
+        $l = $this->member('legacy', 3);
+        $this->projects($l, 2, 'client');
+        $b = ProjectQuota::breakdown($l);
+        $this->assertSame([2, 0, 0, 0], [$b['complimentary'], $b['billable_projects'], $b['billable_client_projects'], $b['agency_plan']]);
+        $this->assertSame(0.0, $b['monthly']);
+    }
+
+    public function testKindNormalisesToProject(): void {
+        $this->assertSame('project', ProjectQuota::kindOf(null));
+        $this->assertSame('project', ProjectQuota::kindOf('enterprise'));
+        $this->assertSame('client', ProjectQuota::kindOf(' Client '));
+    }
+
+    public function testSnapshotCarriesTheBreakdown(): void {
+        $m = $this->member('pro');
+        $this->projects($m, 2, 'client');
+        $s = ProjectQuota::snapshot($m);
+        $this->assertSame(1, $s['billable_client']);
+        $this->assertSame(['project' => 0, 'client' => 2], $s['kinds']);
+        $this->assertSame(ProjectQuota::PRICE_PER_CLIENT_PROJECT, $s['monthly']);
+    }
+
+    public function testCustomDomainIsAPaidPerk(): void {
+        \Flight::set('billing.enforce_project_cap', true);
+        try {
+            $this->assertFalse(ProjectQuota::canUseCustomDomain($this->member('free')));
+            $this->assertTrue(ProjectQuota::canUseCustomDomain($this->member('pro')));
+            $this->assertTrue(ProjectQuota::canUseCustomDomain($this->member('agency')));
+            $this->assertTrue(ProjectQuota::canUseCustomDomain($this->member('legacy', 5)));
+        } finally {
+            \Flight::set('billing.enforce_project_cap', false);
+        }
+        $this->assertTrue(ProjectQuota::canUseCustomDomain($this->member('free')), 'enforcement off: everyone may');
     }
 }

@@ -31,13 +31,36 @@ class ProjectQuota {
     public const FREE_CAP = 1;
 
     /**
-     * Price per project beyond the free one, for display only. The invoice is priced by
-     * conf/rates/tiknix.php on the billing server; that is the figure that counts.
+     * Prices, FOR DISPLAY ONLY. The invoice is priced by conf/rates/tiknix.php on the
+     * billing server; that is the figure that counts. These exist so a page and a refusal
+     * can say a number, and they must match that file.
+     *
+     *   project   an app the member runs themselves
+     *   client    an app built for somebody else (hand-off, client preview)
+     *   agency    a flat plan covering AGENCY_POOL projects, then PRICE_AGENCY_EXTRA each
      */
-    public const PRICE_PER_PROJECT = 49.00;
+    public const PRICE_PER_PROJECT        = 49.00;
+    public const PRICE_PER_CLIENT_PROJECT = 99.00;
+    public const PRICE_AGENCY             = 499.00;
+    public const PRICE_AGENCY_EXTRA       = 49.00;
+    public const AGENCY_POOL              = 10;
 
-    /** A paid account is UNCAPPED — every project past the first is simply billed. */
+    /** The priced kinds a project can be. Anything else reads as 'project'. */
+    public const KINDS = ['project', 'client'];
+
+    /** A paid account is UNCAPPED — every project past the free allowance is simply billed. */
     public const PRO_CAP = PHP_INT_MAX;
+
+    /**
+     * The one WHERE clause that says which projects count against a member. countFor,
+     * countsFor, countedProjects and the /billing breakdown all use it: the first
+     * divergence between copies of this rule is a free tier that leaks.
+     * Binds: member id ×4 (tm join, owner, team owner, free-owner clause).
+     */
+    private const COUNTED_WHERE = "(i.status IS NULL OR i.status != 'deleted')
+                  AND (    i.member_id = ?
+                        OR t.owner_id  = ?
+                        OR (tm.member_id = ? AND COALESCE(owner.plan_tier, 'free') = 'free') )";
 
     /**
      * Projects counting against this account.
@@ -57,10 +80,7 @@ class ProjectQuota {
                 LEFT JOIN team        t      ON t.id = it.team_id
                 LEFT JOIN member      owner  ON owner.id = t.owner_id
                 LEFT JOIN teammember  tm     ON tm.team_id = t.id AND tm.member_id = ?
-                WHERE (i.status IS NULL OR i.status != 'deleted')
-                  AND (    i.member_id = ?
-                        OR t.owner_id  = ?
-                        OR (tm.member_id = ? AND COALESCE(owner.plan_tier, 'free') = 'free') )";
+                WHERE " . self::COUNTED_WHERE;
 
         try {
             // A member with no tier yet has no plan, which is exactly what 'free' means —
@@ -105,7 +125,7 @@ class ProjectQuota {
         $member = Bean::load('member', $memberId);
         if (!$member->id) throw new \RuntimeException('ProjectQuota: no such member ' . $memberId);
         $tier = self::tierOf($memberId);
-        if ($tier === 'pro') return self::PRO_CAP;
+        if ($tier === 'pro' || $tier === 'agency') return self::PRO_CAP;
         if ($tier === 'legacy') return max((int) ($member->planProjectCap ?? 0), self::freeCapFor($memberId));
         return self::freeCapFor($memberId);
     }
@@ -115,23 +135,151 @@ class ProjectQuota {
      * invoice lists at $0 beside the billed ones. Legacy: all of them.
      */
     public static function complimentaryProjects(int $memberId): int {
-        $count = self::countFor($memberId);
-        if (self::tierOf($memberId) === 'legacy') return $count;
-        return min($count, self::freeCapFor($memberId));
+        return self::breakdown($memberId)['complimentary'];
     }
 
     /**
-     * Projects this account is billed for: everything past the free one.
-     *
-     * Zero for a grandfathered account however many it holds — legacy means covered, not
-     * billed-then-discounted.
+     * Projects this account is billed for AT THE PROJECT RATE: the 'project'-kind ones past
+     * the free allowance, on a per-project tier. Zero for legacy (covered, not
+     * billed-then-discounted) and zero under Agency (the pool covers them — see breakdown).
      */
     public static function billableProjects(int $memberId): int {
-        if (self::tierOf($memberId) === 'legacy') return 0;
-        return max(0, self::countFor($memberId) - self::freeCapFor($memberId));
+        return self::breakdown($memberId)['billable_projects'];
     }
 
-    /** 'free' | 'pro' | 'legacy' — what the account is on right now. */
+    /** Client-kind projects billed at the client rate. Zero for legacy and under Agency. */
+    public static function billableClientProjects(int $memberId): int {
+        return self::breakdown($memberId)['billable_client_projects'];
+    }
+
+    /** The priced kind of a project: 'project' unless it was made a 'client' one. */
+    public static function kindOf(?string $plan): string {
+        $plan = strtolower(trim((string) $plan));
+        return in_array($plan, self::KINDS, true) ? $plan : 'project';
+    }
+
+    /**
+     * The projects counted against a member, oldest first, with their kind.
+     *
+     * Same WHERE as countFor — this is that count with the rows kept, so the free
+     * allowance can be handed to the OLDEST projects deterministically ("your first project
+     * is free") and the rest priced by kind. Ordered by created_at then id so two projects
+     * made in the same second still sort the same way every time.
+     *
+     * @return list<array{id:int, kind:string, created_at:string}>
+     * @throws \RuntimeException if the rows cannot be established
+     */
+    public static function countedProjects(int $memberId): array {
+        if ($memberId <= 0) throw new \RuntimeException('ProjectQuota: refusing to list for member id ' . $memberId);
+
+        /* Select only columns that exist. RedBean in fluid mode answers a query naming a
+           missing column with an EMPTY result rather than an error, and an empty result
+           here reads as "nothing to bill" — the one wrong answer a billing function must
+           never give. An install whose schema seed has not run yet (or the unit suite's
+           bare table) therefore falls back to "every project is a plain project". */
+        $cols = array_column(Bean::getAll('PRAGMA table_info(instance)'), 'name');
+        $planExpr    = in_array('plan', $cols, true)       ? 'i.plan'       : 'NULL';
+        $createdExpr = in_array('created_at', $cols, true) ? 'i.created_at' : 'NULL';
+
+        $sql = "SELECT i.id, {$planExpr} AS plan, {$createdExpr} AS created_at
+                FROM instance i
+                LEFT JOIN instance_team it   ON it.instance_id = i.id
+                LEFT JOIN team        t      ON t.id = it.team_id
+                LEFT JOIN member      owner  ON owner.id = t.owner_id
+                LEFT JOIN teammember  tm     ON tm.team_id = t.id AND tm.member_id = ?
+                WHERE " . self::COUNTED_WHERE . "
+                GROUP BY i.id
+                ORDER BY created_at ASC, i.id ASC";
+        try {
+            $rows = Bean::getAll($sql, [$memberId, $memberId, $memberId, $memberId]);
+        } catch (\Throwable $e) {
+            \Flight::get('log')?->error('ProjectQuota: project listing failed — refusing to assume none', [
+                'member' => $memberId, 'error' => $e->getMessage(),
+            ]);
+            throw new \RuntimeException('Could not list the projects for member ' . $memberId, 0, $e);
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = ['id' => (int) $r['id'], 'kind' => self::kindOf($r['plan'] ?? null), 'created_at' => (string) ($r['created_at'] ?? '')];
+        }
+
+        // The listing and the count are the same rule; if they disagree, something
+        // swallowed an error (see above) and this must not become an invoice.
+        $expected = self::countFor($memberId);
+        $listed   = count($out);
+        if ($listed !== $expected) {
+            \Flight::get('log')?->error('ProjectQuota: listing and count disagree — refusing to price', [
+                'member' => $memberId, 'listed' => $listed, 'counted' => $expected,
+            ]);
+            throw new \RuntimeException("Project listing ({$listed}) and count ({$expected}) disagree for member {$memberId}");
+        }
+        return $out;
+    }
+
+    /**
+     * The tier arithmetic, in ONE place. Everything that states a price or reports usage
+     * (the billing page, the dashboard, the usage callback, the refusal copy) reads this.
+     *
+     *   free allowance   the member's oldest projects, of either kind, up to freeCapFor
+     *   legacy           everything complimentary, nothing billed
+     *   free / pro       the rest priced by kind: project @ $49, client @ $99
+     *   agency           $499 covers up to AGENCY_POOL of the rest (either kind); each one
+     *                    past the pool is PRICE_AGENCY_EXTRA
+     *
+     * `monthly` is the display estimate from the constants above; the invoice is priced by
+     * the billing server from the same counts, so the two agree by construction.
+     *
+     * @return array{count:int, free:int, tier:string, kinds:array{project:int,client:int},
+     *               complimentary:int, billable_projects:int, billable_client_projects:int,
+     *               agency_plan:int, agency_pooled:int, agency_extra:int, monthly:float,
+     *               free_ids:list<int>}
+     */
+    public static function breakdown(int $memberId): array {
+        $rows  = self::countedProjects($memberId);
+        $count = count($rows);
+        $free  = self::freeCapFor($memberId);
+        $tier  = self::tierOf($memberId);
+
+        $kinds = ['project' => 0, 'client' => 0];
+        foreach ($rows as $r) $kinds[$r['kind']]++;
+
+        $out = [
+            'count' => $count, 'free' => $free, 'tier' => $tier, 'kinds' => $kinds,
+            'complimentary' => 0, 'billable_projects' => 0, 'billable_client_projects' => 0,
+            'agency_plan' => 0, 'agency_pooled' => 0, 'agency_extra' => 0, 'monthly' => 0.0,
+            'free_ids' => [],
+        ];
+
+        if ($tier === 'legacy') {
+            $out['complimentary'] = $count;
+            $out['free_ids'] = array_map(fn($r) => $r['id'], $rows);
+            return $out;
+        }
+
+        $freeRows = array_slice($rows, 0, $free);
+        $paidRows = array_slice($rows, $free);
+        $out['complimentary'] = count($freeRows);
+        $out['free_ids'] = array_map(fn($r) => $r['id'], $freeRows);
+
+        $paidProject = 0; $paidClient = 0;
+        foreach ($paidRows as $r) { if ($r['kind'] === 'client') $paidClient++; else $paidProject++; }
+
+        if ($tier === 'agency') {
+            $paid = $paidProject + $paidClient;
+            $out['agency_plan']   = 1;
+            $out['agency_pooled'] = min($paid, self::AGENCY_POOL);
+            $out['agency_extra']  = max(0, $paid - self::AGENCY_POOL);
+            $out['monthly']       = self::PRICE_AGENCY + $out['agency_extra'] * self::PRICE_AGENCY_EXTRA;
+            return $out;
+        }
+
+        $out['billable_projects']        = $paidProject;
+        $out['billable_client_projects'] = $paidClient;
+        $out['monthly'] = $paidProject * self::PRICE_PER_PROJECT + $paidClient * self::PRICE_PER_CLIENT_PROJECT;
+        return $out;
+    }
+
+    /** 'free' | 'pro' | 'agency' | 'legacy' — what the account is on right now. */
     public static function tierOf(int $memberId): string {
         $member = Bean::load('member', $memberId);
         if (!$member->id) throw new \RuntimeException('ProjectQuota: no such member ' . $memberId);
@@ -183,6 +331,18 @@ class ProjectQuota {
     }
 
     /**
+     * May this account map a custom domain or stand up a container for a project?
+     *
+     * The pricing page puts "custom domain" under the paid Project tier; the free project
+     * lives on its tiknix subdomain. Same shape as canUseTeams: the OWNER's tier decides,
+     * and when enforcement is off everyone may.
+     */
+    public static function canUseCustomDomain(int $ownerId): bool {
+        if (!self::enforcementEnabled()) return true;
+        return self::tierOf($ownerId) !== 'free';
+    }
+
+    /**
      * Is cap enforcement switched on? Default OFF, so an install that says nothing keeps
      * behaving exactly as it did before phase 4.
      */
@@ -203,10 +363,7 @@ class ProjectQuota {
                 LEFT JOIN member      owner  ON owner.id = t.owner_id
                 LEFT JOIN teammember  tm     ON tm.team_id = t.id AND tm.member_id = ?
                 WHERE i.id = ?
-                  AND (i.status IS NULL OR i.status != 'deleted')
-                  AND (    i.member_id = ?
-                        OR t.owner_id  = ?
-                        OR (tm.member_id = ? AND COALESCE(owner.plan_tier, 'free') = 'free') )";
+                  AND " . self::COUNTED_WHERE;
         return (int) Bean::getCell($sql, [$memberId, $instanceId, $memberId, $memberId, $memberId]) > 0;
     }
 
@@ -250,13 +407,14 @@ class ProjectQuota {
         // Per-project pricing means this is an invitation, not a wall: there is no ceiling
         // to hit, only a card to add. Say the actual price — "upgrade" tells someone
         // nothing about whether they want to.
-        $price = number_format(self::PRICE_PER_PROJECT, 0);
-        $tier  = self::tierOf($memberId);
-        $msg   = $tier === 'legacy'
+        $price  = number_format(self::PRICE_PER_PROJECT, 0);
+        $cprice = number_format(self::PRICE_PER_CLIENT_PROJECT, 0);
+        $tier   = self::tierOf($memberId);
+        $msg    = $tier === 'legacy'
             ? "Your account covers {$cap} projects and you have {$count}. Add a card and you can "
-              . "keep going — extra projects are \${$price} each per month."
+              . "keep going — extra projects are \${$price} a month each (\${$cprice} for a client project)."
             : "Your free plan includes {$cap} project" . ($cap === 1 ? '' : 's') . " and you have {$count}. "
-              . "Add a card and each extra project is \${$price} a month.";
+              . "Add a card and each extra project is \${$price} a month (\${$cprice} for a client project).";
 
         /* Take them straight to the card form rather than to /billing to find the link
            themselves. A signed SSO URL when we can build one; /billing when we cannot,
@@ -356,19 +514,27 @@ class ProjectQuota {
      * @return array{count:int, cap:int, tier:string, needs_paid:bool, over:bool}
      */
     public static function snapshot(int $memberId): array {
-        $count = self::countFor($memberId);
+        $b     = self::breakdown($memberId);
+        $count = $b['count'];
         $cap   = self::capFor($memberId);
         return [
             'count'      => $count,
             'cap'        => $cap,
-            'tier'       => self::tierOf($memberId),
+            'tier'       => $b['tier'],
             // Calls the same function the billing service is answered with, rather than
             // repeating the comparison. The inline copy that used to live here is exactly
             // how a page and an invoice come to disagree about what somebody owes.
             'needs_paid' => self::needsPaidPlan($memberId),
-            'billable'   => self::billableProjects($memberId),
-            'free'       => self::freeCapFor($memberId),
-            'complimentary' => self::complimentaryProjects($memberId),
+            'billable'   => $b['billable_projects'],
+            'billable_client' => $b['billable_client_projects'],
+            'free'       => $b['free'],
+            'complimentary' => $b['complimentary'],
+            'kinds'      => $b['kinds'],
+            'agency_plan'   => $b['agency_plan'],
+            'agency_pooled' => $b['agency_pooled'],
+            'agency_extra'  => $b['agency_extra'],
+            'monthly'    => $b['monthly'],
+            'free_ids'   => $b['free_ids'],
             'over'       => $count > $cap,
         ];
     }

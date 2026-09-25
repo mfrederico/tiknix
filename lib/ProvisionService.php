@@ -166,13 +166,16 @@ class ProvisionService {
     }
 
     /** Register an instance bean owned by $memberId (shared by create/fork). */
-    private function registerInstanceBean(int $memberId, string $slug, string $name, string $engine, bool $isDefault): object {
+    private function registerInstanceBean(int $memberId, string $slug, string $name, string $engine, bool $isDefault, string $plan = 'project'): object {
         $member = Bean::load('member', $memberId);
         $inst = Bean::dispense('instance');
         $inst->slug        = $slug;
         $inst->app         = $this->appNamespace();
         $inst->displayName = $name;
         $inst->engine      = $engine;
+        // The priced KIND (pricing page: Project $49 / Client project $99). Normalised so
+        // a bad value cannot invent a tier; whether it is FREE is decided at read time.
+        $inst->plan        = ProjectQuota::kindOf($plan);
         $inst->status      = 'active';
         $inst->isDefault   = $isDefault ? 1 : 0;
         $inst->createdAt   = date('Y-m-d H:i:s');
@@ -204,6 +207,7 @@ class ProvisionService {
         $base   = strtolower(trim((string) ($p['slug'] ?? '')));
         $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
         $engine = (string) ($p['engine'] ?? 'claude');
+        $plan   = ProjectQuota::kindOf((string) ($p['plan'] ?? 'project'));
         // Only root may flag the "(default)" core sandbox; root-ness is read from the
         // member's real level, not a caller-supplied is_root flag (see delete()).
         $isDefault = !empty($p['is_default']) && self::memberIsRoot($memberId);
@@ -234,7 +238,7 @@ class ProvisionService {
             return ['ok' => false, 'error' => 'Provisioning failed. ' . substr(trim($out['out']), -300), 'code' => 500];
 
         @file_put_contents($this->instanceDir($slug) . '/.aibuilder/engine', $engine . "\n");
-        $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, $isDefault);
+        $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, $isDefault, $plan);
         // Isolate now that the id exists (uid = 30000 + id). No-op unless enabled; never fatal.
         $this->isolateInstance($slug, (int) $inst->id);
         $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
@@ -269,6 +273,26 @@ class ProvisionService {
         $ini = @parse_ini_file($this->instanceDir($slug) . '/conf/config.ini', true) ?: [];
         $p   = (string) ($ini['database']['path'] ?? '');
         return preg_match('#^database/[A-Za-z0-9._-]+\.db$#', $p) ? $p : 'database/' . $slug . '.db';
+    }
+
+    /**
+     * Change a project's priced KIND (Project ↔ Client project). Owner only; the billing
+     * consequence is whatever ProjectQuota::breakdown says next time it is asked, so there
+     * is nothing to sync here — the usage callback reads live counts.
+     */
+    public function setPlan(int $memberId, array $p): array {
+        $instanceId = (int) ($p['id'] ?? 0);
+        $plan = strtolower(trim((string) ($p['plan'] ?? '')));
+        if (!in_array($plan, ProjectQuota::KINDS, true)) return ['ok' => false, 'error' => 'Unknown project kind.', 'code' => 400];
+        $inst = Bean::load('instance', $instanceId);
+        if (!$inst->id) return ['ok' => false, 'error' => 'No such instance', 'code' => 404];
+        if (!$this->ownsInstance($memberId, $instanceId)) return ['ok' => false, 'error' => 'Not your instance', 'code' => 403];
+        if (!empty($inst->isDefault)) return ['ok' => false, 'error' => 'The (default) core instance has no plan.', 'code' => 403];
+        if (ProjectQuota::kindOf($inst->plan) === $plan) return ['ok' => true, 'id' => $instanceId, 'plan' => $plan, 'changed' => false];
+        $inst->plan = $plan;
+        Bean::store($inst);
+        Flight::get('log')->info('project kind changed', ['instance' => $instanceId, 'member' => $memberId, 'plan' => $plan]);
+        return ['ok' => true, 'id' => $instanceId, 'plan' => $plan, 'changed' => true];
     }
 
     // ---- share: toggle a team on an owned instance (instance_team m2m) ----
@@ -311,6 +335,9 @@ class ProvisionService {
         // Copied as-is, including empty: an unset engine means "the default at run time"
         // (PlanIngestor::engineFor); stamping claude here would make it look chosen.
         $engine  = (string) Bean::getCell('SELECT engine FROM instance WHERE id = ?', [$srcId]);
+        // A fork inherits the source's kind unless the caller says otherwise: a copy of a
+        // client project is presumably also for that client.
+        $plan    = ProjectQuota::kindOf((string) ($p['plan'] ?? Bean::load('instance', $srcId)->plan ?? 'project'));
         if (!preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $ckpt)) return ['ok' => false, 'error' => 'Invalid checkpoint name', 'code' => 400];
         if (trim($this->gitInstance($srcSlug, ['tag', '-l', $ckpt])['out']) !== $ckpt)
             return ['ok' => false, 'error' => 'Checkpoint not found in source instance', 'code' => 404];
@@ -360,7 +387,7 @@ class ProvisionService {
         $this->gitInstance($slug, ['commit', '--no-verify', '-m',
             'Fork from ' . $srcSlug . '@' . $ckpt . ($carried ? ' (code+data)' : ' (code only)')]);
 
-        $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, false);
+        $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, false, $plan);
         // A fork is a new instance with its own id — isolate it like create(). No-op unless enabled.
         $this->isolateInstance($slug, (int) $inst->id);
         $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'data_carried' => $carried];

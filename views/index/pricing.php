@@ -26,8 +26,9 @@
             color: var(--text); text-align: center;
             padding: clamp(2.5rem, 6vh, 4.5rem) 1.5rem;
         }
-        .wrap { max-width: 880px; width: 100%; }
-        .plans { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; align-items: stretch; }
+        .wrap { max-width: 1240px; width: 100%; }
+        .plans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; align-items: stretch; }
+        @media (max-width: 1100px) { .plans { grid-template-columns: repeat(2, 1fr); } }
         .price-card { display: flex; flex-direction: column; }
         .price .amount.free { color: #3ddc97; }
         @media (max-width: 680px) { .plans { grid-template-columns: 1fr; } }
@@ -46,17 +47,19 @@
         h1 { font-size: clamp(2rem, 6vw, 2.9rem); font-weight: 800; line-height: 1.12; margin-bottom: 0.75rem; }
         .lede { font-size: 1.05rem; line-height: 1.6; color: var(--text-soft); margin-bottom: 2rem; }
         .price-card {
-            padding: 2rem 1.75rem; background: rgba(255,255,255,0.06);
+            padding: 1.75rem 1.4rem; background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; text-align: left;
         }
         .price-card.highlight { border-color: rgba(59,118,240,0.6); box-shadow: 0 14px 40px rgba(0,0,0,0.35); }
         .plan-name { font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-soft); text-align: center; }
         .price { text-align: center; margin: 0.5rem 0 0.25rem; }
-        .price .amount { font-size: 3.4rem; font-weight: 800; line-height: 1; }
+        .price .amount { font-size: 2.9rem; font-weight: 800; line-height: 1; }
         .price .period { color: var(--text-soft); font-size: 1rem; }
         .price-sub { text-align: center; color: var(--text-soft); font-size: 0.9rem; margin-bottom: 1.5rem; }
         ul.features { list-style: none; margin: 0 0 0.5rem; padding: 0; }
-        ul.features li { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.5rem 0; font-size: 0.98rem; line-height: 1.4; }
+        ul.features li { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.4rem 0; font-size: 0.92rem; line-height: 1.4; }
+        .byo { margin: 0 auto 1.75rem; max-width: 720px; padding: 0.9rem 1.2rem; border: 1px solid rgba(61,220,151,0.45); border-radius: 12px; background: rgba(61,220,151,0.07); font-size: 0.98rem; line-height: 1.5; }
+        .byo strong { color: #3ddc97; }
         ul.features li::before { content: "✓"; color: var(--accent); font-weight: 800; flex: 0 0 auto; }
         .form-card { margin-top: 1.75rem; padding: 1.5rem; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; text-align: left; }
         .form-card h2 { font-size: 1.1rem; margin-bottom: 1rem; text-align: center; }
@@ -90,9 +93,10 @@
         </a>
         <div class="badge">Pricing</div>
         <h1>Priced per project &mdash; and yours to keep.</h1>
-        <p class="lede">Your first project is free. After that it&rsquo;s $49 a month per project &mdash;
-           no tiers, no ceiling, <strong>no lock-in</strong>. The code the AI writes is yours to publish,
-           host anywhere, and keep if you ever leave.</p>
+        <p class="lede">Your first project is free. After that you pay per project, not per seat, and every
+           project is <strong>yours to keep</strong>: publish it, host it anywhere, take it with you if you leave.</p>
+        <p class="byo"><strong>Bring your own model.</strong> Plug in Claude Code or any API key and build as much as
+           you like. We never sell you credits, tokens or a meter. The model is yours, like the app.</p>
 
         <div class="plans">
             <div class="price-card">
@@ -103,20 +107,44 @@
                     <li><span>One full-stack builder instance</span></li>
                     <li><span>Its own isolated app, database &amp; web server</span></li>
                     <li><span><strong>You own every line</strong> &mdash; publish to your GitHub</span></li>
-                    <li><span>Unlimited edits while you build</span></li>
-                    <li><span>Solo workspace &mdash; add a project to invite your team</span></li>
+                    <li><span>Unlimited edits on your own model</span></li>
+                    <li><span>Solo workspace</span></li>
+                </ul>
+            </div>
+            <div class="price-card">
+                <div class="plan-name">Project</div>
+                <div class="price"><span class="amount">$49</span><span class="period"> / month</span></div>
+                <div class="price-sub">for the apps you run yourself</div>
+                <ul class="features">
+                    <li><span>Everything in the free project</span></li>
+                    <li><span><strong>Your whole team included</strong> &mdash; no per-seat fees</span></li>
+                    <li><span>Custom domain or a tiknix subdomain</span></li>
+                    <li><span>Own every line &mdash; no lock-in, self-host any time</span></li>
+                    <li><span>Cancel one, stop paying, keep the app</span></li>
                 </ul>
             </div>
             <div class="price-card highlight">
-                <div class="plan-name">Each additional project</div>
-                <div class="price"><span class="amount">$49</span><span class="period"> / month</span></div>
-                <div class="price-sub">cancel one, stop paying</div>
+                <div class="plan-name">Client project</div>
+                <div class="price"><span class="amount">$99</span><span class="period"> / month</span></div>
+                <div class="price-sub">for the apps you build for someone else</div>
                 <ul class="features">
-                    <li><span>Everything in the free instance</span></li>
-                    <li><span>Add a project per client &mdash; no ceiling</span></li>
-                    <li><span><strong>Your whole team included</strong> &mdash; no per-seat fees</span></li>
-                    <li><span>Own every line &mdash; no lock-in, option to self-host</span></li>
-                    <li><span>Pay only for the projects you keep</span></li>
+                    <li><span>Everything in Project</span></li>
+                    <li><span><strong>Hand it off</strong> &mdash; publish to the client&rsquo;s domain and GitHub</span></li>
+                    <li><span>Client preview access while you build</span></li>
+                    <li><span>Their integrations, their keys, scoped to their project</span></li>
+                    <li><span>One line on the invoice for the engagement</span></li>
+                </ul>
+            </div>
+            <div class="price-card">
+                <div class="plan-name">Agency</div>
+                <div class="price"><span class="amount">$499</span><span class="period"> / month</span></div>
+                <div class="price-sub">ten client projects, pooled</div>
+                <ul class="features">
+                    <li><span>Everything in Client project, ten times over</span></li>
+                    <li><span>Swap projects in and out as engagements end</span></li>
+                    <li><span>More than ten? $49 per extra project</span></li>
+                    <li><span>Your whole studio on every project</span></li>
+                    <li><span>One invoice for the lot</span></li>
                 </ul>
             </div>
         </div>
@@ -128,7 +156,8 @@
         <p class="lede" style="margin-top:1.5rem;font-size:0.95rem;">
             Working with a team? Every paid project includes your whole team &mdash; invite as many
             people as you like, with <strong>no per-seat fees</strong>. The free project is your own solo
-            workspace.
+            workspace. And on every plan the model is yours: bring Claude Code or any API key, and build
+            without a meter.
         </p>
 
         <div class="form-card" style="text-align:center; max-width:460px; margin-left:auto; margin-right:auto;">

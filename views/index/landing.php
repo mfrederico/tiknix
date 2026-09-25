@@ -15,7 +15,7 @@ $hasShowcase = !empty($showcase);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($title ?? 'tiknix — build a real app for every client') ?></title>
-    <meta name="description" content="tiknix spins up a full-stack app per project with AI — isolated, integrated, and theirs to keep. First builder free, $49/mo per project after.">
+    <meta name="description" content="tiknix spins up a full-stack app per project with AI — isolated, integrated, and theirs to keep. Bring your own model, no credits. First project free, then $49/mo per project, $99 per client project.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
@@ -39,7 +39,7 @@ $hasShowcase = !empty($showcase);
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
         </a>
       </div>
-      <p class="hero-fine">First builder instance free · <span style="color:var(--soft);">$49/mo per project after</span> · no card to start</p>
+      <p class="hero-fine">First project free · <span style="color:var(--soft);">from $49/mo per project after</span> · bring your own model, no credits · no card to start</p>
     </div>
 
     <div class="hero-visual">
@@ -344,38 +344,62 @@ $hasShowcase = !empty($showcase);
   </section>
 
   <!-- PRICING -->
-  <section class="band">
+  <section class="band" id="pricing">
     <div class="band-head">
       <div class="eyebrow">Pricing</div>
       <h2>Priced per project, like your invoices</h2>
-      <p>Your first builder is free. Every project after is a flat monthly rate — clean COGS on a client engagement.</p>
+      <p>Your first project is free. After that you pay per project, never per seat. <strong>Bring your own model</strong> &mdash; Claude Code or any API key &mdash; and build without credits, tokens or a meter.</p>
     </div>
-    <div class="price-grid">
+    <div class="price-grid" style="max-width:1180px; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));">
       <div class="card plan">
-        <div class="lbl">First builder instance</div>
+        <div class="lbl">First project</div>
         <div style="display:flex; align-items:baseline; gap:8px; margin-top:12px;"><span class="amt">Free</span></div>
         <div class="fine">forever, no card to start</div>
         <div class="hr"></div>
         <div class="feat">
           <div><span class="ck">✓</span> One full-stack builder instance</div>
           <div><span class="ck">✓</span> Its own isolated environment &amp; database</div>
-          <div><span class="ck">✓</span> Connect Stripe, Shopify &amp; more</div>
+          <div><span class="ck">✓</span> Unlimited edits on your own model</div>
           <div><span class="ck">✓</span> Publish to your GitHub</div>
         </div>
       </div>
-      <div class="card plan plan-hi">
-        <div class="ribbon">SCALE PER CLIENT</div>
-        <div class="lbl" style="color:var(--text);">Each additional project</div>
+      <div class="card plan">
+        <div class="lbl">Project</div>
         <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px;"><span class="amt">$49</span><span style="font-size:17px; color:var(--soft);">/mo</span></div>
-        <div class="fine">per builder instance · cancel one, stop paying</div>
+        <div class="fine">the apps you run yourself</div>
         <div class="hr"></div>
         <div class="feat">
-          <div><span class="ck">✓</span> Everything in the free instance</div>
-          <div><span class="ck">✓</span> Unlimited projects — add one per client</div>
-          <div><span class="ck">✓</span> Publish to their domain, or a container</div>
-          <div><span class="ck">✓</span> Expensable to the engagement it belongs to</div>
+          <div><span class="ck">✓</span> Everything in the free project</div>
+          <div><span class="ck">✓</span> Your whole team, no per-seat fees</div>
+          <div><span class="ck">✓</span> Custom domain</div>
+          <div><span class="ck">✓</span> Cancel one, keep the app</div>
+        </div>
+      </div>
+      <div class="card plan plan-hi">
+        <div class="ribbon">BUILT FOR CLIENTS</div>
+        <div class="lbl" style="color:var(--text);">Client project</div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px;"><span class="amt">$99</span><span style="font-size:17px; color:var(--soft);">/mo</span></div>
+        <div class="fine">the apps you build for someone else</div>
+        <div class="hr"></div>
+        <div class="feat">
+          <div><span class="ck">✓</span> Everything in Project</div>
+          <div><span class="ck">✓</span> Publish to their domain and GitHub</div>
+          <div><span class="ck">✓</span> Client preview access while you build</div>
+          <div><span class="ck">✓</span> One line on the engagement invoice</div>
         </div>
         <a class="btn btn-primary" style="display:flex; justify-content:center; margin-top:26px;" href="/auth/register">Start your first project — free</a>
+      </div>
+      <div class="card plan">
+        <div class="lbl">Agency</div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px;"><span class="amt">$499</span><span style="font-size:17px; color:var(--soft);">/mo</span></div>
+        <div class="fine">ten client projects, pooled</div>
+        <div class="hr"></div>
+        <div class="feat">
+          <div><span class="ck">✓</span> Everything in Client project, ten times</div>
+          <div><span class="ck">✓</span> Swap projects as engagements end</div>
+          <div><span class="ck">✓</span> $49 per project past ten</div>
+          <div><span class="ck">✓</span> One invoice for the lot</div>
+        </div>
       </div>
     </div>
   </section>
@@ -384,6 +408,7 @@ $hasShowcase = !empty($showcase);
   <section class="band">
     <h2 style="font-size:clamp(26px,3vw,34px); text-align:center; margin-bottom:44px;">The questions everyone asks first</h2>
     <div class="faq-grid">
+      <div class="card qa"><h3>Do I need my own AI model?</h3><p>Yes, and that is the point. Plug in Claude Code or any API key and build as much as you like. We never sell credits, tokens or a meter, so nobody rations your builds, and the model relationship is yours like the app is.</p></div>
       <div class="card qa"><h3>Do I need to write code?</h3><p>No. Start by describing what you want in plain language and refine from there. Developers can drop into the code anytime — project leads never have to.</p></div>
       <div class="card qa"><h3>Can my team work on a project together?</h3><p>Yes — every paid project includes your whole team at <strong>no per-seat cost</strong>. Invite teammates, share a live preview with the client, and review in the same place you build. (The free project is a solo workspace.)</p></div>
       <div class="card qa"><h3>Is the code mine?</h3><p>Completely — every line the AI generates is yours. Publish it to your own GitHub, host it anywhere, and keep it if you ever leave. No lock-in, no proprietary runtime holding it hostage.</p></div>

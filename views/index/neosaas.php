@@ -16,7 +16,7 @@ $faqs  = [
     ['Isn\'t this just "build versus buy"?', 'Partly. Build-versus-buy assumes building is slow and expensive, which was true. AI planners and builders changed the cost, so the question now is whether you own what you use. The answer here is yes, always.'],
     ['Do I have to host it myself?', 'No. Someone hosts it, the way SaaS is hosted. The difference is that you can take it with you. On tiknix each project runs in its own isolated environment and can be published to your GitHub or your client\'s domain whenever you like.'],
     ['Who is it for?', 'Any business whose way of working is part of its advantage. Agencies building for clients, founders replacing a stack of subscriptions, operators with a process the big platforms never quite fit. If you have ever hired consultants to change your company so a tool would work, this is for you.'],
-    ['What does it cost?', 'Whatever building costs, once, plus someone keeping it running. On tiknix that is a free first project, then $49 a month per additional project with no per-seat fees. Cancel a project and the app keeps running wherever you published it.'],
+    ['What does it cost?', 'Whatever building costs, once, plus someone keeping it running. On tiknix that is a free first project, then $49 a month for your own projects and $99 for client projects, with no per-seat fees and no credits, because you bring your own model. Cancel a project and the app keeps running wherever you published it.'],
     ['Who coined NeoSaaS?', 'Matthew Frederico of ClickSimple, the company behind tiknix, ShipCannon and DealerYes. The phrase came out of watching companies spend years tailoring themselves to fit software they bought.'],
 ];
 $site = 'https://tiknix.com';
@@ -175,6 +175,7 @@ $jsonld = [
           <li>Per seat, per month, forever. Hire someone, pay more.</li>
           <li>The feature you need is &ldquo;on the roadmap.&rdquo; It has been for a while.</li>
           <li>Your data lives at their house. Cancel, and it all evaporates.</li>
+          <li>Credits, tokens and meters decide how much you get to build.</li>
           <li>You hire tailors to change the company until the software fits.</li>
         </ul>
       </div>
@@ -185,6 +186,7 @@ $jsonld = [
           <li>You own every line. It sits in your GitHub, or your client&rsquo;s.</li>
           <li>Hosted, patched and watched, without a lease attached.</li>
           <li>Priced per project. Cancel one, stop paying, keep the app.</li>
+          <li>Your own model, no credits or tokens. Nobody meters your builds.</li>
           <li>When the business changes, the software changes. Same week.</li>
         </ul>
       </div>
@@ -204,8 +206,9 @@ $jsonld = [
         account it belongs to, and publishes to your GitHub or your client&rsquo;s domain whenever you say.
       </p>
       <p>
-        The first project is free. Each one after is $49 a month, and if you cancel it the app keeps running
-        wherever you put it. That is the whole deal in one pricing line: <strong>you were never renting.</strong>
+        You bring your own model, Claude Code or any API key, so nobody meters your builds. The first project is
+        free. After that it is $49 a month for a project of your own and $99 for one you build for a client, and
+        if you cancel one the app keeps running wherever you put it. That is the whole deal in one pricing line: <strong>you were never renting.</strong>
         It is first-party software from the first commit.
       </p>
       <p>

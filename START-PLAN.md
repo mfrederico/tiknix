@@ -1,6 +1,7 @@
 # start.tiknix: learn the business, plan a bespoke system, build it
 
-**Status: plan for review — nothing built.** Written 2026-09-24 from a survey of core, the
+**Status: plan for review; Track A has started — `pdf` 1.0.0 is built, published and adopted
+by Invoza and Serenity (§5.4a); `requires.commands` is in core. Nothing else is built.** Written 2026-09-24 from a survey of core, the
 workbench sidecar, PartsDNA (`partsdna-74a225`), Serenity (`serenity-bbdc01`) and the concept
 catalog in depth, and of what CollectIQ, Invoza, El Salón (`bookingscheduler`) and lead-machine
 each built beyond core. Decisions to confirm are collected under "Decisions to confirm"; nothing below is
@@ -102,7 +103,7 @@ a `[sidecar.<name>]` section in core's config, and a `Feature::CATALOG` entry.
 | Money | Stripe checkout, subscriptions, billing portal (connector methods) | `StripeConnector`, `lib/StripeGateway.php` |
 
 **Concept catalog today** (`/var/www/html/default/tiknix-concepts/`): `calendar` 1.0.1,
-`pipedemo` 1.0.0, `shopifysync` 1.1.0. **Designed, not extracted:** `storefront`, offer types
+`pipedemo` 1.0.0, `shopifysync` 1.1.0, `pdf` 1.0.0 (the proving case below, 2026-09-25). **Designed, not extracted:** `storefront`, offer types
 `physical` / `digital` / `class` / `session`, `tickets`, `availability`, `profiles`,
 `vendors`, and the `events` bundle (`COMPONENTS_PLAN.md` "Build order" steps 3–5).
 
@@ -545,6 +546,48 @@ versioned components that many projects share and update:
 Left where they are (too specific to generalise honestly): PartsDNA's fitment finder,
 CollectIQ's grading schema and market-value lookup, Serenity's gemstone attributes, business
 reports and content planner, lead-machine's prospect research pipeline.
+
+### 5.4a Proving case: `pdf` (built 2026-09-25)
+
+The first capability plugin went through the whole harvest in one day, and it drove what
+the runtime needed rather than the other way round:
+
+- **Built:** `pdf` 1.0.0 — `app\concepts\pdf\Pdf::fromHtml()` / `toTemp()` / `toFile()` /
+  `pageCount()` / `check()`, headless Chrome run with a throwaway work dir as HOME, XDG and
+  crash-dump dir, pipes for every descriptor, a 60 s kill, and a `RuntimeException` with
+  Chrome's own output on every failure. Ten tests of real renders. Published to the catalog
+  (`tiknix-concepts` 655082e), authored in `/var/www/html/default/concept-dev/concepts/pdf`.
+- **Adopted twice:** Invoza's `InvoicePdf` keeps only its HTML template (3a11454);
+  Serenity's hand-written PDF writer became `views/shop/ticket-pdf.php` + the plugin
+  (8fb9460). Each adoption was pinned first by a characterization test in the source
+  project (`InvoicePdfTest`, `TicketPdfTest`), green before and after the swap.
+- **Proved where it failed before:** run inside each project's isolated php-fpm pool as
+  its pool user (uid 30087 / 30093, via `cgi-fcgi` against the pool socket with a script
+  under `/tmp`) — the environment in which Invoza's own Chrome call died with exit 133 on
+  2026-09-18. Both render; nothing of the sort had been proved for the original code.
+
+What the runtime gained or still lacks, found by doing it:
+
+1. **Gained `requires.commands`** (core 70c193e): a manifest names the programs it shells
+   out to (`"google-chrome|chromium"`), `verify()` refuses the plugin when none is
+   present. The lookup asks the shell, because under `open_basedir` `is_file('/usr/bin/x')`
+   is false for everything outside the install's tree while running it is allowed.
+2. **`open_basedir` refuses `/dev/null`.** A `proc_open` descriptor spec of
+   `['file', '/dev/null']` fails on an isolated install before the program starts. Pipes
+   everywhere. Worth a line in the agent guidelines.
+3. **Tests of app code that uses a plugin cannot reach it** — the concept autoloader takes
+   its enabled set from the *selected* database's flags, and the test suites run on a
+   scratch one. Both pins `require_once` the plugin file by hand. The lock file (§5.3 item
+   3) is the right answer: a test bootstrap that loads what `concepts.lock` says is
+   installed, no database needed.
+4. **The query cache and `addDatabase`:** under php-fpm (APCu live), a second connection
+   opened with the cache attached shares the cache namespace of every other connection
+   with the same DSN (`sqlite::memory:`), so RedBean's cached table list was stale and it
+   re-created a table that existed. Harmless in the proof (cache off for the scratch
+   connection), but any web-context code that opens a fluid secondary connection is
+   exposed. Not fixed.
+5. Still to build from §5.3: version ranges, `requires.core`, the lock file, extend-don't-
+   edit enforcement, updates, settings, bundles. None was needed to ship `pdf`.
 
 ### 5.5 How a component is harvested
 

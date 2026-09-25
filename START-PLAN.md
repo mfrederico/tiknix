@@ -655,6 +655,14 @@ Runtime findings:
     an unknown code now throws where CollectIQ used to quietly return USD-only. The pin was
     changed to expect the error, and says why.
 
+11. **The drift test is blind the same way.** `tests/unit/AgentGuidanceTest` recomposes
+    CLAUDE.md on the scratch database, sees no enabled plugins, and reports the real file
+    (which correctly carries their `guidelines.md` sections) as "edited by hand". It passes
+    on lead-machine (no plugins) and fails on every install with one — Invoza since `pdf`,
+    Serenity since `calendar`. Not a hand edit and not fixed here: the lock file (§5.3
+    item 3) gives both the test bootstrap and the composer the same list without a
+    database. It is now the first A0 item.
+
 ### 5.5 How a component is harvested
 
 Every extraction follows the same five steps, so a live client never pays for it:

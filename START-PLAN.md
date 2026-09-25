@@ -466,9 +466,11 @@ versioned components that many projects share and update:
    when a seam or a `requires.lib` class changes shape), and a manifest declares
    `"requires": {"core": "^1"}`. `verify()` refuses a plugin built for an incompatible core,
    naming both versions — so a core upgrade can never silently break an installed plugin.
-3. **A lock file.** `concepts.lock` in each project: name, version, source, and a hash of the
-   installed files. It makes three things visible: what is installed, whether it is behind
-   the catalog, and whether someone **edited** it in place.
+3. ~~**A lock file.**~~ **Built 2026-09-25** (§5.4d): `concepts.lock` in each project —
+   name, version, source, enabled, and a hash of the installed files — is THE record of
+   plugin state; the settings-table flag is gone. It makes three things visible: what is
+   installed, whether someone **edited** it in place, and (next) whether it is behind the
+   catalog.
 4. **Extend, don't edit.** The update story hangs on this. A project adapts a plugin through
    what the plugin exposes — slots, collect points, config, its own subclassing points, and
    the project's own code around it — never by editing files under `concepts/<name>/`. Then
@@ -662,6 +664,24 @@ Runtime findings:
     Serenity since `calendar`. Not a hand edit and not fixed here: the lock file (§5.3
     item 3) gives both the test bootstrap and the composer the same list without a
     database. It is now the first A0 item.
+
+### 5.4d The lock file (built 2026-09-25)
+
+`lib/ConceptLock.php` + `concepts.lock` at the install root. It replaced the settings-table
+flag as the record of which plugins are installed and switched on, and it is a file in the
+project's repository on purpose: a clone, a task worktree, a test run and the live site now
+read the same plugin set, with no database.
+
+- `ConceptCatalog::install()` records a row (switched off, with a hash of the installed
+  files); `Concepts::enable()` / `disable()` flip it; `clitool --concept-lock` writes the
+  file from disk — the one-time migration from the old flags, and the repair after a
+  directory was added or removed by hand. `--concepts` shows `EDITED` when a plugin's
+  files no longer match the hash (extend-don't-edit, §5.3 item 4, now has its evidence).
+- `tests/bootstrap.php` boots the concept autoloader from the lock, so app tests that use a
+  plugin no longer `require_once` its files, and the CLAUDE.md drift test composes with the
+  install's real plugin set (§5.4a item 3, §5.4b item 7 and §5.4c item 11 — closed).
+- A `concepts/` directory without a lock is "not migrated": an error naming the command,
+  never an install that quietly believes it has no plugins.
 
 ### 5.5 How a component is harvested
 

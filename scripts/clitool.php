@@ -57,7 +57,7 @@ $longopts = [
     // i18n
     'i18n-scan',
     // concepts (COMPONENTS_PLAN.md)
-    'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'force', 'agent-sync',
+    'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'concept-lock', 'rehash', 'force', 'agent-sync',
     'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
@@ -204,14 +204,31 @@ if (isset($opt['agent-sync'])) {
 if (isset($opt['concepts'])) {
     $scan = \app\Concepts::instance()->scan();
     if (!$scan) { out('(no concepts installed — ' . \app\Concepts::DIR . '/ is empty or absent)'); exit(0); }
-    out(sprintf('%-20s %-9s %-10s %s', 'CONCEPT', 'STATE', 'VERSION', 'TITLE / ERROR'));
-    out(str_repeat('-', 78));
+    out(sprintf('%-20s %-9s %-10s %-7s %s', 'CONCEPT', 'STATE', 'VERSION', 'FILES', 'TITLE / ERROR'));
+    out(str_repeat('-', 86));
     foreach ($scan as $name => $row) {
         $m = $row['manifest'];
-        out(sprintf('%-20s %-9s %-10s %s', $name,
+        out(sprintf('%-20s %-9s %-10s %-7s %s', $name,
             $m === null ? 'BROKEN' : ($row['enabled'] ? 'enabled' : 'disabled'),
-            $m->version ?? '-', $m === null ? $row['error'] : ($m->title !== '' ? $m->title : $m->blurb)));
+            $m->version ?? '-', $row['modified'] ? 'EDITED' : 'as-is',
+            $m === null ? $row['error'] : ($m->title !== '' ? $m->title : $m->blurb)));
     }
+    exit(0);
+}
+// --concept-lock: write concepts.lock from what is on disk. The one-time migration from the
+// settings-table flags (which this file replaces) and the repair when a directory was added
+// or removed by hand. --rehash accepts the current files as each concept's baseline.
+if (isset($opt['concept-lock'])) {
+    $flags = \app\ConceptLock::exists(dirname(__DIR__)) ? [] : \app\Feature::installKeys(\app\Concepts::FLAG_PREFIX);
+    try {
+        $r = \app\ConceptLock::sync(dirname(__DIR__), $flags, isset($opt['rehash']));
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    out("# {$r['file']}");
+    foreach ($r['added'] as $n) out("  + {$n}" . (in_array($n, $flags, true) ? ' (enabled, from the settings flag)' : ' (disabled)'));
+    foreach ($r['kept'] as $n) out("  · {$n}");
+    foreach ($r['removed'] as $n) out("  - {$n} (directory gone)");
     exit(0);
 }
 if (isset($opt['concept-verify'])) {

@@ -309,6 +309,8 @@ class ConceptCatalog {
             self::rmTree($tmp);
             throw $e;
         }
+        // The lock row: installed, switched off, with the hash of what was installed.
+        ConceptLock::record($root, $name, $m->version, $this->isLocal() ? 'control-plane catalog' : $this->where());
         return ['name' => $name, 'version' => $m->version, 'dir' => $target, 'files' => count($files)];
     }
 

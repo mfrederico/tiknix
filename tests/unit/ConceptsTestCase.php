@@ -104,7 +104,7 @@ abstract class ConceptsTestCase extends TestCase {
         return "<?php\nnamespace app\\concepts\\{$name};\nclass {$class} {\n{$body}}\n";
     }
 
-    private function rm(string $path): void {
+    protected function rm(string $path): void {
         if (is_link($path) || is_file($path)) { unlink($path); return; }
         if (!is_dir($path)) return;
         foreach (scandir($path) as $e) {

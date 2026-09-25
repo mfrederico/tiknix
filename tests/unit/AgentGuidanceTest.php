@@ -30,7 +30,12 @@ class AgentGuidanceTest extends ConceptsTestCase {
 
     public function testCoresClaudeMdIsExactlyWhatComposeProduces(): void {
         $core = dirname(__DIR__, 2);
-        $c = G::compose($core, []);
+        // With the plugins THIS install has switched on (concepts.lock, no database needed) —
+        // exactly what `clitool --agent-sync` composes with, so an install's real CLAUDE.md,
+        // concept sections included, is compared to what it should be.
+        $enabled = [];
+        foreach (\app\Concepts::instance($core)->enabled() as $name => $m) $enabled[$name] = ['version' => $m->version, 'dir' => $m->dir];
+        $c = G::compose($core, $enabled);
         $this->assertFalse($c['migrated'], 'core carries the markers');
         $this->assertSame(file_get_contents("{$core}/CLAUDE.md"), $c['text'],
             'CLAUDE.md was edited by hand. Edit agent/guidelines/ and run: php scripts/clitool.php --agent-sync');

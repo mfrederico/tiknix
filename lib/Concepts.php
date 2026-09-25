@@ -31,7 +31,7 @@ class Concepts {
     public const DIR = 'concepts';
 
     /** Feature::installKeys() prefix: install.concept.<name> */
-    private const FLAG_PREFIX = 'concept';
+    public const FLAG_PREFIX = 'concept';   // the settings-table flag concepts.lock replaced; read once by --concept-lock
 
     /** One namespace/class-name segment. Class names arrive from URLs, so this is a path-traversal guard. */
     private const PART_RE = '/^[A-Za-z_][A-Za-z0-9_]*$/D';
@@ -81,10 +81,15 @@ class Concepts {
 
     public static function instance(?string $root = null): self {
         if (self::$instance === null) {
-            self::$instance = new self($root ?? dirname(__DIR__), [
-                'enabled' => fn(): array => Feature::installKeys(self::FLAG_PREFIX),
+            $r = rtrim($root ?? dirname(__DIR__), '/');
+            self::$instance = new self($r, [
+                // concepts.lock is the record of what is installed and switched on — a file in
+                // the repository, so a clone, a task worktree and a test run agree with the
+                // live site without a database. The settings-table flag it replaced is
+                // migrated once by `clitool --concept-lock` (ConceptLock::sync).
+                'enabled' => fn(): array => ConceptLock::enabledNames($r),
                 'level'   => fn(): int => (int) (\Flight::getMember()->level ?? ConceptManifest::LEVEL_VALUES['PUBLIC']),
-                'setFlag' => fn(string $name, bool $on) => Feature::setInstallEnabled(self::FLAG_PREFIX . '.' . $name, $on),
+                'setFlag' => fn(string $name, bool $on) => ConceptLock::setEnabled($r, $name, $on),
                 'seed'    => fn(string $dir): array => (new \app\services\Schema\WorkspaceSchemaBuilder())->build($dir),
                 'rows'    => fn(string $bean): int => in_array(Bean::normalize($bean), Bean::inspect(), true) ? (int) Bean::count($bean) : 0,
             ]);
@@ -167,17 +172,20 @@ class Concepts {
     /**
      * Every concept directory on disk, working or not — for listings.
      *
-     * @return array<string,array{manifest:?ConceptManifest,error:?string,enabled:bool}>
+     * @return array<string,array{manifest:?ConceptManifest,error:?string,enabled:bool,modified:bool}>
      */
     public function scan(): array {
         $out = [];
         $on = array_flip($this->enabledNames());
         foreach (glob($this->conceptsDir() . '/*', GLOB_ONLYDIR) ?: [] as $dir) {
             $name = basename($dir);
+            // 'modified': its files differ from what concepts.lock recorded at install — edited
+            // in place, so an update is a merge task, not a replace.
+            $modified = ConceptLock::exists($this->root) && ConceptLock::modified($this->root, $name);
             try {
-                $out[$name] = ['manifest' => ConceptManifest::load($dir, $name), 'error' => null, 'enabled' => isset($on[$name])];
+                $out[$name] = ['manifest' => ConceptManifest::load($dir, $name), 'error' => null, 'enabled' => isset($on[$name]), 'modified' => $modified];
             } catch (ConceptException $e) {
-                $out[$name] = ['manifest' => null, 'error' => $e->getMessage(), 'enabled' => isset($on[$name])];
+                $out[$name] = ['manifest' => null, 'error' => $e->getMessage(), 'enabled' => isset($on[$name]), 'modified' => $modified];
             }
         }
         ksort($out);

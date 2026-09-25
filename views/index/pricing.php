@@ -113,7 +113,7 @@
             <div class="price-card highlight">
                 <div class="plan-name">Each additional project</div>
                 <div class="price"><span class="amount">$49</span><span class="period"> / month</span></div>
-                <div class="price-sub">cancel one, stop paying</div>
+                <div class="price-sub">add or remove projects any time</div>
                 <ul class="features">
                     <li><span>Everything in the free project</span></li>
                     <li><span>Add a project per client &mdash; no ceiling</span></li>

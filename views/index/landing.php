@@ -367,7 +367,7 @@ $hasShowcase = !empty($showcase);
         <div class="ribbon">SCALE PER CLIENT</div>
         <div class="lbl" style="color:var(--text);">Each additional project</div>
         <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px;"><span class="amt">$49</span><span style="font-size:17px; color:var(--soft);">/mo</span></div>
-        <div class="fine">per project · cancel one, stop paying</div>
+        <div class="fine">per project · add or remove any time</div>
         <div class="hr"></div>
         <div class="feat">
           <div><span class="ck">✓</span> Everything in the free project</div>

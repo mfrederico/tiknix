@@ -857,6 +857,22 @@ Every step is idempotent on retry (provisioned already? skip; committed already,
 `plan_sha`? skip). A failure leaves the interview at `failed` with the step and the error
 shown, and **Retry** resumes at that step.
 
+**As built (2026-09-25, core 34cf4b9) — the visitor has no account, so the hand-off is two
+doors.** The wizard's instance POSTs the package (name, PLAN.md, blueprint.json, brief,
+resume URL) to `POST /handoff/receive` with its broker key — the credential every
+instance→core call already carries — and gets a token, a **claim URL** and a state URL
+(`lib/PlanHandoff.php`, `controls/Handoff.php`). The visitor is sent to
+`/handoff/claim/<token>` on tiknix.com: not signed in → sign in or register (the token
+waits in the session, so Register lands back here too); signed in → "Start a new project
+from this plan?" with the name, the engine and the plan gate (`ProjectQuota`), then the
+same `ProvisionService::create` the Projects page uses, `PLAN.md` +
+`.aibuilder/blueprint.json` committed into the new project **as the member**, the project
+selected, and the Builder opened. A token is single-use; `GET /handoff/state?token=`
+tells the wizard's status page `offered` → `claimed` (+ project slug/url), never who.
+Steps 5–7 (connections checklist, Phase 1 decompose, status with **Start phase N**)
+remain. The wizard's half (fill `Handoff::requestCreate`, redirect, status polling) is
+plan #2 on the Start board.
+
 ---
 
 ## 9. The blueprints

@@ -302,6 +302,17 @@ class PlanExecutor {
             $log[] = 'no database/seeds/ — nothing to apply';
         }
 
+        // The schema seeds (services/Schema/Seeds/NN_*.php — the convention the guidelines
+        // mandate) are idempotent by contract and run as a set through the schema builder,
+        // so no ledger: every plan that ships one gets it applied to the live instance here.
+        // Until 2026-09-25 only database/seeds/ was applied, and a plan whose permission
+        // seed lived in services/Schema/Seeds/ merged green with its routes still admin-only.
+        if (is_dir($this->instanceDir . '/services/Schema/Seeds') && is_file($this->instanceDir . '/scripts/clitool.php')) {
+            [$code, $out] = $this->runInProject('php scripts/clitool.php --build');
+            $tail = trim(implode(' ', array_slice($out, -2)));
+            $log[] = 'schema seeds (clitool --build): ' . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
+        }
+
         // Rebuild the permission cache so any new authcontrol rows take effect at once
         // (a direct DB insert doesn't bump the APCu cache version on its own).
         $rc = $this->instanceDir . '/scripts/resetcache.php';
@@ -1073,10 +1084,12 @@ commit and merge your work — you just make the code changes.
   migration or seed scripts. The live SQLite DB is
   discarded from your worktree, so direct writes will NOT persist. If this task needs
   a DB or permission change (e.g. an authcontrol route entry to make a page public),
-  write an IDEMPOTENT PHP seed script to database/seeds/<descriptive-name>.php using
-  the \\app\\Bean wrapper (Bean::findOne / dispense / store). The orchestrator runs
-  every database/seeds/*.php against the live instance after your work merges (with the
-  instance root as CWD), then rebuilds the permission cache — you do NOT run it.
+  write an IDEMPOTENT numbered seed in services/Schema/Seeds/NN_Name.php (the CLAUDE.md
+  convention; permissions through PermissionCache::seedRule). The orchestrator runs the
+  schema builder (clitool --build) against the live instance after your work merges,
+  then rebuilds the permission cache — you do NOT run it. A legacy standalone script in
+  database/seeds/<descriptive-name>.php is also applied (once, ledgered); if you write
+  one, use the \\app\\Bean wrapper (Bean::findOne / dispense / store).
   The seed file lives TWO levels below the instance root, so bootstrap the app with
   EXACTLY this (do not add a chdir, the CWD is already the instance root):
       require_once __DIR__ . '/../../bootstrap.php';

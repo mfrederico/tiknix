@@ -134,6 +134,11 @@ echo PermissionCache::seedRule('apidocs', 'spec', 101, 'OpenAPI JSON (public)');
 
 Seed the rows BEFORE fetching the route, and report what `seedRule` returns — `kept` means
 somebody's deliberate rule won, which is a fact worth printing rather than swallowing.
+A wildcard seed (`seedRule('start', '*', 101)`) also removes the auto-generated
+`start::<method>` rows a fetch left behind — a method row is consulted before the
+wildcard, so they would shadow it; a method row a person set stays as their exception.
+A plan's seeds reach the live instance when the plan finishes (the orchestrator runs
+`clitool --build`), never from a task's worktree.
 RedBean auto-creates a model's table on first store, so there is no `CREATE TABLE`.
 
 ## Framework Standards

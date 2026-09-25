@@ -491,11 +491,24 @@ class PermissionCache {
      *
      * So: correct a row this class invented, never touch one somebody meant.
      *
+     * A WILDCARD seed (`<control>::*`) has the same trap one level down: check() consults
+     * the method row before the wildcard, so the auto-generated `<control>::<method>` rows
+     * that a fetch left behind shadow the wildcard completely — the seed reports `added`
+     * and the routes stay admin-only (the /start wizard, 2026-09-25: eight auto rows at
+     * ADMIN over a wildcard at PUBLIC). Seeding a wildcard therefore removes every
+     * auto-generated method row under that control; a method row somebody set stays,
+     * because it is their exception to the wildcard.
+     *
      * @return string one of 'added' | 'corrected' | 'kept' | 'unchanged', for the seed to report
      */
     public static function seedRule(string $control, string $method, int $level, string $description = ''): string {
         $row = \app\Bean::findOne('authcontrol', 'LOWER(control) = ? AND LOWER(method) = ?',
             [strtolower($control), strtolower($method)]);
+
+        $shadowsRemoved = 0;
+        if ($method === '*') {
+            $shadowsRemoved = self::removeAutoRowsUnder($control);
+        }
 
         if (!$row || !$row->id) {
             $row = \app\Bean::dispense('authcontrol');
@@ -507,10 +520,12 @@ class PermissionCache {
             $row->createdAt   = date('Y-m-d H:i:s');
             \app\Bean::store($row);
             self::clear();
-            return 'added';
+            // 'corrected' rather than 'added' when auto rows had to go: the seed's line
+            // then says the routes were already pinned and were overruled.
+            return $shadowsRemoved > 0 ? 'corrected' : 'added';
         }
 
-        if ((int) $row->level === $level) return 'unchanged';
+        if ((int) $row->level === $level) return $shadowsRemoved > 0 ? 'corrected' : 'unchanged';
 
         // Only a row we invented may be overruled. Anything else is somebody's decision.
         if (strpos((string) $row->description, self::AUTO_MARK) !== 0) return 'kept';
@@ -520,6 +535,18 @@ class PermissionCache {
         \app\Bean::store($row);
         self::clear();
         return 'corrected';
+    }
+
+    /**
+     * Trash the auto-generated `<control>::<method>` rows that would shadow a wildcard
+     * seed. Returns how many went. Hand-set rows are left alone.
+     */
+    private static function removeAutoRowsUnder(string $control): int {
+        $rows = \app\Bean::find('authcontrol', 'LOWER(control) = ? AND method <> ? AND description LIKE ?',
+            [strtolower($control), '*', self::AUTO_MARK . '%']);
+        foreach ($rows as $auto) \app\Bean::trash($auto);
+        if ($rows) self::clear();
+        return count($rows);
     }
 
     /**

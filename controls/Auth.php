@@ -155,7 +155,9 @@ class Auth extends BaseControls\Control {
 
             $this->logger->info('User logged in', ['id' => $member->id, 'username' => $member->username]);
 
-            Flight::redirect($redirect);
+            // A claim waiting in the session (the visitor came from the Get-started wizard,
+            // maybe via Register rather than the login form's redirect) wins over the default.
+            Flight::redirect($redirect === '/dashboard' ? (\app\PlanHandoff::afterLoginTarget() ?? $redirect) : $redirect);
             
         } catch (Exception $e) {
             $this->handleException($e, 'Login failed');
@@ -466,7 +468,8 @@ class Auth extends BaseControls\Control {
             $_SESSION['member']['id'] = $id;
 
             $this->flash('success', 'Welcome to ' . Flight::get('app.name') . '! Your account has been created.');
-            Flight::redirect('/dashboard');
+            // A plan from the Get-started wizard waiting to be claimed lands there, not on the dashboard.
+            Flight::redirect(\app\PlanHandoff::afterLoginTarget() ?? '/dashboard');
             return;
             
         } catch (\Exception $e) {
@@ -531,7 +534,7 @@ class Auth extends BaseControls\Control {
 
             $this->flash('success', 'Welcome to ' . Flight::get('app.name') . '! Your card is on file — '
                                   . 'your first project is free.');
-            Flight::redirect('/dashboard');
+            Flight::redirect(\app\PlanHandoff::afterLoginTarget() ?? '/dashboard');
             return;
         }
 

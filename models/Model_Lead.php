@@ -7,7 +7,10 @@
  * it, so an install has one lead per email address with every blank filled in over time, not
  * one row per form they ever touched:
  *
- *   $lead = Model_Lead::capture('zoe@example.com', 'Zoë', 'Quinn', ['source' => 'appointment', 'phone' => '555-0100']);
+ *   $lead = Model_Lead::capture('zoe@example.com', 'Zoë', 'Quinn', [
+ *       'gate' => LeadGate::forPublicForm($params, $ip, [...]),   // or LeadGate::trusted('staff walk-in')
+ *       'source' => 'appointment', 'phone' => '555-0100',
+ *   ]);
  *
  * Rules the callers used to each get slightly wrong:
  *   - one lead per email, matched case-insensitively; the stored email is lower-cased;
@@ -16,8 +19,10 @@
  *     still a website lead;
  *   - `source` says where the person first came from ('website', 'appointment', 'checkout',
  *     'newsletter' …) and is set only on create;
- *   - `status` is 'new' or 'spam', set on create from the caller's checks (Index::dolead runs
- *     Turnstile, timing and LeadValidator); a repeat submission never downgrades a lead.
+ *   - every capture carries a LeadGate (lib/LeadGate.php): a public form's Turnstile /
+ *     honeypot / timing / content verdict, or a stated reason no visitor was involved;
+ *     `status` ('new' | 'spam') and `spam_reason` come from it on create, and a repeat
+ *     submission never downgrades a lead. Without a gate there is no lead.
  *
  * Lived in bookingscheduler as lib/LeadCapture and in core as inline code in Index::dolead,
  * which did not dedupe at all. Columns beyond core's originals (source, phone, updated_at)
@@ -32,10 +37,17 @@ class Model_Lead extends \RedBeanPHP\SimpleModel {
     /**
      * Find or create the lead for $email; returns the stored bean.
      *
-     * @param array{source?:string,phone?:string,status?:string,spamReason?:string,ip?:string,userAgent?:string} $opts
-     * @throws RuntimeException on an email that is not an email address
+     * @param array{gate:\app\LeadGate,source?:string,phone?:string,ip?:string,userAgent?:string} $opts
+     *   gate  REQUIRED — LeadGate::forPublicForm() for anything a visitor posted (Turnstile,
+     *         honeypot, timing, content checks; a failure flags the lead as spam), or
+     *         LeadGate::trusted('why') when no visitor is involved. No gate, no lead.
+     * @throws RuntimeException on a missing gate or an email that is not an email address
      */
     public static function capture(string $email, string $first, string $last, array $opts = []): \RedBeanPHP\OODBBean {
+        $gate = $opts['gate'] ?? null;
+        if (!$gate instanceof \app\LeadGate) {
+            throw new \RuntimeException("Lead: capture() needs a gate — LeadGate::forPublicForm(...) for a visitor's form, or LeadGate::trusted('why') when no visitor is involved.");
+        }
         $email = strtolower(trim($email));
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new \RuntimeException("Lead: '{$email}' is not an email address.");
@@ -54,18 +66,15 @@ class Model_Lead extends \RedBeanPHP\SimpleModel {
             return $lead;
         }
 
-        $status = (string) ($opts['status'] ?? self::STATUS_NEW);
-        if (!in_array($status, [self::STATUS_NEW, self::STATUS_SPAM], true)) {
-            throw new \RuntimeException("Lead: status must be 'new' or 'spam', not '{$status}'.");
-        }
         $lead = \app\Bean::dispense('lead');
         $lead->email      = $email;
         $lead->firstName  = $first;
         $lead->lastName   = $last;
         $lead->phone      = $phone;
         $lead->source     = trim((string) ($opts['source'] ?? 'website'));
-        $lead->status     = $status;
-        $lead->spamReason = (string) ($opts['spamReason'] ?? '');
+        $lead->status     = $gate->status();
+        $lead->spamReason = $gate->reason();
+        $lead->gate       = $gate->isTrusted() ? 'trusted: ' . $gate->why : 'public';
         $lead->ipAddress  = mb_substr((string) ($opts['ip'] ?? ''), 0, 45);
         $lead->userAgent  = mb_substr((string) ($opts['userAgent'] ?? ''), 0, 255);
         $lead->createdAt  = $now;

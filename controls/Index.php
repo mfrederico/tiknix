@@ -20,8 +20,6 @@ class Index extends BaseControls\Control {
      */
     private const HONEYPOT_FIELD = 'company_website';
 
-    /** Faster than this and nobody read the form, let alone typed into it. */
-    private const MIN_FILL_SECONDS = 3;
     
     /**
      * Home page
@@ -130,49 +128,21 @@ class Index extends BaseControls\Control {
         $lastName  = trim($this->sanitize($this->getParam('last_name')));
         $email     = trim($this->sanitize($this->getParam('email'), 'email'));
 
-        /* Bot signals. CSRF cannot help here — a bot loads the page, takes a valid token
-           and posts it, which is exactly what the real traffic looked like: real harvested
-           addresses, generated names, one submission an hour around the clock to stay under
-           any rate limit.
-           The first two are things a person cannot trip by accident. A hidden field a browser
-           never shows and a human never fills; and a form completed faster than anyone can
-           read it. */
-        $spam = [];
-        if (trim((string) $this->getParam(self::HONEYPOT_FIELD, '')) !== '') {
-            $spam[] = 'honeypot';
-        }
-        /* Cloudflare Turnstile. A no-op when Turnstile is not configured for this install
-           (verify() returns true), so it only bites where the widget actually rendered. FLAGGED,
-           not refused — same reasoning as the honeypot above: a bot told "thank you" stops, and
-           the evidence stays in the leads table instead of being silently dropped. */
-        if (!\app\Turnstile::verify(
-                $this->getParam(\app\Turnstile::FIELD, null),
-                (string) (Flight::request()->ip ?? ''))) {
-            $spam[] = 'turnstile';
-        }
+        /* Bot signals live in LeadGate (Turnstile, the honeypot, the fill time, and
+           LeadValidator's content signals). CSRF cannot help here — a bot loads the page,
+           takes a valid token and posts it, which is exactly what the real traffic looked
+           like: real harvested addresses, generated names, one submission an hour around
+           the clock to stay under any rate limit. The gate FLAGS rather than refuses, and
+           the evidence stays in the leads table. Raw values go to the content checks:
+           sanitize() runs htmlspecialchars, so O'Brien would fail a rule on OUR escaping. */
         $shown = (int) ($_SESSION['lead_form_shown'] ?? 0);
-        if ($shown > 0 && (time() - $shown) < self::MIN_FILL_SECONDS) {
-            $spam[] = 'submitted in ' . (time() - $shown) . 's';
-        }
         unset($_SESSION['lead_form_shown']);   // one submission per render
-
-        /* Content signals: generated names and dot-alias addresses.
-           This code used to argue against exactly this — "no scoring of whether a name looks
-           foreign enough to be fake, which is a filter that eventually rejects a real person
-           and never tells them why". The objection was to REJECTING, and it still stands, so
-           these only ever FLAG. A misjudged Ångström is still captured, still in the leads
-           table, still reachable — one status column away from being a normal lead, instead
-           of a person who was turned away with no way to tell us.
-           LeadValidator is tuned against a corpus of hard real names for the same reason;
-           tests/lead-validator-corpus.php names everyone the thresholds would exclude.
-           Raw values, not the sanitized ones: sanitize() runs htmlspecialchars, so O'Brien
-           becomes "O&#039;Brien" and any content rule would fail a real person on OUR escaping. */
-        foreach (LeadValidator::signals(
-                     (string) $this->getParam('first_name'),
-                     (string) $this->getParam('last_name'),
-                     (string) $this->getParam('email')) as $signal) {
-            $spam[] = $signal;
-        }
+        $gate = \app\LeadGate::forPublicForm($this->getParams(), (string) (Flight::request()->ip ?? ''), [
+            'honeypot' => self::HONEYPOT_FIELD,
+            'shown_at' => $shown,
+            'name'     => [(string) $this->getParam('first_name'), (string) $this->getParam('last_name')],
+            'email'    => (string) $this->getParam('email'),
+        ]);
 
         // Basic validation
         if ($firstName === '' || $lastName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -192,16 +162,15 @@ class Index extends BaseControls\Control {
                because there was nothing to look at before: no way to tell one source from
                many. */
             $lead = \Model_Lead::capture($email, $firstName, $lastName, [
-                'source'     => 'website',
-                'status'     => $spam ? \Model_Lead::STATUS_SPAM : \Model_Lead::STATUS_NEW,
-                'spamReason' => $spam ? implode(', ', $spam) : '',
-                'ip'         => (string) (Flight::request()->ip ?? ''),
-                'userAgent'  => (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''),
+                'gate'      => $gate,
+                'source'    => 'website',
+                'ip'        => (string) (Flight::request()->ip ?? ''),
+                'userAgent' => (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''),
             ]);
 
-            if ($spam) {
+            if ($gate->reasons) {
                 Flight::get('log')->info('Lead flagged as spam', [
-                    'email' => $email, 'reason' => implode(', ', $spam),
+                    'email' => $email, 'reason' => $gate->reason(),
                     'ip' => (string) $lead->ipAddress,
                 ]);
             }

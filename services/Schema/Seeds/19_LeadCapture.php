@@ -7,6 +7,7 @@
  *   lead.source      where the person first came from: website | appointment | checkout | …
  *   lead.phone       filled in from whichever form first has it
  *   lead.updated_at  last time capture() touched the row
+ *   lead.gate        'public' (went through the bot checks) or 'trusted: <why>' (no visitor)
  *
  * Existing rows: source '' means "before this seed" — they came from the landing form, but
  * that is not written here as fact, because on some installs they did not.
@@ -26,6 +27,10 @@ if ($_tableCheck('lead')) {
     if (!array_key_exists('updated_at', $cols)) {
         R::exec("ALTER TABLE lead ADD COLUMN updated_at TEXT DEFAULT ''");
         echo "  lead.updated_at added\n";
+    }
+    if (!array_key_exists('gate', $cols)) {   // 'public' (checked) or 'trusted: <why>' — see lib/LeadGate.php
+        R::exec("ALTER TABLE lead ADD COLUMN gate TEXT DEFAULT ''");
+        echo "  lead.gate added\n";
     }
     R::exec('CREATE INDEX IF NOT EXISTS idx_lead_email ON lead (email)');
 }

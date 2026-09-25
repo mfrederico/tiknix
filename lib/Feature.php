@@ -93,6 +93,11 @@ class Feature {
             'blurb'     => 'Decide where and how a project goes live. Publishing runs as a pipeline in the project itself, so it schedules and debugs like any other. Runs as the publisher.tiknix sidecar — deliberately outside the app, since a finished application should not ship its deployment tooling.',
             'min_level' => 100, // MEMBER and above — they own the projects they publish
         ],
+        'start' => [
+            'label'     => 'Get started',
+            'blurb'     => 'The discovery wizard: learns your business and end goal, plays it back as a concept brief, assembles modules, writes PLAN.md and hands off to the Builder. Runs as the start.tiknix sidecar (START-PLAN.md).',
+            'min_level' => 100, // MEMBER and above — it is how a member gets their first project
+        ],
         'workbench' => [
             'label'     => 'Builder',
             'blurb'     => 'Plan, build + track AI-assisted development tasks per instance. Runs as the workbench.tiknix sidecar; each instance\'s task data lives in its own workbench.db.',

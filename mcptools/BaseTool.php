@@ -99,7 +99,23 @@ abstract class BaseTool {
             \Flight::get('log')->error($msg, ['baseurl' => (string) \Flight::get('app.baseurl')]);
             throw new \RuntimeException($msg);
         }
-        if ($state === 'core') return false;                   // core: ambient core db (unchanged)
+        if ($state === 'core') {
+            // A scope the gateway resolved from X-Tiknix-Project (Mcp::applyProjectScope):
+            // THAT project's own workbench.db, created if it is the project's first task.
+            $scope = \Flight::get('mcp.project');
+            if (is_array($scope) && !empty($scope['dir'])) {
+                $db = rtrim((string) $scope['dir'], '/') . '/data/workbench.db';
+                if (!is_dir(dirname($db)) && !@mkdir(dirname($db), 0775, true)) {
+                    throw new \RuntimeException("Cannot create " . dirname($db) . " for project '{$scope['slug']}'.");
+                }
+                $key = 'ws:' . $scope['slug'];
+                if (!Bean::hasDatabase($key)) Bean::addDatabase($key, 'sqlite:' . $db);
+                Bean::selectDatabase($key);
+                Bean::freeze(false);
+                return true;
+            }
+            return false;                                       // core: ambient core db (unchanged)
+        }
 
         $db = dirname(__DIR__) . '/data/workbench.db';         // {instanceRoot}/data/workbench.db
         if (!is_file($db)) return false;                       // no sidecar-owned tasks here

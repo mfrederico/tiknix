@@ -1051,6 +1051,35 @@ core) → A1 → A2 → B5 Events → A3 → B5 Shopify → the rest.
 
 ---
 
+## 10a. Dogfooding: start.tiknix is being built on the task board (from 2026-09-25)
+
+The owner's call: build the wizard with tiknix itself. The sidecar was hand-scaffolded as
+far as platform knowledge goes (Kit wiring, SSO, config + shared secret, base controller,
+`CLAUDE.md`) and then **registered as a project** so every remaining piece is a task on the
+board, reviewed and merged like client work. What that took, and what it found:
+
+- **A project need not be a provisioned instance.** An `instance` row with slug `start`
+  resolves to `/var/www/html/default/start.tiknix` by the path rule
+  (`Model_Instance::dirFrom`), so no symlink and no provisioning. The directory was given
+  what the Builder expects: a git repo (`main`), `.aibuilder/state` + `engine`,
+  `.claude/settings.json` and the five hook scripts copied from core (the jail binds only
+  the project tree, so hooks cannot point at core's), `server.php` for previews, and
+  `vendor` as a symlink to core's (a sidecar ships no packages).
+- **Gap closed — task tools for a project with no MCP server of its own.** Core's task
+  tools answered for the install they ran on, so a sidecar's agents could not post
+  replies, complete tasks or submit plans. Built: `X-Tiknix-Project: <slug>` on core's
+  gateway (`Mcp::applyProjectScope`, access-checked with `ProjectContext::canAccess`,
+  refused with the reason otherwise); `BaseTool::selectWorkbenchDb()` then serves that
+  project's `data/workbench.db`, and `submit_plan` writes into that project's
+  `.aibuilder/`. The sidecar's `.mcp.json` names core's gateway with the header. The stop
+  hook already forwarded every header. `tests/unit/McpProjectScopeTest.php`.
+- **Still to find out on the first tasks:** whether the jail is happy with a symlinked
+  vendor, whether the preview server needs a fixture SSO session, and how much of the
+  MCP introspection (`reuse_digest` describes core, which is what a sidecar builds on)
+  helps or misleads.
+- Registration recipe: scratchpad `register-start.php` (instance row on member 1,
+  `ProjectContext::set`, `Feature::setEnabled('start')`, an agent API key, `.mcp.json`).
+
 ## 11. Decisions to confirm
 
 1. ~~**Name.**~~ Settled 2026-09-24: **start.tiknix.com**, nav and buttons **Get started**;

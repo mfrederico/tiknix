@@ -286,6 +286,12 @@ class Mcp extends BaseControls\Control {
             // Try to authenticate anyway for personalization, but don't require it
             $this->authenticate();
         }
+        // PROJECT SCOPE over the shared gateway: an `X-Tiknix-Project: <slug>` header makes
+        // the task-board tools (add_task_log, complete_task, submit_plan …) act on THAT
+        // project's data/workbench.db instead of this install's. For a project that has
+        // no MCP server of its own — a sidecar, anything that is not a clone of core.
+        if (!$this->applyProjectScope()) return;
+
         // The caller is known from here on. The loader decides per caller which concept
         // tools exist at all (level, and no member = none), so tools/list and tools/call
         // must see the same identity — an unauthenticated tools/list lists core only.
@@ -851,6 +857,44 @@ class Mcp extends BaseControls\Control {
      * Handle tools/call request
      * Routes to built-in Tiknix tools or proxies to backend servers
      */
+    /**
+     * `X-Tiknix-Project: <slug>` → Flight 'mcp.project' = {id, slug, dir}, or a JSON-RPC error
+     * and false. Only core's gateway takes it (a project's own server IS its scope), only
+     * for an API-key caller, and only for a project that member can access — the same
+     * check the header's project picker makes. No header: nothing changes.
+     */
+    private function applyProjectScope(): bool {
+        $slug = trim((string) ($_SERVER['HTTP_X_TIKNIX_PROJECT'] ?? ''));
+        if ($slug === '') return true;
+        try {
+            $scope = self::resolveProjectScope($slug, (int) ($this->authMember->id ?? 0), (bool) $this->authApiKey);
+        } catch (\RuntimeException $e) {
+            $this->mcpFileLog('ERROR', sprintf('project scope REFUSED slug=%s member=%d: %s', $slug, (int) ($this->authMember->id ?? 0), $e->getMessage()));
+            $this->sendError(-32000, 'X-Tiknix-Project: ' . $e->getMessage(), null, 403);
+            return false;
+        }
+        \Flight::set('mcp.project', $scope);
+        return true;
+    }
+
+    /**
+     * The project a scope header names, resolved and access-checked. Pure enough to test:
+     * reads the instance and member rows, decides, and throws with the reason.
+     *
+     * @return array{id:int,slug:string,dir:string}
+     */
+    public static function resolveProjectScope(string $slug, int $memberId, bool $withApiKey): array {
+        if (!\is_core_install()) throw new \RuntimeException('only the control plane\'s MCP gateway takes a project scope; a project\'s own server already is its scope.');
+        if (!$withApiKey || $memberId <= 0) throw new \RuntimeException('a project scope needs an API-key caller.');
+        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/D', $slug)) throw new \RuntimeException("'{$slug}' is not a project slug.");
+        $inst = Bean::findOne('instance', 'slug = ? AND status = ?', [$slug, 'active']);
+        if (!$inst || !$inst->id) throw new \RuntimeException("no active project '{$slug}'.");
+        if (!ProjectContext::canAccess($memberId, $inst)) throw new \RuntimeException("member {$memberId} cannot access project '{$slug}'.");
+        $dir = $inst->box()->dir();
+        if (!is_dir($dir)) throw new \RuntimeException("project '{$slug}' has no directory at {$dir}.");
+        return ['id' => (int) $inst->id, 'slug' => $slug, 'dir' => $dir];
+    }
+
     private function handleToolsCall(mixed $id, array $params): void {
         $fullToolName = $params['name'] ?? '';
         $arguments = $params['arguments'] ?? [];

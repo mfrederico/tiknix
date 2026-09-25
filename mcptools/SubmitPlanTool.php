@@ -72,6 +72,11 @@ class SubmitPlanTool extends BaseTool {
         // guess: a plan written to the wrong tree is worse than one not written, because
         // the planner reports success and the goal silently never arrives.
         $ws = trim((string) getenv('TIKNIX_WORKSPACE'));
+        // Over core's gateway with a project scope (X-Tiknix-Project), the project's own
+        // directory is the workspace — the planner for a project without its own MCP
+        // server (a sidecar) reaches this tool that way.
+        $scope = \Flight::get('mcp.project');
+        if ($ws === '' && is_array($scope) && !empty($scope['dir'])) $ws = (string) $scope['dir'];
         if ($ws === '' || !is_dir($ws)) {
             return 'Error: submit_plan cannot tell which project this plan is for '
                  . '(TIKNIX_WORKSPACE is not set). This tool must be called by the planner '

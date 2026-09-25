@@ -7,6 +7,7 @@
       <span style="font-size:13px; color:var(--dim); margin-left:8px;">&copy; <?= date('Y') ?> ClickSimple LLC</span>
     </a>
     <div class="foot-links">
+      <a href="/about">Who we are</a>
       <a href="/neosaas">NeoSaaS</a>
       <a href="/stories">Stories</a>
       <a href="/pricing">Pricing</a>

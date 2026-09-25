@@ -55,6 +55,27 @@ class WorkspaceSchemaBuilder {
             }
         };
 
+        /* Dispense a padding bean with FUSE switched off.
+         *
+         * A model whose update() hook validates (Model_Interview's phase, Model_Handoffstep's
+         * step) rejects str_repeat('x', N) padding, so the seed throws and the table is never
+         * created; a hook that stamps dates would also retype a padded TEXT column NUMERIC.
+         * The model is resolved once, at dispense, from OODB's bean helper — so dispensing
+         * through a helper that resolves no model gives a bean whose store() runs no hooks.
+         */
+        $_dispensePadding = function (string $type) {
+            $oodb = \RedBeanPHP\R::getRedBean();
+            $helper = $oodb->getBeanHelper();
+            $oodb->setBeanHelper(new class extends \RedBeanPHP\BeanHelper\SimpleFacadeBeanHelper {
+                public function getModelForBean(\RedBeanPHP\OODBBean $bean) { return null; }
+            });
+            try {
+                return Bean::dispense($type);
+            } finally {
+                $oodb->setBeanHelper($helper);
+            }
+        };
+
         $logger = Flight::get('log');
 
         /* THAW for the duration of the build, and only here.

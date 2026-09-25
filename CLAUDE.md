@@ -688,6 +688,12 @@ copy it, don't re-introduce a bare `chmod 0600`/`mkdir 0700` on `secure/`.
 - Escape all view output: `<?= htmlspecialchars($var) ?>`
 - No silent defaults in layouts — let an undefined view variable error, so a
   controller/view mismatch surfaces immediately instead of rendering blank
+- **A lead is written one way:** `Model_Lead::capture($email, $first, $last, ['gate' => …])`
+  — one lead per email, blanks filled in, `source` set on create. The `gate` is required:
+  `LeadGate::forPublicForm($params, $ip, [...])` for anything a visitor posted (Turnstile
+  must be connected under Connections → Security, or it throws; honeypot, timing and content
+  checks flag the lead as spam rather than refuse it), or `LeadGate::trusted('why')` when no
+  visitor is involved. Never `Bean::dispense('lead')` in a controller.
 
 ## See Also
 

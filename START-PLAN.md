@@ -515,7 +515,7 @@ versioned components that many projects share and update:
 | ~~`pdf`~~ | Invoza `InvoicePdf` (headless Chrome), Serenity `TicketPdf` | done 2026-09-25 (§5.4a) |
 | ~~`images`~~ | Serenity and CollectIQ `ImageProcessor` | done 2026-09-25 (§5.4b) |
 | ~~`locale`~~ | CollectIQ `CurrencyService`, Serenity's USD / US-timezone hardcodes | done 2026-09-25 (§5.4c) |
-| `leadcapture` | El Salón `LeadCapture` | dedupe by email into core's `lead` from any form or booking |
+| ~~`leadcapture`~~ | El Salón `LeadCapture` | done 2026-09-25 as a CORE seam, not a plugin (§5.4e) |
 | `secretrecovery` | CollectIQ `SecretRecovery` | re-encrypt after an app-key rotation |
 
 **Connectors:**
@@ -682,6 +682,36 @@ read the same plugin set, with no database.
   install's real plugin set (§5.4a item 3, §5.4b item 7 and §5.4c item 11 — closed).
 - A `concepts/` directory without a lock is "not migrated": an error naming the command,
   never an install that quietly believes it has no plugins.
+
+### 5.4e Lead capture — a core seam, not a plugin (built 2026-09-25)
+
+The backlog had this as a capability plugin; surveying it said otherwise. The `lead` bean
+is core's (every install's landing form writes it), so the one place a lead is written
+belongs on core's model, additively — the §5.2 rule for an existing primitive:
+
+- **`Model_Lead::capture()`** (core `models/Model_Lead.php`, seed `19_LeadCapture.php` for
+  `source`, `phone`, `updated_at`, `gate` and an email index): one lead per email,
+  case-insensitively; blanks filled in on a returning lead, name / source / status never
+  overwritten; `source` set on create. Core's landing form now dedupes (it never did).
+  The leads list shows the source.
+- **`LeadGate`** (core `lib/LeadGate.php`), required by `capture()` — the owner's ask that
+  capture "doesn't randomly allow bot/spam": a public form's gate runs Turnstile, the
+  honeypot, the fill time and `LeadValidator`'s content signals and FLAGS the lead
+  (status `spam`, reasons kept) rather than refusing it; and **Turnstile must be
+  connected** on the install, or `forPublicForm()` throws naming Connections → Security.
+  Where no visitor is involved the caller says so: `LeadGate::trusted('manual booking
+  entered by staff')`. No gate, no lead — a new form cannot forget.
+- **El Salón adopted it:** `LeadCapture` is a thin wrapper; a visitor's booking and the
+  landing form are public gates, a card-confirmed booking and a staff-entered one are
+  trusted; its old `type` column was migrated into `source` (10 rows); its booking form
+  now carries the Turnstile widget (renders nothing until connected). Pinned
+  (`LeadCaptureTest`), proved in its pool.
+- **Open on El Salón:** Turnstile is not connected there, so a visitor's booking or
+  sign-up currently logs `ERROR … needs Cloudflare Turnstile` and captures no lead (the
+  booking itself still saves). Adding its site + secret keys under Connections → Security
+  on bookingscheduler.tiknix.com switches both public paths on. Serenity, CollectIQ and
+  PartsDNA keep their own `Index::dolead` copies (they replaced core's), so they still
+  write leads directly; moving them onto `capture()` is a follow-up per project.
 
 ### 5.5 How a component is harvested
 

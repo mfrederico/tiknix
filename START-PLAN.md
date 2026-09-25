@@ -1,7 +1,8 @@
 # start.tiknix: learn the business, plan a bespoke system, build it
 
-**Status: plan for review; Track A has started — `pdf` 1.0.0 is built, published and adopted
-by Invoza and Serenity (§5.4a); `requires.commands` is in core. Nothing else is built.** Written 2026-09-24 from a survey of core, the
+**Status: plan for review; Track A has started — `pdf` 1.0.0 (§5.4a) and `images` 1.0.0
+(§5.4b) are built, published and adopted by their source projects; `requires.commands` and
+`requires.extensions` are in core. Nothing else is built.** Written 2026-09-24 from a survey of core, the
 workbench sidecar, PartsDNA (`partsdna-74a225`), Serenity (`serenity-bbdc01`) and the concept
 catalog in depth, and of what CollectIQ, Invoza, El Salón (`bookingscheduler`) and lead-machine
 each built beyond core. Decisions to confirm are collected under "Decisions to confirm"; nothing below is
@@ -103,7 +104,8 @@ a `[sidecar.<name>]` section in core's config, and a `Feature::CATALOG` entry.
 | Money | Stripe checkout, subscriptions, billing portal (connector methods) | `StripeConnector`, `lib/StripeGateway.php` |
 
 **Concept catalog today** (`/var/www/html/default/tiknix-concepts/`): `calendar` 1.0.1,
-`pipedemo` 1.0.0, `shopifysync` 1.1.0, `pdf` 1.0.0 (the proving case below, 2026-09-25). **Designed, not extracted:** `storefront`, offer types
+`pipedemo` 1.0.0, `shopifysync` 1.1.0, `pdf` 1.0.0 and `images` 1.0.0 (the proving cases
+below, 2026-09-25). **Designed, not extracted:** `storefront`, offer types
 `physical` / `digital` / `class` / `session`, `tickets`, `availability`, `profiles`,
 `vendors`, and the `events` bundle (`COMPONENTS_PLAN.md` "Build order" steps 3–5).
 
@@ -507,8 +509,8 @@ versioned components that many projects share and update:
 
 | Plugin | Source(s) | Notes |
 |---|---|---|
-| `pdf` | Invoza `InvoicePdf` (headless Chrome), Serenity `TicketPdf` | HTML → PDF through system Chrome; tickets and invoices become HTML templates |
-| `images` | Serenity and CollectIQ `ImageProcessor` | EXIF orientation, resize, formats, disk-cached `/img` route |
+| ~~`pdf`~~ | Invoza `InvoicePdf` (headless Chrome), Serenity `TicketPdf` | done 2026-09-25 (§5.4a) |
+| ~~`images`~~ | Serenity and CollectIQ `ImageProcessor` | done 2026-09-25 (§5.4b) |
 | `locale` | CollectIQ `CurrencyService`, Serenity's USD / US-timezone hardcodes | currency, timezone and formats as settings |
 | `leadcapture` | El Salón `LeadCapture` | dedupe by email into core's `lead` from any form or booking |
 | `secretrecovery` | CollectIQ `SecretRecovery` | re-encrypt after an app-key rotation |
@@ -588,6 +590,36 @@ What the runtime gained or still lacks, found by doing it:
    exposed. Not fixed.
 5. Still to build from §5.3: version ranges, `requires.core`, the lock file, extend-don't-
    edit enforcement, updates, settings, bundles. None was needed to ship `pdf`.
+
+### 5.4b Proving case: `images` (built 2026-09-25)
+
+The second capability plugin, same harvest, same day:
+
+- **Built:** `images` 1.0.0 — `Image::normalize()` (EXIF baked in, long edge capped,
+  HEIC/TIFF → JPEG, in place), `fit()`, `rotate()` (atomic), `derive()` (cover around a
+  focal point / contain / width-only; webp, jpg, png), `DerivedCache` (rendered once, keyed
+  by source mtime and focal point; mkdir without chmod for ACL'd `cache/`), `Sizes`
+  (the social presets). Imagick with GD as the alternative; **every test runs on both
+  backends** (21 tests, 85 assertions) so the two cannot drift. Published (`0feb8c8`).
+- **Adopted twice:** Serenity's `/img` `ImageProcessor` keeps only its whitelist, paths and
+  URL shape (`9938a68`); CollectIQ's upload `ImageProcessor` keeps its "an unprocessable
+  upload is still saved" contract but now logs the concept's reason as an ERROR instead of
+  returning null silently (`0a8ad00`). Both pinned first (`ImageProcessorTest` in each,
+  green before and after), both proved as their pool users (uid 30093 / 30079).
+- **A bug found by pinning:** Serenity read the focal point with `?:`, so a photo focused
+  on its left or top edge (`0`) was cropped from the centre. The concept and the adapter
+  read it with `??`; the pin carries a test for it that fails on the old code.
+
+Runtime findings, added to §5.4a's list:
+
+6. **Gained `requires.extensions`** (core 9e545f5): `"imagick|gd"` — the same shape as
+   `requires.commands`, checked with `extension_loaded()`.
+7. **The test-loading gap (§5.4a item 3) bites every consumer.** Both pins again
+   `require_once` the plugin's files by hand; the lock-file-driven test bootstrap is now the
+   most-wanted A0 item.
+8. **Fixtures need real EXIF.** Imagick's `setImageOrientation()` writes no tag; the pins
+   stamp a minimal APP1/TIFF segment themselves. Worth a shared test helper once there is
+   a test bootstrap to put it in.
 
 ### 5.5 How a component is harvested
 

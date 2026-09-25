@@ -300,6 +300,20 @@ class WorkspaceManager
             throw new \RuntimeException("Source vendor directory not found: {$sourceVendor}");
         }
 
+        // A project with no composer.json ships no packages of its own: its vendor/ is
+        // borrowed (a sidecar on the Kit links core's). There is nothing to dump-autoload —
+        // the project's classes are not in Composer's map, so the "linked vendor loads the
+        // live project's classes" trap does not apply. The worktree links the PROJECT's
+        // vendor path (not its resolved target): that path is what the jail binds.
+        if (!is_file($this->sourceProject . '/composer.json')) {
+            if (is_link($targetVendor)) unlink($targetVendor);
+            elseif (is_dir($targetVendor)) exec('rm -rf ' . escapeshellarg($targetVendor));
+            if (!@symlink($sourceVendor, $targetVendor)) {
+                throw new \RuntimeException("Could not link {$targetVendor} to the project's vendor at {$sourceVendor}");
+            }
+            return;
+        }
+
         if (\app\GitService::isTaskWorktree($workspacePath)) {
             $this->linkVendor($sourceVendor, $targetVendor, $workspacePath);
             return;
@@ -330,6 +344,17 @@ class WorkspaceManager
     {
         $configPath = $workspacePath . '/conf/config.ini';
         $configExamplePath = $workspacePath . '/conf/config.ini.example';
+
+        // No config in the worktree: git did not carry one (a sidecar gitignores
+        // conf/config.ini; an instance force-tracks it). The workspace's config is the LIVE
+        // project's, rewritten below for the workspace's own address — never the example.
+        $liveConfig = $this->sourceProject . '/conf/config.ini';
+        if (!file_exists($configPath) && is_file($liveConfig)) {
+            if (!is_dir(dirname($configPath))) @mkdir(dirname($configPath), 0775, true);
+            if (!@copy($liveConfig, $configPath)) {
+                throw new \RuntimeException("Could not copy the project's conf/config.ini into the workspace at {$configPath}");
+            }
+        }
 
         // If no config exists, try to copy from example
         if (!file_exists($configPath) && file_exists($configExamplePath)) {

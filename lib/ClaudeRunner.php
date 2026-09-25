@@ -272,6 +272,13 @@ class ClaudeRunner {
         // OWN /mcp/message (its baseurl + its .mcp_token, both already in the workspace) so
         // add_task_log writes to that workbench.db. INERT for core (env unset).
         if (getenv('TIKNIX_WORKBENCH_DB')) {
+            // FIRST the workspace's .mcp.json: it names the MCP server this task's tools
+            // actually talk to — the project's own, or core's gateway with X-Tiknix-Project
+            // for a project that has none (a sidecar). The hooks go where the tools go.
+            $mcp = @json_decode((string) @file_get_contents($this->getProjectPath() . '/.mcp.json'), true);
+            $url = trim((string) ($mcp['mcpServers']['tiknix']['url'] ?? ''));
+            if ($url !== '') return $url;
+
             $cfg  = @parse_ini_file($this->getProjectPath() . '/conf/config.ini', true) ?: [];
             $base = rtrim((string) ($cfg['app']['baseurl'] ?? ''), '/');
             if ($base !== '') return $base . '/mcp/message';
@@ -283,8 +290,9 @@ class ClaudeRunner {
             // var already told us these tasks are not core's; a missing baseurl makes the
             // destination unknowable, not defaultable.
             $msg = 'Task data for this run lives in a project workbench.db (TIKNIX_WORKBENCH_DB '
-                 . 'is set) but the project has no [app] baseurl, so its progress hooks have '
-                 . 'nowhere to report. Refusing rather than posting them to core.';
+                 . 'is set) but the workspace has neither a tiknix server in .mcp.json nor an '
+                 . '[app] baseurl in conf/config.ini, so its progress hooks have nowhere to '
+                 . 'report. Refusing rather than posting them to core.';
             \Flight::get('log')->error($msg, ['project' => $this->getProjectPath()]);
             throw new \RuntimeException($msg);
         }

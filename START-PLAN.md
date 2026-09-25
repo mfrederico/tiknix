@@ -1073,6 +1073,18 @@ board, reviewed and merged like client work. What that took, and what it found:
   project's `data/workbench.db`, and `submit_plan` writes into that project's
   `.aibuilder/`. The sidecar's `.mcp.json` names core's gateway with the header. The stop
   hook already forwarded every header. `tests/unit/McpProjectScopeTest.php`.
+- **Found on the first Run (2026-09-25) — a project that borrows its vendor.** Workspace
+  initialisation built the worktree's hybrid vendor and ran `composer dump-autoload`, which
+  a project with no `composer.json` cannot do; the exception was caught as a warning, the
+  config step never ran, and the runner then refused to start because the worktree had no
+  `[app] baseurl` (a sidecar gitignores `conf/config.ini`; instances force-track it).
+  Fixed in core: such a worktree gets `vendor` as a link to the PROJECT's vendor path (the
+  one the jail binds) and no dump-autoload; a worktree without a config gets the live
+  project's `conf/config.ini` rewritten for its own address; and the runner takes the hook
+  destination from the workspace's `.mcp.json` (where the tools go) before `[app] baseurl`.
+  `tests/unit/WorkspaceBorrowedVendorTest.php`. Also: changing a member's selected
+  project from a script left their open Builder session labelled with the previous project
+  — registration should leave selection to the person.
 - **Still to find out on the first tasks:** whether the jail is happy with a symlinked
   vendor, whether the preview server needs a fixture SSO session, and how much of the
   MCP introspection (`reuse_digest` describes core, which is what a sidecar builds on)

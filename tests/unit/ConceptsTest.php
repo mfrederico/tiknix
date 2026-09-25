@@ -369,4 +369,12 @@ class ConceptsTest extends ConceptsTestCase {
         $this->assertSame('/usr/bin/sh', \app\Concepts::commandOnPath('nope|sh'), 'resolved to the program that exists');
         $this->assertNull(\app\Concepts::commandOnPath('tiknix-no-such-program'));
     }
+
+    public function testVerifyNamesAMissingExtension(): void {
+        $n = $this->uniq('extx');
+        $this->concept($n, ['requires' => ['extensions' => ['tiknix_no_such_ext|tiknix_nor_this', 'json']]]);
+        $problems = implode("\n", $this->concepts()->verify($n));
+        $this->assertStringContainsString("requires.extensions needs 'tiknix_no_such_ext|tiknix_nor_this'", $problems);
+        $this->assertStringNotContainsString("'json'", $problems, 'a loaded extension is not a problem');
+    }
 }

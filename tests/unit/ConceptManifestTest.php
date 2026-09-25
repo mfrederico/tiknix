@@ -58,6 +58,12 @@ class ConceptManifestTest extends TestCase {
         }
     }
 
+    public function testRequiresExtensionsAreExtensionNames(): void {
+        $this->assertSame(['imagick|gd', 'exif'], $this->make(['requires' => ['extensions' => ['imagick|gd', 'exif']]])->requiresExtensions);
+        $this->expectException(ConceptException::class);
+        $this->make(['requires' => ['extensions' => ['Imagick']]]);
+    }
+
     public function testVersionIsRequired(): void {
         $this->expectException(ConceptException::class);
         ConceptManifest::fromArray(['name' => 'tickets'], '/x/tickets', 'tickets');

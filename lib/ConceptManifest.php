@@ -44,6 +44,8 @@ class ConceptManifest {
     private const PIPELINE_RE = '/^[a-z0-9][a-z0-9-]{0,63}$/D';
     /** plain program names, alternatives separated by '|': no paths, no arguments, no shell */
     private const COMMAND_RE  = '/^[A-Za-z0-9][A-Za-z0-9._+-]*(?:\|[A-Za-z0-9][A-Za-z0-9._+-]*)*$/D';
+    /** extension names as extension_loaded() knows them, alternatives separated by '|' */
+    private const EXTENSION_RE = '/^[a-z][a-z0-9_]*(?:\|[a-z][a-z0-9_]*)*$/D';
     private const CALLABLE_RE = '/^(?:([a-z][a-z0-9]*):)?([A-Z][A-Za-z0-9]*)::([a-z][A-Za-z0-9]*)$/D';
     private const VIEW_RE     = '/^[A-Za-z0-9][A-Za-z0-9_\-]*(?:\/[A-Za-z0-9][A-Za-z0-9_\-]*)*\.php$/D';
     private const MATCH_KEY_RE = '/^[a-z][A-Za-z0-9]*$/D';
@@ -64,6 +66,8 @@ class ConceptManifest {
      *      with '|' ("google-chrome|chromium") — any one of them satisfies the entry
      */
     public array $requiresCommands = [];
+    /** @var string[] PHP extensions that must be loaded; alternatives joined with '|' ("imagick|gd") */
+    public array $requiresExtensions = [];
     /** @var string[] controller class names this concept claims */
     public array $controllers = [];
     /** @var string[] bean types this concept claims */
@@ -155,6 +159,7 @@ class ConceptManifest {
         $m->requiresConcepts = self::stringList($requires['concepts'] ?? [], 'requires.concepts', $name, self::NAME_RE);
         $m->requiresLib      = self::stringList($requires['lib'] ?? [], 'requires.lib', $name, self::CLASS_RE);
         $m->requiresCommands = self::stringList($requires['commands'] ?? [], 'requires.commands', $name, self::COMMAND_RE);
+        $m->requiresExtensions = self::stringList($requires['extensions'] ?? [], 'requires.extensions', $name, self::EXTENSION_RE);
         if (in_array($name, $m->requiresConcepts, true)) {
             throw new ConceptException("Concept '{$name}': requires.concepts lists the concept itself.");
         }

@@ -626,6 +626,13 @@ class Concepts {
         foreach ($m->requiresLib as $lib) {
             if (!class_exists('app\\' . $lib)) $problems[] = "requires.lib names app\\{$lib}, which does not exist.";
         }
+        foreach ($m->requiresExtensions as $entry) {
+            $loaded = array_filter(explode('|', $entry), 'extension_loaded');
+            if (!$loaded) {
+                $problems[] = "requires.extensions needs '{$entry}' loaded in PHP, and this install has none of "
+                    . str_replace('|', ', ', $entry) . '.';
+            }
+        }
         foreach ($m->requiresCommands as $entry) {
             if (self::commandOnPath($entry) === null) {
                 $problems[] = "requires.commands needs '{$entry}' on PATH, and this server has none of "

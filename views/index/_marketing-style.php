@@ -4,6 +4,9 @@
  * Needs $logoV (the logo's filemtime, for the mask URL cache-buster).
  */
 ?>
+    <link rel="icon" href="/favicon.ico" sizes="32x32">
+    <link rel="icon" href="/icon-512.png" type="image/png" sizes="512x512">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <style>
         *{ margin:0; padding:0; box-sizing:border-box; }
         :root{

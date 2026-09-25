@@ -6,6 +6,9 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : (is_array($csrf ?? null) ? (string) reset($csrf) : (string) ($csrf ?? '')), ENT_QUOTES, 'UTF-8') ?>">
     <title><?= htmlspecialchars($title ?? 'App') ?></title>
+    <link rel="icon" href="/favicon.ico" sizes="32x32">
+    <link rel="icon" href="/icon-512.png" type="image/png" sizes="512x512">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
     <!-- Restore saved theme before paint to avoid a flash -->
     <script>(function(){try{var t=localStorage.getItem('ui-theme');if(t)document.documentElement.setAttribute('data-bs-theme',t);}catch(e){}})();</script>

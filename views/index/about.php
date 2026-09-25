@@ -16,7 +16,7 @@ $jsonld = [
          'address' => ['@type' => 'PostalAddress', 'addressLocality' => 'Mooresville', 'addressRegion' => 'NC', 'addressCountry' => 'US'],
          'sameAs' => ['https://clicksimple.com/', 'https://github.com/mfrederico']],
         ['@type' => 'Person', '@id' => 'https://clicksimple.com/#matt', 'name' => 'Matthew Frederico', 'jobTitle' => 'Founder & CTO',
-         'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about',
+         'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about', 'image' => $site . '/img/matt.jpg',
          'sameAs' => ['https://linkedin.com/in/mattfred', 'https://github.com/mfrederico', 'https://clicksimple.com/about.php'],
          'knowsAbout' => ['AI agent orchestration', 'Model Context Protocol', 'Ecommerce systems', 'Warehouse management software', 'Laravel', 'PHP', 'Shopify', 'Stripe']],
         ['@type' => 'AboutPage', '@id' => $site . '/about#page', 'url' => $site . '/about', 'name' => 'Who we are', 'mainEntity' => ['@id' => $site . '/#org']],
@@ -48,8 +48,7 @@ $jsonld = [
         .who-hero .sub{ font-size:clamp(16px,1.6vw,19px); color:var(--soft); line-height:1.6; max-width:640px; margin:22px auto 0; }
         .who-hero .sub a{ color:var(--text); border-bottom:1px solid var(--line2); }
         .person{ display:grid; grid-template-columns:180px 1fr; gap:36px; align-items:start; max-width:920px; margin:0 auto; }
-        .person .mark{ aspect-ratio:1; border-radius:16px; border:1px solid var(--line2); background:linear-gradient(180deg, rgba(59,118,240,0.16), rgba(59,118,240,0.03));
-                       display:grid; place-items:center; font-family:var(--serif); font-size:64px; font-weight:600; color:var(--accent2); }
+        .person .photo{ width:100%; aspect-ratio:1; height:auto; object-fit:cover; border-radius:16px; border:1px solid var(--line2); display:block; }
         .person h2{ font-size:clamp(26px,3vw,36px); margin:0; }
         .person .role{ font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent2); font-weight:600; margin:8px 0 18px; }
         .person p{ font-size:clamp(16px,1.5vw,18px); line-height:1.7; color:var(--soft); }
@@ -59,7 +58,7 @@ $jsonld = [
         .facts .card{ padding:22px; }
         .facts .n{ font-family:var(--serif); font-size:30px; font-weight:600; color:var(--text); }
         .facts .k{ font-size:13px; color:var(--dim); margin-top:6px; line-height:1.4; }
-        @media (max-width:640px){ .person{ grid-template-columns:1fr; } .person .mark{ max-width:140px; font-size:48px; } }
+        @media (max-width:640px){ .person{ grid-template-columns:1fr; } .person .photo{ max-width:140px; } }
     </style>
     <script type="application/ld+json"><?= json_encode($jsonld, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?></script>
 </head>
@@ -83,7 +82,7 @@ $jsonld = [
   <!-- THE PERSON -->
   <section class="band">
     <div class="person">
-      <div class="mark" aria-hidden="true">MF</div>
+      <img class="photo" src="/img/matt.jpg" width="800" height="800" alt="Matthew Frederico, founder and CTO" loading="lazy">
       <div>
         <h2>Matthew Frederico</h2>
         <div class="role">Founder &amp; CTO · Mooresville, NC</div>

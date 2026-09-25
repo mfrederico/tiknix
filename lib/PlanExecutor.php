@@ -278,9 +278,23 @@ class PlanExecutor {
      * so a resumed orchestrator never double-applies. Returns human-readable log lines.
      */
     public function finalize(): array {
+        return self::applySeeds($this->instanceDir, $this->instanceDir . '/.aibuilder/plan-' . $this->planId . '-seeds.txt');
+    }
+
+    /**
+     * Apply merged seeds to a LIVE instance: the one post-merge step, shared by a finished
+     * plan (finalize) and a standalone task merged from the board (Workbench::localMergeBack).
+     * Until 2026-09-25 only a plan ran it, so a standalone task's seeds reached the live
+     * instance only by hand — task #10 on start.tiknix merged green with its tables unbuilt.
+     *
+     * @param string $instanceDir the live instance root
+     * @param string $ledgerFile  where the once-only database/seeds/ applications are recorded
+     * @return string[] human-readable log lines; a FAILED line is the caller's to surface
+     */
+    public static function applySeeds(string $instanceDir, string $ledgerFile): array {
+        $instanceDir = rtrim($instanceDir, '/');
         $log = [];
-        $seedDir    = $this->instanceDir . '/database/seeds';
-        $ledgerFile = $this->instanceDir . '/.aibuilder/plan-' . $this->planId . '-seeds.txt';
+        $seedDir    = $instanceDir . '/database/seeds';
         $applied    = is_file($ledgerFile)
             ? array_values(array_filter(array_map('trim', explode("\n", (string)file_get_contents($ledgerFile)))))
             : [];
@@ -292,11 +306,12 @@ class PlanExecutor {
             foreach ($seeds as $seed) {
                 $name = basename($seed);
                 if (isset($appliedSet[$name])) { $log[] = "seed {$name}: already applied"; continue; }
-                [$code, $out] = $this->runInProject('php ' . escapeshellarg($seed));
-                $tail = trim(implode(' ', array_slice($out, -2)));
+                [$code, $out] = self::runIn($instanceDir, 'php ' . escapeshellarg($seed));
+                $tail = trim(implode(' ', array_map('trim', array_slice($out, -2))));
                 $log[] = "seed {$name}: " . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
                 if ($code === 0) { $applied[] = $name; }
             }
+            if (!is_dir(dirname($ledgerFile))) @mkdir(dirname($ledgerFile), 0775, true);
             @file_put_contents($ledgerFile, implode("\n", array_values(array_unique($applied))) . "\n");
         } else {
             $log[] = 'no database/seeds/ — nothing to apply';
@@ -304,20 +319,20 @@ class PlanExecutor {
 
         // The schema seeds (services/Schema/Seeds/NN_*.php — the convention the guidelines
         // mandate) are idempotent by contract and run as a set through the schema builder,
-        // so no ledger: every plan that ships one gets it applied to the live instance here.
+        // so no ledger: every merge that ships one gets it applied to the live instance here.
         // Until 2026-09-25 only database/seeds/ was applied, and a plan whose permission
         // seed lived in services/Schema/Seeds/ merged green with its routes still admin-only.
-        if (is_dir($this->instanceDir . '/services/Schema/Seeds') && is_file($this->instanceDir . '/scripts/clitool.php')) {
-            [$code, $out] = $this->runInProject('php scripts/clitool.php --build');
-            $tail = trim(implode(' ', array_slice($out, -2)));
+        if (is_dir($instanceDir . '/services/Schema/Seeds') && is_file($instanceDir . '/scripts/clitool.php')) {
+            [$code, $out] = self::runIn($instanceDir, 'php scripts/clitool.php --build');
+            $tail = trim(implode(' ', array_map('trim', array_slice($out, -2))));
             $log[] = 'schema seeds (clitool --build): ' . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
         }
 
         // Rebuild the permission cache so any new authcontrol rows take effect at once
         // (a direct DB insert doesn't bump the APCu cache version on its own).
-        $rc = $this->instanceDir . '/scripts/resetcache.php';
+        $rc = $instanceDir . '/scripts/resetcache.php';
         if (is_file($rc)) {
-            [$code] = $this->runInProject('php ' . escapeshellarg($rc));
+            [$code] = self::runIn($instanceDir, 'php ' . escapeshellarg($rc));
             $log[] = 'resetcache: ' . ($code === 0 ? 'ok' : 'FAILED');
         }
         return $log;
@@ -514,8 +529,13 @@ class PlanExecutor {
      * @return array{0:int,1:string[]} exit code, output lines
      */
     private function runInProject(string $command): array {
+        return self::runIn($this->instanceDir, $command);
+    }
+
+    /** The scrubbed runner behind runInProject(), for the static applySeeds() as well. */
+    private static function runIn(string $dir, string $command): array {
         $out = []; $code = 0;
-        exec('env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg('cd ' . escapeshellarg($this->instanceDir) . ' && ' . $command) . ' 2>&1', $out, $code);
+        exec('env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg('cd ' . escapeshellarg($dir) . ' && ' . $command) . ' 2>&1', $out, $code);
         return [$code, $out];
     }
 

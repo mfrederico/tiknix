@@ -7,6 +7,7 @@
     </a>
     <div class="nav-links">
       <a class="hide-sm" href="/#how">How it works</a>
+      <a class="hide-sm" href="/neosaas">Why NeoSaaS</a>
       <a class="hide-sm" href="/#integrations">Integrations</a>
       <a class="hide-sm" href="/stories">Stories</a>
       <a href="/pricing">Pricing</a>

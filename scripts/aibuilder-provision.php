@@ -106,12 +106,16 @@ if (!$n) $ini = rtrim($ini) . "\n\n[pipeline]\ntrigger_secret = \"$trigger\"\n";
 // trigger_secret above: an inherited per-instance identity that is syntactically valid
 // and points at the wrong tenant.
 //
-// ingest_url and api_key are deliberately KEPT from the template. Unlike the tag, those
-// are shared by design: every instance reports to the same control plane with the same
-// ingest key, which Firehose::report validates against core's [firehose] ingest_key.
-$fh      = @parse_ini_file($tplPath, true)['firehose'] ?? [];
-$fhUrl   = (string) ($fh['ingest_url'] ?? '');
-$fhKey   = (string) ($fh['api_key'] ?? '');
+// ingest_url and api_key come from THIS control plane — the one doing the provisioning
+// and the one Firehose::report validates against ([firehose] ingest_key). They used to be
+// copied from the template's own [firehose] block, and core's template carries no
+// ingest_url/api_key (core does not report to itself), so every instance provisioned from
+// it ran blind: four of seven were, found 2026-09-25 when a seed failure on start.tiknix
+// reached nobody. The control plane knows its own address and its own key; derive them.
+$coreCfg = @parse_ini_file(dirname(__DIR__) . '/conf/config.ini', true) ?: [];
+$coreUrl = rtrim((string) ($coreCfg['app']['baseurl'] ?? ''), '/');
+$fhUrl   = $coreUrl !== '' ? $coreUrl . '/firehose/report' : '';
+$fhKey   = (string) ($coreCfg['firehose']['ingest_key'] ?? '');
 $fhTag   = basename($ROOT);                  // <sub>.<app>, matching ErrorReporter::instanceTag
 $fhBlock = "[firehose]\n"
          . "; Report uncaught errors to the control plane (lib/ErrorReporter.php).\n"
@@ -130,9 +134,9 @@ if ($fhUrl === '' || $fhKey === '') {
     // Said out loud rather than left as a silent blank. ErrorReporter self-gates on an
     // empty ingest_url, so this instance would run blind — which is precisely how a
     // fleet ends up with nobody noticing a member table being wiped for a day.
-    fwrite(STDERR, "aibuilder-provision: WARNING - the source config has no [firehose] "
-         . "ingest_url/api_key, so '$fhTag' will NOT report errors to the control plane. "
-         . "Set them in the source app's conf/config.ini and re-provision, or patch this "
+    fwrite(STDERR, "aibuilder-provision: WARNING - this control plane's conf/config.ini has no "
+         . "[app] baseurl or no [firehose] ingest_key, so '$fhTag' will NOT report errors to it. "
+         . "Set them in core's conf/config.ini and re-provision, or patch this "
          . "instance's conf/config.ini by hand.\n");
 }
 

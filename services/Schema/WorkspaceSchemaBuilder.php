@@ -102,6 +102,11 @@ class WorkspaceSchemaBuilder {
                 $this->results[$name] = 'ok';
             } catch (\Throwable $e) {
                 $logger?->error("SchemaBuilder: seed {$name} failed", ['error' => $e->getMessage()]);
+                // A failed seed is caught here, so it is not an uncaught error and never
+                // reached the Firehose on its own — start.tiknix's interview table went
+                // unbuilt with the failure sitting in a log nobody read (2026-09-25).
+                // Reported with the same reporter, self-gated on this install's config.
+                \app\ErrorReporter::capture($e, 'seed_failure', ['seed' => $name, 'seed_dir' => basename(dirname($file))]);
                 $this->results[$name] = 'error: ' . $e->getMessage();
             }
         }

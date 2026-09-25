@@ -5,7 +5,7 @@
  * Carries Person + Organization JSON-LD so "who makes tiknix" resolves here.
  */
 $logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
-$desc  = 'tiknix is built by ClickSimple LLC in Mooresville, North Carolina. Founder and CTO Matthew Frederico has spent fifteen-plus years building the machinery under the button: ShipCannon, DealerYes, and tiknix itself.';
+$desc  = 'tiknix is built by ClickSimple LLC, a software shop in Mooresville, North Carolina. Founder and CTO Matthew Frederico has spent fifteen-plus years building the machinery under the button: ShipCannon, DealerYes, and tiknix itself.';
 $site  = 'https://tiknix.com';
 $jsonld = [
     '@context' => 'https://schema.org',
@@ -74,8 +74,8 @@ $jsonld = [
     <div class="eyebrow">Who we are</div>
     <h1>A small shop <em>that ships.</em></h1>
     <p class="sub">
-      tiknix is built by <a href="https://clicksimple.com/" rel="noopener">ClickSimple LLC</a>, a software and AI
-      company in Mooresville, North Carolina, working since 2019. We build the thing, then we use it
+      tiknix is built by <a href="https://clicksimple.com/" rel="noopener">ClickSimple LLC</a>, a software shop in
+      Mooresville, North Carolina, building for clients since 2019. We build the thing, then we use it
       every day on client work. If it annoys us, it gets fixed.
     </p>
   </section>
@@ -89,14 +89,14 @@ $jsonld = [
         <div class="role">Founder &amp; CTO · Mooresville, NC</div>
         <p>
           Fifteen-plus years of building the machinery under the button. Matt was co-founder and CTO
-          of a platform he architected from <strong>$100 million to $1.2 billion</strong> in under two
-          years, ran a team of nine engineers at a high-volume ecommerce and fulfillment business, and
+          of a platform that grew from <strong>$100 million to $1.2 billion</strong> in revenue in under two
+          years, while he built the engineering underneath it. He ran a team of nine engineers at a high-volume ecommerce and fulfillment business, and
           was the technical lead who unified Salesforce, Marketing Cloud and SAP data across four
-          countries for a global tools brand. He built <a href="https://shipcannon.com" rel="noopener">ShipCannon</a>
+          countries for a global tools maker. He built <a href="https://shipcannon.com" rel="noopener">ShipCannon</a>
           and CannonWMS, a warehouse system past 31 million packages, <a href="https://dealeryes.com" rel="noopener">DealerYes</a>
           for dealer networks, and tiknix, which he uses daily on the client projects that pay for it. He
-          open-sourced FastMCPHP and a MariaDB-to-LLM bridge, writes Laravel, Node and Python, runs AI
-          agents in production, and has the inference bills to prove it.
+          open-sourced FastMCPHP and a MariaDB-to-LLM bridge, writes Laravel, Node and Python, and runs AI
+          agents in production.
         </p>
         <div class="links">
           <a href="https://linkedin.com/in/mattfred" rel="noopener">LinkedIn</a>

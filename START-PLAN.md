@@ -1125,8 +1125,9 @@ board, reviewed and merged like client work. What that took, and what it found:
   - a seed failure is a logged ERROR, not an uncaught one, so it never reached the
     Firehose; and the instance runs blind anyway (`[firehose] ingest_url` empty, because
     core's template carries only `ingest_key` — four of seven instances are blind);
-  - the Task Board has no Checkpoint (it is Advanced Builder's); a plan run should
-    checkpoint itself before its first task.
+  - the Task Board has no Checkpoint (it is Advanced Builder's) — closed the same day: a
+    plan run checkpoints itself before its first task (`PlanExecutor::checkpointBeforeRun`
+    in the orchestrator, tag `checkpoint-plan-<id>` on the plan; no checkpoint, no run).
   Turnstile: core's own keys were pushed into the instance through `ConnectorPush`
   (the one door), and /start renders the widget; the Cloudflare widget's hostname list
   must include start.tiknix.com or the challenge fails client-side.

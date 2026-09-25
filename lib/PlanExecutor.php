@@ -282,6 +282,71 @@ class PlanExecutor {
     }
 
     /**
+     * Take the plan's rollback checkpoint before its first task runs — once per plan.
+     *
+     * The Task Board has no Checkpoint button (that is Advanced Builder's), and the first
+     * dogfood plan on start.tiknix ran eight tasks with nothing but the provisioning
+     * baseline to fall back on. A plan run now checkpoints itself, in the one place every
+     * launch path (board, Advanced Builder, planner auto-build, audit relaunch) comes
+     * through: the orchestrator, outside any jail. The same snapshot-instance.sh the
+     * Checkpoint button runs makes the tag, `checkpoint-plan-<id>`, and the plan records
+     * it (`plan_checkpoint`, which the Advanced Builder plan panel shows). A relaunch —
+     * a retry, a resumed build — keeps the first tag: that IS the before-the-plan point.
+     *
+     * A plan that cannot be checkpointed does not run: the caller gets ok=false and the
+     * reason, logged on the plan. Rolling back is the promise a plan run makes.
+     *
+     * @param string|null $script the snapshot script, for tests; null = [ops] bin_dir's
+     * @return array{ok:bool, tag:string, message:string}
+     */
+    public function checkpointBeforeRun(?string $script = null): array {
+        $plan = $this->plan();
+        if (!$plan->id) return ['ok' => false, 'tag' => '', 'message' => "no plan #{$this->planId} in the tasks db"];
+        $have = trim((string) ($plan->planCheckpoint ?? ''));
+        if ($have !== '') return ['ok' => true, 'tag' => $have, 'message' => "checkpoint {$have} already taken for this plan — kept"];
+
+        $real = realpath($this->instanceDir) ?: $this->instanceDir;
+        $base = basename($real);                              // <slug>.<app>
+        $app  = strpos($base, '.') !== false ? substr($base, strpos($base, '.') + 1) : '';
+        if ($app === '') {
+            $msg = "cannot checkpoint: {$real} is not an <slug>.<app> instance directory";
+            $this->logEvent($plan, 'error', $msg);
+            return ['ok' => false, 'tag' => '', 'message' => $msg];
+        }
+
+        $cfg    = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
+        $prefix = $script === null ? trim((string) ($cfg['ops']['sudo_prefix'] ?? '')) : '';
+        $script = $script ?? rtrim((string) ($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin'), '/') . '/snapshot-instance.sh';
+        if (!is_file($script)) {
+            $msg = "cannot checkpoint: snapshot script missing at {$script} (conf/aibuilder.ini [ops] bin_dir)";
+            $this->logEvent($plan, 'error', $msg);
+            return ['ok' => false, 'tag' => '', 'message' => $msg];
+        }
+
+        $label = 'plan-' . $this->planId;
+        $cmd = ($prefix !== '' ? $prefix . ' ' : '') . escapeshellarg($script) . ' ' . escapeshellarg($app)
+             . ' ' . escapeshellarg($this->slug) . ' ' . escapeshellarg($label);
+        $out = []; $code = 0;
+        exec($cmd . ' 2>&1', $out, $code);
+        $tag = '';
+        foreach (array_reverse(array_filter(array_map('trim', $out))) as $line) {
+            if (preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $line)) { $tag = $line; break; }
+        }
+        if ($code !== 0 || $tag === '') {
+            $said = trim(implode(' ', array_slice(array_filter(array_map('trim', $out)), -3)));
+            $msg = "cannot checkpoint: snapshot-instance.sh exited {$code}" . ($said !== '' ? " — {$said}" : '') . '; the plan will not run without a rollback point';
+            $this->logEvent($plan, 'error', $msg);
+            return ['ok' => false, 'tag' => '', 'message' => $msg];
+        }
+
+        $plan->planCheckpoint = $tag;
+        $plan->updatedAt      = date('Y-m-d H:i:s');
+        Bean::store($plan);
+        $this->logEvent($plan, 'info', "Checkpoint {$tag} taken before the first task — roll the project back to it if this plan goes wrong");
+        return ['ok' => true, 'tag' => $tag, 'message' => "checkpoint {$tag} taken"];
+    }
+
+    /**
      * Apply merged seeds to a LIVE instance: the one post-merge step, shared by a finished
      * plan (finalize) and a standalone task merged from the board (Workbench::localMergeBack).
      * Until 2026-09-25 only a plan ran it, so a standalone task's seeds reached the live

@@ -61,6 +61,21 @@ echo "[orchestrator] plan #$planId ($slug) starting " . date('c') . "\n";
 // engine. A single --model could only be right when every task ran on one provider.
 $ex = new PlanExecutor($planId, $slug, $dir, $level);
 
+// The rollback point, before the first task — once per plan (PlanExecutor::checkpointBeforeRun).
+// No checkpoint, no run: the plan goes back to 'approved' with the reason on it.
+$cp = $ex->checkpointBeforeRun();
+echo "[orchestrator] checkpoint: {$cp['message']}\n";
+if (!$cp['ok']) {
+    $parent = Bean::load('workbenchtask', $planId);
+    $parent->planStatus      = 'approved';
+    $parent->status          = 'pending';
+    $parent->progressMessage = 'Not started: ' . $cp['message'];
+    $parent->updatedAt       = date('Y-m-d H:i:s');
+    Bean::store($parent);
+    fwrite(STDERR, "[orchestrator] refusing to run plan #$planId without a checkpoint: {$cp['message']}\n");
+    exit(1);
+}
+
 /* Derived from the work left and the provider's concurrency, not a constant — see
    PlanExecutor::timeBudgetTicks(). A fixed 720 (2h) was generous for a plan running three
    wide and far too tight for the same plan against a provider that serves one at a time. */

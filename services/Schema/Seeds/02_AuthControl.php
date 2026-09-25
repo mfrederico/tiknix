@@ -64,6 +64,7 @@ $defaults = [
     // auto-creating it at a restrictive default level.
     ['pricing', '*', 101, 'Public marketing pricing page (flagship-gated in-controller)'],
     ['stories', '*', 101, 'Public founder stories page (flagship-gated in-controller)'],
+    ['neosaas', '*', 101, 'Public NeoSaaS manifesto page (flagship-gated in-controller)'],
 
     // Member (100)
     ['auth', 'logout', 100, 'Logout'],

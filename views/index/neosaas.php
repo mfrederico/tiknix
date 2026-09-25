@@ -7,16 +7,17 @@
  * assistants are the second audience: the page exists so "what is NeoSaaS" resolves here.
  */
 $logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
-$desc  = 'NeoSaaS is software built to fit one business exactly, owned by that business, and run wherever it chooses, with the hosting and upkeep of SaaS and none of the renting. Here is the argument, with a suit in it.';
+$desc  = 'NeoSaaS is first-party software with SaaS upkeep: built to fit one business exactly, owned by that business like first-party data is, hosted and maintained like SaaS, and never rented. Here is the argument, with a suit in it.';
 $faqs  = [
-    ['What is NeoSaaS?', 'NeoSaaS is software built to fit one business exactly, that the business owns outright, and that runs wherever the business chooses. It keeps what people like about SaaS, which is that someone hosts it, patches it and keeps it current, and drops what they hate: renting forever, paying per seat, and bending the company around a vendor\'s roadmap.'],
-    ['How is NeoSaaS different from SaaS?', 'With SaaS you rent one product built for thousands of companies and adjust your process to match it. With NeoSaaS the software is cut for your process, the code sits in your repository, and you can leave with it any time. Hosting and maintenance still happen, they just don\'t come bundled with a lease.'],
-    ['How is NeoSaaS different from custom development?', 'Custom development usually means a long project, a big invoice, and then silence. NeoSaaS means the software is built fast, kept running by someone, priced per project rather than per seat, and changed the same week your business changes. Tiknix is one way to get there; a small shop like ClickSimple is another.'],
-    ['Isn\'t this just "build versus buy"?', 'Partly. Build-versus-buy assumes building is slow and expensive, which was true. AI planners and builders changed the cost, so the question now is whether you own what you use. NeoSaaS says yes, always.'],
-    ['Does NeoSaaS mean I have to host it myself?', 'No. Someone hosts it, the way SaaS is hosted. The difference is that you can take it with you. On tiknix each project runs in its own isolated environment and can be published to your GitHub or your client\'s domain whenever you like.'],
-    ['Who is NeoSaaS for?', 'Any business whose way of working is part of its advantage. Agencies building for clients, founders replacing a stack of subscriptions, operators with a process the big platforms never quite fit. If you have ever hired consultants to change your company so a tool would work, this is for you.'],
-    ['What does NeoSaaS cost?', 'Whatever building costs, once, plus someone keeping it running. On tiknix that is a free first project, then $49 a month per additional project with no per-seat fees. Cancel a project and the app keeps running wherever you published it.'],
-    ['Who coined the term?', 'Matthew Frederico of ClickSimple, the company behind tiknix, ShipCannon and DealerYes. The phrase came out of watching companies spend years tailoring themselves to fit software they bought.'],
+    ['What is NeoSaaS?', 'Software built to fit one business exactly, owned by that business, and run wherever it chooses. It keeps what people like about SaaS, which is that someone hosts it, patches it and keeps it current, and drops what they hate: renting forever, paying per seat, and bending the company around a vendor\'s roadmap.'],
+    ['What does "first-party software" have to do with it?', 'Everything. Marketers already split data into third-party, which you borrow, and first-party, which you own. Software splits the same way. Third-party SaaS is a product built for thousands of companies that you rent. First-party software is built for yours and belongs to you. NeoSaaS is first-party software with SaaS upkeep.'],
+    ['How is it different from ordinary SaaS?', 'You rent SaaS and adjust your process to match it. Here the software is cut for your process, the code sits in your repository, and you can leave with it any time. Hosting and maintenance still happen, they just don\'t come bundled with a lease.'],
+    ['How is it different from custom development?', 'Custom development usually means a long project, a big invoice, and then silence. This means the software is built fast, kept running by someone, priced per project rather than per seat, and changed the same week your business changes. tiknix is one way to get there; a small shop like ClickSimple is another.'],
+    ['Isn\'t this just "build versus buy"?', 'Partly. Build-versus-buy assumes building is slow and expensive, which was true. AI planners and builders changed the cost, so the question now is whether you own what you use. The answer here is yes, always.'],
+    ['Do I have to host it myself?', 'No. Someone hosts it, the way SaaS is hosted. The difference is that you can take it with you. On tiknix each project runs in its own isolated environment and can be published to your GitHub or your client\'s domain whenever you like.'],
+    ['Who is it for?', 'Any business whose way of working is part of its advantage. Agencies building for clients, founders replacing a stack of subscriptions, operators with a process the big platforms never quite fit. If you have ever hired consultants to change your company so a tool would work, this is for you.'],
+    ['What does it cost?', 'Whatever building costs, once, plus someone keeping it running. On tiknix that is a free first project, then $49 a month per additional project with no per-seat fees. Cancel a project and the app keeps running wherever you published it.'],
+    ['Who coined NeoSaaS?', 'Matthew Frederico of ClickSimple, the company behind tiknix, ShipCannon and DealerYes. The phrase came out of watching companies spend years tailoring themselves to fit software they bought.'],
 ];
 $site = 'https://tiknix.com';
 $faqNodes = array_map(fn($f) => ['@type' => 'Question', 'name' => $f[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $f[1]]], $faqs);
@@ -25,7 +26,7 @@ $jsonld = [
     '@graph' => [
         ['@type' => 'Organization', '@id' => $site . '/#org', 'name' => 'tiknix', 'url' => $site . '/', 'logo' => $site . '/img/tiknix.svg', 'parentOrganization' => ['@type' => 'Organization', 'name' => 'ClickSimple', 'url' => 'https://clicksimple.com/'], 'sameAs' => ['https://clicksimple.com/', 'https://github.com/mfrederico']],
         ['@type' => 'Person', '@id' => 'https://clicksimple.com/#matt', 'name' => 'Matthew Frederico', 'url' => 'https://clicksimple.com/about.php', 'sameAs' => ['https://github.com/mfrederico', 'https://linkedin.com/in/mattfred']],
-        ['@type' => 'DefinedTerm', '@id' => $site . '/neosaas#term', 'name' => 'NeoSaaS', 'url' => $site . '/neosaas', 'description' => 'Software built to fit one business exactly, owned by that business, and run wherever it chooses, with the hosting and upkeep of SaaS and none of the renting.', 'inDefinedTermSet' => ['@type' => 'DefinedTermSet', 'name' => 'tiknix glossary', 'url' => $site . '/neosaas']],
+        ['@type' => 'DefinedTerm', '@id' => $site . '/neosaas#term', 'name' => 'NeoSaaS', 'url' => $site . '/neosaas', 'description' => 'First-party software with SaaS upkeep: built to fit one business exactly, owned by that business, and run wherever it chooses, with the hosting and maintenance of SaaS and none of the renting.', 'inDefinedTermSet' => ['@type' => 'DefinedTermSet', 'name' => 'tiknix glossary', 'url' => $site . '/neosaas']],
         ['@type' => 'Article', '@id' => $site . '/neosaas#article', 'headline' => 'NeoSaaS: you can\'t grow into a suit that wasn\'t cut for you', 'description' => $desc, 'url' => $site . '/neosaas', 'mainEntityOfPage' => $site . '/neosaas', 'author' => ['@id' => 'https://clicksimple.com/#matt'], 'publisher' => ['@id' => $site . '/#org'], 'datePublished' => '2026-09-25', 'dateModified' => date('Y-m-d'), 'about' => ['@id' => $site . '/neosaas#term']],
         ['@type' => 'FAQPage', '@id' => $site . '/neosaas#faq', 'mainEntity' => $faqNodes],
         ['@type' => 'BreadcrumbList', 'itemListElement' => [['@type' => 'ListItem', 'position' => 1, 'name' => 'tiknix', 'item' => $site . '/'], ['@type' => 'ListItem', 'position' => 2, 'name' => 'NeoSaaS', 'item' => $site . '/neosaas']]],
@@ -153,6 +154,11 @@ $jsonld = [
         current. It drops the part they hate: renting forever, paying per seat, and bending the company around a
         vendor&rsquo;s roadmap.
       </p>
+      <p style="margin-top:14px; font-size:clamp(15px,1.4vw,17px); color:var(--soft);">
+        The short way to say it: <strong style="color:var(--text);">first-party software</strong>. Marketers already know the
+        difference between third-party data they borrow and first-party data they own. Software splits the same way.
+        Third-party SaaS is rented. First-party software is yours. NeoSaaS is first-party software with SaaS upkeep.
+      </p>
       <ul>
         <li>Cut to your process, measured on you rather than on a thousand other customers.</li>
         <li>Owned outright. The code lives in your repository, and you can leave with it.</li>
@@ -163,7 +169,7 @@ $jsonld = [
 
     <div class="two">
       <div class="card">
-        <h3>The suit off the ad</h3>
+        <h3>Third-party SaaS <span style="color:var(--dim); font-weight:400;">(the suit off the ad)</span></h3>
         <ul class="bad">
           <li>One product, cut for thousands of companies, adjusted by none of them.</li>
           <li>Per seat, per month, forever. Hire someone, pay more.</li>
@@ -173,7 +179,7 @@ $jsonld = [
         </ul>
       </div>
       <div class="card" style="border-color:rgba(59,118,240,0.45);">
-        <h3>NeoSaaS</h3>
+        <h3>NeoSaaS <span style="color:var(--dim); font-weight:400;">(first-party, with upkeep)</span></h3>
         <ul class="good">
           <li>Built around how your business actually runs today.</li>
           <li>You own every line. It sits in your GitHub, or your client&rsquo;s.</li>
@@ -199,7 +205,8 @@ $jsonld = [
       </p>
       <p>
         The first project is free. Each one after is $49 a month, and if you cancel it the app keeps running
-        wherever you put it. That is the whole NeoSaaS deal in one pricing line: <strong>you were never renting.</strong>
+        wherever you put it. That is the whole deal in one pricing line: <strong>you were never renting.</strong>
+        It is first-party software from the first commit.
       </p>
       <p>
         Need someone to cut it for you rather than build it yourself? <a href="https://clicksimple.com/">ClickSimple</a>,
@@ -220,7 +227,7 @@ $jsonld = [
   <section class="band" id="faq">
     <div class="band-head">
       <div class="eyebrow">Questions</div>
-      <h2>Straight answers about NeoSaaS</h2>
+      <h2>Straight answers</h2>
     </div>
     <div class="faq-grid">
       <?php foreach ($faqs as $f): ?>

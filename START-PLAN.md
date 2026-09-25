@@ -1115,8 +1115,10 @@ board, reviewed and merged like client work. What that took, and what it found:
     them (core 31a15b4, `PermissionSeedRuleTest`);
   - a finished plan applied only `database/seeds/*.php`, never `services/Schema/Seeds/`
     (the mandated convention) — `finalize()` now runs `clitool --build` (same commit).
-    Still open: a STANDALONE task merged from the board runs no finalize at all, so its
-    seeds reach the live instance only by hand (`--build` was run by hand for task #10);
+    A STANDALONE task merged from the board ran no finalize at all, so its seeds reached
+    the live instance only by hand (`--build` was run by hand for task #10) — closed the
+    same day: the step is `PlanExecutor::applySeeds()`, run by both a finished plan and
+    the board's local merge-back (core eb4fc40, workbench 1289842);
   - a seed's sizing probe for a table whose FUSE model validates on store was rejected,
     so the table was never built — found by the audit's fix task #10, whose
     `$_dispensePadding` helper is ported into core (eb93bb6, `SchemaPaddingTest`);

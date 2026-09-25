@@ -83,7 +83,7 @@
             <?php elseif ($agency): ?>
               $<?= number_format($agencyPrice, 0) ?> covers <?= (int) $agencyPool ?> projects, then $<?= number_format($agencyExtra, 0) ?> each
             <?php else: ?>
-              <?= (int) $freeCap ?> free, then $<?= number_format($perProject, 0) ?> a project · $<?= number_format($perClient, 0) ?> a client project
+              <?= (int) $freeCap ?> free, then $<?= number_format($perProject, 0) ?> a project<?= \app\ProjectQuota::CLIENT_TIER_OFFERED ? ' · $' . number_format($perClient, 0) . ' a client project' : '' ?>
             <?php endif; ?>
           </div>
         </div>
@@ -152,7 +152,7 @@
   <p class="text-muted small mb-3">
     Projects shared into a team you own count once, against you — the people you invite do
     not each need their own plan. Your oldest project<?= (int) $freeCap === 1 ? ' is' : 's are' ?> the free
-    one<?= (int) $freeCap === 1 ? '' : 's' ?>; change a project's kind from the Projects page.
+    one<?= (int) $freeCap === 1 ? '' : 's' ?>.
     You bring your own model on every plan, so nothing here meters your builds.
   </p>
 
@@ -175,7 +175,7 @@
           <td>
 <?php if (!empty($p['free'])): ?>
             <span class="badge text-bg-success">Free</span>
-<?php elseif (($p['kind'] ?? 'project') === 'client'): ?>
+<?php elseif (($p['kind'] ?? 'project') === 'client' && \app\ProjectQuota::CLIENT_TIER_OFFERED): ?>
             <span class="badge text-bg-info">Client project</span>
             <span class="small text-muted">$<?= number_format($perClient, 0) ?>/mo</span>
 <?php else: ?>

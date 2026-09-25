@@ -1,16 +1,47 @@
 # Billing — where it stands (2026-09-25)
 
-**The plan below is historical.** What is built and live:
+**The plan below is historical.** What is SOLD (tiknix.com/pricing): two tiers.
 
 | Tier | Price | How it is decided |
 |---|---|---|
 | First project | free | the member's OLDEST counted projects, up to `member.free_projects` (default 1) |
-| Project | $49/mo | `instance.plan = 'project'` (default), member on `pro` (a card on file) |
-| Client project | $99/mo | `instance.plan = 'client'` (chosen at creation or toggled on /projects) |
-| Agency | $499/mo for 10, then $49 each | `member.plan_tier = 'agency'` (set by an admin; needs a card) |
+| Project | $49/mo | member on `pro` (a card on file); uncapped |
 | Legacy | never billed | grandfathered accounts |
 
 Customers bring their own model; nothing meters builds.
+
+Built, tested and DORMANT behind `ProjectQuota::CLIENT_TIER_OFFERED` / `AGENCY_OFFERED`
+(both false): a per-project kind (`instance.plan` = 'client' at $99) and an Agency pool
+(`member.plan_tier` = 'agency', $499 for ten then $49 each). The rate schedule carries their
+lines; with the flags off the counts are always zero, so nothing is charged. They were
+withdrawn on 2026-09-25 because nothing in the product yet distinguishes a client project
+from any other paid project (every project already has its own public link), and ten
+projects at $49 undercut the pool.
+
+## Later: client hand-off (the idea worth building)
+
+The thing an agency would actually pay more for is a clean hand-off at the end of an
+engagement: **transfer the project to the client's own tiknix account**, so the client keeps
+running it, and the bill moves to them. That is NeoSaaS made literal — the client owns it,
+invoice included.
+
+Sketch:
+1. Owner clicks "Hand off to client", enters the client's email. A signed, expiring transfer
+   token is created (`projecttransfer` table: instance_id, from_member_id, to_email, token,
+   expires_at, accepted_at).
+2. The client opens the link, signs up or in (SignupFlow applies: card required if enabled),
+   and accepts.
+3. On accept, in one transaction: `instance.member_id` → client; `instance_team` rows for
+   the agency's teams removed (or kept as a shared viewer, agency's choice); broker key
+   rotated (`BrokerService`); connections stay with the project (they are per instance).
+   ProjectQuota then counts it against the client; the agency's next usage pull no longer
+   includes it. Nothing to sync — the usage callback reads live counts.
+4. Gates: transfer is a new project for the RECIPIENT, so `ProjectQuota::refusalFor(client, 1)`
+   applies at accept time, with the card link, exactly like fork.
+
+When that exists, the $99 "Client project" becomes real (hand-off included, the agency's
+studio on it while building) and Agency becomes the bulk rate for it (pays for itself at five
+clients). Flip the two flags, and re-add the cards to pricing.php and landing.php.
 
 - The arithmetic lives in ONE place, `ProjectQuota::breakdown()`; the usage callback
   (`/billing/usage/{tenant}`) reports its counts and `billing-service/conf/rates/tiknix.php`

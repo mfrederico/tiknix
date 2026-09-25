@@ -99,14 +99,16 @@ $when = function ($v, string $fmt = 'Y-m-d H:i') {
                             <div class="col-sm-6 mb-3">
                                 <label for="plan_tier" class="form-label">Plan tier</label>
                                 <select class="form-select" id="plan_tier" name="plan_tier">
-                                    <?php foreach (['free' => 'Free — first project only, solo', 'pro' => 'Per project — $' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0) . ' / $' . number_format(\app\ProjectQuota::PRICE_PER_CLIENT_PROJECT, 0) . ' client', 'agency' => 'Agency — $' . number_format(\app\ProjectQuota::PRICE_AGENCY, 0) . ' for ' . (int) \app\ProjectQuota::AGENCY_POOL . ', then $' . number_format(\app\ProjectQuota::PRICE_AGENCY_EXTRA, 0) . ' each', 'legacy' => 'Legacy — grandfathered, never billed'] as $__v => $__l): ?>
+                                    <?php $__opts = ['free' => 'Free — first project only, solo', 'pro' => 'Per project — $' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0) . ' each past the free allowance'];
+                                          if (\app\ProjectQuota::AGENCY_OFFERED || $__tier === 'agency') $__opts['agency'] = 'Agency — $' . number_format(\app\ProjectQuota::PRICE_AGENCY, 0) . ' for ' . (int) \app\ProjectQuota::AGENCY_POOL . ', then $' . number_format(\app\ProjectQuota::PRICE_AGENCY_EXTRA, 0) . ' each';
+                                          $__opts['legacy'] = 'Legacy — grandfathered, never billed'; ?>
+                                    <?php foreach ($__opts as $__v => $__l): ?>
                                     <option value="<?= $__v ?>" <?= $__tier === $__v ? 'selected' : '' ?>><?= htmlspecialchars($__l) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                                 <small class="form-text text-muted">
-                                    Free and per-project follow the card automatically; set <strong>Agency</strong> here when
-                                    the member has agreed to it (needs a card on file). The invoice prices whatever
-                                    the usage callback reports, so this takes effect on the next billing run.
+                                    Free and per-project follow the card automatically. The invoice prices whatever
+                                    the usage callback reports, so a change here takes effect on the next billing run.
                                 </small>
                             </div>
                             <div class="col-sm-6 mb-3">

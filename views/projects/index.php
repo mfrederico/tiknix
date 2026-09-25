@@ -162,6 +162,7 @@ $fmt = function (string $iso): string {
           <div class="col-4 col-sm-3">
             <button class="btn btn-primary btn-sm w-100" type="submit">Create &amp; work on it</button>
           </div>
+          <?php if (\app\ProjectQuota::CLIENT_TIER_OFFERED): ?>
           <div class="col-12">
             <?php /* The priced kind. Your first project is free whichever you pick; after
                      that the price follows the kind (pricing page). Changeable later. */ ?>
@@ -177,6 +178,7 @@ $fmt = function (string $iso): string {
             </div>
             <div class="form-text">You bring your own model on every plan. Nothing meters your builds.</div>
           </div>
+          <?php endif; ?>
           <div class="col-12"><div id="proj-new-msg" class="form-text"></div></div>
         </form>
       </div>
@@ -206,7 +208,7 @@ $fmt = function (string $iso): string {
                 <?php endif; ?>
                 <?php if (!empty($p['free'])): ?>
                   <span class="badge bg-success-subtle text-success" title="Inside your free allowance">Free</span>
-                <?php elseif (($p['kind'] ?? 'project') === 'client'): ?>
+                <?php elseif (($p['kind'] ?? 'project') === 'client' && \app\ProjectQuota::CLIENT_TIER_OFFERED): ?>
                   <span class="badge bg-info-subtle text-info" title="Client project">Client</span>
                 <?php endif; ?>
                 </div>
@@ -278,7 +280,7 @@ $fmt = function (string $iso): string {
                         data-id="<?= (int) $p['id'] ?>" type="button">
                   <?= $active ? 'Continue' : 'Work on this' ?>
                 </button>
-                <?php if (!empty($p['owned'])): ?>
+                <?php if (!empty($p['owned']) && \app\ProjectQuota::CLIENT_TIER_OFFERED): ?>
                   <?php /* Flip the priced kind. Quiet, because it is a billing setting, not
                            a build action; the badge above and the Billing page show the result. */ ?>
                   <button class="btn btn-outline-secondary proj-plan" type="button"

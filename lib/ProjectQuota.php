@@ -48,6 +48,15 @@ class ProjectQuota {
     /** The priced kinds a project can be. Anything else reads as 'project'. */
     public const KINDS = ['project', 'client'];
 
+    /**
+     * What is OFFERED on the pricing page right now. The arithmetic for client projects
+     * and the Agency pool stays built and tested; these only decide whether the UI and the
+     * copy mention them. Two tiers are what is sold (2026-09-25): free, then $49 a project.
+     * See BILLING_PLAN.md "Later: client hand-off" for what would switch these on.
+     */
+    public const CLIENT_TIER_OFFERED = false;
+    public const AGENCY_OFFERED      = false;
+
     /** A paid account is UNCAPPED — every project past the free allowance is simply billed. */
     public const PRO_CAP = PHP_INT_MAX;
 
@@ -410,11 +419,12 @@ class ProjectQuota {
         $price  = number_format(self::PRICE_PER_PROJECT, 0);
         $cprice = number_format(self::PRICE_PER_CLIENT_PROJECT, 0);
         $tier   = self::tierOf($memberId);
+        $clientNote = self::CLIENT_TIER_OFFERED ? " (\${$cprice} for a client project)" : '';
         $msg    = $tier === 'legacy'
             ? "Your account covers {$cap} projects and you have {$count}. Add a card and you can "
-              . "keep going — extra projects are \${$price} a month each (\${$cprice} for a client project)."
+              . "keep going — extra projects are \${$price} a month each{$clientNote}."
             : "Your free plan includes {$cap} project" . ($cap === 1 ? '' : 's') . " and you have {$count}. "
-              . "Add a card and each extra project is \${$price} a month (\${$cprice} for a client project).";
+              . "Add a card and each extra project is \${$price} a month{$clientNote}.";
 
         /* Take them straight to the card form rather than to /billing to find the link
            themselves. A signed SSO URL when we can build one; /billing when we cannot,

@@ -42,6 +42,8 @@ class ConceptManifest {
     private const SLOT_RE     = '/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/D';
     /** The same shape Pipeline\Loader::safeSlug() accepts. */
     private const PIPELINE_RE = '/^[a-z0-9][a-z0-9-]{0,63}$/D';
+    /** plain program names, alternatives separated by '|': no paths, no arguments, no shell */
+    private const COMMAND_RE  = '/^[A-Za-z0-9][A-Za-z0-9._+-]*(?:\|[A-Za-z0-9][A-Za-z0-9._+-]*)*$/D';
     private const CALLABLE_RE = '/^(?:([a-z][a-z0-9]*):)?([A-Z][A-Za-z0-9]*)::([a-z][A-Za-z0-9]*)$/D';
     private const VIEW_RE     = '/^[A-Za-z0-9][A-Za-z0-9_\-]*(?:\/[A-Za-z0-9][A-Za-z0-9_\-]*)*\.php$/D';
     private const MATCH_KEY_RE = '/^[a-z][A-Za-z0-9]*$/D';
@@ -57,6 +59,11 @@ class ConceptManifest {
     public array $requiresConcepts = [];
     /** @var string[] core class names (under app\) this one calls */
     public array $requiresLib = [];
+    /**
+     * @var string[] programs that must be on PATH, one entry per need; alternatives joined
+     *      with '|' ("google-chrome|chromium") — any one of them satisfies the entry
+     */
+    public array $requiresCommands = [];
     /** @var string[] controller class names this concept claims */
     public array $controllers = [];
     /** @var string[] bean types this concept claims */
@@ -147,6 +154,7 @@ class ConceptManifest {
         $requires = self::obj($raw['requires'] ?? [], 'requires', $name);
         $m->requiresConcepts = self::stringList($requires['concepts'] ?? [], 'requires.concepts', $name, self::NAME_RE);
         $m->requiresLib      = self::stringList($requires['lib'] ?? [], 'requires.lib', $name, self::CLASS_RE);
+        $m->requiresCommands = self::stringList($requires['commands'] ?? [], 'requires.commands', $name, self::COMMAND_RE);
         if (in_array($name, $m->requiresConcepts, true)) {
             throw new ConceptException("Concept '{$name}': requires.concepts lists the concept itself.");
         }

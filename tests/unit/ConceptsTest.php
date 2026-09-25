@@ -351,4 +351,22 @@ class ConceptsTest extends ConceptsTestCase {
         $this->assertSame([], $c->enabled());
         $this->assertNull($c->controllerClass('anything'));
     }
+
+    /* ---- requires.commands: a program the concept shells out to ---- */
+
+    public function testVerifyNamesAMissingProgram(): void {
+        $n = $this->uniq('pdfx');
+        $this->concept($n, ['requires' => ['commands' => ['tiknix-no-such-program-' . $n . '|also-not-here']]]);
+        $problems = implode("\n", $this->concepts()->verify($n));
+        $this->assertStringContainsString("requires.commands needs 'tiknix-no-such-program-{$n}|also-not-here'", $problems);
+        $this->assertStringContainsString('also-not-here', $problems);
+    }
+
+    public function testVerifyAcceptsAnyOneAlternative(): void {
+        $n = $this->uniq('pdfy');
+        $this->concept($n, ['requires' => ['commands' => ['tiknix-no-such-program|sh']]]);
+        $this->assertStringNotContainsString('requires.commands', implode("\n", $this->concepts()->verify($n)));
+        $this->assertSame('/usr/bin/sh', \app\Concepts::commandOnPath('nope|sh'), 'resolved to the program that exists');
+        $this->assertNull(\app\Concepts::commandOnPath('tiknix-no-such-program'));
+    }
 }

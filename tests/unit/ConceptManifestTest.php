@@ -44,6 +44,20 @@ class ConceptManifestTest extends TestCase {
         return [['Tickets'], ['event-tickets'], ['1tickets'], ['tick_ets'], ['../etc'], ['a\\b'], ["tickets\n"]];
     }
 
+    /** requires.commands: program names, alternatives with '|' — never a path, an argument or a shell. */
+    public function testRequiresCommandsAreBareProgramNames(): void {
+        $m = $this->make(['requires' => ['commands' => ['google-chrome|chromium', 'ffmpeg']]]);
+        $this->assertSame(['google-chrome|chromium', 'ffmpeg'], $m->requiresCommands);
+        foreach (['/usr/bin/chrome', 'chrome --headless', 'a;b', 'rm -rf', '|chrome', ''] as $bad) {
+            try {
+                $this->make(['requires' => ['commands' => [$bad]]]);
+                $this->fail("accepted requires.commands entry '{$bad}'");
+            } catch (ConceptException $e) {
+                $this->assertStringContainsString('requires.commands', $e->getMessage());
+            }
+        }
+    }
+
     public function testVersionIsRequired(): void {
         $this->expectException(ConceptException::class);
         ConceptManifest::fromArray(['name' => 'tickets'], '/x/tickets', 'tickets');

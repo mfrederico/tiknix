@@ -199,6 +199,28 @@ class Concepts {
         return $data;
     }
 
+    /**
+     * The first program of a requires.commands entry ("google-chrome|chromium") this process
+     * can run, as its path, or null.
+     */
+    public static function commandOnPath(string $entry): ?string {
+        foreach (explode('|', $entry) as $bin) {
+            // Asked of the shell, not stat()ed: under an isolated install's open_basedir,
+            // is_file('/usr/bin/x') is false for everything outside the tree, while running
+            // /usr/bin/x is still allowed — the program is found the way proc_open() finds it.
+            // Pipes for every descriptor: ['file', '/dev/null'] is refused by open_basedir on
+            // an isolated install, and proc_open would fail before asking anything.
+            $proc = @proc_open(['sh', '-c', 'command -v -- "$1" 2>/dev/null', 'sh', $bin],
+                [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+            if (!is_resource($proc)) continue;
+            fclose($pipes[0]);
+            $path = trim((string) stream_get_contents($pipes[1]));
+            fclose($pipes[1]); fclose($pipes[2]);
+            if (proc_close($proc) === 0 && $path !== '') return $path;
+        }
+        return null;
+    }
+
     /* ---- autoload ------------------------------------------------------------------- */
 
     /**
@@ -603,6 +625,12 @@ class Concepts {
         }
         foreach ($m->requiresLib as $lib) {
             if (!class_exists('app\\' . $lib)) $problems[] = "requires.lib names app\\{$lib}, which does not exist.";
+        }
+        foreach ($m->requiresCommands as $entry) {
+            if (self::commandOnPath($entry) === null) {
+                $problems[] = "requires.commands needs '{$entry}' on PATH, and this server has none of "
+                    . str_replace('|', ', ', $entry) . ". Install it (or one of them) before enabling.";
+            }
         }
 
         $this->verifying[$name] = true;

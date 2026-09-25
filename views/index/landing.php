@@ -387,7 +387,6 @@ $hasShowcase = !empty($showcase);
           <div><span class="ck">✓</span> Client preview access while you build</div>
           <div><span class="ck">✓</span> One line on the engagement invoice</div>
         </div>
-        <a class="btn btn-primary" style="display:flex; justify-content:center; margin-top:26px;" href="/auth/register">Start your first project — free</a>
       </div>
       <div class="card plan">
         <div class="lbl">Agency</div>
@@ -401,6 +400,10 @@ $hasShowcase = !empty($showcase);
           <div><span class="ck">✓</span> One invoice for the lot</div>
         </div>
       </div>
+    </div>
+    <div style="display:flex; flex-direction:column; align-items:center; gap:12px; margin-top:34px;">
+      <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
+      <div style="font-size:14px; color:var(--dim);">No card to start. Pick a plan when you add your second project.</div>
     </div>
   </section>
 

@@ -836,6 +836,11 @@ for that client. Before it enters a catalog other clients install from:
 
 Settle this before the first extraction, not after.
 
+**Settled 2026-09-25:** every app built on tiknix is open source, so generic code extracted
+from a client's project may enter the shared catalog. The scrub still applies in full — no
+client data, seed rows, credentials, branding, or business rules particular to that client
+travel with a concept — and a client's own concepts can still live in a private source.
+
 ## Concept MCP tools (built 2026-09-22)
 
 **The MCP server stays core; MCP tools become a concept part.** The server
@@ -1361,7 +1366,9 @@ hook in the layout and a sink, and Playwright covers the case for now.
 4. **`OfferType` contract inside serenity.** Refactor the `offerType` branches behind the
    interface *in place*, with serenity still live and step 3's tests green before and after.
    This is the risky step: it touches the code that takes money.
-5. **Extract `storefront`**, generified and scrubbed. Then `digital`, `class`, `session`, and
+5. **Extract `storefront`**, generified and scrubbed. (The full extraction backlog across
+   all live projects — core consolidations, connectors and concepts — and its order now
+   live in `START-PLAN.md` §5 and §10 Track A; this list keeps the runtime steps.) Then `digital`, `class`, `session`, and
    the remaining capabilities (`tickets`, `availability`, `profiles`, `vendors`), and the
    `events` bundle over them.
 6. ~~Retire the sidecar~~ — done 2026-09-21, early: it was unused (see "Retired").
@@ -1386,7 +1393,8 @@ hook in the layout and a sink, and Playwright covers the case for now.
 Step 1 includes teaching `Introspector`, `check-duplicates.php` and the validation hook to
 walk enabled concepts — otherwise the first installed concept is invisible to the planner.
 
-Before step 5: the ownership terms and the extraction scrub ("Ownership of extracted code").
+Before step 5: the extraction scrub ("Ownership of extracted code" — the ownership question
+itself was settled 2026-09-25: the apps are open source).
 
 Augment-decompose slots in anywhere.
 

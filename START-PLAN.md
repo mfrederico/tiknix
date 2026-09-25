@@ -1123,8 +1123,12 @@ board, reviewed and merged like client work. What that took, and what it found:
     so the table was never built — found by the audit's fix task #10, whose
     `$_dispensePadding` helper is ported into core (eb93bb6, `SchemaPaddingTest`);
   - a seed failure is a logged ERROR, not an uncaught one, so it never reached the
-    Firehose; and the instance runs blind anyway (`[firehose] ingest_url` empty, because
-    core's template carries only `ingest_key` — four of seven instances are blind);
+    Firehose; and the instance ran blind anyway (`[firehose] ingest_url` empty, because
+    core's template carries only `ingest_key` — four of seven instances were blind).
+    Closed the same day (core c8787a9): the schema builder reports a failed seed as
+    `seed_failure` through `ErrorReporter` (proved end to end from start-201e11 into
+    core's Firehose), provisioning derives `ingest_url`/`api_key` from the control
+    plane's own baseurl and `ingest_key`, and the four blind instances were given both;
   - the Task Board has no Checkpoint (it is Advanced Builder's) — closed the same day: a
     plan run checkpoints itself before its first task (`PlanExecutor::checkpointBeforeRun`
     in the orchestrator, tag `checkpoint-plan-<id>` on the plan; no checkpoint, no run).

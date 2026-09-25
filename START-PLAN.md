@@ -1,8 +1,8 @@
 # start.tiknix: learn the business, plan a bespoke system, build it
 
-**Status: plan for review; Track A has started — `pdf` 1.0.0 (§5.4a) and `images` 1.0.0
-(§5.4b) are built, published and adopted by their source projects; `requires.commands` and
-`requires.extensions` are in core. Nothing else is built.** Written 2026-09-24 from a survey of core, the
+**Status: plan for review; Track A has started — `pdf` 1.0.0 (§5.4a), `images` 1.0.0
+(§5.4b) and `locale` 1.0.0 (§5.4c) are built, published and adopted by their source
+projects; `requires.commands` and `requires.extensions` are in core. Nothing else is built.** Written 2026-09-24 from a survey of core, the
 workbench sidecar, PartsDNA (`partsdna-74a225`), Serenity (`serenity-bbdc01`) and the concept
 catalog in depth, and of what CollectIQ, Invoza, El Salón (`bookingscheduler`) and lead-machine
 each built beyond core. Decisions to confirm are collected under "Decisions to confirm"; nothing below is
@@ -104,8 +104,8 @@ a `[sidecar.<name>]` section in core's config, and a `Feature::CATALOG` entry.
 | Money | Stripe checkout, subscriptions, billing portal (connector methods) | `StripeConnector`, `lib/StripeGateway.php` |
 
 **Concept catalog today** (`/var/www/html/default/tiknix-concepts/`): `calendar` 1.0.1,
-`pipedemo` 1.0.0, `shopifysync` 1.1.0, `pdf` 1.0.0 and `images` 1.0.0 (the proving cases
-below, 2026-09-25). **Designed, not extracted:** `storefront`, offer types
+`pipedemo` 1.0.0, `shopifysync` 1.1.0, `pdf` 1.0.0, `images` 1.0.0 and `locale` 1.0.0 (the
+proving cases below, 2026-09-25). **Designed, not extracted:** `storefront`, offer types
 `physical` / `digital` / `class` / `session`, `tickets`, `availability`, `profiles`,
 `vendors`, and the `events` bundle (`COMPONENTS_PLAN.md` "Build order" steps 3–5).
 
@@ -504,6 +504,7 @@ versioned components that many projects share and update:
 | `StripeGateway` PaymentIntents | `invoicing`, `storefront` | additive, on the existing core client (Invoza wrote `StripeDirect` because it lacked this) |
 | `PublicLink` purposes | `tickets`, `invoicing`, `outreach` | additive: a purpose and an optional expiry on the existing core links |
 | `ApiKey` scopes | `shopify-embed`, any plugin with an API | additive: scoped and store-bound keys, hashed at rest |
+| Translator locale | `locale` | `Control` bootstraps translatify with `member.locale`; a registration point so the enabled `locale` plugin supplies `Locale::language($memberId)` instead |
 
 **Capability plugins** — the duplicates, consolidated as plugins:
 
@@ -511,7 +512,7 @@ versioned components that many projects share and update:
 |---|---|---|
 | ~~`pdf`~~ | Invoza `InvoicePdf` (headless Chrome), Serenity `TicketPdf` | done 2026-09-25 (§5.4a) |
 | ~~`images`~~ | Serenity and CollectIQ `ImageProcessor` | done 2026-09-25 (§5.4b) |
-| `locale` | CollectIQ `CurrencyService`, Serenity's USD / US-timezone hardcodes | currency, timezone and formats as settings |
+| ~~`locale`~~ | CollectIQ `CurrencyService`, Serenity's USD / US-timezone hardcodes | done 2026-09-25 (§5.4c) |
 | `leadcapture` | El Salón `LeadCapture` | dedupe by email into core's `lead` from any form or booking |
 | `secretrecovery` | CollectIQ `SecretRecovery` | re-encrypt after an app-key rotation |
 
@@ -620,6 +621,39 @@ Runtime findings, added to §5.4a's list:
 8. **Fixtures need real EXIF.** Imagick's `setImageOrientation()` writes no tag; the pins
    stamp a minimal APP1/TIFF segment themselves. Worth a shared test helper once there is
    a test bootstrap to put it in.
+
+### 5.4c Proving case: `locale` (built 2026-09-25)
+
+- **Built:** `locale` 1.0.0 — `Currencies` (a closed ISO table: symbol, decimals, position),
+  `Money` (`format`, `toMinor` for Stripe — 1200 for ¥1,200, never ×100 — `fromMinor`,
+  `parse` of what a person typed), `Timezones` (validated IANA zones, a grouped picker),
+  `Locale` (the install's currency / timezone / date format / language, each member's
+  preferences over them on core's own `timezone` / `date_format` / `language` keys,
+  configured exchange rates with member overrides, `convert`, `displayCurrency`,
+  `formatDate`). **Seeded, not guessed:** enabling writes the four install settings once
+  (`concept.locale.*`, timezone from `[app] timezone`); at runtime an absent one throws.
+  The first plugin with a `seeds/` step. Published (`43a5b24`).
+- **Adopted twice:** CollectIQ's `CurrencyService` keeps its picker list and "approximate"
+  convention but rates live in the concept and an unconfigured rate is logged; Serenity's
+  checkout takes its currency from `Locale::currency()` and its Stripe amounts from
+  `Money::toMinor()` (the `'usd'` / `* 100` literals are gone), and its teacher-sessions
+  timezone picker uses `Timezones::COMMON` instead of a US-only constant. Pinned
+  (`CurrencyServiceTest`), proved as both pool users (Serenity seeded `America/Denver`,
+  CollectIQ `UTC`, both `USD`).
+- **Translatify.** `/var/www/html/default/translatify` (English-as-key `t()`, scanner, the
+  `/translations` editor) is bootstrapped per request in core's `Control` with a locale
+  read from `member.locale`. `Locale::language()` is meant to be that value's one source;
+  making `Control` read it is a core seam (§5.4), since core cannot depend on a plugin —
+  the next A0 candidate after the lock file.
+
+Runtime findings:
+
+9. **A plugin seed is just a numbered PHP file in `seeds/`** run by
+   `WorkspaceSchemaBuilder::build()` on enable, with `Flight` and `Bean` in scope — nothing
+   to add. It ran on both installs and reported what it kept and what it wrote.
+10. **Stricter than the code it replaced, on purpose:** a corrupt stored currency list or
+    an unknown code now throws where CollectIQ used to quietly return USD-only. The pin was
+    changed to expect the error, and says why.
 
 ### 5.5 How a component is harvested
 

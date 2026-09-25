@@ -1106,6 +1106,28 @@ board, reviewed and merged like client work. What that took, and what it found:
   an MCP server of its own) and workspaces for a project that borrows its vendor.
   The `.tgz` is the source for the first tasks' views and base controller once the
   project exists — copy from it, do not re-derive.
+- **The first plan (2026-09-25, project `start-201e11`, served at start.tiknix.com through a
+  symlink).** Goal → planner → plan #1 (8 tasks, B1+B2) → all merged in about an hour →
+  audit → three Firehose `audit_failure` rows auto-triaged into fix tasks. What the run
+  found in the PLATFORM, each fixed in core the same day:
+  - a wildcard permission seed (`start::*`) was shadowed by the auto-generated method rows
+    the tasks' own verification had left at ADMIN — `seedRule` on a wildcard now removes
+    them (core 31a15b4, `PermissionSeedRuleTest`);
+  - a finished plan applied only `database/seeds/*.php`, never `services/Schema/Seeds/`
+    (the mandated convention) — `finalize()` now runs `clitool --build` (same commit).
+    Still open: a STANDALONE task merged from the board runs no finalize at all, so its
+    seeds reach the live instance only by hand (`--build` was run by hand for task #10);
+  - a seed's sizing probe for a table whose FUSE model validates on store was rejected,
+    so the table was never built — found by the audit's fix task #10, whose
+    `$_dispensePadding` helper is ported into core (eb93bb6, `SchemaPaddingTest`);
+  - a seed failure is a logged ERROR, not an uncaught one, so it never reached the
+    Firehose; and the instance runs blind anyway (`[firehose] ingest_url` empty, because
+    core's template carries only `ingest_key` — four of seven instances are blind);
+  - the Task Board has no Checkpoint (it is Advanced Builder's); a plan run should
+    checkpoint itself before its first task.
+  Turnstile: core's own keys were pushed into the instance through `ConnectorPush`
+  (the one door), and /start renders the widget; the Cloudflare widget's hostname list
+  must include start.tiknix.com or the challenge fails client-side.
 
 ## 11. Decisions to confirm
 

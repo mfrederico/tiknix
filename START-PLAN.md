@@ -237,9 +237,9 @@ core's autoloader like every other sidecar.
 
 **Core changes** (small, each its own commit):
 
-- `[sidecar.start]` in config and `start` in `Feature::CATALOG` (MEMBER, auto-granted to
-  every member — Get started must never be feature-gated away). Served at
-  `start.tiknix.com` by the existing Lua router; no vhost.
+- ~~`[sidecar.start]` in config and `start` in `Feature::CATALOG`~~ — dropped 2026-09-25:
+  the wizard is an ordinary project created in the UI, not a sidecar (§10a), so no feature
+  flag or nav plugin names it; it is linked from the landing hero like any page.
 - `Provision::secret()` accepts the start sidecar's secret for `op: create` only.
 - A **Get started** entry point: the landing hero, `/stories` ("Build something like this"
   per story → that story's blueprint), the empty-state left nav ("Build → New Project"
@@ -1091,6 +1091,21 @@ board, reviewed and merged like client work. What that took, and what it found:
   helps or misleads.
 - Registration recipe: scratchpad `register-start.php` (instance row on member 1,
   `ProjectContext::set`, `Feature::setEnabled('start')`, an agent API key, `.mcp.json`).
+- **Owner's call after the first Run (2026-09-25): create the project in the UI instead.**
+  The hand registration was backed out — instance row 95 trashed, the agent key
+  deactivated, `[sidecar.start]` removed from both configs, `start` dropped from
+  `Feature::CATALOG`, the scaffold archived (scratchpad `start-sidecar-scaffold-*.tgz`:
+  Kit wiring, `Sso`/`StartControl`, `CLAUDE.md`, views) and its directory removed. What
+  that changes: **start.tiknix is a provisioned tiknix instance** (its own pool, DB and
+  accounts; a clone of core with the full Builder toolchain), not a Kit sidecar riding
+  core's SSO. So the wizard runs for a *visitor* — no login until the hand-off, where they
+  sign in or register on tiknix.com and the brief + PLAN.md travel with the `op: create`
+  request (§8 already sends them by value). Nothing in §5 (components), §6 (interview) or
+  §9 (blueprints) depends on the sidecar shape. The two seams built for the sidecar route
+  stay, because they are general: `X-Tiknix-Project` on the gateway (any project without
+  an MCP server of its own) and workspaces for a project that borrows its vendor.
+  The `.tgz` is the source for the first tasks' views and base controller once the
+  project exists — copy from it, do not re-derive.
 
 ## 11. Decisions to confirm
 

@@ -6,7 +6,7 @@
  * registration. Included by both connection pages (the control-plane hub and an
  * instance's own page); it always manages the CURRENT install's keys.
  *
- * Expects: $turnstile = ['configured'=>bool, 'source'=>'connection'|'config'|'none', 'site_masked'=>string]
+ * Expects: $turnstile = ['configured'=>bool, 'source'=>'connection'|'none', 'site_masked'=>string]
  */
 $ts        = $turnstile ?? ['configured' => false, 'source' => 'none', 'site_masked' => ''];
 $tsOn      = !empty($ts['configured']);
@@ -28,8 +28,6 @@ $tsCsrf    = function_exists('csrf_token') ? csrf_token() : '';
             <span class="badge text-bg-danger">Stored key unreadable — every verification is REFUSED</span>
           <?php elseif ($tsOn && $tsSource === 'connection'): ?>
             <span class="badge text-bg-success">On</span>
-          <?php elseif ($tsOn && $tsSource === 'config'): ?>
-            <span class="badge text-bg-warning">On — from config seed</span>
           <?php else: ?>
             <span class="badge text-bg-secondary">Off</span>
           <?php endif; ?>
@@ -47,11 +45,6 @@ $tsCsrf    = function_exists('csrf_token') ? csrf_token() : '';
 
         <?php if ($tsOn && $tsSource === 'connection'): ?>
           <div class="small mt-2">Site key <code><?= htmlspecialchars($tsMasked) ?></code> — verified against Cloudflare.</div>
-        <?php elseif ($tsOn && $tsSource === 'config'): ?>
-          <div class="alert alert-warning py-2 px-3 small mt-2 mb-0">
-            Turnstile is currently enabled from <code>conf/config.ini</code>. Save the keys below to manage them here
-            (encrypted, no config edit) instead.
-          </div>
         <?php endif; ?>
 
         <details class="mt-3"<?= $tsOn ? '' : ' open' ?>>

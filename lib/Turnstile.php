@@ -6,15 +6,14 @@
  * token the client submits, and this verifies it server-side against Cloudflare. The point is
  * to stop automated signups abusing the free tier's build agent.
  *
- * Keys, in precedence order (this install's own, whichever is set):
- *   1. A "turnstile" Connection in this install's own store (data/connections.db) — the
- *      managed source, set from the Connections page. Site key travels in metadata (public);
- *      secret key is encrypted with this install's key, like every other connection.
- *   2. conf/config.ini [turnstile] site_key / secret_key — the bootstrap seed/fallback, used
- *      only when no connection is stored. This is how a fresh install can carry keys before the
- *      UI is touched, and how core was configured before it was dogfooded onto the connection.
+ * Keys live in ONE place: the "turnstile" Connection in this install's own store
+ * (data/connections.db), set from the Connections page (Security card) or pushed in by core
+ * through ConnectorPush. Site key travels in metadata (public); secret key is encrypted with
+ * this install's key, like every other connection. There is no conf/config.ini path: the
+ * [turnstile] section that used to seed a fresh install was a second source of truth
+ * (removed 2026-09-25 — "Turnstile is a connection, not config").
  *
- * Gated on key PRESENCE: with no keys from EITHER source, verification is a no-op (the feature
+ * Gated on key PRESENCE: with no connection stored, verification is a no-op (the feature
  * is simply off, the same way RateLimiter is off without APCu), so registration keeps working
  * before the keys are set. Once both keys are present it is enforced. A configured-but-failing
  * check fails CLOSED (rejects the signup) — the safe default for an anti-abuse gate; Turnstile
@@ -72,16 +71,12 @@ class Turnstile
 
     public static function siteKey(): string
     {
-        $c = self::connection();
-        if (($c['site_key'] ?? '') !== '') return $c['site_key'];
-        return trim((string) (Flight::get('turnstile.site_key') ?? ''));
+        return (string) (self::connection()['site_key'] ?? '');
     }
 
     private static function secretKey(): string
     {
-        $c = self::connection();
-        if (($c['secret_key'] ?? '') !== '') return $c['secret_key'];
-        return trim((string) (Flight::get('turnstile.secret_key') ?? ''));
+        return (string) (self::connection()['secret_key'] ?? '');
     }
 
     /** A stored secret this install can no longer decrypt (rotated app_key, corrupt row). */
@@ -135,21 +130,17 @@ class Turnstile
 
     /**
      * What the Connections UI needs to render the Security card, without ever handing the
-     * secret to a view. `source` says which of the two key sources is live so the card can
-     * tell "managed here" from "still on the config seed".
+     * secret to a view. `source` is 'connection' when keys are stored, else 'none'.
      */
     public static function state(): array
     {
         $c        = self::connection();
         $fromConn = ($c['site_key'] ?? '') !== '' && ($c['secret_key'] ?? '') !== '';
-        $cfgSite  = trim((string) (Flight::get('turnstile.site_key')   ?? ''));
-        $cfgSec   = trim((string) (Flight::get('turnstile.secret_key') ?? ''));
-        $fromCfg  = $cfgSite !== '' && $cfgSec !== '';
         $site     = self::siteKey();
         return [
             'configured'  => self::enabled(),
             'broken'      => (bool) ($c['secret_broken'] ?? false),   // stored, unreadable: verification refuses
-            'source'      => $fromConn ? 'connection' : ($fromCfg ? 'config' : 'none'),
+            'source'      => $fromConn ? 'connection' : 'none',
             'site_masked' => $site === '' ? '' : (substr($site, 0, 6) . '…' . substr($site, -4)),
         ];
     }

@@ -1060,13 +1060,7 @@ class Connections extends Control {
         if (!Flight::hasLevel(LEVELS['ADMIN'])) { $this->jsonError('Admins only.', 403); return; }
         if (!$this->validateCSRF()) return;
         \app\Turnstile::forget();
-        // If a config.ini [turnstile] seed is still present, the feature stays on from
-        // that source — say so rather than implying it is fully off.
-        $st = \app\Turnstile::state();
-        $msg = $st['source'] === 'config'
-            ? 'Removed the stored keys. Turnstile is still enabled from conf/config.ini — clear [turnstile] there to fully disable it.'
-            : 'Human verification is off for this site.';
-        $this->jsonSuccess(['source' => $st['source']], $msg);
+        $this->jsonSuccess(['source' => \app\Turnstile::state()['source']], 'Human verification is off for this site.');
     }
 
     /** POST /connections/pipelinerun — trigger one of the instance's pipelines (owner-scoped). */

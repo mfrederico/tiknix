@@ -10,7 +10,7 @@
     <?php endif; ?>
 
     <?php /* The settings below are the ones stored in the database. Everything in conf/config.ini
-             ([app] [features] [security] [mail] [turnstile] …) is edited at /settings — ADMIN,
+             ([app] [features] [security] [mail] …) is edited at /settings — ADMIN,
              with IniFileService::ROOT_SECTIONS (database, cache, sidecars…) and credentials
              absent. Every file and every key is /settings/ini, ROOT only. Linked here because
              this page is where people look for it. */ ?>

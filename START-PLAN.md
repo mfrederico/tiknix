@@ -1164,6 +1164,24 @@ board, reviewed and merged like client work. What that took, and what it found:
   Turnstile: core's own keys were pushed into the instance through `ConnectorPush`
   (the one door), and /start renders the widget; the Cloudflare widget's hostname list
   must include start.tiknix.com or the challenge fails client-side.
+- **Track A2 landed on Serenity (2026-09-26).** Plan 135 extracted `storefront`,
+  `tickets`, `profiles`, `class` (authored in-tree under `concepts-src/`, lint-clean,
+  published to the catalog, installed); plan 148 made Serenity a consumer: a local
+  `serenity` concept fills the plugins' slots and registers its own offer types, teachers
+  became `profile` rows, its own Shop/Catalog/Orders/Events/ticket code is deleted, the
+  characterization tests replay against the plugins (`tests/unit/Adoption/*ReplayTest`).
+  What the second run found in the platform, each fixed in core the same day: a plan
+  task's jail had the LIVE project as its root and the worktree had no vendor (an agent
+  rewrote the live autoloader; core 7a92c01); a plan that enables a plugin does so in a
+  worktree, so the plugin's seeds never ran on the live database — profiles' permission
+  rows and label were missing until `--concept-seeds=all` existed and finalize ran it
+  (core 2a11ba2); a `requires.connectors` finding blocked enabling while saying it did not
+  (same commit). And one design slip in the plan's own work: the `serenity` concept
+  declared its offer types in its manifest AND seeded them into the storefront setting,
+  which the registry rightly refused — home and shop were 500 for three minutes after the
+  last merge (Serenity a0eadeb). The events module of the wizard is now backed by
+  published components; `PrimitiveCheck`'s static list on Start needs the four names
+  added before the module reads live.
 
 ## 11. Decisions to confirm
 

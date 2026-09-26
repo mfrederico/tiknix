@@ -301,8 +301,9 @@ class Projects extends BaseControls\Control {
             'free'         => in_array((int) $inst->id, $this->freeIds, true),
             'status'       => (string) $inst->status,
             // Async per-instance isolation state, so the picker can say "finishing setup" vs
-            // "isolated" instead of the member wondering whether provisioning worked.
-            'isolation'    => (string) ($inst->isolationState ?? ''),
+            // "isolated" instead of the member wondering whether provisioning worked. Read
+            // from the pool itself (marker + socket), not the column alone — see the model.
+            'isolation'    => \Model_Instance::isolationStateFor($inst),
             'created'      => (string) $inst->createdAt,
             // Hosting: a container is the strongest signal of "published"; fall back to
             // nothing rather than inventing a date we cannot substantiate.

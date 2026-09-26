@@ -97,6 +97,35 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      *
      * Neither can be faked by what the directory is called.
      */
+    /**
+     * Is this instance's isolated pool actually there? The truth is structural: the marker
+     * provisioning drops at the instance root (`.fpm-isolated`, "SOCK=/run/php/tiknix-i<id>.sock")
+     * and that socket existing. The `isolation_state` column is set to 'pending' when
+     * isolation is queued and nothing on this side ever hears the worker finish, so three
+     * isolated projects read "finishing setup…" for days (2026-09-26). Readers use this;
+     * the column follows it.
+     */
+    public static function isolationLive(string $dir): bool {
+        $marker = rtrim($dir, '/') . '/' . \app\IsolatedPool::MARKER;
+        if (!is_file($marker)) return false;
+        if (!preg_match('/^SOCK=(\S+)/m', (string) file_get_contents($marker), $m)) return false;
+        return file_exists($m[1]);
+    }
+
+    /**
+     * The isolation state to show: 'active' when the pool is live (and the column is
+     * corrected to say so), else whatever was recorded ('pending' | 'failed' | '').
+     */
+    public static function isolationStateFor(\RedBeanPHP\OODBBean $inst): string {
+        $recorded = (string) ($inst->isolationState ?? '');
+        $dir = self::dirFrom((string) $inst->slug, (string) ($inst->app ?: 'tiknix'));
+        if (self::isolationLive($dir)) {
+            if ($recorded !== 'active') { $inst->isolationState = 'active'; \app\Bean::store($inst); }
+            return 'active';
+        }
+        return $recorded;
+    }
+
     public static function isProvisionedInstance(string $dir): bool {
         // An alias is not the instance. start.tiknix → start-201e11.tiknix (a symlink so
         // start.tiknix.com serves the project) made every sweep over *.tiknix visit the

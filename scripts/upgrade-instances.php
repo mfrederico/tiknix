@@ -69,6 +69,7 @@ function say(string $s): void { echo $s . "\n"; }
 // be an instance branch. Both, not either.
 $instances = [];
 foreach (glob($root . '/*.tiknix') ?: [] as $dir) {
+    if (is_link($dir)) continue;          // an alias (start.tiknix → start-201e11.tiknix): the target is visited by its own name
     if (!is_dir($dir . '/.git')) continue;
     $origin = sh('git remote get-url origin', $dir);
     $branch = sh('git rev-parse --abbrev-ref HEAD', $dir);

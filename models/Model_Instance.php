@@ -98,6 +98,12 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      * Neither can be faked by what the directory is called.
      */
     public static function isProvisionedInstance(string $dir): bool {
+        // An alias is not the instance. start.tiknix → start-201e11.tiknix (a symlink so
+        // start.tiknix.com serves the project) made every sweep over *.tiknix visit the
+        // same project twice, the second time under the slug "start": the stale-task
+        // reaper then looked for tiknix-start-plan13-orchestrator, found nothing, and
+        // marked a plan that was building "stalled" four seconds after it started.
+        if (is_link(rtrim($dir, '/'))) return false;
         $real = realpath($dir);
         if ($real === false || !is_dir($real . '/.git')) return false;
         if ($real === realpath(self::ROOT . '/tiknix')) return false;      // the control plane

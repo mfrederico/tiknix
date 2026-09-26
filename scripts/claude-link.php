@@ -30,6 +30,7 @@ if (isset($o['root'])) {
     $roots[] = $r;
 } elseif (isset($o['all'])) {
     foreach (glob(dirname(__DIR__, 2) . '/*.tiknix', GLOB_ONLYDIR) ?: [] as $d) {
+        if (is_link($d)) continue;        // an alias of an instance; the target is in the list by its own name
         if (is_file($d . '/public/index.php')) $roots[] = $d;
     }
 } else {

@@ -670,6 +670,10 @@ BASH;
         }
 
         if ($this->submitUntilStarted()) return true;
+        // The agent took the text and did not start: its terminal usually says why
+        // ("Login expired · Please run /login" sat in a pane behind a task the board
+        // called "queued" with no reason, 2026-09-26). Read once, kept for the caller.
+        $this->idleReason = self::idleReasonFromPane(TmuxManager::capture($this->sessionName, 60));
 
         /* \Flight, not Flight. This file is in `namespace app;` and imports only Exception,
            so a bare Flight:: resolves to app\Flight and fatals. Both of these sit on the
@@ -803,6 +807,36 @@ BASH;
      * never began — we then press Enter into an idle agent, which submits nothing. A stray
      * keystroke is a cheaper mistake than a task that claims to be running and is not.
      */
+    /** Why the agent sat idle after the last sendPrompt(), when its terminal said; '' otherwise. */
+    private string $idleReason = '';
+
+    public function idleReason(): string { return $this->idleReason; }
+
+    /**
+     * What an idle agent terminal is saying, as one sentence a person can act on. Known
+     * causes only — anything else is '' and the caller says the brief did not start.
+     * Pure, so it is testable against captured panes.
+     */
+    public static function idleReasonFromPane(string $pane): string {
+        $p = strtolower($pane);
+        if (str_contains($p, 'login expired') || str_contains($p, 'not logged in') || str_contains($p, 'run /login')) {
+            return "the agent's Claude login has expired — open this project's Terminal in Advanced Builder and run /login (agents run as you, so one login covers every project)";
+        }
+        if (str_contains($p, 'invalid api key') || str_contains($p, 'authentication_error') || preg_match('/api error:?\s*401/', $p)) {
+            return 'the agent\'s API key was rejected (401) — check Settings → Models, or the project\'s agent credential';
+        }
+        if (str_contains($p, 'rate limit') || preg_match('/api error:?\s*429/', $p) || str_contains($p, 'usage limit')) {
+            return 'the provider is rate-limiting or the usage limit is reached — the brief will start once it lifts';
+        }
+        if (str_contains($p, 'overloaded') || preg_match('/api error:?\s*5\d\d/', $p)) {
+            return 'the provider answered with a server error (overloaded / 5xx) — try again shortly';
+        }
+        if (str_contains($p, 'could not connect') || str_contains($p, 'network error') || str_contains($p, 'enotfound')) {
+            return 'the agent could not reach its provider (network) — check connectivity from the jail';
+        }
+        return '';
+    }
+
     private function agentStarted(): bool {
         $pane = TmuxManager::capture($this->sessionName, 30);
         if ($pane === '') return false;

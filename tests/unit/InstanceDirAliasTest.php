@@ -21,7 +21,10 @@ class InstanceDirAliasTest extends ConceptsTestCase {
     private function repo(string $name, string $branch, bool $originIsCore = true): string {
         $d = $this->root . '/' . $name;
         mkdir($d, 0700, true);
-        $core = dirname(__DIR__, 2);
+        // "Core" is the control plane's checkout, not whichever tree runs this test: an
+        // instance clone runs the same suite, and its own path is not what origin must be.
+        $core = \Model_Instance::ROOT . '/tiknix';
+        if (!is_dir($core . '/.git')) $this->markTestSkipped("no control plane at {$core} on this host");
         $origin = $originIsCore ? $core : $this->root;
         $git = 'git -C ' . escapeshellarg($d);
         exec("$git init -q && $git remote add origin " . escapeshellarg($origin)

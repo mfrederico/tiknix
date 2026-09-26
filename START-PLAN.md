@@ -870,8 +870,21 @@ same `ProvisionService::create` the Projects page uses, `PLAN.md` +
 selected, and the Builder opened. A token is single-use; `GET /handoff/state?token=`
 tells the wizard's status page `offered` → `claimed` (+ project slug/url), never who.
 Steps 5–7 (connections checklist, Phase 1 decompose, status with **Start phase N**)
-remain. The wizard's half (fill `Handoff::requestCreate`, redirect, status polling) is
-plan #2 on the Start board.
+remain. The wizard's half (fill `Handoff::requestCreate`, redirect, status polling) was
+plan #13 on the Start board (4 tasks, merged 2026-09-26 00:18).
+
+**First real hand-off, 2026-09-26 00:30:** owner walked the wizard as a visitor, pressed
+Build it, signed in, and landed in the Builder of `cleans-cat-poo-boxes-937cab` with
+`PLAN.md` + `.aibuilder/blueprint.json` committed **as him** (`d6786ae Matthew Frederico`).
+It took three tries, and both failures were the same kind: a contract I had written in
+prose, read two ways by two agents — "blueprint_json (a JSON object)" (the wizard sent the
+object inline, the door wanted a string; door now takes both, core 78b1938) and "returns
+{success, data:{claim_url…}}" (the wizard read the fields at the top level and expected a
+state named `pending` where the door says `offered`; fixed on the instance, a53e333). The
+lesson for the next boundary between two boards: hand the agents a **fixture** — the
+door's real request and response bodies as files both sides' tests replay — not a
+sentence. Loose end: the wizard's status page flips to `handed_off` only while it is
+open and polling; a visitor who leaves for tiknix.com (everyone) comes back to it later.
 
 ---
 

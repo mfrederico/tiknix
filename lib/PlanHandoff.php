@@ -41,16 +41,14 @@ class PlanHandoff {
         if ($sourceInstanceId <= 0) throw new \InvalidArgumentException('handoff: the broker key is not bound to an instance');
         $name = trim((string) ($in['name'] ?? ''));
         if ($name === '' || mb_strlen($name) > self::NAME_MAX) throw new \InvalidArgumentException('handoff: name is required (1–' . self::NAME_MAX . ' characters)');
-        $plan = (string) ($in['plan_md'] ?? '');
-        if (trim($plan) === '' || strlen($plan) > self::PLAN_MAX) throw new \InvalidArgumentException('handoff: plan_md is required (≤ ' . self::PLAN_MAX . ' bytes)');
-        $blueprint = (string) ($in['blueprint_json'] ?? '');
-        if ($blueprint === '' || strlen($blueprint) > self::JSON_MAX || !is_array(json_decode($blueprint, true))) {
-            throw new \InvalidArgumentException('handoff: blueprint_json must be a JSON object (≤ ' . self::JSON_MAX . ' bytes)');
-        }
-        $brief = (string) ($in['brief_json'] ?? '');
-        if ($brief !== '' && (strlen($brief) > self::JSON_MAX || !is_array(json_decode($brief, true)))) {
-            throw new \InvalidArgumentException('handoff: brief_json, when given, must be a JSON object');
-        }
+        $plan = $in['plan_md'] ?? '';
+        if (!is_string($plan) || trim($plan) === '' || strlen($plan) > self::PLAN_MAX) throw new \InvalidArgumentException('handoff: plan_md is required, as text (≤ ' . self::PLAN_MAX . ' bytes)');
+        // blueprint_json / brief_json: the JSON object itself, or that object as a string —
+        // both are the same value and both are taken. The wizard sends the object inline;
+        // the first Build it (2026-09-26) hit "Array to string conversion" here because
+        // only the string form was expected, and the contract had said "a JSON object".
+        $blueprint = self::jsonObject($in['blueprint_json'] ?? null, 'blueprint_json', true);
+        $brief     = self::jsonObject($in['brief_json'] ?? null, 'brief_json', false);
         $resume = trim((string) ($in['resume_url'] ?? ''));
         if ($resume !== '' && !preg_match('#^https://[^\s]+$#', $resume)) throw new \InvalidArgumentException('handoff: resume_url must be an https URL');
 
@@ -70,6 +68,28 @@ class PlanHandoff {
         $h->claimedAt         = '';
         Bean::store($h);
         return $h;
+    }
+
+    /**
+     * A JSON object argument, as the encoded string it is stored as. Accepts the decoded
+     * object (an array) or its string form; refuses anything else by name.
+     *
+     * @throws \InvalidArgumentException
+     */
+    private static function jsonObject($value, string $field, bool $required): string {
+        if ($value === null || $value === '') {
+            if ($required) throw new \InvalidArgumentException("handoff: {$field} is required (a JSON object, ≤ " . self::JSON_MAX . ' bytes)');
+            return '';
+        }
+        if (is_array($value)) {
+            $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if ($encoded === false) throw new \InvalidArgumentException("handoff: {$field} could not be encoded as JSON");
+            $value = $encoded;
+        }
+        if (!is_string($value) || strlen($value) > self::JSON_MAX || !is_array(json_decode($value, true))) {
+            throw new \InvalidArgumentException("handoff: {$field} must be a JSON object (≤ " . self::JSON_MAX . ' bytes)');
+        }
+        return $value;
     }
 
     public static function byToken(string $token): ?\RedBeanPHP\OODBBean {

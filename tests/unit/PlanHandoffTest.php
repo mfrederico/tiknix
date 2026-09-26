@@ -58,6 +58,22 @@ class PlanHandoffTest extends ConceptsTestCase {
         $this->assertSame(['status' => 'offered', 'name' => 'Shop Portal', 'project_slug' => '', 'project_url' => ''], PlanHandoff::state($h));
     }
 
+    public function testTheObjectsMayArriveInlineOrAsStrings(): void {
+        // The wizard sends the decoded objects; a string of JSON is the same value.
+        $inline = PlanHandoff::offer(7, $this->package([
+            'blueprint_json' => ['id' => 'client-portal', 'modules' => ['a/b']],
+            'brief_json'     => ['business' => 'Café "Ana"', 'goal' => 'Orders'],
+        ]));
+        $this->assertSame(['id' => 'client-portal', 'modules' => ['a/b']], json_decode((string) $inline->blueprintJson, true));
+        $this->assertSame('Café "Ana"', json_decode((string) $inline->briefJson, true)['business']);
+        $asString = PlanHandoff::offer(7, $this->package());
+        $this->assertSame(['id' => 'client-portal', 'modules' => []], json_decode((string) $asString->blueprintJson, true));
+        $noBrief = PlanHandoff::offer(7, $this->package(['brief_json' => null]));
+        $this->assertSame('', (string) $noBrief->briefJson);
+        try { PlanHandoff::offer(7, $this->package(['plan_md' => ['not' => 'text']])); $this->fail('accepted a non-text plan'); }
+        catch (\InvalidArgumentException $e) { $this->assertStringContainsString('plan_md', $e->getMessage()); }
+    }
+
     public function testEachMalformedFieldIsRefusedByName(): void {
         foreach ([
             [['name' => ''], 'name'],

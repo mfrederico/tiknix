@@ -58,7 +58,7 @@ $longopts = [
     'i18n-scan',
     // concepts (COMPONENTS_PLAN.md)
     'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'concept-seeds:', 'concept-lock', 'rehash', 'force', 'agent-sync',
-    'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'from:', 'origin:', 'forbid:',
+    'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'concept-update:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
     'status:', 'set-password:', 'set-level:', 'reset-2fa', 'delete-user',
@@ -404,6 +404,29 @@ if (isset($opt['concept-install'])) {
     out("# it is NOT enabled. Next: --concept-verify={$name}, then --concept-enable={$name}");
     exit(0);
 }
+if (isset($opt['concept-update'])) {
+    // Installed → the catalog's version, enabled state kept, seeds re-run when enabled
+    // (ConceptCatalog::update). An in-place edit refuses without --force.
+    $name = (string) $opt['concept-update'];
+    if ($DRYRUN) { out("# dry-run: would replace " . \app\Concepts::DIR . "/{$name}/ with the catalog's version" . (isset($opt['force']) ? ' (forced over local edits)' : '')); exit(0); }
+    try {
+        $r = \app\ConceptCatalog::forInstall()->update($name, dirname(__DIR__), isset($opt['force']));
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    out("# updated '{$r['name']}' {$r['from']} → {$r['version']} ({$r['files']} files)" . ($r['enabled'] ? ', still enabled' : ', still disabled'));
+    if ($r['enabled']) {
+        try {
+            $seeded = \app\Concepts::instance()->runSeeds($name);
+            out('# seeds: ' . ($seeded ? count($seeded) . ' ok' : 'none'));
+        } catch (\app\ConceptException $e) {
+            bail("updated, but its seeds failed — " . $e->getMessage());
+        }
+        if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
+        try { agentSync(); } catch (\RuntimeException $e) { err("warning: agent guidance not synced — " . $e->getMessage()); }
+    }
+    exit(0);
+}
 
 // --- Introspection: --list --------------------------------------------------
 if (isset($opt['list'])) {
@@ -673,6 +696,10 @@ CONCEPTS (pluggable features — see COMPONENTS_PLAN.md)
   --concept-search[=WORDS]       Search the shared catalog (no words = list everything)
   --concept-install=NAME         Copy NAME from the catalog into concepts/NAME/. Never
                                  overwrites, never enables
+  --concept-update=NAME [--force]
+                                 Replace concepts/NAME/ with the catalog's newer version;
+                                 enabled stays enabled and its seeds run again. Refuses a
+                                 copy edited in place unless --force (the edit is lost)
   --concept-lint=NAME [--from=ROOT] [--origin=INSTALL_ROOT] [--forbid=a,b]
                                  Is it fit to publish? Origin leakage, secrets, absolute
                                  paths, R::, undeclared core classes and beans.

@@ -314,6 +314,51 @@ class ConceptCatalog {
         return ['name' => $name, 'version' => $m->version, 'dir' => $target, 'files' => count($files)];
     }
 
+    /**
+     * Move an installed concept to the catalog's version — the update half of the runtime
+     * (COMPONENTS_PLAN A0). Refused when the installed copy was edited in place (the lock's
+     * hash no longer matches: an update would silently discard that edit — carry it to the
+     * source and republish, or --force to discard it), and when the catalog holds the very
+     * version already installed. The enabled state survives; the caller runs the seeds of
+     * an enabled concept afterwards so a new version's schema lands (clitool does). On any
+     * failure the previous directory is put back and nothing has changed.
+     *
+     * First needed for class 1.0.1 on Serenity (2026-09-26): a fix task changed the
+     * plugin's SOURCE, and the only way onto the install was "remove the directory".
+     *
+     * @return array{name:string,version:string,from:string,enabled:bool,dir:string,files:int}
+     */
+    public function update(string $name, string $root, bool $force = false): array {
+        self::assertName($name);
+        $root = rtrim($root, '/');
+        $target = "{$root}/" . Concepts::DIR . "/{$name}";
+        if (!is_dir($target)) throw new ConceptException("Concept '{$name}' is not installed here — use --concept-install={$name}.");
+        $row = ConceptLock::entry($root, $name);
+        if ($row === null) throw new ConceptException("Concept '{$name}' has no row in concepts.lock — run --concept-lock first.");
+        if (!$force && ConceptLock::modified($root, $name)) {
+            throw new ConceptException("Concept '{$name}' was edited in place (its files differ from what concepts.lock recorded); "
+                . 'an update would discard that. Carry the change to the source and republish, or --force to discard it.');
+        }
+        $bundle = $this->bundle($name);
+        $newVersion = (string) ($bundle['version'] ?? '');
+        $from = (string) ($row['version'] ?? '');
+        if ($newVersion === $from) throw new ConceptException("Concept '{$name}' is already at {$from}, the catalog's version.");
+        $wasEnabled = !empty($row['enabled']);
+
+        $aside = dirname($target) . "/.{$name}.replaced-" . bin2hex(random_bytes(4));
+        if (!rename($target, $aside)) throw new ConceptException("Concept '{$name}': could not move the installed copy aside.");
+        try {
+            $res = $this->install($name, $root);
+        } catch (\Throwable $e) {
+            if (is_dir($target)) self::rmTree($target);
+            rename($aside, $target);
+            throw $e;
+        }
+        if ($wasEnabled) ConceptLock::setEnabled($root, $name, true);
+        self::rmTree($aside);
+        return $res + ['from' => $from, 'enabled' => $wasEnabled];
+    }
+
     /* ---- publish (control plane only) ----------------------------------------------- */
 
     /**

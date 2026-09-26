@@ -11,6 +11,7 @@ require_once __DIR__ . '/ConceptsTestCase.php';
 use app\ConceptCatalog;
 use app\ConceptException;
 use app\ConceptLint;
+use app\ConceptLock;
 
 class ConceptCatalogTest extends ConceptsTestCase {
 
@@ -36,6 +37,14 @@ class ConceptCatalogTest extends ConceptsTestCase {
             'tests/CalendarTest.php' => "<?php\n",
             'guidelines.md' => "### {$name}\n\nCall Calendar::ics() with a neutral event array.\n",
         ]);
+    }
+
+    /** Re-stamp a written concept's manifest with $version (the helper always writes 1.0.0). */
+    private function bump(string $dir, string $version): string {
+        $j = json_decode((string) file_get_contents("{$dir}/concept.json"), true);
+        $j['version'] = $version;
+        file_put_contents("{$dir}/concept.json", json_encode($j));
+        return $dir;
     }
 
     private function errors(string $dir, array $forbid = []): string {
@@ -152,6 +161,49 @@ class ConceptCatalogTest extends ConceptsTestCase {
         $this->assertSame('1.0.0', $in['version']);
         $prov = json_decode(file_get_contents("{$other}/concepts/calendar/.installed.json"), true);
         $this->assertSame('calendar', $prov['name']);
+    }
+
+    public function testUpdateMovesAnInstallToTheCatalogsNewerVersionKeepingEnabled(): void {
+        $this->local()->publish($this->calendar());
+        $other = $this->root . '/_otherinstall';
+        mkdir($other);
+        $this->local()->install('calendar', $other);
+        ConceptLock::setEnabled($other, 'calendar', true);
+        try {
+            $this->local()->update('calendar', $other);
+            $this->fail('same version should be refused');
+        } catch (ConceptException $e) { $this->assertStringContainsString('already at 1.0.0', $e->getMessage()); }
+
+        // 1.0.1 published: a changed file, a new one.
+        $this->local()->publish($this->bump($this->calendar('calendar', [], [
+            'lib/Calendar.php' => "<?php\nnamespace app\\concepts\\calendar;\nclass Calendar { public static function ics(array \$e): string { return 'BEGIN:VCALENDAR // v1.0.1'; } }\n",
+            'lib/Feed.php'     => "<?php\nnamespace app\\concepts\\calendar;\nclass Feed {}\n",
+        ]), '1.0.1'));
+        $r = $this->local()->update('calendar', $other);
+        $this->assertSame(['1.0.0', '1.0.1', true], [$r['from'], $r['version'], $r['enabled']]);
+        $this->assertStringContainsString('v1.0.1', file_get_contents("{$other}/concepts/calendar/lib/Calendar.php"));
+        $this->assertFileExists("{$other}/concepts/calendar/lib/Feed.php");
+        $row = ConceptLock::entry($other, 'calendar');
+        $this->assertSame(['1.0.1', true], [$row['version'], $row['enabled']], 'the lock follows, enabled kept');
+        $this->assertFalse(ConceptLock::modified($other, 'calendar'), 'hash re-recorded for the new files');
+        $this->assertSame([], glob(dirname("{$other}/concepts/calendar") . '/.calendar.replaced-*'), 'nothing left aside');
+    }
+
+    public function testUpdateRefusesAnInPlaceEditUnlessForced(): void {
+        $this->local()->publish($this->calendar());
+        $other = $this->root . '/_otherinstall';
+        mkdir($other);
+        $this->local()->install('calendar', $other);
+        $this->local()->publish($this->bump($this->calendar(), '1.0.1'));
+        file_put_contents("{$other}/concepts/calendar/lib/Calendar.php", '<?php // adapted for this client');
+        try {
+            $this->local()->update('calendar', $other);
+            $this->fail('an edited install should be refused');
+        } catch (ConceptException $e) { $this->assertStringContainsString('edited in place', $e->getMessage()); }
+        $this->assertStringContainsString('adapted for this client', file_get_contents("{$other}/concepts/calendar/lib/Calendar.php"), 'untouched');
+        $r = $this->local()->update('calendar', $other, true);
+        $this->assertSame('1.0.1', $r['version']);
+        $this->assertStringNotContainsString('adapted', file_get_contents("{$other}/concepts/calendar/lib/Calendar.php"), 'forced: the edit is gone');
     }
 
     public function testInstallNeverOverwrites(): void {

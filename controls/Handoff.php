@@ -75,7 +75,8 @@ class Handoff extends Control {
         $h = PlanHandoff::byToken((string) $this->getParam('token', ''));
         if (!$h) { $this->jsonError('No such hand-off.', 404); return; }
         try {
-            $res = PlanHandoff::create((int) $this->member->id, $h, (string) $this->getParam('name', ''), (string) $this->getParam('engine', 'claude'));
+            $res = PlanHandoff::create((int) $this->member->id, $h, (string) $this->getParam('name', ''), (string) $this->getParam('engine', 'claude'),
+                                       (string) $this->getParam('decompose', '1') === '1');
         } catch (\Throwable $e) {
             $this->logger->error('handoff create failed', ['token' => substr((string) $h->token, 0, 8) . '…', 'err' => $e->getMessage()]);
             $this->jsonError('The project was not created: ' . $e->getMessage(), 500); return;
@@ -88,6 +89,7 @@ class Handoff extends Control {
             $this->jsonError((string) ($res['error'] ?? 'Could not create the project.'), (int) ($res['code'] ?? 400)); return;
         }
         $this->logger->info('handoff claimed', ['token' => substr((string) $h->token, 0, 8) . '…', 'member' => (int) $this->member->id, 'slug' => $res['slug']]);
-        Flight::jsonSuccess(['slug' => $res['slug'], 'url' => $res['url']], 'Project created — PLAN.md is committed.');
+        Flight::jsonSuccess(['slug' => $res['slug'], 'url' => $res['url'], 'planner' => $res['planner']],
+            'Project created — PLAN.md is committed; Phase 1 planner ' . $res['planner'] . '.');
     }
 }

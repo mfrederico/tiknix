@@ -76,6 +76,13 @@ $h = $handoff;
           <div class="col-4 col-sm-2">
             <button class="btn btn-primary w-100" type="submit" id="handoff-build">Build it</button>
           </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input type="hidden" name="decompose" value="0">
+              <input class="form-check-input" type="checkbox" id="handoff-decompose" name="decompose" value="1" checked>
+              <label class="form-check-label" for="handoff-decompose">Plan Phase 1 now — the Builder reads PLAN.md and lays out the first tasks for you to approve (recommended)</label>
+            </div>
+          </div>
           <div class="col-12 form-text">Your first project is free. Provisioning takes about a minute; you land in the Builder with the plan in place.</div>
         </form>
         <div id="handoff-error" class="alert alert-danger mt-3 d-none"></div>
@@ -101,7 +108,15 @@ $h = $handoff;
         body.set('_csrf_token', <?= json_encode(csrf_token()) ?>);
         var r = await fetch('/handoff/create', {method: 'POST', body: body, headers: {'X-CSRF-TOKEN': <?= json_encode(csrf_token()) ?>}});
         var d = await r.json();
-        if (d.success) { window.location.href = d.data.url; return; }
+        if (d.success) {
+          // The project exists. A planner that did not start is said here, with the way in — not lost behind a redirect.
+          if (d.data.planner && d.data.planner.indexOf('NOT started') === 0) {
+            err.innerHTML = 'Project created, but the Phase 1 planner was ' + d.data.planner + ' <a class="alert-link" href="' + d.data.url + '">Open the Builder</a>';
+            err.classList.remove('d-none');
+            return;
+          }
+          window.location.href = d.data.url; return;
+        }
         err.innerHTML = (d.message || 'The project was not created.') + (d.action_url ? ' <a class="alert-link" href="' + d.action_url + '">Continue</a>' : '');
         err.classList.remove('d-none');
       } catch (x) {

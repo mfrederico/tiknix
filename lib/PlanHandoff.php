@@ -126,7 +126,25 @@ class PlanHandoff {
      *
      * @return array ok/slug/id/url, or ok=false/error/code (+action_url from a plan refusal)
      */
-    public static function create(int $memberId, \RedBeanPHP\OODBBean $h, string $name, string $engine): array {
+    /**
+     * The planner's goal for a project that has just received its PLAN.md (§8 step 6):
+     * decompose Phase 1 as the plan defines it, nothing more.
+     */
+    public const PHASE_ONE_GOAL = 'Build Phase 1 of PLAN.md — the plan at the root of this repository, written by the '
+        . 'Get-started wizard and committed as the owner\'s contract. Read it first, all of it. Phase 1 is defined in its '
+        . '"Phases" section; build exactly that phase: the data model it names (section 4), the pages and routes it names '
+        . '(section 5) and the acceptance checks for the phase (section 10), on the primitives section 6 says it is built '
+        . 'from. Nothing from a later phase, nothing the plan does not ask for. Every route gets its authcontrol row by seed '
+        . '(PermissionCache::seedRule), every public form is protected (Turnstile + honeypot, per CLAUDE.md), every task '
+        . 'ships its tests. Decompose into tasks a single agent can finish and prove in one sitting, in dependency order, '
+        . 'naming what each reuses from the codebase.';
+
+    /**
+     * @param bool $decompose start the planner on Phase 1 right after the commit (§8 step 6).
+     *                        The project exists either way; a planner that does not start is
+     *                        reported in `planner`, never hidden.
+     */
+    public static function create(int $memberId, \RedBeanPHP\OODBBean $h, string $name, string $engine, bool $decompose = true): array {
         if ((string) $h->status !== 'offered') {
             return ['ok' => false, 'code' => 409, 'error' => 'This plan has already become a project.'] + self::state($h);
         }
@@ -151,7 +169,22 @@ class PlanHandoff {
         $h->claimedAt   = date('Y-m-d H:i:s');
         Bean::store($h);
         ProjectContext::set($memberId, (int) $inst->id);
-        return ['ok' => true, 'slug' => (string) $inst->slug, 'id' => (int) $inst->id,
+
+        // §8 step 6: the plan is decomposed the moment the project exists, so the member
+        // lands on a board with Phase 1 already being planned — not on an empty board
+        // wondering what to type. The first hand-off (2026-09-26) landed on the empty board.
+        $planner = 'not requested';
+        if ($decompose) {
+            try {
+                $runner  = new PlanRunner((string) $inst->slug, $dir, $memberId, (int) ($member->level ?? LEVELS['MEMBER']), $engine);
+                $session = $runner->start(self::PHASE_ONE_GOAL);
+                $planner = 'started (' . $session . ')';
+            } catch (\Throwable $e) {
+                Flight::get('log')?->error('handoff: the Phase 1 planner did not start', ['slug' => (string) $inst->slug, 'err' => $e->getMessage()]);
+                $planner = 'NOT started: ' . $e->getMessage() . ' — start it from Advanced Builder → Plan with the goal "Build Phase 1 of PLAN.md"';
+            }
+        }
+        return ['ok' => true, 'slug' => (string) $inst->slug, 'id' => (int) $inst->id, 'planner' => $planner,
                 'url' => '/sidecar/app/workbench?to=' . rawurlencode('/workbench')];
     }
 

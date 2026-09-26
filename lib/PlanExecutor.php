@@ -393,6 +393,16 @@ class PlanExecutor {
             $log[] = 'schema seeds (clitool --build): ' . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
         }
 
+        // Every enabled plugin's own seeds, on the live database. A plan that enables a
+        // plugin does so inside a task worktree: the flag arrives through the merged lock
+        // file, the seeds ran against the worktree's copy — Serenity came up with profiles
+        // on and their permission rows and label setting missing (2026-09-26).
+        if (is_file($instanceDir . '/concepts.lock') && is_file($instanceDir . '/scripts/clitool.php')) {
+            [$code, $out] = self::runIn($instanceDir, 'php scripts/clitool.php --concept-seeds=all');
+            $tail = trim(implode(' ', array_map('trim', array_slice($out, -2))));
+            $log[] = 'plugin seeds (clitool --concept-seeds=all): ' . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
+        }
+
         // Rebuild the permission cache so any new authcontrol rows take effect at once
         // (a direct DB insert doesn't bump the APCu cache version on its own).
         $rc = $instanceDir . '/scripts/resetcache.php';

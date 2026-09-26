@@ -56,6 +56,10 @@ class Concepts {
     private bool $rootLoaded = false;
     /** @var array<string,true> concepts whose classes may load while verify() inspects them */
     private array $verifying = [];
+    /** Notices from the last verify(): true, worth saying, and no reason to refuse. */
+    private array $lastNotices = [];
+
+    public function notices(): array { return $this->lastNotices; }
 
     public function __construct(string $root, array $io) {
         foreach (['enabled', 'level', 'setFlag', 'seed', 'rows'] as $k) {
@@ -625,6 +629,7 @@ class Concepts {
         }
 
         $problems = [];
+        $this->lastNotices = [];
         $others = $this->enabled();
         unset($others[$name]);
 
@@ -648,7 +653,11 @@ class Concepts {
             }
         }
 
-        // Reported, not blocking: a storefront must be able to render its "connect Stripe" state.
+        // Reported, not blocking: a storefront must be able to render its "connect Stripe"
+        // state. A NOTICE, kept apart from the problems — enable() refuses on problems, and
+        // this used to sit among them, so `--concept-enable=storefront` on Serenity was
+        // refused with a message that ended "enabling is not blocked" (2026-09-26). Read
+        // with notices() after verify().
         foreach ($m->requiresConnectors as $type) {
             try {
                 $connected = ConnectionStore::for($type) !== null;
@@ -656,8 +665,8 @@ class Concepts {
                 $connected = true; // several connections of that type: it IS connected, the caller must name one
             }
             if (!$connected) {
-                $problems[] = "requires.connectors needs a '{$type}' connection, and this install has none. "
-                    . "Connect it under Connections → {$type}; enabling is not blocked.";
+                $this->lastNotices[] = "requires.connectors: no '{$type}' connection on this install — "
+                    . "its features that need one will say so until it is connected under Connections → {$type}.";
             }
         }
 
@@ -791,6 +800,29 @@ class Concepts {
         if ($problems) {
             throw new ConceptException("Concept '{$name}' cannot be enabled:\n  - " . implode("\n  - ", $problems));
         }
+        try {
+            $seeded = $this->runSeeds($name);
+        } catch (ConceptException $e) {
+            throw new ConceptException("Concept '{$name}' was NOT enabled — " . preg_replace("/^Concept '{$name}': /", '', $e->getMessage()), 0, $e);
+        }
+        ($this->io['setFlag'])($name, true);
+        $this->enabled = null;
+        return $seeded;
+    }
+
+    /**
+     * Run a concept's seeds (concepts/<name>/seeds) against THIS install's database — the
+     * schema-and-permissions half of enabling, on its own. Idempotent by the seeds'
+     * contract. Needed apart from enable() because a plan enables a plugin inside a task
+     * worktree: the flag merges through the lock file, but the seeds ran against the
+     * worktree's database, and the live site came up with the plugin on and its
+     * permission rows and settings missing (Serenity profiles, 2026-09-26).
+     *
+     * @return array<string,string> seed file → result
+     * @throws ConceptException when a seed fails (nothing is switched)
+     */
+    public function runSeeds(string $name): array {
+        if (!preg_match(self::NAME_RE, $name)) throw new ConceptException("'{$name}' is not a valid concept name.");
         $seeded = [];
         $seedDir = $this->conceptsDir() . "/{$name}/seeds";
         if (is_dir($seedDir)) {
@@ -806,11 +838,9 @@ class Concepts {
             if ($failed) {
                 $lines = [];
                 foreach ($failed as $file => $result) $lines[] = "{$file}: {$result}";
-                throw new ConceptException("Concept '{$name}' was NOT enabled — its seeds failed:\n  - " . implode("\n  - ", $lines));
+                throw new ConceptException("Concept '{$name}': its seeds failed:\n  - " . implode("\n  - ", $lines));
             }
         }
-        ($this->io['setFlag'])($name, true);
-        $this->enabled = null;
         return $seeded;
     }
 

@@ -57,7 +57,7 @@ $longopts = [
     // i18n
     'i18n-scan',
     // concepts (COMPONENTS_PLAN.md)
-    'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'concept-lock', 'rehash', 'force', 'agent-sync',
+    'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'concept-seeds:', 'concept-lock', 'rehash', 'force', 'agent-sync',
     'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
@@ -234,6 +234,7 @@ if (isset($opt['concept-lock'])) {
 if (isset($opt['concept-verify'])) {
     $name = (string) $opt['concept-verify'];
     $problems = \app\Concepts::instance()->verify($name);
+    foreach (\app\Concepts::instance()->notices() as $n) out("  note: {$n}");
     if (!$problems) { out("# concept '{$name}': ready to enable"); exit(0); }
     err("concept '{$name}' has " . count($problems) . ' problem(s):');
     foreach ($problems as $p) err("  - {$p}");
@@ -252,10 +253,31 @@ if (isset($opt['concept-enable'])) {
     } catch (\app\ConceptException $e) {
         bail($e->getMessage());
     }
+    foreach (\app\Concepts::instance()->notices() as $n) out("  note: {$n}");
     if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
     try { agentSync(); } catch (\RuntimeException $e) { err("warning: agent guidance not synced — " . $e->getMessage()); }
     out("# concept '{$name}' enabled");
     exit(0);
+}
+if (isset($opt['concept-seeds'])) {
+    // Run an installed concept's seeds against THIS install — or every enabled one's ('all').
+    // What a finished plan runs on the live instance, because enabling inside a task
+    // worktree seeded the worktree's database, not the live one (Concepts::runSeeds).
+    $which = (string) $opt['concept-seeds'];
+    $names = $which === 'all' ? \app\ConceptLock::enabledNames(dirname(__DIR__)) : [$which];
+    if ($DRYRUN) { out('# dry-run: would run seeds for ' . ($names ? implode(', ', $names) : 'nothing (no enabled concept)')); exit(0); }
+    $failed = false;
+    foreach ($names as $name) {
+        try {
+            $r = \app\Concepts::instance()->runSeeds($name);
+            out("# {$name}: " . ($r ? count($r) . ' seed(s) ok' : 'no seeds'));
+        } catch (\app\ConceptException $e) {
+            err("# {$name}: FAILED — " . $e->getMessage());
+            $failed = true;
+        }
+    }
+    if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
+    exit($failed ? 1 : 0);
 }
 if (isset($opt['concept-disable'])) {
     $name = (string) $opt['concept-disable'];
@@ -638,6 +660,10 @@ CONCEPTS (pluggable features — see COMPONENTS_PLAN.md)
   --concepts                     List installed concepts: enabled / disabled / BROKEN
   --concept-verify=NAME          Everything that would stop NAME being enabled
   --concept-enable=NAME          Verify, run concepts/NAME/seeds (thawed), then switch on
+  --concept-seeds=NAME|all       Run an installed concept's seeds against THIS database (all =
+                                 every enabled one) — what a finished plan runs on the live
+                                 instance, since enabling inside a task worktree seeded the
+                                 worktree's copy
   --concept-disable=NAME [--force]
   --agent-sync                   Regenerate CLAUDE.md's managed block (core agent/guidelines/ +
                                  enabled concepts' guidelines.md); enable/disable run it too

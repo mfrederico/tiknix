@@ -45,15 +45,21 @@ class PlanExecutorApplySeedsTest extends ConceptsTestCase {
 
     public function testSchemaSeedsRunThroughTheProjectsBuilderThenTheCacheResets(): void {
         mkdir($this->inst . '/services/Schema/Seeds', 0700, true);
-        $this->stub('scripts/clitool.php', 'echo "  20_X.php: ok\n  21_Y.php: ok\n"; file_put_contents(__DIR__ . "/../built.txt", implode(" ", $argv));');
+        $this->stub('scripts/clitool.php', 'echo "  20_X.php: ok\n  21_Y.php: ok\n"; file_put_contents(__DIR__ . "/../built.txt", implode(" ", $argv) . "\n", FILE_APPEND);');
         $this->stub('scripts/resetcache.php', 'echo "cache reset\n";');
         $log = PlanExecutor::applySeeds($this->inst, $this->ledger);
         $this->assertSame([
             'no database/seeds/ — nothing to apply',
             'schema seeds (clitool --build): ok — 20_X.php: ok 21_Y.php: ok',
             'resetcache: ok',
-        ], $log);
+        ], $log, 'no concepts.lock: no plugin seeds step');
         $this->assertStringContainsString('--build', (string) file_get_contents($this->inst . '/built.txt'), 'ran with the build flag, in the instance');
+
+        // With a lock file, every enabled plugin's seeds run on the live database too.
+        file_put_contents($this->inst . '/concepts.lock', "{}\n");
+        $log = PlanExecutor::applySeeds($this->inst, $this->ledger);
+        $this->assertSame('plugin seeds (clitool --concept-seeds=all): ok — 20_X.php: ok 21_Y.php: ok', $log[2]);
+        $this->assertStringContainsString('--concept-seeds=all', (string) file_get_contents($this->inst . '/built.txt'));
     }
 
     public function testLegacySeedsApplyOnceAndAFailureIsSaid(): void {

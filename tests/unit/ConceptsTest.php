@@ -377,4 +377,30 @@ class ConceptsTest extends ConceptsTestCase {
         $this->assertStringContainsString("requires.extensions needs 'tiknix_no_such_ext|tiknix_nor_this'", $problems);
         $this->assertStringNotContainsString("'json'", $problems, 'a loaded extension is not a problem');
     }
+
+    public function testAMissingConnectorIsANoticeNotARefusal(): void {
+        // No 'stripe' connection is stored in a test install: the concept still enables,
+        // and verify() says so as a notice (the storefront renders its "connect Stripe" state).
+        $n = $this->uniq('cn');
+        $this->concept($n, ['requires' => ['connectors' => ['stripe']]], ['seeds/01_schema.php' => '<?php']);
+        $this->seedResult = ['01_schema.php' => 'ok'];
+        $c = $this->concepts();
+        $this->assertSame([], $c->verify($n), 'no problems');
+        $this->assertCount(1, $c->notices());
+        $this->assertStringContainsString("no 'stripe' connection", $c->notices()[0]);
+        $c->enable($n);
+        $this->assertSame([$n], $this->on, 'enabled despite the notice');
+    }
+
+    public function testRunSeedsAloneSeedsWithoutSwitching(): void {
+        $n = $this->uniq('rs');
+        $this->concept($n, [], ['seeds/01_schema.php' => '<?php']);
+        $this->seedResult = ['01_schema.php' => 'ok'];
+        $this->assertSame(['01_schema.php' => 'ok'], $this->concepts()->runSeeds($n));
+        $this->assertSame(["{$this->root}/concepts/{$n}/seeds"], $this->seedCalls);
+        $this->assertSame([], $this->on, 'the flag is untouched — seeding is not enabling');
+        $this->seedResult = ['01_schema.php' => 'error: boom'];
+        $this->expectExceptionMessage('boom');
+        $this->concepts()->runSeeds($n);
+    }
 }

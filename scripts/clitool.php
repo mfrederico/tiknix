@@ -59,6 +59,7 @@ $longopts = [
     // concepts (COMPONENTS_PLAN.md)
     'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'concept-seeds:', 'concept-lock', 'rehash', 'force', 'agent-sync',
     'connectors', 'bind:', 'unbind:', 'site:', 'sites', 'alias:', 'as:',
+    'connector-lint:', 'connector-publish:', 'connector-install:', 'connector-update:',
     'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'concept-update:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
@@ -269,9 +270,26 @@ if (isset($opt['sites'])) {
     exit(0);
 }
 if (isset($opt['connectors'])) {
-    // This install's connections (alias, type, environment) and what is bound to each.
-    $rows = \app\ConnectionStore::candidates(array_map(fn($c) => $c->key(), \app\services\connectors\ConnectorRegistry::all()));
+    // The connector DEFINITIONS this install has (a class, a manifest of its own, or one from
+    // the catalog with its version), then its connections (alias, type, environment) and what
+    // is bound to each.
+    $root = dirname(__DIR__);
+    $all = \app\services\connectors\ConnectorRegistry::all();
+    $counts = [];
+    foreach (\app\ConnectionStore::candidates(array_map(fn($c) => $c->key(), $all)) as $r) $counts[$r['type']] = ($counts[$r['type']] ?? 0) + 1;
+    out(sprintf('%-16s %-22s %-8s %-12s %s', 'CONNECTOR', 'KIND', 'VERSION', 'CONNECTIONS', 'ROLES'));
+    foreach ($all as $c) {
+        $k = $c->key();
+        $kind = \app\services\connectors\ConnectorRegistry::kind($k);
+        $row = $kind === 'manifest' ? \app\ConceptLock::connectorEntry($root, $k) : null;
+        $kindLabel = $kind === 'code' ? 'code (core)' : ($row === null ? 'manifest (own)' : 'manifest (catalog' . (\app\ConceptLock::connectorModified($root, $k) ? ', EDITED' : '') . ')');
+        $meta = $c->meta();
+        out(sprintf('%-16s %-22s %-8s %-12s %s', $k, $kindLabel, (string) ($meta['version'] ?? '') ?: '-', (string) ($counts[$k] ?? 0), implode(',', (array) ($meta['roles'] ?? [])) ?: '-'));
+    }
+    foreach (\app\services\connectors\ConnectorRegistry::errors() as $e) err("  ! {$e}");
+    $rows = \app\ConnectionStore::candidates(array_map(fn($c) => $c->key(), $all));
     if (!$rows) { out('# no connections on this install'); exit(0); }
+    out('');
     out(sprintf('%-4s %-12s %-28s %-12s %s', 'ID', 'TYPE', 'ALIAS', 'ENV', 'BOUND BY'));
     foreach ($rows as $r) {
         $used = array_map(fn($b) => $b['concept'] . '.' . $b['role'] . ($b['site_ref'] ? '@site' . $b['site_ref'] : '') . ($b['scope'] === 'entity' ? "[{$b['entity_type']}#{$b['entity_ref']}]" : ''), \app\ConnectionBindings::usedBy($r['id']));
@@ -456,7 +474,53 @@ if (isset($opt['concept-install'])) {
         bail($e->getMessage());
     }
     out("# installed '{$r['name']}' v{$r['version']} → {$r['dir']} ({$r['files']} files)");
+    foreach ($r['connectors'] ?? [] as $c) out("# connector '{$c['key']}' v{$c['version']} → {$c['file']} (its roles needed it)");
     out("# it is NOT enabled. Next: --concept-verify={$name}, then --concept-enable={$name}");
+    exit(0);
+}
+// --- Connector catalog: --connector-lint | --connector-publish | --connector-install | --connector-update
+if (isset($opt['connector-lint'])) {
+    $file = (string) $opt['connector-lint'];
+    if (!is_file($file)) bail("'{$file}' is not a file.");
+    $m = json_decode((string) file_get_contents($file), true);
+    if (!is_array($m)) bail("{$file} is not valid JSON: " . json_last_error_msg());
+    $errors = \app\services\connectors\ConnectorRegistry::lint($m, $file);
+    foreach ($errors as $e) err("  ERROR {$e}");
+    out('# ' . basename($file) . ': ' . ($errors ? count($errors) . ' error(s) — not publishable' : 'clean (publishable)'));
+    exit($errors ? 1 : 0);
+}
+if (isset($opt['connector-publish'])) {
+    $file = (string) $opt['connector-publish'];
+    if ($DRYRUN) { out("# dry-run: would lint and publish {$file} into the catalog's connectors/"); exit(0); }
+    try {
+        $r = \app\ConceptCatalog::forInstall()->publishConnector($file);
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    out("# connector '{$r['key']}' v{$r['version']}: {$r['status']}");
+    exit(0);
+}
+if (isset($opt['connector-install'])) {
+    $key = (string) $opt['connector-install'];
+    if ($DRYRUN) { out("# dry-run: would write connectors/{$key}.json from the catalog and record it in concepts.lock"); exit(0); }
+    try {
+        $r = \app\ConceptCatalog::forInstall()->installConnector($key, dirname(__DIR__));
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    out("# connector '{$r['key']}' v{$r['version']} → {$r['file']}");
+    out("# it appears on the Connections page now; connect an account there, then bind it where a plugin asks for it");
+    exit(0);
+}
+if (isset($opt['connector-update'])) {
+    $key = (string) $opt['connector-update'];
+    if ($DRYRUN) { out("# dry-run: would replace connectors/{$key}.json with the catalog's version" . (isset($opt['force']) ? ' (forced over local edits)' : '')); exit(0); }
+    try {
+        $r = \app\ConceptCatalog::forInstall()->updateConnector($key, dirname(__DIR__), isset($opt['force']));
+    } catch (\app\ConceptException $e) {
+        bail($e->getMessage());
+    }
+    out("# updated connector '{$r['key']}' {$r['from']} → {$r['version']} ({$r['file']})");
     exit(0);
 }
 if (isset($opt['concept-update'])) {
@@ -758,6 +822,15 @@ CONCEPTS (pluggable features — see COMPONENTS_PLAN.md)
                                  Replace concepts/NAME/ with the catalog's newer version;
                                  enabled stays enabled and its seeds run again. Refuses a
                                  copy edited in place unless --force (the edit is lost)
+  --connectors                   Connector definitions here (class / own manifest / catalog
+                                 manifest + version) and this install's connections + bindings
+  --connector-lint=FILE          Is a connector manifest fit to publish? Key = file name,
+                                 semver version, valid auth, no credential, no server path
+  --connector-publish=FILE       Put a manifest into the catalog's connectors/ (control plane)
+  --connector-install=KEY        Write connectors/KEY.json from the catalog, recorded in
+                                 concepts.lock. Refused over a class or a manifest you authored
+  --connector-update=KEY [--force]
+                                 Move an installed manifest to the catalog's newer version
   --concept-lint=NAME [--from=ROOT] [--origin=INSTALL_ROOT] [--forbid=a,b]
                                  Is it fit to publish? Origin leakage, secrets, absolute
                                  paths, R::, undeclared core classes and beans.

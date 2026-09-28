@@ -69,6 +69,7 @@ class NotifyService {
     private string  $domain        = '';
     private string  $inboundDomain = '';
     private string  $endpoint      = '';
+    private string  $notConnected  = '';   // why there is no mail connection, when there is none
     private bool    $demoMode      = false;
     private ?string $baseUrl       = null;
     private ?Mailgun $client       = null;
@@ -95,32 +96,26 @@ class NotifyService {
      */
     private function loadConfig(): void {
         if (self::$configCache === null) {
-            $ini = [];
-            $file = dirname(__DIR__) . '/conf/mailgun.ini';
-            if (file_exists($file)) {
-                $ini = parse_ini_file($file) ?: [];
+            // The bound `mail` connection (Mailer::settings() — one resolver for every sender
+            // here). No connection is a state, remembered by its reason so a message that
+            // could not go out says why.
+            $reason = '';
+            try {
+                $s = \app\Mailer::settings();
+            } catch (\Throwable $e) {
+                $s = null;
+                $reason = $e->getMessage();
             }
-
-            // First non-empty value (ini values may be present-but-blank).
-            $pick = static function (array $vals): string {
-                foreach ($vals as $v) {
-                    $v = trim((string)$v, " \t\n\r\0\x0B\"");
-                    if ($v !== '') return $v;
-                }
-                return '';
-            };
-
-            $domain = $pick([$ini['domain'] ?? '']);
             self::$configCache = [
-                'apiKey'        => $pick([$ini['key'] ?? '', $ini['apiKey'] ?? '']),
-                'domain'        => $domain,
-                'inboundDomain' => $pick([$ini['inboundDomain'] ?? '', $ini['inbound_domain'] ?? '', $domain]),
-                'fromEmail'     => $pick([$ini['fromEmail'] ?? '', $domain !== '' ? 'noreply@' . $domain : '']),
-                'fromName'      => $pick([$ini['fromName'] ?? '', (string)(Flight::get('app.name') ?: ''), 'Tiknix']),
-                // Region endpoint — US (default) or https://api.eu.mailgun.net for EU domains.
-                'endpoint'      => $pick([$ini['endpoint'] ?? '', $ini['apiUrl'] ?? '']),
-                // Offline switch: config.ini [app].demo_mode, or demoMode in mailgun.ini.
-                'demoMode'      => self::truthy(Flight::get('app.demo_mode') ?? ($ini['demoMode'] ?? false)),
+                'apiKey'        => $s['key'] ?? '',
+                'domain'        => $s['domain'] ?? '',
+                'inboundDomain' => $s['inbound_domain'] ?? '',
+                'fromEmail'     => $s['from_email'] ?? '',
+                'fromName'      => $s['from_name'] ?? ((string) (Flight::get('app.name') ?: 'Tiknix')),
+                'endpoint'      => $s['endpoint'] ?? '',
+                // Offline switch: config.ini [app].demo_mode.
+                'demoMode'      => self::truthy(Flight::get('app.demo_mode') ?? false),
+                'reason'        => $reason,
             ];
         }
 
@@ -133,6 +128,7 @@ class NotifyService {
         $this->appName       = Flight::get('app.name') ?: ($this->fromName ?: 'Tiknix');
         $this->endpoint      = $c['endpoint'];
         $this->demoMode      = $c['demoMode'];
+        $this->notConnected  = (string) ($c['reason'] ?? '');   // a test may seed the cache without it
         $this->baseUrl       = Flight::get('app.baseurl') ?: (Flight::get('baseurl') ?: null);
 
         if ($this->apiKey !== '') {
@@ -473,8 +469,8 @@ class NotifyService {
         $msg->toName  = $this->toName;
         if ($this->demoMode || !$this->client || $this->domain === '' || $this->inboundDomain === '') {
             $why = $this->demoMode ? 'demo mode is on ([app] demo_mode)'
-                 : ($this->inboundDomain === '' && $this->client && $this->domain !== '' ? 'conf/mailgun.ini has no inboundDomain, so a reply could not come back'
-                 : 'mail is not configured (conf/mailgun.ini key + domain)');
+                 : ($this->inboundDomain === '' && $this->client && $this->domain !== '' ? 'the Mailgun connection has no inbound domain, so a reply could not come back'
+                 : 'mail is not connected: ' . ($this->notConnected ?: 'no usable Mailgun connection'));
             $msg->emailStatus = 'off';
             $msg->emailError  = $why;
             Bean::store($msg);

@@ -448,6 +448,42 @@ piece; everything after is surface.
   has to read config for a franchise to look different. Instance tests that exercise a scoped
   model must create a site first (`Sites::create('main', …)` in the test case); the storefront
   test base does.
+- **P2 — connector catalog, first cut (2026-09-28): Mailgun and Klaviyo.** `tiknix-concepts/
+  connectors/<key>.json` (catalog 4decf25), served by `/concepthub/connectors` and
+  `/concepthub/connector?key=`; `ConceptCatalog::publishConnector / installConnector /
+  updateConnector / resolveConnectors`; `ConnectorRegistry::lint()` (key = file name, semver,
+  valid auth, no credential literal, no server path; publishing refuses on any error);
+  `concepts.lock` gains a `connectors` section (version, source, file hash; absent until the
+  first catalog install so existing locks stay byte-identical); `--connectors` now lists the
+  DEFINITIONS (class / own manifest / catalog manifest + version, EDITED) above the
+  connections; `--connector-lint/-publish/-install/-update`. **Dependency resolution**:
+  `--concept-install` (and the build-based install plan) resolve every role type first — a
+  class or a manifest in THAT project is satisfied, one the catalog holds is installed
+  alongside and reported, one nowhere refuses the concept before a byte lands. Manifests
+  learned three things Mailgun and Klaviyo needed: `auth.username` (basic with a fixed user,
+  Mailgun's `api`), `auth.prefix` (`Authorization: Klaviyo-API-Key <key>`), fixed `headers`
+  on every call (Klaviyo's `revision`), plus `fields` kept on the connection
+  (`metadata.fields`, Mailgun's sending domain; `account_field` names which one is the
+  account) and catalog fields `version`, `roles`, `docs_url`, `suggests`, `multiple` exposed
+  by `meta()`. Core SHIPS both manifests in `connectors/` (the hub on core is where an
+  instance's owner connects them) and publishes them from there; a self-hosted install takes
+  them from the catalog. **Decision 9 done — core's mail is a binding**: `Mailer::settings()`
+  resolves `ConnectionBindings::for('core', 'mail')` (`ConnectionBindings::CORE_ROLES`; an app's
+  own roles ride on its root concept.json as 'root') and is the one answer `lib/Mailer`,
+  `NotifyService` and `/webhook/mailgun` read; key, domain, region endpoint, from-address,
+  inbound domain and the webhook signing key (the connection's webhook secret) all live on
+  the connection; a site's `[mail] from_email` overlay wins over the connection's field;
+  config.ini's `[mail]` block is never read. Seed `23_MailConnection` migrated
+  `conf/mailgun.ini` into a connection once (core: #5 notify.tiknix.com; Mailgun accepted the
+  migrated key on a read-only `/v3/domains` probe) and keeps whatever exists afterwards.
+  Tests: `ConnectorCatalogTest` (lint, publish/install/update/lock, roles pulling manifests
+  in or refusing), `MailSettingsTest` (none → fix named; one binds itself; site from wins;
+  broken names the connection; the seed migrates once then keeps). Not yet in P2: serpapi
+  published + `prospects` proving it on a fresh project; the hub's "this connection can
+  power: …" offer (`suggests` is in `meta()`, the card does not show it yet — P3 with the
+  bindings UI); `outreach` declaring `mail: [microsoft, mailgun, klaviyo]` with an adapter
+  each (that is outreach's code, on the harvest fork); `type: "mcp"` connectors; the
+  `adapters` map / `ChannelAdapter` lint.
 
 ## 11. Decisions to confirm
 

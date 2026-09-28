@@ -1,0 +1,58 @@
+{
+    "key": "mailgun",
+    "version": "1.0.0",
+    "label": "Mailgun",
+    "blurb": "Transactional email over Mailgun's API: password resets, receipts, invitations, and the threaded comms inbox. One connection per sending domain.",
+    "category": "Messaging",
+    "icon": "envelope",
+    "color": "danger",
+    "features": ["Transactional email", "Inbound routes (replies land in a thread)", "Delivery events"],
+    "roles": ["mail"],
+    "multiple": true,
+    "base_url": "https://api.mailgun.net",
+    "ask_base_url": true,
+    "test_path": "/v3/domains",
+    "docs_url": "https://documentation.mailgun.com/docs/mailgun/api-reference/",
+    "account_url": "https://app.mailgun.com/settings/api_security",
+    "account_field": "domain",
+    "auth": {
+        "style": "basic",
+        "username": "api",
+        "key_label": "Private API key",
+        "key_placeholder": "your Mailgun private API key",
+        "key_hint": "Mailgun → Settings → API Security → Mailgun API keys. Sent as HTTP Basic auth with the username api."
+    },
+    "fields": [
+        {
+            "name": "domain",
+            "label": "Sending domain",
+            "type": "text",
+            "required": true,
+            "placeholder": "mail.example.com",
+            "help": "The verified domain mail goes out from (Mailgun → Sending → Domains)."
+        },
+        {
+            "name": "from_email",
+            "label": "From address",
+            "type": "text",
+            "required": false,
+            "placeholder": "noreply@mail.example.com",
+            "help": "Leave blank for noreply@<sending domain>. A site's own conf/sites/<slug>.ini [mail] from_email overrides it per site."
+        },
+        {
+            "name": "inbound_domain",
+            "label": "Inbound domain",
+            "type": "text",
+            "required": false,
+            "placeholder": "mail.example.com",
+            "help": "Where reply-<token>@ addresses are routed for the comms inbox (Mailgun → Receiving). Blank = the sending domain."
+        }
+    ],
+    "endpoints": [
+        { "method": "POST", "path": "/v3/{domain}/messages", "label": "Send a message", "description": "from, to, subject, text/html, h:Reply-To; multipart form.", "params": ["domain"] },
+        { "method": "GET",  "path": "/v3/domains", "label": "Domains", "description": "The account's sending domains — the connect probe." },
+        { "method": "GET",  "path": "/v3/{domain}/events", "label": "Events", "description": "Delivery, failure and bounce events for a domain.", "params": ["domain", "event", "begin", "limit"] },
+        { "method": "GET",  "path": "/v3/routes", "label": "Inbound routes", "description": "The receiving routes that forward mail to /webhook/mailgun." }
+    ],
+    "suggests": { "concepts": ["outreach"] }
+}

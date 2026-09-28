@@ -33,16 +33,62 @@ class ConceptLock {
     public const FILE = 'concepts.lock';
     public const VERSION = 1;
 
-    /** @return array{version:int,concepts:array<string,array<string,mixed>>} */
+    /**
+     * `connectors` is the second section (CONNECTOR-CATALOG-PLAN.md §5): the connector
+     * manifests this install took from the catalog — connectors/<key>.json — with version,
+     * source and the file's hash. A manifest with no row is the install's own (core ships
+     * some; an app may author its own), which the catalog never touches.
+     *
+     * @return array{version:int,concepts:array<string,array<string,mixed>>,connectors:array<string,array<string,mixed>>}
+     */
     public static function read(string $root): array {
         $file = self::path($root);
-        if (!is_file($file)) return ['version' => self::VERSION, 'concepts' => []];
+        if (!is_file($file)) return ['version' => self::VERSION, 'concepts' => [], 'connectors' => []];
         $data = json_decode((string) file_get_contents($file), true);
         if (!is_array($data) || !isset($data['concepts']) || !is_array($data['concepts'])) {
             throw new ConceptException("{$file} is not a valid lock file (expected {\"version\", \"concepts\"}). Fix it or rebuild it with: php scripts/clitool.php --concept-lock");
         }
+        $connectors = $data['connectors'] ?? [];
+        if (!is_array($connectors)) {
+            throw new ConceptException("{$file}: \"connectors\" must be an object. Fix it or rebuild it with: php scripts/clitool.php --concept-lock");
+        }
         ksort($data['concepts']);
-        return ['version' => (int) ($data['version'] ?? self::VERSION), 'concepts' => $data['concepts']];
+        ksort($connectors);
+        return ['version' => (int) ($data['version'] ?? self::VERSION), 'concepts' => $data['concepts'], 'connectors' => $connectors];
+    }
+
+    /* ---- connectors (manifests installed from the catalog) ---- */
+
+    /** The lock's row for one installed connector manifest, or null when the install authored it (or has it not at all). */
+    public static function connectorEntry(string $root, string $key): ?array {
+        return self::read($root)['connectors'][$key] ?? null;
+    }
+
+    /** Record a manifest the catalog just wrote to <root>/connectors/<key>.json. */
+    public static function recordConnector(string $root, string $key, string $version, string $source): void {
+        $root = rtrim($root, '/');
+        $data = self::read($root);
+        $data['connectors'][$key] = [
+            'version'      => $version,
+            'source'       => $source,
+            'installed_at' => date('c'),
+            'hash'         => self::fileHash("{$root}/connectors/{$key}.json"),
+        ];
+        self::write($root, $data);
+    }
+
+    /** Whether the installed manifest differs from what the lock recorded — edited in place. */
+    public static function connectorModified(string $root, string $key): bool {
+        $root = rtrim($root, '/');
+        $row = self::connectorEntry($root, $key);
+        if ($row === null || empty($row['hash'])) return false;
+        $file = "{$root}/connectors/{$key}.json";
+        return !is_file($file) || $row['hash'] !== self::fileHash($file);
+    }
+
+    public static function fileHash(string $file): string {
+        if (!is_file($file)) throw new ConceptException("ConceptLock: {$file} is not a file.");
+        return 'sha256:' . hash_file('sha256', $file);
     }
 
     public static function exists(string $root): bool {
@@ -124,7 +170,7 @@ class ConceptLock {
      */
     public static function sync(string $root, array $enabledElsewhere = [], bool $rehash = false): array {
         $root = rtrim($root, '/');
-        $data = self::exists($root) ? self::read($root) : ['version' => self::VERSION, 'concepts' => []];
+        $data = self::exists($root) ? self::read($root) : ['version' => self::VERSION, 'concepts' => [], 'connectors' => []];
         $dirs = self::installedDirs($root);
         $added = $removed = $kept = [];
         foreach ($dirs as $name) {
@@ -145,6 +191,13 @@ class ConceptLock {
         }
         foreach (array_keys($data['concepts']) as $name) {
             if (!in_array($name, $dirs, true)) { unset($data['concepts'][$name]); $removed[] = $name; }
+        }
+        // Connector rows: a manifest whose file is gone was uninstalled by hand — drop the
+        // row. Files with no row are the install's own and get none (the catalog did not
+        // put them there, so it has nothing to update).
+        foreach (array_keys($data['connectors']) as $key) {
+            if (!is_file("{$root}/connectors/{$key}.json")) { unset($data['connectors'][$key]); $removed[] = "connector {$key}"; }
+            elseif ($rehash) $data['connectors'][$key]['hash'] = self::fileHash("{$root}/connectors/{$key}.json");
         }
         self::write($root, $data);
         return ['added' => $added, 'removed' => $removed, 'kept' => $kept, 'file' => self::path($root)];
@@ -206,8 +259,12 @@ class ConceptLock {
 
     private static function write(string $root, array $data): void {
         ksort($data['concepts']);
+        $connectors = $data['connectors'] ?? [];
+        ksort($connectors);
         $file = self::path($root);
-        $json = json_encode(['version' => self::VERSION, 'concepts' => $data['concepts']], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+        $out = ['version' => self::VERSION, 'concepts' => $data['concepts']];
+        if ($connectors) $out['connectors'] = $connectors;   // absent until the catalog installs one: existing locks stay byte-identical
+        $json = json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
         $tmp = $file . '.' . bin2hex(random_bytes(4)) . '.tmp';
         if (file_put_contents($tmp, $json) !== strlen($json) || !rename($tmp, $file)) {
             @unlink($tmp);

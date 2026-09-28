@@ -39,9 +39,29 @@ class ConnectionBindings {
 
     public static function useManifests(?callable $lookup): void { self::$manifests = $lookup; }
 
+    /**
+     * Core's own roles — core is code, not a concept, so its needs are declared here, in the
+     * same shape a manifest's requires.connectors parses to. `mail` is what lib/Mailer, the
+     * comms inbox (NotifyService) and /webhook/mailgun send through (CONNECTOR-CATALOG-PLAN.md
+     * decision 9). An app's own roles go in its root concept.json and resolve as 'root'.
+     */
+    public const CORE = 'core';
+    public const CORE_ROLES = [
+        ['role' => 'mail', 'types' => ['mailgun'], 'label' => 'Sends email', 'scope' => 'install', 'entity' => '', 'optional' => true, 'inherit' => true],
+    ];
+
     public static function role(string $concept, string $role): array {
-        $m = self::$manifests ? (self::$manifests)($concept) : Concepts::instance()->manifest($concept);
-        foreach ($m->connectorRoles as $r) if ($r['role'] === $role) return $r;
+        if ($concept === self::CORE) {
+            $roles = self::CORE_ROLES;
+        } elseif ($concept === ConceptManifest::ROOT) {
+            $rm = Concepts::instance()->rootManifest();
+            if ($rm === null) throw new \InvalidArgumentException("This install has no root concept.json, so it declares no connector role '{$role}'.");
+            $roles = $rm->connectorRoles;
+        } else {
+            $m = self::$manifests ? (self::$manifests)($concept) : Concepts::instance()->manifest($concept);
+            $roles = $m->connectorRoles;
+        }
+        foreach ($roles as $r) if ($r['role'] === $role) return $r;
         throw new \InvalidArgumentException("Concept '{$concept}' declares no connector role '{$role}' (requires.connectors).");
     }
 

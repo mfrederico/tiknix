@@ -119,6 +119,22 @@ class ManifestConnector extends RestConnector {
             // Marks the card as declarative in the UI and in reuse_digest, so it is
             // obvious which connectors can be edited as data.
             'manifest'        => true,
+        ] + $this->catalogMeta();
+    }
+
+    /**
+     * What the connector catalog adds to a manifest (CONNECTOR-CATALOG-PLAN.md §3.2): its
+     * version, the docs, which roles it can fill, what it suggests installing, whether an
+     * install may hold several. Same on the OAuth and the api-key card.
+     */
+    private function catalogMeta(): array {
+        $suggests = is_array($this->m['suggests'] ?? null) ? $this->m['suggests'] : [];
+        return [
+            'version'   => (string) ($this->m['version'] ?? ''),
+            'docs_url'  => (string) ($this->m['docs_url'] ?? ''),
+            'roles'     => array_values(array_map('strval', (array) ($this->m['roles'] ?? []))),
+            'suggests'  => ['concepts' => array_values(array_map('strval', (array) ($suggests['concepts'] ?? [])))],
+            'multiple'  => array_key_exists('multiple', $this->m) ? (bool) $this->m['multiple'] : true,
         ];
     }
 
@@ -133,14 +149,35 @@ class ManifestConnector extends RestConnector {
         $auth = $this->m['auth'] ?? [];
 
         $fixed = [
-            'auth'      => (string) ($auth['style'] ?? 'bearer'),
-            'auth_name' => (string) ($auth['name'] ?? ''),
-            'test_path' => (string) ($this->m['test_path'] ?? ''),
+            'auth'        => (string) ($auth['style'] ?? 'bearer'),
+            'auth_name'   => (string) ($auth['name'] ?? ''),
+            // basic auth with a provider-fixed username (Mailgun: "api") — the user never types it
+            'username'    => (string) ($auth['username'] ?? ''),
+            // text before the key in a header value (Klaviyo: "Klaviyo-API-Key ")
+            'auth_prefix' => (string) ($auth['prefix'] ?? ''),
+            'test_path'   => (string) ($this->m['test_path'] ?? ''),
         ];
         if (!empty($this->m['spec_url'])) $fixed['spec_url'] = (string) $this->m['spec_url'];
         if (empty($this->m['ask_base_url'])) $fixed['base_url'] = (string) ($this->m['base_url'] ?? '');
+        // headers the provider wants on every call (Klaviyo's revision) — fixed by the manifest
+        if (is_array($this->m['headers'] ?? null) && $this->m['headers']) $fixed['headers'] = $this->m['headers'];
 
-        $merged = array_merge($opts, array_filter($fixed, static fn($v) => $v !== ''));
+        $merged = array_merge($opts, array_filter($fixed, static fn($v) => $v !== '' && $v !== []));
+
+        // The manifest's own fields (Mailgun's sending domain): required ones must be there,
+        // and every one is kept on the connection, because that is the only place the code
+        // that uses the connection can read them from.
+        $declared = [];
+        foreach ((array) ($this->m['fields'] ?? []) as $f) {
+            $fname = (string) ($f['name'] ?? '');
+            if ($fname === '') continue;
+            $val = trim((string) ($opts[$fname] ?? $f['default'] ?? ''));
+            if ($val === '' && !empty($f['required'])) {
+                throw new \Exception(($this->m['label'] ?? $this->key()) . ' needs ' . lcfirst((string) ($f['label'] ?? $fname)) . '.'
+                    . (!empty($f['help']) ? ' ' . (string) $f['help'] : ''));
+            }
+            $declared[$fname] = $val;
+        }
 
         // RestConnector's "choose None for a public API" is good advice on the
         // generic card and nonsense here: a manifest FIXES the auth style, so there
@@ -157,7 +194,16 @@ class ManifestConnector extends RestConnector {
             $merged['label'] = (string) ($this->m['label'] ?? $this->key());
         }
 
-        return parent::validateApiKey($key, $merged);
+        $payload = parent::validateApiKey($key, $merged);
+        if ($declared) $payload['metadata']['fields'] = $declared;
+        // The account a connection stands for, when a field says so (Mailgun: the sending
+        // domain) — what pickers and the alias show instead of the API host.
+        $accountField = (string) ($this->m['account_field'] ?? '');
+        if ($accountField !== '' && ($declared[$accountField] ?? '') !== '') {
+            $payload['external_eid']  = $declared[$accountField];
+            $payload['external_name'] = $declared[$accountField];
+        }
+        return $payload;
     }
 
     // ---------------------------------------------------------------- OAuth
@@ -172,7 +218,7 @@ class ManifestConnector extends RestConnector {
             'color'     => (string) ($this->m['color'] ?? 'secondary'),
             'features'  => (array)  ($this->m['features'] ?? []),
             'manifest'  => true,
-        ];
+        ] + $this->catalogMeta();
     }
 
     /** Manifest providers (GitHub, Google, HubSpot) space-delimit; overridable per manifest. */

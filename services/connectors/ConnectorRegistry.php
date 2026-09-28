@@ -114,8 +114,60 @@ class ConnectorRegistry {
         return $out;
     }
 
+    /** The manifest's key as the catalog and the lock spell it, or '' when the file has none. */
+    public const KEY_RE = '/^[a-z][a-z0-9_]*$/D';
+
+    /**
+     * What a manifest must look like to be PUBLISHED (CONNECTOR-CATALOG-PLAN.md §3.2, §5):
+     * everything validate() checks, plus a version, a key that matches the file name, no
+     * credential literal, no server path. Errors, in words; empty when it may go out.
+     *
+     * @return string[]
+     */
+    public static function lint(array $m, string $filename): array {
+        $errors = [];
+        $name = basename($filename, '.json');
+        $key = strtolower(trim((string) ($m['key'] ?? '')));
+        if ($key === '') $errors[] = '"key" is required — it is the connector type every connection and binding names.';
+        elseif (!preg_match(self::KEY_RE, $key)) $errors[] = "key '{$key}' is unusable (lowercase letters, digits and underscore).";
+        elseif ($key !== $name) $errors[] = "key '{$key}' does not match the file name {$name}.json.";
+        $version = (string) ($m['version'] ?? '');
+        if (!preg_match('/^\d+\.\d+\.\d+$/D', $version)) $errors[] = '"version" must be MAJOR.MINOR.PATCH — the catalog refuses to change a published version.';
+        if (($why = self::validate($m)) !== '') $errors[] = $why;
+        foreach (['docs_url', 'account_url'] as $u) {
+            if (($m[$u] ?? '') !== '' && !preg_match('#^https://#i', (string) $m[$u])) $errors[] = "{$u} must be an https URL.";
+        }
+        foreach ((array) ($m['roles'] ?? []) as $r) {
+            if (!is_string($r) || !preg_match('/^[a-z][a-z0-9_]*$/D', $r)) $errors[] = 'roles must be lowercase identifiers (mail, payments, search).';
+        }
+        foreach ((array) ($m['fields'] ?? []) as $i => $f) {
+            if (!is_array($f) || !preg_match('/^[a-z][a-z0-9_]*$/D', (string) ($f['name'] ?? ''))) { $errors[] = "fields[{$i}] needs a lowercase \"name\"."; continue; }
+            if (in_array($f['name'], ['key', 'type', 'env', 'id', 'base_url', 'auth', 'auth_name', 'username'], true)) $errors[] = "fields[{$i}].name '{$f['name']}' collides with a connect-form field.";
+        }
+        foreach ((array) ($m['endpoints'] ?? []) as $i => $e) {
+            if (!is_array($e) || !isset($e['method'], $e['path']) || !str_starts_with((string) $e['path'], '/')) $errors[] = "endpoints[{$i}] needs a method and a path starting with /.";
+        }
+        // A manifest is a DEFINITION. A credential in it would be published to every install.
+        $walk = function ($v, string $path) use (&$walk, &$errors) {
+            if (!is_array($v)) return;
+            foreach ($v as $k => $child) {
+                $p = $path === '' ? (string) $k : "{$path}.{$k}";
+                if (is_string($child)) {
+                    if (preg_match('/^(client_secret|client_id|api_key|access_token|refresh_token|password|secret|token|signing_key)$/D', (string) $k) && trim($child) !== '') {
+                        $errors[] = "{$p} holds a value — credentials live in Connections, never in a manifest.";
+                    }
+                    if (preg_match('#(^|[\s"\'(])/(var|home|etc|srv|opt|tmp)/#', $child)) $errors[] = "{$p} names a server path ({$child}).";
+                    if (preg_match('/^(sk|rk|pk)_(live|test)_[A-Za-z0-9]{8,}|^key-[0-9a-f]{20,}|^xox[bp]-|^ghp_[A-Za-z0-9]{20,}/', trim($child))) $errors[] = "{$p} looks like a live credential.";
+                }
+                $walk($child, $p);
+            }
+        };
+        $walk($m, '');
+        return $errors;
+    }
+
     /** Why this manifest cannot be used, or '' when it is fine. */
-    private static function validate(array $m): string {
+    public static function validate(array $m): string {
         $oauth = $m['oauth'] ?? null;
 
         if (is_array($oauth)) {
@@ -161,6 +213,17 @@ class ConnectorRegistry {
     public static function errors(): array {
         self::load();
         return self::$errors;
+    }
+
+    /**
+     * How this install has a connector: 'code' (a class here), 'manifest' (connectors/<key>.json
+     * at the app root) or '' (not at all). The catalog installs manifests only, and never
+     * over a class.
+     */
+    public static function kind(string $key): string {
+        $c = self::get($key);
+        if ($c === null) return '';
+        return $c instanceof ManifestConnector ? 'manifest' : 'code';
     }
 
     public static function has(string $key): bool {

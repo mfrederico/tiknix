@@ -420,14 +420,20 @@ class Webhook extends Control {
     }
 
     /** Mailgun settings from conf/mailgun.ini (single source, shared with Mailer). */
+    /**
+     * The bound `mail` connection's signing key, domains and from-address (Mailer::settings —
+     * the same answer the senders use). The signing key is the connection's webhook secret
+     * (Connections → Mailgun → webhook secret). No connection: nothing to verify against,
+     * said in the log; the handler then runs unverified, as it always did in dev.
+     */
     private function mailConfig(): array {
-        $file = dirname(__DIR__) . '/conf/mailgun.ini';
-        if (!file_exists($file)) return [];
-        $ini = parse_ini_file($file) ?: [];
-        // Normalize aliases so callers can rely on signingKey/inboundDomain.
-        $ini['signingKey']    = $ini['signingKey']    ?? $ini['webhook_signing_key'] ?? $ini['signing_key'] ?? '';
-        $ini['inboundDomain'] = $ini['inboundDomain'] ?? $ini['inbound_domain'] ?? ($ini['domain'] ?? '');
-        return $ini;
+        try {
+            $s = \app\Mailer::settings();
+        } catch (\Throwable $e) {
+            $this->logger?->warning('Webhook: no mail connection — ' . $e->getMessage());
+            return [];
+        }
+        return ['signingKey' => $s['signing_key'], 'domain' => $s['domain'], 'inboundDomain' => $s['inbound_domain'], 'fromEmail' => $s['from_email']];
     }
 
     // ---- telegram ----------------------------------------------------------------

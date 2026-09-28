@@ -2,8 +2,13 @@
 /**
  * Mailer - Email Service using Mailgun
  *
- * Provides email sending functionality via Mailgun API.
- * Configuration loaded from conf/mailgun.ini
+ * Sends through the install's `mail` connection (CONNECTOR-CATALOG-PLAN.md decision 9): a
+ * Mailgun connection in this install's own connection store, bound to core's `mail` role
+ * (ConnectionBindings::for('core', 'mail') — one candidate binds itself; a site may bind its
+ * own). The API key, the sending domain, the region endpoint, the from-address and the
+ * inbound domain all come from that connection; conf/mailgun.ini is no longer read (seed
+ * 23_MailConnection migrated it into a connection once). settings() is the one resolver —
+ * NotifyService and /webhook/mailgun read the same answer.
  */
 
 namespace app;
@@ -13,6 +18,52 @@ use Mailgun\Mailgun;
 use \Exception as Exception;
 
 class Mailer {
+
+    public const CONNECTOR = 'mailgun';
+    private const US_ENDPOINT = 'https://api.mailgun.net';
+
+    /**
+     * The install's mail settings, from the bound `mail` connection. Throws, naming the fix,
+     * when there is none (MissingConnectorException: connect one under Connections →
+     * Mailgun), when it is ambiguous or dead (UnboundRoleException), or when the connection
+     * is broken (RuntimeException: no sending domain, key will not decrypt).
+     *
+     * The from-address: a SITE's own `[mail] from_email` (conf/sites/<slug>.ini, recorded
+     * by Sites::applyConfig) wins, then the connection's from_email field, then
+     * noreply@<sending domain>. Not config.ini's [mail] from_email: that section is the
+     * SMTP/example block and on most installs still says noreply@example.com.
+     *
+     * @return array{connection:\RedBeanPHP\OODBBean,alias:string,key:string,domain:string,endpoint:string,from_email:string,from_name:string,inbound_domain:string,signing_key:string}
+     */
+    public static function settings(): array {
+        $conn = ConnectionBindings::for(ConnectionBindings::CORE, 'mail');
+        $alias = ConnectionStore::alias($conn);
+        $meta = json_decode((string) ($conn->metadataJson ?? ''), true);
+        $fields = is_array($meta['fields'] ?? null) ? $meta['fields'] : [];
+        $domain = trim((string) ($fields['domain'] ?? ''));
+        if ($domain === '') {
+            throw new \RuntimeException("Mail: the Mailgun connection '{$alias}' (#{$conn->id}) has no sending domain — reconnect it under Connections → Mailgun with the domain filled in.");
+        }
+        $key = ConnectionStore::ownToken($conn);
+        if ($key === '') {
+            throw new \RuntimeException("Mail: the Mailgun connection '{$alias}' (#{$conn->id}) has no usable API key (empty, or it could not be decrypted with this install's key) — reconnect it under Connections → Mailgun.");
+        }
+        $base = rtrim((string) ($meta['base_url'] ?? self::US_ENDPOINT), '/');
+        $applied = Flight::get('site.config_applied');
+        $siteFrom = is_array($applied) && in_array('mail.from_email', $applied, true) ? trim((string) Flight::get('mail.from_email')) : '';
+        $from = $siteFrom !== '' ? $siteFrom : (trim((string) ($fields['from_email'] ?? '')) ?: "noreply@{$domain}");
+        return [
+            'connection'     => $conn,
+            'alias'          => $alias,
+            'key'            => $key,
+            'domain'         => $domain,
+            'endpoint'       => $base === self::US_ENDPOINT ? '' : $base,   // the SDK's default is US
+            'from_email'     => $from,
+            'from_name'      => Flight::siteName(),
+            'inbound_domain' => trim((string) ($fields['inbound_domain'] ?? '')) ?: $domain,
+            'signing_key'    => ConnectionStore::ownSecret($conn, 'webhookSecret'),
+        ];
+    }
 
     private static ?Mailer $instance = null;
     private ?Mailgun $client = null;
@@ -48,43 +99,38 @@ class Mailer {
     }
 
     /**
-     * Constructor - loads config from mailgun.ini
+     * Constructor - resolves the bound mail connection
      */
     public function __construct() {
         $this->loadConfig();
     }
 
+    /** Why the last construction found no usable mail connection ('' when configured). */
+    private string $notConfigured = '';
+
     /**
-     * Load configuration from mailgun.ini
+     * Resolve the `mail` binding. No connection is a legitimate state for a fresh install
+     * (mail is optional) and is logged as a WARNING naming the fix; a connection that exists
+     * but is broken is an ERROR. Either way send() refuses and says which.
      */
     private function loadConfig(): void {
-        $configPath = dirname(__DIR__) . '/conf/mailgun.ini';
-
-        if (!file_exists($configPath)) {
-            Flight::get('log')->warning('Mailer: mailgun.ini not found');
+        try {
+            $s = self::settings();
+        } catch (MissingConnectorException | UnboundRoleException $e) {
+            $this->notConfigured = $e->getMessage();
+            Flight::get('log')?->warning('Mailer: no mail connection — ' . $e->getMessage());
+            return;
+        } catch (\Throwable $e) {
+            $this->notConfigured = $e->getMessage();
+            Flight::get('log')?->error('Mailer: mail connection unusable — ' . $e->getMessage());
             return;
         }
-
-        try {
-            $config = parse_ini_file($configPath);
-
-            if (empty($config['key']) || empty($config['domain'])) {
-                Flight::get('log')->warning('Mailer: Missing key or domain in mailgun.ini');
-                return;
-            }
-
-            $this->client = Mailgun::create($config['key']);
-            $this->domain = $config['domain'];
-            $this->fromEmail = $config['fromEmail'] ?? "noreply@{$this->domain}";
-            // From-NAME is the site's display name, not a config literal: mailgun.ini shipped
-            // "Tiknix Notification", which is wrong on a tenant. site_name is the source of
-            // truth (setSender() can still override per-message where a flow needs to).
-            $this->fromName = Flight::siteName();
-            $this->configured = true;
-
-        } catch (Exception $e) {
-            Flight::get('log')->error('Mailer: Failed to load config - ' . $e->getMessage());
-        }
+        $this->client = $s['endpoint'] !== '' ? Mailgun::create($s['key'], $s['endpoint']) : Mailgun::create($s['key']);
+        $this->domain = $s['domain'];
+        $this->fromEmail = $s['from_email'];
+        // From-NAME is the site's display name (setSender()/from() can still override per message).
+        $this->fromName = $s['from_name'];
+        $this->configured = true;
     }
 
     /**
@@ -172,7 +218,7 @@ class Mailer {
      */
     public function send(string $content, string $plainText = ''): bool {
         if (!$this->configured) {
-            Flight::get('log')->error('Mailer: Not configured - email not sent');
+            Flight::get('log')->error('Mailer: email not sent — ' . ($this->notConfigured ?: 'no mail connection'));
             return false;
         }
 

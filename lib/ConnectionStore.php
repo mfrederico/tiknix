@@ -618,7 +618,7 @@ class ConnectionStore {
             // Written only when supplied, for the same reason as refresh_token below: a
             // later re-auth that does not resend them must not blank the pair and leave
             // the connection unable to re-authorise against the app it belongs to.
-            foreach (['app_key' => 'appKey', 'app_secret' => 'appSecret'] as $in => $prop) {
+            foreach (['app_key' => 'appKey', 'app_secret' => 'appSecret', 'webhook_secret' => 'webhookSecret'] as $in => $prop) {
                 if (array_key_exists($in, $payload)) {
                     $conn->$prop = self::sealOrEmpty((string) $payload[$in], $key);
                 }

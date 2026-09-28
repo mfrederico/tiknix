@@ -1,0 +1,41 @@
+{
+    "key": "klaviyo",
+    "version": "1.0.0",
+    "label": "Klaviyo",
+    "blurb": "Marketing email and SMS: profiles, lists and segments, events (metrics) and campaigns. The channel srklr ran its list sync and campaign pulls through.",
+    "category": "Messaging",
+    "icon": "megaphone",
+    "color": "success",
+    "features": ["Profiles and lists", "Events / metrics", "Campaigns and flows"],
+    "roles": ["mail", "marketing"],
+    "multiple": true,
+    "base_url": "https://a.klaviyo.com",
+    "test_path": "/api/accounts",
+    "docs_url": "https://developers.klaviyo.com/en/reference/api_overview",
+    "account_url": "https://www.klaviyo.com/settings/account/api-keys",
+    "auth": {
+        "style": "header",
+        "name": "Authorization",
+        "prefix": "Klaviyo-API-Key ",
+        "key_label": "Private API key",
+        "key_placeholder": "pk_…",
+        "key_hint": "Klaviyo → Settings → API keys → Create Private API Key (read profiles, lists, events, campaigns as needed). Sent as Authorization: Klaviyo-API-Key <key>."
+    },
+    "headers": {
+        "revision": "2024-10-15"
+    },
+    "endpoints": [
+        { "method": "GET",  "path": "/api/accounts", "label": "Account", "description": "The account the key belongs to — the connect probe." },
+        { "method": "GET",  "path": "/api/lists", "label": "Lists", "description": "Every list; page with page[cursor].", "params": ["page[cursor]", "fields[list]"] },
+        { "method": "GET",  "path": "/api/lists/{id}", "label": "List", "description": "One list, optionally with its profile count.", "params": ["id", "additional-fields[list]"] },
+        { "method": "GET",  "path": "/api/lists/{id}/profiles", "label": "List profiles", "description": "The profiles on a list.", "params": ["id", "page[cursor]", "page[size]"] },
+        { "method": "POST", "path": "/api/lists/{id}/relationships/profiles", "label": "Add profiles to a list", "description": "JSON:API body {data:[{type:'profile',id}]}.", "params": ["id"] },
+        { "method": "GET",  "path": "/api/profiles", "label": "Profiles", "description": "Search profiles with filter=equals(email,\"…\").", "params": ["filter", "page[cursor]", "page[size]"] },
+        { "method": "POST", "path": "/api/profiles", "label": "Create a profile", "description": "JSON:API body {data:{type:'profile',attributes:{email,…}}}." },
+        { "method": "POST", "path": "/api/profile-import", "label": "Create or update a profile", "description": "Upsert by email/phone/external_id." },
+        { "method": "POST", "path": "/api/events", "label": "Create an event", "description": "A metric on a profile: {data:{type:'event',attributes:{metric:{data:…},profile:{data:…},properties}}}." },
+        { "method": "GET",  "path": "/api/campaigns", "label": "Campaigns", "description": "filter=equals(messages.channel,'email') is required.", "params": ["filter", "page[cursor]"] },
+        { "method": "GET",  "path": "/api/segments", "label": "Segments", "description": "Every segment.", "params": ["page[cursor]"] }
+    ],
+    "suggests": { "concepts": ["outreach"] }
+}

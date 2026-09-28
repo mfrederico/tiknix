@@ -184,6 +184,195 @@ class ConceptCatalog {
         return ['name' => $name, 'version' => $m->version, 'files' => $files];
     }
 
+    /* ---- connectors: manifests in the same catalog (CONNECTOR-CATALOG-PLAN.md §5) ------- */
+    //
+    // <catalog>/connectors/<key>.json — one file each, no code. Published with the same
+    // version rule as a concept, installed to <root>/connectors/<key>.json and recorded in
+    // the lock's `connectors` section. A key that a CLASS in core provides is never
+    // installed: code wins, and the registry would ignore the file anyway.
+
+    public const CONNECTORS_DIR = 'connectors';
+
+    /** @return array<int,array{key:string,version:string,label:string,blurb:string,category:string,roles:string[],type:string}> */
+    public function connectors(): array {
+        if (!$this->isLocal()) {
+            $data = $this->remote('connectors', []);
+            return is_array($data['connectors'] ?? null) ? $data['connectors'] : [];
+        }
+        $out = [];
+        foreach (glob("{$this->dir}/" . self::CONNECTORS_DIR . '/*.json') ?: [] as $file) {
+            try { $out[] = self::connectorSummary($this->readManifest($file)); }
+            catch (ConceptException $e) { $out[] = ['key' => basename($file, '.json'), 'version' => '', 'label' => '', 'blurb' => '', 'category' => '', 'roles' => [], 'type' => '', 'broken' => $e->getMessage()]; }
+        }
+        usort($out, fn($a, $b) => strcmp($a['key'], $b['key']));
+        return $out;
+    }
+
+    /** One connector manifest from the catalog, as data: {key, version, manifest}. */
+    public function connector(string $key): array {
+        self::assertConnectorKey($key);
+        if (!$this->isLocal()) {
+            return $this->remote('connector', ['key' => $key]);
+        }
+        $file = "{$this->dir}/" . self::CONNECTORS_DIR . "/{$key}.json";
+        if (!is_file($file)) throw new ConceptException("Connector '{$key}' is not in the catalog ({$this->dir}).");
+        $m = $this->readManifest($file);
+        return ['key' => $key, 'version' => (string) $m['version'], 'manifest' => $m, 'source' => $this->where()];
+    }
+
+    /**
+     * Put a manifest into the catalog. Refused with the lint's errors, and refused when this
+     * version is already published with different contents.
+     *
+     * @return array{key:string,version:string,status:string}
+     */
+    public function publishConnector(string $file): array {
+        if (!$this->isLocal()) {
+            throw new ConceptException('Publishing is done on the control plane, which holds the catalog. This install only reads it.');
+        }
+        if (!is_file($file)) throw new ConceptException("Connector manifest {$file} does not exist.");
+        $raw = json_decode((string) file_get_contents($file), true);
+        if (!is_array($raw)) throw new ConceptException("Connector manifest {$file} is not valid JSON: " . json_last_error_msg());
+        $errors = \app\services\connectors\ConnectorRegistry::lint($raw, $file);
+        if ($errors) {
+            throw new ConceptException("Connector '" . basename($file, '.json') . "' was NOT published — lint errors:\n  - " . implode("\n  - ", $errors));
+        }
+        $key = (string) $raw['key'];
+        $version = (string) $raw['version'];
+        $dir = "{$this->dir}/" . self::CONNECTORS_DIR;
+        if (!is_dir($dir) && !mkdir($dir, 0775, true)) throw new ConceptException("Connector catalog: could not create {$dir}.");
+        $target = "{$dir}/{$key}.json";
+        $status = 'published';
+        if (is_file($target)) {
+            $existing = $this->readManifest($target);
+            if (hash_file('sha256', $target) === hash_file('sha256', $file)) {
+                return ['key' => $key, 'version' => $version, 'status' => 'unchanged'];
+            }
+            if (version_compare($version, (string) $existing['version'], '<=')) {
+                throw new ConceptException(
+                    "Connector '{$key}' was NOT published — the catalog already has version {$existing['version']} and this is "
+                  . "{$version} with different contents. Bump \"version\" in the manifest.");
+            }
+            $status = 'updated';
+        }
+        $tmp = "{$dir}/.{$key}.publishing-" . bin2hex(random_bytes(4));
+        if (!copy($file, $tmp) || !rename($tmp, $target)) {
+            @unlink($tmp);
+            throw new ConceptException("Connector '{$key}': could not write it into the catalog.");
+        }
+        return ['key' => $key, 'version' => $version, 'status' => $status];
+    }
+
+    /**
+     * Write a catalog manifest to <root>/connectors/<key>.json and record it in the lock.
+     * Refused over a class (code wins) and over an existing file unless $replace — a manifest
+     * the install authored is its own.
+     *
+     * @return array{key:string,version:string,file:string,status:string}
+     */
+    public function installConnector(string $key, string $root, bool $replace = false): array {
+        self::assertConnectorKey($key);
+        $root = rtrim($root, '/');
+        if (\app\services\connectors\ConnectorRegistry::kind($key) === 'code') {
+            throw new ConceptException("Connector '{$key}' is a class in this install (services/connectors); a manifest would be ignored. Nothing to install.");
+        }
+        $data = $this->connector($key);
+        $m = $data['manifest'] ?? null;
+        if (!is_array($m) || ($m['key'] ?? '') !== $key || !is_string($m['version'] ?? null)) {
+            throw new ConceptException("Connector '{$key}': the catalog returned a malformed manifest.");
+        }
+        if ($errors = \app\services\connectors\ConnectorRegistry::lint($m, "{$key}.json")) {
+            throw new ConceptException("Connector '{$key}' from the catalog does not pass the lint here — not installed:\n  - " . implode("\n  - ", $errors));
+        }
+        $dir = "{$root}/" . self::CONNECTORS_DIR;
+        $target = "{$dir}/{$key}.json";
+        if (is_file($target) && !$replace) {
+            throw new ConceptException("Connector '{$key}' is already at {$target}" . (ConceptLock::connectorEntry($root, $key) === null
+                ? ' and this install authored it (no lock row), so it is never overwritten.'
+                : " — use --connector-update={$key}."));
+        }
+        if (!is_dir($dir) && !mkdir($dir, 0775, true)) throw new ConceptException("Connector '{$key}': could not create {$dir}.");
+        $json = json_encode($m, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+        $tmp = "{$dir}/.{$key}.installing-" . bin2hex(random_bytes(4));
+        if (file_put_contents($tmp, $json) !== strlen($json) || !rename($tmp, $target)) {
+            @unlink($tmp);
+            throw new ConceptException("Connector '{$key}': could not write {$target}.");
+        }
+        ConceptLock::recordConnector($root, $key, (string) $m['version'], $this->isLocal() ? 'control-plane catalog' : $this->where());
+        \app\services\connectors\ConnectorRegistry::flush();
+        return ['key' => $key, 'version' => (string) $m['version'], 'file' => $target, 'status' => $replace ? 'updated' : 'installed'];
+    }
+
+    /** Move an installed manifest to the catalog's version. Refused when it was edited in place (unless $force). */
+    public function updateConnector(string $key, string $root, bool $force = false): array {
+        self::assertConnectorKey($key);
+        $root = rtrim($root, '/');
+        $row = ConceptLock::connectorEntry($root, $key);
+        if ($row === null) {
+            throw new ConceptException(is_file("{$root}/" . self::CONNECTORS_DIR . "/{$key}.json")
+                ? "Connector '{$key}' has no row in concepts.lock: this install authored connectors/{$key}.json, and the catalog never overwrites that."
+                : "Connector '{$key}' is not installed here — use --connector-install={$key}.");
+        }
+        if (!$force && ConceptLock::connectorModified($root, $key)) {
+            throw new ConceptException("Connector '{$key}' was edited in place (connectors/{$key}.json differs from what concepts.lock recorded); "
+                . 'an update would discard that. Carry the change to the source and republish, or --force to discard it.');
+        }
+        $latest = (string) ($this->connector($key)['version'] ?? '');
+        if ($latest === (string) ($row['version'] ?? '')) throw new ConceptException("Connector '{$key}' is already at {$latest}, the catalog's version.");
+        return $this->installConnector($key, $root, true) + ['from' => (string) $row['version']];
+    }
+
+    /**
+     * What a concept's connector roles need from this install (§5 "dependency resolution"):
+     * each type is `satisfied` (a class or a manifest here), to `install` (the catalog has
+     * it) or `missing` (nowhere — the concept could never be bound).
+     *
+     * @return array{satisfied:string[],install:string[],missing:string[]}
+     */
+    public function resolveConnectors(array $types, string $root): array {
+        $root = rtrim($root, '/');
+        $out = ['satisfied' => [], 'install' => [], 'missing' => []];
+        $catalog = null;
+        foreach (array_values(array_unique($types)) as $t) {
+            // A class is core code, the same in every clone; a manifest is a file in THAT
+            // install (the project being built, not the control plane running the build).
+            if (\app\services\connectors\ConnectorRegistry::kind($t) === 'code' || is_file("{$root}/" . self::CONNECTORS_DIR . "/{$t}.json")) {
+                $out['satisfied'][] = $t;
+                continue;
+            }
+            if ($catalog === null) $catalog = array_column($this->connectors(), 'key');
+            $out[in_array($t, $catalog, true) ? 'install' : 'missing'][] = $t;
+        }
+        return $out;
+    }
+
+    /** @return array{key:string,version:string,label:string,blurb:string,category:string,roles:string[],type:string} */
+    public static function connectorSummary(array $m): array {
+        return [
+            'key'      => (string) $m['key'],
+            'version'  => (string) ($m['version'] ?? ''),
+            'label'    => (string) ($m['label'] ?? ''),
+            'blurb'    => (string) ($m['blurb'] ?? ''),
+            'category' => (string) ($m['category'] ?? ''),
+            'roles'    => array_values(array_map('strval', (array) ($m['roles'] ?? []))),
+            'type'     => !empty($m['oauth']['authorize_url']) ? 'oauth' : (($m['auth']['style'] ?? 'bearer') === 'none' ? 'none' : 'api_key'),
+        ];
+    }
+
+    private function readManifest(string $file): array {
+        $m = json_decode((string) file_get_contents($file), true);
+        if (!is_array($m)) throw new ConceptException('Connector manifest ' . basename($file) . ' in the catalog is not valid JSON: ' . json_last_error_msg());
+        if (($m['key'] ?? '') !== basename($file, '.json')) throw new ConceptException('Connector manifest ' . basename($file) . " in the catalog declares key '" . ($m['key'] ?? '') . "'.");
+        if (!is_string($m['version'] ?? null) || $m['version'] === '') throw new ConceptException('Connector manifest ' . basename($file) . ' in the catalog has no version.');
+        return $m;
+    }
+
+    private static function assertConnectorKey(string $key): void {
+        if (!preg_match(\app\services\connectors\ConnectorRegistry::KEY_RE, $key)) {
+            throw new ConceptException("'{$key}' is not a valid connector key (lowercase letters, digits and underscore, starting with a letter).");
+        }
+    }
+
     /* ---- install as a build ---------------------------------------------------------- */
 
     /**
@@ -225,10 +414,20 @@ class ConceptCatalog {
         $visit($name, []);
 
         $lines = [];
+        $types = [];
         foreach ($order as $n) {
             $d = $detail[$n];
             $lines[] = "- **{$n}** v{$d['version']}" . ($d['title'] !== '' ? " — {$d['title']}" : '') . ' (' . count($d['files']) . ' files)';
+            foreach ((array) ($d['requires']['connectors'] ?? []) as $t) $types[] = (string) $t;
         }
+        // The connectors those roles need: what the project has, what comes along from the
+        // catalog, and what nobody has — the last refuses the plan, before any build runs.
+        $conn = $this->resolveConnectors($types, $projectRoot);
+        if ($conn['missing']) {
+            throw new ConceptException("Concept '{$name}' needs connector(s) " . implode(', ', $conn['missing'])
+                . ' — not a class in this install and not in the catalog. It could never be bound, so it is not installed.');
+        }
+        foreach ($conn['install'] as $t) $lines[] = "- connector **{$t}** (manifest, from the catalog → `connectors/{$t}.json`)";
         $main = $detail[$name];
         $also = array_values(array_diff($order, [$name]));
         return [
@@ -273,6 +472,19 @@ class ConceptCatalog {
         $bundle = $this->bundle($name);
         $files = self::checkBundle($bundle, $name);
 
+        // The connectors its roles name come first (§5): one the catalog holds is installed
+        // alongside, one nowhere refuses the concept — a plugin that could never be bound is
+        // not installed. Checked from the bundle's own manifest, before a byte lands.
+        $incoming = json_decode($files['concept.json'], true);
+        $roles = is_array($incoming) ? ConceptManifest::fromArray($incoming, $target, $name)->requiresConnectors : [];
+        $conn = $this->resolveConnectors($roles, $root);
+        if ($conn['missing']) {
+            throw new ConceptException("Concept '{$name}' needs connector(s) " . implode(', ', $conn['missing'])
+                . ' — not a class in this install and not in the catalog. It could never be bound, so it is not installed.');
+        }
+        $connectorsInstalled = [];
+        foreach ($conn['install'] as $t) $connectorsInstalled[] = $this->installConnector($t, $root);
+
         if (!is_dir(dirname($target)) && !mkdir(dirname($target), 0775, true)) {
             throw new ConceptException("Concept '{$name}': could not create " . dirname($target) . '.');
         }
@@ -311,7 +523,7 @@ class ConceptCatalog {
         }
         // The lock row: installed, switched off, with the hash of what was installed.
         ConceptLock::record($root, $name, $m->version, $this->isLocal() ? 'control-plane catalog' : $this->where());
-        return ['name' => $name, 'version' => $m->version, 'dir' => $target, 'files' => count($files)];
+        return ['name' => $name, 'version' => $m->version, 'dir' => $target, 'files' => count($files), 'connectors' => $connectorsInstalled];
     }
 
     /**
@@ -484,7 +696,7 @@ class ConceptCatalog {
             'blurb'        => $m->blurb,
             'tags'         => $m->tags,
             'capabilities' => $m->capabilities,
-            'requires'     => ['concepts' => $m->requiresConcepts, 'lib' => $m->requiresLib],
+            'requires'     => ['concepts' => $m->requiresConcepts, 'lib' => $m->requiresLib, 'connectors' => $m->requiresConnectors],
             'provides'     => ['controllers' => $m->controllers, 'beans' => $m->beans],
             'uses_beans'   => $m->usesBeans,
             'hosts_slots'  => array_keys($m->hostsSlots),

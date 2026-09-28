@@ -146,10 +146,13 @@ class RestConnector extends AbstractConnector {
 
         $testPath = trim((string) ($opts['test_path'] ?? ''));
         $probeUrl = $testPath === '' ? $base : self::joinUrl($base, $testPath);
+        $prefix = (string) ($opts['auth_prefix'] ?? '');
+        $fixed  = is_array($opts['headers'] ?? null) ? $opts['headers'] : [];
 
-        $headers = self::authHeaders($auth, $name, $user, $key);
+        $headers = self::authHeaders($auth, $name, $user, $key, $prefix);
         $headers[] = 'Accept: application/json';
         $headers[] = self::USER_AGENT;
+        foreach (self::fixedHeaders($fixed) as $h) $headers[] = $h;
 
         [$status, $body, $err] = $this->http('GET', self::applyQueryAuth($probeUrl, $auth, $name, $key), [
             'headers' => $headers,
@@ -189,6 +192,8 @@ class RestConnector extends AbstractConnector {
             'username'  => $user,
             'test_path' => $testPath,
         ];
+        if ($prefix !== '') $metadata['auth_prefix'] = $prefix;
+        if ($fixed)         $metadata['headers']     = $fixed;
 
         // An imported description is a convenience, so a broken one must not cost
         // the user a working connection: the import throws with its own reason and
@@ -339,9 +344,10 @@ class RestConnector extends AbstractConnector {
         }
         $url = self::applyQueryAuth($url, $auth, $name, $token);
 
-        $headers = self::authHeaders($auth, $name, $user, $token);
+        $headers = self::authHeaders($auth, $name, $user, $token, (string) ($meta['auth_prefix'] ?? ''));
         $headers[] = 'Accept: application/json';
         $headers[] = self::USER_AGENT;
+        foreach (self::fixedHeaders(is_array($meta['headers'] ?? null) ? $meta['headers'] : []) as $h) $headers[] = $h;
         foreach ((array) ($args['headers'] ?? []) as $hk => $hv) {
             // A caller-supplied header may not overwrite the credential the broker
             // just injected, and may not smuggle a second request via CRLF.
@@ -456,13 +462,34 @@ class RestConnector extends AbstractConnector {
     }
 
     /** Auth headers for a style, as a curl-ready list. */
-    private static function authHeaders(string $auth, string $name, string $user, string $key): array {
+    /**
+     * @param string $prefix  for the header style: text before the key in the header value —
+     *                        Klaviyo's "Authorization: Klaviyo-API-Key <key>" (a manifest's auth.prefix)
+     */
+    private static function authHeaders(string $auth, string $name, string $user, string $key, string $prefix = ''): array {
         switch ($auth) {
             case 'bearer': return ['Authorization: Bearer ' . $key];
-            case 'header': return [$name . ': ' . $key];
+            case 'header': return [$name . ': ' . $prefix . $key];
             case 'basic':  return ['Authorization: Basic ' . base64_encode($user . ':' . $key)];
             default:       return [];   // query auth is applied to the URL; none needs nothing
         }
+    }
+
+    /**
+     * Headers a connector sends on EVERY request, declared by its manifest and recorded on
+     * the connection (metadata.headers) — Klaviyo's `revision`, an Accept a provider insists
+     * on. Never Authorization: the credential is the broker's to inject.
+     *
+     * @param array<string,string> $fixed
+     */
+    private static function fixedHeaders(array $fixed): array {
+        $out = [];
+        foreach ($fixed as $hk => $hv) {
+            $hk = trim((string) $hk);
+            if ($hk === '' || preg_match('/[\r\n:]/', $hk) || preg_match('/^authorization$/i', $hk)) continue;
+            $out[] = $hk . ': ' . str_replace(["\r", "\n"], '', (string) $hv);
+        }
+        return $out;
     }
 
     private static function applyQueryAuth(string $url, string $auth, string $name, string $key): string {

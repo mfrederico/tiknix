@@ -10,6 +10,8 @@
  *   GET /concepthub/search?q=…&limit=…   ranked summaries
  *   GET /concepthub/get?name=…           one concept: summary, manifest, file list
  *   GET /concepthub/bundle?name=…        the concept itself, as {path: base64}
+ *   GET /concepthub/connectors           connector manifests in the catalog (summaries)
+ *   GET /concepthub/connector?key=…      one connector manifest, as data
  *   POST /concepthub/install?name=…      queue an install INTO the calling instance, as a
  *                                        build owned by that instance's owner (the Install
  *                                        button on a project's Plugins page)
@@ -38,6 +40,23 @@ class Concepthub extends Control {
     public function get($params = []) {
         if (!($catalog = $this->catalog())) return;
         $this->answer(fn() => $catalog->get((string) $this->getParam('name', '')));
+    }
+
+    /** GET /concepthub/connectors — the connector manifests the catalog holds (summaries). */
+    public function connectors($params = []) {
+        if (!($catalog = $this->catalog())) return;
+        $this->answer(fn() => ['source' => $catalog->where(), 'connectors' => $catalog->connectors()]);
+    }
+
+    /** GET /concepthub/connector?key=… — one manifest, as data, for --connector-install on an instance. */
+    public function connector($params = []) {
+        if (!($catalog = $this->catalog())) return;
+        $key = (string) $this->getParam('key', '');
+        $this->answer(function () use ($catalog, $key) {
+            $c = $catalog->connector($key);
+            $this->logger->info('Connector manifest served', ['connector' => $key, 'version' => $c['version'], 'instance_id' => $this->instanceId]);
+            return $c;
+        });
     }
 
     public function bundle($params = []) {

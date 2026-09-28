@@ -29,7 +29,9 @@ worktree, a test run and the live site all see the same set without a database.
 
 ```bash
 php scripts/clitool.php --concepts                  # installed, enabled/disabled, EDITED when files differ from the lock
-php scripts/clitool.php --concept-install=NAME      # from the catalog (a build task, never a web action)
+php scripts/clitool.php --concept-install=NAME      # from the catalog (a build task, never a web action); brings the connector manifests its roles need
+php scripts/clitool.php --connectors                # connector definitions here (class / own manifest / catalog manifest) + connections + bindings
+php scripts/clitool.php --connector-install=KEY     # a connector manifest from the catalog → connectors/KEY.json (recorded in concepts.lock)
 php scripts/clitool.php --concept-enable=NAME       # verify, run its seeds, switch on, regenerate CLAUDE.md
 php scripts/clitool.php --concept-lock              # (re)write the lock from disk; the one-time migration and the repair
 ```

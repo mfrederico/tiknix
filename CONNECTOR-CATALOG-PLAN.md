@@ -670,6 +670,31 @@ shape). The guard from P2 stays as the tripwire. The mail migration, the per-sit
   `mask::rwx` on every isolated instance after a fleet update (the survey in
   `acl-mask-chmod-trap`).
 
+**C4 status (2026-09-28): built, applied to the active instances.** `scripts/instance-acl.php
+--slug|--all [--check|--dry-run]` narrows the pool user's ACL from rwX on the whole tree to
+r-X (and r-X by default, so code an update adds is read-only from the moment it lands) plus
+rwX on what the app is known to write (surveyed from what pools had actually written):
+`data database secure log logs cache backups storage public/uploads .aibuilder conf
+pipelines mcptools scripts/hooks .claude` and the root files `concepts.lock CLAUDE.md
+.mcp.json`. `conf/` stays writable for the settings editor and `conf/sites/*.ini`;
+`pipelines/ mcptools/ scripts/hooks/ .claude/` because the Pipelines, Mcptools, Hooks,
+Agentsetup and AgentGuidance controllers write the app's own definitions there by design —
+that is a feature, not code the app rewrites. Ownership is untouched (ubuntu), so
+git-as-ubuntu and `--update` are untouched; the core reader keeps rwX; credentials stay
+closed to `other`. `isolate-instance.sh` (capricorn) provisions new instances the same way;
+the two lists must stay in step. **Known limit:** the root directory must be writable for
+the three root files' atomic writes, and directory write allows a rename over any root
+file (bootstrap.php, server.php); everything INSIDE the code directories is read-only —
+no create, no rename, no edit — proved from the pool's side on Serenity (`lib controls
+models services views vendor scripts public concepts` = ro, `lib/Bean.php` not writable
+in place). Files the pool or root own cannot have their ACL changed by ubuntu; they keep
+what they had, and the script names any such file left writable under a code directory.
+Applied to serenity, start-201e11 and cleans-cat-poo-boxes; each answers `/`, `/site/status`
+and a login POST (session + database writes) afterwards; seeds as the pool and `--update`
+as ubuntu still run. The first pass on Serenity aborted before re-granting the data
+directories (a pool-owned log refused ubuntu's setfacl) and left the pool read-only on its
+database for about two minutes — restored by hand, then the script learned the rule.
+
 **C4 — Core needs no write access to instance trees at all.** With C1–C3 done, core's
 processes read instance trees (sidecars, the fleet page, `GitHttp`) and never write. Then the
 POSIX ACL that today grants the pool `rwx` on the WHOLE tree (Serenity: `lib/`, `concepts/`,

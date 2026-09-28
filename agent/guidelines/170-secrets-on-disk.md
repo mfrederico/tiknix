@@ -25,6 +25,13 @@ if (!$isolated) @chmod($file, 0600);   // only a non-isolated install needs the 
 `lib/ConnectionStore.php` and the generated `services/*Credential.php` follow this rule;
 copy it, don't re-introduce a bare `chmod 0600`/`mkdir 0700` on `secure/`.
 
+**The pool's ACL is narrow (C4, `scripts/instance-acl.php`).** The pool user reads the tree
+and writes only `data database secure log logs cache backups storage public/uploads
+.aibuilder conf pipelines mcptools scripts/hooks .claude` and the root files `concepts.lock
+CLAUDE.md .mcp.json`. Code the app generates for itself that must be writable at runtime
+belongs in one of those (a pipeline JSON, an MCP tool, a hook) — never write into `lib/`,
+`controls/`, `views/`… from a request; it is refused, and that refusal is the point.
+
 **Never WRITE an isolated instance's own data as the tree owner.** A CLI run as `ubuntu`
 (clitool, a seed, a scratch script) that creates `data/connections.db` leaves it with mask
 `r--` — SQLite opens at 0644 — and the pool gets "attempt to write a readonly database" on

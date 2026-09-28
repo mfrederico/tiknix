@@ -45,6 +45,10 @@ data/
 # last place a token should be able to reach a commit.
 .aibuilder/
 
+# The release this install runs (written by --update; lib/InstanceUpdate.php). Per install:
+# core has none, each instance its own, so it never travels through a merge.
+/.release
+
 # Playwright output.
 test-results/
 playwright-report/

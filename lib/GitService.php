@@ -88,26 +88,19 @@ class GitService {
      */
     public static function addTaskWorktree(string $projectDir, int $taskId, string $branch, string $base): string {
         $projectDir = rtrim($projectDir, '/');
-        $rel = '.aibuilder/wt/solo-' . $taskId;
-        $git = fn(array $args) => self::gitIn($projectDir, $args);
+        $abs = $projectDir . '/.aibuilder/wt/solo-' . $taskId;
+        $slug = InstanceRepo::slugFromDir($projectDir);
 
-        // A leftover from an earlier run of this task id (removed dir, stale registration).
-        $git(['worktree', 'remove', '--force', $rel]);
-        $git(['worktree', 'prune']);
-        if (is_dir($projectDir . '/' . $rel)) {
-            throw new \RuntimeException("{$projectDir}/{$rel} exists and is not a worktree git knows about; remove it before running this task.");
-        }
-        @mkdir($projectDir . '/.aibuilder/wt', 0775, true);
-
-        $exists = $git(['rev-parse', '--verify', '--quiet', 'refs/heads/' . $branch])['code'] === 0;
-        $add = $exists
-            ? $git(['worktree', 'add', $rel, $branch])
-            : $git(['worktree', 'add', '-b', $branch, $rel, $base]);
-        if ($add['code'] !== 0) {
-            throw new \RuntimeException("git worktree add in {$projectDir} failed: " . trim($add['out']));
-        }
-        Mcp::ensureMcpConfig($projectDir . '/' . $rel);   // API key set later if needed
-        return $projectDir . '/' . $rel;
+        // Cut from the project's ORIGIN (§13 C1), after the live tree's own commits reached
+        // it. A leftover from an earlier run of this task id is unregistered from whichever
+        // repository it belongs to (its .git pointer says).
+        $sync = InstanceRepo::syncLive($projectDir);
+        if ($sync['status'] === 'failed') throw new \RuntimeException("live tree and origin out of step: {$sync['out']}");
+        InstanceRepo::removeWorktree($abs);
+        self::gitIn($projectDir, ['worktree', 'prune']);
+        InstanceRepo::addWorktree($slug, $abs, $branch, $base);
+        Mcp::ensureMcpConfig($abs);   // API key set later if needed
+        return $abs;
     }
 
     /**
@@ -132,12 +125,12 @@ class GitService {
     public static function removeTaskWorkspace(string $path): void {
         $path = rtrim($path, '/');
         if (self::isTaskWorktree($path)) {
+            // Unregistered from the repository its .git pointer names — the project's origin
+            // (since C1) or the project's own .git (a worktree cut before). Both get pruned.
             $project = substr($path, 0, strpos($path, '/.aibuilder/wt/'));
-            $r = self::gitIn($project, ['worktree', 'remove', '--force', $path]);
+            InstanceRepo::removeWorktree($path);
             self::gitIn($project, ['worktree', 'prune']);
-            if ($r['code'] !== 0 && is_dir($path)) {
-                throw new \RuntimeException("git worktree remove {$path} failed: " . trim($r['out']));
-            }
+            try { self::gitIn(InstanceRepo::originPath(InstanceRepo::slugFromDir($project)), ['worktree', 'prune']); } catch (\Throwable $e) { /* not an instance dir: nothing to prune there */ }
             return;
         }
         $base = realpath(self::getProjectsBasePath());

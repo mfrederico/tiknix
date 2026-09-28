@@ -142,7 +142,17 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
             return trim((string) $out);
         };
 
-        if (realpath($run('git remote get-url origin')) !== realpath(self::ROOT . '/tiknix')) return false;
+        // A provisioned instance is a clone of the control plane's repository. Since C1
+        // (lib/InstanceRepo.php) its `origin` is its own bare origin under _origins/ and the
+        // control plane is its `core` remote; before that the control plane WAS origin.
+        // Either shape is the instance; a tree cloned from somewhere else is not.
+        // realpath('') is the CURRENT DIRECTORY, not false — a missing remote must never
+        // resolve to wherever this process happens to run (core, when the suite runs there).
+        $path = static fn(string $p): string|false => $p === '' ? false : realpath($p);
+        $core = realpath(self::ROOT . '/tiknix');
+        $origin = $path($run('git remote get-url origin'));
+        $coreRemote = $path($run('git remote get-url core'));
+        if ($origin !== $core && $coreRemote !== $core) return false;
         return strpos($run('git rev-parse --abbrev-ref HEAD'), 'instance/') === 0;
     }
 

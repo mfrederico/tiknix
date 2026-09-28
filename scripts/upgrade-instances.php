@@ -71,14 +71,21 @@ $instances = [];
 foreach (glob($root . '/*.tiknix') ?: [] as $dir) {
     if (is_link($dir)) continue;          // an alias (start.tiknix → start-201e11.tiknix): the target is visited by its own name
     if (!is_dir($dir . '/.git')) continue;
+    // Since C1 (lib/InstanceRepo.php) an instance's `origin` is its own bare origin and the
+    // control plane is its `core` remote; before that the control plane was `origin`. Either
+    // way the remote that points at core is the one releases come from.
     $origin = sh('git remote get-url origin', $dir);
+    $core   = sh('git remote get-url core', $dir);
     $branch = sh('git rev-parse --abbrev-ref HEAD', $dir);
-    if (!$origin['ok'] || !$branch['ok']) continue;
-    if (realpath($origin['out']) !== realpath($coreDir)) continue;
+    if (!$branch['ok']) continue;
+    $remote = '';
+    if ($core['ok'] && realpath($core['out']) === realpath($coreDir))          $remote = 'core';
+    elseif ($origin['ok'] && realpath($origin['out']) === realpath($coreDir))  $remote = 'origin';
+    if ($remote === '') continue;
     if (strpos($branch['out'], 'instance/') !== 0) continue;
     $slug = substr($branch['out'], strlen('instance/'));
     if ($only !== '' && $slug !== $only) continue;
-    $instances[$slug] = ['dir' => $dir, 'branch' => $branch['out']];
+    $instances[$slug] = ['dir' => $dir, 'branch' => $branch['out'], 'remote' => $remote];
 }
 
 if (!$instances) { say($only !== '' ? "no instance '$only'" : 'no instances found'); exit(1); }
@@ -121,10 +128,11 @@ $done = $skipped = $failed = 0;
 
 foreach ($instances as $slug => $meta) {
     $dir = $meta['dir'];
+    $remote = $meta['remote'];   // the remote that is the control plane: core (since C1) or origin
     say("── $slug ──────────────────────────────────────────");
 
-    sh('git fetch origin --quiet', $dir);
-    $behind = sh('git rev-list --count HEAD..origin/main', $dir);
+    sh('git fetch ' . escapeshellarg($remote) . ' --quiet', $dir);
+    $behind = sh('git rev-list --count HEAD..' . escapeshellarg($remote . '/main'), $dir);
     $n = (int) $behind['out'];
 
     if ($pick !== '') {
@@ -217,7 +225,7 @@ foreach ($instances as $slug => $meta) {
         $undo  = 'cherry-pick --abort';
         $verb  = 'cherry-picked';
     } else {
-        $apply = sh($ident . 'merge origin/main --no-edit', $dir);
+        $apply = sh($ident . 'merge ' . escapeshellarg($remote . '/main') . ' --no-edit', $dir);
         $undo  = 'merge --abort';
         $verb  = 'merged';
     }

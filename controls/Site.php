@@ -23,6 +23,8 @@ class Site extends Control {
             'site'   => ['id' => (int) $site->id, 'slug' => (string) $site->slug, 'name' => (string) $site->name, 'domain' => (string) $site->domain],
             'multi'  => Sites::multi(),
             'config' => (array) (Flight::get('site.config_applied') ?? []),
+            // the release this install runs (--update pins it; '' on the control plane and before the first update)
+            'release' => \app\InstanceUpdate::pinned(dirname(__DIR__)),
         ];
         if (Flight::isLoggedIn()) {
             $roles = [];

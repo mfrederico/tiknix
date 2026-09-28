@@ -422,11 +422,23 @@ class PlanExecutor {
         $wtRel  = '.aibuilder/wt/task-' . (int)$t->id;
         $wtAbs  = $this->instanceDir . '/' . $wtRel;
 
-        // Fresh worktree cut from the CURRENT base (which now includes merged deps).
-        $this->git(['worktree', 'remove', '--force', $wtRel]);   // best-effort clean
-        $this->git(['branch', '-D', $branch]);
-        $add = $this->git(['worktree', 'add', '-b', $branch, $wtRel, $base]);
-        if (!$add['ok']) { $this->fail($t, 'worktree add failed: ' . $add['out']); return false; }
+        // Fresh worktree cut from the ORIGIN's current base (which now includes merged deps),
+        // after the live tree's own commits (a checkpoint) have reached the origin — a task
+        // that started from a base missing them would merge back onto history the site
+        // never had. The worktree lives in the live tree's .aibuilder/ (what the jail binds)
+        // but belongs to the origin (InstanceRepo, §13 C1).
+        $sync = InstanceRepo::syncLive($this->instanceDir);
+        if ($sync['status'] === 'failed') { $this->fail($t, 'live tree and origin out of step: ' . $sync['out']); return false; }
+        try {
+            InstanceRepo::removeWorktree($wtAbs, true, $branch);   // a leftover from an earlier attempt
+        } catch (\Throwable $e) {
+            $this->fail($t, 'worktree add failed: ' . $e->getMessage()); return false;
+        }
+        try {
+            InstanceRepo::addWorktree($this->slug, $wtAbs, $branch, $base);
+        } catch (\Throwable $e) {
+            $this->fail($t, 'worktree add failed: ' . $e->getMessage()); return false;
+        }
 
         // Adopted concepts land in the worktree BEFORE the agent starts, so the task is to
         // adapt code that is there rather than to write it. Before the brief, because the
@@ -721,50 +733,35 @@ class PlanExecutor {
     }
 
     /** Merge a task branch into base; abort cleanly on conflict. */
-    private function mergeBack(string $branch, string $base): array {
-        // Refuse only on UNEXPECTED local edits (a terminal edit mid-run). The live
-        // SQLite DB is force-tracked (for checkpoint/rollback) yet written on every
-        // request, so it is perpetually "modified" — that expected churn is not a
-        // reason to refuse. Plan branches never diff the DB (reapTask discards it),
-        // so the locally-modified DB can't collide with the merge.
-        $dirt = $this->significantDirt();
-        if ($dirt !== []) {
-            return ['status' => 'failed', 'out' => 'instance working tree has uncommitted edits ('
-                . implode(', ', array_slice($dirt, 0, 5)) . '); commit or checkpoint them, then re-run'];
-        }
-        $m = $this->gitRaw('merge --no-ff -m ' . escapeshellarg('merge ' . $branch) . ' ' . escapeshellarg($branch));
-        if ($m['ok']) return ['status' => 'merged', 'out' => ''];
-        // Conflict or other failure — abort to keep base pristine.
-        $this->git(['merge', '--abort']);
-        $isConflict = stripos($m['out'], 'conflict') !== false;
-        return ['status' => $isConflict ? 'conflict' : 'failed', 'out' => trim($m['out'])];
-    }
-
     /**
-     * Working-tree paths with local edits that AREN'T expected runtime churn.
-     * The force-tracked SQLite DB(s) are rewritten on every web request, so
-     * `git status` always shows them modified; ignore *.db / *.sqlite so a live
-     * request can't spuriously trip the dirty-tree guard mid-merge.
+     * Merge the task branch on the ORIGIN (its merge worktree, under the instance lock), then
+     * bring the live tree level. The live tree is never the merge target any more (§13 C1);
+     * its expected churn — the force-tracked runtime database — cannot block a merge that
+     * does not happen there. A live tree that cannot take the sync is reported as a failure
+     * naming why: the merge is on the origin, and a re-run merges nothing new and syncs again.
      */
-    private function significantDirt(): array {
-        $r = $this->git(['status', '--porcelain']);
-        if (!$r['ok']) return [];
-        $out = [];
-        foreach (explode("\n", trim($r['out'])) as $line) {
-            if ($line === '') continue;
-            $path = trim(substr($line, 3));                  // strip "XY " status prefix
-            if (strpos($path, ' -> ') !== false) {           // rename: keep the new path
-                $path = substr($path, strpos($path, ' -> ') + 4);
-            }
-            if (preg_match('/\.(db|sqlite)$/', $path)) continue;   // expected live-DB churn
-            $out[] = $path;
+    private function mergeBack(string $branch, string $base): array {
+        try {
+            $m = InstanceRepo::merge($this->slug, $branch, 'merge ' . $branch);
+        } catch (\Throwable $e) {
+            return ['status' => 'failed', 'out' => $e->getMessage()];
         }
-        return $out;
+        if ($m['status'] !== 'merged') {
+            return ['status' => $m['status'], 'out' => trim($m['out']) . ($m['files'] ? ' — conflicting: ' . implode(', ', $m['files']) : '')];
+        }
+        $s = InstanceRepo::syncLive($this->instanceDir);
+        if ($s['status'] === 'failed') {
+            return ['status' => 'failed', 'out' => "merged on the origin ({$m['sha']}) but the live tree could not take it: {$s['out']}"];
+        }
+        return ['status' => 'merged', 'out' => ''];
     }
 
     private function cleanupWorktree(string $wtRel, string $branch, bool $dropBranch): void {
-        $this->git(['worktree', 'remove', '--force', $wtRel]);
-        if ($dropBranch && $branch !== '') $this->git(['branch', '-D', $branch]);
+        try {
+            InstanceRepo::removeWorktree($this->instanceDir . '/' . $wtRel, $dropBranch, $branch);
+        } catch (\Throwable $e) {
+            \Flight::get('log')?->warning('PlanExecutor: worktree cleanup failed', ['worktree' => $wtRel, 'err' => $e->getMessage()]);
+        }
     }
 
     // ---- readiness / status helpers ---------------------------------------
@@ -1286,10 +1283,9 @@ MD;
 
     // ---- git plumbing ------------------------------------------------------
 
+    /** The origin's branch — what worktrees are cut from and merged into (instance/<slug>). */
     private function baseBranch(): string {
-        $r = $this->git(['rev-parse', '--abbrev-ref', 'HEAD']);
-        $b = trim($r['out']);
-        return $b !== '' && $b !== 'HEAD' ? $b : 'master';
+        return InstanceRepo::baseBranch($this->slug);
     }
 
     /** git -C <instance> <args…> (array form, auto-escaped). */

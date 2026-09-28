@@ -31,6 +31,9 @@ class GitHttp {
     /** The only git service this endpoint will ever run. Read-only by construction. */
     const SERVICE = 'git-upload-pack';
 
+    /** The repo name under which the control plane's own repository is served (releases). */
+    const CORE = 'core';
+
     /** Where provisioned instances live, mirroring ProvisionService::instanceDir(). */
     const INSTANCE_ROOT = '/var/www/html/default';
 
@@ -44,14 +47,31 @@ class GitHttp {
         if (!preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $slug) || strlen($slug) > 64) {
             return ['ok' => false, 'error' => 'Invalid instance slug', 'code' => 404];
         }
+        // The control plane's own repository — `/git/core.git` — is what a tenant fetches
+        // releases from (§13 C2: `core` remote). It is served to ANY active instance
+        // presenting its own deploy token, with its slug as the Basic username (authorize()
+        // checks the token of the instance the username names). Read-only like the rest.
+        if ($slug === self::CORE) {
+            $caller = strtolower(trim((string) self::basicUsername()));
+            if (!preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $caller) || $caller === self::CORE) {
+                return ['ok' => false, 'error' => 'core.git is fetched with an instance\'s slug as the username and its deploy token as the password', 'code' => 401];
+            }
+            $inst = Bean::findOne('instance', 'slug = ?', [$caller]);
+            if (!$inst || !$inst->id || (string) $inst->status !== 'active') return ['ok' => false, 'error' => 'Unknown instance', 'code' => 404];
+            $core = \Model_Instance::ROOT . '/tiknix';
+            if (!is_dir($core . '/.git')) return ['ok' => false, 'error' => 'The control plane has no repository at ' . $core, 'code' => 500];
+            return ['ok' => true, 'dir' => $core, 'bean' => $inst];
+        }
         $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
         if (!$inst || !$inst->id)                  return ['ok' => false, 'error' => 'Unknown instance', 'code' => 404];
         if ((string) $inst->status !== 'active')   return ['ok' => false, 'error' => 'Instance is not active', 'code' => 403];
 
-        $dir = self::INSTANCE_ROOT . '/' . $slug . '.' . self::namespaceOf();
-        if (!is_dir($dir . '/.git'))               return ['ok' => false, 'error' => 'Instance has no repository', 'code' => 404];
+        // The instance's ORIGIN — the bare repository builds land on (lib/InstanceRepo.php,
+        // CONNECTOR-CATALOG-PLAN.md §13 C1). Not the live clone's .git: a tenant fetches what
+        // was merged, never whatever state a running tree happens to be in.
+        if (!InstanceRepo::hasOrigin($slug))       return ['ok' => false, 'error' => 'Instance has no origin repository (scripts/instance-origin.php --slug=' . $slug . ')', 'code' => 404];
 
-        return ['ok' => true, 'dir' => $dir, 'bean' => $inst];
+        return ['ok' => true, 'dir' => InstanceRepo::originPath($slug), 'bean' => $inst];
     }
 
     /** App namespace for instance dirs ("tiknix" from https://tiknix.com). */
@@ -78,6 +98,26 @@ class GitHttp {
         $supplied = self::basicPassword();
         if ($supplied === '') return false;
         return hash_equals(self::deployToken($inst), $supplied);
+    }
+
+    /** Username from HTTP Basic — an instance's slug when core.git is fetched. */
+    public static function basicUsername(): string {
+        if (isset($_SERVER['PHP_AUTH_USER']) && $_SERVER['PHP_AUTH_USER'] !== '') return (string) $_SERVER['PHP_AUTH_USER'];
+        $decoded = self::basicDecoded();
+        return $decoded === '' ? '' : substr($decoded, 0, (int) strpos($decoded, ':'));
+    }
+
+    private static function basicDecoded(): string {
+        $header = '';
+        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'] as $k) {
+            if (!empty($_SERVER[$k])) { $header = (string) $_SERVER[$k]; break; }
+        }
+        if ($header === '' && function_exists('getallheaders')) {
+            foreach (getallheaders() as $k => $v) if (strcasecmp($k, 'Authorization') === 0) { $header = (string) $v; break; }
+        }
+        if (stripos($header, 'basic ') !== 0) return '';
+        $decoded = base64_decode(substr($header, 6), true);
+        return ($decoded === false || !str_contains($decoded, ':')) ? '' : $decoded;
     }
 
     /**

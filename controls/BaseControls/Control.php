@@ -38,25 +38,21 @@ abstract class Control {
 
         // The SITE this request acts for (lib/Sites.php; CONNECTOR-CATALOG-PLAN.md §2c) —
         // resolved once, from the host first, and its conf/sites/<slug>.ini applied before any
-        // branding is read, so mystore2.com answers as mystore2. An install whose seeds have
-        // not run yet has no site table: that is "the feature is not installed", logged once
-        // as a warning, not a reason to fail every page during a rollout. A host that names
-        // no site is a real 404. Cannonwms resolves its warehouse in the same place.
+        // branding is read, so mystore2.com answers as mystore2. An install with NO site table
+        // has no sites: a sidecar (the workbench shares these controllers and never seeds
+        // one — every workbench page 500'd on "no default site" the day this shipped), or an
+        // app whose seeds have not run; nothing to resolve, and /site/status says so loudly
+        // when asked. A site table with no `main` row is a half-built install and throws.
+        // A host that names no site is a real 404. Cannonwms resolves its warehouse in the
+        // same place.
         $this->site = null;
         if (Flight::get('site') === null) {
-            try {
-                $site = \app\Sites::current();
+            if (!\app\Sites::installed()) {
+                Flight::set('site', false);
+            } else {
+                $site = \app\Sites::current();          // SiteNotFoundException → the router's real 404 (FlightMap)
                 Flight::set('site', $site);
                 Flight::set('site.config_applied', \app\Sites::applyConfig($site));
-            } catch (\app\SiteNotFoundException $e) {
-                throw $e;   // the router answers it with a real 404 (FlightMap)
-            } catch (\Throwable $e) {
-                if (stripos($e->getMessage(), 'no such table') !== false) {
-                    $this->logger?->warning('Sites: no site table yet — run `php scripts/clitool.php --build` (seed 21_Sites)');
-                    Flight::set('site', false);
-                } else {
-                    throw $e;
-                }
             }
         }
         $this->site = Flight::get('site') ?: null;

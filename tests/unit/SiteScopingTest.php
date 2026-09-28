@@ -66,6 +66,16 @@ class SiteScopingTest extends ConceptsTestCase {
         $this->assertSame([(int) $d->id], array_map('intval', array_keys(Bean::find('shoporder', $w, $p))), 'Denver sees only its own row');
     }
 
+    /** A sidecar has no site table and never will: that is "no sites", not a broken install. */
+    public function testInstalledSaysWhetherTheInstallHasSitesAtAll(): void {
+        $this->assertTrue(Sites::installed());
+        \RedBeanPHP\R::nuke();
+        Sites::reset();
+        $this->assertFalse(Sites::installed(), 'no site table');
+        try { Sites::default(); $this->fail('a table with no main row, or no table, is asked for its default'); }
+        catch (\RuntimeException $e) { $this->assertStringContainsString('seed 21_Sites', $e->getMessage()); }
+    }
+
     public function testManifestScopedMustBeOwnBeans(): void {
         $n = $this->uniq('sc');
         $m = ConceptManifest::load($this->concept($n, ['provides' => ['beans' => ['shoporder', 'product']], 'scoped' => ['shoporder']]), $n);

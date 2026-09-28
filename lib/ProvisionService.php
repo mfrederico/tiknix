@@ -241,9 +241,28 @@ class ProvisionService {
         $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, $isDefault, $plan);
         // Isolate now that the id exists (uid = 30000 + id). No-op unless enabled; never fatal.
         $this->isolateInstance($slug, (int) $inst->id);
+        $this->createOrigin($slug);
         $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
         if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
         return $out;
+    }
+
+    /**
+     * The instance's ORIGIN — the bare repository its builds land on and it pulls from
+     * (lib/InstanceRepo.php, §13 C1). After isolation, so the pool user gets its ACL. An
+     * instance without one is live but cannot build: said in the warning and the log,
+     * with the command that repairs it, never swallowed.
+     */
+    private function createOrigin(string $slug): void {
+        $dir = $this->instanceDir($slug);
+        try {
+            $steps = InstanceRepo::createOrigin($slug, $dir, IsolatedPool::user($dir));
+            error_log("[provision] origin for {$slug}: " . implode('; ', $steps));
+        } catch (\Throwable $e) {
+            $this->lastWarning = trim($this->lastWarning . " No origin repository for {$slug} (" . $e->getMessage()
+                . ") — builds refuse until `php scripts/instance-origin.php --slug={$slug}` succeeds.");
+            error_log("ERROR provision: origin for {$slug} — " . $e->getMessage());
+        }
     }
 
     // ---- authorization (core is the authority; the caller passes ids, we re-check) ----
@@ -390,6 +409,7 @@ class ProvisionService {
         $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, false, $plan);
         // A fork is a new instance with its own id — isolate it like create(). No-op unless enabled.
         $this->isolateInstance($slug, (int) $inst->id);
+        $this->createOrigin($slug);
         $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'data_carried' => $carried];
         if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
         return $out;

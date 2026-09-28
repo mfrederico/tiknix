@@ -554,6 +554,36 @@ closes the store; the shared-disk pushes below are the same defect waiting elsew
 Three pushes, one mechanism dressed three ways: ubuntu writes git history into the instance's
 clone because it can reach the directory.
 
+**C1 status (2026-09-28): built and proved on Serenity.** `lib/InstanceRepo.php`: the bare
+origin `_origins/<slug>.git` (HEAD on `instance/<slug>`, `receive.denyCurrentBranch =
+updateInstead`), its merge worktree `_origins/<slug>.merge`, the pool's ACL on both;
+`createOrigin` (bare clone of the live tree, remotes re-pointed: `origin` → the bare repo,
+the control plane kept as `core`), `addWorktree`/`removeWorktree` (a worktree's `.git`
+pointer says which repository it belongs to — pre-C1 worktrees keep working), `merge` (in
+the merge worktree, under a per-instance lock; a conflict aborts and names the files),
+`syncLive` (fetch; fast-forward the live tree, push its own commits, or merge-and-push when
+both moved; the modified runtime database never blocks it). `PlanExecutor` cuts from and
+merges on the origin, then syncs the live tree; `GitService::addTaskWorktree` and the
+workbench's merge-back do the same (a branch the origin lacks is fetched from the workspace);
+`GitHttp` serves the origin; provisioning and forks create one; `jail-run.sh` binds the
+repository the worktree's pointer names. `scripts/instance-origin.php --slug|--all` migrates
+an instance once. Proved: a worktree on Serenity points at the origin, a proof commit merged
+on the origin was absent from the live tree until `syncLive` pulled it, the git endpoint
+answers a deploy-token fetch with the origin's branch tip, and the pool user reads and
+fetches from the origin. The rollout scratch scripts now merge `core/main`. All 15
+provisioned instances were migrated the same day. Two facts for C2: git refuses a repository
+owned by another user ("dubious ownership"), and the pool user runs with HOME=/home/ubuntu
+and no `safe.directory` — so the pool cannot run git in the live tree or the origin unless
+each call names them (`InstanceRepo::git` does, per call, never `*`). A fetch over a LOCAL
+PATH cannot carry that to the `upload-pack` child git spawns (it scrubs config from the
+environment), so the pool cannot fetch the origin by path at all — `update` as the pool
+fetches over HTTP (`/git/<slug>.git` with the deploy token: the tenant path, one transport)
+and names the live tree for its local commands. Pushing live commits (checkpoints) from the
+pool has no door (`GitHttp` is read-only by design): C2 decides whether checkpoints stay
+local to the instance (a tag; the tracked runtime database stops travelling through the
+origin) — the likely answer. And `Model_Instance::isProvisionedInstance` keyed on
+"origin is the control plane" — after C1 the control plane is `core`; it accepts either now.
+
 ### 13.2 The four cutovers, in order
 
 Each is shippable alone; each ends with core holding one less write path into instances.
@@ -575,6 +605,26 @@ whose one task is an install", unchanged in shape, landing on the origin like an
   `update` (C2) pulls it; the checkpoint/rollback story (`checkpointBeforeRun`) moves with it.
 - Risk: sidecars (workbench.tiknix) that read the live tree keep working — they read, they
   do not merge. The `.aibuilder/wt/` worktree convention moves under the origin.
+
+**C2 status (2026-09-28): built.** `lib/InstanceUpdate.php` + `clitool --update
+[--release=vX.Y.Z] [--dry-run]` inside an instance; `--release[=vX.Y.Z] [--notes]` and
+`--releases` on the control plane (the suite must be green; main; next patch by default;
+tags are `vMAJOR.MINOR.PATCH`, the convention the repo already had). The update: builds from
+the origin first (`syncLive`), fetch core's tags, target = named or newest, already-merged =
+up-to-date, uncommitted CODE edits refuse (the runtime database is churn, not an edit), a
+LOCAL checkpoint commit+tag `checkpoint-update-<ts>` (database included; never pushed —
+**owner's decision: checkpoints stay local to the instance, especially in development /
+the builder**, so `syncLive` no longer pushes anything: the origin holds code only), merge
+the tag (conflict → abort, files named, exit 1, checkpoint kept), then concepts.lock sync,
+composer only when composer.json changed (the control plane's lock when it is on this disk,
+`composer update` on a tenant), `--build`, `--concept-seeds=all`, `--agent-sync`,
+`resetcache`, `claude-link`, smoke `/` + `/auth/login` = 200, and `.release` pinned (read by
+`/site/status`). Identity: the instance's user — on the control plane's disk the tree owner
+for code while data writes already run as the pool (seed 23); one user on a tenant.
+`/git/core.git` now serves the control plane's own repository to any active instance
+(Basic auth: its slug + its deploy token) — a tenant's `core` remote. Not in C2: the
+conflict landing on the board as a task (it is an ERROR in the log and a non-zero exit);
+the fleet page reading `.release`; the pull ping. The rollout scratch scripts are retired.
 
 **C2 — `update` is the instance's own command.** `php scripts/clitool.php --update`
 (and the same code on a cron/fake-cron tick when a pull signal arrived): `git fetch origin`,

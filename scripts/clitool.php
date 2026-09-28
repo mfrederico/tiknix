@@ -60,6 +60,7 @@ $longopts = [
     'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'concept-seeds:', 'concept-lock', 'rehash', 'force', 'agent-sync',
     'connectors', 'bind:', 'unbind:', 'site:', 'sites', 'alias:', 'as:',
     'connector-lint:', 'connector-publish:', 'connector-install:', 'connector-update:',
+    'update', 'release::', 'releases', 'notes:',
     'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'concept-update:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
@@ -478,6 +479,33 @@ if (isset($opt['concept-install'])) {
     out("# it is NOT enabled. Next: --concept-verify={$name}, then --concept-enable={$name}");
     exit(0);
 }
+// --- The instance's own update (§13 C2): --update [--release=vX.Y.Z] [--dry-run]; on core: --release[=vX.Y.Z] [--notes=…], --releases
+if (isset($opt['update'])) {
+    $r = (new \app\InstanceUpdate())->run(dirname(__DIR__), ['release' => (string) ($opt['release'] ?? ''), 'dry_run' => $DRYRUN]);
+    foreach ($r['lines'] as $l) out('  ' . $l);
+    out('# update: ' . $r['status'] . ($r['release'] !== '' ? " ({$r['release']})" : ''));
+    exit($r['ok'] ? 0 : 1);
+}
+if (isset($opt['releases'])) {
+    exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' tag --list ' . escapeshellarg('v*') . ' 2>&1', $tagsOut);
+    $tags = \app\InstanceUpdate::releaseTags(implode("\n", $tagsOut));
+    if (!$tags) { out('# no release tags yet — tag one on the control plane with --release=v1.6.0'); exit(0); }
+    foreach ($tags as $t) {
+        $sha = trim((string) shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' rev-list -n 1 --abbrev-commit ' . escapeshellarg($t) . ' 2>/dev/null'));
+        $when = trim((string) shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' log -1 --format=%cs ' . escapeshellarg($t) . ' 2>/dev/null'));
+        out(sprintf('  %-12s %s  %s', $t, $sha, $when));
+    }
+    $pin = \app\InstanceUpdate::pinned(dirname(__DIR__));
+    if ($pin !== '') out("# this install runs {$pin}");
+    exit(0);
+}
+if (array_key_exists('release', $opt) && !isset($opt['update'])) {
+    if ($DRYRUN) { out('# dry-run: would run the suite and tag ' . ((string) $opt['release'] !== '' ? $opt['release'] : 'the next patch release') . ' on main'); exit(0); }
+    $r = (new \app\InstanceUpdate())->tagRelease(dirname(__DIR__), (string) ($opt['release'] ?? ''), (string) ($opt['notes'] ?? ''));
+    if (!$r['ok']) bail($r['message']);
+    out("# release: {$r['message']} — instances take it with: php scripts/clitool.php --update");
+    exit(0);
+}
 // --- Connector catalog: --connector-lint | --connector-publish | --connector-install | --connector-update
 if (isset($opt['connector-lint'])) {
     $file = (string) $opt['connector-lint'];
@@ -822,6 +850,14 @@ CONCEPTS (pluggable features — see COMPONENTS_PLAN.md)
                                  Replace concepts/NAME/ with the catalog's newer version;
                                  enabled stays enabled and its seeds run again. Refuses a
                                  copy edited in place unless --force (the edit is lost)
+  --update [--release=vX.Y.Z]    THE INSTANCE'S OWN UPDATE (run inside an instance): builds from
+                                 its origin, then the newest (or named) release tag from core,
+                                 after a LOCAL checkpoint (never pushed); seeds, guidance,
+                                 cache, claude link, smoke test; pins .release. Conflicts stop
+                                 it and are named. --dry-run says what it would do
+  --release[=vX.Y.Z] [--notes=…] On the control plane: run the suite and tag main as a release
+                                 (default: next patch of the newest). Nothing is pushed
+  --releases                     Release tags, oldest first, and the release this install runs
   --connectors                   Connector definitions here (class / own manifest / catalog
                                  manifest + version) and this install's connections + bindings
   --connector-lint=FILE          Is a connector manifest fit to publish? Key = file name,

@@ -78,6 +78,15 @@ class IsolatedPool {
         return $euid === $owner;
     }
 
+    /** The pool's OS user (`tiknix-i<id>`), from the socket name; '' when the instance is not isolated. */
+    public static function user(string $root): string {
+        $root = rtrim($root, '/');
+        if (!@is_file($root . '/' . self::MARKER)) return '';
+        $name = basename(self::socket($root), '.sock');
+        if (!preg_match('/^[a-z][a-z0-9-]*$/D', $name)) throw new \RuntimeException("IsolatedPool: socket name '{$name}' is not a pool user name.");
+        return $name;
+    }
+
     /** The pool's FastCGI socket, from the marker (`SOCK=/run/php/tiknix-i<id>.sock`). */
     public static function socket(string $root): string {
         $root = rtrim($root, '/');

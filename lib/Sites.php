@@ -52,6 +52,16 @@ class Sites {
         return $s->id ? $s : null;
     }
 
+    /**
+     * Does this install have sites at all — a `site` table? A sidecar (workbench, explorer)
+     * shares core's controllers but has no site table and never will; an app install gets
+     * one from seed 21. Asked before resolving, because RedBean in fluid mode answers a
+     * query on a missing table with "no rows", which is indistinguishable from "no site".
+     */
+    public static function installed(): bool {
+        return in_array('site', array_map('strtolower', Bean::inspect()), true);
+    }
+
     /** The install's default site. Missing = the seed did not run: an error, not a quiet stand-in. */
     public static function default(): \RedBeanPHP\OODBBean {
         $s = self::bySlug(self::DEFAULT_SLUG);

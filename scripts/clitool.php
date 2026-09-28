@@ -58,6 +58,7 @@ $longopts = [
     'i18n-scan',
     // concepts (COMPONENTS_PLAN.md)
     'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'concept-seeds:', 'concept-lock', 'rehash', 'force', 'agent-sync',
+    'connectors', 'bind:', 'unbind:', 'site:', 'sites', 'alias:', 'as:',
     'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'concept-update:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
@@ -257,6 +258,57 @@ if (isset($opt['concept-enable'])) {
     if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
     try { agentSync(); } catch (\RuntimeException $e) { err("warning: agent guidance not synced — " . $e->getMessage()); }
     out("# concept '{$name}' enabled");
+    exit(0);
+}
+// --- Connections by role: --connectors | --bind | --unbind | --alias | --sites (CONNECTOR-CATALOG-PLAN.md) ---
+if (isset($opt['sites'])) {
+    foreach (\app\Sites::all() as $s) {
+        out(sprintf('%-4s %-20s %-30s %-40s %s', $s->id, $s->slug, $s->name, $s->domain ?: '-', $s->status));
+    }
+    if (!\app\Sites::all()) err('no sites — run --build (seed 21_Sites)');
+    exit(0);
+}
+if (isset($opt['connectors'])) {
+    // This install's connections (alias, type, environment) and what is bound to each.
+    $rows = \app\ConnectionStore::candidates(array_map(fn($c) => $c->key(), \app\services\connectors\ConnectorRegistry::all()));
+    if (!$rows) { out('# no connections on this install'); exit(0); }
+    out(sprintf('%-4s %-12s %-28s %-12s %s', 'ID', 'TYPE', 'ALIAS', 'ENV', 'BOUND BY'));
+    foreach ($rows as $r) {
+        $used = array_map(fn($b) => $b['concept'] . '.' . $b['role'] . ($b['site_ref'] ? '@site' . $b['site_ref'] : '') . ($b['scope'] === 'entity' ? "[{$b['entity_type']}#{$b['entity_ref']}]" : ''), \app\ConnectionBindings::usedBy($r['id']));
+        out(sprintf('%-4s %-12s %-28s %-12s %s', $r['id'], $r['type'], mb_strimwidth($r['alias'], 0, 28, '…'), $r['environment'], $used ? implode(', ', $used) : '-'));
+    }
+    exit(0);
+}
+if (isset($opt['alias'])) {
+    // --alias=ID --as="Serenity Denver"
+    $id = (int) $opt['alias']; $as = (string) ($opt['as'] ?? '');
+    if ($id <= 0 || $as === '') bail('usage: --alias=CONNECTION_ID --as="Name"');
+    try { \app\ConnectionStore::setAlias($id, $as); } catch (\Throwable $e) { bail($e->getMessage()); }
+    out("# connection #{$id} is now '{$as}'");
+    exit(0);
+}
+if (isset($opt['bind']) || isset($opt['unbind'])) {
+    // --bind=concept.role=CONNECTION_ID [--site=slug]   |   --unbind=concept.role [--site=slug]
+    $spec = (string) ($opt['bind'] ?? $opt['unbind']);
+    if (!preg_match('/^([a-z][a-z0-9]*)\.([a-z][a-z0-9_]*)(?:=(\d+))?$/', $spec, $m)) bail('usage: --bind=concept.role=CONNECTION_ID [--site=slug]  |  --unbind=concept.role [--site=slug]');
+    [$_, $concept, $role] = $m;
+    $siteId = 0;
+    if (isset($opt['site'])) {
+        $s = \app\Sites::bySlug((string) $opt['site']);
+        if (!$s) bail("no site '{$opt['site']}' — see --sites");
+        $siteId = (int) $s->id;
+    } else {
+        $siteId = (int) \app\Sites::default()->id;
+    }
+    try {
+        if (isset($opt['bind'])) {
+            if (empty($m[3])) bail('--bind needs =CONNECTION_ID (see --connectors)');
+            $b = \app\ConnectionBindings::bind($concept, $role, (int) $m[3], 'cli', $siteId);
+            out("# {$concept}.{$role} → '{$b->aliasSnapshot}' (#{$b->connectionRef}) for site #{$siteId}");
+        } else {
+            out(\app\ConnectionBindings::unbind($concept, $role, $siteId) ? "# {$concept}.{$role} unbound for site #{$siteId}" : "# nothing was bound");
+        }
+    } catch (\Throwable $e) { bail($e->getMessage()); }
     exit(0);
 }
 if (isset($opt['concept-seeds'])) {

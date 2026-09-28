@@ -75,6 +75,49 @@ class ConceptManifest {
      *      Reported by Concepts::verify() when missing; never blocks enabling.
      */
     public array $requiresConnectors = [];
+    /**
+     * @var array<int,array{role:string,types:string[],label:string,scope:string,entity:string,optional:bool,inherit:bool}>
+     *      the connector ROLES this concept binds (lib/ConnectionBindings.php); requiresConnectors is
+     *      the flat list of their types
+     */
+    public array $connectorRoles = [];
+
+    private const ROLE_RE = '/^[a-z][a-z0-9_]*$/D';
+
+    /** Parse requires.connectors into roles; a bare key is a role of that name and type. */
+    private static function connectorRoles($v, string $concept): array {
+        if (!is_array($v) || ($v !== [] && !array_is_list($v))) {
+            throw new ConceptException("Concept '{$concept}': requires.connectors must be a JSON list.");
+        }
+        $roles = []; $seen = [];
+        foreach ($v as $i => $entry) {
+            $where = "requires.connectors[{$i}]";
+            if (is_string($entry)) {
+                if (!preg_match(self::CONNECTOR_RE, $entry)) throw new ConceptException("Concept '{$concept}': {$where} has an invalid connector key " . json_encode($entry) . '.');
+                $entry = ['role' => $entry, 'types' => [$entry]];
+            }
+            if (!is_array($entry) || array_is_list($entry)) throw new ConceptException("Concept '{$concept}': {$where} must be a connector key or an object {role, types}.");
+            $role = (string) ($entry['role'] ?? '');
+            if (!preg_match(self::ROLE_RE, $role)) throw new ConceptException("Concept '{$concept}': {$where}.role must be a lowercase identifier (payments, mail, search).");
+            if (isset($seen[$role])) throw new ConceptException("Concept '{$concept}': requires.connectors names role '{$role}' twice.");
+            $seen[$role] = true;
+            $types = self::stringList($entry['types'] ?? [], "{$where}.types", $concept, self::CONNECTOR_RE);
+            if (!$types) throw new ConceptException("Concept '{$concept}': {$where}.types must name at least one connector.");
+            $scope = (string) ($entry['scope'] ?? 'install');
+            if (!in_array($scope, ['install', 'entity'], true)) throw new ConceptException("Concept '{$concept}': {$where}.scope must be 'install' or 'entity'.");
+            $entity = (string) ($entry['entity'] ?? '');
+            if ($scope === 'entity' && !preg_match(self::BEAN_RE, $entity)) throw new ConceptException("Concept '{$concept}': {$where} has scope 'entity' but names no entity bean.");
+            $inherit = array_key_exists('inherit', $entry) ? (bool) $entry['inherit'] : ($role !== 'payments');
+            $roles[] = [
+                'role' => $role, 'types' => $types,
+                'label' => (string) ($entry['label'] ?? ucfirst(str_replace('_', ' ', $role))),
+                'scope' => $scope, 'entity' => $entity,
+                'optional' => (bool) ($entry['optional'] ?? false),
+                'inherit' => $inherit,
+            ];
+        }
+        return $roles;
+    }
     /** @var string[] controller class names this concept claims */
     public array $controllers = [];
     /** @var string[] bean types this concept claims */
@@ -167,7 +210,15 @@ class ConceptManifest {
         $m->requiresLib      = self::stringList($requires['lib'] ?? [], 'requires.lib', $name, self::CLASS_RE);
         $m->requiresCommands = self::stringList($requires['commands'] ?? [], 'requires.commands', $name, self::COMMAND_RE);
         $m->requiresExtensions = self::stringList($requires['extensions'] ?? [], 'requires.extensions', $name, self::EXTENSION_RE);
-        $m->requiresConnectors = self::stringList($requires['connectors'] ?? [], 'requires.connectors', $name, self::CONNECTOR_RE);
+        // requires.connectors: ROLES (CONNECTOR-CATALOG-PLAN.md §3.3). Each entry is an object
+        // {role, types[], label?, scope?, entity?, optional?, inherit?} — or, for every manifest
+        // published before roles existed, a bare connector key, which means a role of that
+        // name filled by that one type. requiresConnectors stays the flat list of types for
+        // callers that only ask "which connectors does this want".
+        $m->connectorRoles = self::connectorRoles($requires['connectors'] ?? [], $name);
+        $types = [];
+        foreach ($m->connectorRoles as $r) foreach ($r['types'] as $t) $types[$t] = true;
+        $m->requiresConnectors = array_keys($types);
         if (in_array($name, $m->requiresConcepts, true)) {
             throw new ConceptException("Concept '{$name}': requires.concepts lists the concept itself.");
         }

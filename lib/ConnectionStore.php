@@ -249,11 +249,79 @@ class ConnectionStore {
     /** The connected accounts, for an error that can actually be acted on. */
     private static function describe(array $conns): string {
         $out = [];
-        foreach ($conns as $c) {
-            $name = (string) ($c->externalEid ?: $c->externalName ?: $c->connectionName ?: $c->id);
-            $out[] = $name . ' (' . (string) $c->environment . ')';
-        }
+        foreach ($conns as $c) $out[] = self::alias($c) . ' (' . (string) $c->environment . ')';
         return implode(', ', $out);
+    }
+
+    // ---- aliases and candidates (CONNECTOR-CATALOG-PLAN.md §3.1, §4) -------------------
+    //
+    // The alias is the human name of one connection on this install — "Serenity main",
+    // "EU store" — what pickers show and what a binding remembers. It is stored in the
+    // existing `connection_name` column (one column, one meaning: a person's name for the
+    // connection); when nobody named it, the provider's account name stands in.
+
+    /** The connection's alias: its name here, else the provider's name for the account, else its id. */
+    public static function alias(\RedBeanPHP\OODBBean $c): string {
+        $own = trim((string) ($c->connectionName ?? ''));
+        if ($own !== '') return $own;
+        $ext = trim((string) ($c->externalName ?: $c->externalEid ?: ''));
+        return $ext !== '' ? $ext : ('#' . (int) $c->id);
+    }
+
+    /**
+     * Name a connection. Unique per connector type on this install: two Stripes may not both
+     * be "Main"; a Stripe and a Shopify may.
+     *
+     * @throws \InvalidArgumentException on an empty alias or a clash, naming the other connection
+     */
+    public static function setAlias(int $id, string $alias): void {
+        $alias = trim($alias);
+        if ($alias === '' || mb_strlen($alias) > 120) throw new \InvalidArgumentException('An alias is 1–120 characters.');
+        // withOwnDb swallows throwables into $onError, so a refusal is carried out as data.
+        $done = self::withOwnDb(function () use ($id, $alias) {
+            $c = Bean::load('connections', $id);
+            if (!$c->id) return ['refused' => "No connection #{$id} on this install."];
+            foreach (Bean::find('connections', 'connector_type = ? AND id <> ?', [(string) $c->connectorType, $id]) as $other) {
+                if (strcasecmp(self::alias($other), $alias) === 0) {
+                    return ['refused' => "'{$alias}' already names {$c->connectorType} connection #{$other->id} here."];
+                }
+            }
+            $c->connectionName = $alias;
+            $c->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($c);
+            return true;
+        }, null);
+        if (is_array($done) && isset($done['refused'])) throw new \InvalidArgumentException($done['refused']);
+        if ($done !== true) throw new \RuntimeException("Could not rename connection #{$id} — the connection store is not open (see the log).");
+    }
+
+    /** One connection by id, or null. Read-only (see withOwnDb: a bean kept past the call must not be stored). */
+    public static function byId(int $id): ?\RedBeanPHP\OODBBean {
+        if ($id <= 0) return null;
+        $c = self::withOwnDb(function () use ($id) { $c = Bean::load('connections', $id); return $c->id ? $c : null; }, null);
+        return $c instanceof \RedBeanPHP\OODBBean ? $c : null;
+    }
+
+    /**
+     * The live connections whose connector type is one of $types — what a role's picker
+     * offers. Each entry: id, type, alias, environment, account.
+     */
+    public static function candidates(array $types, ?string $env = null): array {
+        $types = array_values(array_unique(array_map('strval', $types)));
+        if (!$types) return [];
+        $rows = self::withOwnDb(function () use ($types, $env) {
+            $slots = implode(',', array_fill(0, count($types), '?'));
+            $sql = "connector_type IN ({$slots}) AND enabled = 1 AND (revoked_at IS NULL OR revoked_at = '')";
+            $params = $types;
+            if ($env !== null && $env !== '') { $sql .= ' AND environment = ?'; $params[] = $env; }
+            $out = [];
+            foreach (Bean::find('connections', $sql . ' ORDER BY connector_type, id', $params) as $c) {
+                $out[] = ['id' => (int) $c->id, 'type' => (string) $c->connectorType, 'alias' => self::alias($c),
+                          'environment' => (string) $c->environment, 'account' => (string) ($c->externalName ?: $c->externalEid ?: '')];
+            }
+            return $out;
+        }, []);
+        return is_array($rows) ? $rows : [];
     }
 
     /**

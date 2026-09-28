@@ -40,6 +40,32 @@ class StripeGateway {
         return new self($environment);
     }
 
+    /**
+     * A gateway for ONE connection — the way a concept reaches Stripe once it asks by role
+     * (ConnectionBindings::for('storefront', 'payments')): Denver's binding gives Denver's
+     * gateway. A connection whose auth_type is 'broker' is the platform-custody account
+     * (reached through core, decision 3 of CONNECTOR-CATALOG-PLAN.md); any other holds its
+     * own secret key, decrypted here with this install's key, and is called directly.
+     *
+     * @throws \RuntimeException when a direct connection's key cannot be read — never a
+     *                           quiet fall to the broker, which would charge the wrong account
+     */
+    public static function forConnection(\RedBeanPHP\OODBBean $conn): self {
+        $g = new self((string) ($conn->environment ?: 'production'));
+        if ((string) $conn->authType === 'broker') {
+            $g->driver = 'broker';
+            $g->cfg = self::brokerConfig();
+            return $g;
+        }
+        $secret = ConnectionStore::ownToken($conn);
+        if ($secret === '') {
+            throw new \RuntimeException("Stripe connection '" . ConnectionStore::alias($conn) . "' (#{$conn->id}) has no readable secret key on this install — reconnect it under Connections → Stripe.");
+        }
+        $g->driver = 'direct';
+        $g->cfg = ['secret' => $secret];
+        return $g;
+    }
+
     public function driver(): string { return $this->driver; }
 
     public function getAccount(): array { return $this->call('get_account', []); }

@@ -55,7 +55,7 @@ binding     role → connection        install-level or entity-level            
 
 Invariants, each of which the code enforces rather than assumes:
 
-1. **A concept asks by role.** `Connections::for('payments')` inside a concept, never
+1. **A concept asks by role.** `ConnectionBindings::for('payments')` inside a concept, never
    `ConnectionStore::for('stripe')`. The lint (§5) flags a concept that names a type.
 2. **Ambiguity is an error.** One candidate with no binding binds itself and says so in the
    log; two candidates with no binding throws `UnboundRoleException` naming the concept, the
@@ -152,7 +152,7 @@ brand) — the mechanism is one.
   manager of Los Angeles), and a site-scoped controller checks it the way `TaskAccessControl`
   checks a team.
 - **Bindings hang off sites.** `connectionbinding` and `channel` rows carry `site_ref`; the
-  resolver (§4) reads the current site first. So `Connections::for('payments')` in Denver
+  resolver (§4) reads the current site first. So `ConnectionBindings::for('payments')` in Denver
   is Denver's Stripe with no code knowing Denver exists, and a site with no binding of its
   own falls to the install-level binding only when the role says `inherit: true` (payments
   does not: money must never fall through to another franchise's account; mail may).
@@ -253,14 +253,14 @@ for its role (no separate `connectionbinding` row); install-scoped roles use
 `connectionbinding`. Cursors (`lastchecked` and friends) live on the channel, so two
 Shopify stores advance independently and a re-bound connection keeps its place.
 
-## 4. Resolution — `lib/Connections.php` (new; one class, used by concepts, pipelines and the broker)
+## 4. Resolution — `lib/ConnectionBindings.php` (new; one class, used by concepts, pipelines and the broker — not `Connections`, which is the hub controller's name)
 
 ```php
-Connections::for(string $concept, string $role, ?array $entity = null): OODBBean   // the connection bean (read-only)
-Connections::token(string $concept, string $role, ?array $entity = null): string   // decrypted secret, this install only
-Connections::candidates(string $concept, string $role): array                      // [{id, alias, type, environment}] for pickers
-Connections::bind(string $concept, string $role, int $connectionId, ?array $entity, string $by): void
-Connections::unbound(string $concept): array                                       // roles with no usable binding (for the Plugins page and verify())
+ConnectionBindings::for(string $concept, string $role, ?array $entity = null): OODBBean   // the connection bean (read-only)
+ConnectionBindings::token(string $concept, string $role, ?array $entity = null): string   // decrypted secret, this install only
+ConnectionBindings::candidates(string $concept, string $role): array                      // [{id, alias, type, environment}] for pickers
+ConnectionBindings::bind(string $concept, string $role, int $connectionId, ?array $entity, string $by): void
+ConnectionBindings::unbound(string $concept): array                                       // roles with no usable binding (for the Plugins page and verify())
 ```
 
 Order in `for()`: the current site's entity binding → the current site's binding → the
@@ -276,7 +276,7 @@ resolves as unbound, with the alias snapshot in the message.
 
 Where each consumer plugs in:
 
-- **Concept code**: `Connections::for('payments')` inside `app\concepts\storefront\…`; the
+- **Concept code**: `ConnectionBindings::for('payments')` inside `app\concepts\storefront\…`; the
   concept name is inferred from the calling namespace so code does not repeat it.
 - **Pipelines** (`ConnectionStep`): a pipeline shipped by a concept says `"connection": {"role": "search"}`;
   an app's own pipeline may say `"connection": {"alias": "Stripe · EU store"}` or keep the
@@ -373,7 +373,7 @@ already, so a shared key's mistakes open no fix tasks.
 - `WorkspaceShareTest`: flagged rows and the key travel; unflagged do not; the binding to an
   unshared connection resolves unbound in the workspace.
 - Characterization first, as always: what `ConnectionStore::for()` does today is pinned
-  before `Connections::for()` is layered on it.
+  before `ConnectionBindings::for()` is layered on it.
 
 ## 10. Build order — every step shippable alone
 
@@ -425,8 +425,9 @@ piece; everything after is surface.
 8. **"Channel" is the customer-facing word** for an entity-scoped binding (§2a) — the term
    srklr, cannonwms and myctobot users already know; "binding" stays internal. (Proposed.)
 9. **Core's own mail** (`lib/Mailer.php`, `conf/mailgun.ini`) moves onto a `mail` binding in
-   P6, not before: transactional mail must not depend on the new machinery while it is being
-   built. (Proposed.)
+   P2, with the Mailgun manifest — the owner's call (2026-09-28): few enough clients that
+   transactional mail may depend on the new machinery while it is built, and breakage there
+   is acceptable. (Decided.)
 10. **"Site" is the generic word** in core; a concept may present it as warehouse, location,
     franchise or client. (Proposed — the owner's examples were franchises and warehouses;
     one bean, many labels.)

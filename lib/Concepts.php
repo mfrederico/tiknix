@@ -138,6 +138,14 @@ class Concepts {
      *
      * @return array<string,ConceptManifest>
      */
+    /** One installed concept's manifest (enabled or not). */
+    public function manifest(string $name): ConceptManifest {
+        if (!preg_match(self::NAME_RE, $name)) throw new ConceptException("'{$name}' is not a valid concept name.");
+        $on = $this->enabled();
+        if (isset($on[$name])) return $on[$name];
+        return ConceptManifest::load($this->conceptsDir() . '/' . $name, $name);
+    }
+
     public function enabled(): array {
         if ($this->enabled === null) {
             $out = [];

@@ -68,6 +68,42 @@ Invariants, each of which the code enforces rather than assumes:
    them (they hold the id). Two connections of one connector on one install cannot share an
    alias.
 
+## 2a. Channels — what srklr got right, carried over
+
+srklr (`srklr.arc.tiknix`, `srklr.tiknix/views/channel/`) ran for years on a pattern the owner
+later reused in cannonwms and myctobot, and it is the entity-level binding above with the
+rest of its anatomy attached. Read it before building P1/P3:
+
+| srklr | What it is | In this plan |
+|---|---|---|
+| `channel` bean, one row per configured integration; several rows of one platform (two Shopify stores) | the bound instance, with `getSetting/setSetting`, **switches** (per-channel feature toggles) and **cursors** (`lastchecked` = the last ORDER date seen, "not system date!") | a **channel** = an entity-level binding + its own settings, switches and cursors, stored on the channel row — never on the connection, which is only credentials |
+| `views/channel/form-<platform>.php` (shopify, bigcommerce, miva, woocommerce, amazon) | a setup wizard: collect credentials, *validate by calling the API*, then save | the connector's connect form (hub) + the concept's channel wizard (its entity form with the picker), and `validateApiKey()` / `test_path` doing the live check before anything is stored |
+| `views/channel/plugin-<service>.php` (klaviyo, mailchimp, quickbooks, shipstation, slack, webhook, datamerge, posystem, pptr) | services attached to a channel, each with its settings card | connectors of other roles (`mail`, `accounting`, `shipping`, `notify`, `webhook`) bound to the same concept — the two kinds are one mechanism, distinguished by role |
+| `BaseControls\ChannelContext` — `getApi`, `initiateBatch`, `get`, `hook`, `streamOut`; the Klaviyo channel's verbs: order, setOrderStatus, updateStock, skulist, emailzip, test | one adapter per platform behind a fixed interface: an API client, a batch entry point, a fetch, a **webhook receiver**, streaming output | the concept's **adapter per connector type** (§2 invariant 4) is exactly this interface, declared by the concept for each role: `adapters: {payments: {stripe: "PaymentsStripe"}, mail: {microsoft: "MailGraph", mailgun: "MailMailgun", klaviyo: "MailKlaviyo"}}`; `hook` becomes the concept's per-channel webhook route (`/<concept>/hook/<channel>`), verified by the connector |
+| `cron/download<platform>.php`, `<platform>variance.php`, `update<platform>orderstatus.php` — "below line 73 is unique, above is bootstrap" | per-channel scheduled jobs sharing one bootstrap; a change ledger (`queuestock`) | the concept's pipelines, run **per channel** (`ConnectionStep` by role resolves the channel's binding; the cursor is read and advanced on the channel row); the ledger is the concept's own bean |
+
+Two consequences for the plan as written:
+
+- **"Channel" is the word.** Entity-level bindings are channels in the UI and the code:
+  `channel` is the generic bean concepts use unless they already have a better-named one
+  (outreach's `emailaccount` is a channel of role `mail`). It carries `concept, role,
+  connection_ref, alias_snapshot, name, settings_json, switches_json, cursors_json, enabled`.
+  A concept with `scope: entity` roles gets the channel list/wizard pages for free from a
+  core view (`views/channels/`), the way the Plugins page is shared.
+- **The adapter contract is declared, not discovered.** `adapters` in the concept manifest
+  maps role × connector type → class; the lint checks each class implements the role's
+  interface (`ChannelAdapter`: `client()`, `test()`, `fetch()`, `batch()`, `hook()`), so a
+  concept that claims `mail: [microsoft, mailgun]` and ships only the Graph adapter fails
+  lint, not a customer.
+
+Mail, concretely — the roles the owner named: `mail: [microsoft, gmail, mailgun, klaviyo]`.
+Mailgun is already in core as `lib/Mailer.php` reading `conf/mailgun.ini`; it becomes a
+connector manifest (`api_key` + domain, `test_path` `/v3/domains/<domain>`) and `Mailer` binds
+a `mail` role for core's own transactional mail in P6, config kept until then. Klaviyo comes
+from srklr's controller as a manifest connector (public key / site id + private key, `test`
+against `/api/accounts`) with the tools its verbs imply (profiles, events, lists, orders);
+its `hook` is the webhook receiver. Both are published in P2 (§10).
+
 ## 3. Data model
 
 ### 3.1 `connections` (each install's store) — one new column
@@ -104,11 +140,19 @@ how a third-party MCP becomes a connection a concept can bind to, with no PHP.
 "requires": {
   "connectors": [
     { "role": "payments", "types": ["stripe"],               "label": "Takes payment" },
-    { "role": "mail",     "types": ["microsoft", "gmail"],   "label": "Sends and reads mail", "scope": "entity", "entity": "emailaccount" },
+    { "role": "mail",     "types": ["microsoft", "gmail", "mailgun", "klaviyo"], "label": "Sends and reads mail", "scope": "entity", "entity": "emailaccount" },
     { "role": "search",   "types": ["serpapi"],              "optional": true }
   ]
+},
+"adapters": {
+  "payments": { "stripe": "PaymentsStripe" },
+  "mail":     { "microsoft": "MailGraph", "gmail": "MailGmail", "mailgun": "MailMailgun", "klaviyo": "MailKlaviyo" }
 }
 ```
+
+`adapters` (§2a) names, per role and connector type, the class (relative to the concept's
+namespace) implementing that role's `ChannelAdapter` interface; the lint refuses a manifest
+that lists a type in `types` without an adapter for it.
 
 - `scope`: `install` (default — one binding for the whole install) or `entity` (each row of
   `entity` bean carries its own binding; the install-level binding, if any, is the default
@@ -124,6 +168,13 @@ connection_ref (id in connections.db), alias_snapshot, bound_by ('auto'|'member:
 Unique on `(concept, role, scope, entity_type, entity_ref)`. The `connection_ref` is a plain
 pointer (`_ref`, not `_id` — it points into another database). `alias_snapshot` is only for
 display when the connection is gone; resolution always re-reads the store.
+
+Entity-scoped roles use the **channel** bean (§2a) as the entity unless the concept names its
+own: `channel`: `concept, role, name, connection_ref, alias_snapshot, settings_json,
+switches_json, cursors_json, enabled, created_at, updated_at`. A channel row IS the binding
+for its role (no separate `connectionbinding` row); install-scoped roles use
+`connectionbinding`. Cursors (`lastchecked` and friends) live on the channel, so two
+Shopify stores advance independently and a re-bound connection keeps its place.
 
 ## 4. Resolution — `lib/Connections.php` (new; one class, used by concepts, pipelines and the broker)
 
@@ -247,11 +298,15 @@ already, so a shared key's mistakes open no fix tasks.
   **storefront** declares `payments`, Invoza's Stripe sandbox auto-binds, a second Stripe
   connection makes the page say which to choose and the Plugins page binds it. Tests above.
 - **P2 — connector catalog.** `tiknix-concepts/connectors/`, publish/install/update/lint,
-  lock section, `--concept-install` resolution, `suggests`. Proving case: **serpapi** published,
-  `prospects` installed on a fresh project brings it, the hub offers Prospects after a SerpAPI
-  connect.
-- **P3 — UI.** Hub alias/rename/used-by/refuse-delete; Plugins page bindings; entity picker
-  widget; `outreach` moves `emailaccount` onto the widget (its own plan on the harvest fork).
+  lock section, `--concept-install` resolution, `suggests`; the `adapters` map and the
+  `ChannelAdapter` interface with its lint. Proving cases: **serpapi** published, `prospects`
+  installed on a fresh project brings it, the hub offers Prospects after a SerpAPI connect;
+  **mailgun** and **klaviyo** published as manifests (§2a), `outreach` declares
+  `mail: [microsoft, mailgun, klaviyo]` with an adapter each.
+- **P3 — UI and channels.** Hub alias/rename/used-by/refuse-delete; Plugins page bindings;
+  the shared channel pages (`views/channels/`: list, wizard with the connection picker,
+  switches, cursors) that any concept with an entity-scoped role gets; `outreach` moves
+  `emailaccount` onto them (its own plan on the harvest fork); per-channel webhook route.
 - **P4 — pipelines and the broker by binding.** `ConnectionStep` role/alias; MCP tool listing
   grouped by alias; `connection_id` validated per instance.
 - **P5 — task workspaces share flagged connections.**
@@ -277,6 +332,11 @@ piece; everything after is surface.
    say so.
 6. **Suggests are soft** — never install on connect.
 7. **Renaming an alias** re-labels; deleting a bound connection is refused. (Chosen.)
+8. **"Channel" is the customer-facing word** for an entity-scoped binding (§2a) — the term
+   srklr, cannonwms and myctobot users already know; "binding" stays internal. (Proposed.)
+9. **Core's own mail** (`lib/Mailer.php`, `conf/mailgun.ini`) moves onto a `mail` binding in
+   P6, not before: transactional mail must not depend on the new machinery while it is being
+   built. (Proposed.)
 
 ## 12. Not in this plan
 

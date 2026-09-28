@@ -159,6 +159,43 @@ $flash = $_SESSION['flash'] ?? []; unset($_SESSION['flash']);
                         </div>
                       </details>
                     </div>
+                  <?php elseif ($key === 'microsoft'):
+                    /* Same reasoning as Shopify above: there is no shared Microsoft app — a
+                       mailbox connection is always the customer's own Azure AD app registration
+                       (MicrosoftConnector::requiresOwnApp) — so the credential fields are shown
+                       here rather than sending the customer down the shared-app handoff path,
+                       where a requiresOwnApp() connector would only fail with a less actionable
+                       error. Ported from lead-machine with the connector (2026-09-28). */
+                    $__scheme = (($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http';
+                    $__cb = $__scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '') . '/connections/callback/microsoft';
+                  ?>
+                    <div class="col-12">
+                      <details open>
+                        <summary class="small text-secondary" style="cursor:pointer">Azure AD app credentials (required)</summary>
+                        <div class="row g-2 mt-1">
+                          <div class="col-12">
+                            <p class="small text-secondary mb-2">
+                              A Microsoft mailbox always connects through your own Azure AD app registration —
+                              this project holds no shared Microsoft app. Register one at
+                              <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
+                              (Entra ID → App registrations → New registration), add the redirect URI below as a
+                              Web platform, and grant delegated Microsoft Graph permissions
+                              <code>Mail.Send</code>, <code>Mail.ReadWrite</code>, <code>User.Read</code>,
+                              <code>offline_access</code>, <code>Calendars.ReadWrite</code>.<br>
+                              Redirect URI to register: <code><?= htmlspecialchars($__cb) ?></code>
+                            </p>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label small mb-1">Application (client) ID</label>
+                            <input type="text" name="app_key" class="form-control form-control-sm" autocomplete="off" placeholder="from the Azure app overview" required>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label small mb-1">Client secret</label>
+                            <input type="password" name="app_secret" class="form-control form-control-sm" autocomplete="new-password" placeholder="stored encrypted" required>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
                   <?php endif; ?>
                   <div class="col-7"><select name="env" class="form-select form-select-sm">
                     <?php foreach ($environments as $e): ?><option value="<?= htmlspecialchars($e) ?>"<?= $e === 'production' ? ' selected' : '' ?>><?= $e === 'production' ? 'Live' : ucfirst($e) ?></option><?php endforeach; ?>

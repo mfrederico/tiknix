@@ -175,16 +175,19 @@ if (isset($opt['build'])) {
     if (\app\IsolatedPool::ownerOnIsolated(dirname(__DIR__))) {
         out('# running seeds as the pool user (' . \app\IsolatedPool::user(dirname(__DIR__)) . ')…');
         $r = \app\IsolatedPool::runAsPoolBooted(dirname(__DIR__),
-            'foreach ((new \app\services\Schema\WorkspaceSchemaBuilder())->build() as $file => $status) echo "  {$file}: {$status}\n"; '
-          . 'if (class_exists("\app\PermissionCache")) { \app\PermissionCache::clear(); echo "# permission cache cleared (in the pool)\n"; }');
+            '$bad = 0; foreach ((new \app\services\Schema\WorkspaceSchemaBuilder())->build() as $file => $status) { echo "  {$file}: {$status}\n"; if ($status !== "ok") $bad++; } '
+          . 'if (class_exists("\app\PermissionCache")) { \app\PermissionCache::clear(); echo "# permission cache cleared (in the pool)\n"; } echo $bad ? "EXIT:1\n" : "EXIT:0\n";');
         if ($r['output'] === '') bail("the pool answered nothing (cgi-fcgi exit {$r['status']}) — the seeds did not run");
-        out($r['output']);
-        exit(preg_match('/ERROR|FAILED|Fatal|Uncaught/', $r['output']) ? 1 : 0);
+        out(trim(str_replace(["EXIT:0", "EXIT:1"], '', $r['output'])));
+        // A seed that failed is a failed build: said by the exit code, not only by a line in the log.
+        exit(str_contains($r['output'], 'EXIT:1') || !str_contains($r['output'], 'EXIT:') || preg_match('/Fatal|Uncaught/', $r['output']) ? 1 : 0);
     }
     out('# running seeds…');
-    foreach ((new WorkspaceSchemaBuilder())->build() as $file => $status) out("  {$file}: {$status}");
+    $bad = 0;
+    foreach ((new WorkspaceSchemaBuilder())->build() as $file => $status) { out("  {$file}: {$status}"); if ($status !== 'ok') $bad++; }
     if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
-    exit(0);
+    if ($bad) err("# {$bad} seed(s) failed — see the lines above and the log");
+    exit($bad ? 1 : 0);
 }
 
 // --- Agent guidance: --agent-sync (also run by --concept-enable / --concept-disable) ---

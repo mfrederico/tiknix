@@ -181,8 +181,9 @@ class InstanceUpdate {
         }
 
         [$code, $o] = ($this->run)($root, "{$cli} --build 2>&1");
-        $errs = array_values(array_filter($o, fn($l) => str_contains($l, 'ERROR') && !str_contains($l, 'fluid schema change')));
-        $out['schema seeds'] = [$code === 0 && !$errs, $errs ? trim(implode(' | ', array_slice($errs, 0, 2))) : ''];
+        // --build exits non-zero when a seed failed; its "<seed>: error: …" line is the detail
+        $errs = array_values(array_filter($o, fn($l) => preg_match('/: error: |ERROR|FAILED/', $l) && !str_contains($l, 'fluid schema change')));
+        $out['schema seeds'] = [$code === 0 && !$errs, $errs ? trim(implode(' | ', array_slice($errs, 0, 2))) : ($code !== 0 ? 'exit ' . $code . ': ' . trim(implode(' ', array_slice($o, -2))) : '')];
         if (is_file("{$root}/concepts.lock")) {
             [$code, $o] = ($this->run)($root, "{$cli} --concept-seeds=all 2>&1");
             $out['plugin seeds'] = [$code === 0, $code === 0 ? '' : trim(implode(' ', array_slice($o, -2)))];

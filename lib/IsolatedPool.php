@@ -107,8 +107,15 @@ class IsolatedPool {
      */
     public static function runAsPoolBooted(string $root, string $body): array {
         $root = rtrim($root, '/');
+        // Under FPM the query cache (APCu, per SAPI) holds the table list, and RedBean's
+        // fluid mode reads it: a seed that creates a table is then told the table is still
+        // missing and issues CREATE TABLE twice ("table `site` already exists" on two
+        // instances' first update, 2026-09-28). Seeds run with the cache OFF for this
+        // request and clear it afterwards so the web sees what they built.
         $php = '<?php set_time_limit(0); ini_set("display_errors", "1"); chdir(' . var_export($root, true) . '); '
-             . 'require "bootstrap.php"; new \app\Bootstrap(); ' . $body;
+             . 'require "bootstrap.php"; new \app\Bootstrap(); '
+             . '$__ca = \Flight::get("cachedDatabaseAdapter"); if ($__ca instanceof \app\CachedDatabaseAdapter) $__ca->disableCache(); '
+             . 'try { ' . $body . ' } finally { if ($__ca instanceof \app\CachedDatabaseAdapter) { $__ca->clearAllCache(); $__ca->enableCache(); } }';
         return self::runAsPool($root, $php);
     }
 

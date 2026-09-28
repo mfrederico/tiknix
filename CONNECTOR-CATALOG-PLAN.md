@@ -522,3 +522,152 @@ piece; everything after is surface.
 Per-role permission scopes inside a connection (which tools a concept may call); marketplace
 listing of connectors; OAuth apps of core's own (the "shared app" handoff) beyond what exists;
 moving core's own consumers wholesale (P6 is opportunistic).
+
+## 13. Every instance is a tenant — the installation vector (owner's call, 2026-09-28)
+
+**The rule.** An instance is treated as if it were a self-hosted LXC tenant even when it sits
+on core's disk: **the instance asks, then pulls, with its own identity, and applies with its
+own user.** Core never reaches into an instance's tree. Core's only outbound acts are (a) the
+credential landing — an OAuth exchange that had to start on core because the provider app
+is core's — delivered to the instance's receive door, and (b) a "there is something to pull"
+signal, with polling as the guarantee (the MQTT rule). One transport for code: **git, with
+tags as versions.** A zip is an export, never an installation vector (§13.6).
+
+**Why now.** The mail migration (P2) ran as `ubuntu` into Serenity's connection store and left
+the pool user read-only on its own file — the third incident of the same shape (ACL mask,
+2026-09-17; sqlite3 probe, 2026-09-25; this). Each was a write that only works because the
+disk is shared. The guard (`ConnectionStore::assertOwnerMayWrite`, `IsolatedPool::runAsPool`)
+closes the store; the shared-disk pushes below are the same defect waiting elsewhere.
+
+### 13.1 Where each path stands
+
+| Path | Initiates | Writes, where | Today |
+|---|---|---|---|
+| `--concept-install`, `--connector-install` on an instance | the instance, with its broker key (`/concepthub/*`) | the CLI user, into the instance tree | **pull** ✓ |
+| LXC tenant bootstrap | the tenant, with its deploy token (`/git/<slug>.git`, read-only smart HTTP, `lib/GitHttp.php`) | the tenant's user | **pull** ✓ |
+| Credential after OAuth | core → `/connectorapi/receive` with the instance's key (`lib/ConnectorPush.php`) | the instance's pool, its own store | **push over HTTP** ✓ (tenant-safe) |
+| Plugins page **Install** on an instance | the instance asks (`requestInstall`), core queues a build **on core** (`queueInstall` → `scripts/concept-install.php` → plan-ingest) | ubuntu on core, into a worktree of the instance's clone, merged onto `instance/<slug>` | push over shared disk ✗ |
+| Agent builds (plans, standalone tasks) | core's executor (`PlanOrchestrator` / `PlanExecutor`) | ubuntu on core, same worktree + merge | push over shared disk ✗ |
+| Core upgrades (the rollout loop) | an operator on core (`upgrade-pre.sh` / `upgrade-post.sh`) | ubuntu merging `origin/main` into the live clone, then `--build`, `--agent-sync`, `resetcache` | push over shared disk ✗ |
+| Seeds / migrations | whoever runs `--build` | ubuntu (seed 23 re-runs itself as the pool) | mixed |
+
+Three pushes, one mechanism dressed three ways: ubuntu writes git history into the instance's
+clone because it can reach the directory.
+
+### 13.2 The four cutovers, in order
+
+Each is shippable alone; each ends with core holding one less write path into instances.
+
+**C1 — Builds and plugin installs land on the origin; the instance pulls.**
+Core keeps a bare (or non-checked-out) copy of every instance repository — the thing
+`GitHttp` already serves — and that is the ORIGIN. The executor's worktree is cut from the
+origin, the finished task is committed and merged onto `instance/<slug>` **there**, never in
+the live tree. The live tree becomes a plain clone whose only writer is its own `update`
+(C2). On this box the pull is a local fetch over the same endpoint a tenant uses, so nothing
+gets slower and there is exactly one code path. The Plugins-page install is then "a build
+whose one task is an install", unchanged in shape, landing on the origin like any build.
+- Changes: `PlanOrchestrator::launch` / `PlanExecutor` worktree base and merge target
+  (origin, not the live clone); `Concepthub::install` unchanged (it queues the same build);
+  a `repo_path` per instance row (bare origin) beside `dirFrom()`; `GitHttp` today serves
+  the LIVE clone's `.git` (`lib/GitHttp.php:52`) and moves to the origin — a tenant then
+  fetches what was merged on the origin, not whatever state the live tree happens to be in.
+- Proof: a task merged on Serenity's origin is invisible on serenity-bbdc01.tiknix.com until
+  `update` (C2) pulls it; the checkpoint/rollback story (`checkpointBeforeRun`) moves with it.
+- Risk: sidecars (workbench.tiknix) that read the live tree keep working — they read, they
+  do not merge. The `.aibuilder/wt/` worktree convention moves under the origin.
+
+**C2 — `update` is the instance's own command.** `php scripts/clitool.php --update`
+(and the same code on a cron/fake-cron tick when a pull signal arrived): `git fetch origin`,
+merge `origin/instance/<slug>` (builds) and the pinned core **tag** (releases; §13.3) into
+the working tree, keep the identity files, run `--build`, `--concept-seeds=all`,
+`--agent-sync`, `resetcache`, smoke `/` and `/auth/login`, report — i.e. today's
+`upgrade-pre.sh` + `upgrade-post.sh`, moved to the other side of the door and run **as the
+instance's user** (the pool, via `IsolatedPool::runAsPool`, or the tenant's own user on an
+LXC). Conflicts stop the update and are reported on the board as a task, not resolved by an
+operator's hand in the tree. Core's side of the loop shrinks to "tag a release, ping the
+fleet, read the reports".
+- Changes: `scripts/clitool.php --update`; a `release` tag scheme on core (`v2026.09.28`, or
+  semver); an instance pin (`conf/release` or the lock file) so an instance updates to a
+  version, not to whatever main is; a report row (`instance.last_update_at`, result) that the
+  fleet page reads; the upgrade scratch scripts retired.
+- Proof: Serenity updates itself from a tag with no operator write into its tree; the
+  Denver host is still Denver afterwards; the fleet page shows the version per instance.
+
+**C3 — Seeds and migrations run inside `update`, as the instance's user.** No seed writes
+instance data as ubuntu: `--build` invoked by C2 already runs as the right user, and a seed
+that must write the store on an isolated instance goes through `runAsPool` (seed 23 is the
+shape). The guard from P2 stays as the tripwire. The mail migration, the per-site backfills
+(`Sites::scopeBean`) and every future data migration are C3 by construction.
+- Proof: the guard never fires during an `update`; `getfacl data/connections.db` is
+  `mask::rwx` on every isolated instance after a fleet update (the survey in
+  `acl-mask-chmod-trap`).
+
+**C4 — Core needs no write access to instance trees at all.** With C1–C3 done, core's
+processes read instance trees (sidecars, the fleet page, `GitHttp`) and never write. Then the
+POSIX ACL that today grants the pool `rwx` on the WHOLE tree (Serenity: `lib/`, `concepts/`,
+`connectors/` all writable by the pool — checked 2026-09-28) is narrowed to what the app
+must write: `data/`, `secure/`, `log/`, `public/uploads/`, `state/`, `.aibuilder/`. Code is
+read-only to the app that runs it, which is what isolation was for. **Decision 13** (below)
+says whether to narrow; C4 is when it is safe to.
+- Proof: a pool request that tries to write `lib/` fails; every page and pipeline still
+  works; `update` (the instance's user) still writes code.
+
+### 13.3 Core releases as tags
+
+Core's `main` stops being what instances receive. A **release** is a tag on core; an instance
+pins one and `update` moves it to the next. What an instance carries besides core — its own
+app code on `instance/<slug>`, its plugins under `concepts/` (copies, per COMPONENTS_PLAN),
+its manifests under `connectors/`, its lock — merges with the tag exactly as it merges with
+main today, so the known hand-merge cases (partsdna `Settings.php`, Mailer on serenity…)
+become C2 conflict reports instead of operator afternoons. Plugins keep their own versions
+in the catalog; a release may bump the minimum plugin versions it expects and `update` says
+which plugins need `--concept-update` before it will proceed.
+
+### 13.4 Credentials and OAuth on a tenant's own domain
+
+Already correct in shape (`controls/Connections.php::instanceconnect`): a connection made
+with the customer's **own** provider app runs the whole OAuth locally on the instance's
+domain — authorize, callback, seal — and core is not involved. A connection made with
+**tiknix's shared** app must call back to tiknix.com, because that is the URI registered on
+the app and the secret behind it is ours: core is the landing pad and pushes the credential
+to the instance's receive door (HTTP, the instance's key). Both work off-box today.
+Consequences for the tenant model:
+- **Ejecting a connection means re-registering, not copying.** Leaving development = create
+  your own app per provider and reconnect; the shared-app token stays valid until then.
+- **A manifest says which model it needs:** `requires_own_app: true` for providers whose
+  callback must be the app owner's (Shopify, Stripe Connect); plain OAuth (GitHub, Google)
+  works either way; API-key connectors (Mailgun, Klaviyo) have no redirect and are
+  domain-free from day one. Surfaced on the card and in `--connectors`.
+- **Sites** do not change this: with the shared app every site's connect lands on tiknix.com
+  and is pushed to the one install, then bound per site (§2c); with an own app the franchise
+  registers its own domain as the callback.
+- **The scrub must hold across updates:** `conf/<connector>.ini` is emptied at provision so a
+  project never holds tiknix's shared secret; `conf/*.ini` is gitignored (only
+  `*.example.ini` is tracked), so a tag pulled by C2 cannot reintroduce one. C2's proof
+  includes `test -s conf/github.ini` (and each provider ini) being empty on a tenant after
+  an update.
+
+### 13.5 What stays on core, by design
+
+The catalog (served, versioned), the origins and the git endpoint, the broker (tokens for
+shared-app connections, the receive push), the fleet page, billing, the planner/executor
+(it runs on core and lands on the origin), the shared OAuth apps, the release tags, the ping.
+
+### 13.6 Decisions this section adds
+
+13. **Narrow the pool's ACL to data directories** once C4 is reached (proposed: yes — an app
+    that can rewrite its own code is not isolated). Until then the wide ACL stays; the store
+    guard covers the case that actually bit.
+14. **Git with tags is the one transport**; a zip/tar is an export of a tag (self-hosting
+    hand-off), never something an endpoint unpacks. No "receive an archive" door is built.
+15. **The instance user runs every write into the instance** — the pool (via `runAsPool`) on
+    core's disk, the tenant's user on an LXC. ubuntu on core reads instance trees and never
+    writes them after C1–C3. The rollout scratch scripts are retired at C2.
+16. **`requires_own_app` on connector manifests** (13.4), set for Shopify and Stripe Connect.
+
+### 13.7 Order against the rest of the plan
+
+C1 and C2 before P3's bindings UI, so nothing new is built on the push paths; C3 is P2's
+guard made total and can ride with C2; C4 after a fleet update proves C1–C3. P4 (pipelines
+and the broker by binding) is unaffected. Roughly: C1 one day, C2 one day, C3 half, C4 half
+plus a fleet pass.

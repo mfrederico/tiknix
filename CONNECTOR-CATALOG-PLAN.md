@@ -15,9 +15,10 @@ core classes with the same meta. A **connection** is one credentialed use of a c
 install, created by a person, encrypted in that install's own store, and now carrying a
 human **alias** ("Serenity main", "EU store"). A **concept** never names a provider in code: its
 manifest declares **roles** (`payments`, `mail`, `search`) and which connector types may fill
-each; enabling the concept **binds** each role to a connection alias — at install level when
-there is one of a thing, at entity level when the concept models several (a campaign's sending
-mailbox, a storefront's shop). Resolution is strict: one candidate binds itself; two candidates
+each; enabling the concept **binds** each role to a connection alias — per **site** (a franchise,
+location, warehouse or client: Serenity's Los Angeles and Denver each with their own Stripe,
+§2c), at install level when there is one of a thing, at entity level when the concept models
+several (a campaign's sending mailbox, a storefront's shop). Resolution is strict: one candidate binds itself; two candidates
 with no binding is an error that names the page to fix it; a missing connector type names the
 catalog entry to install. Connector definitions ship through a **connector catalog** beside the
 concept catalog, so `--concept-install=prospects` can bring the `serpapi` definition with it,
@@ -124,6 +125,52 @@ Two more things cannonwms settles:
   in the wizard and the hub as coming soon rather than being absent — which is also what the
   Get-started wizard already does for modules.
 
+### 2c. Sites — franchises, locations, warehouses (the owner's "supercritical" layer)
+
+Serenity with a Los Angeles and a Denver location needs a Stripe per location, for accounting;
+a WMS needs a warehouse per building; an agency has a client per engagement. cannonwms calls
+this a warehouse and resolves it once per request in its base control — *"single source of
+truth: 1) the sidebar switcher session, 2) `member.warehouse_id`, 3) first assigned"* — with
+members assigned to warehouses and channels linked to warehouses with priority. That is the
+scope of §2b made first-class, and it is where bindings actually live. This plan calls it a
+**site**; a concept may call it what its domain does (warehouse, location, franchise, client,
+brand) — the mechanism is one.
+
+- **A site** is a row of `site`: `slug, name, domain (optional), status, settings_json,
+  branding_json, address_json, parent_ref (a franchise may sit under a region), created_at`.
+  An install always has at least one (the default site, created by the install seed, slug
+  `main`), so single-location apps pay nothing and multi-location apps add rows.
+- **The current site is resolved once per request** (`Sites::current()`), in this order and
+  no other: the request's **host** when it matches a site's `domain`
+  (`serenity-denver.tiknix.com` → Denver — the Lua router already sends every `*.tiknix.com`
+  host to the install; the install maps host → site); else the **session switcher** (the
+  sidebar's "Denver ▾", cannonwms's pattern); else the **member's default site**
+  (`member.site_ref`); else the install's default site. A host that matches no site is not
+  "main" — it is a 404 with the site list in the log, because a franchise link that quietly
+  showed another franchise's data is the worst outcome.
+- **Members belong to sites** (`membersite`: member, site, role — a manager of Denver is not a
+  manager of Los Angeles), and a site-scoped controller checks it the way `TaskAccessControl`
+  checks a team.
+- **Bindings hang off sites.** `connectionbinding` and `channel` rows carry `site_ref`; the
+  resolver (§4) reads the current site first. So `Connections::for('payments')` in Denver
+  is Denver's Stripe with no code knowing Denver exists, and a site with no binding of its
+  own falls to the install-level binding only when the role says `inherit: true` (payments
+  does not: money must never fall through to another franchise's account; mail may).
+- **Data scoping is the concept's declaration**, not magic: a concept marks which of its
+  beans are per-site (`scoped: ["shoporder", "product"]`), those beans get `site_ref` by
+  seed, and `Bean::` reads through a site filter the concept opts into per query
+  (`Sites::where('shoporder')`). Unscoped beans are shared (a catalogue can be shared across
+  franchises while orders are not — Serenity's call per bean).
+- **Two deployment shapes, one code path.** A franchise can be a site inside one install
+  (rows), or its own instance (`serenity-denver.tiknix.com` provisioned as a project of its
+  own, the way every project is today). The concept code is identical because it only ever
+  asks for the current site's bindings; a site inside an install can later be **promoted** to
+  an instance (export its scoped rows, its channels and its bindings; the domain moves with
+  it) and an instance can be **adopted** as a site. Which shape a customer wants is about
+  accounting, staff and isolation, not code, and the wizard asks it as a question.
+- **The default site is invisible** in single-site installs: no switcher, no site column in
+  lists, no host mapping — until a second site exists.
+
 Mail, concretely — the roles the owner named: `mail: [microsoft, gmail, mailgun, klaviyo]`.
 Mailgun is already in core as `lib/Mailer.php` reading `conf/mailgun.ini`; it becomes a
 connector manifest (`api_key` + domain, `test_path` `/v3/domains/<domain>`) and `Mailer` binds
@@ -191,9 +238,10 @@ that lists a type in `types` without an adapter for it.
 
 ### 3.4 Bindings — a bean in the APP database (config, not secret)
 
-`connectionbinding`: `concept, role, scope ('install'|'entity'), entity_type, entity_ref,
+`connectionbinding`: `concept, role, site_ref, scope ('install'|'entity'), entity_type, entity_ref,
 connection_ref (id in connections.db), alias_snapshot, bound_by ('auto'|'member:<id>'), created_at`.
-Unique on `(concept, role, scope, entity_type, entity_ref)`. The `connection_ref` is a plain
+Unique on `(concept, role, site_ref, scope, entity_type, entity_ref)`; `site_ref = 0` is the
+install-wide binding a site may inherit when the role allows (§2c). The `connection_ref` is a plain
 pointer (`_ref`, not `_id` — it points into another database). `alias_snapshot` is only for
 display when the connection is gone; resolution always re-reads the store.
 
@@ -215,7 +263,9 @@ Connections::bind(string $concept, string $role, int $connectionId, ?array $enti
 Connections::unbound(string $concept): array                                       // roles with no usable binding (for the Plugins page and verify())
 ```
 
-Order in `for()`: entity binding → install binding → exactly one candidate (auto-bind, logged
+Order in `for()`: the current site's entity binding → the current site's binding → the
+install-wide binding *if the role inherits* (§2c; `payments` never does) → exactly one
+candidate on this install (auto-bind, logged
 `INFO Connections: auto-bound <concept>.<role> to <alias>`) → `UnboundRoleException`
 ("storefront needs a payments connection and this install has two Stripe connections
 (Serenity main, EU store) — choose one under Plugins → Storefront → Payments") → no candidate:
@@ -290,8 +340,14 @@ Where each consumer plugs in:
 3. Existing single connections auto-bind on first use (invariant 2), so nothing a customer
    has connected stops working the day this ships.
 4. Serenity's storefront today reaches Stripe through the broker driver with no local
-   connection: it gets a `payments` binding to a Stripe connection the owner creates (or the
-   broker-backed connection is registered as one — decision 3 below).
+   connection: the broker-backed Stripe becomes a real connection row (`auth_type = broker`,
+   alias "Serenity main") so it binds like any other (decision 3). Then the proving case for
+   sites: two sites, **Los Angeles** and **Denver**, each with its own Stripe connection and
+   its own `payments` binding; orders and tickets scoped per site, the catalogue shared;
+   `serenity-denver.tiknix.com` mapped to Denver by host. Checkout in Denver charges Denver's
+   Stripe; nothing in the storefront plugin names a site.
+5. Every install gets its default site (`main`) by seed; `member.site_ref` defaults to it;
+   scoped beans of enabled concepts get `site_ref = main` for existing rows.
 
 ## 8. Task workspaces (the earlier `workspace_share` proposal, placed here)
 
@@ -321,11 +377,16 @@ already, so a shared key's mistakes open no fix tasks.
 
 ## 10. Build order — every step shippable alone
 
-- **P1 — roles, aliases, bindings, resolver (core).** `connections.alias` + migration;
-  `connectionbinding` bean + seed; `Connections` class; `ConceptManifest` roles (bare strings
-  kept); `Concepts::verify()` unbound reporting; `--connectors` listing. Proving case:
-  **storefront** declares `payments`, Invoza's Stripe sandbox auto-binds, a second Stripe
-  connection makes the page say which to choose and the Plugins page binds it. Tests above.
+- **P1 — sites, roles, aliases, bindings, resolver (core).** `site` bean + default site by
+  seed + `Sites::current()` (host → switcher → member default → default site) + the sidebar
+  switcher once a second site exists; `connections.alias` + migration; `connectionbinding`
+  bean + seed (with `site_ref`); `Connections` class; `ConceptManifest` roles (bare strings
+  kept) with `inherit`; `Concepts::verify()` unbound reporting; `--connectors` listing.
+  Proving case — **Serenity**: the broker-backed Stripe becomes a connection row; `storefront`
+  declares `payments` (no inherit); Los Angeles and Denver as sites with a Stripe each;
+  Denver by host; checkout in Denver charges Denver's Stripe; a site with no Stripe of its
+  own refuses checkout naming the Plugins page rather than charging another franchise.
+  Tests above plus `SitesResolveTest` (host, switcher, member default, unknown host = 404).
 - **P2 — connector catalog.** `tiknix-concepts/connectors/`, publish/install/update/lint,
   lock section, `--concept-install` resolution, `suggests`; the `adapters` map and the
   `ChannelAdapter` interface with its lint. Proving cases: **serpapi** published, `prospects`
@@ -366,6 +427,15 @@ piece; everything after is surface.
 9. **Core's own mail** (`lib/Mailer.php`, `conf/mailgun.ini`) moves onto a `mail` binding in
    P6, not before: transactional mail must not depend on the new machinery while it is being
    built. (Proposed.)
+10. **"Site" is the generic word** in core; a concept may present it as warehouse, location,
+    franchise or client. (Proposed — the owner's examples were franchises and warehouses;
+    one bean, many labels.)
+11. **Payments never inherit.** A site with no `payments` binding refuses to take money rather
+    than charging the install-wide account; `mail` and `search` inherit by default. Each role
+    says which. (Chosen — accounting is the whole reason sites exist.)
+12. **Host mapping lives on the site row**, and an unmatched host is a 404, never the default
+    site. Instance-per-franchise stays available and a site can be promoted to one; the
+    wizard asks which shape the customer wants. (Proposed.)
 
 ## 12. Not in this plan
 

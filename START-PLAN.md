@@ -1182,6 +1182,23 @@ board, reviewed and merged like client work. What that took, and what it found:
   last merge (Serenity a0eadeb). The events module of the wizard is now backed by
   published components; `PrimitiveCheck`'s static list on Start needs the four names
   added before the module reads live.
+- **Track A5, lead-machine (2026-09-28) — harvested without touching the project.** The
+  owner's rule: pull the concepts, leave lead-machine alone. So the extraction ran on a
+  **fork**: `ProvisionService::fork` copies a checkpoint's code and its tracked database,
+  and a client's prospects do not belong in a scratch project agents read — a temporary
+  tag pointing at lead-machine's tree *without* `database/` (git plumbing, no commit on
+  its branch) gave a code-only fork, `leadmachine-harvest-b85d36`, deleted after. Plan 1
+  there (9 tasks, ~65 min, run from the CLI rather than the Builder) published
+  **clients, prospects, outreach 1.0.0** to the catalog; `MicrosoftConnector` (Graph mail
+  + calendar, the customer's own Azure app) and the SerpAPI manifest connector moved into
+  core (027b1ca) because a concept cannot carry connectors — an A0 gap worth closing
+  (`connectors/` in the concept format). The adoption notes live in the catalog repo
+  (`docs/adoption/lead-machine*.md`) for whenever lead-machine's owner wants them. The
+  fork also showed 26 core-owned files on lead-machine's branch are stale copies (earlier
+  rollouts resolved conflicts as "keep the instance's own" for core code too) — a fleet
+  pass with core-wins-on-core-owned-files is due. "Find and reach customers" is a sixth
+  wizard module waiting for a blueprint (§9): clients + prospects + outreach + a mail
+  connector.
 
 ## 11. Decisions to confirm
 

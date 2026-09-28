@@ -423,6 +423,31 @@ piece; everything after is surface.
   (§2c — orders are still one table), the sidebar switcher and Plugins-page bindings (P3),
   `ConnectionBindings` in pipelines and the broker (P4). The rule "a name that resolves to
   the hub controller" cost one rename: the resolver is `ConnectionBindings`, not `Connections`.
+- **P1b — per-site data, per-site config, the status endpoint (2026-09-28, core 11eeb7a;
+  storefront 1.0.3 c394a23).** The concept declares which of its beans are per-site
+  (`"scoped": ["shoporder","shoporderitem"]`, checked ⊆ `provides.beans`); the runtime does
+  the rest: `Sites::scopeBean()` adds `site_ref` + index and backfills existing rows to `main`
+  (run after the concept's own seeds by `runSeeds`, so `--concept-update`/`--concept-seeds`
+  report `per-site shoporder: added, backfilled:15`), `Sites::stamp()` on create (the
+  `SiteScoped` model trait), `Sites::filter()`/`where()` on every admin read. Cron sweeps
+  (stale holds) stay install-wide on purpose: cron has no host. **Every request resolves its
+  site** in the base controller (`Sites::current()` from the host; `SiteNotFoundException` →
+  a real 404 in `FlightMap`), then **`conf/sites/<slug>.ini`** is merged over the install's
+  config for that request — only `[app] [brand] [mail] [features] [locale] [shop] [seo]`,
+  credential keys refused by name, other sections refused; with no file a second site still
+  gets its own `app.name`. The file is tracked (no secrets by rule), so publishing carries it.
+  `/site/status` (public JSON: host, site, multi, applied config keys; roles per concept when
+  logged in) and `/site/switch` (POST, member) exist. Proved on Serenity after the core roll:
+  `serenity-bbdc01.tiknix.com/site/status` → `main`; `serenity-denver.tiknix.com/site/status`
+  → `denver` with `["app.name","app.timezone"]` from `conf/sites/denver.ini`; by script the
+  same code sees 15 orders / 3 customers on main and 0 / 0 on Denver. Two facts learned:
+  nginx's dynamic host map only routes a host that has a symlinked instance dir, so a truly
+  unknown host lands on core's vhost and never reaches the install (the 404 path is proved by
+  test, not by curl); and Serenity's own `views/layouts/_site.php` hard-codes its title, so
+  the overlay changes what `Flight::get('app.name')` answers, not that page — the app's code
+  has to read config for a franchise to look different. Instance tests that exercise a scoped
+  model must create a site first (`Sites::create('main', …)` in the test case); the storefront
+  test base does.
 
 ## 11. Decisions to confirm
 

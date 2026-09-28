@@ -564,7 +564,15 @@ Flight::map('siteName', function() {
     static $cached = null;
     if ($cached !== null) return $cached;
     $name = '';
-    try { $name = trim((string) Flight::getSetting('site_name', 0)); } catch (\Throwable $e) { $name = ''; }
+    // A site with its own name (a second site, or conf/sites/<slug>.ini — Sites::applyConfig
+    // records what it applied) is that site: the install-wide site_name setting is main's.
+    $applied = Flight::get('site.config_applied');
+    if (is_array($applied) && in_array('app.name', $applied, true)) {
+        $name = trim((string) (Flight::get('app.name') ?? ''));
+    }
+    if ($name === '') {
+        try { $name = trim((string) Flight::getSetting('site_name', 0)); } catch (\Throwable $e) { $name = ''; }
+    }
     if ($name === '') $name = trim((string) (Flight::get('app.name') ?? ''));
     return $cached = ($name !== '' ? $name : 'Tiknix');
 });

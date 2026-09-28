@@ -322,7 +322,10 @@ if (isset($opt['concept-seeds'])) {
     foreach ($names as $name) {
         try {
             $r = \app\Concepts::instance()->runSeeds($name);
-            out("# {$name}: " . ($r ? count($r) . ' seed(s) ok' : 'no seeds'));
+            $scoped = array_filter($r, fn($k) => str_starts_with($k, 'scoped:'), ARRAY_FILTER_USE_KEY);
+            $seeds = count($r) - count($scoped);
+            out("# {$name}: " . ($seeds ? "{$seeds} seed(s) ok" : 'no seeds'));
+            foreach ($scoped as $k => $result) out("  per-site " . substr($k, 7) . ": " . substr($result, 5));   // added | backfilled:<n> | unchanged
         } catch (\app\ConceptException $e) {
             err("# {$name}: FAILED — " . $e->getMessage());
             $failed = true;
@@ -470,7 +473,10 @@ if (isset($opt['concept-update'])) {
     if ($r['enabled']) {
         try {
             $seeded = \app\Concepts::instance()->runSeeds($name);
-            out('# seeds: ' . ($seeded ? count($seeded) . ' ok' : 'none'));
+            $scoped = array_filter($seeded, fn($k) => str_starts_with($k, 'scoped:'), ARRAY_FILTER_USE_KEY);
+            $n = count($seeded) - count($scoped);
+            out('# seeds: ' . ($n ? "{$n} ok" : 'none'));
+            foreach ($scoped as $k => $result) out("  per-site " . substr($k, 7) . ": " . substr($result, 5));
         } catch (\app\ConceptException $e) {
             bail("updated, but its seeds failed — " . $e->getMessage());
         }

@@ -144,6 +144,13 @@ Flight::map('defaultRoute', function($prefix = '') {
                     Flight::get('log')->warning("Method not found: {$function}");
                     Flight::notFound();
                 }
+            } catch(\app\SiteNotFoundException $e) {
+                // The HOST names no site of this install (lib/Sites.php): a real 404, not a
+                // server error — the code is fine, the address is not one this install serves.
+                // Thrown from the base controller's constructor, which cannot stop a request
+                // itself (see notFound() below: render and return, nothing more).
+                Flight::get('log')->warning('No site for host: ' . $e->getMessage());
+                Flight::notFound();
             } catch(\Throwable $e) {
                 // Catch both Exception and Error (PHP 7+)
                 Flight::get('log')->error("Controller error: ".$e->getMessage(), [

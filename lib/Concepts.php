@@ -849,6 +849,12 @@ class Concepts {
                 throw new ConceptException("Concept '{$name}': its seeds failed:\n  - " . implode("\n  - ", $lines));
             }
         }
+        // Per-site beans (manifest `scoped`): the column and its backfill, after the concept's
+        // own seeds have created the tables. Reported per bean like a seed line.
+        $m = $this->manifest($name);
+        foreach ($m->scoped as $bean) {
+            $seeded["scoped:{$bean}"] = 'ok — ' . Sites::scopeBean($bean);
+        }
         return $seeded;
     }
 

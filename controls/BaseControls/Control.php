@@ -15,6 +15,8 @@ abstract class Control {
     
     protected $logger;
     protected $member;
+    /** @var \RedBeanPHP\OODBBean|null the site this request acts for (lib/Sites.php); null before seed 21 ran */
+    protected $site = null;
     protected $viewData = [];
     protected $routeParams = [];
 
@@ -34,6 +36,31 @@ abstract class Control {
                 ->setLocale($locale)->setFallback('en');
         }
 
+        // The SITE this request acts for (lib/Sites.php; CONNECTOR-CATALOG-PLAN.md §2c) —
+        // resolved once, from the host first, and its conf/sites/<slug>.ini applied before any
+        // branding is read, so mystore2.com answers as mystore2. An install whose seeds have
+        // not run yet has no site table: that is "the feature is not installed", logged once
+        // as a warning, not a reason to fail every page during a rollout. A host that names
+        // no site is a real 404. Cannonwms resolves its warehouse in the same place.
+        $this->site = null;
+        if (Flight::get('site') === null) {
+            try {
+                $site = \app\Sites::current();
+                Flight::set('site', $site);
+                Flight::set('site.config_applied', \app\Sites::applyConfig($site));
+            } catch (\app\SiteNotFoundException $e) {
+                throw $e;   // the router answers it with a real 404 (FlightMap)
+            } catch (\Throwable $e) {
+                if (stripos($e->getMessage(), 'no such table') !== false) {
+                    $this->logger?->warning('Sites: no site table yet — run `php scripts/clitool.php --build` (seed 21_Sites)');
+                    Flight::set('site', false);
+                } else {
+                    throw $e;
+                }
+            }
+        }
+        $this->site = Flight::get('site') ?: null;
+
         // Initialize view data
         $this->viewData = [
             'member' => $this->member,
@@ -41,6 +68,8 @@ abstract class Control {
             'menu' => Flight::loadMenu(),
             'title' => 'App',
             'csrf' => SimpleCsrf::getTokenArray(),
+            'site' => $this->site,
+            'sites_multi' => $this->site ? \app\Sites::multi() : false,
             // Global branding, available to every view: the admin-editable site name and
             // whether this is the core install (tenants show their own name, core shows Tiknix).
             'site_name' => Flight::siteName(),

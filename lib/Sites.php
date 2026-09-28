@@ -147,6 +147,105 @@ class Sites {
         return ["{$col} = ?", [(int) self::current()->id]];
     }
 
+    // ---- per-site data (CONNECTOR-CATALOG-PLAN.md §2c: "data scoping is the concept's declaration") ----
+
+    /**
+     * Make a bean per-site: add `site_ref` (indexed) and stamp every existing row with the
+     * default site, so nothing that exists today is orphaned. Idempotent; DDL, so it runs
+     * from a seed or the plugin-enable step, never from a request. The identifier is a
+     * validated bean name (lowercase alphanumerics), never user input.
+     *
+     * @return string added | backfilled:<n> | unchanged
+     */
+    public static function scopeBean(string $bean): string {
+        $bean = Bean::normalize($bean);
+        if (!preg_match('/^[a-z][a-z0-9]*$/D', $bean)) throw new \InvalidArgumentException("Sites::scopeBean: '{$bean}' is not a bean name.");
+        $tables = array_map('strtolower', Bean::inspect());
+        if (!in_array($bean, $tables, true)) return 'unchanged';   // the bean's own seed has not created it yet
+        $cols = Bean::inspect($bean);
+        $out = 'unchanged';
+        $table = '`' . $bean . '`';
+        if (!array_key_exists('site_ref', $cols)) {
+            $ddl = 'ALTER TABLE ' . $table . ' ADD COLUMN site_ref INTEGER DEFAULT 0';
+            Bean::exec($ddl);
+            $out = 'added';
+        }
+        $idx = 'CREATE INDEX IF NOT EXISTS idx_' . $bean . '_site_ref ON ' . $table . ' (site_ref)';
+        Bean::exec($idx);
+        $main = self::bySlug(self::DEFAULT_SLUG);
+        if ($main) {
+            $count = 'SELECT COUNT(*) FROM ' . $table . ' WHERE site_ref = 0 OR site_ref IS NULL';
+            $n = (int) Bean::getCell($count);
+            if ($n > 0) {
+                $fill = 'UPDATE ' . $table . ' SET site_ref = ? WHERE site_ref = 0 OR site_ref IS NULL';
+                Bean::exec($fill, [(int) $main->id]);
+                $out = ($out === 'added' ? 'added, ' : '') . "backfilled:{$n}";
+            }
+        }
+        return $out;
+    }
+
+    /** Scope a query to the current site: filter('status = ?', ['paid']) → ['site_ref = ? AND (status = ?)', [id, 'paid']]. */
+    public static function filter(string $sql = '', array $params = [], string $alias = ''): array {
+        [$w, $p] = self::where($alias);
+        $sql = trim($sql);
+        if ($sql === '') return [$w, $p];
+        if (preg_match('/^\s*(ORDER|LIMIT|GROUP)\b/i', $sql)) return [$w . ' ' . $sql, array_merge($p, $params)];
+        return [$w . ' AND (' . $sql . ')', array_merge($p, $params)];
+    }
+
+    /** Stamp a new row with the current site (a row that already has one is left alone). */
+    public static function stamp(\RedBeanPHP\OODBBean $bean): void {
+        if ((int) ($bean->siteRef ?? 0) <= 0) $bean->siteRef = (int) self::current()->id;
+    }
+
+    // ---- per-site config (a site with its own domain has its own .ini) -----------------------
+    //
+    // conf/sites/<slug>.ini is merged over the install's config for the request, so
+    // mystore2.com answers with its own name, branding, from-address, locale. Only sections a
+    // site may own are read — never the database, security, firehose, broker, sidecar or
+    // engine sections, and never a credential: those belong to the install and to connections.
+
+    public const CONFIG_SECTIONS = ['app', 'brand', 'mail', 'features', 'locale', 'shop', 'seo'];
+    private const CONFIG_KEYS_NEVER = ['mailgun_api_key', 'smtp_password', 'api_key', 'secret', 'secret_key', 'key', 'password', 'token'];
+
+    public static function configPath(\RedBeanPHP\OODBBean $site): string {
+        return dirname(__DIR__) . '/conf/sites/' . $site->slug . '.ini';
+    }
+
+    /**
+     * Apply the site's .ini overlay to this request's runtime config. Returns the keys set.
+     * A malformed file is an ERROR naming it — a site that half-applies its config would look
+     * like another site. A section or key a site may not own is refused by name, not skipped.
+     */
+    public static function applyConfig(\RedBeanPHP\OODBBean $site): array {
+        $file = self::configPath($site);
+        $applied = [];
+        if (!is_file($file)) {
+            // No overlay: the site's NAME still comes from the site row when it differs from
+            // the install's, so a second site is never shown under the first one's name.
+            if (self::multi() && (string) $site->name !== '') { \Flight::set('app.name', (string) $site->name); $applied[] = 'app.name'; }
+            return $applied;
+        }
+        $ini = @parse_ini_file($file, true, INI_SCANNER_TYPED);
+        if ($ini === false) throw new \RuntimeException("Sites: {$file} is not a valid ini file — site '{$site->slug}' cannot be served with half its config.");
+        foreach ($ini as $section => $values) {
+            if (!is_array($values)) throw new \RuntimeException("Sites: {$file} has a key outside any section ('{$section}'); every key belongs to a section.");
+            if (!in_array($section, self::CONFIG_SECTIONS, true)) {
+                throw new \RuntimeException("Sites: {$file} sets [{$section}], which a site may not own (allowed: " . implode(', ', self::CONFIG_SECTIONS) . ').');
+            }
+            foreach ($values as $key => $value) {
+                if (in_array(strtolower((string) $key), self::CONFIG_KEYS_NEVER, true)) {
+                    throw new \RuntimeException("Sites: {$file} sets [{$section}] {$key} — credentials live in Connections, never in a site's ini.");
+                }
+                \Flight::set("{$section}.{$key}", $value);
+                $applied[] = "{$section}.{$key}";
+            }
+        }
+        if (!isset($ini['app']['name']) && self::multi() && (string) $site->name !== '') { \Flight::set('app.name', (string) $site->name); $applied[] = 'app.name'; }
+        return $applied;
+    }
+
     private static function anyDomains(): bool {
         return Bean::count('site', "domain <> ''") > 0;
     }

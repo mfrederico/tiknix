@@ -60,3 +60,9 @@ if (!$main || !$main->id) {
     R::store($main);
     echo "  default site 'main' created (#{$main->id})\n";
 }
+
+// /site/status is how two domains on one install are proved to be two sites; /site/switch is
+// the member's switcher. Seeded here, before anything fetches them.
+foreach ([['status', 101, 'Which site this host resolves to (public)'], ['switch', 100, 'Act as another site for this session']] as [$method, $level, $desc]) {
+    echo "  authcontrol: site::{$method} => " . \app\PermissionCache::seedRule('site', $method, $level, $desc) . "\n";
+}

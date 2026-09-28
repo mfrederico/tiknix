@@ -81,6 +81,8 @@ class ConceptManifest {
      *      the flat list of their types
      */
     public array $connectorRoles = [];
+    /** @var string[] beans (of this concept's own) whose rows are per-site: site_ref column, Sites::filter() reads */
+    public array $scoped = [];
 
     private const ROLE_RE = '/^[a-z][a-z0-9_]*$/D';
 
@@ -216,6 +218,11 @@ class ConceptManifest {
         // name filled by that one type. requiresConnectors stays the flat list of types for
         // callers that only ask "which connectors does this want".
         $m->connectorRoles = self::connectorRoles($requires['connectors'] ?? [], $name);
+        // scoped: the concept's beans that are per-SITE (CONNECTOR-CATALOG-PLAN.md §2c) — rows
+        // carry site_ref, reads go through Sites::filter(), the plugin-enable step adds the
+        // column. Only a bean the concept provides may be scoped: a shared bean is another
+        // concept's to decide.
+        $m->scoped = self::stringList($raw['scoped'] ?? [], 'scoped', $name, self::BEAN_RE);
         $types = [];
         foreach ($m->connectorRoles as $r) foreach ($r['types'] as $t) $types[$t] = true;
         $m->requiresConnectors = array_keys($types);
@@ -226,6 +233,11 @@ class ConceptManifest {
         $provides = self::obj($raw['provides'] ?? [], 'provides', $name);
         $m->controllers = self::stringList($provides['controllers'] ?? [], 'provides.controllers', $name, self::CLASS_RE);
         $m->beans       = self::stringList($provides['beans'] ?? [], 'provides.beans', $name, self::BEAN_RE);
+        foreach ($m->scoped as $b) {
+            if (!in_array($b, $m->beans, true)) {
+                throw new ConceptException("Concept '{$name}': scoped lists '{$b}', which provides.beans does not — a concept scopes only its own beans.");
+            }
+        }
         $m->capabilities = self::stringList($provides['capabilities'] ?? [], 'provides.capabilities', $name, null);
         $m->pipelines = self::stringList($provides['pipelines'] ?? [], 'provides.pipelines', $name, self::PIPELINE_RE);
         foreach ($m->pipelines as $slug) {

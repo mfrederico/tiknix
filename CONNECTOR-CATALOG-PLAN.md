@@ -650,6 +650,16 @@ what they printed, exit non-zero on a FAILED/Fatal line) whenever the tree owner
 them — which is what `--update`'s post steps do — so every file a seed creates (a store, a
 journal, a per-site column's rebuild) belongs to the pool. Seed 23's own re-dispatch is
 gone: the mechanism is the command's, not one seed's. The store guard stays as the tripwire.
+First fleet update found the trap the memory already named: under FPM the query cache holds
+the table list, so a seed that created `site` was told it still did not exist and issued
+CREATE TABLE twice; seeds now run with the cache off for the request and clear it after
+(v1.6.2), and a failed seed fails `--build` and the update. Proved: Serenity's `--build`
+prints "running seeds as the pool user (tiknix-i93)"; no isolated instance has a database
+file the pool cannot write; the store guard never fired; serenity, start-201e11 and
+cleans-cat-poo-boxes run v1.6.2 by their own `--update`. leadmachine-harvest's update
+conflicted on its own edits (START-PLAN.md, views/connections/instance.php), aborted
+cleanly and was left as it was — a task-branch resolve, not an operator's hand. Dormant
+instances were not updated (owner's rule).
 
 **C3 — Seeds and migrations run inside `update`, as the instance's user.** No seed writes
 instance data as ubuntu: `--build` invoked by C2 already runs as the right user, and a seed

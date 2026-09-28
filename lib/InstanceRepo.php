@@ -86,8 +86,9 @@ class InstanceRepo {
         self::must($origin, ['symbolic-ref', 'HEAD', 'refs/heads/' . $branch]);
         // A bare clone records the live tree as its remote; nothing may ever fetch FROM the live tree.
         self::git($origin, ['remote', 'remove', 'origin']);
-        // The live tree pushes its checkpoints here while the merge tree has the branch checked
-        // out: update that worktree in place instead of refusing the push.
+        // Should anything ever push the branch the merge tree has checked out (a migration
+        // pushing by hand), update that worktree in place instead of refusing. The live tree
+        // itself never pushes (syncLive): checkpoints stay local.
         self::must($origin, ['config', 'receive.denyCurrentBranch', 'updateInstead']);
         $steps[] = "HEAD → {$branch}";
 
@@ -203,14 +204,16 @@ class InstanceRepo {
     }
 
     /**
-     * Bring the live tree and its origin level (the seed of the instance's own `update`, C2):
-     * fetch; fast-forward the live tree when the origin is ahead; push when the live tree is
-     * ahead (a checkpoint it committed); merge then push when both moved. A merge the live
-     * tree cannot take (a file changed on both sides) is reported with the files, never
-     * forced — the tracked runtime database is expected to be modified and is not touched
-     * by task commits, so it does not block a fast-forward.
+     * Bring the live tree level with its origin (what --update runs first, C2): fetch;
+     * fast-forward the live tree when the origin is ahead; merge locally when both moved.
+     * The live tree NEVER pushes: its own commits are checkpoints — the runtime database
+     * and local state — and those stay the instance's (owner's call, 2026-09-28); the origin
+     * holds code only, which is why a tenant can fetch it. A merge the live tree cannot take
+     * (a file changed on both sides) is reported with the files, never forced — the tracked
+     * runtime database is expected to be modified and is not touched by task commits, so
+     * it does not block a fast-forward.
      *
-     * @return array{status:string,out:string} status up-to-date | pulled | pushed | merged | failed
+     * @return array{status:string,out:string} status up-to-date | pulled | local-ahead | merged | failed
      */
     public static function syncLive(string $liveDir): array {
         $liveDir = rtrim($liveDir, '/');
@@ -228,8 +231,7 @@ class InstanceRepo {
         $lock = self::lock($slug);
         try {
             if (!$remote['ok']) {
-                $p = self::git($liveDir, ['push', '--quiet', 'origin', 'HEAD:refs/heads/' . $branch]);
-                return $p['ok'] ? ['status' => 'pushed', 'out' => "origin had no {$branch}; pushed"] : ['status' => 'failed', 'out' => 'push failed: ' . trim($p['out'])];
+                return ['status' => 'failed', 'out' => "the origin has no branch {$branch} — recreate it with scripts/instance-origin.php"];
             }
             $remoteSha = trim($remote['out']);
             if ($remoteSha === $local) return ['status' => 'up-to-date', 'out' => substr($local, 0, 7)];
@@ -241,20 +243,16 @@ class InstanceRepo {
                                 : ['status' => 'failed', 'out' => 'the live tree could not fast-forward: ' . trim($m['out'])];
             }
             if ($ahead) {
-                $p = self::git($liveDir, ['push', '--quiet', 'origin', 'HEAD:refs/heads/' . $branch]);
-                return $p['ok'] ? ['status' => 'pushed', 'out' => substr($remoteSha, 0, 7) . ' → ' . substr($local, 0, 7)]
-                                : ['status' => 'failed', 'out' => 'push to the origin failed: ' . trim($p['out'])];
+                return ['status' => 'local-ahead', 'out' => 'the live tree has ' . trim(self::git($liveDir, ['rev-list', '--count', $remoteSha . '..' . $local])['out']) . ' local commit(s) (checkpoints stay here)'];
             }
-            $m = self::git($liveDir, ['merge', '--no-ff', '--quiet', '-m', "sync: live tree and origin of {$slug}", $remoteSha]);
+            $m = self::git($liveDir, ['-c', 'user.email=update@tiknix.local', '-c', 'user.name=update', 'merge', '--no-ff', '--quiet', '-m', "sync: builds from the origin of {$slug}", $remoteSha]);
             if (!$m['ok']) {
                 $conf = self::git($liveDir, ['diff', '--name-only', '--diff-filter=U']);
                 $files = trim(str_replace("\n", ', ', (string) $conf['out']));
                 self::git($liveDir, ['merge', '--abort']);
                 return ['status' => 'failed', 'out' => 'the live tree and the origin both changed and the merge failed' . ($files !== '' ? " — conflicting: {$files}" : '') . ': ' . trim($m['out'])];
             }
-            $p = self::git($liveDir, ['push', '--quiet', 'origin', 'HEAD:refs/heads/' . $branch]);
-            return $p['ok'] ? ['status' => 'merged', 'out' => 'both sides had commits; merged and pushed']
-                            : ['status' => 'failed', 'out' => 'merged in the live tree but the push to the origin failed: ' . trim($p['out'])];
+            return ['status' => 'merged', 'out' => 'both sides had commits; merged locally (nothing pushed)'];
         } finally {
             self::unlock($lock);
         }

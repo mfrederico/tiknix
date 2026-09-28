@@ -1,0 +1,103 @@
+# Configuration (contains credentials). Broad by default — every connector secret
+# (proxmox/shopify/stripe/broker/…) stays out of the repo without needing a new line
+# here each time. Only the committed *.example.ini templates are tracked.
+conf/*.ini
+!conf/*.example.ini
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Database files
+database/*.db
+database/*.sqlite
+
+# Cache
+cache/
+*.cache
+
+# Logs
+log/*.log
+# Anchored patterns only match at the repo root, so the line above misses a log
+# directory anywhere else — public/log/ in particular, which an agent created and then
+# committed in two instances. A tracked log file is rewritten on every request, so it
+# reads as a permanent uncommitted change and BLOCKS the instance upgrade merge.
+**/log/*.log
+
+# Uploads live in public/uploads (web-served, under the docroot) and secure/uploads
+# (outside the docroot, NOT web-served). BOTH are tracked & published — the only
+# difference is web reachability. Anchored (/uploads/) so it ignores ONLY the legacy
+# top-level uploads/ dir — an unanchored "uploads/" would also swallow */uploads.
+/uploads/
+
+# Workbench project workspaces (cloned repos). Anchored (/projects/) for exactly the
+# reason noted above: unanchored, it also swallowed views/projects/, so the Projects
+# picker silently failed to commit.
+/projects/
+
+# AI Projects (workspace) sidecar: per-instance task data, owned by the sidecar, never tracked
+# The whole directory, not just workbench.db — workspace.db lives here too, and anything
+# else the sidecar decides to keep is runtime state by definition.
+data/
+
+# The agent's own working directory: plan.json, the runner scripts, and state/<engine>/,
+# which is the credential home app\AgentState binds into the jail. Runtime state, and the
+# last place a token should be able to reach a commit.
+.aibuilder/
+
+# The release this install runs (written by --update; lib/InstanceUpdate.php). Per install:
+# core has none, each instance its own, so it never travels through a merge.
+/.release
+
+# Playwright output.
+test-results/
+playwright-report/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code workspace files (auto-generated for each workspace)
+.claude/
+.mcp.json
+.playwright-mcp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Composer
+vendor/
+composer.lock
+
+# Node.js
+node_modules/
+package-lock.json
+.mcp_token
+.mcp_url
+public/uploads/
+public/store/
+
+# Secrets and non-web-served files. A DIRECTORY rule on purpose: the previous
+# conf/*.key glob ignored a .key and would have let a .pem, .json or .txt
+# through, and the one value that must never travel is in here.
+secure/
+conf/*.key
+
+# Live-database copies the upgrade procedure parks aside before a merge and
+# restores after (scripts/upgrade-instances.php). Transient by design, and copies
+# of customer data — a `git add -A` during a conflict resolution committed three
+# of them into instance repos before this rule existed.
+*.preupgrade
+
+# Backups written beside live files: DB snapshots taken before migrations, and the
+# IniFileService backup-on-write copies (<file>.bak-<stamp>). Each holds exactly what the
+# live file holds — member PII and password hashes, or live Stripe keys — so a `git add -A`
+# would publish them. The existing conf/*.ini and database/*.db rules do NOT match these
+# names, which is how two live-key backups sat untracked-but-addable for a day.
+*.bak-*
+
+# machine-local: a hard link to the host claude binary (~230 MB). See lib/ClaudeBinary.php.
+/bin/claude

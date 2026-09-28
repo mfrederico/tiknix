@@ -93,24 +93,26 @@ class InstanceRepoTest extends TestCase {
         $this->assertDirectoryDoesNotExist($wt);
         $this->assertSame('', $this->git(InstanceRepo::originPath(self::SLUG), 'branch --list plan-1/task-1'));
 
-        // the live tree commits (a checkpoint) → the sync pushes; the next worktree includes it
+        // the live tree commits (a checkpoint) → it stays local; the origin never learns of it
         $this->commitIn($this->live, 'site.db', "db-state-3\n", 'checkpoint: before plan 2');
         $s = InstanceRepo::syncLive($this->live);
-        $this->assertSame('pushed', $s['status'], $s['out']);
+        $this->assertSame('local-ahead', $s['status'], $s['out']);
+        $originTip = $this->git(InstanceRepo::originPath(self::SLUG), 'rev-parse instance/' . self::SLUG);
+        $this->assertNotSame($this->git($this->live, 'rev-parse HEAD'), $originTip, 'nothing was pushed');
         $wt2 = $this->live . '/.aibuilder/wt/task-2';
         InstanceRepo::addWorktree(self::SLUG, $wt2, 'plan-2/task-2', InstanceRepo::baseBranch(self::SLUG));
-        $this->assertSame("db-state-3\n", file_get_contents($wt2 . '/site.db'), 'cut from a base that has the checkpoint');
-        $this->assertSame("db-state-3\n", file_get_contents(InstanceRepo::mergeTreePath(self::SLUG) . '/site.db'), 'the merge worktree followed the push (updateInstead)');
+        $this->assertSame("db-state-1\n", file_get_contents($wt2 . '/site.db'), 'a task is cut from the origin: code only, no checkpoint state');
 
-        // both moved: a live commit and a task merged on the origin → merge + push
+        // both moved: a live checkpoint and a task merged on the origin → merged locally, still nothing pushed
         $this->git($wt2, 'config user.email a@example.com'); $this->git($wt2, 'config user.name a');
         $this->commitIn($wt2, 'two.txt', "2\n", 'task 2');
         $this->assertSame('merged', InstanceRepo::merge(self::SLUG, 'plan-2/task-2', 'merge task 2')['status']);
-        $this->commitIn($this->live, 'note.txt', "live\n", 'live-side commit');
         $s = InstanceRepo::syncLive($this->live);
         $this->assertSame('merged', $s['status'], $s['out']);
         $this->assertFileExists($this->live . '/two.txt');
-        $this->assertSame($this->git($this->live, 'rev-parse HEAD'), $this->git(InstanceRepo::originPath(self::SLUG), 'rev-parse instance/' . self::SLUG), 'origin and live level again');
+        $this->assertSame("db-state-3\n", file_get_contents($this->live . '/site.db'), 'the checkpointed database state survived the merge');
+        $this->assertFalse(is_file(InstanceRepo::mergeTreePath(self::SLUG) . '/note.txt'));
+        $this->assertStringNotContainsString('checkpoint', $this->git(InstanceRepo::originPath(self::SLUG), 'log --oneline instance/' . self::SLUG), 'no checkpoint ever reached the origin');
         InstanceRepo::removeWorktree($wt2, true, 'plan-2/task-2');
     }
 

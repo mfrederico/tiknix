@@ -406,6 +406,24 @@ already, so a shared key's mistakes open no fix tasks.
 Roughly: P1 two days, P2 one, P3 two, P4 one, P5 half, P6 as met. P1 and P2 are the critical
 piece; everything after is surface.
 
+## 10a. Status
+
+- **P1 built and proved on Serenity (2026-09-28, core ab53e74; storefront 1.0.2 168ea66).**
+  `lib/Sites.php` + seed 21 (default site `main` on every install), `lib/ConnectionBindings.php`
+  + seed 22, aliases and candidates on `ConnectionStore`, roles in `ConceptManifest`,
+  `StripeGateway::forConnection`, `clitool --sites/--connectors/--alias/--bind/--unbind`; 13
+  tests. On Serenity: the platform-custody Stripe is connection #1 "Serenity main"
+  (`auth_type = broker`), sites `la` and `denver` exist, `serenity-denver.tiknix.com` reaches
+  the install and resolves to Denver; `storefront.payments` is bound for `main` and resolves
+  to "Serenity main via broker"; on the Denver host the same call refuses: *"Storefront needs
+  a payments connection for site 'denver' and none is bound to it. The install's only
+  candidate, 'Serenity main', is not assumed to be Serenity Denver's — bind it under Plugins
+  → Storefront → Takes payment if it is."* An unknown host names the sites that exist.
+  Not yet: Denver's and LA's own Stripe connections (the owner's keys), per-site data scoping
+  (§2c — orders are still one table), the sidebar switcher and Plugins-page bindings (P3),
+  `ConnectionBindings` in pipelines and the broker (P4). The rule "a name that resolves to
+  the hub controller" cost one rename: the resolver is `ConnectionBindings`, not `Connections`.
+
 ## 11. Decisions to confirm
 
 1. **Alias uniqueness per connector, not per install** — "Main" may be both a Stripe and a

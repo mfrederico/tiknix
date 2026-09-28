@@ -139,6 +139,23 @@ class ConnectionStore {
      * Run against this install's own connections db, restoring the caller's
      * connection afterwards. Mirrors app\CoreDb::with.
      */
+    /**
+     * A WRITE to an isolated instance's store by the tree owner (ubuntu on the CLI) is
+     * refused: SQLite creates the file at 0644, the ACL mask follows, and the pool — which is
+     * not the owner — is left with a read-only store. Serenity's connections.db was exactly
+     * that after a CLI script, 2026-09-28 (repair: setfacl -m m::rwx, never chmod). The
+     * write belongs to the pool: the app itself, or IsolatedPool::runAsPool(). Thrown OUTSIDE
+     * withOwnDb, which turns throwables into its fallback value.
+     */
+    public static function assertOwnerMayWrite(): void {
+        if (IsolatedPool::ownerOnIsolated(self::root())) {
+            throw new \RuntimeException(
+                'ConnectionStore: ' . self::root() . " is an isolated instance and this process is its tree owner, not its pool user; "
+              . 'a write from here would leave the pool locked out of data/connections.db. Make the change from the app '
+              . '(Connections page), or run it as the pool: \\app\\IsolatedPool::runAsPool().');
+        }
+    }
+
     public static function withOwnDb(callable $fn, $onError = null, bool $create = false) {
         $db = self::ownDbPath();
 
@@ -147,6 +164,7 @@ class ConnectionStore {
         // connected to left an empty database behind -- scheduler-17d481 and
         // quickticket-027513 both acquired one from a lookup that touched nothing.
         if (!$create && !is_file($db)) return $onError;
+        if ($create && !is_file($db)) self::assertOwnerMayWrite();   // creating it is the write that does the damage
 
         $dir = dirname($db);
         if (!is_dir($dir)) @mkdir($dir, 0755, true);
@@ -277,6 +295,7 @@ class ConnectionStore {
     public static function setAlias(int $id, string $alias): void {
         $alias = trim($alias);
         if ($alias === '' || mb_strlen($alias) > 120) throw new \InvalidArgumentException('An alias is 1–120 characters.');
+        self::assertOwnerMayWrite();
         // withOwnDb swallows throwables into $onError, so a refusal is carried out as data.
         $done = self::withOwnDb(function () use ($id, $alias) {
             $c = Bean::load('connections', $id);
@@ -567,6 +586,7 @@ class ConnectionStore {
      * belongs to one install.
      */
     public static function put(string $type, string $env, array $payload): int {
+        self::assertOwnerMayWrite();
         $key = self::ownKey();   // minted (and its write checked) before anything is stored
 
         return (int) self::withOwnDb(function () use ($type, $env, $payload, $key) {

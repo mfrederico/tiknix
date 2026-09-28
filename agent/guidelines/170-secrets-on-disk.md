@@ -24,3 +24,13 @@ if (!$isolated) @chmod($file, 0600);   // only a non-isolated install needs the 
 
 `lib/ConnectionStore.php` and the generated `services/*Credential.php` follow this rule;
 copy it, don't re-introduce a bare `chmod 0600`/`mkdir 0700` on `secure/`.
+
+**Never WRITE an isolated instance's own data as the tree owner.** A CLI run as `ubuntu`
+(clitool, a seed, a scratch script) that creates `data/connections.db` leaves it with mask
+`r--` — SQLite opens at 0644 — and the pool gets "attempt to write a readonly database" on
+its own store (Serenity, 2026-09-28; repair `setfacl -m m::rwx`, never chmod).
+`ConnectionStore::put()/setAlias()` and store creation refuse this
+(`IsolatedPool::ownerOnIsolated`). Code files (`concepts/`, `connectors/*.json`,
+`concepts.lock`) are the owner's, like every merge; DATA the pool must write is the pool's:
+do it from the app, or through the pool with `IsolatedPool::runAsPool($root, $php)`
+(cgi-fcgi to the socket named in `.fpm-isolated`) — seed `23_MailConnection` shows the shape.

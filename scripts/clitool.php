@@ -169,6 +169,18 @@ if (isset($opt['build'])) {
         }
     }
     if ($DRYRUN) { out('# dry-run: would run seeds in services/Schema/Seeds/'); exit(0); }
+    // On an isolated instance the seeds run AS THE POOL (§13 C3): a database file the tree
+    // owner creates is read-only for the pool (the ACL mask follows SQLite's 0644), so the
+    // whole builder runs through the pool's socket and every file it makes is the pool's.
+    if (\app\IsolatedPool::ownerOnIsolated(dirname(__DIR__))) {
+        out('# running seeds as the pool user (' . \app\IsolatedPool::user(dirname(__DIR__)) . ')…');
+        $r = \app\IsolatedPool::runAsPoolBooted(dirname(__DIR__),
+            'foreach ((new \app\services\Schema\WorkspaceSchemaBuilder())->build() as $file => $status) echo "  {$file}: {$status}\n"; '
+          . 'if (class_exists("\app\PermissionCache")) { \app\PermissionCache::clear(); echo "# permission cache cleared (in the pool)\n"; }');
+        if ($r['output'] === '') bail("the pool answered nothing (cgi-fcgi exit {$r['status']}) — the seeds did not run");
+        out($r['output']);
+        exit(preg_match('/ERROR|FAILED|Fatal|Uncaught/', $r['output']) ? 1 : 0);
+    }
     out('# running seeds…');
     foreach ((new WorkspaceSchemaBuilder())->build() as $file => $status) out("  {$file}: {$status}");
     if (class_exists('\app\PermissionCache')) { \app\PermissionCache::clear(); out('# permission cache cleared'); }
@@ -337,6 +349,19 @@ if (isset($opt['concept-seeds'])) {
     $which = (string) $opt['concept-seeds'];
     $names = $which === 'all' ? \app\ConceptLock::enabledNames(dirname(__DIR__)) : [$which];
     if ($DRYRUN) { out('# dry-run: would run seeds for ' . ($names ? implode(', ', $names) : 'nothing (no enabled concept)')); exit(0); }
+    // As the pool on an isolated instance (§13 C3) — see --build.
+    if ($names && \app\IsolatedPool::ownerOnIsolated(dirname(__DIR__))) {
+        out('# running plugin seeds as the pool user (' . \app\IsolatedPool::user(dirname(__DIR__)) . ')…');
+        $r = \app\IsolatedPool::runAsPoolBooted(dirname(__DIR__),
+            '$failed = false; foreach (' . var_export(array_values($names), true) . ' as $name) { try { $r = \app\Concepts::instance()->runSeeds($name); '
+          . '$scoped = array_filter($r, fn($k) => str_starts_with($k, "scoped:"), ARRAY_FILTER_USE_KEY); $seeds = count($r) - count($scoped); '
+          . 'echo "# {$name}: " . ($seeds ? "{$seeds} seed(s) ok" : "no seeds") . "\n"; foreach ($scoped as $k => $res) echo "  per-site " . substr($k, 7) . ": " . substr($res, 5) . "\n"; } '
+          . 'catch (\app\ConceptException $e) { echo "# {$name}: FAILED — " . $e->getMessage() . "\n"; $failed = true; } } '
+          . 'if (class_exists("\app\PermissionCache")) { \app\PermissionCache::clear(); echo "# permission cache cleared (in the pool)\n"; } echo $failed ? "EXIT:1\n" : "EXIT:0\n";');
+        if ($r['output'] === '') bail("the pool answered nothing (cgi-fcgi exit {$r['status']}) — the seeds did not run");
+        out(trim(str_replace(["EXIT:0", "EXIT:1"], '', $r['output'])));
+        exit(str_contains($r['output'], 'EXIT:1') || preg_match('/Fatal|Uncaught/', $r['output']) ? 1 : 0);
+    }
     $failed = false;
     foreach ($names as $name) {
         try {

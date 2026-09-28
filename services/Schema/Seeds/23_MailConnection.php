@@ -13,18 +13,11 @@
  * credential file is a person's decision.
  */
 use app\ConnectionStore;
-use app\IsolatedPool;
 
 $root = dirname(__DIR__, 3);
-// The store is the POOL's file. On an isolated instance --build runs as the tree owner, and
-// a store that user creates is read-only for the pool (ConnectionStore::assertOwnerMayWrite).
-// So the migration runs as the pool: this same seed, through the instance's php-fpm socket.
-if (!defined('TIKNIX_SEED_IN_POOL') && IsolatedPool::ownerOnIsolated($root)) {
-    $r = IsolatedPool::runAsPool($root, '<?php define("TIKNIX_SEED_IN_POOL", 1); chdir(' . var_export($root, true) . '); '
-        . 'require "bootstrap.php"; new \app\Bootstrap(); include ' . var_export(__FILE__, true) . ';');
-    echo $r['output'] !== '' ? $r['output'] . "\n" : "  ERROR mail: the pool answered nothing (cgi-fcgi exit {$r['status']}) — the migration did not run\n";
-    return;
-}
+// The store is the POOL's file: on an isolated instance --build itself runs every seed as
+// the pool (§13 C3, clitool), and ConnectionStore::assertOwnerMayWrite() refuses a write by
+// the tree owner — so a seed that reaches this line is running as the right user.
 $ini = "{$root}/conf/mailgun.ini";
 if (!is_file($ini)) {
     echo "  mail: no conf/mailgun.ini — nothing to migrate (connect Mailgun under Connections when mail is wanted)\n";

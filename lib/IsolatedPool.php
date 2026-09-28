@@ -98,6 +98,21 @@ class IsolatedPool {
     }
 
     /**
+     * Run a piece of application code as the pool user, with the app booted: chdir to the
+     * instance, bootstrap, then $body (PHP statements; `use` statements are not allowed —
+     * name classes fully). What --build and --concept-seeds do when the tree owner runs them
+     * on an isolated instance (§13 C3): every file a seed creates then belongs to the pool.
+     *
+     * @return array{status:int,output:string}
+     */
+    public static function runAsPoolBooted(string $root, string $body): array {
+        $root = rtrim($root, '/');
+        $php = '<?php set_time_limit(0); ini_set("display_errors", "1"); chdir(' . var_export($root, true) . '); '
+             . 'require "bootstrap.php"; new \app\Bootstrap(); ' . $body;
+        return self::runAsPool($root, $php);
+    }
+
+    /**
      * Run PHP as the instance's pool user, through its php-fpm socket (cgi-fcgi), and return
      * what it printed. The one way a CLI process owned by the provisioning user can create or
      * write the instance's own data without leaving the pool locked out of it. The script is

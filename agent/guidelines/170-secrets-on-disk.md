@@ -32,5 +32,7 @@ its own store (Serenity, 2026-09-28; repair `setfacl -m m::rwx`, never chmod).
 `ConnectionStore::put()/setAlias()` and store creation refuse this
 (`IsolatedPool::ownerOnIsolated`). Code files (`concepts/`, `connectors/*.json`,
 `concepts.lock`) are the owner's, like every merge; DATA the pool must write is the pool's:
-do it from the app, or through the pool with `IsolatedPool::runAsPool($root, $php)`
-(cgi-fcgi to the socket named in `.fpm-isolated`) — seed `23_MailConnection` shows the shape.
+`clitool --build` and `--concept-seeds` already run every seed AS THE POOL on an isolated
+instance (`IsolatedPool::runAsPoolBooted`), so a seed never needs to think about it; a
+one-off script that writes instance data goes through `IsolatedPool::runAsPool($root, $php)`
+(cgi-fcgi to the socket named in `.fpm-isolated`).

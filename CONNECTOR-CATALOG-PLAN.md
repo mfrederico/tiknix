@@ -643,6 +643,14 @@ fleet, read the reports".
 - Proof: Serenity updates itself from a tag with no operator write into its tree; the
   Denver host is still Denver afterwards; the fleet page shows the version per instance.
 
+**C3 status (2026-09-28): built.** On an isolated instance `--build` and `--concept-seeds`
+run the WHOLE seed set as the pool user through its php-fpm socket
+(`IsolatedPool::runAsPoolBooted`: chdir, bootstrap, run the builder / the concept seeds, print
+what they printed, exit non-zero on a FAILED/Fatal line) whenever the tree owner invokes
+them — which is what `--update`'s post steps do — so every file a seed creates (a store, a
+journal, a per-site column's rebuild) belongs to the pool. Seed 23's own re-dispatch is
+gone: the mechanism is the command's, not one seed's. The store guard stays as the tripwire.
+
 **C3 — Seeds and migrations run inside `update`, as the instance's user.** No seed writes
 instance data as ubuntu: `--build` invoked by C2 already runs as the right user, and a seed
 that must write the store on an isolated instance goes through `runAsPool` (seed 23 is the

@@ -96,6 +96,34 @@ Two consequences for the plan as written:
   concept that claims `mail: [microsoft, mailgun]` and ships only the Graph adapter fails
   lint, not a customer.
 
+### 2b. cannonwms — the same pattern, one generation later, plus scopes
+
+cannonwms (`cannonwms/services/Channels/`, `controls/Web/`) is srklr's channel rebuilt with the
+pieces named, and it adds the one thing this plan was missing:
+
+| cannonwms | In this plan |
+|---|---|
+| `ChannelService::getSupportedTypes()` — a registry of types (`shopify`, `woocommerce`, `miva`, … 17 of them) each with `name, auth_type, icon, description`, and `status: coming_soon` for the unbuilt | the **connector catalog**: the same registry as data, per key, with `type` for `auth_type`; `coming_soon` is a manifest with no adapter yet, which the wizard already knows how to show |
+| `channel` row: `type, name, slug, auth_type, has_credentials, settings, status, last_sync, last_error, fulfillment_strategy, extra_data, is_active`; credentials stored and fetched separately (`storeOAuthCredentials / getCredentials`) | the **channel** bean of §2a, credentials in `connections.db` behind `connection_ref` — cannonwms already keeps them apart; `last_sync`/`last_error` are the cursor and health that live on the channel |
+| one `controls/Web/<Platform>.php` per platform doing only `connect()` + `callback()` (the OAuth wiring), then `ChannelService::create()` | code connectors keep their own connect flow (`authorizeUrl / exchangeCode` on the connector class — Shopify already); manifest connectors use the hub's generic one; either way the result is a connection row and a channel row |
+| one generic `Channels` control — `index, edit, sync, test, locations, syncinventory, pushinventory, warehouses, linkwarehouse, catalog…` — every action taking the channel **id** (`opId()`) and dispatching through `SyncService` to the adapter for that channel's type | the shared channel pages (`views/channels/`) plus a generic per-channel action route: a role declares its **actions** (`sync`, `test`, `push`, …), the concept's adapter implements them, and `/channels/<action>/<id-or-alias>` runs the right adapter — "hit the internal endpoint with the id/alias and that connection happens" |
+| `ChannelAdapterInterface` — `fetchOrders(since), updateStock(sku, qty, locationId), updateTracking, testConnection, getOrder, getProducts, fetchRefunds, createRefund, cancelOrder, registerWebhooks` — and **`getCapabilities()`** with `hasCapability()`, an `AbstractChannelAdapter` giving safe defaults, `StubAdapter` for the coming-soon types, `LocationAwareAdapterInterface` for platforms with locations | the role's adapter interface is exactly this shape, and **capabilities are declared by the adapter**, not inferred from the type: UI and services branch on `hasCapability('refunds')`, never on `type === 'shopify'`. A role interface names its required methods and its optional capabilities. |
+| **Warehouse** — a physical *and* data warehouse; channels link to warehouses many-to-many with a **priority** (`channelwarehouse: warehouse_id, priority, is_active`) and a per-channel **fulfillment strategy** (`split`, `hold_until_complete`); locations map between warehouse and platform | the missing piece: a **scope**. A channel belongs to a scope entity the concept names — a warehouse for a WMS, a client for an agency, a brand or site for a multi-store shop — and a scope holds many channels with priority and a strategy among them. |
+
+So the `channel` bean of §3.4 gains `scope_type, scope_ref, priority` (a channel with no scope
+is install-wide), and a role may declare `scope: "warehouse"` meaning "channels of this role
+hang off that concept's warehouse rows". "Multiple connections per warehouse" is then the
+normal case, not a special one, and the concept decides the strategy across them (cannonwms's
+`fulfillment_strategy` is the concept's own setting on the channel or the scope).
+
+Two more things cannonwms settles:
+- **Sync state is per channel, and the cursor is the last record's timestamp** (`last_sync`
+  is read as `since`; a forced full sync ignores it) — same rule as srklr's `lastchecked`,
+  and it goes in `cursors_json` with the record's own clock, never the system's.
+- **Coming soon is a first-class state**: a connector in the catalog with a stub adapter shows
+  in the wizard and the hub as coming soon rather than being absent — which is also what the
+  Get-started wizard already does for modules.
+
 Mail, concretely — the roles the owner named: `mail: [microsoft, gmail, mailgun, klaviyo]`.
 Mailgun is already in core as `lib/Mailer.php` reading `conf/mailgun.ini`; it becomes a
 connector manifest (`api_key` + domain, `test_path` `/v3/domains/<domain>`) and `Mailer` binds
@@ -170,8 +198,9 @@ pointer (`_ref`, not `_id` — it points into another database). `alias_snapshot
 display when the connection is gone; resolution always re-reads the store.
 
 Entity-scoped roles use the **channel** bean (§2a) as the entity unless the concept names its
-own: `channel`: `concept, role, name, connection_ref, alias_snapshot, settings_json,
-switches_json, cursors_json, enabled, created_at, updated_at`. A channel row IS the binding
+own: `channel`: `concept, role, name, connection_ref, alias_snapshot, scope_type, scope_ref,
+priority, settings_json, switches_json, cursors_json, status, last_sync, last_error, enabled,
+created_at, updated_at` (§2b for scope and priority). A channel row IS the binding
 for its role (no separate `connectionbinding` row); install-scoped roles use
 `connectionbinding`. Cursors (`lastchecked` and friends) live on the channel, so two
 Shopify stores advance independently and a re-bound connection keeps its place.

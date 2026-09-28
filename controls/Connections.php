@@ -59,6 +59,16 @@ class Connections extends Control {
         return $inst;
     }
 
+    /** A project the member may work on — owned, or shared through a team (the picker's rule). Viewing only; writes use ownedInstance(). */
+    private function accessibleInstance($id) {
+        $id = (int)$id;
+        if (!$id) return null;
+        $inst = Bean::load('instance', $id);
+        if (!$inst->id || !$inst->accessibleBy((int)$this->member->id)) return null;
+        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        return $inst;
+    }
+
     /** The enabled GitHub connection bound to member + instance, or null. */
     private function githubConn(int $instanceId) {
         return \app\ConnectionStore::forInstall($instanceId, 'github');
@@ -714,13 +724,22 @@ class Connections extends Control {
         // member selected. NOT "most recently created" — that guess meant Connections
         // showed a different project's stores than the one you were working on, and
         // connecting from here could bind a store to the wrong instance entirely.
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        //
+        // Any project the member may WORK ON (the rule the picker lists by), not only one
+        // they own: a shared project used to bounce here to /projects without a word, so
+        // the page looked missing. Viewing is for everyone on it; the connect / rename /
+        // disconnect actions below stay the owner's (ownedInstance) and the view says so.
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) {
             $project = ProjectContext::current((int)$this->member->id);
-            if ($project) $inst = $this->ownedInstance((int)$project->id);
+            if ($project) $inst = $this->accessibleInstance((int)$project->id);
         }
         // No project chosen → choose one; do not silently fall back to some instance.
-        if (!$inst) { Flight::redirect('/projects'); return; }
+        if (!$inst) {
+            $this->flash('info', 'Pick a project to see its connections.');
+            Flight::redirect('/projects');
+            return;
+        }
 
         // A just-completed connect (a prior request) writes a connections row; bust
         // the cache before reading so a newly-connected store shows on the FIRST view
@@ -820,6 +839,9 @@ class Connections extends Control {
             'title'          => 'Connections',
             'instance'       => $inst,
             'instances'      => $instances,
+            // shared with me (a team): the page is read-only and says so; owner actions stay the owner's
+            'canManage'      => $inst->ownedBy((int)$this->member->id),
+            'ownerEmail'     => (string) (Bean::load('member', (int)$inst->memberId)->email ?? ''),
             'cards'          => $cards,
             // This site's own sign-up gate — install-local, so this is CORE's Turnstile.
             'turnstile'      => \app\Turnstile::state(),

@@ -44,10 +44,13 @@ class Integrations extends Control {
         // "most recently created" — that guess showed one project's automations while
         // you believed you were in another, and Run would fire the wrong instance's
         // pipeline.
-        $inst = $this->ownedInstance($this->getParam('id', 0));
+        // Any project the member may WORK ON (owned, or shared through a team): this page
+        // is read-only, so access is the right gate. It used to require ownership and bounce
+        // a shared project to /projects with no word — "Integrations is missing".
+        $inst = $this->accessibleInstance($this->getParam('id', 0));
         if (!$inst) {
             $project = \app\ProjectContext::current((int)$this->member->id);
-            if ($project) $inst = $this->ownedInstance((int)$project->id);
+            if ($project) $inst = $this->accessibleInstance((int)$project->id);
         }
         if (!$inst) { Flight::redirect('/projects'); return; }
 
@@ -131,6 +134,16 @@ class Integrations extends Control {
         if (!$id) return null;
         $inst = Bean::load('instance', $id);
         if (!$inst->id || (int)$inst->memberId !== (int)$this->member->id) return null;
+        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        return $inst;
+    }
+
+    /** A project the member may work on — the same rule the project picker lists by (Model_Instance::accessibleBy). */
+    private function accessibleInstance($id) {
+        $id = (int)$id;
+        if (!$id) return null;
+        $inst = Bean::load('instance', $id);
+        if (!$inst->id || !$inst->accessibleBy((int)$this->member->id)) return null;
         if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;
     }

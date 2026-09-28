@@ -11,6 +11,17 @@
  */
 $iid = (int)$instance->id;
 $envBadge = ['development' => 'secondary', 'production' => 'success'];
+// A project shared with you (a team) shows here read-only: connecting, renaming and
+// removing are its owner's. Said up front — the page used to bounce to Projects instead.
+if (empty($canManage)): ?>
+  <div class="container pt-3" style="max-width:1100px">
+    <div class="alert alert-warning py-2 small mb-0">
+      <i class="bi bi-people me-1"></i>
+      <strong><?= htmlspecialchars($instance->name ?: $instance->slug) ?></strong> is shared with you. You can see its connections;
+      connecting, renaming and disconnecting are for its owner<?= !empty($ownerEmail) ? ' (' . htmlspecialchars($ownerEmail) . ')' : '' ?>.
+    </div>
+  </div>
+<?php endif;
 
 // Group cards by category, honouring $categoryOrder then any leftovers.
 $byCat = [];

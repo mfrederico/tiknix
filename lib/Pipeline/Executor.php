@@ -1,0 +1,396 @@
+<?php
+/**
+ * Pipeline\Executor — run a pipeline against a context, persisting a `piperun` + one
+ * `pipesteprun` per step ACTUALLY run (lazy). Walks steps honoring on_success /
+ * on_fail ∈ { next | goto:<name> | exit }. Three entry points:
+ *   run($def,$ctx,$src)   — sync, creates the run (in-app calls; short pipelines)
+ *   resume($runId)        — a Dispatcher-created queued run; execute in the background
+ *   continueRun($id,$in)  — resume a paused await_input run, injecting the input
+ *
+ * A step may return ['await'=>true, 'prompt'=>, 'token'=>] (the wait/await_input
+ * step) — the run persists its bag+next-index to stateJson, goes 'paused', and stops
+ * until continueRun. The variable bag accumulates context, run built-ins, {time.*},
+ * and each finished step's { output, stdout, stderr, exit } under its name + {prev.*}.
+ */
+
+namespace app\Pipeline;
+
+use app\Bean;
+
+class Executor {
+
+    public const MAX_STEPS = 500;            // default loop backstop for goto cycles
+    public const MAX_STEPS_CEILING = 20000;  // the most a pipeline may ask for
+
+    private string $root;
+
+    public function __construct(string $root) {
+        $this->root = rtrim($root, '/');
+    }
+
+    /**
+     * The slugs of the runs above this one, outermost first — set by the `pipeline` step
+     * on the child executor. Carried into every step's $run as 'chain' (this run's own
+     * slug appended) so a child that calls again can refuse a cycle or a runaway depth.
+     * @var string[]
+     */
+    private array $chain = [];
+
+    public function withChain(array $chain): self {
+        $this->chain = array_values(array_map('strval', $chain));
+        return $this;
+    }
+
+    /** The run this one was started by (a `pipeline` step), for piperun.parent_run_id. */
+    private ?int $parentRunId = null;
+
+    public function withParentRun(int $parentRunId): self {
+        $this->parentRunId = $parentRunId > 0 ? $parentRunId : null;
+        return $this;
+    }
+
+    /**
+     * Sync run: create the piperun, execute from the start. $extra is merged into the
+     * variable bag (durable objects inject state/message/trigger; normal runs pass []).
+     */
+    public function run(array $def, array $context = [], string $source = 'manual', array $extra = []): array {
+        $run = $this->newRun($def, $context, $source, 'running');
+        $bag = $this->freshBag($def, $context, $run);
+        if ($extra) $bag = array_merge($bag, $extra);
+        return $this->execute($def, $run, 0, $bag);
+    }
+
+    /** Background: execute a Dispatcher-created 'queued' run to completion. */
+    public function resume(int $runId): array {
+        $run = Bean::load('piperun', $runId);
+        if (!$run->id) throw new \RuntimeException("run $runId not found");
+        $def = Loader::forInstall($this->root)->get((string) $run->slug);
+        if (!$def) { $run->status = 'failed'; $run->error = 'definition missing'; Bean::store($run); throw new \RuntimeException('definition missing'); }
+        $run->status = 'running'; $run->startedAt = $run->startedAt ?: date('Y-m-d H:i:s'); Bean::store($run);
+        $context = json_decode((string) $run->contextJson, true) ?: [];
+        $bag = $this->freshBag($def, $context, $run);
+        return $this->execute($def, $run, 0, $bag);
+    }
+
+    /** Resume a paused await_input run, injecting the supplied input under {input.*}. */
+    public function continueRun(int $runId, array $input): array {
+        $run = Bean::load('piperun', $runId);
+        if (!$run->id) throw new \RuntimeException("run $runId not found");
+        if ($run->status !== 'paused') throw new \RuntimeException("run $runId is not awaiting input (status={$run->status})");
+        $def = Loader::forInstall($this->root)->get((string) $run->slug);
+        if (!$def) throw new \RuntimeException('definition missing');
+        $state = json_decode((string) $run->stateJson, true) ?: [];
+        $bag = $state['bag'] ?? $this->freshBag($def, [], $run);
+        $bag['input'] = $input;                          // the awaited input
+        $bag[(string) $run->awaitStep]['output'] = $input;  // and as the await step's output
+        $run->status = 'running'; Bean::store($run);
+        return $this->execute($def, $run, (int) ($state['next'] ?? 0), $bag);
+    }
+
+    // ---- debug / step-trace ------------------------------------------------
+
+    /** Start a debug run: run the first step, then pause at a breakpoint. */
+    public function debugRun(array $def, array $context = [], string $source = 'debug'): array {
+        $run = $this->newRun($def, $context, $source, 'running');
+        $bag = $this->freshBag($def, $context, $run);
+        return $this->execute($def, $run, 0, $bag, true);
+    }
+
+    /** Advance a paused debug run by ONE step, first merging $patch into the bag. */
+    public function debugStep(int $runId, array $patch = []): array {
+        return $this->resumeDebug($runId, $patch, true);
+    }
+
+    /** Let a paused debug run finish (merging $patch first); still honors await pauses. */
+    public function debugContinueToEnd(int $runId, array $patch = []): array {
+        return $this->resumeDebug($runId, $patch, false);
+    }
+
+    /** Abort a paused debug run. */
+    public function debugAbort(int $runId): array {
+        $run = Bean::load('piperun', $runId);
+        if (!$run->id) throw new \RuntimeException("run $runId not found");
+        $run->status = 'failed'; $run->error = 'aborted from debugger';
+        $run->finishedAt = date('Y-m-d H:i:s'); Bean::store($run);
+        return ['run_id' => $runId, 'status' => 'failed', 'error' => 'aborted'];
+    }
+
+    private function resumeDebug(int $runId, array $patch, bool $stepMode): array {
+        $run = Bean::load('piperun', $runId);
+        if (!$run->id) throw new \RuntimeException("run $runId not found");
+        if ($run->status !== 'paused') throw new \RuntimeException("run $runId is not at a breakpoint (status={$run->status})");
+        $state = json_decode((string) $run->stateJson, true) ?: [];
+        if (($state['kind'] ?? '') !== 'debug') throw new \RuntimeException("run $runId is not a debug breakpoint");
+        $def = Loader::forInstall($this->root)->get((string) $run->slug);
+        if (!$def) throw new \RuntimeException('definition missing');
+        $bag = $state['bag'] ?? $this->freshBag($def, [], $run);
+        if ($patch) $bag = self::mergeBag($bag, $patch);
+        $run->status = 'running'; Bean::store($run);
+        return $this->execute($def, $run, (int) ($state['next'] ?? 0), $bag, $stepMode);
+    }
+
+    /** Deep-merge injected data into the variable bag (patch wins; arrays merge by key). */
+    private static function mergeBag(array $bag, array $patch): array {
+        foreach ($patch as $k => $v) {
+            $bag[$k] = (is_array($v) && isset($bag[$k]) && is_array($bag[$k])) ? self::mergeBag($bag[$k], $v) : $v;
+        }
+        return $bag;
+    }
+
+    // ---- core loop ---------------------------------------------------------
+
+    private function execute(array $def, $run, int $i, array $bag, bool $stepMode = false): array {
+        $steps = array_values($def['steps'] ?? []);
+        $byName = [];
+        foreach ($steps as $k => $s) $byName[(string) $s['name']] = $k;
+        $runMeta = ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid,
+                    'run_directory' => (string) $run->runDir, 'root' => $this->root,
+                    // For the `pipeline` step: who is above us, and who we are.
+                    'slug' => (string) ($def['slug'] ?? ''), 'chain' => array_merge($this->chain, [(string) ($def['slug'] ?? '')])];
+
+        $status = 'completed'; $error = ''; $done = (int) $run->stepsDone; $guard = 0; $lastName = '';
+
+        // The backstop is per-pipeline, because how many steps is "too many" depends
+        // on the job. MAX_STEPS still guards anything that does not say otherwise; a
+        // pull that paginates a large store declares what it needs. Bounded either
+        // way — an unbounded loop is the thing this exists to stop.
+        $maxSteps = (int) ($def['max_steps'] ?? self::MAX_STEPS);
+        $maxSteps = max(1, min($maxSteps, self::MAX_STEPS_CEILING));
+
+        while ($i < count($steps)) {
+            if (++$guard > $maxSteps) {
+                // Say which of the two causes it probably is. A runaway goto and a
+                // paginating pull look identical from here, and "goto cycle?" sends
+                // someone hunting a bug that is not there when the real answer is
+                // that the store simply has more records than the budget allows.
+                $status = 'failed';
+                $error  = "step budget exceeded after {$maxSteps} steps at step '{$lastName}'"
+                        . ' — either a goto cycle, or a paginating pull that needs a bigger page size'
+                        . ' or a higher "max_steps" on the pipeline';
+                break;
+            }
+            $step = $steps[$i];
+            $name = (string) $step['name'];
+            $lastName = $name;
+
+            $res = $this->runStep(self::applySource($step, $def), $bag, $runMeta, (int) $run->id);
+
+            // await_input: persist state, pause, stop.
+            if (!empty($res['await'])) {
+                $run->status    = 'paused';
+                $run->awaitStep = $name;
+                $run->awaitPrompt = (string) ($res['prompt'] ?? '');
+                $run->stateJson = json_encode(['bag' => $bag, 'next' => $i + 1, 'kind' => 'await'], JSON_UNESCAPED_SLASHES);
+                Bean::store($run);
+                return ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid, 'status' => 'paused',
+                        'steps_done' => $done, 'awaiting' => $name, 'prompt' => $run->awaitPrompt];
+            }
+
+            // A step's output is flattened to the top of its own namespace so a named
+            // step reads exactly like {prev.*}: {greet.data.shop.name} == {prev.data.shop.name}.
+            // The reserved keys (output/stdout/stderr/exit/input) are overlaid and always win,
+            // so {greet.output.a}, {greet.stdout}, {greet.input.x} keep working (back-compat).
+            $flat = is_array($res['output']) ? $res['output'] : ['value' => $res['output']];
+            $bag[$name] = array_merge($flat, [
+                'output' => $res['output'], 'stdout' => $res['stdout'],
+                'stderr' => $res['stderr'], 'exit' => $res['exit'], 'input' => $res['input'],
+            ]);
+            $bag['prev'] = $flat;
+            $done++;
+            $run->stepsDone = $done; Bean::store($run);
+
+            $flow = (string) ($step[$res['ok'] ? 'on_success' : 'on_fail'] ?? ($res['ok'] ? 'next' : 'exit'));
+            $nextI = $i + 1;
+            if ($flow === 'exit' || $flow === '') {
+                if (!$res['ok']) { $status = 'failed'; $error = $res['stderr'] ?: "step '$name' failed"; }
+                break;
+            }
+            if (strncmp($flow, 'goto:', 5) === 0) {
+                $target = substr($flow, 5);
+                if (!isset($byName[$target])) { $status = 'failed'; $error = "goto:$target — no such step"; break; }
+                $nextI = $byName[$target];
+            }
+
+            // Debug/step mode: pause AFTER each step so the caller can inspect the
+            // resolved input + output and inject/override data (the bag) before the
+            // next step runs. Resumed via debugStep()/debugContinueToEnd().
+            if ($stepMode) {
+                $run->status      = 'paused';
+                $run->awaitStep   = $name;
+                $run->awaitPrompt = '';
+                $run->stateJson   = json_encode(['bag' => $bag, 'next' => $nextI, 'kind' => 'debug', 'last' => $name], JSON_UNESCAPED_SLASHES);
+                Bean::store($run);
+                return ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid, 'status' => 'paused',
+                        'debug' => true, 'steps_done' => $done, 'last_step' => $name,
+                        'next_step' => $steps[$nextI]['name'] ?? null];
+            }
+            $i = $nextI;
+        }
+
+        $run->status     = $status;
+        $run->error      = $error;
+        $run->finishedAt = date('Y-m-d H:i:s');
+        $run->outputJson = json_encode($bag[$lastName]['output'] ?? null, JSON_UNESCAPED_SLASHES);
+        Bean::store($run);
+        return ['run_id' => (int) $run->id, 'run_uid' => (string) $run->runUid, 'status' => $status,
+                'steps_done' => $done, 'error' => $error, 'output' => $bag[$lastName]['output'] ?? null];
+    }
+
+    /**
+     * Fold a named source from the pipeline's `sources` block into a step's config.
+     *
+     * A pipeline declares WHERE its data comes from once, at the top:
+     *
+     *   "sources": { "shop": {"connector":"shopify","environment":"production",
+     *                         "account":"{context.store|}"} }
+     *
+     * and a step just says which one it wants: {"source":"shop"}. Before this, every
+     * step repeated the connector, the environment and the account, so a pipeline's
+     * data source was something you worked out by reading all of its steps — and
+     * pointing one at a different store meant editing each of them, correctly.
+     *
+     * The step's OWN keys win, so a step can still override one field of a shared
+     * source. An unknown source name is left alone here and refused by validate(),
+     * where the message can name the sources that do exist.
+     */
+    private static function applySource(array $step, array $def): array {
+        $name = (string) ($step['config']['source'] ?? '');
+        if ($name === '') return $step;
+
+        $src = $def['sources'][$name] ?? null;
+        if (!is_array($src)) return $step;
+
+        $step['config'] = ((array) $step['config']) + $src;
+        return $step;
+    }
+
+    /** Resolve variables, dispatch to the step type, persist the step-run. */
+    private function runStep(array $step, array $bag, array $runMeta, int $runId): array {
+        $name = (string) $step['name'];
+        $type = (string) ($step['type'] ?? '');
+        $handler = StepRegistry::get($type);
+
+        $sr = Bean::dispense('pipesteprun');
+        $sr->runId = $runId; $sr->stepName = $name; $sr->stepType = $type;
+        $sr->status = 'running'; $sr->startedAt = date('Y-m-d H:i:s');
+        Bean::store($sr);
+
+        $t0 = microtime(true);
+        $config = [];
+        if (!$handler) {
+            $res = ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => "unknown step type '$type'", 'exit' => 1];
+        } else {
+            Vars::takeUnresolved();   // start this step's tally clean
+            $config = Vars::resolve((array) ($step['config'] ?? []), $bag);
+            $unresolved = Vars::takeUnresolved();
+            $sr->inputJson = json_encode($config, JSON_UNESCAPED_SLASHES);
+            try { $res = $handler->run($config, $runMeta); }
+            catch (\Throwable $e) { $res = ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $e->getMessage(), 'exit' => 1]; }
+            if ($unresolved) {
+                // The step ran with the literal text — that is unchanged — but the trace and
+                // the log now say so. A literal "{context.mailto}" is truthy and looks like a
+                // value; nothing downstream can tell it from one.
+                $warn = 'WARNING: unresolved token(s) ' . implode(', ', $unresolved)
+                      . ' — left as literal text. Write {token|fallback} if absence is intended, or fix the reference.';
+                $res['stderr'] = trim($warn . "\n" . (string) ($res['stderr'] ?? ''));
+                error_log("WARNING Pipeline run {$runId} step '{$name}': unresolved token(s) " . implode(', ', $unresolved));
+            }
+        }
+        $res += ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => '', 'exit' => 1, 'await' => false];
+        $res['input'] = $config;   // the resolved config/args that ran → {<step>.input.*}
+
+        $sr->status     = !empty($res['await']) ? 'awaiting' : ($res['ok'] ? 'completed' : 'failed');
+        $sr->outputJson = json_encode($res['output'], JSON_UNESCAPED_SLASHES);
+        // What the step ran on (agent: engine, model, which credential), so a run says
+        // whose account it spent. Never a secret: steps put names here, not keys.
+        $sr->metaJson   = !empty($res['meta']) ? json_encode($res['meta'], JSON_UNESCAPED_SLASHES) : '';
+        $sr->stdout     = mb_substr((string) $res['stdout'], 0, 65535);
+        $sr->stderr     = mb_substr((string) $res['stderr'], 0, 65535);
+        $sr->exitCode   = (int) $res['exit'];
+        $sr->durationMs = (int) round((microtime(true) - $t0) * 1000);
+        $sr->finishedAt = date('Y-m-d H:i:s');
+        Bean::store($sr);
+        return $res;
+    }
+
+    // ---- run + bag setup ---------------------------------------------------
+
+    /** Create a new piperun bean (status set by caller: 'running' sync, 'queued' dispatched). */
+    public function newRun(array $def, array $context, string $source, string $status): object {
+        $slug = (string) ($def['slug'] ?? 'pipeline');
+        $uid  = bin2hex(random_bytes(12));
+        // Per-instance run dir under the project's OWN data/ tree — pool-owned, inside the
+        // instance's open_basedir, and gitignored/non-public. NOT a shared sys_get_temp_dir()
+        // /tiknix-pipe: that single path is shared by every isolated tenant, so whichever pool
+        // touches it first owns it 0755 and every OTHER instance's pool then can't mkdir its run
+        // dir — the background worker's `>> run_dir/worker.log` redirect fails and the run wedges
+        // as 'queued' forever. Fail LOUD if the dir still can't be made (never @-swallow it).
+        $safeSlug = preg_replace('/[^a-z0-9_-]/i', '', $slug) ?: 'pipeline';
+        $dir = $this->root . '/data/pipe-runs/' . $safeSlug . '/' . $uid;
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException("Pipeline: could not create run directory '{$dir}' — is the instance's data/ writable by this process?");
+        }
+        $run = Bean::dispense('piperun');
+        $run->slug = $slug; $run->runUid = $uid; $run->status = $status; $run->source = $source;
+        if ($this->parentRunId !== null) $run->parentRunId = $this->parentRunId;
+        $run->contextJson = json_encode($context, JSON_UNESCAPED_SLASHES);
+        $run->stepsTotal = count($def['steps'] ?? []); $run->stepsDone = 0;
+        $run->runDir = $dir; $run->createdAt = date('Y-m-d H:i:s');
+        if ($status === 'running') $run->startedAt = date('Y-m-d H:i:s');
+        Bean::store($run);
+        $this->pruneOldRuns();   // opportunistic, throttled housekeeping
+        return $run;
+    }
+
+    /** Keep finished run dirs under data/pipe-runs/ for this long, then prune them (7 days). */
+    private const RUN_RETENTION_SECONDS = 604800;
+
+    /**
+     * Delete run dirs older than RUN_RETENTION_SECONDS from this instance's
+     * data/pipe-runs/. Throttled to at most once an hour via a marker file's mtime, so it
+     * costs nothing on a normal dispatch. Best-effort — a failed prune must never block a
+     * run from starting. (Old runs used to live in /tmp and got wiped on reboot; per-instance
+     * dirs persist, so they need their own housekeeping.)
+     */
+    private function pruneOldRuns(): void {
+        try {
+            $base = $this->root . '/data/pipe-runs';
+            if (!is_dir($base)) return;
+            $marker = $base . '/.last-prune';
+            if (is_file($marker) && (time() - (int) @filemtime($marker)) < 3600) return;
+            @touch($marker);
+            $cutoff = time() - self::RUN_RETENTION_SECONDS;
+            foreach (glob($base . '/*', GLOB_ONLYDIR) ?: [] as $slugDir) {
+                foreach (glob($slugDir . '/*', GLOB_ONLYDIR) ?: [] as $runDir) {
+                    $mt = @filemtime($runDir);
+                    if ($mt !== false && $mt < $cutoff) self::rmTree($runDir);
+                }
+            }
+        } catch (\Throwable $e) {
+            // housekeeping is best-effort; ignore
+        }
+    }
+
+    /** Recursively remove a directory; never follow symlinks (unlink them, don't descend). */
+    private static function rmTree(string $dir): void {
+        if (is_link($dir) || !is_dir($dir)) { @unlink($dir); return; }
+        foreach (scandir($dir) ?: [] as $e) {
+            if ($e === '.' || $e === '..') continue;
+            $p = $dir . '/' . $e;
+            if (is_link($p) || !is_dir($p)) @unlink($p);
+            else self::rmTree($p);
+        }
+        @rmdir($dir);
+    }
+
+    private function freshBag(array $def, array $context, $run): array {
+        return [
+            'context'       => $context,
+            'time'          => Vars::timeBag(),
+            'run_id'        => (int) $run->id,
+            'run_uid'       => (string) $run->runUid,
+            'run_directory' => (string) $run->runDir,
+            'pipeline_slug' => (string) $run->slug,
+        ];
+    }
+}

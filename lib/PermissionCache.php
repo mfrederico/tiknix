@@ -1,0 +1,645 @@
+<?php
+/**
+ * Permission Cache with APCu Support
+ * Provides high-performance permission checking with shared memory caching
+ * Falls back to per-request caching if APCu is not available
+ */
+
+namespace app;
+
+use \app\Bean;
+use \Flight as Flight;
+
+class PermissionCache {
+
+    /**
+     * Prefix on the description of a row this class INVENTED, rather than one a person or
+     * a seed set deliberately. It is the only thing that distinguishes a default from a
+     * policy, and seedRule() below depends on it.
+     */
+    public const AUTO_MARK = 'Auto-generated permission for';
+
+
+    // Process-local cache (fastest access)
+    private static $localCache = null;
+    /** Why the last load failed, or null. Set = every check() denies until a load succeeds. */
+    private static ?string $loadFailed = null;
+
+    // Cache configuration - Use unique keys per installation
+    private static $CACHE_KEY = null;
+    private const CACHE_TTL = 3600; // 1 hour
+    private static $STATS_KEY = null;
+    private static $CACHE_VERSION_FILE = null;
+
+    /**
+     * Get cache version file path
+     */
+    private static function getCacheVersionFile() {
+        if (self::$CACHE_VERSION_FILE === null) {
+            $cacheDir = \app\Paths::root() . '/cache';
+            if (!is_dir($cacheDir)) {
+                @mkdir($cacheDir, 0755, true);
+            }
+            self::$CACHE_VERSION_FILE = $cacheDir . '/.permission_cache_version';
+        }
+        return self::$CACHE_VERSION_FILE;
+    }
+
+    /**
+     * Get current cache version (timestamp from version file)
+     */
+    private static function getCacheVersion() {
+        $versionFile = self::getCacheVersionFile();
+        if (file_exists($versionFile)) {
+            return (int)file_get_contents($versionFile);
+        }
+        return 0;
+    }
+
+    /**
+     * Get unique cache key for this installation (includes version for cache busting)
+     */
+    private static function getCacheKey() {
+        if (self::$CACHE_KEY === null) {
+            // Create unique key based on installation path and version
+            $siteId = md5(__DIR__ . '_' . ($_SERVER['HTTP_HOST'] ?? 'cli'));
+            $version = self::getCacheVersion();
+            self::$CACHE_KEY = "tiknix_{$siteId}_permissions_v{$version}";
+            self::$STATS_KEY = "tiknix_{$siteId}_stats";
+        }
+        return self::$CACHE_KEY;
+    }
+
+    /**
+     * Get stats cache key
+     */
+    private static function getStatsKey() {
+        if (self::$STATS_KEY === null) {
+            self::getCacheKey(); // Initialize both keys
+        }
+        return self::$STATS_KEY;
+    }
+
+    /**
+     * Check if user has permission for controller/method
+     *
+     * @param string $control Controller name
+     * @param string $method Method name
+     * @param int $userLevel User's permission level
+     * @return bool
+     */
+    public static function check($control, $method, $userLevel) {
+        // Ensure cache is loaded
+        self::ensureLoaded();
+        if (self::$loadFailed !== null) {
+            self::logAccess('denied-unreadable', strtolower("{$control}::{$method}"));
+            return false;
+        }
+
+        // Check specific method permission
+        $key = strtolower("{$control}::{$method}");
+        if (isset(self::$localCache[$key])) {
+            $requiredLevel = self::$localCache[$key];
+            self::logAccess('hit', $key);
+            $hasPermission = $userLevel <= $requiredLevel;
+
+            // Increment validcount when permission is granted
+            if ($hasPermission) {
+                self::incrementValidCount($control, $method);
+            }
+
+            return $hasPermission;
+        }
+
+        // Check wildcard permission for entire controller
+        $wildcardKey = strtolower("{$control}::*");
+        if (isset(self::$localCache[$wildcardKey])) {
+            $requiredLevel = self::$localCache[$wildcardKey];
+            self::logAccess('wildcard', $wildcardKey);
+            $hasPermission = $userLevel <= $requiredLevel;
+
+            // Increment validcount for wildcard when permission is granted
+            if ($hasPermission) {
+                self::incrementValidCount($control, '*');
+            }
+
+            return $hasPermission;
+        }
+
+        // No permission found - check if we're in build mode
+        if (Flight::get('build')) {
+            self::logAccess('build', $key);
+            // Auto-create the row, then judge THIS request by it like any other. It used
+            // to `return true` here: the row was created at ADMIN and the request that
+            // created it was let through whoever sent it — one free request per new route
+            // for anyone, including anonymous. Build mode is "the row appears", not "the
+            // first caller is trusted"; nobody moves faster because of the free pass.
+            $level = self::createPermission($control, $method);
+            if ($level !== null) return $userLevel <= $level;
+            // Not a real route (no such controller/method): fall through to the default rule.
+        }
+
+        /* Deny by default. A route with no authcontrol row is one nobody has classified
+           yet, and the safe assumption for an unclassified route is ADMIN-only, never
+           world-reachable. The blanket PUBLIC fallback here meant every new controller
+           shipped publicly reachable and any lost row silently opened a route.
+
+           defaultLevelFor() is not a guess — it is the explicit allowlist of the routes
+           that are legitimately public (install, index, the pre-auth auth pages, and the
+           self-authenticating endpoints that verify their own bearer/API key), so those
+           still resolve to PUBLIC. Everything else an admin must classify with a real
+           row via seedRule(). */
+        self::logAccess('default', $key);
+        return $userLevel <= self::defaultLevelFor($control, $method);
+    }
+
+    /**
+     * Ensure cache is loaded into memory
+     */
+    private static function ensureLoaded() {
+        // If already in process memory, return immediately (fastest)
+        if (self::$localCache !== null) {
+            return;
+        }
+
+        // Try to load from APCu shared memory
+        if (self::hasAPCu()) {
+            self::$localCache = apcu_fetch(self::getCacheKey(), $success);
+            if ($success) {
+                Flight::get('log')->debug('PermissionCache: Loaded from APCu');
+                self::incrementStat('apcu_hits');
+                return;
+            }
+        }
+
+        // Load from database
+        self::loadFromDatabase();
+
+        // Store in APCu if available
+        if (self::hasAPCu() && self::$localCache !== null) {
+            apcu_store(self::getCacheKey(), self::$localCache, self::CACHE_TTL);
+            Flight::get('log')->info('PermissionCache: Stored in APCu');
+        }
+    }
+
+    /**
+     * Load permissions from database
+     */
+    private static function loadFromDatabase() {
+        try {
+            $startTime = microtime(true);
+
+            // Load all permissions from database
+            $permissions = Bean::findAll('authcontrol');
+
+            self::$localCache = [];
+
+            foreach ($permissions as $perm) {
+                // Store with lowercase key for case-insensitive lookups
+                $key = strtolower("{$perm->control}::{$perm->method}");
+                self::$localCache[$key] = (int)$perm->level;
+            }
+
+            $loadTime = round((microtime(true) - $startTime) * 1000, 2);
+
+            Flight::get('log')->info('PermissionCache: Loaded from database', [
+                'count' => count(self::$localCache),
+                'time_ms' => $loadTime
+            ]);
+
+            self::incrementStat('db_loads');
+            self::$loadFailed = null;
+
+        } catch (\Exception $e) {
+            Flight::get('log')->error('PermissionCache: Failed to load', [
+                'error' => $e->getMessage()
+            ]);
+            // Not an empty cache: an empty cache means "no rows", and check() then resolves
+            // every route through defaultLevelFor() — which re-opens /install and the other
+            // public-by-design routes. "authcontrol unreadable" must deny, and keep denying
+            // until a load succeeds; the ERROR above says why.
+            self::$localCache = [];
+            self::$loadFailed = $e->getMessage();
+        }
+    }
+
+    /**
+     * Clear the cache (call after permission changes)
+     * Works from both CLI and web by incrementing version file
+     */
+    public static function clear() {
+        // Clear local cache
+        self::$localCache = null;
+        self::$loadFailed = null;
+
+        // Clear APCu stats counters before changing version
+        if (self::hasAPCu()) {
+            $statsKey = self::getStatsKey();
+            apcu_delete($statsKey . '_apcu_hits');
+            apcu_delete($statsKey . '_db_loads');
+        }
+
+        // Increment version file to invalidate all APCu caches across all processes
+        $versionFile = self::getCacheVersionFile();
+        $newVersion = time();
+        file_put_contents($versionFile, $newVersion);
+
+        // Reset cache keys so they use new version
+        self::$CACHE_KEY = null;
+        self::$STATS_KEY = null;
+
+        // The cache is ALREADY cleared by this point — logging must never be the thing that
+        // makes clearing it fail. Flight's logger only exists once the web bootstrap has
+        // run, so any CLI that touches an authcontrol row reached this line via
+        // Model_Authcontrol::after_delete() and died on `null->info()`, after the row had
+        // been deleted: the work was done and the caller saw a fatal.
+        $msg = 'PermissionCache: Cache cleared (version: ' . $newVersion . ')';
+        try {
+            $log = Flight::get('log');
+            if ($log) { $log->info($msg); return; }
+        } catch (\Throwable $e) { /* no Flight bootstrap in this process */ }
+        error_log($msg);
+    }
+
+    /**
+     * Reload cache from database
+     */
+    public static function reload() {
+        self::clear();
+        self::ensureLoaded();
+        return self::$localCache;
+    }
+
+    /**
+     * Get cache statistics
+     * Returns consistent field names across all views
+     */
+    public static function getStats() {
+        $apcu_hits = 0;
+        $db_loads = 0;
+
+        // Get APCu counters if available
+        if (self::hasAPCu()) {
+            $apcu_hits = apcu_fetch(self::getStatsKey() . '_apcu_hits') ?: 0;
+            $db_loads = apcu_fetch(self::getStatsKey() . '_db_loads') ?: 0;
+        }
+
+        // Calculate hit rate
+        $total_requests = $apcu_hits + $db_loads;
+        $hit_rate = $total_requests > 0 ? ($apcu_hits / $total_requests) * 100 : 0;
+
+        $stats = [
+            // Basic cache status
+            'apcu_available' => self::hasAPCu(),
+            'cache_loaded' => self::$localCache !== null,
+            'in_apcu' => false,
+
+            // Permission counts and memory
+            'count' => self::$localCache ? count(self::$localCache) : 0,
+            'memory' => self::$localCache ? strlen(serialize(self::$localCache)) : 0,
+
+            // Cache performance metrics
+            'hits' => $apcu_hits,
+            'misses' => $db_loads,
+            'hit_rate' => $hit_rate,
+
+            // Cache version
+            'cache_version' => self::getCacheVersion()
+        ];
+
+        // Get additional APCu-specific stats
+        if (self::hasAPCu()) {
+            $stats['in_apcu'] = apcu_exists(self::getCacheKey());
+
+            if ($stats['in_apcu']) {
+                $info = apcu_key_info(self::getCacheKey());
+                if ($info) {
+                    $stats['apcu_ttl'] = $info['ttl'] ?? null;
+                    $stats['apcu_hits_on_key'] = $info['num_hits'] ?? null;
+                }
+            }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Warm up the cache (useful for deployment/startup)
+     */
+    public static function warmup() {
+        self::clear();
+        self::ensureLoaded();
+
+        $stats = self::getStats();
+        Flight::get('log')->info('PermissionCache: Warmed up', $stats);
+
+        return $stats;
+    }
+
+    /**
+     * Check if APCu is available and enabled
+     */
+    private static function hasAPCu() {
+        return function_exists('apcu_fetch') &&
+               function_exists('apcu_store') &&
+               ini_get('apc.enabled') &&
+               (php_sapi_name() !== 'cli' || ini_get('apc.enable_cli'));
+    }
+
+    /**
+     * Create a new permission entry (build mode only). Only creates if the controller and
+     * method actually exist. Returns the row's LEVEL (the existing row's when one already
+     * exists), or null when nothing was created, so check() can judge the current request
+     * against it instead of waving it through.
+     */
+    private static function createPermission($control, $method): ?int {
+        if (!Flight::get('build')) {
+            return null;
+        }
+
+        // Verify controller class exists (use ucfirst to match routing convention)
+        $className = "app\\" . ucfirst($control);
+        if (!class_exists($className)) {
+            Flight::get('log')->debug("PermissionCache: Controller class not found: {$className}");
+            return null;
+        }
+
+        // Verify method exists in the controller
+        if (!method_exists($className, $method)) {
+            Flight::get('log')->debug("PermissionCache: Method not found: {$className}::{$method}");
+            return null;
+        }
+
+        // Check if method is public (required for routing)
+        $reflection = new \ReflectionMethod($className, $method);
+        if (!$reflection->isPublic()) {
+            Flight::get('log')->debug("PermissionCache: Method is not public: {$className}::{$method}");
+            return null;
+        }
+
+        try {
+            Flight::get('log')->info("PermissionCache: Auto-creating permission for {$control}->{$method}");
+
+            // Most auto-created routes default to ADMIN, but pre-auth routes MUST be
+            // public or the app locks itself out (e.g. the first-run wizard loops:
+            // / -> /install -> /auth/login -> /install). See defaultLevelFor().
+            $level = self::defaultLevelFor($control, $method);
+
+            // Idempotent: the row may already exist in the DB while missing from a
+            // stale/cold cache, or a concurrent request may have just created it.
+            // Reuse it instead of INSERTing (authcontrol has a UNIQUE(control,method)
+            // constraint that would otherwise throw on the duplicate).
+            $auth = Bean::findOne('authcontrol', 'LOWER(control) = ? AND LOWER(method) = ?',
+                [strtolower($control), strtolower($method)]);
+            if (!$auth) {
+                $auth = Bean::dispense('authcontrol');
+                $auth->control = $control;
+                $auth->method = $method;
+                $auth->level = $level;
+                $auth->description = self::AUTO_MARK . " {$control}::{$method}";
+                $auth->validcount = 0;
+                $auth->createdAt = date('Y-m-d H:i:s');
+                Bean::store($auth);
+            } else {
+                // Existing row wins; sync the level we'll cache to what's stored.
+                $level = (int)$auth->level;
+            }
+
+            // Add to local cache immediately
+            $key = strtolower("{$control}::{$method}");
+            if (self::$localCache !== null) {
+                self::$localCache[$key] = $level;
+            }
+
+            // Clear APCu to force reload on next request
+            if (self::hasAPCu()) {
+                apcu_delete(self::getCacheKey());
+            }
+
+            return (int) $level;
+        } catch (\Exception $e) {
+            Flight::get('log')->error('PermissionCache: Failed to create permission', [
+                'error' => $e->getMessage()
+            ]);
+            return null;   // nothing created: check() applies the default rule, never a free pass
+        }
+    }
+
+    /**
+     * Level to assign a route auto-created in build_mode. Most default to ADMIN,
+     * but a few controllers MUST stay publicly reachable or the app locks itself
+     * out — the first-run install wizard (else / -> /install -> /auth/login ->
+     * /install loops) and the pre-authentication auth routes (login/register/
+     * reset/oauth/2FA), where the visitor is not logged in yet.
+     */
+    private static function defaultLevelFor($control, $method) {
+        $c = strtolower((string)$control);
+        $m = strtolower((string)$method);
+        // Whole controllers that are public: install wizard + home/landing.
+        if ($c === 'install' || $c === 'index') return LEVELS['PUBLIC'];
+        // Firehose ingest is reachable but self-authed by API key (like mcp::message).
+        // The feed (firehose::index) stays ADMIN via the default below.
+        if ($c === 'firehose' && $m === 'report') return LEVELS['PUBLIC'];
+
+        // SELF-AUTHENTICATING ENDPOINTS. These carry their own credential — the
+        // instance's [pipeline] trigger_secret, a pk_ REST key, or an MCP API key — and
+        // verify it in the controller. They must be REACHABLE for that check to run, so
+        // the ADMIN default below is not a safe fallback for them: it redirects the
+        // caller to /auth/login, which a bearer-token client cannot satisfy, and the
+        // failure looks like a broken endpoint rather than a permission.
+        //
+        // This matters because rows are auto-generated on FIRST REQUEST: a freshly
+        // provisioned instance silently pins these to ADMIN the first time anything
+        // touches them, so the editor's Run/Debug and any REST call 303 to a login page.
+        // Routes NOT listed here (pipeline::keys, ::varshapes, ::mykey) are UI surfaces
+        // and keep the ADMIN/MEMBER default.
+        if ($c === 'pipeline') {
+            $selfAuthed = ['trigger', 'api', 'status', 'debug', 'debugstep', 'object', 'objecttick', 'mintkey'];
+            if (in_array($m, $selfAuthed, true)) return LEVELS['PUBLIC'];
+        }
+        // Same contract, documented at length in controls/Mcp.php: PUBLIC means
+        // reachable, not unprotected.
+        if ($c === 'mcp' && in_array($m, ['message', 'health', 'registry'], true)) return LEVELS['PUBLIC'];
+        // publish::run is the control plane's publish door — a project's pipeline calls
+        // it with that instance's own broker key and the instance is resolved from the
+        // key. Same self-authenticating contract; see controls/Publish.php.
+        if ($c === 'publish' && $m === 'run') return LEVELS['PUBLIC'];
+        // Pre-auth auth routes only (NOT logout/account management).
+        if ($c === 'auth') {
+            $publicAuth = [
+                'login', 'dologin', 'register', 'doregister',
+                'forgot', 'doforgot', 'reset', 'doreset',
+                'google', 'googlecallback', 'verify', 'setpassword',
+                'twofasetup', 'twofaverify', 'twofaconfirmsaved', 'twofarecoverycodes',
+                'twofaskip',
+            ];
+            if (in_array($m, $publicAuth, true)) return LEVELS['PUBLIC'];
+        }
+        return LEVELS['ADMIN'];
+    }
+
+    /**
+     * Set a route's permission from a SEED, correctly.
+     *
+     * The rule seeds have always followed — "never widen an existing rule" — is right for
+     * policy and wrong for defaults, and the two were indistinguishable. A route gets an
+     * auto-generated row at the ADMIN default the first time anything touches it, so
+     * merely FETCHING a new route before its seed ran pinned it to admin forever: the
+     * seed would then find a row, decline to widen it, and say so in a line that scrolls
+     * past in a build log. It cost us twice in one day — once to a curl, once to a
+     * build's own verification step, which fetched the page it was about to seed.
+     *
+     * So: correct a row this class invented, never touch one somebody meant.
+     *
+     * A WILDCARD seed (`<control>::*`) has the same trap one level down: check() consults
+     * the method row before the wildcard, so the auto-generated `<control>::<method>` rows
+     * that a fetch left behind shadow the wildcard completely — the seed reports `added`
+     * and the routes stay admin-only (the /start wizard, 2026-09-25: eight auto rows at
+     * ADMIN over a wildcard at PUBLIC). Seeding a wildcard therefore removes every
+     * auto-generated method row under that control; a method row somebody set stays,
+     * because it is their exception to the wildcard.
+     *
+     * @return string one of 'added' | 'corrected' | 'kept' | 'unchanged', for the seed to report
+     */
+    public static function seedRule(string $control, string $method, int $level, string $description = ''): string {
+        $row = \app\Bean::findOne('authcontrol', 'LOWER(control) = ? AND LOWER(method) = ?',
+            [strtolower($control), strtolower($method)]);
+
+        $shadowsRemoved = 0;
+        if ($method === '*') {
+            $shadowsRemoved = self::removeAutoRowsUnder($control);
+        }
+
+        if (!$row || !$row->id) {
+            $row = \app\Bean::dispense('authcontrol');
+            $row->control     = $control;
+            $row->method      = $method;
+            $row->level       = $level;
+            $row->description = $description ?: "Seeded permission for {$control}::{$method}";
+            $row->validcount  = 0;
+            $row->createdAt   = date('Y-m-d H:i:s');
+            \app\Bean::store($row);
+            self::clear();
+            // 'corrected' rather than 'added' when auto rows had to go: the seed's line
+            // then says the routes were already pinned and were overruled.
+            return $shadowsRemoved > 0 ? 'corrected' : 'added';
+        }
+
+        if ((int) $row->level === $level) return $shadowsRemoved > 0 ? 'corrected' : 'unchanged';
+
+        // Only a row we invented may be overruled. Anything else is somebody's decision.
+        if (strpos((string) $row->description, self::AUTO_MARK) !== 0) return 'kept';
+
+        $row->level       = $level;
+        $row->description = $description ?: "Seeded permission for {$control}::{$method}";
+        \app\Bean::store($row);
+        self::clear();
+        return 'corrected';
+    }
+
+    /**
+     * Trash the auto-generated `<control>::<method>` rows that would shadow a wildcard
+     * seed. Returns how many went. Hand-set rows are left alone.
+     */
+    private static function removeAutoRowsUnder(string $control): int {
+        $rows = \app\Bean::find('authcontrol', 'LOWER(control) = ? AND method <> ? AND description LIKE ?',
+            [strtolower($control), '*', self::AUTO_MARK . '%']);
+        foreach ($rows as $auto) \app\Bean::trash($auto);
+        if ($rows) self::clear();
+        return count($rows);
+    }
+
+    /**
+     * Log cache access for debugging
+     */
+    private static function logAccess($type, $key) {
+        if (Flight::get('debug')) {
+            Flight::get('log')->debug("PermissionCache: {$type} for {$key}");
+        }
+    }
+
+    /**
+     * Increment statistics counter
+     */
+    private static function incrementStat($stat) {
+        if (self::hasAPCu()) {
+            $key = self::getStatsKey() . '_' . $stat;
+            apcu_inc($key, 1, $success, self::CACHE_TTL);
+        }
+    }
+
+    /**
+     * Get all cached permissions (for debugging/admin panel)
+     */
+    public static function getAll() {
+        self::ensureLoaded();
+        return self::$localCache;
+    }
+
+    /**
+     * Add or update a permission in cache
+     */
+    public static function set($control, $method, $level) {
+        self::ensureLoaded();
+
+        $key = strtolower("{$control}::{$method}");
+        self::$localCache[$key] = (int)$level;
+
+        // Update APCu if available
+        if (self::hasAPCu()) {
+            apcu_store(self::getCacheKey(), self::$localCache, self::CACHE_TTL);
+        }
+
+        Flight::get('log')->debug("PermissionCache: Set {$key} = {$level}");
+    }
+
+    /**
+     * Remove a permission from cache
+     */
+    public static function remove($control, $method) {
+        self::ensureLoaded();
+
+        $key = strtolower("{$control}::{$method}");
+        unset(self::$localCache[$key]);
+
+        // Update APCu if available
+        if (self::hasAPCu()) {
+            apcu_store(self::getCacheKey(), self::$localCache, self::CACHE_TTL);
+        }
+
+        Flight::get('log')->debug("PermissionCache: Removed {$key}");
+    }
+
+    /**
+     * Increment validcount for a permission (async to avoid performance impact)
+     *
+     * @param string $control Controller name
+     * @param string $method Method name
+     */
+    private static function incrementValidCount($control, $method) {
+        // Use a deferred write to avoid blocking the request
+        // Only increment once per request to avoid multiple increments
+        static $incrementedThisRequest = [];
+
+        $key = strtolower("{$control}::{$method}");
+
+        if (isset($incrementedThisRequest[$key])) {
+            return; // Already incremented this request
+        }
+
+        $incrementedThisRequest[$key] = true;
+
+        try {
+            // Use a simple SQL UPDATE for better performance
+            Bean::exec(
+                'UPDATE authcontrol SET validcount = validcount + 1 WHERE LOWER(control) = ? AND LOWER(method) = ?',
+                [strtolower($control), strtolower($method)]
+            );
+        } catch (\Exception $e) {
+            // Silently fail - don't interrupt request for counter update
+            Flight::get('log')->debug("PermissionCache: Failed to increment validcount for {$key}", [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+}

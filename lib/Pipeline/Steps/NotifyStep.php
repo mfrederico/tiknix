@@ -1,0 +1,51 @@
+<?php
+/**
+ * notify — send an email via lib/Mailer (merges myctobot's mailgun + email_out).
+ * When Mailer isn't configured (local/dev), it records the intended message as
+ * output instead of failing, so a pipeline is still runnable offline.
+ */
+
+namespace app\Pipeline\Steps;
+
+use app\Mailer;
+
+class NotifyStep implements StepInterface {
+
+    public static function type(): string { return 'notify'; }
+
+    public static function schema(): array {
+        return [
+            'summary' => 'Send an email (via the configured Mailer).',
+            'fields'  => [
+                ['name' => 'to',      'label' => 'To',      'type' => 'text',     'required' => true, 'help' => 'Recipient email.'],
+                ['name' => 'subject', 'label' => 'Subject', 'type' => 'text',     'required' => true, 'help' => 'Subject line.'],
+                ['name' => 'body',    'label' => 'Body',    'type' => 'textarea', 'required' => true, 'help' => 'HTML or text body.'],
+                ['name' => 'name',    'label' => 'Recipient name', 'type' => 'text', 'help' => 'Optional — recipient display name.'],
+            ],
+        ];
+    }
+
+    public function run(array $config, array $run): array {
+        $to      = trim((string) ($config['to'] ?? ''));
+        $subject = (string) ($config['subject'] ?? '(no subject)');
+        $body    = (string) ($config['body'] ?? '');
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            // Echo the resolved value — an unresolved {token} stays literal, so this instantly
+            // shows WHY (e.g. "{context.mailto} - 2026-…" means mailto wasn't in the context).
+            return ['ok' => false, 'output' => null, 'stdout' => '',
+                    'stderr' => 'invalid recipient: "' . mb_substr($to, 0, 120) . '" — the "to" field must resolve to a bare email address',
+                    'exit' => 1];
+        }
+        if (!class_exists('\\app\\Mailer') || !Mailer::isConfigured()) {
+            return ['ok' => true, 'output' => ['sent' => false, 'reason' => 'mailer-not-configured', 'to' => $to, 'subject' => $subject],
+                    'stdout' => "would email {$to}: {$subject}", 'stderr' => '', 'exit' => 0];
+        }
+        try {
+            $sent = Mailer::create()->to($to, (string) ($config['name'] ?? ''))->subject($subject)->send($body);
+            return ['ok' => (bool) $sent, 'output' => ['sent' => (bool) $sent, 'to' => $to, 'subject' => $subject],
+                    'stdout' => $sent ? "emailed {$to}" : 'send failed', 'stderr' => $sent ? '' : 'send returned false', 'exit' => $sent ? 0 : 1];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'output' => null, 'stdout' => '', 'stderr' => $e->getMessage(), 'exit' => 1];
+        }
+    }
+}

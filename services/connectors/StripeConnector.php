@@ -1,0 +1,603 @@
+<?php
+/**
+ * StripeConnector — Stripe account connection (control-plane custody).
+ *
+ * Primary auth is a PASTED, VALIDATED secret/restricted API key (sk_/rk_): the
+ * builder creates a restricted key in the Stripe Dashboard and pastes it once;
+ * validateApiKey() proves it against GET /v1/account before anything persists.
+ * The Connect (Standard) OAuth methods below are kept dormant so OAuth stays a
+ * drop-in future option (flip meta()['auth_type'] back to 'oauth').
+ *
+ * Either way the credential is stored ENCRYPTED in the connections table on the
+ * control plane and is never written into a builder instance — instances reach
+ * Stripe only through the MCP broker. The PUBLISHABLE key (pk_...) is public by
+ * design and may travel in metadata for instance frontends.
+ */
+
+namespace app\services\connectors;
+
+class StripeConnector extends AbstractConnector {
+
+    public function key(): string { return 'stripe'; }
+
+    public function meta(): array {
+        return [
+            'label'     => 'Stripe',
+            'auth_type' => 'api_key',
+            'blurb'     => 'Paste a Stripe secret or restricted key to take payments, manage customers, and sell subscriptions.',
+            'category'  => 'Payments',
+            'icon'      => 'credit-card',
+            'color'     => 'primary',
+            'features'  => ['Checkout', 'Subscriptions', 'Customers'],
+        ];
+    }
+
+    /**
+     * API-key mode needs NO platform-side credentials (no client_id/secret) — the
+     * connector is usable out of the box, so the UI's connect form is never gated.
+     */
+    public function isConfigured(): bool {
+        return true;
+    }
+
+    /**
+     * Validate a pasted secret (sk_) or restricted (rk_) key against Stripe and
+     * normalize it into the exchangeCode() payload shape. The key itself never
+     * appears in any error message.
+     */
+    public function validateApiKey(string $key, array $opts = []): array {
+        $key = trim($key);
+        if ($key === '') throw new \Exception('A Stripe secret or restricted key is required.');
+
+        [$status, $body] = $this->http('GET', 'https://api.stripe.com/v1/account',
+            ['headers' => ['Authorization: Bearer ' . $key, 'Accept: application/json']]);
+        if ($status === 401 || $status === 403) {
+            throw new \Exception('Stripe rejected that key — check it is a valid secret (sk_) or restricted (rk_) key.');
+        }
+        if ($status < 200 || $status >= 300) {
+            throw new \Exception('Stripe key validation failed (HTTP ' . $status . ').');
+        }
+        $aj   = json_decode($body, true) ?: [];
+        $acct = (string)($aj['id'] ?? '');
+        $name = (string)($aj['business_profile']['name']
+            ?? $aj['settings']['dashboard']['display_name']
+            ?? $aj['email'] ?? '');
+        if ($name === '') $name = $acct;
+
+        return [
+            'access_token'  => $key,
+            'token_type'    => 'Bearer',
+            'scopes'        => 'api_key',
+            'external_eid'  => $acct,
+            'external_name' => $name,
+            'external_url'  => 'https://dashboard.stripe.com/' . $acct,
+            'metadata'      => [
+                'stripe_user_id'  => $acct,
+                'livemode'        => strpos($key, '_live_') !== false,
+                // Not derivable from a secret key and not needed — Checkout is a
+                // hosted redirect. Public-by-design when present via OAuth.
+                'publishable_key' => '',
+            ],
+        ];
+    }
+
+    public function defaultScopes(): string {
+        return (string)($this->oauth()['scope'] ?? 'read_write');
+    }
+
+    public function authorizeUrl(array $ctx): string {
+        // Stripe Connect has no per-store domain (unlike Shopify) — ctx['shop'] is ignored.
+        $o = $this->oauth();
+        $q = http_build_query([
+            'response_type' => 'code',
+            'client_id'     => (string)($o['client_id'] ?? ''),
+            'scope'         => (string)($ctx['scopes'] ?? $this->defaultScopes()),
+            'state'         => (string)($ctx['state'] ?? ''),
+            'redirect_uri'  => (string)($ctx['redirect_uri'] ?? ''),
+        ]);
+        return 'https://connect.stripe.com/oauth/authorize?' . $q;
+    }
+
+    public function exchangeCode(array $ctx): array {
+        // The controller has already verified the signed state + CSRF before calling us.
+        $params = $ctx['params'] ?? [];
+        $o      = $this->oauth();
+
+        if (!empty($params['error'])) {
+            throw new \Exception('Stripe authorization failed: '
+                . (string)($params['error_description'] ?? $params['error']));
+        }
+        $code = (string)($params['code'] ?? '');
+        if ($code === '') throw new \Exception('Missing authorization code.');
+
+        // 1) Exchange the code for the connected account's permanent access token.
+        [$status, $body] = $this->http('POST', 'https://connect.stripe.com/oauth/token', [
+            'headers' => ['Content-Type: application/x-www-form-urlencoded', 'Accept: application/json'],
+            'body'    => http_build_query([
+                'client_secret' => (string)($o['client_secret'] ?? ''),
+                'code'          => $code,
+                'grant_type'    => 'authorization_code',
+            ]),
+        ]);
+        $j = json_decode($body, true);
+        if ($status < 200 || $status >= 300 || empty($j['stripe_user_id']) || empty($j['access_token'])) {
+            throw new \Exception('Stripe token exchange failed (HTTP ' . $status . ').');
+        }
+        $token  = (string)$j['access_token'];
+        $acct   = (string)$j['stripe_user_id'];
+        $scopes = (string)($j['scope'] ?? 'read_write');
+
+        // 2) Best-effort: fetch the account's display name.
+        $name = $acct;
+        [$s2, $b2] = $this->http('GET', 'https://api.stripe.com/v1/account',
+            ['headers' => ['Authorization: Bearer ' . $token, 'Accept: application/json']]);
+        if ($s2 >= 200 && $s2 < 300) {
+            $aj = json_decode($b2, true) ?: [];
+            $candidate = (string)($aj['business_profile']['name']
+                ?? $aj['settings']['dashboard']['display_name']
+                ?? $aj['email'] ?? '');
+            if ($candidate !== '') $name = $candidate;
+        }
+
+        return [
+            'access_token'  => $token,
+            'token_type'    => 'Bearer',
+            'scopes'        => $scopes,
+            'external_eid'  => $acct,
+            'external_name' => $name,
+            'external_url'  => 'https://dashboard.stripe.com/' . $acct,
+            'metadata'      => [
+                'stripe_user_id'  => $acct,
+                // The publishable key is PUBLIC by design — instance frontends use it.
+                'publishable_key' => (string)($j['stripe_publishable_key'] ?? ''),
+                'livemode'        => (bool)($j['livemode'] ?? false),
+                'scope'           => $scopes,
+            ],
+        ];
+    }
+
+    // --- Broker tools ---------------------------------------------------------
+
+    public function brokerTools(): array {
+        $envProp = ['type' => 'string', 'description' => 'Which connection: development|staging|production (default production).'];
+        return [
+            [
+                'name'        => 'get_account',
+                'description' => 'Fetch the connected Stripe account profile (name, email, capabilities).',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'environment' => $envProp,
+                ]],
+            ],
+            [
+                'name'        => 'list_products',
+                'description' => 'List active products from the connected Stripe account.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'limit'       => ['type' => 'integer', 'description' => 'Max products, 1-100 (default 20).'],
+                    'environment' => $envProp,
+                ]],
+            ],
+            [
+                'name'        => 'list_prices',
+                'description' => 'List active prices (with their products expanded) from the connected Stripe account.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'limit'       => ['type' => 'integer', 'description' => 'Max prices, 1-100 (default 20).'],
+                    'environment' => $envProp,
+                ]],
+            ],
+            [
+                'name'        => 'list_customers',
+                'description' => 'List customers from the connected Stripe account.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'limit'       => ['type' => 'integer', 'description' => 'Max customers, 1-100 (default 20).'],
+                    'environment' => $envProp,
+                ]],
+            ],
+            [
+                'name'        => 'create_customer',
+                'description' => 'Create a customer on the connected Stripe account.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'email'       => ['type' => 'string', 'description' => 'Customer email address.'],
+                    'name'        => ['type' => 'string', 'description' => 'Customer full name.'],
+                    'metadata'    => ['type' => 'object', 'description' => 'Key/value metadata to attach.'],
+                    'environment' => $envProp,
+                ]],
+            ],
+            [
+                'name'        => 'create_checkout_session',
+                'description' => 'Create a Stripe Checkout session; redirect the buyer to the returned url.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'mode'                => ['type' => 'string', 'description' => 'payment|subscription (default payment).'],
+                    'line_items'          => ['type' => 'array', 'description' => 'Items: [{price: price_..., quantity: 1}, ...].'],
+                    'price'               => ['type' => 'string', 'description' => 'Single price id (alternative to line_items).'],
+                    'quantity'            => ['type' => 'integer', 'description' => 'Quantity for the single price (default 1).'],
+                    'success_url'         => ['type' => 'string', 'description' => 'Where Stripe sends the buyer after payment (required).'],
+                    'cancel_url'          => ['type' => 'string', 'description' => 'Where Stripe sends the buyer on cancel (required).'],
+                    'customer'            => ['type' => 'string', 'description' => 'Existing customer id (optional).'],
+                    'client_reference_id' => ['type' => 'string', 'description' => 'Your own reference id for the session (optional).'],
+                    'environment'         => $envProp,
+                ], 'required' => ['success_url', 'cancel_url']],
+            ],
+            [
+                'name'        => 'list_subscriptions',
+                'description' => 'List subscriptions (memberships) from the connected Stripe account.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'limit'       => ['type' => 'integer', 'description' => 'Max subscriptions, 1-100 (default 20).'],
+                    'status'      => ['type' => 'string', 'description' => 'Filter: all|active|trialing|past_due|canceled|unpaid|paused|incomplete|incomplete_expired|ended (default all).'],
+                    'customer'    => ['type' => 'string', 'description' => 'Limit to one customer id (optional).'],
+                    'environment' => $envProp,
+                ]],
+            ],
+            [
+                'name'        => 'request',
+                'description' => 'Make any authenticated request to the Stripe API. The secret key is injected server-side. Body is form-encoded for writes / query-string for GET.',
+                'inputSchema' => ['type' => 'object', 'properties' => [
+                    'method'      => ['type' => 'string', 'description' => 'GET|POST|DELETE (default GET).'],
+                    'path'        => ['type' => 'string', 'description' => 'API path, e.g. /v1/charges, /v1/refunds, /v1/customers/{id}.'],
+                    'body'        => ['type' => 'object', 'description' => 'Params (values may reference pipeline {context.x}); form-encoded for writes, query for GET.'],
+                    'environment' => $envProp,
+                ], 'required' => ['path']],
+            ],
+        ];
+    }
+
+    public function callBrokerTool(string $tool, $conn, string $token, array $args): array {
+        $limit = max(1, min(100, (int)($args['limit'] ?? 20)));
+
+        switch ($tool) {
+            case 'get_account':
+                return $this->apiGet($token, 'account');
+            case 'list_products':
+                return $this->apiGet($token, 'products?' . http_build_query(['active' => 'true', 'limit' => $limit]));
+            case 'list_prices':
+                return $this->apiGet($token, 'prices?' . http_build_query([
+                    'active' => 'true', 'limit' => $limit, 'expand' => ['data.product'],
+                ]));
+            case 'list_customers':
+                return $this->apiGet($token, 'customers?' . http_build_query(['limit' => $limit]));
+            case 'create_customer':
+                return $this->apiPost($token, 'customers', $this->customerFields($args));
+            case 'create_checkout_session':
+                return $this->apiPost($token, 'checkout/sessions', $this->checkoutSessionFields($args));
+            case 'list_subscriptions':
+                $q = ['limit' => $limit, 'status' => $this->normalizeSubscriptionStatus($args['status'] ?? 'all')];
+                if (!empty($args['customer'])) $q['customer'] = (string)$args['customer'];
+                return $this->apiGet($token, 'subscriptions?' . http_build_query($q));
+            case 'request':
+                return $this->apiRequest($token, $args);
+            default:
+                throw new \Exception('Unknown Stripe broker tool: ' . $tool);
+        }
+    }
+
+    /** Generic authenticated Stripe request: method + path + body (form-encoded for writes). */
+    private function apiRequest(string $token, array $args): array {
+        $method = strtoupper((string)($args['method'] ?? 'GET')) ?: 'GET';
+        $path   = ltrim((string)($args['path'] ?? ''), '/');
+        if ($path === '') throw new \Exception('request: a path is required (e.g. /v1/charges).');
+        if (strncmp($path, 'v1/', 3) !== 0) $path = 'v1/' . $path;
+        $url  = 'https://api.stripe.com/' . $path;
+        $body = $args['body'] ?? [];
+        if (!is_array($body)) $body = [];
+
+        $headers = ['Authorization: Bearer ' . $token, 'Accept: application/json'];
+        $opts    = ['headers' => $headers];
+        if ($method === 'GET') {
+            if ($body) $url .= (strpos($url, '?') === false ? '?' : '&') . http_build_query($body);
+        } else {
+            $headers[] = 'Content-Type: application/x-www-form-urlencoded';
+            $headers[] = 'Idempotency-Key: ' . bin2hex(random_bytes(16));
+            $opts['headers'] = $headers;
+            $opts['body']    = http_build_query($body);
+        }
+        [$status, $resp] = $this->http($method, $url, $opts);
+        return $this->decodeOrThrow($status, $resp);
+    }
+
+    /** Fields for POST /v1/customers. */
+    private function customerFields(array $args): array {
+        $f = [];
+        if (!empty($args['email'])) $f['email'] = (string)$args['email'];
+        if (!empty($args['name']))  $f['name']  = (string)$args['name'];
+        if (!empty($args['metadata']) && is_array($args['metadata'])) {
+            $f['metadata'] = array_map('strval', $args['metadata']);
+        }
+        return $f;
+    }
+
+    /**
+     * Create a hosted Checkout Session for an order (ad-hoc price_data, so products
+     * need no pre-created Stripe price) and return its redirect url. Control-plane
+     * only; the token is used for this call and never returned.
+     */
+    public function createCheckout($conn, string $token, array $order): array {
+        $mode = ($order['mode'] ?? 'payment') === 'subscription' ? 'subscription' : 'payment';
+        $items = [];
+        foreach (array_values($order['items'] ?? []) as $it) {
+            $cents = max(0, (int)($it['amount_cents'] ?? 0));
+            if ($cents <= 0) continue;
+            $priceData = [
+                'currency'     => strtolower((string)($it['currency'] ?? 'usd')),
+                'product_data' => ['name' => (string)($it['title'] ?? 'Item')],
+                'unit_amount'  => $cents,
+            ];
+            // Subscription mode needs a recurring price; the interval drives the cycle.
+            if ($mode === 'subscription') {
+                $interval = strtolower((string)($it['interval'] ?? 'month'));
+                if (!in_array($interval, ['day', 'week', 'month', 'year'], true)) $interval = 'month';
+                $priceData['recurring'] = ['interval' => $interval];
+            }
+            $items[] = ['price_data' => $priceData, 'quantity' => max(1, (int)($it['quantity'] ?? 1))];
+        }
+        if (empty($items)) throw new \Exception('Nothing to check out.');
+        $success = trim((string)($order['success_url'] ?? ''));
+        $cancel  = trim((string)($order['cancel_url'] ?? ''));
+        if ($success === '' || $cancel === '') throw new \Exception('Checkout needs success and cancel URLs.');
+        $fields = ['mode' => $mode, 'success_url' => $success, 'cancel_url' => $cancel, 'line_items' => $items];
+        if (!empty($order['client_reference_id'])) $fields['client_reference_id'] = (string)$order['client_reference_id'];
+
+        // Provider-neutral `collect` block (same shape every connector receives) →
+        // Stripe Checkout's native address/phone/shipping collection. We lean on
+        // Stripe to render + validate all of it; it comes back on the session.
+        $collect = is_array($order['collect'] ?? null) ? $order['collect'] : [];
+        $fields['billing_address_collection'] = !empty($collect['billing']) ? 'required' : 'auto';
+        if (!empty($collect['phone'])) $fields['phone_number_collection'] = ['enabled' => 'true'];
+        if (!empty($collect['shipping'])) {
+            $countries = array_values(array_filter(array_map(
+                fn($c) => strtoupper(substr(trim((string)$c), 0, 2)),
+                (array)($collect['countries'] ?? [])
+            )));
+            if ($countries) $fields['shipping_address_collection'] = ['allowed_countries' => $countries];
+            // A single flat shipping rate (amount 0 shows as "Free"); Stripe adds it to the
+            // total. One-time payments only — recurring plans fold shipping into the price.
+            $rate = is_array($collect['shipping_rate'] ?? null) ? $collect['shipping_rate'] : null;
+            if ($rate !== null && $mode === 'payment') {
+                $fields['shipping_options'] = [[
+                    'shipping_rate_data' => [
+                        'type'         => 'fixed_amount',
+                        'display_name' => (string)($rate['label'] ?? 'Shipping'),
+                        'fixed_amount' => [
+                            'amount'   => max(0, (int)($rate['amount_cents'] ?? 0)),
+                            'currency' => strtolower((string)($rate['currency'] ?? 'usd')),
+                        ],
+                    ],
+                ]];
+            }
+        }
+
+        $res = $this->apiPost($token, 'checkout/sessions', $fields);
+        return ['url' => (string)($res['url'] ?? ''), 'id' => (string)($res['id'] ?? '')];
+    }
+
+    /**
+     * Mint a hosted Stripe Billing Portal session for a customer — self-serve to
+     * update card, view invoices, or cancel. Auto-provisions a default portal
+     * configuration on the account if none exists yet (so it works without the
+     * member first configuring the portal in their dashboard).
+     */
+    public function billingPortalUrl($conn, string $token, string $customerId, string $returnUrl): string {
+        if ($customerId === '') throw new \Exception('This subscription has no customer to manage.');
+        $body = ['customer' => $customerId, 'return_url' => $returnUrl];
+        try {
+            $s = $this->apiPost($token, 'billing_portal/sessions', $body);
+        } catch (\Throwable $e) {
+            // No portal configuration on the account yet — create a sane default and retry
+            // against it explicitly (a new config is not made the account default).
+            $cfg = $this->apiPost($token, 'billing_portal/configurations', [
+                'business_profile[headline]'                    => 'Manage your subscription',
+                'features[invoice_history][enabled]'            => 'true',
+                'features[payment_method_update][enabled]'      => 'true',
+                'features[customer_update][enabled]'            => 'true',
+                'features[customer_update][allowed_updates][0]' => 'email',
+                'features[customer_update][allowed_updates][1]' => 'address',
+                'features[subscription_cancel][enabled]'        => 'true',
+            ]);
+            $body['configuration'] = (string)($cfg['id'] ?? '');
+            $s = $this->apiPost($token, 'billing_portal/sessions', $body);
+        }
+        return (string)($s['url'] ?? '');
+    }
+
+    /**
+     * Confirm a Stripe webhook order by RE-FETCHING the session (never trust the raw
+     * body): only a session Stripe itself reports as paid becomes an order. This is
+     * authoritative without a webhook signing secret — the fetch uses our own key, so
+     * a spoofed event can only reference a session that is (a) ours and (b) actually paid.
+     */
+    public function webhookOrder($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array {
+        self::assertSignature($rawBody, $headers, $secret);
+        $event = json_decode($rawBody, true);
+        if (!is_array($event)) return null;
+        $type = (string)($event['type'] ?? '');
+        if ($type !== 'checkout.session.completed' && $type !== 'checkout.session.async_payment_succeeded') return null;
+        $sessionId = (string)($event['data']['object']['id'] ?? '');
+        if (strncmp($sessionId, 'cs_', 3) !== 0) return null;
+        $s = $this->apiGet($token, 'checkout/sessions/' . rawurlencode($sessionId)
+            . '?expand[]=customer_details&expand[]=total_details');
+        if (($s['payment_status'] ?? '') !== 'paid') return null;
+        // Shipping address moved to collected_information on newer API versions; read
+        // either. Returns the SAME normalized keys every connector must fill.
+        $cust = is_array($s['customer_details'] ?? null) ? $s['customer_details'] : [];
+        $ship = $s['shipping_details'] ?? ($s['collected_information']['shipping_details'] ?? []);
+        $ship = is_array($ship) ? $ship : [];
+        return [
+            'session_id'      => (string)($s['id'] ?? $sessionId),
+            'payment_intent'  => (string)($s['payment_intent'] ?? ''),
+            'mode'            => (string)($s['mode'] ?? 'payment'),
+            'subscription'    => (string)($s['subscription'] ?? ''),
+            'amount_total'    => (int)($s['amount_total'] ?? 0),
+            'amount_shipping' => (int)($s['total_details']['amount_shipping'] ?? 0),
+            'currency'        => (string)($s['currency'] ?? 'usd'),
+            'email'           => (string)($cust['email'] ?? $s['customer_email'] ?? ''),
+            'name'            => (string)($cust['name'] ?? ''),
+            'phone'           => (string)($cust['phone'] ?? ''),
+            'billing_address' => self::addr($cust['address'] ?? []),
+            'ship_name'       => (string)($ship['name'] ?? $cust['name'] ?? ''),
+            'shipping_address'=> self::addr($ship['address'] ?? []),
+            'reference'       => (string)($s['client_reference_id'] ?? ''),
+            'livemode'        => (bool)($s['livemode'] ?? false),
+        ];
+    }
+
+    /**
+     * Subscription lifecycle events (renewals / cancellations). Verifies the signature,
+     * then RE-FETCHES the subscription (authoritative) and returns its normalized current
+     * state, or null for events that aren't subscription lifecycle. Same trust model as
+     * webhookOrder — a spoofed event can only reference a subscription that is ours.
+     */
+    public function subscriptionFromEvent($conn, string $token, string $rawBody, array $headers, string $secret = ''): ?array {
+        self::assertSignature($rawBody, $headers, $secret);
+        $event = json_decode($rawBody, true);
+        if (!is_array($event)) return null;
+        $type = (string)($event['type'] ?? '');
+        $subEvents = ['invoice.paid', 'invoice.payment_failed', 'customer.subscription.created',
+                      'customer.subscription.updated', 'customer.subscription.deleted'];
+        if (!in_array($type, $subEvents, true)) return null;
+
+        $obj = is_array($event['data']['object'] ?? null) ? $event['data']['object'] : [];
+        // invoice.* carry the subscription id; customer.subscription.* ARE the subscription.
+        $subId = strncmp($type, 'invoice.', 8) === 0 ? (string)($obj['subscription'] ?? '') : (string)($obj['id'] ?? '');
+        if (strncmp($subId, 'sub_', 4) !== 0) return null;
+
+        $s = $this->apiGet($token, 'subscriptions/' . rawurlencode($subId) . '?expand[]=customer');
+        $item  = is_array($s['items']['data'][0] ?? null) ? $s['items']['data'][0] : [];
+        $price = is_array($item['price'] ?? null) ? $item['price'] : [];
+        $cust  = is_array($s['customer'] ?? null) ? $s['customer'] : [];
+        $custId = is_array($s['customer'] ?? null) ? (string)($cust['id'] ?? '') : (string)($s['customer'] ?? '');
+        return [
+            'subscription_id'      => (string)($s['id'] ?? $subId),
+            'status'               => (string)($s['status'] ?? ''),   // active|trialing|past_due|canceled|unpaid|incomplete
+            'current_period_end'   => (int)($s['current_period_end'] ?? 0),
+            'cancel_at_period_end' => (bool)($s['cancel_at_period_end'] ?? false),
+            'customer_id'          => $custId,
+            'email'                => (string)($cust['email'] ?? ''),
+            'name'                 => (string)($cust['name'] ?? ''),
+            'amount'               => (int)($price['unit_amount'] ?? 0),
+            'currency'             => (string)($price['currency'] ?? 'usd'),
+            'interval'             => (string)($price['recurring']['interval'] ?? ''),
+            'livemode'             => (bool)($s['livemode'] ?? false),
+        ];
+    }
+
+    /** Verify the Stripe-Signature header when a secret is set; throw on mismatch. */
+    private static function assertSignature(string $rawBody, array $headers, string $secret): void {
+        if ($secret === '') return;
+        $sig = '';
+        foreach ($headers as $k => $v) {
+            if (strcasecmp((string)$k, 'Stripe-Signature') === 0) { $sig = is_array($v) ? (string)($v[0] ?? '') : (string)$v; break; }
+        }
+        if (!self::verifyStripeSignature($rawBody, $sig, $secret)) {
+            throw new \Exception('Stripe webhook signature verification failed.');
+        }
+    }
+
+    /** Normalize a Stripe address dict into the provider-neutral shape stored on orders. */
+    private static function addr($a): array {
+        $a = is_array($a) ? $a : [];
+        return [
+            'line1'   => (string)($a['line1'] ?? ''),
+            'line2'   => (string)($a['line2'] ?? ''),
+            'city'    => (string)($a['city'] ?? ''),
+            'state'   => (string)($a['state'] ?? ''),
+            'postal'  => (string)($a['postal_code'] ?? ''),
+            'country' => (string)($a['country'] ?? ''),
+        ];
+    }
+
+    /**
+     * Verify Stripe's `Stripe-Signature` header: HMAC-SHA256 of "t.payload" with the
+     * webhook signing secret (whsec_), matched against a v1 signature, within a 5-minute
+     * timestamp tolerance (replay protection). Constant-time compare.
+     */
+    private static function verifyStripeSignature(string $payload, string $sigHeader, string $secret): bool {
+        if ($sigHeader === '' || $secret === '') return false;
+        $t = ''; $v1 = [];
+        foreach (explode(',', $sigHeader) as $kv) {
+            $p = explode('=', trim($kv), 2);
+            if (count($p) !== 2) continue;
+            if ($p[0] === 't') $t = $p[1];
+            elseif ($p[0] === 'v1') $v1[] = $p[1];
+        }
+        if ($t === '' || $v1 === [] || !ctype_digit($t)) return false;
+        if (abs(time() - (int)$t) > 300) return false;
+        $expected = hash_hmac('sha256', $t . '.' . $payload, $secret);
+        foreach ($v1 as $sig) { if (hash_equals($expected, $sig)) return true; }
+        return false;
+    }
+
+    /**
+     * Validate + build fields for POST /v1/checkout/sessions. Nested arrays are
+     * form-encoded by http_build_query into Stripe's bracket syntax, e.g.
+     * line_items[0][price]=price_..&line_items[0][quantity]=1.
+     */
+    private function checkoutSessionFields(array $args): array {
+        $successUrl = trim((string)($args['success_url'] ?? ''));
+        $cancelUrl  = trim((string)($args['cancel_url'] ?? ''));
+        if ($successUrl === '') throw new \Exception('create_checkout_session requires a success_url.');
+        if ($cancelUrl === '')  throw new \Exception('create_checkout_session requires a cancel_url.');
+        $mode = (string)($args['mode'] ?? 'payment');
+        if (!in_array($mode, ['payment', 'subscription'], true)) $mode = 'payment';
+
+        $items = [];
+        if (!empty($args['line_items']) && is_array($args['line_items'])) {
+            foreach (array_values($args['line_items']) as $li) {
+                if (!is_array($li) || empty($li['price'])) continue;
+                $items[] = ['price' => (string)$li['price'], 'quantity' => max(1, (int)($li['quantity'] ?? 1))];
+            }
+        } elseif (!empty($args['price'])) {
+            $items[] = ['price' => (string)$args['price'], 'quantity' => max(1, (int)($args['quantity'] ?? 1))];
+        }
+        if (empty($items)) throw new \Exception('create_checkout_session requires line_items (or a single price).');
+
+        $f = [
+            'mode'        => $mode,
+            'success_url' => $successUrl,
+            'cancel_url'  => $cancelUrl,
+            'line_items'  => $items,
+        ];
+        if (!empty($args['customer']))            $f['customer'] = (string)$args['customer'];
+        if (!empty($args['client_reference_id'])) $f['client_reference_id'] = (string)$args['client_reference_id'];
+        return $f;
+    }
+
+    /** Constrain a subscription status filter to Stripe's set; default 'all'. */
+    private function normalizeSubscriptionStatus($status): string {
+        $set = ['all', 'active', 'trialing', 'past_due', 'canceled', 'unpaid', 'paused',
+                'incomplete', 'incomplete_expired', 'ended'];
+        $status = strtolower(trim((string)$status));
+        return in_array($status, $set, true) ? $status : 'all';
+    }
+
+    /** GET the Stripe API with the account token; decode to an array. */
+    private function apiGet(string $token, string $path): array {
+        [$status, $body] = $this->http('GET', 'https://api.stripe.com/v1/' . $path,
+            ['headers' => ['Authorization: Bearer ' . $token, 'Accept: application/json']]);
+        return $this->decodeOrThrow($status, $body);
+    }
+
+    /** POST the Stripe API (form-encoded, idempotent); decode to an array. */
+    private function apiPost(string $token, string $path, array $fields): array {
+        [$status, $body] = $this->http('POST', 'https://api.stripe.com/v1/' . $path, [
+            'headers' => [
+                'Authorization: Bearer ' . $token,
+                'Content-Type: application/x-www-form-urlencoded',
+                'Accept: application/json',
+                'Idempotency-Key: ' . bin2hex(random_bytes(16)),
+            ],
+            'body' => http_build_query($fields),
+        ]);
+        return $this->decodeOrThrow($status, $body);
+    }
+
+    /** Shared Stripe response handling — errors never include the token. */
+    private function decodeOrThrow(int $status, string $body): array {
+        if ($status === 401 || $status === 403) {
+            throw new \Exception('Stripe rejected the credentials (HTTP ' . $status . ') — reconnect the account.');
+        }
+        $j = json_decode($body, true);
+        if ($status < 200 || $status >= 300) {
+            $msg = (is_array($j) && !empty($j['error']['message'])) ? ': ' . (string)$j['error']['message'] : '.';
+            throw new \Exception('Stripe API error (HTTP ' . $status . ')' . $msg);
+        }
+        return is_array($j) ? $j : [];
+    }
+}

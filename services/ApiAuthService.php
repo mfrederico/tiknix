@@ -1,0 +1,99 @@
+<?php
+/**
+ * ApiAuthService — stateless API-key auth for scaffolded API controllers.
+ *
+ * Mirrors the apikey-table auth in controls/Mcp.php: reads a Bearer token
+ * (Authorization header, X-Api-Key fallback), validates the apikey row (active +
+ * not expired), loads the owning member, and bumps usage stats. Scope checks are
+ * best-effort — an empty/absent scopes list allows all; a non-empty list must
+ * contain '*', '<bean>.*', '<bean>.<action>', or '<action>'.
+ */
+
+namespace app\services;
+
+use app\Bean;
+
+class ApiAuthService {
+
+    /**
+     * @return array{success:bool, member_id:?int, member?:object, key?:object, error:?string}
+     */
+    /**
+     * A JSON list column (scopes, allowed_servers) as an array. NULL / '' / '[]' is "no
+     * entries". Anything else that does not decode to a list is a FAULT, not an empty list:
+     * a corrupt scopes column used to read as [] — and [] means "unrestricted" to every
+     * check downstream, so the broken key was the most permissive one.
+     *
+     * @throws \RuntimeException naming the column
+     */
+    public static function decodeList($json, string $what): array {
+        $json = trim((string) $json);
+        if ($json === '') return [];
+        $v = json_decode($json, true);
+        if (!is_array($v)) {
+            throw new \RuntimeException("{$what} is not a JSON list (" . json_last_error_msg() . '): ' . substr($json, 0, 60));
+        }
+        return array_values($v);
+    }
+
+    public static function authenticate(string $bean = '', string $action = 'read'): array {
+        $token = self::extractToken();
+        if ($token === '') {
+            return ['success' => false, 'member_id' => null, 'error' => 'Missing API token'];
+        }
+
+        $key = Bean::findOne('apikey', 'token = ? AND is_active = 1', [$token]);
+        if (!$key || !$key->id) {
+            return ['success' => false, 'member_id' => null, 'error' => 'Invalid API token'];
+        }
+        if ($key->expiresAt && strtotime((string)$key->expiresAt) < time()) {
+            return ['success' => false, 'member_id' => null, 'error' => 'API token expired'];
+        }
+
+        $member = Bean::load('member', (int)$key->memberId);
+        if (!$member->id) {
+            return ['success' => false, 'member_id' => null, 'error' => 'API token owner not found'];
+        }
+
+        // is_active above is the KEY's own revocation flag. It says nothing about whether
+        // the person still has an account, so without this a suspended member kept every
+        // API token they had ever issued.
+        if (!$member->canAuthenticate()) {
+            return ['success' => false, 'member_id' => null, 'error' => 'API token owner is not active'];
+        }
+
+        try {
+            $scopes = self::decodeList($key->scopes ?? null, "apikey #{$key->id} scopes");
+        } catch (\RuntimeException $e) {
+            \Flight::get('log')->error('ERROR ' . $e->getMessage());
+            return ['success' => false, 'member_id' => null, 'error' => 'API token scopes are unreadable; the key must be re-issued'];
+        }
+        if ($bean !== '' && $scopes && !self::allows($scopes, $bean, $action)) {
+            return ['success' => false, 'member_id' => null, 'error' => "API token lacks scope {$bean}.{$action}"];
+        }
+
+        // Usage stats (best effort — don't fail auth if this throws).
+        try {
+            $key->lastUsedAt = date('Y-m-d H:i:s');
+            $key->lastUsedIp = $_SERVER['REMOTE_ADDR'] ?? null;
+            $key->usageCount = ((int)($key->usageCount ?? 0)) + 1;
+            Bean::store($key);
+        } catch (\Throwable $e) { /* non-fatal */ }
+
+        return ['success' => true, 'member_id' => (int)$member->id, 'member' => $member, 'key' => $key, 'error' => null];
+    }
+
+    private static function extractToken(): string {
+        $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        if (preg_match('/^Bearer\s+(.+)$/i', $h, $m)) return trim($m[1]);
+        if (!empty($_SERVER['HTTP_X_API_KEY'])) return trim((string)$_SERVER['HTTP_X_API_KEY']);
+        return '';
+    }
+
+    private static function allows(array $scopes, string $bean, string $action): bool {
+        foreach (['*', "{$bean}.*", "{$bean}.{$action}", $action] as $needle) {
+            if (in_array($needle, $scopes, true)) return true;
+        }
+        return false;
+    }
+}

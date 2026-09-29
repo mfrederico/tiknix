@@ -24,7 +24,7 @@ chdir(dirname(__DIR__));
 
 // Full bootstrap so Flight config (app.baseurl, firehose.ingest_key), the logger,
 // Mailer, and the control-plane DB connection are all live.
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use RedBeanPHP\R;
 use app\AuditRunner;

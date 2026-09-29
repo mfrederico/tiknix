@@ -90,7 +90,7 @@ php public/index.php --control=test --method=debug --verbose
 tail -f log/app-*.log
 
 # Test database connection
-php -r "require 'bootstrap.php'; \$app = new app\Bootstrap('conf/config.ini');"</code></pre>
+php -r "require 'vendor/autoload.php'; \$app = new app\Bootstrap('conf/config.ini');"</code></pre>
                 </div>
 
                 <div class="alert alert-success alert-dismissible fade show mt-5" role="alert">

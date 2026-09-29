@@ -13,8 +13,19 @@ use app\AgentGuidance as G;
 
 class AgentGuidanceTest extends ConceptsTestCase {
 
+    /** The runtime's sections live in a scratch runtime tree beside the scratch app. */
+    protected function setUp(): void {
+        parent::setUp();
+        G::$runtimeRoot = "{$this->root}/rt";
+    }
+
+    protected function tearDown(): void {
+        G::$runtimeRoot = null;
+        parent::tearDown();
+    }
+
     private function core(array $sections = ['010-a.md' => "## A\n\nalpha\n", '020-b.md' => "## B\n\nbeta\n"]): void {
-        foreach ($sections as $f => $body) $this->put("{$this->root}/agent/guidelines/{$f}", $body);
+        foreach ($sections as $f => $body) $this->put("{$this->root}/rt/agent/guidelines/{$f}", $body);
     }
 
     private function claude(): string { return (string) file_get_contents("{$this->root}/CLAUDE.md"); }
@@ -29,6 +40,7 @@ class AgentGuidanceTest extends ConceptsTestCase {
     /* ---- the drift guard: core's real file IS the generated file ---- */
 
     public function testCoresClaudeMdIsExactlyWhatComposeProduces(): void {
+        G::$runtimeRoot = null;   // the real runtime's sections
         $core = dirname(__DIR__, 2);
         // With the plugins THIS install has switched on (concepts.lock, no database needed) —
         // exactly what `clitool --agent-sync` composes with, so an install's real CLAUDE.md,
@@ -50,6 +62,14 @@ class AgentGuidanceTest extends ConceptsTestCase {
         $expected = G::START . "\n## A\n\nalpha\n\n## B\n\nbeta\n\n## C\n\ngamma\n\n"
                   . "## Concept: cal (1.2.3)\n\n### Using cal\n\nDo the thing.\n\n" . G::END . "\n";
         $this->assertSame($expected, $this->claude(), '100- sorts after 020-: three-digit prefixes');
+    }
+
+    public function testAnAppSectionReplacesTheRuntimesOfTheSameNameAndNewOnesSlotIn(): void {
+        $this->core();
+        $this->put("{$this->root}/agent/guidelines/020-b.md", "## B, the app's way\n\nours\n");
+        $this->put("{$this->root}/agent/guidelines/015-mine.md", "## Mine\n\nonly here\n");
+        G::sync($this->root, []);
+        $this->assertSame(G::START . "\n## A\n\nalpha\n\n## Mine\n\nonly here\n\n## B, the app's way\n\nours\n\n" . G::END . "\n", $this->claude());
     }
 
     public function testThePreambleAboveTheBlockIsKeptByteForByte(): void {

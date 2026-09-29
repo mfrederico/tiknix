@@ -33,7 +33,7 @@
  */
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
-require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/vendor/autoload.php';
 new \app\Bootstrap();
 
 use app\Bean;

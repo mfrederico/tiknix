@@ -535,7 +535,6 @@ The MCP server (`/mcp/message`) uses **two-layer authentication**:
 ### Layer 1: Route-Level (authcontrol table)
 ```
 mcp::message = 101 (PUBLIC)
-mcp::registry = 101 (PUBLIC)
 ```
 **This is intentional!** These endpoints handle their own authentication.
 Setting them to PUBLIC just means they're *reachable*, not *unprotected*.

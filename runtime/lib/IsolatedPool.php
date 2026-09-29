@@ -113,7 +113,7 @@ class IsolatedPool {
         // instances' first update, 2026-09-28). Seeds run with the cache OFF for this
         // request and clear it afterwards so the web sees what they built.
         $php = '<?php set_time_limit(0); ini_set("display_errors", "1"); chdir(' . var_export($root, true) . '); '
-             . 'require "bootstrap.php"; new \app\Bootstrap(); '
+             . 'require "vendor/autoload.php"; new \app\Bootstrap(); '
              . '$__ca = \Flight::get("cachedDatabaseAdapter"); if ($__ca instanceof \app\CachedDatabaseAdapter) $__ca->disableCache(); '
              . 'try { ' . $body . ' } finally { if ($__ca instanceof \app\CachedDatabaseAdapter) { $__ca->clearAllCache(); $__ca->enableCache(); } }';
         return self::runAsPool($root, $php);
@@ -125,7 +125,7 @@ class IsolatedPool {
      * write the instance's own data without leaving the pool locked out of it. The script is
      * written under the system temp dir, which every pool's open_basedir includes, and
      * removed afterwards. $php is the whole file, `<?php` included; boot the app yourself
-     * (`chdir($root); require 'bootstrap.php'; new \app\Bootstrap();`) when it needs one.
+     * (`chdir($root); require 'vendor/autoload.php'; new \app\Bootstrap();`) when it needs one.
      *
      * @return array{status:int,output:string}
      * @throws \RuntimeException when cgi-fcgi or the socket is missing — never a quiet ''

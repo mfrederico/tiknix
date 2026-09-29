@@ -11,7 +11,7 @@
 // Bootstrap the application
 $projectRoot = dirname(__DIR__);
 chdir($projectRoot);
-require_once $projectRoot . '/bootstrap.php';
+require_once $projectRoot . '/vendor/autoload.php';
 $app = new \app\Bootstrap('conf/config.ini');
 
 use app\Mcp;

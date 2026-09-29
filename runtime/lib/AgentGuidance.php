@@ -5,7 +5,7 @@
  * Learned from Laravel Boost (COMPONENTS_PLAN.md, "Concept guidance"): agent guidance is
  * composed from what an install HAS, and regenerated when that changes. Here:
  *
- *   agent/guidelines/NN-<section>.md     core guidance, one file per section, in order
+ *   agent/guidelines/NN-<section>.md     the runtime's guidance (an app's same-named file replaces one), in order
  *   concepts/<name>/guidelines.md        an enabled concept's own rules (≤ MAX_LINES)
  *
  * sync() rewrites ONE managed block in <root>/CLAUDE.md, between START and END. Whatever
@@ -41,20 +41,30 @@ class AgentGuidance {
     private const CORE_H1 = '# Tiknix Development Standards';
 
     /**
-     * Core's sections, in order: ['10-top-rules.md' => "## Top Rules\n…", …].
-     * Loud when the directory is missing — an install with no guidance is a fault, not an
-     * empty block.
+     * The sections, in order: ['010-top-rules.md' => "## Top Rules\n…", …]. Two layers, like
+     * views and seeds: the runtime's agent/guidelines/ (every app gets them), then the app's
+     * own agent/guidelines/ — an app file with the same name REPLACES the runtime's section,
+     * a new name slots in by its number. Loud when the runtime's directory is missing or
+     * empty: an install with no guidance is a fault, not an empty block.
      */
+    /** Test seam: the runtime tree whose agent/guidelines/ is the base layer (null = Paths::runtime()). */
+    public static ?string $runtimeRoot = null;
+
     public static function sections(string $root): array {
-        $dir = rtrim($root, '/') . '/' . self::DIR;
-        if (!is_dir($dir)) {
-            throw new \RuntimeException("AgentGuidance: {$dir} does not exist. Core guidance lives there, one file per section.");
+        $rt = rtrim(self::$runtimeRoot ?? \app\Paths::runtime(), '/') . '/' . self::DIR;
+        if (!is_dir($rt)) {
+            throw new \RuntimeException("AgentGuidance: {$rt} does not exist. The runtime's guidance lives there, one file per section.");
         }
-        $files = glob($dir . '/*.md') ?: [];
-        if (!$files) {
-            throw new \RuntimeException("AgentGuidance: {$dir} has no *.md sections.");
+        $byName = [];
+        foreach ([$rt, rtrim($root, '/') . '/' . self::DIR] as $dir) {
+            if (!is_dir($dir)) continue;
+            foreach (glob($dir . '/*.md') ?: [] as $f) $byName[basename($f)] = $f;
         }
-        sort($files, SORT_STRING);
+        if (!$byName) {
+            throw new \RuntimeException("AgentGuidance: {$rt} has no *.md sections.");
+        }
+        ksort($byName, SORT_STRING);
+        $files = array_values($byName);
         $out = [];
         foreach ($files as $f) {
             $body = file_get_contents($f);

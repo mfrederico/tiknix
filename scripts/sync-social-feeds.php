@@ -11,7 +11,7 @@
  *   (crontab)  0,30 * * * *   php /var/www/html/default/tiknix/scripts/sync-social-feeds.php >> /var/log/tiknix-social.log 2>&1
  */
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 new app\Bootstrap('conf/config.ini');
 
 use app\Bean;

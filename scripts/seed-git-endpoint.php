@@ -14,7 +14,7 @@
 
 if (php_sapi_name() !== 'cli') { http_response_code(403); exit("cli only\n"); }
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use app\Bean;
 

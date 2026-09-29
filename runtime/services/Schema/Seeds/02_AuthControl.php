@@ -194,7 +194,6 @@ $defaults = [
     ['mcptools', '*', 1, 'MCP tool editor: writes PHP that runs on the server (root)'],
     ['mcp', 'message', 101, 'MCP JSON-RPC endpoint'],
     ['mcp', 'health', 101, 'MCP health check'],
-    ['mcpregistry', 'testConnection', 101, 'Test MCP server connection'],
 
     // Billing usage pull (101) — auth handled by the controller, same shape as mcp.
     // The caller is the ClickSimple billing server, which has no tiknix session and

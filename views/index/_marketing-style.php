@@ -41,8 +41,8 @@
         .card{ border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,0.02); }
         .logo{ display:flex; align-items:center; gap:11px; color:var(--text); }
         .logo-mark{ width:32px; height:32px; flex:0 0 auto; background:currentColor;
-            -webkit-mask:url(/img/tiknix.svg?v=<?= $logoV ?>) center/contain no-repeat;
-                    mask:url(/img/tiknix.svg?v=<?= $logoV ?>) center/contain no-repeat; }
+            -webkit-mask:url(/rt/img/tiknix.svg?v=<?= $logoV ?>) center/contain no-repeat;
+                    mask:url(/rt/img/tiknix.svg?v=<?= $logoV ?>) center/contain no-repeat; }
         .logo-word{ font-family:var(--serif); font-size:23px; font-weight:700; letter-spacing:-0.02em; }
 
         /* nav */

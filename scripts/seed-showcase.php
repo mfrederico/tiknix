@@ -12,7 +12,7 @@
  *   php scripts/seed-showcase.php
  */
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 new app\Bootstrap('conf/config.ini');
 
 use app\Bean;

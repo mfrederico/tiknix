@@ -1209,7 +1209,7 @@ commit and merge your work — you just make the code changes.
   one, use the \\app\\Bean wrapper (Bean::findOne / dispense / store).
   The seed file lives TWO levels below the instance root, so bootstrap the app with
   EXACTLY this (do not add a chdir, the CWD is already the instance root):
-      require_once __DIR__ . '/../../bootstrap.php';
+      require_once __DIR__ . '/../../vendor/autoload.php';
       \$app = new \\app\\Bootstrap();
   A wrong relative depth (e.g. '/../bootstrap.php') will fatal — the seed is two dirs deep.
 - **NO FALLBACKS. Fail loudly.** If something you need is missing — a config key, a

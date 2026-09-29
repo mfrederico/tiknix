@@ -25,7 +25,7 @@ class Dispatcher {
         $run = (new Executor($this->root))->newRun($def, $context, $source, 'queued');
         $runId = (int) $run->id;
 
-        $script = $this->root . '/scripts/pipeline-run.php';
+        $script = \app\Paths::runtime() . '/bin/pipeline-run.php';   // started with cd to the app root below
         $inner  = 'php ' . escapeshellarg($script) . ' --run=' . $runId;
         $log    = escapeshellarg((string) $run->runDir . '/worker.log');
 

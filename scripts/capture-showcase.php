@@ -11,7 +11,7 @@
  *   0 * * * *   php /var/www/html/default/tiknix/scripts/capture-showcase.php >> /var/log/tiknix-showcase.log 2>&1
  */
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 new app\Bootstrap('conf/config.ini');
 
 use app\Bean;

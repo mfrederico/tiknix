@@ -18,7 +18,7 @@ if (php_sapi_name() !== 'cli') {
     die("This script must be run from the command line\n");
 }
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 // bootstrap.php only DEFINES Bootstrap; constructing it is what registers the autoloader
 // and opens the database. Without this line every app\ class is "not found".

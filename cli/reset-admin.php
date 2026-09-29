@@ -17,7 +17,7 @@ define('BASE_PATH', dirname(__DIR__));
 chdir(BASE_PATH);
 
 // Load bootstrap
-require_once BASE_PATH . '/bootstrap.php';
+require_once BASE_PATH . '/vendor/autoload.php';
 
 // Initialize application
 $app = new \app\Bootstrap('conf/config.ini');

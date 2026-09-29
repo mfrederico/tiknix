@@ -1,4 +1,4 @@
-<?php $logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1'; ?>
+<?php $logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,8 +37,8 @@
         .logo { display: inline-flex; align-items: center; gap: 0.7rem; margin-bottom: 1.5rem; color: var(--text); text-decoration: none; }
         .logo-mark {
             width: 48px; height: 48px; flex: 0 0 auto; background: currentColor;
-            -webkit-mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
-                    mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
+            -webkit-mask: url(/rt/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
+                    mask: url(/rt/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
         }
         .logo-word { font-family: 'Playfair Display', Georgia, serif; font-weight: 600; font-size: 2rem; line-height: 1; }
         .badge {

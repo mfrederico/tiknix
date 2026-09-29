@@ -22,9 +22,9 @@ class Bootstrap {
     public function __construct($configFile = null) {
         // Default config path relative to this file
         if ($configFile === null) {
-            $configFile = __DIR__ . '/conf/config.ini';
+            $configFile = \app\Paths::root() . '/conf/config.ini';
         } elseif ($configFile[0] !== '/') {
-            $configFile = __DIR__ . '/' . $configFile;
+            $configFile = \app\Paths::root() . '/' . $configFile;
         }
         // PHP 8.5 turned many "null passed to a string parameter" calls into E_DEPRECATED
         // notices. Flight's error handler throws an ErrorException on anything still in
@@ -34,9 +34,6 @@ class Bootstrap {
         // a page. Real warnings and errors continue to throw and be handled as before.
         error_reporting(error_reporting() & ~E_DEPRECATED & ~E_USER_DEPRECATED);
 
-        // Initialize autoloader first - this must come before any framework usage
-        $this->initAutoloader();
-        
         // Now load configuration (after autoloader so Flight class is available)
         $this->loadConfig($configFile);
         
@@ -110,8 +107,8 @@ class Bootstrap {
         if ($checked) return;
         $checked = true;
         try {
-            $dir  = __DIR__ . '/conf';
-            $base = basename(__DIR__);
+            $dir  = \app\Paths::root() . '/conf';
+            $base = basename(\app\Paths::root());
             $dot  = strrpos($base, '.');
             if ($dot === false) return;                     // core install ("tiknix"): no <slug>.ini
             $slug = substr($base, 0, $dot);
@@ -155,23 +152,9 @@ class Bootstrap {
     }
 
     /**
-     * Initialize Composer autoloader
-     */
-    private function initAutoloader() {
-        $vendorPath = __DIR__ . '/vendor/autoload.php';
-        if (!file_exists($vendorPath)) {
-            die("Vendor autoload not found. Please run: composer install");
-        }
-        require_once $vendorPath;
-    }
-    
-    /**
      * Initialize CLI handler if running from command line
      */
     private function initCLI() {
-        // Load CLI handler class
-        require_once __DIR__ . '/runtime/lib/CliHandler.php';
-        
         if (\app\CliHandler::isCli()) {
             $this->cliHandler = new \app\CliHandler();
             $this->cliHandler->process();
@@ -197,10 +180,10 @@ class Bootstrap {
         // an nginx rule happens to block .log — a sibling file with any other extension
         // is served (verified: a .txt in that directory returned 200).
         //
-        // __DIR__ is the install root by construction, so the path no longer depends on
+        // Paths::root() is the install root by construction, so the path no longer depends on
         // who called us or from where. An absolute path in the config is honoured as-is.
         $logFile = $this->config['logging']['file'] ?? 'log/app.log';
-        $config['logFile'] = ($logFile[0] ?? '') === '/' ? $logFile : __DIR__ . '/' . ltrim($logFile, './');
+        $config['logFile'] = ($logFile[0] ?? '') === '/' ? $logFile : \app\Paths::root() . '/' . ltrim($logFile, './');
 
         // Containers log to stderr (Hyperlift/Docker capture the stream; the
         // container FS is ephemeral so a logfile is lost). Toggled by the LOG_STDERR
@@ -283,7 +266,7 @@ class Bootstrap {
                 // mysql://, pgsql://, sqlite:... — see parse_db_dsn() in lib/functions.php.
                 $envDsn = getenv('DB_DSN');
                 if ($envDsn !== false && trim($envDsn) !== '') {
-                    [$dsn, $dsnUser, $dsnPass] = \parse_db_dsn(trim($envDsn), __DIR__);
+                    [$dsn, $dsnUser, $dsnPass] = \parse_db_dsn(trim($envDsn), \app\Paths::root());
                     if ($dsnUser === null) {
                         R::setup($dsn);
                     } else {
@@ -293,7 +276,7 @@ class Bootstrap {
                     // SQLite configuration - use absolute path relative to project root
                     $dbPath = $need('path');
                     if ($dbPath[0] !== '/') {
-                        $dbPath = __DIR__ . '/' . $dbPath;
+                        $dbPath = \app\Paths::root() . '/' . $dbPath;
                     }
                     // Create database directory if it doesn't exist
                     $dbDir = dirname($dbPath);
@@ -360,7 +343,6 @@ class Bootstrap {
                nothing. SQLite only — another driver keeps its own writer rather than
                silently losing the audit to a class that does not match it. */
             if (R::getWriter() instanceof \RedBeanPHP\QueryWriter\SQLiteT) {
-                require_once __DIR__ . '/runtime/lib/SchemaAuditWriter.php';
                 $auditAdapter = R::getDatabaseAdapter();
                 $auditWriter  = new \app\SchemaAuditWriter($auditAdapter);
                 R::configureFacadeWithToolbox(new \RedBeanPHP\ToolBox(
@@ -377,7 +359,6 @@ class Bootstrap {
 
             // Initialize Query Cache with CachedDatabaseAdapter
             if ($this->config['cache']['query_cache'] ?? false) {
-                require_once __DIR__ . '/runtime/lib/CachedDatabaseAdapter.php';
                 $cachedAdapter = new \app\CachedDatabaseAdapter(R::getDatabaseAdapter()->getDatabase());
                 $toolbox = new \RedBeanPHP\ToolBox(R::getRedBean(), $cachedAdapter, R::getWriter());
                 R::configureFacadeWithToolbox($toolbox);
@@ -471,7 +452,7 @@ class Bootstrap {
      */
     private function initFlight() {
         // Set Flight configuration
-        Flight::set('flight.views.path', __DIR__ . '/views');
+        Flight::set('flight.views.path', \app\Paths::root() . '/views');
         // Views in two layers (RUNTIME-SPLIT-MAP.md): the app's views/ first, then the
         // runtime's. An app file at the same relative path overrides the runtime's page.
         Flight::register('view', \app\LayeredView::class, [], function (\app\LayeredView $view) {
@@ -484,23 +465,16 @@ class Bootstrap {
         Flight::set('debug', $this->config['app']['debug'] ?? false);
         Flight::set('build', $this->config['app']['build_mode'] ?? false);
         
-        // Load FlightMap extensions
-        require_once __DIR__ . '/runtime/lib/FlightMap.php';
-        
-        // Load utility functions if exists
-        if (file_exists(__DIR__ . '/runtime/lib/functions.php')) {
-            require_once __DIR__ . '/runtime/lib/functions.php';
-        }
+        // FlightMap extensions (this directory; functions.php is Composer's "files" autoload)
+        require_once __DIR__ . '/FlightMap.php';
 
-        // Load custom routes
-        if (file_exists(__DIR__ . '/routes/mcp.php')) {
-            require_once __DIR__ . '/routes/mcp.php';
-        }
+        // The MCP routes, from the runtime's routes/ unless the app overrides the file
+        require_once \app\Paths::route('mcp') ?? throw new \RuntimeException('routes/mcp.php is missing from both the app and the runtime');
 
         // Concepts (COMPONENTS_PLAN.md): autoload enabled concepts' classes. After FlightMap
         // (install flags are owned by SYSTEM_ADMIN_ID) and after the database. A no-op on an
         // install with no concepts/ directory.
-        \app\Concepts::boot(__DIR__);
+        \app\Concepts::boot(\app\Paths::root());
 
         // Register default route handler (catch-all for /class/method pattern)
         Flight::defaultRoute();

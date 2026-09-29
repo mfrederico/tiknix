@@ -41,7 +41,7 @@ class Integrations extends Control {
      * them stays admin-only on /connections.
      */
     private function instanceView(): void {
-        $root = dirname(__DIR__);                       // the app root this code runs in
+        $root = \app\Paths::root();                       // the app root this code runs in
         $this->render('integrations/index', [
             'title'          => 'Integrations',
             'pipelines'      => InstanceAutomations::pipelines($root),

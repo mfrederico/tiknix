@@ -226,7 +226,7 @@ class Connections extends Control {
      */
     private function instanceConnections(): void {
         if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/dashboard'); return; }
-        $root = dirname(__DIR__);
+        $root = \app\Paths::root();
 
         $connections = ConnectionStore::withOwnDb(function () {
             $rows = [];
@@ -290,7 +290,7 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         if (!$this->instanceManageGuard(false)) return;
         if (!$this->validateCSRF()) return;
-        $root = dirname(__DIR__);
+        $root = \app\Paths::root();
         $type = strtolower(trim((string)$this->getParam('type', '')));
         $env  = $this->normalizeEnv($this->getParam('env', 'production'));
         $shop = trim((string)$this->getParam('shop', ''));

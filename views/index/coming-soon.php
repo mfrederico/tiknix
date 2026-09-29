@@ -1,4 +1,4 @@
-<?php $logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1'; ?>
+<?php $logoV = @filemtime(\app\Paths::root() . '/public/img/tiknix.svg') ?: '1'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -255,7 +255,7 @@
         <div class="rail" id="rail">
             <?php foreach ($showcase as $s):
                 $spath = (string)($s->screenshotPath ?? '');
-                $fsPath = dirname(__DIR__, 2) . '/public' . $spath;
+                $fsPath = \app\Paths::root() . '/public' . $spath;
                 $ver = @filemtime($fsPath) ?: '1';
             ?>
             <a class="scard" href="<?= htmlspecialchars((string)$s->url) ?>" target="_blank" rel="noopener">

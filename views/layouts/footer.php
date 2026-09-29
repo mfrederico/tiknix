@@ -39,7 +39,7 @@
         <div class="toast-header">
             <i class="bi bi-info-circle me-2"></i>
             <strong class="me-auto">Notification</strong>
-            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="toast"></button>
         </div>
         <div class="toast-body"></div>
     </div>

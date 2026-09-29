@@ -136,7 +136,7 @@ class Mcp extends BaseControls\Control {
         $this->logger = Flight::get('log');
 
         // Initialize tool loader
-        $this->toolLoader = new ToolLoader(dirname(__DIR__) . '/mcptools');
+        $this->toolLoader = new ToolLoader();
         $this->toolLoader->setMcp($this);
 
         // Enabled concepts' tools (concept.json provides.tools), each carrying the level its
@@ -941,7 +941,7 @@ class Mcp extends BaseControls\Control {
                 // authenticated member) along, the HTTP equivalent of the env a stdio server
                 // inherits. This handler is the HTTP transport only, so it never shadows the
                 // value a stdio planner exported.
-                putenv('TIKNIX_WORKSPACE=' . dirname(__DIR__));
+                putenv('TIKNIX_WORKSPACE=' . \app\Paths::root());
                 if (($this->authMember->id ?? 0)) {
                     putenv('TIKNIX_MEMBER_ID=' . (int) $this->authMember->id);
                 }
@@ -2007,7 +2007,7 @@ class Mcp extends BaseControls\Control {
      * Each line is tagged `http` or `stdio` so they stay tellable apart.
      */
     private function mcpFileLog(string $level, string $msg): void {
-        $dir = dirname(__DIR__) . '/log';
+        $dir = \app\Paths::root() . '/log';
         if (!is_dir($dir) && !@mkdir($dir, 0775, true)) return;
         @file_put_contents(
             $dir . '/mcp-' . date('Y-m-d') . '.log',
@@ -2169,7 +2169,7 @@ class Mcp extends BaseControls\Control {
         //
         // An unset or missing ini value does NOT remove an existing entry. Unset means
         // this host does not manage mantic, not that a hand-wired entry is wrong.
-        $aib = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
+        $aib = @parse_ini_file(\app\Paths::root() . '/conf/aibuilder.ini', true) ?: [];
         $manticServer = trim((string)($aib['tools']['mantic_server'] ?? ''));
         if ($manticServer !== '' && is_file($manticServer)) {
             self::ensureServerArgs($config['mcpServers'], 'mantic', 'node', [$manticServer]);

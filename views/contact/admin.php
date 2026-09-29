@@ -1,6 +1,6 @@
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2">Contact Messages</h1>
+        <h1 class="h2">Support messages</h1>
         <div>
             <span class="badge bg-info"><?= $total ?> Total Messages</span>
         </div>

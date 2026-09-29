@@ -21,23 +21,10 @@ class Mcptools extends Control {
         parent::__construct();
         $this->toolsDir = \app\Paths::root() . '/mcptools';
 
-        // Editing MCP tools is editing what an API key can DO. Gated by the same
-        // `mcp` grant as key issuing (see controls/Apikeys) so the two cannot drift
-        // apart: admins always, everyone else only once an admin switches it on.
-        if (!\app\Feature::allows('mcp', (int) $this->member->id, (int) $this->member->level)) {
-            $this->logger->warning('Ungranted member attempted to reach MCP tools', [
-                'member_id' => $this->member->id, 'member_level' => $this->member->level,
-                'feature'   => 'mcp',
-            ]);
-            // http_response_code, not Flight::response()->status(): status() sets
-            // the code on Flight's response OBJECT, and renderView echoes straight
-            // out before exit bypasses Flight::send() — so the 403 was never
-            // flushed and PHP emitted its default 200. The page said Forbidden and
-            // the status line said OK, which is the version a monitor believes.
-            http_response_code(403);
-            \Flight::renderView('error/403', ['title' => '403 - Forbidden']);
-            exit;
-        }
+        // Editing an MCP tool is writing PHP that runs on this server, so every action is
+        // ROOT (requireLevel in each method, and mcptools::* = 1 in the permission table).
+        // A feature-grant gate here used to promise admins and granted members more than
+        // the methods then allowed; one rule now, and the table says the same thing.
     }
 
     /**

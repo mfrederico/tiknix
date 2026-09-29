@@ -146,7 +146,7 @@
                         // TABLE, not just the file: a fresh instance can have an
                         // empty security.db (table lazily created on first rule /
                         // by seed-security.php), so query defensively -> 0.
-                        $securityDbPath = dirname(dirname(__DIR__)) . '/database/security.db';
+                        $securityDbPath = \app\Paths::root() . '/database/security.db';
                         $ruleCount = 0;
                         if (file_exists($securityDbPath)) {
                             try {
@@ -167,7 +167,7 @@
 
                 <a href="/contact/admin" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
-                        <h5 class="mb-1">Contact Messages</h5>
+                        <h5 class="mb-1">Support messages</h5>
                         <?php
                         // Use Bean wrapper
                         $newMessages = \app\Bean::count('contact', 'status = ?', ['new']);

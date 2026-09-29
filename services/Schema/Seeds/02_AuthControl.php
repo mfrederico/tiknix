@@ -110,7 +110,6 @@ $defaults = [
     ['settings', 'saveini', 50, 'INI editor — save (scope enforced per level)'],
     ['settings', 'initemplate', 1, 'Raw INI editor — create from template'],
     ['translations', '*', 50, 'Translations editor (i18n)'],
-    ['permissions', '*', 50, 'Permission management'],
     ['contact', 'admin', 50, 'View contact messages'],
     ['contact', 'view', 50, 'View single message'],
     ['contact', 'respond', 50, 'Respond to message'],
@@ -192,6 +191,7 @@ $defaults = [
 
     // Public MCP endpoints (101) — auth handled by the controller
     ['mcp', '*', 101, 'MCP server endpoints'],
+    ['mcptools', '*', 1, 'MCP tool editor: writes PHP that runs on the server (root)'],
     ['mcp', 'message', 101, 'MCP JSON-RPC endpoint'],
     ['mcp', 'health', 101, 'MCP health check'],
     ['mcpregistry', 'testConnection', 101, 'Test MCP server connection'],
@@ -225,8 +225,6 @@ $defaults = [
     ['admin', 'conceptdisable', 1, 'Concepts — switch one off (ROOT)'],
     ['admin', 'conceptinstall', 1, 'Concepts — queue an install into the selected project, as a build (ROOT)'],
     ['admin', 'conceptstatus',  1, 'Concepts — install progress for the Plugins page spinner (ROOT)'],
-    ['permissions', 'build', 1, 'Build mode - scan controllers'],
-    ['permissions', 'scan', 1, 'Scan for new permissions'],
 ];
 
 // Applied through PermissionCache::seedRule, which does the one thing a plain

@@ -13,7 +13,7 @@
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
             <?= htmlspecialchars(($msg['message']) ?? '') ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
 
@@ -150,7 +150,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Delete MCP Tool</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <p>Are you sure you want to delete <strong id="deleteToolName"></strong>?</p>

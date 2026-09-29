@@ -44,6 +44,62 @@ Flight::map('defaultRoute', function($prefix = '') {
         if (empty($class)) $class = 'index';
         if (empty($function)) $function = 'index';
         
+        // Resolve the controller BEFORE asking whether this member may use it. A URL no
+        // controller answers is a 404 for everyone: checking permission first sent a guest
+        // to the login page for a page that does not exist, and in build mode it wrote an
+        // authcontrol row for every scanner's made-up path.
+        $classname = '\\'.CLASS_NAMESPACE.'\\'.ucfirst($class);
+        // The app's controls/ and the runtime's (RUNTIME-SPLIT-MAP.md) — both answer URLs;
+        // the autoloader already prefers the app's file when both define a class.
+        $controllerRoots = [realpath(\app\Paths::root() . '/controls'), realpath(\app\Paths::runtime() . '/controls')];
+
+        // An ENABLED concept may claim a URL that core does not (COMPONENTS_PLAN.md).
+        // Core is tried first, and a concept cannot be enabled while core owns the
+        // name, so this never changes what an existing URL means. The concept's own
+        // controls/ joins the allowed roots only for the class it claimed — a
+        // disabled concept is never consulted, so it is unroutable by construction.
+        if (!class_exists($classname) && is_dir(\app\Paths::root() . '/' . \app\Concepts::DIR)) {
+            $concepts = \app\Concepts::instance();
+            $claimed = $concepts->controllerClass($class);
+            if ($claimed !== null) {
+                $classname = '\\' . $claimed;
+                $controllerRoots = array_merge($controllerRoots, $concepts->controllerRoots());
+            }
+        }
+
+        // Check if controller class exists before trying to instantiate
+        // A URL nobody implements is a visitor typo or a scanner, not a fault in
+        // this application — so it is a warning. Logging routine 404s at ERROR
+        // buried the real errors and made "any ERROR in the log is a bug" — the
+        // rule the e2e suite enforces — impossible to hold.
+        if (!class_exists($classname)) {
+            Flight::get('log')->warning("Controller not found: {$classname}");
+            Flight::notFound();
+            return;
+        }
+
+        // Only dispatch to real controllers: the resolved class's source
+        // file must live under this project's controls/ directory. The
+        // `app\` namespace also maps to lib/, so without this an attacker
+        // could instantiate helper classes (Bean, PermissionCache, ...)
+        // straight from a URL. Directory-based (not a name list) so new
+        // controllers in any controls/ subdir work automatically.
+        $classFile = (new \ReflectionClass($classname))->getFileName();
+        $classReal = $classFile === false ? false : realpath($classFile);
+        $inControllerRoot = false;
+        foreach ($controllerRoots as $controllerRoot) {
+            if ($controllerRoot !== false && $classReal !== false
+                && strpos($classReal, $controllerRoot . DIRECTORY_SEPARATOR) === 0) {
+                $inControllerRoot = true;
+                break;
+            }
+        }
+        if (!$inControllerRoot) {
+            Flight::get('log')->warning("Refused non-controller class: {$classname}");
+            Flight::notFound();
+            return;
+        }
+
         Flight::get('log')->debug("Checking permission for {$class}->{$function}");
         
         // Check permissions
@@ -60,61 +116,8 @@ Flight::map('defaultRoute', function($prefix = '') {
             $params['operation']->type = $operationid;
             $params['route'] = $route;
             
-            // Instantiate and call controller
-            $classname = ucfirst($class);
+            // Instantiate and call controller (resolved above, before the permission check)
             try {
-                $classname = '\\'.CLASS_NAMESPACE.'\\'.$classname;
-                // The app's controls/ and the runtime's (RUNTIME-SPLIT-MAP.md) — both answer URLs;
-                // the autoloader already prefers the app's file when both define a class.
-                $controllerRoots = [realpath(\app\Paths::root() . '/controls'), realpath(\app\Paths::runtime() . '/controls')];
-
-                // An ENABLED concept may claim a URL that core does not (COMPONENTS_PLAN.md).
-                // Core is tried first, and a concept cannot be enabled while core owns the
-                // name, so this never changes what an existing URL means. The concept's own
-                // controls/ joins the allowed roots only for the class it claimed — a
-                // disabled concept is never consulted, so it is unroutable by construction.
-                if (!class_exists($classname) && is_dir(\app\Paths::root() . '/' . \app\Concepts::DIR)) {
-                    $concepts = \app\Concepts::instance();
-                    $claimed = $concepts->controllerClass($class);
-                    if ($claimed !== null) {
-                        $classname = '\\' . $claimed;
-                        $controllerRoots = array_merge($controllerRoots, $concepts->controllerRoots());
-                    }
-                }
-
-                // Check if controller class exists before trying to instantiate
-                // A URL nobody implements is a visitor typo or a scanner, not a fault in
-                // this application — so it is a warning. Logging routine 404s at ERROR
-                // buried the real errors and made "any ERROR in the log is a bug" — the
-                // rule the e2e suite enforces — impossible to hold.
-                if (!class_exists($classname)) {
-                    Flight::get('log')->warning("Controller not found: {$classname}");
-                    Flight::notFound();
-                    return;
-                }
-
-                // Only dispatch to real controllers: the resolved class's source
-                // file must live under this project's controls/ directory. The
-                // `app\` namespace also maps to lib/, so without this an attacker
-                // could instantiate helper classes (Bean, PermissionCache, ...)
-                // straight from a URL. Directory-based (not a name list) so new
-                // controllers in any controls/ subdir work automatically.
-                $classFile = (new \ReflectionClass($classname))->getFileName();
-                $classReal = $classFile === false ? false : realpath($classFile);
-                $inControllerRoot = false;
-                foreach ($controllerRoots as $controllerRoot) {
-                    if ($controllerRoot !== false && $classReal !== false
-                        && strpos($classReal, $controllerRoot . DIRECTORY_SEPARATOR) === 0) {
-                        $inControllerRoot = true;
-                        break;
-                    }
-                }
-                if (!$inControllerRoot) {
-                    Flight::get('log')->warning("Refused non-controller class: {$classname}");
-                    Flight::notFound();
-                    return;
-                }
-
                 $instance = new $classname;
 
                 // Check if method exists and is callable

@@ -58,7 +58,7 @@ foreach (Bean::find('instance', "status = 'active' ORDER BY slug") as $inst) {
     $secret = (string) ($ini['pipeline']['trigger_secret'] ?? '');
     if ($base === '' || $secret === '') { $skips[] = "{$slug}: no [app] baseurl or [pipeline] trigger_secret"; continue; }
     // A tree without the endpoint answers 404 to every knock; say why, by name.
-    $ctrl = @file_get_contents($dir . '/controls/Pipeline.php');
+    $ctrl = @file_get_contents($dir . '/controls/Pipeline.php'); if ($ctrl === false) $ctrl = @file_get_contents($dir . '/runtime/controls/Pipeline.php');   // since the runtime split
     if ($ctrl === false || strpos($ctrl, 'function tick(') === false) { $skips[] = "{$slug}: no /pipeline/tick yet — merge core into it"; continue; }
     $targets[] = ['slug' => $slug, 'url' => $base . '/pipeline/tick', 'secret' => $secret];
 }

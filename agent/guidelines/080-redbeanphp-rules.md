@@ -3,7 +3,7 @@
 > **Official Documentation**: https://redbeanphp.com/
 > Always refer to the official docs for the most accurate information.
 
-### Bean Wrapper Class (lib/Bean.php) — REQUIRED
+### Bean Wrapper Class (runtime/lib/Bean.php) — REQUIRED
 
 **ALWAYS use `Bean::` for database operations. Never call `R::` directly.**
 
@@ -86,8 +86,8 @@ $conn->external_eid = 'acme-store.myshopify.com';
 
 Use `_ref` (not `_id`) when the target is a real row but a FOREIGN KEY would be harmful:
 - The bean type is **plural** (`connections`), so `connection_id` would point at a bean
-  type `connection` that does not exist — see `services/Schema/Seeds/04_ExternalIdentity.php`
-  and `lib/Mentions.php` (`thread_ref`, `message_ref`).
+  type `connection` that does not exist — see `runtime/services/Schema/Seeds/04_ExternalIdentity.php`
+  and `runtime/lib/Mentions.php` (`thread_ref`, `message_ref`).
 - The parent is **hard deleted** (`Bean::trash`), and SQLite's default `NO ACTION` would
   make that delete fail forever — e.g. `externalidentity.member_ref`.
 

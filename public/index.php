@@ -6,7 +6,7 @@
 
 // The error page of last resort — FIRST, before the autoloader, so that whatever breaks
 // afterwards (Composer included) still ends in a real page rather than a blank one.
-require __DIR__ . '/../lib/fatal-handler.php';
+require __DIR__ . '/../runtime/lib/fatal-handler.php';
 
 // Report everything; SHOW nothing unless this install says it is being debugged.
 //

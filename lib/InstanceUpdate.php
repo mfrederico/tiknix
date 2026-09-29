@@ -205,6 +205,26 @@ class InstanceUpdate {
             foreach (['/', '/auth/login'] as $p) { $st = ($this->http)($base . $p); if ($st !== 200) $bad[] = "{$p} → {$st}"; }
             $out['smoke'] = [!$bad, $bad ? implode(', ', $bad) : "{$base}/ and /auth/login answer 200"];
         }
+
+        // Overrides (the owner's rule, 2026-09-28): an app file that replaces a runtime file is
+        // NOT upgraded by this update — the app's copy keeps answering. Not a failure: the
+        // runtime moved on as it should. Said by name, so the owner knows which of their
+        // copies now lags the runtime and must be reconciled by hand (--overrides).
+        $rt = is_dir("{$root}/runtime") ? "{$root}/runtime" : "{$root}/vendor/tiknix/runtime";
+        if (is_dir($rt)) {
+            try {
+                $rep = Overrides::report($root, $rt);
+                $stale = array_keys(array_filter($rep, fn($r) => $r['status'] === 'STALE'));
+                $unrec = array_keys(array_filter($rep, fn($r) => $r['status'] === 'unrecorded'));
+                $detail = count($rep) . ' override(s)';
+                if ($stale) $detail .= '; STALE — the runtime changed these and your copies were NOT upgraded, reconcile them yourself: ' . implode(', ', $stale);
+                if ($unrec) $detail .= '; unrecorded (no base to compare): ' . implode(', ', $unrec);
+                if ($stale || $unrec) \Flight::get('log')?->warning('InstanceUpdate: overrides need the owner', ['stale' => $stale, 'unrecorded' => $unrec]);
+                $out['overrides'] = [true, $detail];
+            } catch (\Throwable $e) {
+                $out['overrides'] = [false, $e->getMessage()];
+            }
+        }
         return $out;
     }
 

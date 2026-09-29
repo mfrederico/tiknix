@@ -546,7 +546,7 @@ MD;
      */
     private function codebaseDigest(): string {
         try {
-            $file = dirname(__DIR__) . '/mcptools/Introspector.php';
+            $file = \app\Paths::runtime() . '/mcptools/Introspector.php';
             if (is_file($file)) require_once $file;
             $cls = 'app\\mcptools\\Introspector';
             if (!class_exists($cls)) return '_(codebase inventory unavailable)_';

@@ -1240,7 +1240,7 @@ MD;
         $reuses = json_decode((string)$t->reuses, true);
         if (!is_array($reuses) || !$reuses) return '';
         try {
-            $file = dirname(__DIR__) . '/mcptools/Introspector.php';
+            $file = \app\Paths::runtime() . '/mcptools/Introspector.php';
             if (is_file($file)) require_once $file;
             $cls = 'app\\mcptools\\Introspector';
             if (!class_exists($cls)) throw new \RuntimeException('mcptools/Introspector.php is missing from this project');

@@ -1,6 +1,6 @@
 ## Email (Mailer)
 
-Mail is a CONNECTION, not config. `lib/Mailer.php`, the comms inbox (`services/NotifyService.php`)
+Mail is a CONNECTION, not config. `runtime/lib/Mailer.php`, the comms inbox (`runtime/services/NotifyService.php`)
 and `/webhook/mailgun` all read `Mailer::settings()`: the install's Mailgun connection bound to
 core's `mail` role (`ConnectionBindings::for('core', 'mail')`). Connect one under Connections →
 Mailgun (private API key + sending domain; optional from-address, inbound domain, webhook

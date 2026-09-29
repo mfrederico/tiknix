@@ -1,0 +1,731 @@
+<?php
+/**
+ * Introspector — deterministic, lean codebase introspection.
+ *
+ * Scans a tiknix codebase (controllers, models, lib, conf) plus its SQLite
+ * schema/permissions and answers structural questions WITHOUT loading file
+ * bodies. Everything it returns is a pointer (path:line + one-liner) so callers
+ * drill down with Read only where needed. No LLM, no network — safe in the jail.
+ *
+ * Used by the codebase_map / describe / whatprovides MCP tools.
+ */
+
+namespace app\mcptools;
+
+class Introspector {
+
+    private string $root;
+    private ?\PDO $db = null;
+
+    public function __construct(?string $root = null) {
+        // mcptools/ always lives at <root>/mcptools, so \app\Paths::root() is the app root.
+        $this->root = rtrim($root ?: \app\Paths::root(), '/');
+        $this->openDb();
+    }
+
+    /** Open the instance's sqlite db (read-only) if config points at one. */
+    private function openDb(): void {
+        $ini = @parse_ini_file("{$this->root}/conf/config.ini", true) ?: [];
+        $type = strtolower($ini['database']['type'] ?? '');
+        $path = $ini['database']['path'] ?? '';
+        if ($type !== 'sqlite' || $path === '') return;
+        $abs = $path[0] === '/' ? $path : "{$this->root}/{$path}";
+        if (!is_file($abs)) return;
+        try { $this->db = new \PDO('sqlite:' . $abs); $this->db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION); }
+        catch (\Throwable $e) { $this->db = null; $this->problem('open ' . $abs, $e); }
+    }
+
+    // === public API ==========================================================
+
+    /** Lean table-of-contents: names + counts, no detail. */
+    /** @var string[] what could not be read while answering — shown, never hidden */
+    private array $problems = [];
+
+    /**
+     * A read that failed is recorded, logged at ERROR, and printed with the answer. It
+     * used to be swallowed: a broken query rendered as "(none yet)" and the build agent,
+     * told the project had no pipelines / no routes / no columns, wrote duplicates.
+     */
+    private function problem(string $where, \Throwable $e): void {
+        $msg = "Introspector: {$where} failed — " . $e->getMessage();
+        $this->problems[] = $msg;
+        error_log('ERROR ' . $msg);
+    }
+
+    /** @return string[] */
+    public function problems(): array { return $this->problems; }
+
+    /** The problems as a block to append to any rendered answer; '' when there were none. */
+    public function problemsBlock(): string {
+        if (!$this->problems) return '';
+        return "\n## Introspection problems (these answers are INCOMPLETE — do not treat a missing item as absent)\n\n- " . implode("\n- ", array_unique($this->problems)) . "\n";
+    }
+
+    public function map(): array {
+        $controllers = array_map(fn($c) => ['name' => $c['name'], 'routes' => count($c['methods'])], $this->controllers());
+        $models = array_map(fn($m) => ['name' => $m['name'], 'table' => $m['table']], $this->models());
+        $routeCount = array_sum(array_column($controllers, 'routes'));
+        return [
+            'controllers' => $controllers,
+            'models'      => $models,
+            'libs'        => array_column($this->libs(), 'name'),
+            'config'      => $this->confSections(),
+            'routeCount'  => $routeCount,
+        ];
+    }
+
+    /** Detail for matching primitives (a name may be BOTH a controller and a model). */
+    public function describe(string $name): array {
+        $q = strtolower(preg_replace('/\.php$/', '', trim($name)));
+        $out = [];
+
+        foreach ($this->controllers() as $c) {
+            if (strtolower($c['name']) === $q) {
+                $out[] = ['kind' => 'controller', 'name' => $c['name'], 'path' => $c['path'], 'line' => $c['line'],
+                    'routes' => array_map(fn($m) => [
+                        'route' => '/' . strtolower($c['name']) . '/' . $m['name'],
+                        'method' => $m['name'], 'line' => $m['line'],
+                        'level' => $this->routeLevel(strtolower($c['name']), $m['name']),
+                    ], $c['methods'])];
+            }
+        }
+        foreach ($this->models() as $m) {
+            if ($m['name'] === $q || strtolower($m['class']) === 'model_' . $q) {
+                $out[] = ['kind' => 'model', 'name' => $m['name'], 'table' => $m['table'], 'path' => $m['path'],
+                    'columns' => $this->columns($m['table']), 'relations' => $this->relations($m['table'])];
+            }
+        }
+        foreach ($this->libs() as $l) {
+            if (strtolower($l['name']) === $q) {
+                $out[] = ['kind' => 'lib', 'name' => $l['name'], 'path' => $l['path'], 'methods' => $l['methods']];
+            }
+        }
+        return $out;
+    }
+
+    /** Ranked pointers across all primitives for a concept. Capped. */
+    public function whatprovides(string $concept, int $limit = 12): array {
+        $concept = strtolower(trim($concept));
+        if ($concept === '') return [];
+        $words = array_values(array_filter(preg_split('/\s+/', $concept)));
+        $hits = [];
+
+        $score = function (string $name, string $text) use ($concept, $words) {
+            $n = strtolower($name); $t = strtolower($text); $s = 0;
+            if (strpos($n, $concept) !== false) $s += 5;
+            $s += substr_count($t, $concept) * 2;
+            foreach ($words as $w) { if (strpos($n, $w) !== false) $s += 2; if (strpos($t, $w) !== false) $s += 1; }
+            return $s;
+        };
+        $add = function ($kind, $name, $path, $line, $why, $s) use (&$hits) {
+            if ($s > 0) $hits[] = ['kind' => $kind, 'name' => $name, 'path' => $path, 'line' => $line, 'why' => $why, '_s' => $s];
+        };
+
+        foreach ($this->controllers() as $c) {
+            $methods = implode(' ', array_column($c['methods'], 'name'));
+            $add('controller', $c['name'], $c['path'], $c['line'], 'controller', $score($c['name'], $c['name'] . ' ' . $methods . ' ' . $c['doc']));
+            foreach ($c['methods'] as $m) {
+                $r = '/' . strtolower($c['name']) . '/' . $m['name'];
+                $add('route', $r, $c['path'], $m['line'], 'route', $score($m['name'] . ' ' . $r, $m['name']));
+            }
+        }
+        foreach ($this->models() as $m) {
+            $cols = implode(' ', array_column($this->columns($m['table']), 'name'));
+            $add('model', $m['name'], $m['path'], 1, 'model/table ' . $m['table'], $score($m['name'] . ' ' . $m['table'], $m['name'] . ' ' . $m['table'] . ' ' . $cols));
+        }
+        foreach ($this->libs() as $l) {
+            $add('lib', $l['name'], $l['path'], 1, 'lib class', $score($l['name'], $l['name'] . ' ' . implode(' ', $l['methods'])));
+        }
+        foreach ($this->confSections() as $sec) {
+            $add('config', '[' . $sec . ']', 'conf/config.ini', 1, 'config section', $score($sec, $sec));
+        }
+
+        usort($hits, fn($a, $b) => $b['_s'] <=> $a['_s']);
+        $local = array_map(fn($h) => array_diff_key($h, ['_s' => 1]), array_slice($hits, 0, $limit));
+
+        // After what is HERE, what could be ADOPTED. Appended rather than ranked in, so a
+        // busy codebase never crowds the catalog out of the answer — and asked in the tool
+        // agents already call by habit, instead of relying on them to remember a second one.
+        return array_merge($local, $this->catalogHits($concept));
+    }
+
+    /**
+     * Catalog concepts matching a capability, shaped like whatprovides() hits. Concepts this
+     * project already has are left out — those are found above, as code.
+     *
+     * No catalog configured → nothing (absent is not news). A catalog that is configured and
+     * cannot be reached → ONE hit saying so, because an agent reading "no matches" would
+     * conclude the capability has to be built.
+     */
+    private function catalogHits(string $query, int $limit = 5): array {
+        if (!\app\ConceptCatalog::isConfigured()) return [];
+        try {
+            $found = \app\ConceptCatalog::forInstall()->search($query, $limit + count($this->concepts()));
+        } catch (\app\ConceptException $e) {
+            return [['kind' => 'catalog-UNREACHABLE', 'name' => 'concept catalog', 'path' => '-', 'line' => 0,
+                     'why' => 'could not be checked, so this is NOT "nothing to adopt": ' . $e->getMessage()]];
+        }
+        $have = $this->concepts();
+        $out = [];
+        foreach ($found['results'] as $r) {
+            if (isset($have[$r['name']])) continue;
+            $needs = array_merge($r['requires']['concepts'], $r['requires']['lib']);
+            $out[] = ['kind' => 'catalog-concept', 'name' => $r['name'], 'path' => "catalog:{$r['name']} v{$r['version']}", 'line' => 0,
+                      'why' => 'NOT in this codebase — available to ADOPT (list it in the task\'s `adopts`). '
+                             . ($r['title'] !== '' ? $r['title'] . '. ' : '') . mb_substr($r['blurb'], 0, 200)
+                             . ($needs ? ' Requires: ' . implode(', ', $needs) . '.' : '')];
+            if (count($out) >= $limit) break;
+        }
+        return $out;
+    }
+
+    /**
+     * Reuse digest — a compact, prose inventory of everything that already
+     * exists (controllers, models+columns, lib services, permissions, config,
+     * seeders), meant to be INJECTED into the planner prompt so decomposition
+     * reuses existing primitives instead of reinventing them. Token-bounded:
+     * long lists are capped with a "+N more" marker (the planner can drill with
+     * describe()). Degrades gracefully when no DB is present (structural parts
+     * still render; DB-derived parts note they're not live yet).
+     */
+    public function digest(int $maxColsPerModel = 14, int $maxMethodsPerLib = 10, int $maxRoutesPerCtrl = 12): string {
+        $names = [1 => 'ROOT', 50 => 'ADMIN', 100 => 'MEMBER', 101 => 'PUBLIC'];
+        $lvl = fn($n) => $n === null ? '?' : ($names[$n] ?? (string)$n);
+        $out = [];
+
+        // --- Concepts --------------------------------------------------------
+        // First, because it changes how everything below reads: a controller or bean that
+        // belongs to a DISABLED concept exists on disk but is not routable, and the right
+        // move is to enable the concept, not to build the feature again.
+        $concepts = $this->concepts();
+        if ($concepts) {
+            $out[] = '### Concepts (' . count($concepts) . ') — pluggable features installed under concepts/<name>/. '
+                   . 'REUSE one by enabling it (`php scripts/clitool.php --concept-enable=<name>`) before building the same thing';
+            foreach ($concepts as $name => $c) {
+                $state = $c['enabled'] === null ? 'state unknown — this instance\'s database could not be read'
+                                                : ($c['enabled'] ? 'ENABLED' : 'disabled');
+                if ($c['manifest'] === null) {
+                    $out[] = "- **{$name}** [BROKEN, {$state}] — {$c['error']}";
+                    continue;
+                }
+                $m = $c['manifest'];
+                $bits = [];
+                if ($m->controllers)      $bits[] = 'controllers: ' . implode(', ', $m->controllers);
+                if ($m->beans)            $bits[] = 'beans: ' . implode(', ', $m->beans);
+                if ($m->tools)            $bits[] = 'MCP tools: ' . implode(', ', array_map(fn($t) => "{$t['class']} ({$lvl($t['level'])})", $m->tools));
+                if ($m->hostsSlots)       $bits[] = 'hosts slots: ' . implode(', ', array_keys($m->hostsSlots));
+                if ($m->slots)            $bits[] = 'fills slots: ' . implode(', ', array_keys($m->slots));
+                if ($m->requiresConcepts) $bits[] = 'requires: ' . implode(', ', $m->requiresConcepts);
+                $what = $m->blurb !== '' ? $m->blurb : $m->title;
+                $out[] = "- **{$name}** v{$m->version} [{$state}]" . ($what !== '' ? " — {$what}" : '')
+                       . ($bits ? ' (' . implode('; ', $bits) . ')' : '');
+            }
+            $out[] = '';
+        }
+        // --- Available to adopt ------------------------------------------------
+        // What this project does NOT have but the shared catalog does. Without this the
+        // inventory ends at the project's own walls, and a fresh project asked for
+        // something another one already built has no way to know.
+        if (\app\ConceptCatalog::isConfigured()) {
+            try {
+                $offered = array_values(array_filter(
+                    \app\ConceptCatalog::forInstall()->search('', 50)['results'],
+                    fn(array $r) => !isset($concepts[$r['name']])));
+                if ($offered) {
+                    $out[] = '### Available to ADOPT (' . count($offered) . ') — ready-made concepts in the shared catalog, NOT in this codebase. '
+                           . 'List one in a task\'s `adopts` and it is installed into that task\'s worktree; `concepts_get("<name>")` for detail';
+                    foreach ($offered as $r) {
+                        $needs = array_merge($r['requires']['concepts'], $r['requires']['lib']);
+                        $out[] = "- **{$r['name']}** v{$r['version']} — " . ($r['title'] !== '' ? "{$r['title']}. " : '')
+                               . mb_substr($r['blurb'], 0, 220) . ($needs ? ' (requires: ' . implode(', ', $needs) . ')' : '');
+                    }
+                    $out[] = '';
+                }
+            } catch (\app\ConceptException $e) {
+                $out[] = '### Available to ADOPT — the catalog could NOT be checked';
+                $out[] = '- ' . $e->getMessage();
+                $out[] = '- Do not read this as "nothing to adopt". Say in the plan that the catalog was unreachable.';
+                $out[] = '';
+            }
+        }
+
+        $conceptTag = function (array $row) use ($concepts): string {
+            if (($row['concept'] ?? null) === null) return '';
+            $on = $concepts[$row['concept']]['enabled'] ?? null;
+            return " _(concept: {$row['concept']}" . ($on === false ? ', DISABLED — not routable until enabled' : '') . ')_';
+        };
+
+        // --- Controllers -----------------------------------------------------
+        $ctrls = $this->controllers();
+        $out[] = '### Controllers (' . count($ctrls) . ') — reuse an existing route/controller before adding one';
+        foreach ($ctrls as $c) {
+            $slug = strtolower($c['name']);
+            $methods = array_column($c['methods'], 'name');
+            $levels = [];
+            foreach ($c['methods'] as $m) { $levels[$lvl($this->routeLevel($slug, $m['name']))] = true; }
+            $lv = $levels ? ' [' . implode(',', array_keys($levels)) . ']' : '';
+            $shown = array_slice($methods, 0, $maxRoutesPerCtrl);
+            $more = count($methods) > $maxRoutesPerCtrl ? ' +' . (count($methods) - $maxRoutesPerCtrl) : '';
+            $out[] = "- **{$c['name']}**{$lv}{$conceptTag($c)} — " . implode(', ', $shown) . $more;
+        }
+
+        // --- Models / tables -------------------------------------------------
+        //
+        // Split in two, because "everything in models/" is not one kind of thing. An
+        // instance is a clone of core, so it inherits core's OWN tables — the task board
+        // the build system writes into, the instance registry, the MCP log. Offering
+        // those under "reuse a bean before creating a near-duplicate" invites a planner to
+        // put a customer's domain data inside the build system's furniture, and at best
+        // costs it a paragraph explaining why it will not: a real plan here opened with
+        // "NEW beans are justified: grocerylist/workbenchtask are unrelated domains",
+        // which is reasoning the inventory should never have demanded.
+        //
+        // They are still LISTED, not hidden. A planner that cannot see `member` may well
+        // invent a second one, and a name collision on an existing table is worse than a
+        // paragraph of noise.
+        $appModels = $platform = [];
+        foreach ($this->models() as $m) {
+            if (self::isPlatformBean($m['name'])) $platform[] = $m;
+            else                                  $appModels[] = $m;
+        }
+
+        $describe = function (array $m) use ($maxColsPerModel): string {
+            $cols = array_column($this->columns($m['table']), 'name');
+            $colShown = array_slice($cols, 0, $maxColsPerModel);
+            $colMore = count($cols) > $maxColsPerModel ? ' +' . (count($cols) - $maxColsPerModel) : '';
+            $rels = array_map(fn($r) => '→' . $r['belongsTo'], $this->relations($m['table']));
+            $relStr = $rels ? '  {rel: ' . implode(' ', $rels) . '}' : '';
+            $colStr = $cols ? implode(', ', $colShown) . $colMore : '(no live table yet)';
+            return "- **{$m['name']}** — {$colStr}{$relStr}";
+        };
+
+        $out[] = '';
+        $out[] = '### Models / tables (' . count($appModels) . ') — reuse a bean before creating a near-duplicate';
+        foreach ($appModels as $m) $out[] = $describe($m);
+
+        if ($platform) {
+            $out[] = '';
+            $out[] = '### Platform tables (' . count($platform) . ') — the build system\'s own. DO NOT store app data in these';
+            $out[] = 'These exist in every instance because an instance is a clone of the platform.'
+                   . ' They are the task board, the instance registry and their logs — infrastructure,'
+                   . ' not domain models. Never extend one to hold a feature\'s data, and never create a'
+                   . ' bean whose name collides with one. Listed only so you avoid both.';
+            $out[] = '- ' . implode(', ', array_map(fn($m) => '`' . $m['name'] . '`', $platform));
+        }
+
+        // --- Lib services ----------------------------------------------------
+        $libs = $this->libs();
+        $out[] = '';
+        $out[] = '### Lib services (' . count($libs) . ') — reuse a service before writing new logic';
+        foreach ($libs as $l) {
+            if (!$l['methods']) continue;
+            $shown = array_slice($l['methods'], 0, $maxMethodsPerLib);
+            $more = count($l['methods']) > $maxMethodsPerLib ? ' +' . (count($l['methods']) - $maxMethodsPerLib) : '';
+            $out[] = "- **{$l['name']}**: " . implode(', ', $shown) . $more;
+        }
+
+        // --- Permissions (authcontrol) --------------------------------------
+        $rows = $this->authcontrolRows();
+        if ($rows) {
+            $wild = array_values(array_filter($rows, fn($r) => $r['method'] === '*'));
+            usort($wild, fn($a, $b) => $a['level'] <=> $b['level']);
+            $out[] = '';
+            $out[] = '### Permissions (authcontrol, ' . count($rows) . ' rows) — every NEW route needs an entry here (ship it as a seed)';
+            foreach ($wild as $r) {
+                $ln = $lvl($r['level']);
+                $out[] = "- {$r['control']}::* = {$r['level']} ({$ln})";
+            }
+            $rest = count($rows) - count($wild);
+            if ($rest > 0) $out[] = "- …plus {$rest} per-method entries — use describe(\"<controller>\") for specifics";
+        }
+
+        // --- Config ----------------------------------------------------------
+        $conf = $this->confSections();
+        if ($conf) {
+            $out[] = '';
+            $out[] = '### Config sections (conf/config.ini): ' . implode(' ', array_map(fn($s) => "[$s]", $conf));
+        }
+
+        // --- Seeding ---------------------------------------------------------
+        $base = $this->seedScripts('services/Schema/Seeds');
+        $plan = $this->seedScripts('database/seeds');
+        $out[] = '';
+        $out[] = '### Seeding — how DB / permission changes ship (never write the live DB directly)';
+        $out[] = '- Base schema seeds (run at instance creation): ' . ($base ? implode(', ', $base) : '(none)');
+        $out[] = '- Plan seeds — idempotent PHP in `database/seeds/*.php`, applied ONCE post-merge via the `\\app\\Bean` wrapper (findOne/dispense/store): ' . ($plan ? implode(', ', $plan) : '(none yet)');
+        $out[] = '- A new route\'s permission == a seed here that upserts an `authcontrol` row (control, method, level). RedBean auto-creates a model\'s table on first store — no CREATE TABLE.';
+
+        // --- Automations (pipelines / durable objects / connectors) ----------
+        // First-class building blocks — prefer these over bespoke controllers for
+        // scheduled jobs, webhooks, agent tools, and stateful/long-lived logic.
+        $out[] = '';
+        $out[] = '### Automations — pipelines, durable objects & connectors (BUILDING BLOCKS; prefer over bespoke controllers)';
+        $stepTypes = [];
+        foreach (\app\Pipeline\StepRegistry::components() as $t => $c) { if (empty($c['internal'])) $stepTypes[] = $t; }
+        $out[] = '- **Pipeline steps** to compose (files at `pipelines/<slug>.json`; build via the `pipeline_components` + `pipeline_set` MCP tools): ' . implode(', ', $stepTypes);
+        $pipes = [];
+        try {
+            // Enabled concepts' pipelines too, from THIS root's flags (concepts() read them).
+            $on = [];
+            foreach ($this->concepts() as $cname => $c) if ($c['enabled'] === true && $c['manifest'] !== null) $on[$cname] = $c['manifest'];
+            $loader = new \app\Pipeline\Loader($this->root, \app\Concepts::pipelineSourcesFor("{$this->root}/concepts", array_keys($on), $on));
+            foreach ($loader->all() as $slug => $def) {
+                $tag = !empty($def['stateful']) ? ' (durable object)'
+                     : (!empty($def['trigger']['cron']) ? ' (cron ' . $def['trigger']['cron'] . ')' : '');
+                $origin = $loader->originOf((string) $slug);
+                $pipes[] = $slug . $tag . ($origin !== null ? " [concept: {$origin}]" : '');
+            }
+        } catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
+        $out[] = '- **Existing pipelines** (reuse/extend before adding): ' . ($pipes ? implode(', ', $pipes) : '(none yet)');
+        $out[] = '- A pipeline can set `expose_as_tool` (→ an MCP tool), `expose_as_api` (→ a per-member REST endpoint), or `trigger.cron` (scheduled) — reach for these instead of a hand-written controller for scheduled jobs, webhooks, or agent tools.';
+        $out[] = '- **Durable object** = a pipeline with `stateful:true` — an addressable (id-keyed) actor with persisted `{state.*}`, incoming `{message.*}`, and alarms (a `__alarm` output key re-schedules it). Use for chat/session/agent state, counters, anything long-lived; delivered via `POST /pipeline/object/<slug>?key=<id>`.';
+        if (is_file($this->root . '/conf/broker.ini')) {
+            $out[] = '- **Connectors**: this instance has a broker configured — add a `connection` step to call its connected accounts (Stripe/Shopify/…) with the key injected server-side. Accounts are wired at the platform Integrations page.';
+        }
+
+        return implode("\n", $out) . $this->problemsBlock();
+    }
+
+    // === public accessors for the Architecture Explorer ======================
+
+    /** All authcontrol rows (control, method, level) — the Explorer's top ribbon. */
+    public function authcontrol(): array {
+        return $this->authcontrolRows();
+    }
+
+    /** App table names (excludes SQLite internals), for the `select *` drill picker. */
+    public function tables(): array {
+        return array_values(array_filter($this->tableNames(), fn($t) => strncmp($t, 'sqlite_', 7) !== 0));
+    }
+
+    /** Column metadata for a table (name+type), read-only. */
+    public function tableColumns(string $table): array {
+        return $this->columns($table);
+    }
+
+    /**
+     * Read up to $limit rows from $table (read-only, LIMIT-capped, identifier-guarded).
+     * Returns ['columns'=>[...], 'rows'=>[[...]], 'total'=>int]. The table MUST be a
+     * real table name (validated) — never interpolate untrusted input here.
+     */
+    public function rows(string $table, int $limit = 50, int $offset = 0): array {
+        $empty = ['columns' => [], 'rows' => [], 'total' => 0];
+        if (!$this->db) return $empty;
+        if (!preg_match('/^[a-z0-9_]+$/i', $table)) return $empty;
+        if (!in_array($table, $this->tableNames(), true)) return $empty;   // allowlist to real tables
+        $limit  = max(1, min(500, $limit));
+        $offset = max(0, $offset);
+        $cols = array_column($this->columns($table), 'name');
+        $out  = $empty;
+        $out['columns'] = $cols;
+        try {
+            $total = $this->db->query("SELECT COUNT(*) FROM " . $table);
+            $out['total'] = $total ? (int) $total->fetchColumn() : 0;
+            $stmt = $this->db->query("SELECT * FROM " . $table . " LIMIT " . $limit . " OFFSET " . $offset);
+            foreach ($stmt ?: [] as $r) {
+                $row = [];
+                foreach ($cols as $c) $row[$c] = $r[$c] ?? null;
+                $out['rows'][] = $row;
+            }
+        } catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
+        return $out;
+    }
+
+    /**
+     * Controller inventory for CallGraph: name(lower) => {name, path, methods:[m=>line],
+     * hasFallback}. Reuses the scanner controllers() (public methods + line numbers).
+     */
+    public function controllerList(): array {
+        $out = [];
+        foreach ($this->controllers() as $c) {
+            $methods = [];
+            foreach ($c['methods'] as $m) $methods[$m['name']] = $m['line'];
+            $out[strtolower($c['name'])] = [
+                'name'        => $c['name'],
+                'path'        => $c['path'],
+                'methods'     => $methods,
+                'hasFallback' => isset($methods['_fallback']),
+            ];
+        }
+        return $out;
+    }
+
+    /** Lib inventory for CallGraph: ClassName => {path, methods:[names]}. */
+    public function libList(): array {
+        $out = [];
+        foreach ($this->libs() as $l) {
+            $out[$l['name']] = ['path' => $l['path'], 'methods' => $l['methods']];
+        }
+        return $out;
+    }
+
+    /** Root path this introspector is scanning (CallGraph reads bodies under it). */
+    public function rootPath(): string {
+        return $this->root;
+    }
+
+    /** Bean→bean FK edges (belongsTo via *_id), for the data-model graph. */
+    public function relationEdges(): array {
+        $out = [];
+        foreach ($this->tables() as $t) {
+            foreach ($this->relations($t) as $r) {
+                $out[] = ['from' => $t, 'to' => $r['belongsTo'], 'via' => $r['via']];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Literal custom routes from routes/*.php — but ONLY from files bootstrap.php
+     * actually require()s (per CALLGRAPH-DESIGN §3.5: unloaded routes files, e.g.
+     * routes/api.php here, are DEAD and their literals are not live routes). Each:
+     * ['pattern','verbs','file','line','live'=>bool].
+     */
+    public function routeLiterals(): array {
+        $loaded = $this->loadedRoutesFiles();
+        $out = [];
+        foreach (glob("{$this->root}/routes/*.php") ?: [] as $file) {
+            $base = basename($file);
+            $src  = @file_get_contents($file);
+            if ($src === false) continue;
+            $live = in_array($base, $loaded, true);
+            foreach (explode("\n", $src) as $i => $ln) {
+                if (preg_match("/Flight::route\\(\\s*'(?:([A-Z|]+)\\s+)?(\\/[^']*)'/", $ln, $m)) {
+                    $out[] = [
+                        'pattern' => $m[2],
+                        'verbs'   => $m[1] ?: 'ANY',
+                        'file'    => "routes/{$base}",
+                        'line'    => $i + 1,
+                        'live'    => $live,
+                    ];
+                }
+            }
+        }
+        return $out;
+    }
+
+    /** routes/*.php basenames that bootstrap.php require()s (defaultRoute is implicit). */
+    private function loadedRoutesFiles(): array {
+        $boot = @file_get_contents("{$this->root}/bootstrap.php");
+        if ($boot === false) return [];
+        $loaded = [];
+        if (preg_match_all("#require(?:_once)?\\s+__DIR__\\s*\\.\\s*'/routes/([a-z0-9_]+\\.php)'#i", $boot, $m)) {
+            $loaded = $m[1];
+        }
+        return $loaded;
+    }
+
+    // === scanners ============================================================
+
+    /**
+     * Where code lives: the install's own tree, plus every installed concept's
+     * (concepts/<name>/ — a self-contained directory with the same layout; COMPONENTS_PLAN.md).
+     *
+     * Without this the inventory cannot see an installed concept, and a planner that cannot
+     * see `tickets` classifies ticketing as NEW and builds it a second time beside the first.
+     *
+     * @return array<int,array{dir:string,concept:?string}>
+     */
+    private function codeRoots(): array {
+        $roots = [['dir' => $this->root, 'concept' => null]];
+        // The runtime's controllers, models and libraries answer this app's routes too
+        // (RUNTIME-SPLIT-MAP.md). Listed after the app's own, so an override shows first.
+        $rt = \app\Paths::runtime();
+        if (is_dir($rt) && realpath($rt) !== realpath($this->root) && str_starts_with((string) realpath($rt), (string) realpath($this->root) . '/')) {
+            $roots[] = ['dir' => $rt, 'concept' => null];
+        }
+        foreach (array_keys($this->concepts()) as $name) {
+            $roots[] = ['dir' => "{$this->root}/concepts/{$name}", 'concept' => $name];
+        }
+        return $roots;
+    }
+
+    private function rel(string $file): string {
+        return substr($file, strlen($this->root) + 1);
+    }
+
+    private array $_concepts;
+    /**
+     * Installed concepts, from disk. `enabled` is read from THIS instance's database — never
+     * core's — and is null when that cannot be read: "off" and "could not tell" are
+     * different answers, and the planner is told which one it got.
+     *
+     * @return array<string,array{manifest:?\app\ConceptManifest,error:?string,enabled:?bool}>
+     */
+    public function concepts(): array {
+        if (isset($this->_concepts)) return $this->_concepts;
+        $on = null;
+        if ($this->db) {
+            try {
+                $st = $this->db->query("SELECT setting_key FROM settings WHERE setting_key LIKE 'install.concept.%' AND setting_value = '1'");
+                $on = [];
+                foreach ($st->fetchAll(\PDO::FETCH_COLUMN) as $key) $on[substr((string) $key, strlen('install.concept.'))] = true;
+            } catch (\Throwable $e) {
+                $on = null;   // enabled state UNKNOWN (reported as such below), not "none enabled"
+                $this->problem(__FUNCTION__, $e);
+            }
+        }
+        $out = [];
+        foreach (glob("{$this->root}/concepts/*", GLOB_ONLYDIR) ?: [] as $dir) {
+            $name = basename($dir);
+            $enabled = $on === null ? null : isset($on[$name]);
+            try {
+                $out[$name] = ['manifest' => \app\ConceptManifest::load($dir, $name), 'error' => null, 'enabled' => $enabled];
+            } catch (\app\ConceptException $e) {
+                $out[$name] = ['manifest' => null, 'error' => $e->getMessage(), 'enabled' => $enabled];
+            }
+        }
+        ksort($out);
+        return $this->_concepts = $out;
+    }
+
+    private array $_ctrl;
+    private function controllers(): array {
+        if (isset($this->_ctrl)) return $this->_ctrl;
+        $out = [];
+        foreach ($this->codeRoots() as $codeRoot)
+        foreach (glob("{$codeRoot['dir']}/controls/*.php") ?: [] as $file) {
+            $base = basename($file, '.php');
+            if ($base === 'BaseControls') continue;
+            $src = @file_get_contents($file); if ($src === false) continue;
+            $lines = explode("\n", $src);
+            $classLine = 1; $doc = '';
+            foreach ($lines as $i => $ln) { if (preg_match('/^\s*(?:abstract\s+|final\s+)?class\s+/', $ln)) { $classLine = $i + 1; break; } }
+            if (preg_match('#/\*\*(.*?)\*/#s', $src, $dm)) $doc = preg_replace('/\s+/', ' ', $dm[1]);
+            $methods = [];
+            foreach ($lines as $i => $ln) {
+                if (preg_match('/^\s*public\s+function\s+(\w+)\s*\(/', $ln, $mm)) {
+                    if (in_array($mm[1], ['__construct', '__destruct', '__call', '__get', '__set'], true)) continue;
+                    $methods[] = ['name' => $mm[1], 'line' => $i + 1];
+                }
+            }
+            $out[] = ['name' => $base, 'path' => $this->rel($file), 'line' => $classLine, 'methods' => $methods, 'doc' => $doc, 'concept' => $codeRoot['concept']];
+        }
+        return $this->_ctrl = $out;
+    }
+
+    /**
+     * Beans that belong to the PLATFORM, not to the app being built.
+     *
+     * Every instance is a clone of core, so it ships core's own tables. These are the
+     * build system's furniture: the plan/task board that PlanExecutor writes into (which
+     * now lives in the instance's data/workbench.db but whose FUSE models still ship in
+     * models/ because core's plan pipeline drives them), the instance registry, and the
+     * MCP call log. An app must never store its domain data in any of them.
+     */
+    private const PLATFORM_BEANS = [
+        'workbenchtask', 'tasklog', 'taskcomment', 'tasksnapshot',   // the build system's task board
+        'instance',                                                   // the project registry
+        'mcplog',                                                     // MCP call log
+        'authcontrol',                                                // route permissions (seeded, not modelled)
+        'detectederror',                                              // firehose intake
+        'promptlog',                                                  // a member's prompt history
+    ];
+
+    private static function isPlatformBean(string $bean): bool {
+        return in_array(strtolower($bean), self::PLATFORM_BEANS, true);
+    }
+
+    private array $_models;
+    private function models(): array {
+        if (isset($this->_models)) return $this->_models;
+        $out = [];
+        foreach ($this->codeRoots() as $codeRoot)
+        foreach (glob("{$codeRoot['dir']}/models/Model_*.php") ?: [] as $file) {
+            $base = basename($file, '.php');                 // Model_Member
+            $bean = strtolower(substr($base, strlen('Model_')));
+            $out[] = ['name' => $bean, 'class' => $base, 'table' => $bean, 'path' => $this->rel($file), 'concept' => $codeRoot['concept']];
+        }
+        return $this->_models = $out;
+    }
+
+    private array $_libs;
+    private function libs(): array {
+        if (isset($this->_libs)) return $this->_libs;
+        $out = [];
+        foreach ($this->codeRoots() as $codeRoot)
+        foreach (glob("{$codeRoot['dir']}/lib/*.php") ?: [] as $file) {
+            $base = basename($file, '.php');
+            $src = @file_get_contents($file); if ($src === false) continue;
+            $methods = [];
+            if (preg_match_all('/^\s*public\s+(?:static\s+)?function\s+(\w+)/m', $src, $mm)) {
+                $methods = array_values(array_filter($mm[1], fn($x) => strpos($x, '__') !== 0));
+            }
+            $out[] = ['name' => $base, 'path' => $this->rel($file), 'methods' => $methods, 'concept' => $codeRoot['concept']];
+        }
+        return $this->_libs = $out;
+    }
+
+    private function confSections(): array {
+        $ini = @parse_ini_file("{$this->root}/conf/config.ini", true) ?: [];
+        return array_keys($ini);
+    }
+
+    // === db-derived ==========================================================
+
+    private function columns(string $table): array {
+        if (!$this->db || !preg_match('/^[a-z0-9_]+$/i', $table)) return [];
+        $out = [];
+        try {
+            foreach ($this->db->query("PRAGMA table_info(" . $table . ")") ?: [] as $r) {
+                $out[] = ['name' => $r['name'], 'type' => $r['type']];
+            }
+        } catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
+        return $out;
+    }
+
+    /** Infer relations from *_id columns, but only when the target table exists. */
+    private function relations(string $table): array {
+        $rel = []; $tables = $this->tableNames();
+        foreach ($this->columns($table) as $c) {
+            if (preg_match('/^(.*)_id$/', $c['name'], $m) && $m[1] !== '' && in_array($m[1], $tables, true)) {
+                $rel[] = ['belongsTo' => $m[1], 'via' => $c['name']];
+            }
+        }
+        return $rel;
+    }
+
+    private array $_tables;
+    private function tableNames(): array {
+        if (isset($this->_tables)) return $this->_tables;
+        $this->_tables = [];
+        if ($this->db) {
+            try { foreach ($this->db->query("SELECT name FROM sqlite_master WHERE type='table'") ?: [] as $r) $this->_tables[] = $r['name']; }
+            catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
+        }
+        return $this->_tables;
+    }
+
+    private array $_levels;
+    private function routeLevel(string $control, string $method): ?int {
+        if (!$this->db) return null;
+        if (!isset($this->_levels)) {
+            $this->_levels = [];
+            try {
+                foreach ($this->db->query("SELECT control, method, level FROM authcontrol") ?: [] as $r) {
+                    $this->_levels[strtolower($r['control']) . '::' . strtolower($r['method'])] = (int)$r['level'];
+                }
+            } catch (\Throwable $e) { $this->_levels = []; $this->problem(__FUNCTION__, $e); }
+        }
+        return $this->_levels["{$control}::{$method}"] ?? $this->_levels["{$control}::*"] ?? null;
+    }
+
+    /** All authcontrol rows (control, method, level), for the reuse digest. */
+    private function authcontrolRows(): array {
+        if (!$this->db) return [];
+        $out = [];
+        try {
+            foreach ($this->db->query("SELECT control, method, level FROM authcontrol ORDER BY level, control") ?: [] as $r) {
+                $out[] = ['control' => $r['control'], 'method' => $r['method'], 'level' => (int)$r['level']];
+            }
+        } catch (\Throwable $e) { $this->problem(__FUNCTION__, $e); }
+        return $out;
+    }
+
+    /** Basenames of the seed scripts under a relative dir (e.g. database/seeds). */
+    private function seedScripts(string $rel): array {
+        $files = glob("{$this->root}/{$rel}/*.php") ?: [];
+        sort($files);
+        return array_map(fn($f) => basename($f), $files);
+    }
+}

@@ -60,7 +60,7 @@ $longopts = [
     'concepts', 'concept-verify:', 'concept-enable:', 'concept-disable:', 'concept-seeds:', 'concept-lock', 'rehash', 'force', 'agent-sync',
     'connectors', 'bind:', 'unbind:', 'site:', 'sites', 'alias:', 'as:',
     'connector-lint:', 'connector-publish:', 'connector-install:', 'connector-update:',
-    'update', 'release::', 'releases', 'notes:',
+    'update', 'release::', 'releases', 'notes:', 'overrides', 'override:', 'override-record:',
     'concept-search::', 'concept-lint:', 'concept-publish:', 'concept-install:', 'concept-update:', 'from:', 'origin:', 'forbid:',
     // members
     'list-users', 'user:', 'adduser:', 'username:', 'password:', 'level:',
@@ -507,6 +507,28 @@ if (isset($opt['concept-install'])) {
     out("# it is NOT enabled. Next: --concept-verify={$name}, then --concept-enable={$name}");
     exit(0);
 }
+// --- Overrides (RUNTIME-SPLIT-MAP.md): app files that replace runtime files, which the runtime then no longer upgrades
+if (isset($opt['overrides'])) {
+    $rep = \app\Overrides::report();
+    if (!$rep) { out('# no overrides — every runtime file is the runtime\'s'); exit(0); }
+    out(sprintf('%-48s %-11s %s', 'FILE', 'STATUS', 'BASED ON'));
+    foreach ($rep as $rel => $r) out(sprintf('%-48s %-11s %s', $rel, $r['status'], $r['release'] ?: '-'));
+    $stale = count(array_filter($rep, fn($r) => in_array($r['status'], ['STALE', 'unrecorded'], true)));
+    if ($stale) err("# {$stale} need you: STALE = the runtime changed the file since you copied it (diff runtime/<file> against yours, carry the change over, then --override-record=<file>); unrecorded = no base known (--override-record=<file> once you have checked it)");
+    exit(0);
+}
+if (isset($opt['override'])) {
+    $release = \app\InstanceUpdate::pinned(dirname(__DIR__));
+    try { $f = \app\Overrides::take((string) $opt['override'], $release); } catch (\Throwable $e) { bail($e->getMessage()); }
+    out("# {$opt['override']} copied into the app: {$f}");
+    out('# it now REPLACES the runtime\'s file, and runtime updates will not upgrade it — --overrides says when it falls behind');
+    exit(0);
+}
+if (isset($opt['override-record'])) {
+    try { \app\Overrides::record((string) $opt['override-record'], \app\InstanceUpdate::pinned(dirname(__DIR__))); } catch (\Throwable $e) { bail($e->getMessage()); }
+    out("# {$opt['override-record']}: recorded against the runtime's current file");
+    exit(0);
+}
 // --- The instance's own update (§13 C2): --update [--release=vX.Y.Z] [--dry-run]; on core: --release[=vX.Y.Z] [--notes=…], --releases
 if (isset($opt['update'])) {
     $r = (new \app\InstanceUpdate())->run(dirname(__DIR__), ['release' => (string) ($opt['release'] ?? ''), 'dry_run' => $DRYRUN]);
@@ -878,6 +900,11 @@ CONCEPTS (pluggable features — see COMPONENTS_PLAN.md)
                                  Replace concepts/NAME/ with the catalog's newer version;
                                  enabled stays enabled and its seeds run again. Refuses a
                                  copy edited in place unless --force (the edit is lost)
+  --overrides                    App files that REPLACE runtime files (same path under runtime/):
+                                 current / STALE (runtime changed since you copied it) /
+                                 unrecorded / orphaned. Overridden files are never upgraded
+  --override=PATH                Copy runtime/PATH into the app to customise it, recorded
+  --override-record=PATH         Re-baseline an override after reconciling it by hand
   --update [--release=vX.Y.Z]    THE INSTANCE'S OWN UPDATE (run inside an instance): builds from
                                  its origin, then the newest (or named) release tag from core,
                                  after a LOCAL checkpoint (never pushed); seeds, guidance,

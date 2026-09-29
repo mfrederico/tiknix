@@ -64,7 +64,9 @@ Flight::map('defaultRoute', function($prefix = '') {
             $classname = ucfirst($class);
             try {
                 $classname = '\\'.CLASS_NAMESPACE.'\\'.$classname;
-                $controllerRoots = [realpath(dirname(__DIR__) . '/controls')];
+                // The app's controls/ and the runtime's (RUNTIME-SPLIT-MAP.md) — both answer URLs;
+                // the autoloader already prefers the app's file when both define a class.
+                $controllerRoots = [realpath(\app\Paths::root() . '/controls'), realpath(\app\Paths::runtime() . '/controls')];
 
                 // An ENABLED concept may claim a URL that core does not (COMPONENTS_PLAN.md).
                 // Core is tried first, and a concept cannot be enabled while core owns the

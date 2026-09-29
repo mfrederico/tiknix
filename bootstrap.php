@@ -170,7 +170,7 @@ class Bootstrap {
      */
     private function initCLI() {
         // Load CLI handler class
-        require_once __DIR__ . '/lib/CliHandler.php';
+        require_once __DIR__ . '/runtime/lib/CliHandler.php';
         
         if (\app\CliHandler::isCli()) {
             $this->cliHandler = new \app\CliHandler();
@@ -360,7 +360,7 @@ class Bootstrap {
                nothing. SQLite only — another driver keeps its own writer rather than
                silently losing the audit to a class that does not match it. */
             if (R::getWriter() instanceof \RedBeanPHP\QueryWriter\SQLiteT) {
-                require_once __DIR__ . '/lib/SchemaAuditWriter.php';
+                require_once __DIR__ . '/runtime/lib/SchemaAuditWriter.php';
                 $auditAdapter = R::getDatabaseAdapter();
                 $auditWriter  = new \app\SchemaAuditWriter($auditAdapter);
                 R::configureFacadeWithToolbox(new \RedBeanPHP\ToolBox(
@@ -377,7 +377,7 @@ class Bootstrap {
 
             // Initialize Query Cache with CachedDatabaseAdapter
             if ($this->config['cache']['query_cache'] ?? false) {
-                require_once __DIR__ . '/lib/CachedDatabaseAdapter.php';
+                require_once __DIR__ . '/runtime/lib/CachedDatabaseAdapter.php';
                 $cachedAdapter = new \app\CachedDatabaseAdapter(R::getDatabaseAdapter()->getDatabase());
                 $toolbox = new \RedBeanPHP\ToolBox(R::getRedBean(), $cachedAdapter, R::getWriter());
                 R::configureFacadeWithToolbox($toolbox);
@@ -472,6 +472,13 @@ class Bootstrap {
     private function initFlight() {
         // Set Flight configuration
         Flight::set('flight.views.path', __DIR__ . '/views');
+        // Views in two layers (RUNTIME-SPLIT-MAP.md): the app's views/ first, then the
+        // runtime's. An app file at the same relative path overrides the runtime's page.
+        Flight::register('view', \app\LayeredView::class, [], function (\app\LayeredView $view) {
+            $view->path = Flight::get('flight.views.path');
+            $view->extension = Flight::get('flight.views.extension');
+            $view->fallbacks = [\app\Paths::runtime() . '/views'];
+        });
         Flight::set('flight.log_errors', true);
         Flight::set('baseurl', $this->config['app']['baseurl'] ?? '/');
         Flight::set('debug', $this->config['app']['debug'] ?? false);

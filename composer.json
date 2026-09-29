@@ -51,15 +51,27 @@
         "psr-4": {
             "app\\": [
                 "controls/",
-                "lib/"
+                "lib/",
+                "runtime/controls/",
+                "runtime/lib/"
             ],
             "app\\Models\\": "models/",
-            "app\\BaseControls\\": "controls/BaseControls/",
-            "app\\mcptools\\": "mcptools/",
-            "app\\services\\": "services/"
+            "app\\BaseControls\\": [
+                "controls/BaseControls/",
+                "runtime/controls/BaseControls/"
+            ],
+            "app\\mcptools\\": [
+                "mcptools/",
+                "runtime/mcptools/"
+            ],
+            "app\\services\\": [
+                "services/",
+                "runtime/services/"
+            ]
         },
         "classmap": [
-            "models/"
+            "models/",
+            "runtime/models/"
         ],
         "files": [
             "lib/functions.php"

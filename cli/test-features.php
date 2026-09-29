@@ -37,13 +37,13 @@ if ($dbConfig['type'] === 'sqlite') {
 }
 
 // Load Bean wrapper
-require_once BASE_PATH . '/lib/Bean.php';
+require_once BASE_PATH . '/runtime/lib/Bean.php';
 
 // Set up Flight config
 \Flight::set('project_root', BASE_PATH);
 
 // Load additional lib files
-require_once BASE_PATH . '/lib/ValidationService.php';
+require_once BASE_PATH . '/runtime/lib/ValidationService.php';
 require_once BASE_PATH . '/lib/TaskAccessControl.php';
 
 // Define LEVELS if not defined

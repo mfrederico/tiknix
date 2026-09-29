@@ -13,7 +13,7 @@ two_factor_enforce = true   ; false = OPTIONAL (eligible users prompted but can 
 - **enabled=true, enforce=false** → optional: eligible users are prompted at login but may hit **Skip for now** (`/auth/twofaskip`, session-scoped); anyone who opts in still verifies each login.
 - **enabled=true, enforce=true** → required for `REQUIRED_LEVELS` (default, secure).
 
-The enforcement choke points are `TwoFactorAuth::needsSetup()` / `needsVerification()`; policy is read via `policyEnabled()` / `policyEnforced()`. Level scope in `lib/TwoFactorAuth.php`:
+The enforcement choke points are `TwoFactorAuth::needsSetup()` / `needsVerification()`; policy is read via `policyEnabled()` / `policyEnforced()`. Level scope in `runtime/lib/TwoFactorAuth.php`:
 
 ```php
 public const TRUST_DURATION = 30 * 24 * 60 * 60;  // 30 days device trust
@@ -28,7 +28,7 @@ public const REQUIRED_LEVELS = [1, 50];            // ROOT, ADMIN in scope for 2
 5. Device trusted for 30 days (no 2FA prompt on same device)
 
 **Key files:**
-- `lib/TwoFactorAuth.php` - Core 2FA logic
+- `runtime/lib/TwoFactorAuth.php` - Core 2FA logic
 - `views/auth/2fa-setup.php` - QR code setup page
 - `views/auth/2fa-verify.php` - Login verification page
 - `views/auth/2fa-recovery-codes.php` - Recovery codes display

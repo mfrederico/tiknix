@@ -15,7 +15,7 @@ class ErrorPageTest extends TestCase {
     private const BROWSER_THRESHOLD = 512;
 
     public static function setUpBeforeClass(): void {
-        require_once dirname(__DIR__, 2) . '/lib/fatal-handler.php';
+        require_once dirname(__DIR__, 2) . '/runtime/lib/fatal-handler.php';
     }
 
     public function testTheLastResortPageIsBigEnoughToBeShown(): void {
@@ -38,7 +38,7 @@ class ErrorPageTest extends TestCase {
 
     /** @dataProvider errorViews */
     public function testEveryErrorViewIsBigEnoughToBeShown(string $view): void {
-        $file = dirname(__DIR__, 2) . "/views/error/{$view}.php";
+        $file = dirname(__DIR__, 2) . "/runtime/views/error/{$view}.php";
         $this->assertFileExists($file);
         // The source is a floor for the rendered page: the markup and CSS are static, and the
         // PHP in these views only ever adds to them.
@@ -57,9 +57,9 @@ class ErrorPageTest extends TestCase {
             if (is_array($tok) && in_array($tok[0], [T_COMMENT, T_DOC_COMMENT], true)) continue;
             $index .= is_array($tok) ? $tok[1] : $tok;
         }
-        $handler  = strpos($index, "lib/fatal-handler.php");
+        $handler  = strpos($index, "runtime/lib/fatal-handler.php");
         $autoload = strpos($index, 'bootstrap.php');
-        $this->assertNotFalse($handler, 'public/index.php must require lib/fatal-handler.php');
+        $this->assertNotFalse($handler, 'public/index.php must require runtime/lib/fatal-handler.php');
         $this->assertLessThan($autoload, $handler, 'the handler must be registered before the app boots — a fatal during boot is the case it exists for');
         $this->assertStringNotContainsString("ini_set('display_errors', 1)", $index, 'raw PHP errors must not be shown unconditionally');
     }

@@ -165,9 +165,9 @@ done
   && ok "admin permissions delete is not a bare-GET 200 sink" || no "authcontrol delete" "GET returned 200"
 
 echo "H8 — attachments gated by canView and off the web root"
-php -r '$s=file_get_contents("'"$ROOT"'/controls/Communications.php");
+php -r '$s=file_get_contents("'"$ROOT"'/runtime/controls/Communications.php");
   if(!preg_match("/function attachment.*?\n    \}/s",$s,$m))exit(2); $b=$m[0];
-  $w=file_get_contents("'"$ROOT"'/controls/Webhook.php");
+  $w=file_get_contents("'"$ROOT"'/runtime/controls/Webhook.php");
   exit((strpos($b,"canView")!==false
         && strpos($w,"secure/uploads/inbound-mail")!==false
         && strpos($w,"public/uploads/inbound-mail")===false)?0:1);' \

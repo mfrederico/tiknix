@@ -1,7 +1,7 @@
 <?php
 namespace tests\unit;
 
-require_once __DIR__ . "/../../lib/StripeGateway.php";
+require_once __DIR__ . "/../../runtime/lib/StripeGateway.php";
 
 use app\StripeGateway;
 use PHPUnit\Framework\TestCase;

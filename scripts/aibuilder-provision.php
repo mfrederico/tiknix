@@ -33,7 +33,7 @@ if (strpos(basename($ROOT), '.') === false) {
 // <root>/bin/claude. A HARD LINK to the host install, not a symlink — a symlink to the
 // operator's home dangles inside the AI Builder sandbox and across claude's self-updates
 // (lib/ClaudeBinary.php has the whole story). Refresh later with scripts/claude-link.php.
-require_once $ROOT . '/lib/ClaudeBinary.php';
+require_once $ROOT . '/runtime/lib/ClaudeBinary.php';
 try {
     $linked = \app\ClaudeBinary::link($ROOT);
     echo "  bin/claude: {$linked['action']} — {$linked['detail']}\n";

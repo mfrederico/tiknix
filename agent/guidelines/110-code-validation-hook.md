@@ -5,7 +5,7 @@ PreToolUse hook in `.claude/settings.json`) enforces these standards:
 - **Blocks** on raw `R::<method>` where `Bean::` wraps it — see the table above. Methods
   `Bean::` does NOT wrap (`setup`, `close`, `testConnection`, `getWriter`, `nuke`) pass,
   because blocking a call with no alternative just teaches people to route around the hook.
-  Allowlisted files: `bootstrap.php`, `services/Schema/Seeds/*.php`, `lib/Bean.php`.
+  Allowlisted files: `bootstrap.php`, `services/Schema/Seeds/*.php`, `runtime/lib/Bean.php`.
 - **Blocks** on invalid `R::dispense` bean names (underscores, uppercase)
 - **Warns** on `exec` for CRUD — `Bean::exec` too, not just `R::exec`: the wrapper bypasses
   FUSE models exactly the same way, and checking only `R::` meant converting a file to the

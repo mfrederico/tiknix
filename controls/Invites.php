@@ -157,4 +157,98 @@ class Invites extends Control {
         // cost you an invite.
         Flight::jsonSuccess(['revoked' => (int) $inv->id], 'Invitation withdrawn — that allowance is back.');
     }
+
+    // ---- leads → invitations (moved from Leads in RUNTIME-SPLIT-MAP.md step 2) ----
+
+    /**
+     * POST /invites/lead — turn a lead into a member by inviting them. JSON.
+     *
+     * A lead is an email address that asked to be told about the product; a member is an
+     * account. The only supported way to cross that gap is the invitation flow, so this
+     * adds no account-creation path of its own: Invite::create() applies the rules
+     * (valid address, permission, already-a-member, an outstanding invite is RESENT
+     * rather than duplicated, per-window allowance which admins bypass), Mailer sends the
+     * same site-invite template, and /auth/invite creates the account and stamps
+     * accepted_member_id. Nothing here writes the member table.
+     *
+     * The lead row is left untouched. Whether a lead was invited is not a fact about the
+     * lead, it is a fact about the invite table, and storing a copy on the lead would be
+     * a second version of the truth that goes stale the moment an invite is revoked or
+     * expires. inviteStates() reads it from the invites themselves.
+     */
+    public function lead() {
+        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
+        if (Flight::request()->method !== 'POST') { Flight::jsonError('POST required', 405); return; }
+        if (!$this->validateCSRF()) return;
+
+        $lead = Bean::load('lead', (int) $this->getParam('id', 0));
+        if (!$lead->id) { Flight::jsonError('No such lead.', 404); return; }
+
+        $email = strtolower(trim((string) $lead->email));
+        if ($email === '') { Flight::jsonError('That lead has no email address to invite.', 409); return; }
+
+        $r = Invite::create($email, (int) $this->member->id, (int) $this->member->level);
+        if (empty($r['ok'])) { Flight::jsonError((string) $r['error'], 409); return; }
+
+        $inv  = $r['invite'];
+        $from = $this->member->displayName('Someone');
+
+        // The invite EXISTS and its link works even if the mail fails, so report that
+        // honestly and hand back the URL rather than calling the whole thing a failure.
+        $sent = false;
+        try {
+            if (Mailer::isConfigured()) {
+                $sent = Mailer::sendSiteInvite(
+                    $email, $from, Invite::url($inv),
+                    date('j M Y', strtotime((string) $inv->expiresAt)), ''
+                );
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error('Lead invite email failed', [
+                'lead' => (int) $lead->id, 'invite' => (int) $inv->id, 'error' => $e->getMessage(),
+            ]);
+        }
+
+        $inv->emailSent = $sent ? 1 : 0;
+        if ($sent) $inv->emailSentAt = date('Y-m-d H:i:s');
+        Bean::store($inv);
+        \app\Leads::bustLeadCache();
+
+        $this->logger->info('Lead invited', [
+            'lead' => (int) $lead->id, 'invite' => (int) $inv->id,
+            'to' => $email, 'by' => (int) $this->member->id, 'emailed' => $sent,
+            'resend' => !empty($r['resend']),
+        ]);
+
+        Flight::jsonSuccess(
+            ['invite_id' => (int) $inv->id, 'url' => Invite::url($inv), 'emailed' => $sent],
+            !empty($r['resend'])
+                ? $email . ' already had an open invitation — it has been sent again, and no allowance was used.'
+                : ($sent
+                    ? 'Invitation emailed to ' . $email . '. It expires on '
+                      . date('j M Y', strtotime((string) $inv->expiresAt)) . '.'
+                    : 'Invitation created but could NOT be emailed. Send them this link: ' . Invite::url($inv))
+        );
+    }
+
+    /**
+     * Invite state per lead email, in ONE query rather than one per row.
+     *
+     * @return array<string,string> lowercased email => 'accepted'|'pending'|'expired'|'revoked'
+     */
+    public static function leadStates(): array {
+        $out = [];
+        foreach (Bean::find('invite') as $inv) {
+            $email = strtolower(trim((string) $inv->email));
+            if ($email === '') continue;
+            $state = !empty($inv->acceptedAt) ? 'accepted'
+                   : (!empty($inv->revokedAt) ? 'revoked'
+                   : (strtotime((string) $inv->expiresAt) <= time() ? 'expired' : 'pending'));
+            // accepted always wins, then pending — a revoked or expired invite must not
+            // hide the fact that the same address later joined.
+            $rank = ['accepted' => 3, 'pending' => 2, 'expired' => 1, 'revoked' => 0];
+            if (!isset($out[$email]) || $rank[$state] > $rank[$out[$email]]) $out[$email] = $state;
+        }
+        return $out;
+    }
 }

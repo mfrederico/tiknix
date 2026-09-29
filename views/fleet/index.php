@@ -72,7 +72,7 @@ $when = fn(?string $s) => $s ? date('M j, Y g:i A', strtotime($s)) : '—';
                     <?php endif; ?>
                 </td>
                 <td class="text-end">
-                    <form method="POST" action="/admin/instances" class="d-inline-flex gap-2 justify-content-end"
+                    <form method="POST" action="/fleet" class="d-inline-flex gap-2 justify-content-end"
                           <?= $r['on'] ? '' : 'data-confirm="Let the control plane build against ' . htmlspecialchars((string) $b->slug, ENT_QUOTES) . ' with nobody watching?"' ?>>
                         <?= csrf_field() ?>
                         <input type="hidden" name="instance_id" value="<?= (int) $b->id ?>">

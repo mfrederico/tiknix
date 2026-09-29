@@ -70,7 +70,7 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
   /* This site's own sign-up gate (Turnstile). Install-local, so on the control plane it
      manages THIS site's registration, not the selected project's — kept at the top and
      under its own "Security" heading so it does not read as a per-project connector. */
-  include __DIR__ . '/_turnstile.php';
+  include \Flight::view()->getTemplate('connections/_turnstile');
   ?>
 
   <?php

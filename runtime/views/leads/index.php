@@ -138,7 +138,7 @@ document.addEventListener('DOMContentLoaded', function () {
         btn.disabled = true;
         var original = btn.innerHTML;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-        fetch('/leads/invite', {
+        fetch('/invites/lead', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',

@@ -40,7 +40,7 @@ foreach ($pages as $page) {
         // Everything that touches the credential happens inside, including the
         // refresh WRITE: a bean stored outside would land in core's database, and the
         // token would be re-sealed with core's key instead of the instance's.
-        $res = ConnectionStore::withInstall($iid, function () use ($page, $REFRESH_WINDOW, $slug) {
+        $res = \app\InstanceConnections::withInstall($iid, function () use ($page, $REFRESH_WINDOW, $slug) {
             $conn = Bean::load('connections', (int)$page->connectionRef);
             if (!$conn->id || (int)$conn->enabled !== 1 || !empty($conn->revokedAt)) {
                 throw new \Exception('connection missing/disabled');

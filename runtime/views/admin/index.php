@@ -83,7 +83,7 @@
                     <p class="mb-1">Configure access controls and permissions</p>
                 </a>
                 
-                <a href="/admin/instances" class="list-group-item list-group-item-action">
+                <a href="/fleet" class="list-group-item list-group-item-action">
                     <div class="d-flex w-100 justify-content-between">
                         <h5 class="mb-1">Instances — Unattended Builds</h5>
                     </div>

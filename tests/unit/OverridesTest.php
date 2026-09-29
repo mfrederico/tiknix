@@ -91,6 +91,11 @@ class OverridesTest extends TestCase {
             $this->assertStringContainsString('/runtime/', (new \ReflectionClass($c))->getFileName(), "{$c} comes from the runtime");
         }
         $this->assertStringNotContainsString('/runtime/', (new \ReflectionClass('app\\PlanExecutor'))->getFileName(), 'control plane stays in the app');
-        $this->assertSame([], Overrides::shadowing(\app\Paths::root(), \app\Paths::runtime()), 'core overrides nothing of its own runtime');
+        // Core overrides exactly the three role-shaped controllers (RUNTIME-SPLIT-MAP.md step
+        // 2): its marketing home, its builder hub for other projects, and the hub's
+        // integrations — each recorded, so a runtime change to the app version shows STALE.
+        $this->assertSame(['controls/Connections.php', 'controls/Index.php', 'controls/Integrations.php'],
+            Overrides::shadowing(\app\Paths::root(), \app\Paths::runtime()));
+        foreach (Overrides::report() as $rel => $r) $this->assertSame('current', $r['status'], $rel);
     }
 }

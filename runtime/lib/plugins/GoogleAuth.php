@@ -32,6 +32,10 @@ use \app\Bean;
 
 class GoogleAuth {
 
+    /** callable(int $memberId): void — what a new Google-created member also gets; the platform registers its billing tenant (lib/controlplane.php). */
+    public static $onNewMember = null;
+
+
     private static $authUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
     private static $tokenUrl = 'https://oauth2.googleapis.com/token';
     private static $userInfoUrl = 'https://www.googleapis.com/oauth2/v2/userinfo';
@@ -289,7 +293,7 @@ class GoogleAuth {
            Non-fatal: nobody is turned away from signing in because a billing service is
            unreachable, and the billing page registers one on demand for anyone who slipped
            through. The failure logs an ERROR naming the member. */
-        \app\SignupFlow::ensureTenantFor((int) $id);
+        if (self::$onNewMember !== null) (self::$onNewMember)((int) $id);   // the platform's billing tenant (lib/controlplane.php)
 
         Flight::get('log')->info('New member created via Google OAuth', [
             'member_id' => $id,

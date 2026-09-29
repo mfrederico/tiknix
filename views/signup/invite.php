@@ -33,7 +33,7 @@
               </div>
             <?php endif; ?>
 
-            <form method="POST" action="/auth/invite">
+            <form method="POST" action="/signup/invite">
               <?php foreach (($csrf ?? []) as $n => $v): ?>
                 <input type="hidden" name="<?= htmlspecialchars($n) ?>" value="<?= htmlspecialchars($v) ?>">
               <?php endforeach; ?>

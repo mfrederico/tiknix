@@ -37,7 +37,7 @@
   <hr class="my-4">
 
   <p class="small text-muted mb-2">Already added it?</p>
-  <form method="get" action="/auth/complete">
+  <form method="get" action="/signup/complete">
     <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
     <button class="btn btn-outline-secondary" type="submit">Check again</button>
   </form>

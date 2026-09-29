@@ -301,6 +301,6 @@ class Invite {
 
     /** The public link for an invite. */
     public static function url(object $inv): string {
-        return app_url('/auth/invite?token=' . rawurlencode((string) $inv->token));
+        return app_url('/signup/invite?token=' . rawurlencode((string) $inv->token));
     }
 }

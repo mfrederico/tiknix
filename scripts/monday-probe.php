@@ -43,7 +43,7 @@ if ($token === '' && isset($opts['connection'])) {
     };
 
     $token = (string) ($iid > 0
-        ? \app\ConnectionStore::withInstall($iid, $reader, '')
+        ? \app\InstanceConnections::withInstall($iid, $reader, '')
         : \app\ConnectionStore::withOwnDb($reader, ''));
 
     if ($token === '') {

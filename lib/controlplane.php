@@ -65,3 +65,23 @@
         return ['id' => (int) $inst->id, 'slug' => $slug, 'dir' => $dir];
     };
 \app\Mcp::$brokerConnection = static fn(int $instanceId, string $type, string $env, ?string $account) => \app\InstanceConnections::forInstall($instanceId, $type, $env, $account);
+
+// Leads — the lead list shows each address's sign-up invitation state and offers an invite.
+\app\Leads::$inviteStates = static fn(): array => \app\Invites::leadStates();
+
+// Auth — after login, a Get-started plan waiting to be claimed; card-on-file sign-up.
+\app\Auth::$afterLogin = static fn(): ?string => \app\PlanHandoff::afterLoginTarget();
+\app\Auth::$registerVia = static function (string $email, string $password, string $first, string $last, string $username): ?array {
+    if (!\app\SignupFlow::enabled()) return null;
+    $started = \app\SignupFlow::start($email, $password, $first, $last, $username);
+    if (!$started['ok']) return ['error' => $started['error']];
+    // The token identifies which signup came back; it authorises nothing on its own,
+    // because completion still turns on what the billing service says.
+    return ['redirect' => '/signup/complete?token=' . urlencode($started['token'])];
+};
+
+// Google sign-in — a new member is a billing subject like any other: register their tenant.
+\app\plugins\GoogleAuth::$onNewMember = static fn(int $memberId) => \app\SignupFlow::ensureTenantFor($memberId);
+
+// Admin — quotas, free-project grants, plan tiers, billing tenant/lifecycle on the member screens.
+\app\Admin::$memberExtension = new \app\PlatformMemberAdmin();

@@ -8,6 +8,10 @@ use \Exception as Exception;
 use app\BaseControls\Control;
 
 class Admin extends Control {
+
+    /** The platform's part of the member screens (lib/PlatformMemberAdmin via lib/controlplane.php); null in an app. */
+    public static ?MemberAdminExtension $memberExtension = null;
+
     
     const ROOT_LEVEL = 1;
     const ADMIN_LEVEL = 50;
@@ -89,18 +93,8 @@ class Admin extends Control {
         
         // Get all members
         $this->viewData['members'] = Bean::findAll('member', 'ORDER BY created_at DESC');
-        // Projects held / allowed per member — the same snapshot the invoice and the create
-        // gate use, so this column cannot disagree with them. Platform only: on a customer's
-        // app there are no projects to count.
-        $this->viewData['quotas'] = [];
-        if (is_core_install()) {
-            foreach ($this->viewData['members'] as $m) {
-                // The logged-out visitor's account has no projects and gets no allowance.
-                if ((int) $m->id === PUBLIC_USER_ID) continue;
-                try { $this->viewData['quotas'][(int) $m->id] = \app\ProjectQuota::snapshot((int) $m->id); }
-                catch (\Throwable $e) { $this->viewData['quotas'][(int) $m->id] = ['error' => $e->getMessage()]; }
-            }
-        }
+        // The platform's per-member project column (Admin::$memberExtension); none in an app.
+        $this->viewData['quotas'] = self::$memberExtension !== null ? self::$memberExtension->listing($this->viewData['members']) : [];
         
         $this->render('admin/members', $this->viewData);
     }
@@ -177,30 +171,8 @@ class Admin extends Control {
                         $avatar = trim($request->data->avatar_url ?? '');
                         $member->avatarUrl   = $avatar !== '' ? $avatar : null;
 
-                        // Per-member FREE-project allowance (ProjectQuota::freeCapFor). 0 = the
-                        // global default. NOT gated by the system-account check above — the
-                        // operator's own account is exactly the one they raise to "unlimited".
-                        // Through the model: the number and its audit row (who, when, why)
-                        // are written together — a grant is money not collected.
-                        if (is_core_install() && (int) $member->id !== PUBLIC_USER_ID && isset($request->data->free_projects)) {
-                            $member->box()->setFreeProjects((int) $request->data->free_projects,
-                                (int) $this->member->id, (string) ($request->data->free_projects_note ?? ''));
-                        }
-
-                        // Plan tier. 'agency' is the one tier a card cannot imply, so an admin
-                        // sets it here (self-serve comes later). SignupFlow::syncPlanTier
-                        // leaves 'agency' and 'legacy' alone; a removed card still drops to free.
-                        if (is_core_install() && (int) $member->id !== PUBLIC_USER_ID && isset($request->data->plan_tier)) {
-                            $wantTier = strtolower(trim((string) $request->data->plan_tier));
-                            $haveTier = strtolower(trim((string) ($member->planTier ?: 'free')));
-                            if (in_array($wantTier, ['free', 'pro', 'agency', 'legacy'], true) && $wantTier !== $haveTier) {
-                                $member->planTier = $wantTier;
-                                $member->planProjectCap = 0;
-                                Flight::get('log')->info('admin changed plan tier', [
-                                    'member' => (int) $member->id, 'from' => $haveTier, 'to' => $wantTier, 'by' => (int) $this->member->id,
-                                ]);
-                            }
-                        }
+                        // The platform's own fields (free projects, plan tier): Admin::$memberExtension.
+                        if (self::$memberExtension !== null) self::$memberExtension->beforeSave($member, $request->data, (int) $this->member->id);
 
                         // Update password if provided
                         if (!empty($request->data->password)) {
@@ -217,12 +189,7 @@ class Admin extends Control {
                             try {
                                 Bean::store($member);
 
-                                /* Billing follows the account status — suspend somebody here
-                                   and the nightly run must stop invoicing them, not keep
-                                   charging a card for an account that no longer works.
-                                   Called unconditionally: it compares the current status and
-                                   is a no-op when nothing needs changing. Non-fatal. */
-                                \app\BillingLifecycle::syncFor((int) $member->id);
+                                if (self::$memberExtension !== null) self::$memberExtension->afterSave($member);
 
                                 // Persist per-member feature flags eligible for this level.
                                 $submittedFeatures = (array)($request->data->features ?? []);
@@ -263,15 +230,8 @@ class Admin extends Control {
             }
         }
         
-        // ASK, don't read the cache and hope somebody filled it.
-        //
-        // firstBuildAt is stamped LAZILY by Invite::hasBuilt(), which scans each project's
-        // own workbench.db. This page rendered the bare column instead of calling it, so a
-        // member who had built read "Hasn't built anything yet — their invitations stay
-        // locked" until they happened to open /invites themselves and stamp it. That is
-        // the exact question an admin comes to this page to answer, reported backwards.
-        \app\Invite::hasBuilt((int) $member->id);
-        $member = Bean::load('member', (int) $member->id);   // re-read: hasBuilt may have stamped
+        if (self::$memberExtension !== null) self::$memberExtension->prepareEdit((int) $member->id);
+        $member = Bean::load('member', (int) $member->id);   // re-read: the extension may have stamped
 
         $this->viewData['title'] = 'Edit Member';
         $this->viewData['editMember'] = $member;
@@ -288,16 +248,11 @@ class Admin extends Control {
         // inviter in the first place.
         $this->viewData['invitedCount'] = Bean::count('member', 'invited_by = ?', [(int) $member->id]);
         $this->viewData['twofaEnabled'] = \app\TwoFactorAuth::isEnabled($member);
-        // Projects: what they hold, what is free, what is billed — and who granted the free
-        // ones. The same snapshot the invoice is answered with, so the page cannot disagree.
-        // Platform only: projects, and paying for them, exist on tiknix.com — on a customer's
-        // app this member edit screen is theirs (Serenity puts its member types here).
-        $quotaApplies = is_core_install() && (int) $member->id !== PUBLIC_USER_ID;   // not the logged-out visitor's account
-        $this->viewData['projectQuota'] = $quotaApplies ? \app\ProjectQuota::snapshot((int) $member->id) : null;
-        $this->viewData['freeGrants'] = $quotaApplies ? array_map(fn($a) => [
-            'row' => $a,
-            'by'  => Bean::load('member', (int) $a->byRef)->displayName('member #' . (int) $a->byRef),
-        ], $member->box()->audits('free_projects', 10)) : [];
+        // The platform's billing panel (Admin::$memberExtension); an app's edit screen has none.
+        $extra = self::$memberExtension !== null ? self::$memberExtension->editView($member) : ['projectQuota' => null, 'freeGrants' => []];
+        $this->viewData['projectQuota'] = $extra['projectQuota'] ?? null;
+        $this->viewData['freeGrants']   = $extra['freeGrants'] ?? [];
+        $this->viewData['billingPanel'] = $extra['panel'] ?? '';
 
         $this->viewData['featureFlags'] = [];
         foreach (\app\Feature::catalogForLevel((int)$member->level) as $fkey => $fmeta) {
@@ -368,8 +323,7 @@ class Admin extends Control {
                         try {
                             Bean::store($member);
 
-                            // An admin-created member is a billing subject too. Non-fatal.
-                            \app\SignupFlow::ensureTenantFor((int) $member->id);
+                            if (self::$memberExtension !== null) self::$memberExtension->created($member);
 
                             $this->logger->info('New member created by admin', [
                                 'member_id' => $member->id,
@@ -578,9 +532,9 @@ class Admin extends Control {
                 ]);
                 
                 /* Stop billing BEFORE the row goes: the tenant slug lives on it, and
-                   afterwards there is nothing left to say which tenant to stop. Non-fatal —
-                   see BillingLifecycle. */
-                \app\BillingLifecycle::onDelete((int) $id);
+                   afterwards there is nothing left to say which tenant to stop (the platform's
+                   PlatformMemberAdmin::deleting). */
+                if (self::$memberExtension !== null) self::$memberExtension->deleting((int) $id);
 
                 Bean::trash($member);
 
@@ -630,7 +584,7 @@ class Admin extends Control {
                             $member->updatedAt = date('Y-m-d H:i:s');
                             Bean::store($member);
                             // Billing follows the account status. Non-fatal.
-                            \app\BillingLifecycle::syncFor((int) $member->id);
+                            if (self::$memberExtension !== null) self::$memberExtension->afterSave($member);
                             $count++;
                         }
                     }
@@ -648,7 +602,7 @@ class Admin extends Control {
                             $member->updatedAt = date('Y-m-d H:i:s');
                             Bean::store($member);
                             // Billing follows the account status. Non-fatal.
-                            \app\BillingLifecycle::syncFor((int) $member->id);
+                            if (self::$memberExtension !== null) self::$memberExtension->afterSave($member);
                             $count++;
                         }
                     }
@@ -679,65 +633,6 @@ class Admin extends Control {
     /**
      * Cache management page
      */
-    /**
-     * /admin/instances — unattended auto-triage, per instance.
-     *
-     * Admin-only by the constructor above, which is the point: turning this on lets the
-     * control plane launch headless agent builds against a client's repo with nobody
-     * watching, so it is a spend decision and not a preference the client sets. There is
-     * deliberately no member-facing route — see Model_Instance::setAutoTriage.
-     */
-    public function instances($params = []) {
-        $this->viewData['title'] = 'Instances — Unattended Builds';
-        $request = Flight::request();
-
-        if ($request->method === 'POST') {
-            if (!Flight::csrf()->validateRequest()) {
-                $this->flash('error', 'CSRF validation failed');
-                Flight::redirect('/admin/instances');
-                return;
-            }
-            $id  = (int) ($request->data->instance_id ?? 0);
-            $on  = !empty($request->data->enabled);
-            $why = trim((string) ($request->data->note ?? ''));
-
-            $inst = Bean::load('instance', $id);
-            if (!$inst->id) {
-                $this->flash('error', 'No such instance');
-            } else {
-                // The model writes the flag and the audit row together, so they cannot
-                // come apart, and returns false when nothing actually changed.
-                $changed = $inst->setAutoTriage($on, (int) $this->member->id, $why);
-                $this->flash(
-                    $changed ? 'success' : 'info',
-                    $changed
-                        ? sprintf('Unattended builds %s for %s.', $on ? 'ENABLED' : 'disabled', $inst->slug)
-                        : sprintf('%s was already %s — nothing recorded.', $inst->slug, $on ? 'enabled' : 'disabled')
-                );
-            }
-            Flight::redirect('/admin/instances');
-            return;
-        }
-
-        $rows = [];
-        foreach (Bean::findAll('instance', 'ORDER BY slug') as $inst) {
-            $last  = $inst->lastAudit('auto_triage');
-            $byId  = $last ? (int) $last->memberId : 0;
-            $rows[] = [
-                'bean'    => $inst,
-                'on'      => $inst->autoTriageOn(),
-                'last'    => $last,
-                'by'      => $byId ? (string) (Bean::load('member', $byId)->email ?: 'member #' . $byId) : '',
-                'owner'   => (string) (Bean::load('member', (int) $inst->memberId)->email ?: ''),
-            ];
-        }
-
-        $this->viewData['rows'] = $rows;
-        // Whole-trail view: who granted what, when, across every instance.
-        $this->viewData['trail'] = Bean::findAll('instanceaudit', 'ORDER BY id DESC LIMIT 25');
-        $this->render('admin/instances', $this->viewData);
-    }
-
     public function cache() {
         // Check admin permission
         if (!$this->requireLevel(self::ADMIN_LEVEL)) {

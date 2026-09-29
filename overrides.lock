@@ -1,0 +1,20 @@
+{
+    "version": 1,
+    "overrides": {
+        "controls/Connections.php": {
+            "base": "sha256:d4ea2365b731c0ceb6e6b48fe85c45aae8814364aae4a945de8d8e2921368633",
+            "release": "",
+            "recorded_at": "2026-09-29T20:22:19+00:00"
+        },
+        "controls/Index.php": {
+            "base": "sha256:625c1df695ddd01fc7b9ae09c7277fedc943a3b13e85f1b52b6fde5c9658887d",
+            "release": "",
+            "recorded_at": "2026-09-29T20:21:46+00:00"
+        },
+        "controls/Integrations.php": {
+            "base": "sha256:ccb04eef7e9d4f739ea657e0eed3c39e27abb4780dde22ec9b74e3d0b3c3f849",
+            "release": "",
+            "recorded_at": "2026-09-29T20:21:45+00:00"
+        }
+    }
+}

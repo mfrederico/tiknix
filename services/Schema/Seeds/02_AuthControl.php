@@ -51,8 +51,6 @@ $defaults = [
     ['teams', 'join', 101, 'Accept a team invite via token (public, self-serve account create)'],
     ['install', 'index', 101, 'First-run setup wizard'],
     ['install', 'save', 101, 'First-run setup wizard submit'],
-    ['docs', '*', 101, 'Documentation'],
-    ['help', '*', 101, 'Help pages'],
     ['contact', 'index', 101, 'Contact form'],
     ['contact', 'submit', 101, 'Submit contact form'],
     ['contact', 'ask', 100, 'A signed-in member writes to support'],

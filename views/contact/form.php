@@ -132,9 +132,11 @@
                     </div>
                 </div>
                 
+                <?php if (is_control_plane()): /* the help centre is the platform's */ ?>
                 <div class="mt-4 text-center text-muted">
                     <p><i class="bi bi-info-circle"></i> Need immediate assistance? Check our <a href="/help">Help Center</a> for quick answers.</p>
                 </div>
+                <?php endif; ?>
             <?php endif; ?>
         </div>
     </div>

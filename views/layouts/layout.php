@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : (is_array($csrf ?? null) ? (string) reset($csrf) : (string) ($csrf ?? '')), ENT_QUOTES, 'UTF-8') ?>">
+    <title><?= htmlspecialchars($title ?? 'App') ?></title>
+    <link rel="icon" href="/favicon.ico" sizes="32x32">
+    <link rel="icon" href="/icon-512.png" type="image/png" sizes="512x512">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+    <!-- Restore saved theme before paint to avoid a flash -->
+    <script>(function(){try{var t=localStorage.getItem('ui-theme');if(t)document.documentElement.setAttribute('data-bs-theme',t);}catch(e){}})();</script>
+
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Custom CSS (tiknix-specific; loaded before the design system so tokens win) -->
+    <link href="/css/app.css" rel="stylesheet">
+    <!-- Shared design system — MUST load last so its :root overrides win -->
+    <?php include \Flight::view()->getTemplate('components/design-system'); ?>
+
+    <!-- Additional CSS -->
+    <?php if (isset($additional_css)): ?>
+        <?php foreach ($additional_css as $css): ?>
+            <link href="<?= $css ?>" rel="stylesheet">
+        <?php endforeach; ?>
+    <?php endif; ?>
+</head>
+<body>
+    <!-- Shell: sidebar + topbar open in header, page body, shell closes in footer -->
+    <?= $header_content ?>
+    <?= $body_content ?>
+    <?= $footer_content ?>
+
+    <!-- Bootstrap 5 JS Bundle (includes Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- jQuery (optional, but useful) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- Custom JS -->
+    <script src="/js/app.js"></script>
+    <!-- Modal alert/confirm/prompt (tkAlert, tkConfirm, tkPrompt, data-confirm) -->
+    <script src="/js/dialogs.js"></script>
+    <!-- Server-side DataTables primitive (self-activates only when a .dt-server table exists) -->
+    <script src="/js/dt-server.js"></script>
+
+    <!-- Flash Messages -->
+    <?php if (isset($_SESSION['flash'])): ?>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            <?php foreach ($_SESSION['flash'] as $flash): ?>
+                <?php $isLogoutMessage = stripos($flash['message'], 'logged out') !== false; ?>
+                <?php if ($isLogoutMessage): ?>
+                clearToastHistory();
+                <?php endif; ?>
+<?php /* json_encode with the HEX flags, NOT addslashes: addslashes escapes quotes but not
+         '<', so a flash message containing </script><script> broke out of this block and
+         ran in a ROOT session (flash text can be request-derived, e.g. Mcptools/Hooks
+         name params). JSON_HEX_TAG/APOS/QUOT/AMP encode <>&'" so nothing can escape the
+         string or the <script>. json_encode emits its own quotes, so none are written here. */ ?>
+                showToast(<?= json_encode($flash['type'], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP) ?>, <?= json_encode($flash['message'], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP) ?>);
+            <?php endforeach; ?>
+            <?php unset($_SESSION['flash']); ?>
+        });
+    </script>
+    <?php endif; ?>
+
+    <!-- Additional JS -->
+    <?php if (isset($additional_js)): ?>
+        <?php foreach ($additional_js as $js): ?>
+            <script src="<?= $js ?>"></script>
+        <?php endforeach; ?>
+    <?php endif; ?>
+</body>
+</html>

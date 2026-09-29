@@ -74,7 +74,7 @@
                             ?>
                             <?php if (empty($mcpServers)): ?>
                                 <div class="alert alert-info">
-                                    No MCP servers configured yet. <a href="/agentsetup?tab=servers">Configure servers</a> in Agent Setup.
+                                    No MCP servers configured yet.<?php if (is_control_plane()): ?> <a href="/agentsetup?tab=servers">Configure servers</a> in Agent Setup.<?php endif; ?>
                                 </div>
                             <?php else: ?>
                                 <div class="row">

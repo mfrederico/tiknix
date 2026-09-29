@@ -85,3 +85,7 @@
 
 // Admin — quotas, free-project grants, plan tiers, billing tenant/lifecycle on the member screens.
 \app\Admin::$memberExtension = new \app\PlatformMemberAdmin();
+
+// The page shell — projects, the project bar, Workspace/Build navigation, Teams and Billing.
+foreach (['prepare', 'nav', 'bar', 'account'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
+unset($__slot);

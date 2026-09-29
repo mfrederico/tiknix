@@ -47,10 +47,14 @@ $__canRoom = !empty($__rooms);
                         <i class="bi bi-people text-body-secondary" style="font-size:2rem"></i>
                         <p class="mt-2 mb-1">There is nobody to message yet.</p>
                         <p class="small text-body-secondary mb-3">
-                            You can message people you share a team with. Join or create a team and
-                            whoever is in it will appear here.
+                            You can message people you share a team with.
+                            <?php if (is_control_plane()): /* Teams is the platform's page */ ?>
+                            Join or create a team and whoever is in it will appear here.
+                            <?php endif; ?>
                         </p>
+                        <?php if (is_control_plane()): ?>
                         <a href="/teams" class="btn btn-sm btn-primary">Teams</a>
+                        <?php endif; ?>
                     </div>
                 <?php else: ?>
 

@@ -46,49 +46,23 @@ $__icon = fn($i) => $__iconMap[$i] ?? ($i ?: 'dot');
 // and Profile moves to the avatar dropdown with the other account items. Dashboard stays.
 $__skip = ['/auth/logout' => 1, '/admin' => 1, '/' => 1, '/member/profile' => 1];
 
-// Every sidecar plugin operates ON a project — the AI Builder edits one, the Pipeline
-// Editor edits its pipelines, the Store and Explorer read one. With no project selected
-// they have nothing to act on, so offering them invites the exact confusion this is
-// meant to remove: you click in, get asked to pick a project, and now two places own
-// that choice. Hide them until a project is chosen; /projects is the way in.
-$__hasProject = false;
-if (!empty($__loggedIn) && class_exists('\app\ProjectContext')) {
-    $__memberId   = (int) (\Flight::getMember()->id ?? 0);
-    $__hasProject = $__memberId > 0 && \app\ProjectContext::current($__memberId) !== null;
-}
-
 // Group the dynamic menu by its optional 'section' (default "Main").
 $__sections = [];
 foreach (($menu ?? []) as $__it) {
     if (isset($__it['url']) && isset($__skip[$__it['url']])) continue;
-    // A future plugin that genuinely does not need a project can opt out with
-    // 'requires_project' => false in its menu entry.
-    if (!$__hasProject
-        && isset($__it['url']) && str_starts_with((string) $__it['url'], '/sidecar/app/')
-        && ($__it['requires_project'] ?? true)) continue;
     $__sections[$__it['section'] ?? 'Main'][] = $__it;
 }
-// Surface Teams + Communications in the "Main" group for logged-in users. Teams was
-// only reachable from the topbar dropdown; Communications moved here out of Workspace.
+// Whatever runs this app may add to the shell (app\Chrome). The 'prepare' parts see the menu
+// before it is drawn and may add to it; one that draws a band under the top bar sets
+// $__chromeBar so the page leaves room for it.
+$__chromeBar = false;
+foreach (\app\Chrome::files('prepare') as $__part) include $__part;
+// Surface Communications in the "Main" group for logged-in users.
 // Dedupe against whatever the dynamic menu already provides so nothing doubles up.
 if ($__loggedIn) {
     $__have = [];
     foreach ($__sections as $__grp) foreach ($__grp as $__i) { if (isset($__i['url'])) $__have[$__i['url']] = 1; }
-    // Projects is the ONLY place a project is chosen; everything else — core pages and
-    // every sidecar — follows that selection. It leads the Main group because it is the
-    // question all the others assume you have already answered.
-    //
-    // It is also CONTROL-PLANE only, for the same reason the dashboard hides it: a
-    // finished app running on its own domain has no projects to pick, so the link would
-    // lead somewhere that means nothing there. Teams and Communications stay — those are
-    // ordinary features every clone really has.
-    $__main = [];
-    if (builder_tools_enabled()) {
-        $__main[] = ['url' => '/projects', 'label' => 'Projects', 'icon' => 'grid-3x3-gap'];
-    }
-    $__main[] = ['url' => '/teams',          'label' => 'Teams',          'icon' => 'people'];
-    $__main[] = ['url' => '/communications', 'label' => 'Communications', 'icon' => 'chat-left-dots'];
-
+    $__main = [['url' => '/communications', 'label' => 'Communications', 'icon' => 'chat-left-dots']];
     foreach ($__main as $__add) {
         if (!isset($__have[$__add['url']])) $__sections['Main'][] = $__add;
     }
@@ -105,12 +79,6 @@ if ($__loggedIn) {
         $__supportNew = 0;
         try { $__supportNew = (int)\app\Bean::count('contact', 'status = ?', ['new']); } catch (\Throwable $e) {}
         $__sections['Main'][] = ['url' => '/contact/admin', 'label' => 'Support', 'icon' => 'life-preserver', 'badge' => $__supportNew];
-    }
-    /* Members write to support from inside the app (Contact::ask) instead of by email; the
-       answer comes back to their Communications. Platform only: on a customer's own app
-       this would add a nav item to THEIR users that nobody there asked for. */
-    if (!$__isAdmin && is_core_install() && !isset($__have['/contact'])) {
-        $__sections['Main'][] = ['url' => '/contact', 'label' => 'Support', 'icon' => 'life-preserver'];
     }
 }
 ?>
@@ -150,54 +118,7 @@ if ($__loggedIn) {
       <?php endforeach; ?>
 
       <?php if ($__loggedIn): ?>
-        <?php if (builder_tools_enabled()): ?>
-          <div class="ui-nav-heading">Workspace</div>
-          <?php /* AI Projects + AI Builder moved to the workbench.tiknix sidecar — listed under Plugins below (Feature-gated). */ ?>
-          <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
-          <a class="ui-nav-link<?= $__active('/integrations') ?>" href="/integrations"><i class="bi bi-diagram-3"></i> Integrations</a>
-          <?php /* Agent Setup is MCP configuration, so it follows the mcp GRANT rather than
-                   the admin heading it used to sit under — a granted member is not an admin,
-                   and filing their one tool under "Admin" says otherwise. Admins still see
-                   it: allows() is true for them without any switch being set. */ ?>
-          <?php if (\app\Feature::allows('mcp', $__mid, $__level)): ?>
-            <a class="ui-nav-link<?= $__active('/agentsetup') ?>" href="/agentsetup"><i class="bi bi-sliders"></i> Agent Setup</a>
-          <?php endif; ?>
-          <?php /* Registration is closed, so an invitation is the only way anyone new gets
-                   an account — a real permission, granted per member (see app\Invite). */ ?>
-          <?php if (\app\Feature::allows('invites', $__mid, $__level)): ?>
-            <a class="ui-nav-link<?= $__active('/invites') ?>" href="/invites"><i class="bi bi-envelope-plus"></i> Invitations</a>
-          <?php endif; ?>
-        <?php endif; ?>
-
-        <?php
-        /* These act ON the selected project, so they cannot be USED until one is chosen —
-           otherwise you click in, get asked to pick a project, and two places own that
-           choice. /projects is the way in, and it is also where a project gets made
-           (/projects/create is a POST endpoint, not a page).
-
-           But the section is still SHOWN. Removing it outright meant five nav items
-           vanished at once with nothing to explain it, which reads as "my tools were
-           switched off" rather than "you are not on a project". So the heading stays and
-           offers the one thing a new account actually needs to do first. */
-        $__enabledPlugins = [];
-        if ($__loggedIn && class_exists('\\app\\Sidecar\\Registry')) {
-            foreach (\app\Sidecar\Registry::launchable() as $__pname => $__p) {
-                if (\app\Feature::isEnabled($__p['feature'], $__mid, $__level)) {
-                    $__enabledPlugins[$__pname] = $__p;
-                }
-            }
-        }
-        ?>
-        <?php if ($__enabledPlugins): ?>
-          <div class="ui-nav-heading">Build</div>
-          <?php if ($__hasProject): ?>
-            <?php foreach ($__enabledPlugins as $__pname => $__p): ?>
-              <a class="ui-nav-link<?= $__active('/sidecar/app/' . $__pname) ?>" href="/sidecar/app/<?= htmlspecialchars($__pname) ?>"><i class="bi <?= htmlspecialchars($__p['icon']) ?>"></i> <?= htmlspecialchars($__p['label']) ?></a>
-            <?php endforeach; ?>
-          <?php else: ?>
-            <a class="ui-nav-link" href="/projects"><i class="bi bi-plus-circle"></i> New Project</a>
-          <?php endif; ?>
-        <?php endif; ?>
+        <?php foreach (\app\Chrome::files('nav') as $__part) include $__part; ?>
 
         <?php if ($__isAdmin): ?>
           <div class="ui-nav-heading">Admin</div>
@@ -245,21 +166,7 @@ if ($__loggedIn) {
     <?php endif; ?>
   </aside>
 
-  <?php
-  /* WHICH PROJECT AM I IN — the project bar under the top bar. Resolved here, before
-     .ui-main opens, because the bar's presence sets --ui-projectbar-height, which the
-     sidecar iframe subtracts from the viewport. It used to be a chip squeezed into the
-     top bar, where it wrapped into two ragged rows on a phone. */
-  $__pbar = null;   // 'project' | 'none' | null (no bar)
-  $__proj = null;
-  if ($__hasProject) {
-      $__proj = \app\ProjectContext::current((int) (\Flight::getMember()->id ?? 0));
-      if ($__proj) $__pbar = 'project';
-  } elseif ($__loggedIn && builder_tools_enabled()) {
-      $__pbar = 'none';
-  }
-  ?>
-  <div class="ui-main<?= $__pbar ? ' has-projectbar' : '' ?>">
+  <div class="ui-main<?= $__chromeBar ? ' has-projectbar' : '' ?>">
     <header class="ui-topbar">
       <button class="ui-btn-icon d-lg-none" type="button" onclick="uiToggleSidebar(true)" aria-label="Open menu"><i class="bi bi-list"></i></button>
       <div class="ui-topbar-title">
@@ -272,7 +179,7 @@ if ($__loggedIn) {
           <button class="ui-btn-icon" id="uiThemeToggle" type="button" aria-label="Toggle theme"><i class="bi bi-moon-stars"></i></button>
         </li>
         <?php if ($__loggedIn): ?>
-          <?php include __DIR__ . '/_notify-bell.php'; ?>
+          <?php include \Flight::view()->getTemplate('layouts/_notify-bell'); ?>
           <li class="nav-item dropdown">
             <a class="text-decoration-none" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               <span class="ui-user-chip">
@@ -291,16 +198,7 @@ if ($__loggedIn) {
               <?php if (\app\Feature::allows('mcp', $__mid, $__level)): ?>
                 <li><a class="dropdown-item" href="/apikeys"><i class="bi bi-key me-2"></i>API Keys</a></li>
               <?php endif; ?>
-              <li><a class="dropdown-item" href="/teams"><i class="bi bi-people me-2"></i>Teams</a></li>
-              <?php /* Account-scoped, so it belongs beside Profile/Settings/Teams rather than
-                       in the project sidebar: billing follows the person, not whichever project
-                       they happen to have open. Shown to every member — the page charges
-                       nothing, and someone who cannot see what is counted against them has no
-                       way to tell us it is wrong. */ ?>
-              <li><a class="dropdown-item" href="/billing"><i class="bi bi-credit-card me-2"></i>Billing</a></li>
-              <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" href="/docs"><i class="bi bi-book me-2"></i>Documentation</a></li>
-              <li><a class="dropdown-item" href="/help"><i class="bi bi-question-circle me-2"></i>Help</a></li>
+<?php foreach (\app\Chrome::files('account') as $__part) include $__part; ?>
               <li><hr class="dropdown-divider"></li>
               <li><a class="dropdown-item text-danger" href="/auth/logout"><i class="bi bi-box-arrow-right me-2"></i>Sign out</a></li>
             </ul>
@@ -314,39 +212,7 @@ if ($__loggedIn) {
       </ul>
     </header>
 
-    <?php if ($__pbar === 'project'):
-        /* Links to the WORKING instance — the thing you are building — never to wherever it
-           is published: a published URL belongs to a publish target, not to the project. */
-        $__purl  = $__proj->box()->url();
-        $__pname = $__proj->displayName ?: $__proj->slug;
-        $__pmid  = (int) (\Flight::getMember()->id ?? 0);
-    ?>
-      <div class="ui-projectbar" role="region" aria-label="Current project">
-        <i class="bi bi-hdd-network-fill text-primary flex-none"></i>
-        <span class="ui-pb-eyebrow d-none d-sm-inline">Working on</span>
-        <a href="<?= htmlspecialchars($__purl) ?>" target="_blank" rel="noopener" class="ui-pb-name link-body-emphasis text-decoration-none"
-           title="Open the working instance — <?= htmlspecialchars($__purl) ?>"><?= htmlspecialchars($__pname) ?><i class="bi bi-box-arrow-up-right ms-1 small opacity-75"></i></a>
-        <?php if (!empty($__proj->isDefault)): ?><span class="badge text-bg-warning flex-none" style="font-size:.62rem">default · core</span><?php endif; ?>
-        <nav class="ui-pb-actions" aria-label="Project actions">
-          <?php /* Feature-gated like every sidecar: offering Publish without the flag lands on a plugin they cannot open. */ ?>
-          <?php if (\app\Feature::isEnabled('publisher', $__pmid, $__level)): ?>
-            <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm" title="Where and how this project goes live"><i class="bi bi-cloud-upload"></i><span class="ui-pb-label">Publish</span></a>
-          <?php endif; ?>
-          <a href="/connections" class="btn btn-outline-secondary btn-sm" title="Store &amp; service connections for this project"><i class="bi bi-plug"></i><span class="ui-pb-label">Connections</span></a>
-          <a href="/teams" class="btn btn-outline-secondary btn-sm" title="Share this project with a team"><i class="bi bi-people"></i><span class="ui-pb-label">Share</span></a>
-          <a href="/projects" class="btn btn-outline-primary btn-sm" title="Change project"><i class="bi bi-grid-3x3-gap"></i><span class="ui-pb-label">Change</span></a>
-        </nav>
-      </div>
-    <?php elseif ($__pbar === 'none'):
-        /* No project selected. Said here, where the project normally is — everything that
-           works on a project quietly does nothing until one is chosen. The state a new
-           account starts in, and the one after deleting the project you were on. */ ?>
-      <a href="/projects" class="ui-projectbar ui-projectbar-empty text-decoration-none">
-        <i class="bi bi-signpost-split-fill text-warning-emphasis flex-none"></i>
-        <span class="ui-pb-name link-body-emphasis">No project selected — create or choose one to begin</span>
-        <span class="ui-pb-actions"><span class="btn btn-warning btn-sm"><i class="bi bi-grid-3x3-gap"></i><span class="ui-pb-label">Projects</span></span></span>
-      </a>
-    <?php endif; ?>
+    <?php foreach (\app\Chrome::files('bar') as $__part) include $__part; ?>
 
     <?php if (!empty($breadcrumbs)): ?>
     <nav aria-label="breadcrumb" class="px-4 pt-3">

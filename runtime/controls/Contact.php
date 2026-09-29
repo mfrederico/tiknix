@@ -26,7 +26,7 @@ class Contact extends BaseControls\Control {
         // A signed-in member on the platform is sent to the member support desk, which the
         // control plane provides (Contact::$memberDesk, lib/controlplane.php). An app's own
         // /contact is its form for everyone.
-        if (!empty($this->member->id) && self::$memberDesk !== null) {
+        if (Flight::isLoggedIn() && self::$memberDesk !== null) {   // a guest carries the public-user bean, which has an id
             Flight::redirect(self::$memberDesk);
             return;
         }

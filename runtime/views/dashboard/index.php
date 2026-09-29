@@ -175,6 +175,7 @@ if (!empty($billing)):
    building an app, not for the people using one, and everybody lands here. Building
    happens in the Builder, so the dashboard just points at help. */
 ?>
+<?php if (is_control_plane()): /* the platform's docs and help centre */ ?>
 <div class="ui-panel mt-4">
     <div class="ui-panel-header"><h3><i class="bi bi-life-preserver text-primary me-2"></i>Need a hand?</h3></div>
     <div class="ui-panel-body">
@@ -185,6 +186,7 @@ if (!empty($billing)):
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <style>
 /* Feature panel — subtle primary tint that adapts to the active theme */

@@ -24,11 +24,11 @@
     <a href="https://tiknix.com/auth/login/" style="text-decoration:underline">tiknix workspace</a>.
   </div>
 
-  <?php include __DIR__ . '/../partials/connected-services.php'; ?>
+  <?php include \Flight::view()->getTemplate('partials/connected-services'); ?>
 
   <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em">Pipelines &amp; automations</h2>
   <?php
     $canRun = false;
-    include __DIR__ . '/../partials/pipeline-automations.php';
+    include \Flight::view()->getTemplate('partials/pipeline-automations');
   ?>
 </div>

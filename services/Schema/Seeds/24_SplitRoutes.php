@@ -5,9 +5,13 @@
  *   helpdesk::*  the member support desk, split out of Contact (was contact::ask, members)
  *   signup::*    invitation acceptance and card-on-file completion, split out of Auth (public)
  *   fleet::*     the per-instance unattended-build page, split out of Admin (admins)
+ *   help::*, docs::*  the platform's help centre and documentation, moved from the runtime's
+ *                seed 02 when the controllers came back to the control plane (public)
  */
 echo '  authcontrol: helpdesk::* => ' . \app\PermissionCache::seedRule('helpdesk', '*', 100, 'Member support desk (signed-in members)') . "\n";
 // /signup/invite and /signup/complete: public, as /auth/invite and /auth/complete were.
 echo '  authcontrol: signup::* => ' . \app\PermissionCache::seedRule('signup', '*', 101, 'Platform sign-up: invitations and card-on-file completion (public)') . "\n";
 // /fleet — the per-instance unattended-build switch, moved from /admin/instances (admins).
 echo '  authcontrol: fleet::* => ' . \app\PermissionCache::seedRule('fleet', '*', 50, 'Every project: unattended builds (admins)') . "\n";
+echo '  authcontrol: help::* => ' . \app\PermissionCache::seedRule('help', '*', 101, 'Help pages') . "\n";
+echo '  authcontrol: docs::* => ' . \app\PermissionCache::seedRule('docs', '*', 101, 'Documentation') . "\n";

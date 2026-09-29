@@ -147,9 +147,11 @@ curl -X POST <?= htmlspecialchars($mcpUrl ?? '') ?> \
             </h5>
         </div>
         <div class="card-body">
+<?php if (is_control_plane()): /* Agent Setup is the platform's */ ?>
             <a href="/agentsetup" class="btn btn-outline-primary me-2">
                 <i class="bi bi-gear"></i> Agent Setup
             </a>
+<?php endif; ?>
             <a href="/apikeys" class="btn btn-outline-secondary">
                 <i class="bi bi-key"></i> Manage API Keys
             </a>

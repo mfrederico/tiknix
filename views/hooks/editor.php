@@ -76,7 +76,7 @@ $isEdit = !$isNew;
                         <?php
                         $editorCode = $code ?? '';
                         $editorHeight = '500px';
-                        include dirname(__DIR__) . '/components/php-editor.php';
+                        include \Flight::view()->getTemplate('components/php-editor');
                         ?>
 
                         <div class="p-3 border-top bg-light d-flex gap-2">

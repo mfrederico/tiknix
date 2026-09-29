@@ -191,6 +191,49 @@ controller), BaseTool, ConnectionStore, ConceptCatalog, Dispatcher, InstanceUpda
 CoreDb, Model_Instance, Model_Member — each is a §4 tangle. Not yet on main, not released, no
 instance has it.
 
+## 5b. Step 2 status (2026-09-29, same branch)
+
+The tangles are resolved: **no file under `runtime/` names a control-plane class** (checked
+by a scan of every class reference in `runtime/`). The pattern throughout is one of three:
+
+- **An extension point in the runtime, filled by the control plane.** The runtime class
+  exposes a public static slot (or an interface); `lib/controlplane.php`, loaded only by
+  core's composer `files`, fills it. An app fills none of them and gets the plain behaviour.
+  Slots: `AgentState::$otherProjectDirs`, `ProjectTarget::$resolver`, `Member::$onClose`,
+  `Dashboard::$billingCard`, `Contact::$memberDesk`, `Mcp::$projectScope`,
+  `Mcp::$brokerConnection`, `Leads::$inviteStates`, `Auth::$afterLogin`,
+  `Auth::$registerVia`, `GoogleAuth::$onNewMember`, `Admin::$memberExtension`
+  (`MemberAdminExtension`, implemented by `PlatformMemberAdmin`), and `app\Chrome` — the page
+  shell's four slots (prepare, nav, bar, account) that carry Projects, the project bar,
+  Workspace/Build, Teams, Billing, Help and Docs.
+- **A split**: the platform half of a class became its own control-plane class —
+  `InstanceConnections` (other projects' connection stores), `MemberProjects`,
+  `WorkbenchTool` (task-tool base), `InstanceUpdate::pullBuilds` (shared by
+  `InstanceRepo::syncLive`), and the controllers `Helpdesk` (from Contact), `Signup` (from
+  Auth; `/auth/invite` is now `/signup/invite`), `Fleet` (from `Admin::instances`), and
+  `Invites::lead` (from Leads). Seed 24 gives their routes permission rows.
+- **A role-shaped controller carved in two**: the runtime has an app version of
+  `Connections` (29 of 68 methods), `Index` (install check + coming-soon + lead form) and
+  `Integrations`; core keeps its full copies as **recorded overrides** — the only three, and
+  `OverridesTest` pins that.
+
+Moved back to the control plane because they describe the platform: `Help`, `Docs`,
+`Hooks` (with Agent Setup) and their views. Teams stays control plane; its models stay in
+the runtime. The layouts, partials and components moved into the runtime (two runtime views
+included them by relative path and would have failed in an app); every such include now goes
+through the view resolver, so an app copy wins.
+
+One explicit setting replaces three heuristics: `[app] platform_role = "control-plane"` in
+core's `conf/config.ini`; absent means an app. `is_core_install()`, `builder_tools_enabled()`
+and `control_plane_state()` all derive from it.
+
+Proved: suite 427 green; tiknix2 serves the public pages and redirects the gated ones to
+login; 25 signed-in pages render as the owner; rendered as an app (role off, slots empty) the
+dashboard, Communications, Admin, Contact, MCP and API-keys pages carry no link to a
+control-plane route. Fixed on the way: a guest at `/contact` got the member support page
+(the public-user bean has an id — also true on tiknix.com main); Docs used a constant only the
+web entry point defines. Still pre-existing: `/permissions` has no views.
+
 ## 6. Order of work
 
 1. Move the files in §3 into a `runtime/` directory inside this repo first, with the

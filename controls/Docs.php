@@ -14,7 +14,7 @@ class Docs extends BaseControls\Control {
      * Display main documentation (README)
      */
     public function index() {
-        $readmePath = BASE_PATH . '/README.md';
+        $readmePath = \app\Paths::root() . '/README.md';
         $content = file_exists($readmePath)
             ? $this->parse(file_get_contents($readmePath))
             : '<div class="alert alert-warning">Documentation file not found.</div>';
@@ -59,10 +59,10 @@ class Docs extends BaseControls\Control {
     private function docPath(string $name): string {
         if ($name === '' || substr(strtolower($name), -3) !== '.md') return '';
 
-        $real = realpath(BASE_PATH . '/' . $name);
+        $real = realpath(\app\Paths::root() . '/' . $name);
         if ($real === false || !is_file($real)) return '';
 
-        $root = realpath(BASE_PATH);
+        $root = realpath(\app\Paths::root());
         foreach ([$root, $root . '/docs'] as $allowed) {
             // Root itself holds only top-level docs; docs/ may nest.
             if ($allowed === $root && dirname($real) === $root) return $real;
@@ -119,7 +119,7 @@ class Docs extends BaseControls\Control {
      * Display Workbench documentation
      */
     public function workbench() {
-        $workbenchPath = BASE_PATH . '/docs/WORKBENCH.md';
+        $workbenchPath = \app\Paths::root() . '/docs/WORKBENCH.md';
         $content = '';
 
         if (file_exists($workbenchPath)) {
@@ -138,7 +138,7 @@ class Docs extends BaseControls\Control {
      * Display Caching documentation
      */
     public function caching() {
-        $cachingPath = BASE_PATH . '/docs/CACHING.md';
+        $cachingPath = \app\Paths::root() . '/docs/CACHING.md';
         $content = '';
 
         if (file_exists($cachingPath)) {

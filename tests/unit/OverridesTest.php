@@ -86,16 +86,28 @@ class OverridesTest extends TestCase {
     public function testTheRepositoryLayersResolve(): void {
         $this->assertSame(realpath(dirname(__DIR__, 2)), \app\Paths::root());
         $this->assertSame(realpath(dirname(__DIR__, 2)) . '/runtime', \app\Paths::runtime());
-        foreach (['app\\Bean', 'app\\Sites', 'app\\Help', 'app\\Settings', 'app\\mcptools\\ToolLoader', 'app\\services\\connectors\\ConnectorRegistry', 'app\\Paths', 'Model_Lead'] as $c) {
+        foreach (['app\\Bean', 'app\\Sites', 'app\\Communications', 'app\\Chrome', 'app\\Settings', 'app\\mcptools\\ToolLoader', 'app\\services\\connectors\\ConnectorRegistry', 'app\\Paths', 'Model_Lead'] as $c) {
             $this->assertTrue(class_exists($c), "{$c} autoloads");
             $this->assertStringContainsString('/runtime/', (new \ReflectionClass($c))->getFileName(), "{$c} comes from the runtime");
         }
-        $this->assertStringNotContainsString('/runtime/', (new \ReflectionClass('app\\PlanExecutor'))->getFileName(), 'control plane stays in the app');
+        foreach (['app\\PlanExecutor', 'app\\Help', 'app\\Docs', 'app\\Hooks', 'app\\Teams'] as $c) {
+            $this->assertStringNotContainsString('/runtime/', (new \ReflectionClass($c))->getFileName(), "{$c} is the control plane's");
+        }
         // Core overrides exactly the three role-shaped controllers (RUNTIME-SPLIT-MAP.md step
         // 2): its marketing home, its builder hub for other projects, and the hub's
         // integrations — each recorded, so a runtime change to the app version shows STALE.
         $this->assertSame(['controls/Connections.php', 'controls/Index.php', 'controls/Integrations.php'],
             Overrides::shadowing(\app\Paths::root(), \app\Paths::runtime()));
         foreach (Overrides::report() as $rel => $r) $this->assertSame('current', $r['status'], $rel);
+    }
+
+    /** The page shell's extension points: the control plane fills them; a slot name that does not exist is refused. */
+    public function testChromeSlots(): void {
+        foreach (['prepare', 'nav', 'bar', 'account'] as $slot) {
+            $this->assertSame(["platform/chrome_{$slot}"], \app\Chrome::$parts[$slot] ?? null, "lib/controlplane.php fills '{$slot}'");
+            foreach (\app\Chrome::files($slot) as $f) $this->assertStringNotContainsString('/runtime/', $f);
+        }
+        $this->expectException(\InvalidArgumentException::class);
+        \app\Chrome::add('footer', 'x');
     }
 }

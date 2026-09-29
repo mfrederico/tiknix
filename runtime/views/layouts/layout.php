@@ -20,7 +20,7 @@
     <!-- Custom CSS (tiknix-specific; loaded before the design system so tokens win) -->
     <link href="/css/app.css" rel="stylesheet">
     <!-- Shared design system — MUST load last so its :root overrides win -->
-    <?php include __DIR__ . '/../components/design-system.php'; ?>
+    <?php include \Flight::view()->getTemplate('components/design-system'); ?>
 
     <!-- Additional CSS -->
     <?php if (isset($additional_css)): ?>

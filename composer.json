@@ -33,6 +33,7 @@
         "pragmarx/google2fa": "^8.0",
         "symfony/http-client": "^6.0",
         "symfony/yaml": "^8.1",
+        "tiknix/runtime": "*@dev",
         "tiknix/sidecar-kit": "^0.1.0",
         "translatify/translatify": "^0.1",
         "vlucas/phpdotenv": "^5.5"
@@ -51,30 +52,17 @@
         "psr-4": {
             "app\\": [
                 "controls/",
-                "lib/",
-                "runtime/controls/",
-                "runtime/lib/"
+                "lib/"
             ],
             "app\\Models\\": "models/",
-            "app\\BaseControls\\": [
-                "controls/BaseControls/",
-                "runtime/controls/BaseControls/"
-            ],
-            "app\\mcptools\\": [
-                "mcptools/",
-                "runtime/mcptools/"
-            ],
-            "app\\services\\": [
-                "services/",
-                "runtime/services/"
-            ]
+            "app\\BaseControls\\": "controls/BaseControls/",
+            "app\\mcptools\\": "mcptools/",
+            "app\\services\\": "services/"
         },
         "classmap": [
-            "models/",
-            "runtime/models/"
+            "models/"
         ],
         "files": [
-            "runtime/lib/functions.php",
             "lib/controlplane.php"
         ]
     },
@@ -102,6 +90,13 @@
         "sidecar-kit": {
             "type": "vcs",
             "url": "git@github.com:mfrederico/sidecar-kit.tiknix.git"
+        },
+        "tiknix-runtime": {
+            "type": "path",
+            "url": "../tiknix-runtime",
+            "options": {
+                "symlink": true
+            }
         }
     }
 }

@@ -82,16 +82,19 @@ class OverridesTest extends TestCase {
         $this->assertSame('/abs/concept/view.php', $v->getTemplate('/abs/concept/view.php'), 'absolute paths untouched');
     }
 
-    /** In this repository: every runtime controller and library class resolves, and nothing overrides anything yet. */
+    /** In this repository: runtime classes come from the package, control-plane classes from core, and core overrides exactly three files. */
     public function testTheRepositoryLayersResolve(): void {
         $this->assertSame(realpath(dirname(__DIR__, 2)), \app\Paths::root());
-        $this->assertSame(realpath(dirname(__DIR__, 2)) . '/runtime', \app\Paths::runtime());
+        // The runtime is the tiknix/runtime package (vendor/tiknix/runtime; a symlink to its
+        // checkout while core develops it through a path repository).
+        $this->assertSame(realpath(dirname(__DIR__, 2) . '/vendor/tiknix/runtime'), \app\Paths::runtime());
+        $fromRuntime = fn(string $c) => str_starts_with((string) realpath((new \ReflectionClass($c))->getFileName()), \app\Paths::runtime() . '/');
         foreach (['app\\Bean', 'app\\Sites', 'app\\Communications', 'app\\Chrome', 'app\\Settings', 'app\\mcptools\\ToolLoader', 'app\\services\\connectors\\ConnectorRegistry', 'app\\Paths', 'Model_Lead'] as $c) {
             $this->assertTrue(class_exists($c), "{$c} autoloads");
-            $this->assertStringContainsString('/runtime/', (new \ReflectionClass($c))->getFileName(), "{$c} comes from the runtime");
+            $this->assertTrue($fromRuntime($c), "{$c} comes from the runtime");
         }
         foreach (['app\\PlanExecutor', 'app\\Help', 'app\\Docs', 'app\\Hooks', 'app\\Teams'] as $c) {
-            $this->assertStringNotContainsString('/runtime/', (new \ReflectionClass($c))->getFileName(), "{$c} is the control plane's");
+            $this->assertFalse($fromRuntime($c), "{$c} is the control plane's");
         }
         // Core overrides exactly the three role-shaped controllers (RUNTIME-SPLIT-MAP.md step
         // 2): its marketing home, its builder hub for other projects, and the hub's
@@ -105,7 +108,7 @@ class OverridesTest extends TestCase {
     public function testChromeSlots(): void {
         foreach (['prepare', 'nav', 'bar', 'account'] as $slot) {
             $this->assertSame(["platform/chrome_{$slot}"], \app\Chrome::$parts[$slot] ?? null, "lib/controlplane.php fills '{$slot}'");
-            foreach (\app\Chrome::files($slot) as $f) $this->assertStringNotContainsString('/runtime/', $f);
+            foreach (\app\Chrome::files($slot) as $f) $this->assertStringStartsWith(\app\Paths::root() . '/views/', (string) realpath($f));
         }
         $this->expectException(\InvalidArgumentException::class);
         \app\Chrome::add('footer', 'x');

@@ -53,7 +53,7 @@ class ValidatorToolsTest extends TestCase {
     }
 
     public function testARelativePathIsThisInstalls(): void {
-        $r = $this->run_(new ValidatePhpTool(), ['path' => 'runtime/lib/Bean.php']);
+        $r = $this->run_(new ValidatePhpTool(), ['path' => 'lib/controlplane.php']);
         $this->assertTrue($r['valid'], implode("\n", $r['errors']));
         $this->assertTrue($this->run_(new ValidatePhpTool(), ['path' => 'mcptools'])['valid'], 'a directory is checked file by file');
     }

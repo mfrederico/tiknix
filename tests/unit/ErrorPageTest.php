@@ -15,7 +15,7 @@ class ErrorPageTest extends TestCase {
     private const BROWSER_THRESHOLD = 512;
 
     public static function setUpBeforeClass(): void {
-        require_once dirname(__DIR__, 2) . '/runtime/lib/fatal-handler.php';
+        require_once \app\Paths::runtime() . '/lib/fatal-handler.php';
     }
 
     public function testTheLastResortPageIsBigEnoughToBeShown(): void {
@@ -38,7 +38,7 @@ class ErrorPageTest extends TestCase {
 
     /** @dataProvider errorViews */
     public function testEveryErrorViewIsBigEnoughToBeShown(string $view): void {
-        $file = dirname(__DIR__, 2) . "/runtime/views/error/{$view}.php";
+        $file = \app\Paths::runtime() . "/views/error/{$view}.php";
         $this->assertFileExists($file);
         // The source is a floor for the rendered page: the markup and CSS are static, and the
         // PHP in these views only ever adds to them.

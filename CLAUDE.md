@@ -6,7 +6,7 @@
 1. **Check logs first** when something misbehaves: the `last_error` MCP tool (newest ERROR with what preceded it), or `tail -50 log/app-$(date +%Y-%m-%d).log`
 2. Use the CLI tool for DB ops: `php scripts/clitool.php --help` (see [CLI Tool](#cli-tool))
 3. **No explicit routes** — `Flight::defaultRoute()` auto-routes `/controller/method`
-4. Use the `Bean::` wrapper (`runtime/lib/Bean.php`), never `R::` directly (except bootstrap + schema seeds)
+4. Use the `Bean::` wrapper (`vendor/tiknix/runtime/lib/Bean.php`), never `R::` directly (except bootstrap + schema seeds)
 5. String external IDs use the `_eid` suffix, never `_id` (reserved for RedBeanPHP integer FKs)
 6. **No fallbacks. Fail loudly.** When something required is missing or wrong, raise or log
    an ERROR that names it. Never substitute a placeholder, a default, or the nearest working
@@ -150,7 +150,7 @@ This project uses FlightPHP and RedBeanPHP. You MUST follow these conventions st
 > **Official Documentation**: https://redbeanphp.com/
 > Always refer to the official docs for the most accurate information.
 
-### Bean Wrapper Class (runtime/lib/Bean.php) — REQUIRED
+### Bean Wrapper Class (vendor/tiknix/runtime/lib/Bean.php) — REQUIRED
 
 **ALWAYS use `Bean::` for database operations. Never call `R::` directly.**
 
@@ -233,8 +233,8 @@ $conn->external_eid = 'acme-store.myshopify.com';
 
 Use `_ref` (not `_id`) when the target is a real row but a FOREIGN KEY would be harmful:
 - The bean type is **plural** (`connections`), so `connection_id` would point at a bean
-  type `connection` that does not exist — see `runtime/services/Schema/Seeds/04_ExternalIdentity.php`
-  and `runtime/lib/Mentions.php` (`thread_ref`, `message_ref`).
+  type `connection` that does not exist — see `vendor/tiknix/runtime/services/Schema/Seeds/04_ExternalIdentity.php`
+  and `vendor/tiknix/runtime/lib/Mentions.php` (`thread_ref`, `message_ref`).
 - The parent is **hard deleted** (`Bean::trash`), and SQLite's default `NO ACTION` would
   make that delete fail forever — e.g. `externalidentity.member_ref`.
 
@@ -469,44 +469,47 @@ Lower number = higher privilege. Check with `Flight::hasLevel(LEVELS['ADMIN'])`.
 
 ## File Structure — the runtime and the app
 
-tiknix is being split into a **runtime** every app runs on and the **app** itself
-(RUNTIME-SPLIT-MAP.md). The runtime lives in `runtime/` (later `vendor/tiknix/runtime/`, a
-versioned package); the app is everything else at the root.
+A tiknix app is a Composer project that requires the **runtime**, `tiknix/runtime`
+(RUNTIME-SPLIT-MAP.md). The runtime is installed at `vendor/tiknix/runtime/`, a versioned
+package; the app is everything else at the root.
 
 ```
-runtime/controls, runtime/lib, runtime/models,       the RUNTIME: primitives (Bean, Sites, Mailer,
-runtime/services, runtime/mcptools, runtime/views    ConnectionBindings…), stock pages, MCP tools,
-                                                     pipelines, connectors, runtime seeds
-/controls /lib /models /services /mcptools /views    the APP's own code
-/concepts /connectors                                installed plugins and connector manifests
-/conf /data /database /secure /log /public           the app's config, data and web root
-/routes                                              route bootstraps (Flight::defaultRoute())
+vendor/tiknix/runtime/{controls,lib,models,       the RUNTIME: primitives (Bean, Sites, Mailer,
+  services,mcptools,views,routes,bin,public}      ConnectionBindings…), stock pages, MCP tools,
+                                                  pipelines, connectors, runtime seeds, commands
+/controls /lib /models /services /mcptools /views the APP's own code
+/routes                                           the app's route files (routes/<segment>.php)
+/concepts /connectors                             installed plugins and connector manifests
+/conf /data /database /secure /log /public        the app's config, data and web root
+/scripts/clitool.php …                            one-line doors to the runtime's commands
+/public/rt                                        the runtime's assets (a link into the package)
 ```
 
-**Never edit a file under `runtime/`.** The runtime is upgraded as a whole; an edit there is
-overwritten by the next update. To change a runtime page, controller or library:
+**Never edit a file under `vendor/tiknix/runtime/`.** The runtime is upgraded as a whole; an
+edit there is overwritten by the next update. To change a runtime page, controller or library:
 
 1. **Extend it** — a slot, a setting, or your own class that calls the runtime's. Always first.
 2. **Override it** — `php scripts/clitool.php --override=controls/Help.php` copies the runtime
    file to the same path in the app. The app's file then REPLACES the runtime's (controllers
-   and libraries through the autoloader, views through the view resolver, seeds by file name).
-   An overridden file is **never upgraded again**: `--update` moves the rest of the runtime and
-   names the override STALE when the runtime changed it; its owner reconciles it by hand and
-   runs `--override-record=<path>`. `--overrides` lists them all. Override the smallest thing
-   that works — a view, not its controller.
+   and libraries through the autoloader, views through the view resolver, seeds, route files
+   and agent guidance sections by file name). An overridden file is **never upgraded again**:
+   `--update` moves the rest of the runtime and names the override STALE when the runtime
+   changed it; its owner reconciles it by hand and runs `--override-record=<path>`.
+   `--overrides` lists them all. Override the smallest thing that works — a view, not its
+   controller.
 
 Find the app root with `\app\Paths::root()` and the runtime's tree with
 `\app\Paths::runtime()` — never `dirname(__DIR__)`, which means a different directory
-depending on where a file lives.
+depending on where a file lives. Runtime commands run from the app root.
 
 ## Code Validation Hook
 
-A validation hook at `scripts/hooks/validate-tiknix-php.php` (wired up as a `Write|Edit`
+A validation hook at `scripts/hooks/validate-tiknix-php.php` (the app's door to the runtime's `bin/hooks/validate-tiknix-php.php`) (wired up as a `Write|Edit`
 PreToolUse hook in `.claude/settings.json`) enforces these standards:
 - **Blocks** on raw `R::<method>` where `Bean::` wraps it — see the table above. Methods
   `Bean::` does NOT wrap (`setup`, `close`, `testConnection`, `getWriter`, `nuke`) pass,
   because blocking a call with no alternative just teaches people to route around the hook.
-  Allowlisted files: `bootstrap.php`, `services/Schema/Seeds/*.php`, `runtime/lib/Bean.php`.
+  Allowlisted files: the runtime's own `lib/Bootstrap.php` and `lib/Bean.php`, and `services/Schema/Seeds/*.php`.
 - **Blocks** on invalid `R::dispense` bean names (underscores, uppercase)
 - **Warns** on `exec` for CRUD — `Bean::exec` too, not just `R::exec`: the wrapper bypasses
   FUSE models exactly the same way, and checking only `R::` meant converting a file to the
@@ -582,7 +585,7 @@ two_factor_enforce = true   ; false = OPTIONAL (eligible users prompted but can 
 - **enabled=true, enforce=false** → optional: eligible users are prompted at login but may hit **Skip for now** (`/auth/twofaskip`, session-scoped); anyone who opts in still verifies each login.
 - **enabled=true, enforce=true** → required for `REQUIRED_LEVELS` (default, secure).
 
-The enforcement choke points are `TwoFactorAuth::needsSetup()` / `needsVerification()`; policy is read via `policyEnabled()` / `policyEnforced()`. Level scope in `runtime/lib/TwoFactorAuth.php`:
+The enforcement choke points are `TwoFactorAuth::needsSetup()` / `needsVerification()`; policy is read via `policyEnabled()` / `policyEnforced()`. Level scope in `vendor/tiknix/runtime/lib/TwoFactorAuth.php`:
 
 ```php
 public const TRUST_DURATION = 30 * 24 * 60 * 60;  // 30 days device trust
@@ -597,7 +600,7 @@ public const REQUIRED_LEVELS = [1, 50];            // ROOT, ADMIN in scope for 2
 5. Device trusted for 30 days (no 2FA prompt on same device)
 
 **Key files:**
-- `runtime/lib/TwoFactorAuth.php` - Core 2FA logic
+- `vendor/tiknix/runtime/lib/TwoFactorAuth.php` - Core 2FA logic
 - `views/auth/2fa-setup.php` - QR code setup page
 - `views/auth/2fa-verify.php` - Login verification page
 - `views/auth/2fa-recovery-codes.php` - Recovery codes display
@@ -614,7 +617,7 @@ Available in all views via `lib/functions.php`:
 
 ## Email (Mailer)
 
-Mail is a CONNECTION, not config. `runtime/lib/Mailer.php`, the comms inbox (`runtime/services/NotifyService.php`)
+Mail is a CONNECTION, not config. `vendor/tiknix/runtime/lib/Mailer.php`, the comms inbox (`vendor/tiknix/runtime/services/NotifyService.php`)
 and `/webhook/mailgun` all read `Mailer::settings()`: the install's Mailgun connection bound to
 core's `mail` role (`ConnectionBindings::for('core', 'mail')`). Connect one under Connections →
 Mailgun (private API key + sending domain; optional from-address, inbound domain, webhook

@@ -104,7 +104,7 @@ class MailSettingsTest extends ConceptsTestCase {
     public function testTheSeedMigratesAnIniOnceAndThenKeeps(): void {
         // The seed reads <app root>/conf/mailgun.ini, and the app root is \app\Paths::root():
         // point that at this test's root and run the real seed file.
-        $file = dirname(__DIR__, 2) . '/runtime/services/Schema/Seeds/23_MailConnection.php';
+        $file = \app\Paths::runtime() . '/services/Schema/Seeds/23_MailConnection.php';
         \app\Paths::useRoot($this->root);
         $this->addToAssertionCount(1);
 

@@ -6,6 +6,6 @@
  *      breaks afterwards (the autoloader included) still ends in a real page;
  *   2. this app's Composer autoloader.
  */
-require __DIR__ . '/../runtime/lib/fatal-handler.php';
+require __DIR__ . '/../vendor/tiknix/runtime/lib/fatal-handler.php';
 require __DIR__ . '/../vendor/autoload.php';
 \app\Front::serve();

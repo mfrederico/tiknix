@@ -135,7 +135,7 @@ class ConceptToolsTest extends ConceptsTestCase {
     }
 
     public function testCoreToolsStayVisibleToEveryone(): void {
-        $l = new ToolLoader(dirname(__DIR__, 2) . '/runtime/mcptools');
+        $l = new ToolLoader(\app\Paths::runtime() . '/mcptools');
         $this->assertContains('reuse_digest', $l->getNames(), 'no auth set: core tools are ungated by the loader');
     }
 

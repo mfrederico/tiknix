@@ -155,6 +155,42 @@ every `is_core_install / builder_tools_enabled / is_control_plane` branch (18 fi
    control plane's tables (`instance`, `workbenchtask`, `plan`, …) because it was cloned
    from core's database.
 
+## 5a. Step 1 status (2026-09-29, branch `runtime-split`, served at tiknix2.tiknix.com)
+
+Built on its own branch in a worktree at `/var/www/html/default/tiknix2.tiknix`, which serves
+**tiknix2.tiknix.com** with its own copies of core's config, databases and keys (owner's
+suggestion: keep tiknix.com untouched while the split is proven). Done:
+
+- 216 runtime files and 17 view directories moved into `runtime/` with `git mv` (history
+  follows): lib (incl. Pipeline, Scaffold), controls, models, services (connectors, Config,
+  the schema builder, 18 runtime seeds), mcptools, views.
+- **Override rule, implemented:** composer's psr-4 and classmap list the app's directories
+  before `runtime/`; `app\LayeredView` resolves views app-first; the seed builder runs both
+  seed directories as one numbered sequence (an app seed of the same name wins); the MCP
+  tool loader discovers both (the app's tool of the same name wins); the router accepts
+  controllers from both `controls/` directories.
+- **Owner's rule on overrides:** `app\Overrides` + `overrides.lock` — an app file at a runtime
+  path replaces it and is never upgraded again; `--update` still moves the runtime and names
+  each override that fell behind as STALE (not a failure); `clitool --overrides`,
+  `--override=PATH` (copy + record), `--override-record=PATH` (re-baseline after reconciling).
+- `app\Paths::root()` (Composer's root package) replaced 41 location-relative root lookups;
+  `Paths::runtime()` is the runtime's own tree.
+- Guidance: "never edit runtime/; extend, else override the smallest file" (100-file-structure).
+- `tests/run.sh` clears git's environment: under the commit hook in a worktree, GIT_DIR is
+  absolute and tests that build temp repositories wrote into this one (on main it is the
+  relative `.git` and works by luck — the same class as the 2026-09-28 incident).
+
+Proved: suite 426 green (3 skips are `is_core_install()` deciding by the directory name
+"tiknix2.tiknix" — that helper is deleted in step 2); tiknix2 serves `/`, `/auth/login`,
+`/help`, `/docs`, `/privacy`, `/terms`, `/site/status` from runtime controllers and views; 19
+signed-in pages render as the owner. Found, pre-existing on tiknix.com too: `/permissions`
+has no views at all, `/mcp/registry` 500s (`app\Mcpregistry` missing).
+
+Step-2 debt (moved files that still reference classes left behind): Control (base
+controller), BaseTool, ConnectionStore, ConceptCatalog, Dispatcher, InstanceUpdate, Redact,
+CoreDb, Model_Instance, Model_Member — each is a §4 tangle. Not yet on main, not released, no
+instance has it.
+
 ## 6. Order of work
 
 1. Move the files in §3 into a `runtime/` directory inside this repo first, with the

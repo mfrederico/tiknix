@@ -1,0 +1,141 @@
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <h1 class="mb-4">Contact Support</h1>
+            
+            <?php if ($success ?? false): ?>
+                <div class="alert alert-success">
+                    <h4 class="alert-heading">Thank you for contacting us!</h4>
+                    <p>Your message has been received and our support team will review it shortly.</p>
+                    <hr>
+                    <p class="mb-0">We typically respond within 24-48 hours. If your issue is urgent, please indicate that in your message.</p>
+                </div>
+                <a href="/" class="btn btn-primary">Return to Home</a>
+            <?php else: ?>
+                
+                <?php if (!empty($errors)): ?>
+                    <div class="alert alert-danger">
+                        <h4 class="alert-heading">Please fix the following errors:</h4>
+                        <ul class="mb-0">
+                            <?php foreach ($errors as $error): ?>
+                                <li><?= htmlspecialchars(($error) ?? '') ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
+                
+                <div class="card">
+                    <div class="card-body">
+                        <form method="POST" action="/contact/submit">
+                            <?php
+                            // Include CSRF token if available
+                            if (isset($csrf) && is_array($csrf)):
+                                foreach ($csrf as $name => $value): ?>
+                                    <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
+                                <?php endforeach;
+                            endif;
+                            ?>
+                            
+                            <?php
+                            /* Bot defences that cost a person nothing. The honeypot is
+                               hidden from people and irresistible to form-fillers; the
+                               timestamp catches a submission that arrived faster than
+                               anyone could have typed it. Both are checked in
+                               Contact::submit(). Do not add a label or a placeholder —
+                               a screen reader would read them out, and a bot reads
+                               them too. */
+                            ?>
+                            <div aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden">
+                                <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off" value=""></label>
+                            </div>
+                            <input type="hidden" name="form_ts" value="<?= time() ?>">
+
+                            <?php $__tsKey = \app\Turnstile::siteKey(); if ($__tsKey !== ''): ?>
+                            <div class="mb-3 text-center" id="ts-gate">
+                                <p class="text-muted small mb-2">Please verify you're human to continue.</p>
+                                <?= \app\Turnstile::widget(['callback' => 'tsVerified', 'expired_callback' => 'tsReset', 'error_callback' => 'tsReset', 'class' => 'd-inline-block']) ?>
+                            </div>
+                            <div id="contact-fields" hidden>
+                            <?php endif; ?>
+
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Your Name <span class="text-danger">*</span></label>
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="name" 
+                                       name="name" 
+                                       value="<?= htmlspecialchars($data['name'] ?? member_display_name($_SESSION['member'] ?? null)) ?>"
+                                       required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email Address <span class="text-danger">*</span></label>
+                                <input type="email" 
+                                       class="form-control" 
+                                       id="email" 
+                                       name="email" 
+                                       value="<?= htmlspecialchars($data['email'] ?? $_SESSION['member']['email'] ?? '') ?>" 
+                                       required>
+                                <small class="form-text text-muted">We'll use this to respond to your inquiry</small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="category" class="form-label">Category</label>
+                                <select class="form-select" id="category" name="category">
+                                    <option value="general" <?= ($data['category'] ?? '') === 'general' ? 'selected' : '' ?>>General Inquiry</option>
+                                    <option value="support" <?= ($data['category'] ?? '') === 'support' ? 'selected' : '' ?>>Technical Support</option>
+                                    <option value="billing" <?= ($data['category'] ?? '') === 'billing' ? 'selected' : '' ?>>Billing Question</option>
+                                    <option value="feature" <?= ($data['category'] ?? '') === 'feature' ? 'selected' : '' ?>>Feature Request</option>
+                                    <option value="bug" <?= ($data['category'] ?? '') === 'bug' ? 'selected' : '' ?>>Bug Report</option>
+                                    <option value="other" <?= ($data['category'] ?? '') === 'other' ? 'selected' : '' ?>>Other</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="subject" class="form-label">Subject <span class="text-danger">*</span></label>
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="subject" 
+                                       name="subject" 
+                                       value="<?= htmlspecialchars($data['subject'] ?? '') ?>" 
+                                       required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="message" class="form-label">Message <span class="text-danger">*</span></label>
+                                <textarea class="form-control" 
+                                          id="message" 
+                                          name="message" 
+                                          rows="8" 
+                                          required><?= htmlspecialchars($data['message'] ?? '') ?></textarea>
+                                <small class="form-text text-muted">Please provide as much detail as possible</small>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-envelope-fill"></i> Send Message
+                                </button>
+                                <a href="/" class="btn btn-outline-secondary">Cancel</a>
+                            </div>
+
+                            <?php if (!empty($__tsKey)): ?>
+                            </div><!-- /#contact-fields -->
+                            <?php /* api.js is emitted by Turnstile::widget() above. */ ?>
+                            <script>
+                              // Reveal the form only after Turnstile fires its success hook; hide again on expire/error.
+                              function tsVerified(){ var f=document.getElementById('contact-fields'); if(f){f.hidden=false;}
+                                var g=document.getElementById('ts-gate'); if(g){var p=g.querySelector('p'); if(p){p.innerHTML='<span class="text-success">Verified &#10003;</span>';}} }
+                              function tsReset(){ var f=document.getElementById('contact-fields'); if(f){f.hidden=true;} }
+                            </script>
+                            <?php endif; ?>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="mt-4 text-center text-muted">
+                    <p><i class="bi bi-info-circle"></i> Need immediate assistance? Check our <a href="/help">Help Center</a> for quick answers.</p>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>

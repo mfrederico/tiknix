@@ -22,6 +22,15 @@ namespace app;
 
 class AgentState {
 
+    /**
+     * The control plane's answer to "which other project directories does this member own?"
+     * — callable(int $memberId): string[]. Set at boot by lib/controlplane.php; null in an app,
+     * which has no other projects to look in.
+     * @var callable|null
+     */
+    public static $otherProjectDirs = null;
+
+
     /** Where per-member stores live. Outside the web root and outside any instance. */
     private const DEFAULT_BASE = '/home/ubuntu/.tiknix/agent-state';
 
@@ -106,26 +115,19 @@ class AgentState {
         $here = self::projectDir($instanceDir, $engine);
         if (is_file($here . '/.credentials.json')) return $here;
 
+        // The member's OTHER projects are the control plane's knowledge (its registry), not
+        // the runtime's: it supplies them through AgentState::$otherProjectDirs at boot
+        // (lib/controlplane.php). Without it — an app in its own container — there is no
+        // other project to adopt from, and the member signs in here.
+        if (self::$otherProjectDirs === null) return '';
         $best = ''; $bestAt = 0;
-        try {
-            $pdo = new \PDO('sqlite:' . \app\Paths::root() . '/database/tiknix.db');
-            $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-            $st = $pdo->prepare('SELECT slug, app FROM instance WHERE member_id = ?');
-            $st->execute([$memberId]);
-            foreach ($st->fetchAll(\PDO::FETCH_ASSOC) as $row) {
-                $dir  = \Model_Instance::dirForSlug((string) $row['slug'], (string) ($row['app'] ?: 'tiknix'));
-                $cand = self::projectDir($dir, $engine);
-                $file = $cand . '/.credentials.json';
-                if (!is_file($file)) continue;
-                $at = (int) @filemtime($file);
-                if ($at > $bestAt) { $best = $cand; $bestAt = $at; }
-            }
-        } catch (\Throwable $e) {
-            // "Nothing to adopt" and "could not look" are different answers; this one means
-            // the member will be asked to /login again, so say why.
-            error_log('ERROR AgentState: could not read the instance registry to adopt an existing login (' . \app\Paths::root() . '/database/tiknix.db): ' . $e->getMessage());
+        foreach ((self::$otherProjectDirs)($memberId) as $dir) {
+            $cand = self::projectDir($dir, $engine);
+            $file = $cand . '/.credentials.json';
+            if (!is_file($file)) continue;
+            $at = (int) @filemtime($file);
+            if ($at > $bestAt) { $best = $cand; $bestAt = $at; }
         }
-
         return $best;
     }
 

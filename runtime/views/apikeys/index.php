@@ -215,7 +215,7 @@ claude mcp list
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
                 <h5 class="modal-title"><i class="bi bi-plug"></i> Use API Key with Claude Code</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" aria-label="Close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <p>Add <strong id="useKeyName"></strong> to Claude Code:</p>
@@ -261,7 +261,7 @@ claude mcp list
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Regenerate API Key</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div id="regenerateConfirm">

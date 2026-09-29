@@ -64,7 +64,7 @@ class ConnectionStore {
     private static string $openedFor = '';
 
     private static function root(): string {
-        return self::$root !== '' ? self::$root : dirname(__DIR__);
+        return self::$root !== '' ? self::$root : \app\Paths::root();
     }
 
     /** Where the credentials live. Gitignored, like data/workbench.db. */

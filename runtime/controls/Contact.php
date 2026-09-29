@@ -242,7 +242,7 @@ class Contact extends BaseControls\Control {
         $messages = Bean::findAll('contact', $sql, $params);
         
         $this->render('contact/admin', [
-            'title' => 'Contact Messages',
+            'title' => 'Support messages',
             'messages' => $messages,
             'page' => $page,
             'total' => $total,

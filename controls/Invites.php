@@ -34,12 +34,7 @@ class Invites extends Control {
         // explained on the page — bouncing a granted member with a 403 would tell them
         // nothing about the one thing they need to do to unlock it.
         if (!Feature::allows(Invite::FLAG, (int) $this->member->id, (int) $this->member->level)) {
-            $this->logger->warning('Ungranted member attempted to reach invitations', [
-                'member_id' => $this->member->id, 'member_level' => $this->member->level,
-            ]);
-            http_response_code(403);   // see Mcptools: status() alone is not flushed before exit
-            Flight::renderView('error/403', ['title' => '403 - Forbidden']);
-            exit;
+            $this->forbid('Ungranted member attempted to reach invitations', ['feature' => Invite::FLAG]);
         }
     }
 

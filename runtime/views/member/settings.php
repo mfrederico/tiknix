@@ -285,7 +285,7 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title text-danger">Close your account</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="alert alert-danger">
@@ -347,7 +347,7 @@
                 <?php endif; ?>
                 <div class="modal-header">
                     <h5 class="modal-title">Disable Two-Factor Authentication</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="alert alert-warning">
@@ -380,7 +380,7 @@
                 <?php endif; ?>
                 <div class="modal-header">
                     <h5 class="modal-title">Regenerate Recovery Codes</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="alert alert-info">

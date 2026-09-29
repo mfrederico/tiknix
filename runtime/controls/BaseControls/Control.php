@@ -177,6 +177,25 @@ abstract class Control {
     /**
      * Check if user is logged in
      */
+    /**
+     * Refuse this request with a real 403 page and stop. For a gate the permission table
+     * cannot express (a per-member feature grant). The status is set with
+     * http_response_code(), not Flight::response()->status(): renderView echoes straight
+     * out, so Flight's response object is never sent and its status never reaches the wire
+     * — a refusal that says Forbidden on the page and 200 on the status line is invisible to
+     * logs, monitors and every client. The exit is what makes the status stick; a gate that
+     * rendered the page and returned was served as 200 (Agent Setup, 2026-09-29).
+     */
+    protected function forbid(string $why, array $context = []): never {
+        $this->logger->warning($why, $context + [
+            'member_id' => $this->member->id ?? null, 'member_level' => $this->member->level ?? null,
+            'path' => Flight::request()->url,
+        ]);
+        http_response_code(403);
+        Flight::renderView('error/403', ['title' => '403 - Forbidden']);
+        exit;
+    }
+
     protected function requireLogin() {
         if (!Flight::isLoggedIn()) {
             $this->logger->debug('Login required');

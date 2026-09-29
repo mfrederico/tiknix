@@ -42,14 +42,7 @@ class Apikeys extends Control {
         // it can be edited, and it has to sit at MEMBER for a grant to be reachable at
         // all, so the code gate is what actually holds.
         if (!Feature::allows('mcp', (int) $this->member->id, (int) $this->member->level)) {
-            $this->logger->warning('Ungranted member attempted to reach API key management', [
-                'member_id' => $this->member->id, 'member_level' => $this->member->level,
-                'feature'   => 'mcp',
-                'path'      => Flight::request()->url,
-            ]);
-            http_response_code(403);   // see Mcptools: status() alone is not flushed before exit
-            Flight::renderView('error/403', ['title' => '403 - Forbidden']);
-            exit;
+            $this->forbid('Ungranted member attempted to reach API key management', ['feature' => 'mcp']);
         }
     }
 

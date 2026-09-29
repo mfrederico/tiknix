@@ -10,6 +10,14 @@ use \Exception as Exception;
 use app\BaseControls\Control;
 
 class Member extends Control {
+
+    /**
+     * What else closing an account ends — callable(int $memberId): array{deleted:array,failed:array}.
+     * Set by the control plane (lib/controlplane.php) to deprovision the member's projects.
+     * @var callable|null
+     */
+    public static $onClose = null;
+
     
     public function __construct() {
         parent::__construct();
@@ -244,8 +252,9 @@ class Member extends Control {
             $this->jsonError('That password is not correct.', 403); return;
         }
 
-        // 1) Deprovision every project they own (reports, never aborts on a single failure).
-        $del = (new ProvisionService())->deleteAllForMember((int) $member->id);
+        // 1) The control plane deprovisions every project they own (Member::$onClose, set by
+        //    lib/controlplane.php; reports, never aborts on a single failure). An app owns no projects.
+        $del = self::$onClose !== null ? (self::$onClose)((int) $member->id) : ['deleted' => [], 'failed' => []];
 
         // 2) Disband teams they own; drop their memberships in others' teams.
         foreach (Bean::find('team', 'owner_id = ?', [(int) $member->id]) as $t) {

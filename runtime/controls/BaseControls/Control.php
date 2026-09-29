@@ -32,7 +32,7 @@ abstract class Control {
             $qlang  = (string)(Flight::request()->query->lang ?? '');
             if ($qlang !== '' && preg_match('/^[a-z]{2}(-[A-Z]{2})?$/', $qlang)) $locale = $qlang;
             if (!preg_match('/^[a-z]{2}(-[A-Z]{2})?$/', $locale)) $locale = 'en';
-            \Translatify\Translator::register(dirname(__DIR__, 2) . '/lang')
+            \Translatify\Translator::register(\app\Paths::root() . '/lang')
                 ->setLocale($locale)->setFallback('en');
         }
 

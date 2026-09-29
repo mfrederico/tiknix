@@ -485,11 +485,11 @@ class Bootstrap {
         Flight::set('build', $this->config['app']['build_mode'] ?? false);
         
         // Load FlightMap extensions
-        require_once __DIR__ . '/lib/FlightMap.php';
+        require_once __DIR__ . '/runtime/lib/FlightMap.php';
         
         // Load utility functions if exists
-        if (file_exists(__DIR__ . '/lib/functions.php')) {
-            require_once __DIR__ . '/lib/functions.php';
+        if (file_exists(__DIR__ . '/runtime/lib/functions.php')) {
+            require_once __DIR__ . '/runtime/lib/functions.php';
         }
 
         // Load custom routes

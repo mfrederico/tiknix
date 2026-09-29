@@ -71,7 +71,7 @@ class Connections extends Control {
 
     /** The enabled GitHub connection bound to member + instance, or null. */
     private function githubConn(int $instanceId) {
-        return \app\ConnectionStore::forInstall($instanceId, 'github');
+        return \app\InstanceConnections::forInstall($instanceId, 'github');
     }
 
     private function connSummary($conn): array {
@@ -762,7 +762,7 @@ class Connections extends Control {
         // in a catch, so the hint silently rendered blank and looked like "no secret
         // set". Core now reports only WHETHER one is set, which is the whole of what
         // it honestly knows.
-        $byType = ConnectionStore::withInstall((int)$inst->id, function () {
+        $byType = InstanceConnections::withInstall((int)$inst->id, function () {
             $out = [];
             foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
                 if (!$c->id) continue;
@@ -1275,7 +1275,7 @@ class Connections extends Control {
 
         // Advisory allowlist: the connectors this instance actually has connections
         // for, read from its own store.
-        $keys = ConnectionStore::withInstall((int)$inst->id, function () {
+        $keys = InstanceConnections::withInstall((int)$inst->id, function () {
             $k = [];
             foreach (Bean::find('connections', 'enabled = 1') as $c) {
                 if ($c->connectorType) $k[(string)$c->connectorType] = true;
@@ -1807,7 +1807,7 @@ class Connections extends Control {
         // decrypted with that instance's key (ownToken), and the outcome is written
         // back to the same file. Carrying the bean out and storing it afterwards
         // would save it to core -- see ConnectionStore::withInstall.
-        $res = ConnectionStore::withInstall($iid, function () use ($cid) {
+        $res = InstanceConnections::withInstall($iid, function () use ($cid) {
             $conn = Bean::load('connections', $cid);
             if (!$conn->id) return ['error' => 'Connection not found', 'code' => 404];
 
@@ -1837,7 +1837,7 @@ class Connections extends Control {
         if (($t = $this->hubTarget()) === null) return;
         [$iid, $cid] = $t;
 
-        $gone = ConnectionStore::withInstall($iid, function () use ($cid) {
+        $gone = InstanceConnections::withInstall($iid, function () use ($cid) {
             $conn = Bean::load('connections', $cid);
             if (!$conn->id) return false;
             Bean::trash($conn);
@@ -1907,7 +1907,7 @@ class Connections extends Control {
         // database is fine -- it is store() that writes to whatever is selected, which
         // is why nothing here saves it. The token must be decrypted inside, while the
         // instance's key is the one in scope.
-        $src = ConnectionStore::withInstall($iid, function () use ($cid) {
+        $src = InstanceConnections::withInstall($iid, function () use ($cid) {
             $conn = Bean::load('connections', $cid);
             if (!$conn->id) return null;
             return ['conn' => $conn, 'token' => ConnectionStore::ownToken($conn)];

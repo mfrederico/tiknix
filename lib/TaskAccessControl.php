@@ -440,7 +440,7 @@ class TaskAccessControl {
      * array_values so the id-keyed getCol result is safe to splat into IN() bindings.
      */
     public function getSharedInstanceIds(int $memberId): array {
-        return Bean::load('member', $memberId)->sharedInstanceIds();
+        return MemberProjects::sharedIds($memberId);
     }
 
     /**
@@ -449,7 +449,7 @@ class TaskAccessControl {
      * I see / create tasks in" (workbench tabs + the New Task instance picker).
      */
     public function getAccessibleInstanceIds(int $memberId): array {
-        return Bean::load('member', $memberId)->accessibleInstanceIds();
+        return MemberProjects::accessibleIds($memberId);
     }
 
     /**

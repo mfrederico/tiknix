@@ -33,7 +33,7 @@ class Brokerinfo extends Control {
         // The instance's own store, not core's table. Reading core's here answered
         // "you have no connections" to an instance that had several — the worst
         // possible answer, because it is indistinguishable from the truth.
-        $out = \app\ConnectionStore::withInstall($instanceId, function () {
+        $out = \app\InstanceConnections::withInstall($instanceId, function () {
             $rows = [];
             foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
                 if (!$c->id) continue;
@@ -129,7 +129,7 @@ class Brokerinfo extends Control {
         // Scoping by instance_id is no longer a WHERE clause — it is which FILE we
         // open. A key can only reach its own instance's store, so a row found in
         // there is by construction that instance's.
-        $gone = \app\ConnectionStore::withInstall($iid, function () use ($cid) {
+        $gone = \app\InstanceConnections::withInstall($iid, function () use ($cid) {
             $conn = Bean::load('connections', $cid);
             if (!$conn->id) return false;
             Bean::trash($conn);
@@ -240,11 +240,11 @@ class Brokerinfo extends Control {
         // the same rule that governs the rest of the platform governs this.
         $member = \app\Bean::load('member', $memberId);
         if (!$member->id || !$member->canAuthenticate()
-            || !in_array($instanceId, $member->box()->accessibleInstanceIds(), true)) {
+            || !in_array($instanceId, \app\MemberProjects::accessibleIds((int) $member->id), true)) {
             Flight::jsonError('No access to that project.', 403); return;
         }
 
-        $conn = \app\ConnectionStore::forInstall($instanceId, $connector);
+        $conn = \app\InstanceConnections::forInstall($instanceId, $connector);
         if (!$conn) { Flight::jsonError('No enabled ' . $connector . ' connection for that project.', 404); return; }
 
         $token = \app\ConnectionStore::token($conn);

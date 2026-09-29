@@ -20,72 +20,40 @@ function csrf_token(): string {
 }
 
 /**
- * Is this tiknix running as the root control plane (the one that provisions
- * instances), rather than a provisioned sandbox instance?
+ * WHAT THIS INSTALL IS — one explicit answer (RUNTIME-SPLIT-MAP.md, step 2).
  *
- * The AI Builder / instance tooling only makes sense on the control plane; a
- * sandbox is a leaf and must not spawn nested instances (until real host-aware
- * nesting exists). Detection keys off the running host vs the apex domain, so it
- * works without any per-instance config: a clone served at instance.tiknix.com
- * self-identifies as a sandbox, tiknix.com as the control plane.
+ *   [app] platform_role = "control-plane"   the install that provisions and builds projects
+ *   (absent)                                an app built on the runtime — every project
  *
- * Apex defaults to "tiknix.com" (the slug.tiknix.com convention); override with
- * [app] control_plane_host in config. Fail-safe: an unknown host is treated as
- * the control plane so the root is never accidentally locked out of its tools.
- *
- * That fail-safe is right for gating TOOLS and wrong for choosing a DATABASE, so the
- * underlying three-state answer is exposed separately — see control_plane_state().
+ * This replaced three heuristics that disagreed at the edges: is_core_install() read the
+ * DIRECTORY name (a dot meant tenant — so tiknix2.tiknix called itself a tenant),
+ * is_control_plane() compared the HOST with broker.ini's endpoint and answered "core" when
+ * it could not tell, and builder_tools_enabled() layered a third config flag on top. An
+ * app is what every install is unless it says otherwise, so absence means "app" — the
+ * definition, not a guess; the control plane declares itself, and a misconfigured control
+ * plane shows its app face immediately rather than a project ever thinking it is core.
+ * A value other than the two is a fault and is refused by name.
  */
+function platform_role(): string {
+    $v = strtolower(trim((string) (\Flight::get('app.platform_role') ?? '')));
+    if ($v === '' || $v === 'app') return 'app';
+    if ($v === 'control-plane') return 'control-plane';
+    throw new \RuntimeException("[app] platform_role = '{$v}' in conf/config.ini is not 'control-plane' or 'app'.");
+}
+
+/** The control plane (provisions and builds projects)? The builder tools live only there. */
 function is_control_plane(): bool {
-    return control_plane_state() !== 'project';   // unknown -> root keeps its tools
+    return platform_role() === 'control-plane';
 }
 
-/**
- * WHICH INSTALL IS THIS: 'core' | 'project' | 'unknown'.
- *
- * is_control_plane() collapses this to a bool and answers "unknown" as "core", because it
- * was written to gate tooling and locking the root out of its own tools is the worse
- * error there.
- *
- * Callers that pick a DATABASE must not accept that collapse. An install whose
- * app.baseurl is empty or unparseable cannot say who it is, and answering "core" sends a
- * project's task reads and writes into the control plane's tables — the same silent
- * cross-database wrong-answer that let a build agent be handed another project's task 1.
- * There the honest answer is to stop, so they ask for the third state and refuse on it.
- *
- * @return 'core'|'project'|'unknown'
- */
+/** 'core' | 'project' — kept for callers written against the three-state version; there is no 'unknown' any more. */
 function control_plane_state(): string {
-    $root = strtolower(trim((string)(\Flight::get('app.control_plane_host') ?? '')));
-    if ($root === '') {
-        // A project knows its control plane by the credential it holds: conf/broker.ini
-        // names the endpoint it spends its broker key at. That is a fact about this
-        // install, unlike the literal 'tiknix.com' that used to stand here.
-        $b = @parse_ini_file(dirname(__DIR__) . '/conf/broker.ini', true) ?: [];
-        $root = strtolower((string) (parse_url((string) ($b['broker']['endpoint'] ?? ''), PHP_URL_HOST) ?: ''));
-    }
-    if ($root === '') return 'unknown';   // cannot say who it is: never 'core' by assumption (see above)
-
-    $host = strtolower((string)(parse_url((string)\Flight::get('app.baseurl'), PHP_URL_HOST) ?: ''));
-    if ($host === '') return 'unknown';
-
-    return $host === $root ? 'core' : 'project';
+    return is_control_plane() ? 'core' : 'project';
 }
 
-/**
- * Should the "builder" tooling (AI Builder, Workbench, Agent Setup) be available
- * here? These belong on the root control plane, not inside a provisioned sandbox
- * instance (a leaf).
- *
- * Precedence: an explicit [app] builder_tools_enabled in config.ini wins — so a
- * provisioned sub-instance can hard-disable the tools regardless of host. If it
- * is unset, fall back to is_control_plane() host detection.
- */
+/** The builder tooling (Advanced Builder, workbench, Agent Setup) — the control plane's. */
 function builder_tools_enabled(): bool {
-    $v = \Flight::get('app.builder_tools_enabled');
-    if ($v === null) return is_control_plane();   // unset -> auto-detect by host
-    if (is_bool($v)) return $v;
-    return in_array(strtolower(trim((string)$v)), ['1', 'true', 'on', 'yes', 'enabled'], true);
+    return is_control_plane();
 }
 
 /**
@@ -273,7 +241,7 @@ if (!function_exists('t')) {
 // Only fires for Model_* not already resolved by the classmap.
 spl_autoload_register(function (string $class): void {
     if (strncmp($class, 'Model_', 6) !== 0) return;
-    $file = __DIR__ . '/../models/' . $class . '.php';
+    $file = \app\Paths::root() . '/models/' . $class . '.php';
     if (is_file($file)) require $file;
 });
 
@@ -599,17 +567,9 @@ if (!function_exists('parse_db_dsn')) {
     }
 }
 
-/**
- * True on the flagship/core install, false on a tenant instance.
- *
- * Core vs tenant is decided by the install DIRECTORY name: a tenant lives in
- * "<slug>.<app>" (a dot in the basename), core does not. This mirrors the check the
- * footer/layout have always inlined, centralised so branding decisions (the copyright
- * entity, platform-only doc links) have a single answer. Distinct from is_control_plane(),
- * which is about builder-tool availability by HOST, not the filesystem identity.
- */
+/** The flagship install (branding: copyright entity, platform-only links) — the control plane. */
 function is_core_install(): bool {
-    return strpos(basename(dirname(__DIR__)), '.') === false;
+    return is_control_plane();
 }
 
 

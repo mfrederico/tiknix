@@ -74,6 +74,21 @@ use \app\services\connectors\ConnectorRegistry;
 
 class Mcp extends BaseControls\Control {
 
+    /**
+     * callable(string $slug, int $memberId, bool $withApiKey): array{id,slug,dir} — resolves an
+     * X-Tiknix-Project scope on the control plane's gateway (lib/controlplane.php). Null in an app.
+     * @var callable|null
+     */
+    public static $projectScope = null;
+
+    /**
+     * callable(int $instanceId, string $type, string $env, ?string $account): ?OODBBean — the
+     * broker's read of an INSTANCE's connection (lib/controlplane.php). Null in an app.
+     * @var callable|null
+     */
+    public static $brokerConnection = null;
+
+
     private const PROTOCOL_VERSION = '2024-11-05';
     private const SERVER_NAME = 'tiknix-mcp';
     private const SERVER_VERSION = '1.0.0';
@@ -884,15 +899,10 @@ class Mcp extends BaseControls\Control {
      * @return array{id:int,slug:string,dir:string}
      */
     public static function resolveProjectScope(string $slug, int $memberId, bool $withApiKey): array {
-        if (!\is_core_install()) throw new \RuntimeException('only the control plane\'s MCP gateway takes a project scope; a project\'s own server already is its scope.');
-        if (!$withApiKey || $memberId <= 0) throw new \RuntimeException('a project scope needs an API-key caller.');
-        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/D', $slug)) throw new \RuntimeException("'{$slug}' is not a project slug.");
-        $inst = Bean::findOne('instance', 'slug = ? AND status = ?', [$slug, 'active']);
-        if (!$inst || !$inst->id) throw new \RuntimeException("no active project '{$slug}'.");
-        if (!ProjectContext::canAccess($memberId, $inst)) throw new \RuntimeException("member {$memberId} cannot access project '{$slug}'.");
-        $dir = $inst->box()->dir();
-        if (!is_dir($dir)) throw new \RuntimeException("project '{$slug}' has no directory at {$dir}.");
-        return ['id' => (int) $inst->id, 'slug' => $slug, 'dir' => $dir];
+        // The control plane's gateway resolves the project (Mcp::$projectScope, set in
+        // lib/controlplane.php). A project's own server already is its scope.
+        if (self::$projectScope === null) throw new \RuntimeException('only the control plane\'s MCP gateway takes a project scope; a project\'s own server already is its scope.');
+        return (self::$projectScope)($slug, $memberId, $withApiKey);
     }
 
     private function handleToolsCall(mixed $id, array $params): void {
@@ -1024,7 +1034,10 @@ class Mcp extends BaseControls\Control {
         // because RedBean answers a query naming an absent column with NOTHING
         // rather than an error — which would make a good connection disappear on an
         // instance whose table predates revoked_at.
-        $conn = \app\ConnectionStore::forInstall($instanceId, $connectorKey, $env, $account !== '' ? $account : null);
+        // The broker is the control plane's: it reads the INSTANCE's store (Mcp::$brokerConnection,
+        // lib/controlplane.php). An app's MCP server is not a broker.
+        if (self::$brokerConnection === null) throw new \Exception('This MCP server is not a broker — broker tools are served by the control plane.');
+        $conn = (self::$brokerConnection)($instanceId, $connectorKey, $env, $account !== '' ? $account : null);
         if (!$conn || !$conn->id) {
             // forInstance() already excludes disabled and revoked rows, so the
             // separate "was revoked" throw that used to sit here is unreachable. Its

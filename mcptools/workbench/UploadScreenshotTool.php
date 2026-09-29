@@ -1,10 +1,10 @@
 <?php
 namespace app\mcptools\workbench;
 
-use app\mcptools\BaseTool;
+use app\mcptools\workbench\WorkbenchTool;
 use \app\Bean;
 
-class UploadScreenshotTool extends BaseTool {
+class UploadScreenshotTool extends WorkbenchTool {
 
     public static string $name = 'upload_screenshot';
 

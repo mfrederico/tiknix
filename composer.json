@@ -74,7 +74,8 @@
             "runtime/models/"
         ],
         "files": [
-            "lib/functions.php"
+            "runtime/lib/functions.php",
+            "lib/controlplane.php"
         ]
     },
     "scripts": {

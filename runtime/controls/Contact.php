@@ -11,6 +11,9 @@ use \app\Bean;
 use \app\Mailer;
 
 class Contact extends BaseControls\Control {
+
+    /** Where a signed-in member's "contact" goes on the platform ('/helpdesk'); null in an app. */
+    public static ?string $memberDesk = null;
     
     /**
      * Display contact form
@@ -20,15 +23,11 @@ class Contact extends BaseControls\Control {
         // in (they are signed in), and the answer comes back to their Communications.
         // Platform only: a customer's app owns its /contact (Serenity's is its order and
         // session inquiry form, for signed-in customers too).
-        if (!empty($this->member->id) && is_core_install()) {
-            $this->render('contact/member', [
-                'title'   => 'Support',
-                'project' => $this->projectParam((string) $this->getParam('project', '')) ?? ProjectContext::current((int) $this->member->id),
-                'tickets' => array_map(fn($c) => [
-                    'ticket' => $c,
-                    'thread' => (int) (Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['contact', (int) $c->id])->id ?? 0),
-                ], array_values(Bean::find('contact', 'member_id = ? ORDER BY id DESC LIMIT 20', [(int) $this->member->id]))),
-            ]);
+        // A signed-in member on the platform is sent to the member support desk, which the
+        // control plane provides (Contact::$memberDesk, lib/controlplane.php). An app's own
+        // /contact is its form for everyone.
+        if (!empty($this->member->id) && self::$memberDesk !== null) {
+            Flight::redirect(self::$memberDesk);
             return;
         }
         $this->render('contact/form', [
@@ -212,54 +211,6 @@ class Contact extends BaseControls\Control {
         }
     }
     
-    /**
-     * A project named by id or slug that this member can reach — the ticket is about it.
-     * Anything else (unknown, someone else's) is null: it is never named on a ticket.
-     */
-    private function projectParam(int|string $ref): ?object {
-        if ($ref === 0 || $ref === '') return null;
-        $inst = is_int($ref) ? Bean::load('instance', $ref) : Bean::findOne('instance', 'slug = ?', [$ref]);
-        if (!$inst || !$inst->id) return null;
-        return ProjectContext::canAccess((int) $this->member->id, $inst) ? $inst : null;
-    }
-
-    /**
-     * POST /contact/ask — a signed-in member writes to support. Same queue as the public
-     * form (/contact/admin, the Support badge, the alert email), but the member is seated
-     * in the conversation, so the answer and any follow-up happen in Communications.
-     * No Turnstile: they are signed in, and the form carries a CSRF token.
-     */
-    public function ask() {
-        if (!$this->requireLogin()) return;
-        if (!is_core_install()) { Flight::redirect('/contact'); return; }
-        if (!$this->validateCSRF()) return;
-        $subject  = trim((string) $this->getParam('subject', ''));
-        $message  = trim((string) $this->getParam('message', ''));
-        $category = (string) $this->getParam('category', 'general');
-        if ($subject === '' || $message === '') {
-            $this->flash('error', 'A subject and a message are both needed.');
-            Flight::redirect('/contact');
-            return;
-        }
-        $mid = (int) $this->member->id;
-        try {
-            $r = Support::open($mid, $subject, $message, $category, $this->projectParam((int) $this->getParam('about_project', 0)), 'app');
-        } catch (\Throwable $e) {
-            $this->flash('error', $e->getMessage());
-            Flight::redirect('/contact');
-            return;
-        }
-        $threadId = $r['thread'];
-        if (!$threadId) {
-            // Stored and in the admin queue, but not a conversation the member can open.
-            $this->flash('warning', 'Your message reached support, but its conversation could not be opened — you will get the answer by email.');
-            Flight::redirect('/contact');
-            return;
-        }
-        $this->flash('success', 'Sent to support. The answer will appear here and in your email.');
-        Flight::redirect('/communications/thread/' . $threadId);
-    }
-
     /**
      * Admin: View all contact messages
      */

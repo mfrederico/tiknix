@@ -3,7 +3,7 @@
  * InstanceUpdate — the instance's OWN update (CONNECTOR-CATALOG-PLAN.md §13, cutover C2):
  * `php scripts/clitool.php --update`, run in the instance by the instance's user.
  *
- *   1. builds    bring the live tree level with its origin (InstanceRepo::syncLive) — what
+ *   1. builds    bring the live tree level with its origin (pullBuilds) — what
  *                the executor merged there since the last update
  *   2. release   fetch the control plane's tags (`core` remote) and pick the target: the
  *                one asked for, or the newest release tag; nothing to do when already on it
@@ -71,7 +71,7 @@ class InstanceUpdate {
 
         // --- 1. builds from the origin ------------------------------------------------------
         try {
-            $s = InstanceRepo::syncLive($root);
+            $s = self::pullBuilds($root);
         } catch (\Throwable $e) {
             return $this->done(false, 'failed', '', $pinned, ["origin: " . $e->getMessage()]);
         }
@@ -226,6 +226,55 @@ class InstanceUpdate {
             }
         }
         return $out;
+    }
+
+    /**
+     * Bring this live tree level with its origin — the builds merged there (RUNTIME-SPLIT-MAP
+     * step 2: moved here from InstanceRepo::syncLive so the runtime needs nothing of the
+     * control plane's). Fetch; fast-forward when the origin is ahead; merge locally when both
+     * moved. NEVER pushes: the live tree's own commits are checkpoints — its database and
+     * local state — and stay the instance's; the origin holds code only. A merge the tree
+     * cannot take is reported with the files, never forced.
+     *
+     * @param callable|null $git  (dir, args) → {ok, out}; the control plane passes one that
+     *                            names its origin as a safe directory
+     * @return array{status:string,out:string} up-to-date | pulled | local-ahead | merged | failed
+     */
+    public static function pullBuilds(string $liveDir, ?callable $git = null, string $label = ''): array {
+        $liveDir = rtrim($liveDir, '/');
+        $git = $git ?? fn(string $dir, array $args) => (new self())->git($dir, $args);
+        $slug = $label !== '' ? $label : basename($liveDir);
+        $branch = trim($git($liveDir, ['rev-parse', '--abbrev-ref', 'HEAD'])['out']);
+        if ($branch === '' || $branch === 'HEAD') return ['status' => 'failed', 'out' => "{$liveDir} is not on a branch"];
+        $f = $git($liveDir, ['fetch', '--quiet', 'origin']);
+        if (!$f['ok']) return ['status' => 'failed', 'out' => 'fetch from the origin failed: ' . trim($f['out'])];
+        $local  = trim($git($liveDir, ['rev-parse', 'HEAD'])['out']);
+        $remote = $git($liveDir, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' . $branch]);
+        {
+            if (!$remote['ok']) {
+                return ['status' => 'failed', 'out' => "the origin has no branch {$branch} — recreate it with scripts/instance-origin.php"];
+            }
+            $remoteSha = trim($remote['out']);
+            if ($remoteSha === $local) return ['status' => 'up-to-date', 'out' => substr($local, 0, 7)];
+            $behind = $git($liveDir, ['merge-base', '--is-ancestor', $local, $remoteSha])['ok'];
+            $ahead  = $git($liveDir, ['merge-base', '--is-ancestor', $remoteSha, $local])['ok'];
+            if ($behind) {
+                $m = $git($liveDir, ['merge', '--ff-only', '--quiet', $remoteSha]);
+                return $m['ok'] ? ['status' => 'pulled', 'out' => substr($local, 0, 7) . ' → ' . substr($remoteSha, 0, 7)]
+                                : ['status' => 'failed', 'out' => 'the live tree could not fast-forward: ' . trim($m['out'])];
+            }
+            if ($ahead) {
+                return ['status' => 'local-ahead', 'out' => 'the live tree has ' . trim($git($liveDir, ['rev-list', '--count', $remoteSha . '..' . $local])['out']) . ' local commit(s) (checkpoints stay here)'];
+            }
+            $m = $git($liveDir, ['-c', 'user.email=update@tiknix.local', '-c', 'user.name=update', 'merge', '--no-ff', '--quiet', '-m', "sync: builds from the origin of {$slug}", $remoteSha]);
+            if (!$m['ok']) {
+                $conf = $git($liveDir, ['diff', '--name-only', '--diff-filter=U']);
+                $files = trim(str_replace("\n", ', ', (string) $conf['out']));
+                $git($liveDir, ['merge', '--abort']);
+                return ['status' => 'failed', 'out' => 'the live tree and the origin both changed and the merge failed' . ($files !== '' ? " — conflicting: {$files}" : '') . ': ' . trim($m['out'])];
+            }
+            return ['status' => 'merged', 'out' => 'both sides had commits; merged locally (nothing pushed)'];
+        }
     }
 
     // ---- release tags on the control plane -----------------------------------------------------

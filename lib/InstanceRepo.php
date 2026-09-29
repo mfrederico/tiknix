@@ -224,35 +224,12 @@ class InstanceRepo {
         if (trim(self::git($liveDir, ['remote', 'get-url', 'origin'])['out']) !== self::originPath($slug)) {
             return ['status' => 'failed', 'out' => "{$liveDir}: remote origin is not " . self::originPath($slug) . ' — run scripts/instance-origin.php --slug=' . $slug];
         }
-        $f = self::git($liveDir, ['fetch', '--quiet', 'origin']);
-        if (!$f['ok']) return ['status' => 'failed', 'out' => 'fetch from the origin failed: ' . trim($f['out'])];
-        $local  = trim(self::git($liveDir, ['rev-parse', 'HEAD'])['out']);
-        $remote = self::git($liveDir, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' . $branch]);
+        // The live-tree half is the runtime's (InstanceUpdate::pullBuilds — a project pulls its
+        // own builds the same way inside a container); here it runs under this instance's
+        // origin lock and with git told that the origin is a safe directory.
         $lock = self::lock($slug);
         try {
-            if (!$remote['ok']) {
-                return ['status' => 'failed', 'out' => "the origin has no branch {$branch} — recreate it with scripts/instance-origin.php"];
-            }
-            $remoteSha = trim($remote['out']);
-            if ($remoteSha === $local) return ['status' => 'up-to-date', 'out' => substr($local, 0, 7)];
-            $behind = self::git($liveDir, ['merge-base', '--is-ancestor', $local, $remoteSha])['ok'];
-            $ahead  = self::git($liveDir, ['merge-base', '--is-ancestor', $remoteSha, $local])['ok'];
-            if ($behind) {
-                $m = self::git($liveDir, ['merge', '--ff-only', '--quiet', $remoteSha]);
-                return $m['ok'] ? ['status' => 'pulled', 'out' => substr($local, 0, 7) . ' → ' . substr($remoteSha, 0, 7)]
-                                : ['status' => 'failed', 'out' => 'the live tree could not fast-forward: ' . trim($m['out'])];
-            }
-            if ($ahead) {
-                return ['status' => 'local-ahead', 'out' => 'the live tree has ' . trim(self::git($liveDir, ['rev-list', '--count', $remoteSha . '..' . $local])['out']) . ' local commit(s) (checkpoints stay here)'];
-            }
-            $m = self::git($liveDir, ['-c', 'user.email=update@tiknix.local', '-c', 'user.name=update', 'merge', '--no-ff', '--quiet', '-m', "sync: builds from the origin of {$slug}", $remoteSha]);
-            if (!$m['ok']) {
-                $conf = self::git($liveDir, ['diff', '--name-only', '--diff-filter=U']);
-                $files = trim(str_replace("\n", ', ', (string) $conf['out']));
-                self::git($liveDir, ['merge', '--abort']);
-                return ['status' => 'failed', 'out' => 'the live tree and the origin both changed and the merge failed' . ($files !== '' ? " — conflicting: {$files}" : '') . ': ' . trim($m['out'])];
-            }
-            return ['status' => 'merged', 'out' => 'both sides had commits; merged locally (nothing pushed)'];
+            return InstanceUpdate::pullBuilds($liveDir, fn(string $dir, array $args) => self::git($dir, $args), $slug);
         } finally {
             self::unlock($lock);
         }

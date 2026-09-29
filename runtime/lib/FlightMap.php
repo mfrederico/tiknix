@@ -73,7 +73,7 @@ Flight::map('defaultRoute', function($prefix = '') {
                 // name, so this never changes what an existing URL means. The concept's own
                 // controls/ joins the allowed roots only for the class it claimed — a
                 // disabled concept is never consulted, so it is unroutable by construction.
-                if (!class_exists($classname) && is_dir(dirname(__DIR__) . '/' . \app\Concepts::DIR)) {
+                if (!class_exists($classname) && is_dir(\app\Paths::root() . '/' . \app\Concepts::DIR)) {
                     $concepts = \app\Concepts::instance();
                     $claimed = $concepts->controllerClass($class);
                     if ($claimed !== null) {

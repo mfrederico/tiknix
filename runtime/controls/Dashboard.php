@@ -10,6 +10,14 @@ use \Flight as Flight;
 use \app\Bean;
 
 class Dashboard extends BaseControls\Control {
+
+    /**
+     * callable(int $memberId): ?array — the plan/billing tile, supplied by the control plane
+     * (lib/controlplane.php). Null in an app: no tile.
+     * @var callable|null
+     */
+    public static $billingCard = null;
+
     
     /**
      * Main dashboard page
@@ -46,7 +54,9 @@ class Dashboard extends BaseControls\Control {
      */
     private function billingCard(): ?array {
         try {
-            return ProjectQuota::snapshot((int) $this->member->id);
+            // The control plane's plan tile (Dashboard::$billingCard, lib/controlplane.php);
+            // an app has no project quota, and the view omits the tile.
+            return self::$billingCard !== null ? (self::$billingCard)((int) $this->member->id) : null;
         } catch (\Throwable $e) {
             Flight::get('log')->error('Dashboard: billing tile omitted — project count failed', [
                 'member' => (int) $this->member->id, 'error' => $e->getMessage(),

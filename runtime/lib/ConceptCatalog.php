@@ -99,7 +99,7 @@ class ConceptCatalog {
 
     /** @return array{dir?:string,broker?:array{base:string,key:string}} empty = nothing configured */
     private static function locate(?string $root): array {
-        $root = rtrim($root ?? dirname(__DIR__), '/');
+        $root = rtrim($root ?? \app\Paths::root(), '/');
         $config = is_file("{$root}/conf/config.ini") ? parse_ini_file("{$root}/conf/config.ini", true) : [];
         if ($config === false) {
             throw new ConceptException("Concept catalog: {$root}/conf/config.ini could not be parsed, so [concepts] catalog_dir is unknown.");
@@ -824,7 +824,7 @@ class ConceptCatalog {
         // answers a script argument with its usage screen ("-R, --allow-to-run-as-root …").
         // --autobuild=1: the approval gate exists for plans that spend agent time; an install
         // plan has no agent and takes seconds, so the request IS the approval.
-        $cmd = 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/concept-install.php')
+        $cmd = 'php ' . escapeshellarg(\app\Paths::root() . '/scripts/concept-install.php')
              . ' --concept=' . escapeshellarg($name)
              . ' --slug='    . escapeshellarg((string) $project['slug'])
              . ' --dir='     . escapeshellarg((string) $project['dir'])

@@ -57,7 +57,7 @@ class Integrations extends Control {
         $dir = $this->instanceDir($inst->slug);
         // Connected services for the selected instance, service+status only (the owner
         // sees full detail on /connections; this catalog never carries identifiers).
-        $services = \app\ConnectionStore::withInstall((int)$inst->id, function () {
+        $services = \app\InstanceConnections::withInstall((int)$inst->id, function () {
             $out = [];
             foreach (Bean::find('connections', 'enabled = 1') as $c) {
                 $svc = (string)$c->connectorType; if ($svc === '') continue;

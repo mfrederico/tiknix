@@ -101,6 +101,6 @@ class ProjectContext {
      * @return object[]
      */
     public static function accessible(int $memberId): array {
-        return Bean::load('member', $memberId)->accessibleInstances();
+        return MemberProjects::accessible($memberId);
     }
 }

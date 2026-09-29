@@ -21,7 +21,7 @@ class ApplicationInfoTool extends BaseTool {
     public static array $inputSchema = ['type' => 'object', 'properties' => [], 'required' => []];
 
     public function execute(array $args): string {
-        $root = dirname(__DIR__);
+        $root = \app\Paths::root();
         $out = "# application_info\n\n";
         $out .= '- **PHP** ' . PHP_VERSION . ' (' . PHP_SAPI . ")\n";
         $out .= '- **tiknix** ' . self::version($root) . "\n";

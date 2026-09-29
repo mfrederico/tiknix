@@ -16,7 +16,7 @@ $statusBadge = ['new' => 'text-bg-warning', 'responded' => 'text-bg-success', 'c
 
   <div class="card shadow-sm mb-4">
     <div class="card-body">
-      <form method="POST" action="/contact/ask">
+      <form method="POST" action="/helpdesk/ask">
         <?= csrf_field() ?>
         <div class="row g-2">
           <div class="col-sm-8">

@@ -17,11 +17,11 @@
 
 namespace app\mcptools\workbench;
 
-use app\mcptools\BaseTool;
+use app\mcptools\workbench\WorkbenchTool;
 use app\Bean;
 use app\EngineRegistry;
 
-class CreateTaskTool extends BaseTool {
+class CreateTaskTool extends WorkbenchTool {
 
     public static string $name = 'create_task';
 

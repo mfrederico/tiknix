@@ -25,7 +25,9 @@ class McpProjectScopeTest extends ConceptsTestCase {
 
     protected function setUp(): void {
         parent::setUp();
-        if (!\is_core_install()) $this->markTestSkipped('only the control plane takes a project scope');
+        // Only the control plane takes a project scope: the test declares that role
+        // (platform_role), rather than depending on where the tree happens to live.
+        \Flight::set('app.platform_role', 'control-plane');
         self::memoryDb();
         if (!Bean::hasDatabase(self::DB)) Bean::addDatabase(self::DB, 'sqlite::memory:');
         Bean::selectDatabase(self::DB);
@@ -37,6 +39,7 @@ class McpProjectScopeTest extends ConceptsTestCase {
     }
 
     protected function tearDown(): void {
+        \Flight::set('app.platform_role', null);
         @rmdir($this->projectDir);
         Bean::selectDatabase('default');
         parent::tearDown();

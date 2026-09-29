@@ -177,66 +177,6 @@ class Model_Member extends \RedBeanPHP\SimpleModel {
             array_merge($ids, ['active'])));
     }
 
-    // ---- instances -------------------------------------------------------------------
-
-    /** Instances this member owns outright. */
-    public function ownedInstanceIds(): array {
-        $id = (int) $this->bean->id;
-        if ($id <= 0 || !in_array('instance', \app\Bean::inspect(), true)) return [];
-        return array_values(array_map('intval', \app\Bean::getCol(
-            'SELECT id FROM instance WHERE member_id = ?', [$id])));
-    }
-
-    /**
-     * Instances shared with a team this member is on.
-     *
-     * DISTINCT deliberately: an instance shared with two teams the same person belongs to
-     * is one instance. TaskAccessControl had it, ProjectContext's copy did not, and they
-     * agreed only because nothing is multi-team shared yet — a duplicate id would have
-     * flowed straight into an IN (?,?) binding.
-     */
-    public function sharedInstanceIds(): array {
-        $teamIds = $this->teamIds();
-        if (!$teamIds || !in_array('instance_team', \app\Bean::inspect(), true)) return [];
-
-        return array_values(array_unique(array_map('intval', \app\Bean::getCol(
-            'SELECT DISTINCT instance_id FROM instance_team WHERE team_id IN ('
-            . \app\Bean::genSlots($teamIds) . ')', $teamIds))));
-    }
-
-    /** Everything this member may use: owned plus shared. */
-    public function accessibleInstanceIds(): array {
-        return array_values(array_unique(array_merge(
-            $this->ownedInstanceIds(), $this->sharedInstanceIds())));
-    }
-
-    /**
-     * Every project this member may work on, as beans — the source list for the picker.
-     *
-     * Owned first, then shared, and DELETED ones excluded. That last part is why this is
-     * not just a load() over accessibleInstanceIds(): the id list deliberately includes
-     * everything the member may touch, while the picker must not offer a project that has
-     * been destroyed.
-     */
-    public function accessibleInstances(): array {
-        $id = (int) $this->bean->id;
-        if ($id <= 0) return [];
-
-        $own = \app\Bean::find('instance', 'member_id = ? AND status != ?', [$id, 'deleted']);
-
-        $shared = [];
-        $ids = $this->sharedInstanceIds();
-        if ($ids) {
-            $shared = \app\Bean::find('instance',
-                'id IN (' . \app\Bean::genSlots($ids) . ') AND member_id != ? AND status != ?',
-                array_merge($ids, [$id, 'deleted']));
-        }
-
-        // array_values because find() returns beans keyed by id — merging keyed arrays
-        // would silently drop rows whose ids collide across the two result sets.
-        return array_merge(array_values($own), array_values($shared));
-    }
-
     public function sharesTeamWith(int $otherId): bool {
         if ($otherId <= 0) return false;
         $other = \app\Bean::load('member', $otherId);

@@ -1,0 +1,146 @@
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                <?php if (!empty($registration_closed)): ?>
+                    <div class="text-center py-4">
+                        <i class="bi bi-door-closed text-muted" style="font-size:2.75rem;"></i>
+                        <h2 class="card-title mt-3 mb-2">Registrations Closed</h2>
+                        <p class="text-muted mb-4">
+                            We're not accepting new registrations right now.<br>Please check back later.
+                        </p>
+                        <a href="/auth/login" class="btn btn-outline-primary">
+                            <i class="bi bi-box-arrow-in-right"></i> Sign In
+                        </a>
+                    </div>
+                <?php else: ?>
+                    <h2 class="card-title text-center mb-4">Create Account</h2>
+
+                    <?php if (!empty($errors)): ?>
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <ul class="mb-0">
+                                <?php foreach ($errors as $error): ?>
+                                    <li><?= htmlspecialchars(($error) ?? '') ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <form method="POST" action="/auth/doregister">
+                        <?php
+                        // Include CSRF token if available
+                        if (isset($csrf) && is_array($csrf)):
+                            foreach ($csrf as $name => $value): ?>
+                                <input type="hidden" name="<?= htmlspecialchars(($name) ?? '') ?>" value="<?= htmlspecialchars(($value) ?? '') ?>">
+                            <?php endforeach;
+                        endif;
+                        ?>
+
+                        <?php $__tsKey = \app\Turnstile::siteKey(); if ($__tsKey !== ''): ?>
+                        <div class="mb-3 text-center" id="ts-gate">
+                            <p class="text-muted small mb-2">Please verify you're human to continue.</p>
+                            <?= \app\Turnstile::widget(['callback' => 'tsVerified', 'expired_callback' => 'tsReset', 'error_callback' => 'tsReset', 'class' => 'd-inline-block']) ?>
+                        </div>
+                        <div id="reg-fields" hidden>
+                        <?php endif; ?>
+
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="username" 
+                                   name="username" 
+                                   value="<?= htmlspecialchars($data['username'] ?? '') ?>"
+                                   required 
+                                   minlength="3"
+                                   placeholder="Choose a username">
+                            <small class="form-text text-muted">At least 3 characters</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email Address</label>
+                            <input type="email" 
+                                   class="form-control" 
+                                   id="email" 
+                                   name="email" 
+                                   value="<?= htmlspecialchars($data['email'] ?? '') ?>"
+                                   required 
+                                   placeholder="your@email.com">
+                            <small class="form-text text-muted">We'll never share your email</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="password" 
+                                   name="password" 
+                                   required
+                                   minlength="8"
+                                   placeholder="Create a password">
+                            <small class="form-text text-muted">At least 8 characters</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="password_confirm" class="form-label">Confirm Password</label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="password_confirm" 
+                                   name="password_confirm" 
+                                   required 
+                                   minlength="6"
+                                   placeholder="Confirm your password">
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-person-plus"></i> Create Account
+                            </button>
+                        </div>
+
+                        <?php if ($__tsKey !== ''): ?>
+                        </div><!-- /#reg-fields -->
+                        <?php /* api.js is emitted by Turnstile::widget() above. */ ?>
+                        <script>
+                          // Reveal the form only after Turnstile verifies; hide again if it expires/errors.
+                          function tsVerified(){ var f=document.getElementById('reg-fields'); if(f){f.hidden=false;}
+                            var g=document.getElementById('ts-gate'); if(g){var p=g.querySelector('p'); if(p){p.innerHTML='<span class="text-success">Verified &#10003;</span>';}} }
+                          function tsReset(){ var f=document.getElementById('reg-fields'); if(f){f.hidden=true;} }
+                        </script>
+                        <?php endif; ?>
+                        
+                        <hr class="my-4">
+                        
+                        <div class="text-center">
+                            <p>Already have an account? <a href="/auth/login">Sign In</a></p>
+                        </div>
+                    </form>
+                <?php endif; ?>
+                </div>
+            </div>
+            
+            <?php if (empty($registration_closed)): ?>
+            <div class="text-center mt-3 text-muted">
+                <small>
+                    <i class="bi bi-info-circle"></i>
+                    By registering, you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>
+                </small>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    margin-top: 50px;
+    border-radius: 10px;
+}
+
+.form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+</style>

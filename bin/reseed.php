@@ -1,0 +1,62 @@
+#!/usr/bin/env php
+<?php
+/**
+ * reseed.php — build/refresh the database schema by running the numbered bean
+ * seeds in services/Schema/Seeds/.
+ *
+ * Connects through Bootstrap, so it honours DB_DSN (SQLite locally, MySQL /
+ * Postgres on a deploy) exactly like the app. RedBean emits dialect-correct DDL,
+ * so the SAME seeds initialize any backend — no schema.sql dialect juggling.
+ *
+ * Idempotent: safe to run repeatedly (seeds check before creating).
+ *
+ * Usage:
+ *   php scripts/reseed.php            # seed / top-up the configured database
+ *   php scripts/reseed.php --fresh    # drop all tables first, then seed
+ *   DB_DSN=mysql://user@host/db php scripts/reseed.php
+ */
+
+if (php_sapi_name() !== 'cli') {
+    die("This script must be run from the command line.\n");
+}
+
+require_once __DIR__ . '/_boot.php';   // runs from the app root
+
+use RedBeanPHP\R;
+use app\services\Schema\WorkspaceSchemaBuilder;
+use app\Bean;
+
+$fresh = in_array('--fresh', $argv, true);
+
+$app = new \app\Bootstrap(); // connects (DB_DSN-aware)
+
+if (!R::testConnection()) {
+    fwrite(STDERR, "reseed: database connection failed\n");
+    exit(1);
+}
+
+$dbType = Bean::getDatabaseAdapter()->getDatabase()->getDatabaseType();
+echo "reseed: connected ({$dbType})\n";
+
+if ($fresh) {
+    echo "reseed: --fresh — dropping existing tables\n";
+    foreach (Bean::inspect() as $table) {
+        try { Bean::exec("DROP TABLE IF EXISTS " . $table); echo "  dropped {$table}\n"; }
+        catch (\Exception $e) { fwrite(STDERR, "  warn dropping {$table}: " . $e->getMessage() . "\n"); }
+    }
+}
+
+echo "reseed: running seeds…\n";
+$results = (new WorkspaceSchemaBuilder())->build();
+foreach ($results as $file => $status) {
+    echo "  {$file}: {$status}\n";
+}
+
+// Refresh the permission cache so the new authcontrol rows take effect.
+if (class_exists('\app\PermissionCache')) {
+    \app\PermissionCache::clear();
+    echo "reseed: permission cache cleared\n";
+}
+
+R::close();
+echo "reseed: done — the admin has no password yet; set it at /install (the seeded default cannot sign in)\n";

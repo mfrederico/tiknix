@@ -1,0 +1,104 @@
+<?php
+/**
+ * Front — the web and CLI entry point every app shares. An app's public/index.php requires the
+ * fatal handler (by path, before Composer) and its autoloader, then calls Front::serve().
+ *
+ * Moved out of core's public/index.php in RUNTIME-SPLIT-MAP.md step 3: the front controller is
+ * the runtime's, so an update changes it for every app at once.
+ */
+
+namespace app;
+
+class Front {
+
+    public static function serve(): void {
+        // Report everything; SHOW nothing unless this install says it is being debugged.
+        //
+        // This used to be ini_set('display_errors', 1) unconditionally, "for development" — in
+        // production too. A fatal therefore printed PHP's raw message, server paths and all, to the
+        // visitor, and printing it sent the headers, so nothing could replace it with a proper page or
+        // even a 500 status. Bootstrap::loadConfig() turns it back on when [app] debug is set; the CLI
+        // keeps it, because a terminal is where that message belongs.
+        error_reporting(E_ALL);
+        ini_set('display_errors', PHP_SAPI === 'cli' ? '1' : '0');
+
+        // The app root: Composer's root package (never this file's location — it lives in the runtime).
+        if (!defined('BASE_PATH')) define('BASE_PATH', \app\Paths::root());
+        chdir(BASE_PATH);
+        $argv = $_SERVER['argv'] ?? [];
+        $argc = count($argv);
+
+        // Check if we're running from CLI
+        if (php_sapi_name() === 'cli' && $argc > 1) {
+            // Check if asking for help
+            if (in_array('--help', $argv) || in_array('-h', $argv)) {
+                echo "TikNix CLI Interface\n";
+                echo "====================\n\n";
+                echo "Usage: php index.php [config] [options]\n\n";
+                echo "Options:\n";
+                echo "  --help, -h         Show this help message\n";
+                echo "  --control=NAME     Controller name (required)\n";
+                echo "  --method=NAME      Method name (default: index)\n";
+                echo "  --member=ID        Member ID to run as (default: public-user-entity)\n";
+                echo "  --params=STRING    URL-encoded parameters (e.g., 'param1=value1&param2=value2')\n";
+                echo "  --json=JSON        JSON parameters (e.g., '{\"key\":\"value\"}')\n";
+                echo "  --cron             Cron mode (suppress output)\n";
+                echo "  --verbose          Verbose output\n\n";
+                echo "Examples:\n";
+                echo "  # Run a simple controller method\n";
+                echo "  php index.php --control=test --method=hello\n\n";
+                echo "  # Run with parameters\n";
+                echo "  php index.php --control=report --method=generate --params='type=daily&format=pdf'\n\n";
+                echo "  # Run as specific member with JSON data\n";
+                echo "  php index.php --member=1 --control=api --method=process --json='{\"action\":\"sync\"}'\n\n";
+                echo "  # Run in cron mode (silent)\n";
+                echo "  php index.php --control=cleanup --method=daily --cron\n\n";
+                echo "  # Create a cron job\n";
+                echo "  0 2 * * * /usr/bin/php /path/to/index.php --control=cleanup --method=daily --cron\n";
+                exit(0);
+            }
+
+            // Determine config file from first arg if it's not an option
+            $configFile = 'conf/config.ini';
+            if (!empty($argv[1]) && strpos($argv[1], '--') !== 0 && file_exists($argv[1])) {
+                $configFile = $argv[1];
+            }
+        } else {
+            // Web mode - determine config file normally
+            $configFile = 'conf/config.ini';
+        }
+
+        // Check config file exists
+        if (!file_exists($configFile)) {
+            if (php_sapi_name() === 'cli') {
+                echo "Error: Configuration file not found: {$configFile}\n";
+                echo "Please create conf/config.ini from conf/config.example.ini\n";
+                exit(1);
+            } else {
+                // Show setup message for web
+                die('
+                    <h1>Welcome to TikNix Framework!</h1>
+                    <p>Please copy <code>conf/config.example.ini</code> to <code>conf/config.ini</code> and update with your settings.</p>
+                    <p>Then run: <code>php database/init_users.php</code></p>
+                ');
+            }
+        }
+
+        // Initialize application with CLI arguments if available
+        $app = new Bootstrap($configFile);
+
+        // Load routes - for both web and CLI modes (CLI sets REQUEST_URI in CliHandler). A route
+        // file named for the first URL segment (the app's, else the runtime's) takes the request;
+        // otherwise routes/default.php does.
+        if (isset($_SERVER['REQUEST_URI'])) {
+            $segments = explode('/', trim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '', '/'));
+            $firstSegment = (!empty($segments[0])) ? $segments[0] : 'index';
+            require_once \app\Paths::route($firstSegment)
+                ?? \app\Paths::route('default')
+                ?? throw new \RuntimeException('routes/default.php is missing from both the app and the runtime');
+        }
+
+        // Run the application
+        $app->run();
+    }
+}

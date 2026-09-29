@@ -28,7 +28,7 @@
 $__mqtt = \app\Mqtt::browserCredentials($__mid);
 ?>
 <?php if ($__mqtt): ?>
-<script src="/js/tnx-live.js"></script>
+<script src="/rt/js/tnx-live.js"></script>
 <script>window.__tnxLiveCfg = <?= json_encode($__mqtt, JSON_UNESCAPED_SLASHES) ?>;</script>
 <?php endif; ?>
 <li class="nav-item dropdown" id="notify-bell">

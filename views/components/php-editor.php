@@ -67,7 +67,7 @@ $editorReadonly = $editorReadonly ?? false;
 </style>
 
 <!-- CodeMirror 6 (local bundle) -->
-<script src="/js/codemirror.min.js"></script>
+<script src="/rt/js/codemirror.min.js"></script>
 <script>
 (function() {
     const editorId = <?= json_encode($editorId) ?>;

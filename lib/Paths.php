@@ -59,4 +59,15 @@ class Paths {
         if ($rt !== $out[0]) $out[] = $rt;
         return $out;
     }
+
+    /**
+     * The route file routes/<name>.php — the app's when it has one, else the runtime's; null
+     * when neither exists (a first URL segment with no route file of its own is ordinary:
+     * the default route handles it).
+     */
+    public static function route(string $name): ?string {
+        if (!preg_match('/^[a-z0-9_-]+$/i', $name)) return null;   // a URL segment, never a path
+        foreach (self::layered("routes/{$name}.php") as $f) if (is_file($f)) return $f;
+        return null;
+    }
 }

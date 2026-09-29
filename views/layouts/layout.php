@@ -18,7 +18,7 @@
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <!-- Custom CSS (tiknix-specific; loaded before the design system so tokens win) -->
-    <link href="/css/app.css" rel="stylesheet">
+    <link href="/rt/css/app.css" rel="stylesheet">
     <!-- Shared design system — MUST load last so its :root overrides win -->
     <?php include \Flight::view()->getTemplate('components/design-system'); ?>
 
@@ -40,11 +40,11 @@
     <!-- jQuery (optional, but useful) -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <!-- Custom JS -->
-    <script src="/js/app.js"></script>
+    <script src="/rt/js/app.js"></script>
     <!-- Modal alert/confirm/prompt (tkAlert, tkConfirm, tkPrompt, data-confirm) -->
-    <script src="/js/dialogs.js"></script>
+    <script src="/rt/js/dialogs.js"></script>
     <!-- Server-side DataTables primitive (self-activates only when a .dt-server table exists) -->
-    <script src="/js/dt-server.js"></script>
+    <script src="/rt/js/dt-server.js"></script>
 
     <!-- Flash Messages -->
     <?php if (isset($_SESSION['flash'])): ?>

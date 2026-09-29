@@ -1,4 +1,4 @@
-<?php $logoV = @filemtime(\app\Paths::root() . '/public/img/tiknix.svg') ?: '1'; ?>
+<?php $logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -46,8 +46,8 @@
         .logo-mark {
             width: 80px; height: 80px; flex: 0 0 auto;
             background: currentColor;
-            -webkit-mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
-                    mask: url(/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
+            -webkit-mask: url(/rt/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
+                    mask: url(/rt/img/tiknix.svg?v=<?= $logoV ?>) center / contain no-repeat;
             animation: funnel-breathe 4.5s ease-in-out infinite;
             will-change: transform, filter;
         }

@@ -427,30 +427,6 @@ class Mcp extends BaseControls\Control {
     }
 
     /**
-     * MCP Registry - forwards to Mcpregistry controller
-     * GET /mcp/registry[/method]
-     */
-    public function registry($params = null): void {
-        $instance = new Mcpregistry();
-
-        // Get the method from operation, default to index
-        $method = $params['operation']->name ?? 'index';
-
-        // Forward the params, shifting operation down
-        $forwardParams = $params;
-        $forwardParams['operation'] = new \stdClass();
-        $forwardParams['operation']->name = $params['operation']->type ?? null;
-        $forwardParams['operation']->type = null;
-
-        if (method_exists($instance, $method) && (new \ReflectionMethod($instance, $method))->isPublic()) {
-            $instance->$method($forwardParams);
-        } else {
-            // Default to index if method doesn't exist
-            $instance->index($params);
-        }
-    }
-
-    /**
      * Claude Code configuration endpoint
      * GET /mcp/config
      *

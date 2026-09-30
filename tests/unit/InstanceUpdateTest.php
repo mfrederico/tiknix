@@ -159,6 +159,25 @@ class InstanceUpdateTest extends TestCase {
         $this->assertSame('up-to-date', $r2['status'], implode("\n", $r2['lines']));
     }
 
+    public function testANotYetInstalledAppPassesTheSmokeTestOnlyWhenItsWizardAnswers(): void {
+        $this->published = ['v2.0.0-alpha.1', 'v2.0.0-alpha.2'];
+        $wizard = 200;
+        $u = new InstanceUpdate(function (string $dir, string $cmd): array {
+            if (str_contains($cmd, ' show tiknix/runtime --all')) return [0, [json_encode(['versions' => $this->published])]];
+            if (preg_match("/ update tiknix\\/runtime --with='tiknix\\/runtime:([^']+)'/", $cmd, $m)) { $this->lock('v' . $m[1], false, $dir); return [0, []]; }
+            return [0, ['ok']];
+        }, function (string $url) use (&$wizard): int { return str_ends_with($url, '/install') ? $wizard : 303; });
+        $r = $u->run($this->app);
+        $this->assertSame('updated', $r['status'], implode("\n", $r['lines']));
+        $this->assertStringContainsString('not set up yet', implode("\n", $r['lines']));
+
+        $this->published[] = 'v2.0.0-alpha.3';
+        $wizard = 500;
+        $r = $u->run($this->app);
+        $this->assertSame('failed', $r['status'], 'redirects to a wizard that is broken are a failure');
+        $this->assertStringContainsString('smoke: FAILED', implode("\n", $r['lines']));
+    }
+
     public function testAComposerFailurePutsEverythingBackAndPinsNothing(): void {
         $u = $this->updater();
         $this->published = ['v2.0.0-alpha.1', 'v2.0.0-alpha.2'];

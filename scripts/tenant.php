@@ -17,6 +17,11 @@
  *        (--task and --plan also take --out=FILE: the JSON result written there as well)
  *   php scripts/tenant.php --workspace=SLUG               the builder's records on core (_workspaces/<slug>),
  *                                                         adopting a host clone's history once
+ *   php scripts/tenant.php --domain-add=SLUG --domain=HOST     another domain as its own site in the
+ *                                                         container: DNS checked, TLS, the app's
+ *                                                         conf/hosts/<HOST>.ini + database, routing
+ *   php scripts/tenant.php --domain-remove=SLUG --domain=HOST  stop serving it (its data stays in the app)
+ *   php scripts/tenant.php --domains=SLUG
  *   php scripts/tenant.php --status=SLUG
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving
  *
@@ -44,7 +49,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -124,6 +129,15 @@ if (isset($o['workspace'])) {
     $i = inst($o['workspace']);
     $r = \app\TenantBuilder::adoptHistory($i);
     done($r, 'workspace ' . $i->slug . ' (' . \Model_Instance::dirOf($i) . ')');
+    exit(0);
+}
+// Other domains, each its own site in the project's container (lib/TenantDomains.php).
+if (isset($o['domain-add']))    { done(\app\TenantDomains::add(inst($o['domain-add']), domain($o)), 'domain ' . domain($o) . ' for ' . $o['domain-add']); exit(0); }
+if (isset($o['domain-remove'])) { done(\app\TenantDomains::remove(inst($o['domain-remove']), domain($o)), 'domain ' . domain($o) . ' removed from ' . $o['domain-remove']); exit(0); }
+if (isset($o['domains'])) {
+    $i = inst($o['domains']);
+    echo "main site: {$i->ctDomain}\n";
+    foreach (\app\TenantDomains::of($i) as $d) echo "own site:  {$d}\n";
     exit(0);
 }
 if (isset($o['status'])) {

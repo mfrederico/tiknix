@@ -435,10 +435,16 @@ class ProxmoxDeploy {
     public static function removeProxy(string $domain): bool {
         $parts = explode('.', $domain);
         if (count($parts) < 2) return true;
-        array_pop($parts);
-        $file = self::PROXY_DIR . '/.proxy.' . implode('.', $parts);
+        $file = self::proxyPath($domain);
         if (!is_file($file)) return true;
         return @unlink($file);
+    }
+
+    /** capricorn's proxy file for a domain: .proxy.<domain without its tld>. */
+    public static function proxyPath(string $domain): string {
+        $parts = explode('.', $domain);
+        array_pop($parts);                       // drop the tld, exactly as capricorn does
+        return self::PROXY_DIR . '/.proxy.' . implode('.', $parts);
     }
 
     public static function writeProxy(string $domain, string $ip): array {

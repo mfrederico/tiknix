@@ -31,7 +31,8 @@ fi
 apt-get install -yq --no-install-recommends \
   php$PHPV-fpm php$PHPV-cli php$PHPV-sqlite3 php$PHPV-mbstring php$PHPV-intl php$PHPV-zip \
   php$PHPV-gd php$PHPV-curl php$PHPV-xml php$PHPV-apcu php$PHPV-mysql \
-  nginx git unzip curl ca-certificates openssh-server >/dev/null
+  nginx git unzip curl ca-certificates openssh-server tmux >/dev/null
+# tmux: the app's /claude page runs `claude setup-token` in a tmux session (AgentLogin)
 if ! command -v composer >/dev/null 2>&1; then
   # getcomposer.org's installer, checked against its published signature
   EXPECTED="$(curl -fsSL https://composer.github.io/installer.sig)"
@@ -72,6 +73,12 @@ pm.process_idle_timeout = 30s
 php_admin_value[error_log] = /srv/app/log/php-error.log
 EOF
 rm -f /etc/php/$PHPV/fpm/pool.d/www.conf
+# The packaged unit sets PrivateDevices=yes: no /dev/ptmx, so tmux started from a request
+# (the /claude sign-in terminal, AgentLogin) dies with "server exited unexpectedly". The
+# container is the isolation boundary here — one app per container.
+mkdir -p /etc/systemd/system/php$PHPV-fpm.service.d
+printf '[Service]\nPrivateDevices=no\n' > /etc/systemd/system/php$PHPV-fpm.service.d/pty.conf
+systemctl daemon-reload
 cat > /etc/nginx/sites-available/app <<'EOF'
 # The app, behind capricorn (which terminates TLS and proxies here on port 80).
 server {

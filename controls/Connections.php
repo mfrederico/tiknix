@@ -879,7 +879,7 @@ class Connections extends Control {
         if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/dashboard'); return; }
         $root = dirname(__DIR__);
 
-        $connections = ConnectionStore::withOwnDb(function () {
+        $connections = ConnectionStore::readOwn(function () {
             $rows = [];
             foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
                 if (!$c->id) continue;

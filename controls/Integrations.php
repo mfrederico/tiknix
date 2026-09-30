@@ -108,7 +108,7 @@ class Integrations extends Control {
      * There is no remote call left to fail, so there is nothing left to flatten.
      */
     private function connectedServices(string $root): array {
-        $services = \app\ConnectionStore::withOwnDb(function () {
+        $services = \app\ConnectionStore::readOwn(function () {
             $out = [];
             foreach (Bean::find('connections') as $c) {
                 $svc = (string)$c->connectorType; if ($svc === '') continue;

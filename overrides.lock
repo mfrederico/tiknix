@@ -21,6 +21,11 @@
             "release": "dev-main",
             "recorded_at": "2026-09-30T17:02:29+00:00"
         },
+        "views/privacy/index.php": {
+            "base": "sha256:b375c53e58b911b374af555f7afd993c46519df5c23b0442cdd68a4a168b6c3f",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T23:56:00+00:00"
+        },
         "views/teams/create.php": {
             "base": "sha256:000744cfbf7c64137886ec4cc0501d39c7f83bce4884406abfa0d581e7815267",
             "release": "dev-main",
@@ -45,6 +50,11 @@
             "base": "sha256:a5c1af646a7d6f680f1cc4af684d3a3db9306c28d10144a16a8d01b5dd4fe772",
             "release": "dev-main",
             "recorded_at": "2026-09-30T17:01:39+00:00"
+        },
+        "views/terms/index.php": {
+            "base": "sha256:755af9ced85ab760bd3070e6c18f12894e128399c779748425d1f6156c824a78",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T23:56:00+00:00"
         }
     }
 }

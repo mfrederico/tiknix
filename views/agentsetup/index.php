@@ -256,7 +256,7 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Name</label>
-                        <input type="text" class="form-control" name="slug" required pattern="[a-z0-9][a-z0-9-]*" placeholder="my-server">
+                        <input type="text" class="form-control" name="slug" required pattern="[a-z0-9][a-z0-9\-]*" placeholder="my-server">
                         <div class="form-text">Lowercase alphanumeric with dashes</div>
                     </div>
                     <div class="mb-3">

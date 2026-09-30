@@ -53,7 +53,7 @@ $isEdit = !$isNew;
                                 <div class="col-auto">
                                     <input type="text" class="form-control form-control-sm font-monospace"
                                            id="file_name" name="file_name"
-                                           pattern="[a-z][a-z0-9-]*\.php"
+                                           pattern="[a-z][a-z0-9\-]*\.php"
                                            placeholder="my-custom-hook.php"
                                            value="<?= htmlspecialchars(($fileName) ?? '') ?>"
                                            required style="width: 250px;">

@@ -261,17 +261,24 @@ class TenantHost {
      * task/<id>, the app's own agent and credentials, changes committed). The prompt travels on
      * stdin. Returns the tenant's JSON answer, or a refusal naming what failed on the way.
      */
-    public static function task(object $inst, string $id, string $prompt, int $timeout = 1800): array {
-        return self::taskCall($inst, '--agent-task=' . escapeshellarg($id) . ' --timeout=' . (int) $timeout, $prompt, $timeout + 120);
+    public static function task(object $inst, string $id, string $prompt, int $timeout = 1800, string $agent = ''): array {
+        return self::taskCall($inst, '--agent-task=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $prompt, $timeout + 120);
     }
 
     /** The builder's planner in the tenant (clitool --agent-plan): the plan's JSON in 'plan'. */
-    public static function plan(object $inst, string $id, string $request, int $memberId, int $timeout = 1800): array {
-        return self::taskCall($inst, '--agent-plan=' . escapeshellarg($id) . ' --member=' . (int) $memberId . ' --timeout=' . (int) $timeout, $request, $timeout + 120);
+    public static function plan(object $inst, string $id, string $request, int $memberId, int $timeout = 1800, string $agent = ''): array {
+        return self::taskCall($inst, '--agent-plan=' . escapeshellarg($id) . ' --member=' . (int) $memberId . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $request, $timeout + 120);
     }
 
     public static function mergeTask(object $inst, string $id): array   { return self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600); }
     public static function discardTask(object $inst, string $id): array { return self::taskCall($inst, '--agent-discard=' . escapeshellarg($id), null, 120); }
+
+    /** --agent=NAME for one of the app's agents (its AI agents page); '' = the app's default. */
+    private static function agentArg(string $agent): string {
+        if ($agent === '') return '';
+        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/D', $agent)) throw new \InvalidArgumentException("'{$agent}' is not an agent name");
+        return ' --agent=' . escapeshellarg($agent);
+    }
 
     private static function taskCall(object $inst, string $args, ?string $stdin, int $timeout): array {
         [$code, $out] = self::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php ' . $args, $stdin, $timeout);

@@ -9,6 +9,7 @@
 namespace tests\unit;
 
 use app\AgentTask;
+use app\Bean;
 use app\EngineRegistry;
 use app\Paths;
 use PHPUnit\Framework\TestCase;
@@ -16,8 +17,16 @@ use PHPUnit\Framework\TestCase;
 class AgentTaskTest extends TestCase {
 
     private string $app;
+    private const DB = 'agenttask-test';
+    private ?string $prevDb = null;
 
     protected function setUp(): void {
+        // The app's agents (AgentTask::runsOn reads the default one): none here, so a run goes
+        // on the app's Claude account — the stand-in login below.
+        $this->prevDb = Bean::currentDatabaseKey();
+        if (!Bean::hasDatabase(self::DB)) Bean::addDatabase(self::DB, 'sqlite::memory:');
+        Bean::selectDatabase(self::DB);
+        \RedBeanPHP\R::nuke();
         $this->app = sys_get_temp_dir() . '/tiknix-agenttask-' . getmypid() . '-' . bin2hex(random_bytes(3));
         foreach (['conf', 'bin', 'scripts', '.aibuilder/state/claude'] as $d) mkdir("{$this->app}/{$d}", 0700, true);
         file_put_contents("{$this->app}/composer.json", "{}\n");
@@ -37,6 +46,7 @@ class AgentTaskTest extends TestCase {
     }
 
     protected function tearDown(): void {
+        if ($this->prevDb !== null && Bean::hasDatabase($this->prevDb)) Bean::selectDatabase($this->prevDb);
         Paths::useRoot(null);
         EngineRegistry::flush();
         exec('rm -rf ' . escapeshellarg($this->app));

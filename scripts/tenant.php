@@ -10,10 +10,10 @@
  *   php scripts/tenant.php --up=SLUG --domain=HOST        create + provision + publish
  *   php scripts/tenant.php --ssh=SLUG [--root] -- CMD…    run a command in the tenant (as app)
  *   php scripts/tenant.php --clitool=SLUG -- ARGS…        the app's own clitool, in /srv/app (as app)
- *   php scripts/tenant.php --task=SLUG --id=ID < prompt   the builder: an agent task in the tenant
+ *   php scripts/tenant.php --task=SLUG --id=ID [--agent=NAME] < prompt   the builder: an agent task in the tenant
  *   php scripts/tenant.php --merge=SLUG --id=ID           merge a task branch (then the seeds)
  *   php scripts/tenant.php --discard=SLUG --id=ID         throw a task away
- *   php scripts/tenant.php --plan=SLUG --id=ID --member=N < request   the builder's planner in the tenant
+ *   php scripts/tenant.php --plan=SLUG --id=ID --member=N [--agent=NAME] < request   the builder's planner in the tenant
  *        (--task and --plan also take --out=FILE: the JSON result written there as well)
  *   php scripts/tenant.php --workspace=SLUG               the builder's records on core (_workspaces/<slug>),
  *                                                         adopting a host clone's history once
@@ -44,7 +44,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -101,10 +101,10 @@ if (isset($o['task']) || isset($o['plan']) || isset($o['merge']) || isset($o['di
     if ($id === '') { fwrite(STDERR, "ERROR --id=TASK is required\n"); exit(2); }
     if (isset($o['task'])) {
         $prompt = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
-        $r = TenantHost::task(inst($o['task']), $id, $prompt);
+        $r = TenantHost::task(inst($o['task']), $id, $prompt, 1800, (string) ($o['agent'] ?? ''));
     } elseif (isset($o['plan'])) {
         $request = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
-        $r = TenantHost::plan(inst($o['plan']), $id, $request, (int) ($o['member'] ?? 0));
+        $r = TenantHost::plan(inst($o['plan']), $id, $request, (int) ($o['member'] ?? 0), 1800, (string) ($o['agent'] ?? ''));
     } elseif (isset($o['merge'])) {
         $r = TenantHost::mergeTask(inst($o['merge']), $id);
     } else {

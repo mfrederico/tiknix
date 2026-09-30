@@ -89,8 +89,12 @@ class PlanOrchestrator {
     ): bool {
         $planId = (int) $planId;
         if ($planId <= 0) { self::fail('orchestrator launch without a plan id', []); return false; }
-        try { InstanceRepo::assertNotCarried($slug); }
-        catch (\RuntimeException $e) { self::fail($e->getMessage(), ['plan' => $planId, 'slug' => $slug]); return false; }
+        // A project in its own container builds there (PlanExecutor's tenant route); only a
+        // carried host clone that no longer serves the site is refused.
+        if (!TenantBuilder::bySlug($slug)) {
+            try { InstanceRepo::assertNotCarried($slug); }
+            catch (\RuntimeException $e) { self::fail($e->getMessage(), ['plan' => $planId, 'slug' => $slug]); return false; }
+        }
 
         // Already building — under either name. Checked before the scoped name is
         // built so a pre-rename orchestrator is not joined by a second one.

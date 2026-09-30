@@ -22,12 +22,24 @@ class TenantBuilder {
     /** What the workspace keeps from a host clone's .aibuilder/ (history, not machinery). */
     private const HISTORY = ['*.log', '*.json', '*.md', '*.txt', 'engine', 'plans'];
 
+    /** The instance row when $slug lives in its own container, else null (core's registry, from any process). */
+    public static function bySlug(string $slug): ?object {
+        $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ?', [$slug]));
+        return ($inst && $inst->id && \Model_Instance::tenantRow($inst)) ? $inst : null;
+    }
+
     /** The project's workspace, created when missing. */
     public static function workspace(object $inst): string {
         if (!\Model_Instance::tenantRow($inst)) throw new \RuntimeException("{$inst->slug} does not live in its own container");
         $ws = \Model_Instance::dirOf($inst);
         foreach (['', '/data', '/.aibuilder'] as $d) {
             if (!is_dir($ws . $d) && !@mkdir($ws . $d, 0775, true)) throw new \RuntimeException("could not create {$ws}{$d}");
+        }
+        // The audit's browser (it verifies the running site over its public URL, from here).
+        if (!is_file("{$ws}/.mcp.json")) {
+            file_put_contents("{$ws}/.mcp.json", json_encode(['mcpServers' => ['playwright' => [
+                'command' => 'npx', 'args' => ['-y', '@playwright/mcp@latest', '--headless', '--isolated', '--no-sandbox'],
+            ]]], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         }
         return $ws;
     }
@@ -94,5 +106,49 @@ class TenantBuilder {
         if (!is_file($outFile)) return null;
         $d = json_decode((string) file_get_contents($outFile), true);
         return is_array($d) ? $d : null;
+    }
+
+    /**
+     * The codebase inventory the planner's and the builder's briefs embed — computed IN THE
+     * CONTAINER (the Introspector behind the MCP tools, over /srv/app), since the app's code is
+     * there and nowhere on core.
+     */
+    public static function digest(object $inst): string {
+        [$code, $out] = TenantHost::ssh($inst, 'app', 'cd /srv/app && php -d error_reporting=0 -r '
+            . escapeshellarg('require "vendor/autoload.php"; require "vendor/tiknix/runtime/mcptools/Introspector.php"; echo (new app\mcptools\Introspector("/srv/app"))->digest();'), null, 120);
+        if ($code !== 0 || trim($out) === '') {
+            error_log("ERROR TenantBuilder::digest: {$inst->slug}'s container gave no codebase inventory (exit {$code}): " . mb_substr(trim($out), 0, 300));
+            return '_(codebase inventory unavailable: the container did not answer — see the log)_';
+        }
+        return $out;
+    }
+
+    /**
+     * The planner's result (tenant.php --plan --out) into the workspace, where the planner's
+     * script and plan-ingest look: <member>-<time>-<rand>.plan.json, or plan-complete.md when
+     * the agent found the goal already built. Returns the process exit code (0 = something
+     * was delivered).
+     */
+    public static function unpackPlan(string $outFile, string $abDir, string $slug, int $memberId): int {
+        $r = self::result($outFile);
+        if ($r === null) { echo "[planner] the container planner left no result ({$outFile})\n"; return 1; }
+        if (!empty($r['credential'])) echo "[planner] ran in {$slug}'s container on {$r['credential']}\n";
+        if (($r['status'] ?? '') === 'complete') {
+            file_put_contents("{$abDir}/plan-complete.md", (string) ($r['complete'] ?? ''));
+            echo "[planner] the agent judged the goal already built (plan-complete.md)\n";
+            return 0;
+        }
+        if (($r['status'] ?? '') !== 'planned') {
+            echo '[planner] no plan: ' . ($r['status'] ?? '?') . ' — ' . ($r['error'] ?? '') . "\n";
+            if (!empty($r['output'])) echo "[planner] agent output (tail):\n" . mb_substr((string) $r['output'], -2000) . "\n";
+            return 1;
+        }
+        $plan = json_decode((string) $r['plan'], true);
+        if (!is_array($plan)) { echo "[planner] the plan is not JSON\n"; return 1; }
+        $plan['instance'] = $slug;   // submit_plan stamped the container's throwaway worktree
+        $file = "{$abDir}/{$memberId}-" . date('Ymd-His') . '-' . substr(bin2hex(random_bytes(4)), 0, 6) . '.plan.json';
+        if (file_put_contents($file, json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) { echo "[planner] could not write {$file}\n"; return 1; }
+        echo '[planner] plan received from the container: "' . ($plan['title'] ?? '?') . '" (' . count($plan['subtasks'] ?? []) . " task(s))\n";
+        return 0;
     }
 }

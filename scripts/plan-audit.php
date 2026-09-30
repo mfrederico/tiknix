@@ -72,9 +72,12 @@ Bean::selectDatabase($taskDbKey);
 if (!$inst || !$inst->id) { fwrite(STDERR, "no instance $slug in core's registry\n"); exit(1); }
 
 $appNs   = (string)($inst->app ?: 'tiknix');
-$baseUrl = "https://{$slug}.{$appNs}.com";
+// A project in its own container: its public domain, and its clitool over SSH (tenant.php).
+$GLOBALS['tenantSlug'] = \Model_Instance::tenantRow($inst) ? $slug : '';
+if ($GLOBALS['tenantSlug'] !== '' && (string) $inst->ctDomain === '') { fwrite(STDERR, "{$slug} lives in a container with no domain (instance.ct_domain)\n"); exit(1); }
+$baseUrl = $GLOBALS['tenantSlug'] !== '' ? 'https://' . $inst->ctDomain : "https://{$slug}.{$appNs}.com";
 $clitool = $dir . '/scripts/clitool.php';
-if (!is_file($clitool)) { fwrite(STDERR, "no clitool at $clitool\n"); exit(1); }
+if ($GLOBALS['tenantSlug'] === '' && !is_file($clitool)) { fwrite(STDERR, "no clitool at $clitool\n"); exit(1); }
 
 // --- 1) Provision ephemeral test users (deterministic; agent only logs in) ----
 $token = substr(sha1($planId . '|' . $slug . '|' . $plan->updatedAt), 0, 8);
@@ -82,7 +85,9 @@ $specs = ['root' => 1, 'admin' => 50, 'member' => 100];
 $creds = [];
 
 function runClitool(string $dir, array $args): array {
-    $inner = 'cd ' . escapeshellarg($dir) . ' && php ' . escapeshellarg('scripts/clitool.php');
+    $inner = ($GLOBALS['tenantSlug'] ?? '') !== ''
+        ? 'php ' . escapeshellarg(dirname(__DIR__) . '/scripts/tenant.php') . ' ' . escapeshellarg('--clitool=' . $GLOBALS['tenantSlug']) . ' --'
+        : 'cd ' . escapeshellarg($dir) . ' && php ' . escapeshellarg('scripts/clitool.php');
     foreach ($args as $a) { $inner .= ' ' . escapeshellarg((string)$a); }
     // env -u: this driver runs with TIKNIX_WORKBENCH_DB set and exec() passes its
     // environment down. The instance's own bootstrap honours that variable, so the QA

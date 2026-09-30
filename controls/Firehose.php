@@ -33,7 +33,6 @@ class Firehose extends Control {
     /** GET /firehose — admin feed of detected errors (newest first, 'new' on top). */
     public function index() {
         if (!$this->requireLogin()) return;
-        $this->requireBuilderTools('Firehose');
         if ($this->member->level > LEVELS['ADMIN']) {
             $this->flash('error', 'The error firehose is admin-only.');
             Flight::redirect('/dashboard');
@@ -201,11 +200,6 @@ class Firehose extends Control {
     }
 
     private function autoTriage($err): array {
-        // Control-plane only: an instance clone of this code must never create tasks.
-        if (function_exists('is_control_plane') && !is_control_plane()) {
-            return ['action' => 'skipped', 'reason' => 'not control plane'];
-        }
-
         // Resolve the reporting instance. Reported tag is "<slug>.tiknix".
         $tag  = (string)$err->instanceTag;
         $slug = preg_replace('/\.[^.]+$/', '', $tag);   // bidsurge.tiknix -> bidsurge

@@ -54,7 +54,6 @@
 
 // Mcp — the gateway's X-Tiknix-Project scope, and the broker's read of an instance's connection.
 \app\Mcp::$projectScope = static function (string $slug, int $memberId, bool $withApiKey): array {
-        if (!\is_core_install()) throw new \RuntimeException('only the control plane\'s MCP gateway takes a project scope; a project\'s own server already is its scope.');
         if (!$withApiKey || $memberId <= 0) throw new \RuntimeException('a project scope needs an API-key caller.');
         if (!preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/D', $slug)) throw new \RuntimeException("'{$slug}' is not a project slug.");
         $inst = \app\Bean::findOne('instance', 'slug = ? AND status = ?', [$slug, 'active']);
@@ -87,5 +86,18 @@
 \app\Admin::$memberExtension = new \app\PlatformMemberAdmin();
 
 // The page shell — projects, the project bar, Workspace/Build navigation, Teams and Billing.
-foreach (['prepare', 'nav', 'bar', 'account'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
+// The platform's pages beside the app (Chrome::$links), its shell, and its own parts of the
+// dashboard and footer — what the runtime used to decide with is_core_install().
+\app\Chrome::$links = [
+    'projects'   => '/projects',
+    'docs'       => 'https://docs.tiknix.com',
+    'help'       => '/help',
+    'agentsetup' => '/agentsetup',
+    'fleet'      => '/fleet',
+];
+\app\Chrome::$omit = ['/connections', '/integrations'];   // the hub's own nav offers them (chrome_nav)
+\app\Chrome::$copyright = 'ClickSimple LLC';
+\app\Chrome::$mark = true;
+\app\Member::$builderPrefs = true;
+foreach (['prepare', 'nav', 'bar', 'account', 'footer', 'dashboard'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
 unset($__slot);

@@ -623,7 +623,6 @@ class Connections extends Control {
     }
 
     private function mcGate(bool $json = false): bool {
-        if (!builder_tools_enabled()) { $json ? Flight::jsonError('Model connections are a builder feature.', 403) : Flight::redirect('/connections'); return false; }
         if (Flight::request()->method !== 'POST') { $json ? Flight::jsonError('POST only.', 405) : Flight::redirect('/connections'); return false; }
         if (!Flight::csrf()->validateRequest()) { $json ? Flight::jsonError('Invalid CSRF token.', 403) : $this->flash('error', 'Invalid CSRF token.'); if (!$json) Flight::redirect('/connections#models'); return false; }
         return true;
@@ -717,7 +716,6 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         // Inside an instance there is no owner/instance picker — show the read-only
         // list of what this app is connected to (metadata via the broker).
-        if (!builder_tools_enabled()) { $this->instanceConnections(); return; }
         $instances = Bean::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
 
         // An explicit ?id= wins (deep links from the builder), then the project the
@@ -1050,11 +1048,10 @@ class Connections extends Control {
 
     /** Guard for the instance-side manage actions: instance context (not control plane) + ADMIN. */
     private function instanceManageGuard(bool $json): bool {
-        if (builder_tools_enabled()) {   // on the control plane, use the owner-scoped flow instead
-            if ($json) $this->jsonError('Manage connections from the control-plane Connections page.', 400);
-            else Flight::redirect('/connections');
-            return false;
-        }
+        // The control plane manages a project's connections through the owner-scoped flow.
+        if ($json) $this->jsonError('Manage connections from the control-plane Connections page.', 400);
+        else Flight::redirect('/connections');
+        return false;
         if (!Flight::hasLevel(LEVELS['ADMIN'])) {
             if ($json) $this->jsonError('Admins only.', 403);
             else Flight::redirect('/integrations');
@@ -1874,11 +1871,9 @@ class Connections extends Control {
         // for an instance would seal it with core's key and hand the instance a value
         // it can never verify against -- and the failure would show up as an HMAC
         // mismatch on a live webhook, nowhere near the button that caused it.
-        if (builder_tools_enabled()) {
-            $this->jsonError('Set the webhook secret from the instance\'s own Connections page: '
-                . 'it is encrypted with that install\'s key, which the control plane does not hold.', 409);
-            return;
-        }
+        $this->jsonError('Set the webhook secret from the instance\'s own Connections page: '
+            . 'it is encrypted with that install\'s key, which the control plane does not hold.', 409);
+        return;
 
         $cid = (int)$this->getParam('cid', 0);
         if ($cid <= 0) { $this->jsonError('Connection not found', 404); return; }

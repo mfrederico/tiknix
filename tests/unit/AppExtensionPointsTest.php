@@ -21,6 +21,7 @@ class AppExtensionPointsTest extends TestCase {
     public function testTheDashboardIsASlotAndAnUnknownSlotIsRefused(): void {
         $parts = Chrome::$parts;
         try {
+            Chrome::$parts = [];   // the control plane fills slots of its own (lib/controlplane.php)
             Chrome::add('dashboard', 'invoicing/_dashboard');
             $this->assertSame(['invoicing/_dashboard'], Chrome::$parts['dashboard']);
             try { Chrome::add('dashbaord', 'x'); $this->fail('a misspelled slot was accepted'); }

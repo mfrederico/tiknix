@@ -14,7 +14,6 @@ use \Flight as Flight;
 class About extends BaseControls\Control {
 
     public function index($params = []) {
-        if (!is_control_plane()) { Flight::redirect('/'); return; }
         $this->render('index/about', [
             'title' => 'Who we are — tiknix',
         ], false);

@@ -25,46 +25,21 @@ abstract class WorkbenchTool extends BaseTool {
      * @return bool TRUE when this process is answering for ONE project's own workbench.db.
      */
     protected function selectWorkbenchDb(): bool {
-        // REFUSE when this install cannot say who it is.
-        //
-        // is_control_plane() answers "unknown" as "core" so the root is never locked out
-        // of its tools. Applied here that fail-safe picks a DATABASE: an install with an
-        // empty or unparseable app.baseurl would read and write the CONTROL PLANE's tasks
-        // while believing they were its own. Task ids are per-project, so that is not an
-        // error anyone would see — it is a plausible answer about the wrong project, which
-        // is exactly how the .mcp.json bug survived. Stop instead.
-        $state = \control_plane_state();
-        if ($state === 'unknown') {
-            $msg = 'This install cannot identify itself ([app] baseurl is empty or '
-                 . 'unparseable), so it cannot say whether workbench tasks belong to it or '
-                 . 'to the control plane. Refusing rather than reading another install\'s tasks.';
-            \Flight::get('log')->error($msg, ['baseurl' => (string) \Flight::get('app.baseurl')]);
-            throw new \RuntimeException($msg);
-        }
-        if ($state === 'core') {
-            // A scope the gateway resolved from X-Tiknix-Project (Mcp::applyProjectScope):
-            // THAT project's own workbench.db, created if it is the project's first task.
-            $scope = \Flight::get('mcp.project');
-            if (is_array($scope) && !empty($scope['dir'])) {
-                $db = rtrim((string) $scope['dir'], '/') . '/data/workbench.db';
-                if (!is_dir(dirname($db)) && !@mkdir(dirname($db), 0775, true)) {
-                    throw new \RuntimeException("Cannot create " . dirname($db) . " for project '{$scope['slug']}'.");
-                }
-                $key = 'ws:' . $scope['slug'];
-                if (!Bean::hasDatabase($key)) Bean::addDatabase($key, 'sqlite:' . $db);
-                Bean::selectDatabase($key);
-                Bean::freeze(false);
-                return true;
+        // A scope the gateway resolved from X-Tiknix-Project (Mcp::applyProjectScope):
+        // THAT project's own workbench.db, created if it is the project's first task.
+        $scope = \Flight::get('mcp.project');
+        if (is_array($scope) && !empty($scope['dir'])) {
+            $db = rtrim((string) $scope['dir'], '/') . '/data/workbench.db';
+            if (!is_dir(dirname($db)) && !@mkdir(dirname($db), 0775, true)) {
+                throw new \RuntimeException("Cannot create " . dirname($db) . " for project '{$scope['slug']}'.");
             }
-            return false;                                       // core: ambient core db (unchanged)
+            $key = 'ws:' . $scope['slug'];
+            if (!Bean::hasDatabase($key)) Bean::addDatabase($key, 'sqlite:' . $db);
+            Bean::selectDatabase($key);
+            Bean::freeze(false);
+            return true;
         }
-
-        $db = \app\Paths::root() . '/data/workbench.db';         // {instanceRoot}/data/workbench.db
-        if (!is_file($db)) return false;                       // no sidecar-owned tasks here
-        if (!Bean::hasDatabase('ws')) Bean::addDatabase('ws', 'sqlite:' . $db);
-        Bean::selectDatabase('ws');
-        Bean::freeze(false);
-        return true;
+        return false;                                       // core: ambient core db (unchanged)
     }
 
     /**

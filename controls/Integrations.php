@@ -32,8 +32,7 @@ class Integrations extends Control {
      */
     public function index($params = []) {
         if (!$this->requireLogin()) return;
-        if (builder_tools_enabled()) { $this->controlPlane(); return; }
-        $this->instanceView();
+        $this->controlPlane();
     }
 
     /** Control-plane hub — the selected project's automations. */
@@ -76,25 +75,6 @@ class Integrations extends Control {
             'services'       => array_values($services),
             'brokerError'    => '',
         ]);
-    }
-
-    /**
-     * Inside-an-instance read-only catalog. Open to ALL members (non-admin included) —
-     * the point is that builders can discover what's available to integrate with.
-     * Connections show as SERVICE + STATUS only (never account identifiers); managing
-     * them stays admin-only on /connections.
-     */
-    private function instanceView(): void {
-        $root = dirname(__DIR__);                       // the app root this code runs in
-        $this->render('integrations/index', [
-            'title'          => 'Integrations',
-            'pipelines'      => InstanceAutomations::pipelines($root),
-            'durableObjects' => InstanceAutomations::durableObjects($root),
-            'appName'        => basename($root),
-            // This instance's own public base URL — used to show the concrete
-            // MCP tool + REST API paths on the exposed pipeline cards.
-            'baseUrl'        => rtrim((string) (Flight::get('app.baseurl') ?: ''), '/'),
-        ] + $this->connectedServices($root));
     }
 
     /**

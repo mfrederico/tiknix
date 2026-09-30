@@ -45,7 +45,6 @@ class Helpdesk extends BaseControls\Control {
      */
     public function ask() {
         if (!$this->requireLogin()) return;
-        if (!is_core_install()) { Flight::redirect('/helpdesk'); return; }
         if (!$this->validateCSRF()) return;
         $subject  = trim((string) $this->getParam('subject', ''));
         $message  = trim((string) $this->getParam('message', ''));

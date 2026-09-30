@@ -47,24 +47,6 @@ class SendToTiknixSupportTool extends BaseTool {
         $message  = trim((string) $args['message']);
         $category = (string) ($args['category'] ?? 'problem');
 
-        if (!is_core_install()) {
-            // A project: core knows us by our broker key; the ticket is our owner's.
-            try {
-                [$base, $key] = MemberModel::broker();
-            } catch (\RuntimeException $e) {
-                return "# send_to_tiknix_support FAILED\n\n" . $e->getMessage() . "\n";
-            }
-            [$code, $body] = MemberModel::httpCall('POST', $base . '/brokerinfo/support',
-                ['Authorization: Bearer ' . $key, 'Accept: application/json', 'Content-Type: application/json'],
-                json_encode(['subject' => $subject, 'message' => $message, 'category' => $category], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 30);
-            $d = json_decode((string) $body, true);
-            if ($code !== 200 || empty($d['ok'])) {
-                $why = is_array($d) ? (string) ($d['message'] ?? $d['error'] ?? '') : '';
-                return "# send_to_tiknix_support FAILED\n\nCore answered HTTP {$code}" . ($why !== '' ? ": {$why}" : '') . "\n";
-            }
-            return "# send_to_tiknix_support — sent (ticket #{$d['ticket']})\n\nTell the user it is with Tiknix support; the answer will arrive in their Communications and email: {$d['url']}\n";
-        }
-
         // tiknix.com: the caller's own account.
         $this->requireAuth();
         $project = null;

@@ -91,7 +91,7 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      * tasks believing it is tidying a customer project. Naming conventions also break the
      * moment somebody adds an alias.
      *
-     * Two structural facts define one, both already used by scripts/upgrade-instances.php:
+     * Two structural facts define one:
      *   - its git origin IS core (realpath, so a symlinked path collapses to the truth)
      *   - it sits on an `instance/<slug>` branch, which only provisioning creates
      *

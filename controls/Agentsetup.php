@@ -51,7 +51,6 @@ class Agentsetup extends Control {
 
     public function __construct() {
         parent::__construct();
-        $this->requireBuilderTools('Agent Setup');
     }
 
     /**

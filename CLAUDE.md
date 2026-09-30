@@ -71,8 +71,8 @@ Prefer Mantic over `grep` or `glob` for discovery tasks.
 
 ## Codebase Introspection (MCP)
 
-Inside an AI Builder instance, the `tiknix` MCP server exposes structural
-primitives — prefer them over scanning the tree:
+The app's own `tiknix` MCP server (`/mcp/message`, or the stdio server in the runtime) exposes
+structural primitives — prefer them over scanning the tree:
 
 - `reuse_digest` — the pre-baked "what already exists" inventory in ONE call: controllers (+levels), models (+columns/relations), lib services (+methods), authcontrol wildcards, config sections, seeders. Call this FIRST when adding a feature.
 - `codebase_map` — orient first: controllers (+route counts), models+tables, lib classes, config sections.
@@ -90,16 +90,6 @@ They return pointers, not file bodies — `Read` the file at the pointer for det
 - `database_query(sql)` — ADMIN and HTTP only (not for jailed agents): ONE read-only statement (SELECT / WITH / EXPLAIN / read-only PRAGMA), capped at 200 rows, credential columns withheld.
 
 Every string these return is scrubbed of credential shapes (`Redact`). A value that reads `[redacted …]` was there and was withheld — that is not the same as empty.
-
-### When the platform is at fault — offer to escalate, then ask
-
-If, while working out why something does not work, the cause looks like the **Tiknix
-platform** (the builder, pipelines runtime, hosting, connectors, billing) rather than this
-app's own code, ASK the user: **"Should I escalate this to Tiknix support?"** Only on a yes,
-call `send_to_tiknix_support(user_agreed: true, subject, message)` — the message written for
-a support engineer: what was attempted, what happened (exact errors, URLs, times), what you
-already checked, what you suspect. The ticket names this project; the answer reaches the
-user in Communications and by email. Never send one without asking; 5 per hour at most.
 
 ### Reuse first (MANDATORY when adding functionality)
 
@@ -140,6 +130,16 @@ wildcard, so they would shadow it; a method row a person set stays as their exce
 A plan's seeds reach the live instance when the plan finishes (the orchestrator runs
 `clitool --build`), never from a task's worktree.
 RedBean auto-creates a model's table on first store, so there is no `CREATE TABLE`.
+
+## When the Platform Is at Fault — Offer to Escalate, Then Ask
+
+If, while working out why something does not work, the cause looks like the **Tiknix
+platform** (the builder, pipelines runtime, hosting, connectors, billing) rather than this
+app's own code, ASK the user: **"Should I escalate this to Tiknix support?"** Only on a yes,
+call `send_to_tiknix_support(user_agreed: true, subject, message)` — the message written for
+a support engineer: what was attempted, what happened (exact errors, URLs, times), what you
+already checked, what you suspect. The ticket names this project; the answer reaches the
+user in Communications and by email. Never send one without asking; 5 per hour at most.
 
 ## Framework Standards
 
@@ -755,5 +755,6 @@ one-off script that writes instance data goes through `IsolatedPool::runAsPool($
 - `REDBEAN_README.md` - Detailed RedBeanPHP reference
 - `FLIGHTPHP_README.md` - Detailed FlightPHP reference
 - https://redbeanphp.com/ - Official RedBeanPHP documentation
+- `vendor/tiknix/runtime/README.md` - the runtime package: what it is, how an app extends or overrides it
 
 <!-- tiknix:managed end -->

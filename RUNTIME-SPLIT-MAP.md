@@ -354,8 +354,59 @@ visitor. Until the reload, the container was proved through an SSH tunnel to it.
 **Open**: the builder's agent needs the app's own credential (a Claude login or an Anthropic
 key/connection in the app) — deliberately not copied from anyone; the mechanics are proved by
 `AgentTaskTest` with a stand-in agent. The workbench/plan executor still dispatch to host
-clones — wiring them to `TenantHost::task` is step 5, with deleting the isolation machinery.
+clones — wiring them to `TenantHost::task` is step 5 (§5e).
 Old cat-poo-box (`cleans-cat-poo-boxes-937cab`) is untouched.
+
+## 5e. Step 5 status (2026-09-30)
+
+**Ten projects now run in their own containers, on their own domains.** `scripts/tenant.php
+--inventory / --carry / --carry-data / --cutover / --rollback` (`lib/TenantCarry.php`) move a
+host clone into a tenant under its own slug and instance row:
+
+| step | what it does |
+|---|---|
+| inventory | the clone's WORKING TREE (uncommitted work included), by content hash against every blob core ever had: its own files, and the core files it edited |
+| seed | the template made into the app (`TenantApp::prepareRepo`), its own files and `concepts.lock`, edited core files kept under `.carry/edited/` with `CARRY.md` as the porting list, host paths retargeted (`bootstrap.php` → the autoloader, the clone's dir → `/srv/app`; anything else refused) — pushed as origin branch `app`; `main` stays the clone's |
+| provision | `tenant/app.sh` from branch `app`, the app's `system-packages`, heartbeat OFF (a staging copy must not run the live app's schedule) |
+| data | consistent SQLite backups, the connections store and key, `secure/`, uploads, site configs, its own `conf/*.ini` (never one core has or ships an example of: those are core's credentials), `config.ini` merged onto the tenant's minus host/control-plane settings, its own Claude login (read through the pool on an isolated clone), seeds + plugin seeds, orphaned permission rows pruned, the regenerated CLAUDE.md committed |
+| cutover | databases once more, the real base URL, the domain(s) proxied, heartbeat ON, the staging host retired, `carried-to-tenant.json` beside the origin — core's builder (main ff45e72) and heartbeat (main) skip the clone from then on |
+| rollback | the proxy files removed, heartbeat off, the marker removed |
+
+| project | container | core edits → |
+|---|---|---|
+| pd | 100 | home page via `Index::$home`; Earlywater's own view |
+| invoza | 102 | menu (`prepare`) + dashboard panel (`dashboard` slot) |
+| blower4free | 103 | rebate routes seed; Shopify orders via `ConnectionBindings::call('root','store','create_order')` |
+| mileage | 106 | trip-calculator home; team trips (`team` slot); trip rooms via `Model_Thread::$related`; Google-connect experiment dropped (never used) |
+| bookingscheduler | 107 | salon home + theming (`Home`); lead CRM as recorded overrides; Stripe reconciliation as a `/webhook/stripe` handler |
+| lead-machine | 108 | outreach menu + dashboard; 15 pipelines retargeted; its GC pipeline |
+| start, discotuba, surgeew, quickticket | 110–113 | none (the shared uncommitted platform sweep dropped); discotuba declares `ffmpeg` |
+
+Paused on the host by the owner's call: **collectiq, partsdna, Serenity** (they rewrote core's
+dashboard, admin, auth and layout); collectiq's staging container 109 is kept, not served.
+leadmachine-harvest was deleted (archive + origin kept). This branch cannot land on main
+until those three move: the host builder and host isolation still serve them there.
+
+**What the runtime gained** (alpha.13–26): Turnstile optional with an admin notice;
+`Index::$home`; Chrome slots `dashboard`, `team`, `Chrome::$links/$omit/$copyright/$mark`;
+Teams for an app's users (leaving a team leaves its rooms — fixed on main too);
+`Model_Thread::$related`; `ConnectionBindings::call`; Shopify `create_order`; Stripe setup /
+off-session charge / refund / verified events and `/webhook/stripe` with app handlers;
+Microsoft `find_conversation_message` and the reply fix; upsert may write a declared `id`;
+`Mailer::brand()`; the menu lights its most specific item; `--update` commits CLAUDE.md;
+every template app ships `pipelines/garbagecollector.json`; tenants tick themselves.
+
+**Deleted by the container move** (§3): from the runtime, `IsolatedPool`, `CoreDb`, the
+pool-user seeds, the pipeline jail, the connections store's ACL special case, and
+`is_core_install` / `builder_tools_enabled` / `is_control_plane` / `platform_role` — the
+platform now says what it adds (`lib/controlplane.php`). From core, `scripts/instance-acl.php`,
+`trim-instance.php`, `upgrade-instances.php` and seed 09. `IsolatedPool` and `CoreDb` live in
+core until the last host clone moves (the carry reads through the pool; the host builder).
+
+**Open**: the builder in containers — the workbench and plan executor still drive host
+clones (`TenantHost::task` exists and is proved; the async tmux wrapper, the planner and the
+audit verbs are the work), and with it the host builder's jail and pool code goes; capricorn's
+`isolate-instance.sh` / `jail-run.sh` go when main no longer needs them.
 
 ## 6. Order of work
 

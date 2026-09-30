@@ -82,6 +82,12 @@ fi
 grep -cE ": ok$" /tmp/tiknix-build.log | sed 's/^/seeds ok: /'
 sudo -u app php scripts/clitool.php --agent-sync | tail -1
 
+say "the app's heartbeat: its own pipelines and durable objects, every minute"
+# The app schedules itself (scripts/pipeline-cron.php ticks it in-process); nothing on core has
+# to know its files. Written whole, so re-running this script never duplicates the line.
+printf '%s\n' '* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1' | crontab -u app -
+crontab -l -u app | sed 's/^/crontab: /'
+
 say "the app's agent: bin/claude and its engines"
 sudo -u app HOME=/home/app php -r 'require "/srv/app/vendor/autoload.php"; $r = \app\ClaudeBinary::link("/srv/app", realpath("/home/app/.local/bin/claude")); echo "bin/claude: {$r["action"]} — {$r["detail"]}\n";'
 if [ ! -f conf/aibuilder.ini ] && [ -f conf/aibuilder.example.ini ]; then sudo -u app cp conf/aibuilder.example.ini conf/aibuilder.ini; fi

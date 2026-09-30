@@ -119,6 +119,7 @@ PHP;
             foreach ($inv['own'] as $p) self::copy("{$src}/{$p}", "{$work}/{$p}");
             foreach ($inv['edited'] as $p) self::copy("{$src}/{$p}", "{$work}/.carry/edited/{$p}");
             if ($inv['uncommitted']) $steps[] = count($inv['uncommitted']) . ' of them uncommitted in the host clone: ' . implode(', ', $inv['uncommitted']);
+            $steps[] = self::retarget($work, $inv['dir'], $inv['own']);
             // Which plugins it has and which are on: its lock, with the concepts/ it names (own files).
             if (is_file("{$src}/concepts.lock")) { self::copy("{$src}/concepts.lock", "{$work}/concepts.lock"); $steps[] = 'concepts.lock carried'; }
             file_put_contents("{$work}/CARRY.md", self::report($inst, $inv));
@@ -209,6 +210,29 @@ PHP;
         [$c, $o] = TenantHost::ssh($inst, 'root', 'systemctl restart php8.5-fpm', null, 120);
         if ($c !== 0) return ['ok' => false, 'error' => "php-fpm restart failed: {$o}", 'steps' => $steps];
         return ['ok' => true, 'steps' => $steps];
+    }
+
+    /**
+     * The carried files pointed at the tenant: the host clone's bootstrap.php was the old way to
+     * boot (app\\Bootstrap is the runtime's, autoloaded), and its directory is /srv/app there.
+     * Pipelines and scripts named both (lead-machine's 15 pipelines, invoza's and
+     * bookingscheduler's cron scripts). Any other host path left is refused, by file.
+     */
+    private static function retarget(string $work, string $dir, array $files): string {
+        $changed = [];
+        foreach ($files as $p) {
+            if (!preg_match('/\.(php|json|sh|ini|md)$/', $p) || !is_file("{$work}/{$p}")) continue;
+            $t = $orig = (string) file_get_contents("{$work}/{$p}");
+            $esc = str_replace('/', '\\/', $dir);   // JSON may escape slashes
+            $t = str_replace(["{$dir}/bootstrap.php", $dir, "{$esc}\\/bootstrap.php", $esc],
+                             ['/srv/app/vendor/autoload.php', '/srv/app', '\\/srv\\/app\\/vendor\\/autoload.php', '\\/srv\\/app'], $t);
+            $t = preg_replace_callback("#^\\s*require(?:_once)?\\s*\\(?\\s*__DIR__\\s*\\.\\s*'/\\.\\./bootstrap\\.php'\\s*\\)?\\s*;[^\\n]*\\n#m",
+                fn($m) => str_contains($t, 'vendor/autoload.php') ? '' : "require_once __DIR__ . '/../vendor/autoload.php';\n", $t);
+            if ($t !== $orig) { file_put_contents("{$work}/{$p}", $t); $changed[] = $p; }
+            if (preg_match('#(?:/|\\\\/)var(?:/|\\\\/)www(?:/|\\\\/)html(?:/|\\\\/)[^\s"\']*#', $t, $m))
+                throw new \RuntimeException("{$p} still names a host path the tenant cannot reach ({$m[0]}) — fix it in the host clone or port it by hand");
+        }
+        return $changed ? 'pointed at the tenant (/srv/app, the autoloader): ' . implode(', ', $changed) : 'no host paths in the carried files';
     }
 
     const CLAUDE_LOGIN = '.aibuilder/state/claude/.credentials.json';

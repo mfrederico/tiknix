@@ -1,17 +1,12 @@
 #!/bin/bash
-# tenant/provision.sh — turn a fresh Ubuntu 24.04 container into a tiknix app host.
+# tenant/app.sh — put ONE app on a tenant whose system layer is tenant/base.sh (a linked clone
+# of the template, or a container base.sh ran in).
 #
-# Run AS ROOT inside the container, over SSH, by the control plane (lib/TenantHost.php):
-#   ssh root@10.10.10.N 'bash -s' < tenant/provision.sh   (with the settings below in the env)
+# Run AS ROOT inside the container, over SSH, by the control plane (TenantHost::provision), with
+# the settings below as `export` lines ahead of this script on stdin. Idempotent: re-running it
+# repairs an app rather than failing on one.
 #
-# Idempotent: every step checks before it acts, so re-running it repairs a tenant rather
-# than failing on one. This file IS the tenant image (RUNTIME-SPLIT-MAP.md step 4): the
-# container is Proxmox's stock ubuntu-24.04-standard template, and everything tiknix needs is
-# put there by this script, versioned with the control plane — no image registry, no custom
-# template to publish.
-#
-# What the tenant ends up with:
-#   PHP 8.5 (ondrej PPA — the same PHP core runs) + nginx, PHP-FPM pool running as `app`
+# What the app ends up with (on top of base.sh's PHP 8.5, nginx and FPM pool):
 #   /srv/app                  the app: a git repository, cloned from core once, then its own
 #   app@ over SSH             the builder's door (core's tenant key); root@ is provisioning only
 #   ~app/.git-credentials,    read-only access to core's git endpoint (this app's deploy token):
@@ -36,37 +31,11 @@ PHPV=8.5
 APP_DIR=/srv/app
 say() { echo "== $*"; }
 
-say "packages"
-if ! command -v php$PHPV >/dev/null 2>&1; then
-  apt-get update -q
-  apt-get install -yq --no-install-recommends software-properties-common ca-certificates curl gnupg
-  add-apt-repository -y ppa:ondrej/php
-  apt-get update -q
-fi
-apt-get install -yq --no-install-recommends \
-  php$PHPV-fpm php$PHPV-cli php$PHPV-sqlite3 php$PHPV-mbstring php$PHPV-intl php$PHPV-zip \
-  php$PHPV-gd php$PHPV-curl php$PHPV-xml php$PHPV-apcu php$PHPV-mysql \
-  nginx git unzip curl ca-certificates openssh-server >/dev/null
-if ! command -v composer >/dev/null 2>&1; then
-  # getcomposer.org's installer, checked against its published signature
-  EXPECTED="$(curl -fsSL https://composer.github.io/installer.sig)"
-  php -r "copy('https://getcomposer.org/installer', '/tmp/composer-setup.php');"
-  ACTUAL="$(php -r "echo hash_file('sha384', '/tmp/composer-setup.php');")"
-  if [ "$EXPECTED" != "$ACTUAL" ]; then echo "provision: composer installer signature mismatch" >&2; exit 3; fi
-  php /tmp/composer-setup.php --quiet --install-dir=/usr/local/bin --filename=composer
-  rm -f /tmp/composer-setup.php
-fi
-# The downloaded .debs and package lists are only needed to install; ~350 MB left behind otherwise.
-apt-get clean
-rm -rf /var/lib/apt/lists/*
-php -v | head -1; composer --version 2>/dev/null | head -1
-
 say "core is $CORE_HOST at $CORE_IP"
 grep -q " $CORE_HOST\$" /etc/hosts || echo "$CORE_IP $CORE_HOST" >> /etc/hosts
 
 say "the app user"
-id app >/dev/null 2>&1 || useradd --create-home --shell /bin/bash app
-install -d -o app -g app -m 700 /home/app/.ssh
+id app >/dev/null 2>&1 || { echo "app.sh: no app user — run tenant/base.sh first" >&2; exit 5; }
 touch /home/app/.ssh/authorized_keys
 grep -qF "$BUILDER_PUBKEY" /home/app/.ssh/authorized_keys || echo "$BUILDER_PUBKEY" >> /home/app/.ssh/authorized_keys
 chown app:app /home/app/.ssh/authorized_keys; chmod 600 /home/app/.ssh/authorized_keys
@@ -110,56 +79,9 @@ fi
 grep -cE ": ok$" /tmp/tiknix-build.log | sed 's/^/seeds ok: /'
 sudo -u app php scripts/clitool.php --agent-sync | tail -1
 
-say "the app's own agent (the builder runs it here: clitool --agent-task)"
-if [ ! -x /home/app/.local/bin/claude ]; then
-  sudo -iu app bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >/dev/null
-fi
-sudo -iu app /home/app/.local/bin/claude --version | head -1
-# bin/claude: a link inside the app (app\ClaudeBinary), found by agent steps and tasks
+say "the app's agent: bin/claude and its engines"
 sudo -u app HOME=/home/app php -r 'require "/srv/app/vendor/autoload.php"; $r = \app\ClaudeBinary::link("/srv/app", realpath("/home/app/.local/bin/claude")); echo "bin/claude: {$r["action"]} — {$r["detail"]}\n";'
 if [ ! -f conf/aibuilder.ini ] && [ -f conf/aibuilder.example.ini ]; then sudo -u app cp conf/aibuilder.example.ini conf/aibuilder.ini; fi
-
-say "php-fpm pool and nginx"
-cat > /etc/php/$PHPV/fpm/pool.d/app.conf <<EOF
-[app]
-user = app
-group = app
-listen = /run/php/app.sock
-listen.owner = www-data
-listen.group = www-data
-pm = ondemand
-pm.max_children = 8
-pm.process_idle_timeout = 30s
-php_admin_value[error_log] = /srv/app/log/php-error.log
-EOF
-rm -f /etc/php/$PHPV/fpm/pool.d/www.conf
-cat > /etc/nginx/sites-available/app <<'EOF'
-# The app, behind capricorn (which terminates TLS and proxies here on port 80).
-server {
-    listen 80 default_server;
-    server_name _;
-    root /srv/app/public;
-    index index.php;
-    client_max_body_size 25m;
-
-    location / { try_files $uri $uri/ /index.php?$query_string; }
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/app.sock;
-        # capricorn terminates TLS: tell PHP the original scheme
-        fastcgi_param HTTPS $fwd_https;
-    }
-    location ~ /\.(?!well-known) { deny all; }
-    location ~* \.(log|db|sqlite|ini)$ { deny all; }
-}
-EOF
-cat > /etc/nginx/conf.d/forwarded.conf <<'EOF'
-map $http_x_forwarded_proto $fwd_https { default ""; https on; }
-EOF
-ln -sf /etc/nginx/sites-available/app /etc/nginx/sites-enabled/app
-rm -f /etc/nginx/sites-enabled/default
-nginx -t 2>&1 | tail -1
-systemctl enable -q php$PHPV-fpm nginx
 systemctl restart php$PHPV-fpm nginx
 
 say "done: $(sudo -u app git -C "$APP_DIR" log --oneline -1) on runtime $(sudo -u app php -r 'require "/srv/app/vendor/autoload.php"; echo \app\InstanceUpdate::installedRuntime("/srv/app")["version"] ?? "?";')"

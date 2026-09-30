@@ -292,6 +292,19 @@ class ProxmoxService {
         return $this->task('POST', $node, '/nodes/' . $node . '/lxc/' . $vmid . '/status/stop');
     }
 
+    /** Turn a stopped container into a template (read-only; clones share its disk). */
+    public function templateCt(string $node, int $vmid): array {
+        return $this->task('POST', $node, '/nodes/' . $node . '/lxc/' . $vmid . '/template');
+    }
+
+    /**
+     * Clone a container. From a template with full=0 this is a LINKED clone: on thin storage
+     * the new disk shares the template's blocks and holds only what the clone changes.
+     */
+    public function cloneCt(string $node, int $vmid, int $newid, array $params = []): array {
+        return $this->task('POST', $node, '/nodes/' . $node . '/lxc/' . $vmid . '/clone', array_merge(['newid' => $newid], $params));
+    }
+
     public function destroyCt(string $node, int $vmid, bool $purge = true): array {
         return $this->task('DELETE', $node, '/nodes/' . $node . '/lxc/' . $vmid,
             $purge ? ['purge' => 1, 'destroy-unreferenced-disks' => 1] : []);

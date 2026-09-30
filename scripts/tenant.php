@@ -3,8 +3,9 @@
  * tenant.php — make an app and give it its own container (RUNTIME-SPLIT-MAP.md step 4).
  *
  *   php scripts/tenant.php --new-app=SLUG --name="Display Name" [--member=1]
- *   php scripts/tenant.php --create=SLUG                  container + sshd
- *   php scripts/tenant.php --provision=SLUG --domain=HOST PHP, nginx, the app (tenant/provision.sh)
+ *   php scripts/tenant.php --build-template               the tenant image: base.sh + seal.sh → a template
+ *   php scripts/tenant.php --create=SLUG                  a linked clone of the newest template
+ *   php scripts/tenant.php --provision=SLUG --domain=HOST the app on it (tenant/app.sh)
  *   php scripts/tenant.php --publish=SLUG --domain=HOST   serve HOST from the container
  *   php scripts/tenant.php --up=SLUG --domain=HOST        create + provision + publish
  *   php scripts/tenant.php --ssh=SLUG [--root] -- CMD…    run a command in the tenant (as app)
@@ -27,7 +28,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -47,6 +48,7 @@ function domain(array $o): string {
     return $d;
 }
 
+if (isset($o['build-template'])) { done(TenantHost::buildTemplate(), 'tenant template'); exit(0); }
 if (isset($o['new-app'])) {
     $name = trim((string) ($o['name'] ?? ''));
     if ($name === '') { fwrite(STDERR, "ERROR --name is required\n"); exit(2); }

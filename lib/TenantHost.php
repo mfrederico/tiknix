@@ -2,11 +2,14 @@
 /**
  * TenantHost — an app's own container on the Proxmox node (RUNTIME-SPLIT-MAP.md step 4).
  *
- *   create()     a system container from Proxmox's stock ubuntu-24.04-standard template on
- *                the internal NAT'd bridge (10.10.10.<vmid>), core's tenant SSH key
- *                authorised for root
- *   provision()  tenant/provision.sh over SSH, as root: PHP 8.5 + nginx, the `app` user, the
- *                app cloned from core's git endpoint and built — the "image" is that script
+ *   buildTemplate()  the tenant IMAGE: a container from Proxmox's stock ubuntu-24.04-standard
+ *                with core's key, tenant/base.sh (PHP 8.5 + nginx + FPM as `app`, Composer,
+ *                the app's Claude Code, trimmed) and tenant/seal.sh (own host keys and
+ *                machine-id per clone), stopped and converted to a template named
+ *                tiknix-base-<YYYYmmddHHMM>
+ *   create()     a LINKED clone of the newest template on the internal NAT'd bridge
+ *                (10.10.10.<vmid>) — it shares the template's disk and holds only its changes
+ *   provision()  tenant/app.sh over SSH, as root: this app's credentials, clone and build
  *   publish()    capricorn's proxy file, so <host> is served from the container
  *   ssh()        run a command in the tenant as `app` (the builder's door) or `root`
  *   destroy()    stop and delete the container, stop serving its host
@@ -23,8 +26,10 @@ namespace app;
 
 class TenantHost {
 
-    /** Proxmox's stock template (on the node's `local` template storage). */
-    const TEMPLATE   = 'local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst';
+    /** Proxmox's stock OS template the tenant template is built from (node's `local` storage). */
+    const OS_TEMPLATE = 'local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst';
+    /** Name prefix of tenant templates; the newest (by its timestamp suffix) is the one cloned. */
+    const TEMPLATE_PREFIX = 'tiknix-base-';
     const ROOTFS     = 'local-lvm';
     const ROOTFS_GB  = 4;
     const MEMORY_MB  = 1024;
@@ -37,7 +42,9 @@ class TenantHost {
     /** Core's tenant key: its public half is authorised in every tenant (root at create, app by provision.sh). */
     const KEY        = '/home/ubuntu/.ssh/tiknix_tenant_ed25519';
     const KNOWN      = '/home/ubuntu/.ssh/known_hosts_tenants';
-    const PROVISION  = __DIR__ . '/../tenant/provision.sh';
+    const BASE_SH    = __DIR__ . '/../tenant/base.sh';
+    const SEAL_SH    = __DIR__ . '/../tenant/seal.sh';
+    const APP_SH     = __DIR__ . '/../tenant/app.sh';
     /** Container ids never touched: 101 is the control plane itself. */
     const PROTECTED  = [101];
 
@@ -49,38 +56,113 @@ class TenantHost {
         return ['ok' => true, 'inst' => $inst];
     }
 
+    /** The newest tenant template on the node, or a refusal naming how to build one. */
+    public static function currentTemplate(ProxmoxService $pve, string $node): array {
+        $best = null;
+        foreach ($pve->containers($node) as $c) {
+            $name = (string) ($c['name'] ?? '');
+            if ((int) ($c['template'] ?? 0) !== 1 || !str_starts_with($name, self::TEMPLATE_PREFIX)) continue;
+            if ($best === null || strcmp($name, (string) $best['name']) > 0) $best = $c;
+        }
+        if ($best === null) return ['ok' => false, 'error' => 'no tenant template on ' . $node . ' — build one: php scripts/tenant.php --build-template'];
+        return ['ok' => true, 'vmid' => (int) $best['vmid'], 'name' => (string) $best['name']];
+    }
+
+    /**
+     * Build a new tenant template: a container from the stock OS template, base.sh + seal.sh
+     * run in it over SSH, stopped, converted. Older templates stay (clones depend on them);
+     * new tenants clone the newest.
+     */
+    public static function buildTemplate(): array {
+        $pve = ProxmoxService::fromConfig();
+        if (!$pve) return ['ok' => false, 'error' => 'conf/proxmox.ini is not configured'];
+        $pub = @file_get_contents(self::KEY . '.pub');
+        if ($pub === false || trim($pub) === '') return ['ok' => false, 'error' => 'core has no tenant key at ' . self::KEY . '.pub'];
+        $node = $pve->node();
+        $vmid = self::freeVmid($pve);
+        if (!$vmid['ok']) return $vmid;
+        $vmid = $vmid['vmid'];
+        $ip = self::SUBNET . $vmid;
+        $name = self::TEMPLATE_PREFIX . date('YmdHi');
+        $steps = [];
+        $r = $pve->createCt($node, $vmid, self::OS_TEMPLATE, self::ctParams($name, $ip) + [
+            'description' => 'tiknix tenant template (TenantHost::buildTemplate)',
+            'rootfs' => self::ROOTFS . ':' . self::ROOTFS_GB,
+            'ssh-public-keys' => trim($pub),
+            'onboot' => 0,
+        ]);
+        if (!$r['ok']) return ['ok' => false, 'error' => "create {$vmid} failed: {$r['exit']}\n{$r['log']}"];
+        $s = $pve->startCt($node, $vmid);
+        if (!$s['ok']) return ['ok' => false, 'error' => "start {$vmid} failed: {$s['exit']}"];
+        self::forgetHostKey($ip);
+        $w = self::waitForSsh($ip, 120);
+        if (!$w['ok']) return $w;
+        $steps[] = "container {$vmid} ({$name}) at {$ip}";
+        $probe = (object) ['slug' => $name, 'ctIp' => $ip];
+        foreach (['base' => self::BASE_SH, 'seal' => self::SEAL_SH] as $what => $file) {
+            [$code, $out] = self::ssh($probe, 'root', 'bash -s', (string) file_get_contents($file), 1800);
+            $steps[] = trim(implode("\n", array_filter(explode("\n", $out), fn($l) => str_starts_with($l, '==') || str_contains($l, 'PHP ') || str_contains($l, 'Claude Code'))));
+            if ($code !== 0) return ['ok' => false, 'error' => "{$what}.sh exited {$code} in {$vmid}", 'steps' => $steps, 'output' => $out];
+        }
+        $st = $pve->stopCt($node, $vmid);
+        if (!$st['ok']) return ['ok' => false, 'error' => "stop {$vmid} failed: {$st['exit']}", 'steps' => $steps];
+        $t = $pve->templateCt($node, $vmid);
+        if (!$t['ok']) return ['ok' => false, 'error' => "converting {$vmid} to a template failed: {$t['exit']}\n{$t['log']}", 'steps' => $steps];
+        self::forgetHostKey($ip);
+        $steps[] = "template {$name} = {$vmid}";
+        return ['ok' => true, 'vmid' => $vmid, 'name' => $name, 'steps' => $steps];
+    }
+
     public static function create(object $inst): array {
         if ((int) $inst->ctVmid > 0) return ['ok' => false, 'error' => "{$inst->slug} already has container {$inst->ctVmid} ({$inst->ctIp})"];
         $pve = ProxmoxService::fromConfig();
         if (!$pve) return ['ok' => false, 'error' => 'conf/proxmox.ini is not configured'];
-        $pub = @file_get_contents(self::KEY . '.pub');
-        if ($pub === false || trim($pub) === '') return ['ok' => false, 'error' => 'core has no tenant key at ' . self::KEY . '.pub (ssh-keygen -t ed25519 -f ' . self::KEY . ')'];
         $node = $pve->node();
+        $tpl = self::currentTemplate($pve, $node);
+        if (!$tpl['ok']) return $tpl;
+        $vmid = self::freeVmid($pve);
+        if (!$vmid['ok']) return $vmid;
+        $vmid = $vmid['vmid'];
+        $ip = self::SUBNET . $vmid;
+        $host = substr(preg_replace('/[^a-z0-9-]/', '-', strtolower((string) $inst->slug)), 0, 60);
+        $c = $pve->cloneCt($node, $tpl['vmid'], $vmid, ['hostname' => $host, 'full' => 0,
+            'description' => 'tiknix app ' . $inst->slug . ' (linked clone of ' . $tpl['name'] . ')']);
+        if (!$c['ok']) return ['ok' => false, 'error' => "clone of {$tpl['name']} to {$vmid} failed: {$c['exit']}" . ($c['log'] !== '' ? "\n{$c['log']}" : '')];
+        $inst->ctVmid = $vmid; $inst->ctIp = $ip;
+        Bean::store($inst);
+        $cfg = $pve->setCtConfig($node, $vmid, self::ctParams($host, $ip) + ['onboot' => 1]);
+        if (($cfg['error'] ?? '') !== '') return ['ok' => false, 'error' => "configuring {$vmid} failed: {$cfg['error']}"];
+        $s = $pve->startCt($node, $vmid);
+        if (!$s['ok']) return ['ok' => false, 'error' => "start {$vmid} failed: {$s['exit']}" . ($s['log'] !== '' ? "\n{$s['log']}" : '')];
+        self::forgetHostKey($ip);
+        $w = self::waitForSsh($ip, 120);
+        if (!$w['ok']) return $w;
+        return ['ok' => true, 'vmid' => $vmid, 'ip' => $ip, 'step' => "container {$vmid} at {$ip}: linked clone of {$tpl['name']}, sshd answering after {$w['seconds']}s"];
+    }
+
+    /** Settings every tenant container carries (a new one, a template build, a clone). */
+    private static function ctParams(string $hostname, string $ip): array {
+        return [
+            'hostname'   => $hostname,
+            'memory'     => self::MEMORY_MB,
+            'swap'       => self::SWAP_MB,
+            'cores'      => self::CORES,
+            'net0'       => 'name=eth0,bridge=' . self::BRIDGE . ',ip=' . $ip . '/24,gw=' . self::GATEWAY,
+            'nameserver' => self::DNS,
+            'features'   => 'nesting=1',
+        ];
+    }
+
+    private static function freeVmid(ProxmoxService $pve): array {
         $vmid = $pve->nextId();
         if ($vmid <= 0 || in_array($vmid, self::PROTECTED, true)) return ['ok' => false, 'error' => "Proxmox offered vmid {$vmid}"];
         if ($vmid >= 255) return ['ok' => false, 'error' => "vmid {$vmid} does not fit the 10.10.10.<vmid> address plan"];
-        $ip = self::SUBNET . $vmid;
-        $r = $pve->createCt($node, $vmid, self::TEMPLATE, [
-            'hostname'        => substr(preg_replace('/[^a-z0-9-]/', '-', strtolower((string) $inst->slug)), 0, 60),
-            'description'     => 'tiknix app ' . $inst->slug . ' (TenantHost)',
-            'rootfs'          => self::ROOTFS . ':' . self::ROOTFS_GB,
-            'memory'          => self::MEMORY_MB,
-            'swap'            => self::SWAP_MB,
-            'cores'           => self::CORES,
-            'net0'            => 'name=eth0,bridge=' . self::BRIDGE . ',ip=' . $ip . '/24,gw=' . self::GATEWAY,
-            'nameserver'      => self::DNS,
-            'features'        => 'nesting=1',
-            'ssh-public-keys' => trim($pub),
-            'onboot'          => 1,
-        ]);
-        if (!$r['ok']) return ['ok' => false, 'error' => "create {$vmid} failed: {$r['exit']}" . ($r['log'] !== '' ? "\n{$r['log']}" : '')];
-        $inst->ctVmid = $vmid; $inst->ctIp = $ip;
-        Bean::store($inst);
-        $s = $pve->startCt($node, $vmid);
-        if (!$s['ok']) return ['ok' => false, 'error' => "start {$vmid} failed: {$s['exit']}" . ($s['log'] !== '' ? "\n{$s['log']}" : '')];
-        $w = self::waitForSsh($ip, 120);
-        if (!$w['ok']) return $w;
-        return ['ok' => true, 'vmid' => $vmid, 'ip' => $ip, 'step' => "container {$vmid} at {$ip}, sshd answering after {$w['seconds']}s"];
+        return ['ok' => true, 'vmid' => $vmid];
+    }
+
+    /** A reused address is a new machine with new host keys: forget the old one's. */
+    private static function forgetHostKey(string $ip): void {
+        if (is_file(self::KNOWN)) exec('ssh-keygen -q -R ' . escapeshellarg($ip) . ' -f ' . escapeshellarg(self::KNOWN) . ' 2>/dev/null');
     }
 
     public static function waitForSsh(string $ip, int $timeout): array {
@@ -94,7 +176,7 @@ class TenantHost {
     }
 
     /**
-     * Run provision.sh in the tenant as root. The settings reach it as `export` lines ahead
+     * Run app.sh in the tenant as root (the system layer is the template's). The settings reach it as `export` lines ahead
      * of the script on stdin — never on a command line, where the deploy token would sit in
      * a process list.
      */
@@ -116,10 +198,10 @@ class TenantHost {
         ];
         $script = '';
         foreach ($env as $k => $v) $script .= "export {$k}=" . escapeshellarg($v) . "\n";
-        $script .= (string) file_get_contents(self::PROVISION);
+        $script .= (string) file_get_contents(self::APP_SH);
         [$code, $out] = self::ssh($inst, 'root', 'bash -s', $script, 1800);
         return ['ok' => $code === 0, 'exit' => $code, 'output' => $out,
-                'error' => $code === 0 ? '' : "provision.sh exited {$code} in {$inst->ctIp}"];
+                'error' => $code === 0 ? '' : "app.sh exited {$code} in {$inst->ctIp}"];
     }
 
     /** Serve https://<domain> from the tenant (capricorn's proxy file; TLS per ProxmoxDeploy). */
@@ -185,6 +267,7 @@ class TenantHost {
         $d = $pve->destroyCt($node, $vmid);
         if (!$d['ok']) return ['ok' => false, 'error' => "destroy {$vmid} failed: {$d['exit']}"];
         if ((string) $inst->ctDomain !== '') ProxmoxDeploy::removeProxy((string) $inst->ctDomain);
+        self::forgetHostKey((string) $inst->ctIp);
         $inst->ctVmid = 0; $inst->ctIp = ''; $inst->ctDomain = '';
         Bean::store($inst);
         return ['ok' => true, 'step' => "container {$vmid} destroyed"];

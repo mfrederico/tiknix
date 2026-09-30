@@ -30,7 +30,7 @@ if ! command -v php$PHPV >/dev/null 2>&1; then
 fi
 apt-get install -yq --no-install-recommends \
   php$PHPV-fpm php$PHPV-cli php$PHPV-sqlite3 php$PHPV-mbstring php$PHPV-intl php$PHPV-zip \
-  php$PHPV-gd php$PHPV-curl php$PHPV-xml php$PHPV-apcu php$PHPV-mysql \
+  php$PHPV-gd php$PHPV-imagick php$PHPV-curl php$PHPV-xml php$PHPV-apcu php$PHPV-mysql \
   nginx git unzip curl ca-certificates openssh-server tmux >/dev/null
 # tmux: the app's /claude page runs `claude setup-token` in a tmux session (AgentLogin)
 if ! command -v composer >/dev/null 2>&1; then

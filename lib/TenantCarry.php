@@ -280,7 +280,11 @@ PHP;
         }
         $inst->ctDomain = $domain;
         $inst->ctAliases = implode(',', $aliases);
+        $inst->ctKind = 'tenant';   // it lives there now: the builder works in the container
         Bean::store($inst);
+        $w = TenantBuilder::adoptHistory($inst);
+        if (!$w['ok']) return ['ok' => false, 'error' => "the site is served from the tenant, but the builder's history could not be moved: {$w['error']}", 'steps' => $steps];
+        $steps[] = $w['step'];
         // The tenant is the live app now: it runs its own schedule (off while it was staging).
         $h = TenantHost::heartbeat($inst, true);
         if (!$h['ok']) return ['ok' => false, 'error' => "the site is served from the tenant, but its heartbeat could not be switched on: {$h['error']}", 'steps' => $steps];
@@ -307,6 +311,8 @@ PHP;
         $marker = InstanceRepo::originPath((string) $inst->slug) . '/' . InstanceRepo::CARRIED_MARKER;
         if (is_file($marker) && !unlink($marker)) return ['ok' => false, 'error' => "the domains are back on the host clone, but {$marker} could not be removed — its builder is still blocked", 'steps' => $steps];
         $steps[] = 'builder on the host clone unblocked';
+        $inst->ctKind = 'staging';   // the host clone is the app again
+        Bean::store($inst);
         $steps[] = 'NOTE: anything written to the tenant since the cutover is not in the host clone';
         return ['ok' => true, 'steps' => $steps];
     }

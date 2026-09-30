@@ -128,7 +128,7 @@ class TenantHost {
         $c = $pve->cloneCt($node, $tpl['vmid'], $vmid, ['hostname' => $host, 'full' => 0,
             'description' => 'tiknix app ' . $inst->slug . ' (linked clone of ' . $tpl['name'] . ')']);
         if (!$c['ok']) return ['ok' => false, 'error' => "clone of {$tpl['name']} to {$vmid} failed: {$c['exit']}" . ($c['log'] !== '' ? "\n{$c['log']}" : '')];
-        $inst->ctVmid = $vmid; $inst->ctIp = $ip;
+        $inst->ctVmid = $vmid; $inst->ctIp = $ip; $inst->ctKind = 'tenant';
         Bean::store($inst);
         $cfg = $pve->setCtConfig($node, $vmid, self::ctParams($host, $ip) + ['onboot' => 1]);
         if (($cfg['error'] ?? '') !== '') return ['ok' => false, 'error' => "configuring {$vmid} failed: {$cfg['error']}"];
@@ -265,6 +265,11 @@ class TenantHost {
         return self::taskCall($inst, '--agent-task=' . escapeshellarg($id) . ' --timeout=' . (int) $timeout, $prompt, $timeout + 120);
     }
 
+    /** The builder's planner in the tenant (clitool --agent-plan): the plan's JSON in 'plan'. */
+    public static function plan(object $inst, string $id, string $request, int $memberId, int $timeout = 1800): array {
+        return self::taskCall($inst, '--agent-plan=' . escapeshellarg($id) . ' --member=' . (int) $memberId . ' --timeout=' . (int) $timeout, $request, $timeout + 120);
+    }
+
     public static function mergeTask(object $inst, string $id): array   { return self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600); }
     public static function discardTask(object $inst, string $id): array { return self::taskCall($inst, '--agent-discard=' . escapeshellarg($id), null, 120); }
 
@@ -287,7 +292,7 @@ class TenantHost {
         if (!$d['ok']) return ['ok' => false, 'error' => "destroy {$vmid} failed: {$d['exit']}"];
         if ((string) $inst->ctDomain !== '') ProxmoxDeploy::removeProxy((string) $inst->ctDomain);
         self::forgetHostKey((string) $inst->ctIp);
-        $inst->ctVmid = 0; $inst->ctIp = ''; $inst->ctDomain = '';
+        $inst->ctVmid = 0; $inst->ctIp = ''; $inst->ctDomain = ''; $inst->ctKind = '';
         Bean::store($inst);
         return ['ok' => true, 'step' => "container {$vmid} destroyed"];
     }

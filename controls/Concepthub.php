@@ -88,7 +88,7 @@ class Concepthub extends Control {
             $this->fail('This instance has no owner on record here, so nobody can own the build.', 409);
             return;
         }
-        $project = ['slug' => (string) $inst->slug, 'dir' => \Model_Instance::dirFrom((string) $inst->slug, (string) ($inst->app ?? ''))];
+        $project = ['slug' => (string) $inst->slug, 'dir' => \Model_Instance::dirOf($inst)];
         try {
             $catalog->get($name);   // a name the catalog does not hold is a 404 in words, before anything runs
         } catch (ConceptException $e) {

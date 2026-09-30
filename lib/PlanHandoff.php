@@ -157,7 +157,7 @@ class PlanHandoff {
         if (empty($res['ok'])) return $res;
 
         $inst = Bean::load('instance', (int) $res['id']);
-        $dir  = \Model_Instance::dirFrom((string) $inst->slug, (string) ($inst->app ?: 'tiknix'));
+        $dir  = \Model_Instance::dirOf($inst);
         $member = Bean::load('member', $memberId);
         self::commitPlan($dir, (string) $h->planMd, (string) $h->blueprintJson,
             trim((string) (($member->firstName ?? '') . ' ' . ($member->lastName ?? ''))) ?: (string) ($member->username ?? 'member'),

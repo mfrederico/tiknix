@@ -13,6 +13,10 @@
  *   php scripts/tenant.php --task=SLUG --id=ID < prompt   the builder: an agent task in the tenant
  *   php scripts/tenant.php --merge=SLUG --id=ID           merge a task branch (then the seeds)
  *   php scripts/tenant.php --discard=SLUG --id=ID         throw a task away
+ *   php scripts/tenant.php --plan=SLUG --id=ID --member=N < request   the builder's planner in the tenant
+ *        (--task and --plan also take --out=FILE: the JSON result written there as well)
+ *   php scripts/tenant.php --workspace=SLUG               the builder's records on core (_workspaces/<slug>),
+ *                                                         adopting a host clone's history once
  *   php scripts/tenant.php --status=SLUG
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving
  *
@@ -40,7 +44,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -92,19 +96,35 @@ if (isset($o['clitool'])) {
     echo $out;
     exit($code);
 }
-if (isset($o['task']) || isset($o['merge']) || isset($o['discard'])) {
+if (isset($o['task']) || isset($o['plan']) || isset($o['merge']) || isset($o['discard'])) {
     $id = (string) ($o['id'] ?? '');
     if ($id === '') { fwrite(STDERR, "ERROR --id=TASK is required\n"); exit(2); }
     if (isset($o['task'])) {
         $prompt = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
         $r = TenantHost::task(inst($o['task']), $id, $prompt);
+    } elseif (isset($o['plan'])) {
+        $request = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
+        $r = TenantHost::plan(inst($o['plan']), $id, $request, (int) ($o['member'] ?? 0));
     } elseif (isset($o['merge'])) {
         $r = TenantHost::mergeTask(inst($o['merge']), $id);
     } else {
         $r = TenantHost::discardTask(inst($o['discard']), $id);
     }
-    echo json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    $json = json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    // --out: the result as a file too — a builder session (TenantBuilder::launch) reads it
+    // when the session has ended. Written whole, then renamed: a reader never sees half.
+    if (isset($o['out'])) {
+        $out = (string) $o['out'];
+        if (file_put_contents($out . '.tmp', $json) === false || !rename($out . '.tmp', $out)) { fwrite(STDERR, "ERROR could not write {$out}\n"); exit(1); }
+    }
+    echo $json;
     exit(!empty($r['ok']) ? 0 : 1);
+}
+if (isset($o['workspace'])) {
+    $i = inst($o['workspace']);
+    $r = \app\TenantBuilder::adoptHistory($i);
+    done($r, 'workspace ' . $i->slug . ' (' . \Model_Instance::dirOf($i) . ')');
+    exit(0);
 }
 if (isset($o['status'])) {
     $i = inst($o['status']);
@@ -128,6 +148,8 @@ if (isset($o['carry'])) {
     if (TenantApp::sh('git -C ' . escapeshellarg($origin) . ' rev-parse -q --verify refs/heads/' . TenantCarry::BRANCH)[0] !== 0) done(TenantCarry::seed($i), 'seed');
     else echo "  {$origin} already has branch " . TenantCarry::BRANCH . ": not seeded again\n";
     if ((int) $i->ctVmid <= 0) done(TenantHost::create($i), 'container');
+    // Staging until the cutover: the host clone is still the app, and its builder works there.
+    if ((string) $i->ctKind !== 'tenant') { $i->ctKind = 'staging'; \app\Bean::store($i); }
     done(TenantHost::provision($i, $d, TenantCarry::BRANCH), 'provision');
     done(TenantCarry::data($i, $d), 'data');
     done(TenantHost::publish($i, $d), 'publish');

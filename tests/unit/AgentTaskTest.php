@@ -85,4 +85,27 @@ class AgentTaskTest extends TestCase {
         $this->assertSame("an app\n", file_get_contents("{$this->app}/README.md"));
         $this->assertDirectoryDoesNotExist("{$this->app}/.aibuilder/wt/t2");
     }
+
+    public function testAPlanComesBackFromSubmitPlanAndLeavesNothingBehind(): void {
+        $head = $this->git('rev-parse HEAD');
+        // The stand-in planner does what submit_plan does: writes a plan into its workspace.
+        file_put_contents("{$this->app}/bin/claude", "#!/bin/sh\nmkdir -p \"\$TIKNIX_WORKSPACE/.aibuilder\"\n"
+            . "echo '{\"title\":\"Add a README line\",\"subtasks\":[{\"title\":\"edit README\"}],\"member_id\":'\"\$TIKNIX_MEMBER_ID\"'}' > \"\$TIKNIX_WORKSPACE/.aibuilder/7-x.plan.json\"\n"
+            . "echo 'this edit is thrown away' >> README.md\necho done\n");
+        $r = AgentTask::plan($this->app, 'p1', "# Plan request\nAdd a line to the README", 7);
+        $this->assertTrue($r['ok'], json_encode($r));
+        $this->assertSame('planned', $r['status']);
+        $plan = json_decode($r['plan'], true);
+        $this->assertSame('Add a README line', $plan['title']);
+        $this->assertSame(7, $plan['member_id'], 'the planner knew who asked');
+        $this->assertDirectoryDoesNotExist("{$this->app}/.aibuilder/wt/p1", 'the worktree is gone');
+        $this->assertSame($head, $this->git('rev-parse HEAD'), 'nothing was committed');
+        $this->assertSame("an app\n", file_get_contents("{$this->app}/README.md"), 'what the planner touched stayed in its worktree');
+
+        file_put_contents("{$this->app}/bin/claude", "#!/bin/sh\necho 'I forgot to submit'\n");
+        $r = AgentTask::plan($this->app, 'p2', 'plan something', 7);
+        $this->assertSame('no-plan', $r['status']);
+        $this->assertStringContainsString('without calling submit_plan', $r['error']);
+        $this->assertDirectoryDoesNotExist("{$this->app}/.aibuilder/wt/p2");
+    }
 }

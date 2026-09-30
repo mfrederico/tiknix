@@ -156,7 +156,8 @@ PHP;
             $steps[] = 'databases: ' . implode(', ', array_map('basename', $dbs)) . (is_file("{$dir}/data/connections.db") ? ', data/connections.db' : '');
 
             if (!$databasesOnly) {
-                foreach (['secure', 'public/uploads', 'uploads', 'data/pipe-runs', 'conf/sites'] as $p) {
+                // Not data/pipe-runs: past runs' scratch sandboxes (the runs themselves are rows).
+                foreach (['secure', 'public/uploads', 'uploads', 'conf/sites'] as $p) {
                     if (!is_dir("{$dir}/{$p}")) continue;
                     @mkdir(dirname("{$stage}/root/{$p}"), 0755, true);
                     self::must(self::sh('cp -a ' . escapeshellarg("{$dir}/{$p}") . ' ' . escapeshellarg("{$stage}/root/{$p}")), "copy {$p}");
@@ -182,6 +183,12 @@ PHP;
             self::sh('rm -rf ' . escapeshellarg($stage));
         }
 
+        if (!$databasesOnly) {
+            $l = self::carryClaudeLogin($inst);
+            if (!$l['ok']) return ['ok' => false, 'error' => $l['error'], 'steps' => $steps];
+            $steps[] = $l['step'];
+        }
+
         // The runtime's seeds against the carried database, the guidance, a fresh FPM.
         [$c, $o] = TenantHost::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --build 2>&1 | tail -40; exit ${PIPESTATUS[0]}', null, 900);
         if ($c !== 0) return ['ok' => false, 'error' => "clitool --build failed on the carried data:\n" . trim($o), 'steps' => $steps];
@@ -202,6 +209,31 @@ PHP;
         [$c, $o] = TenantHost::ssh($inst, 'root', 'systemctl restart php8.5-fpm', null, 120);
         if ($c !== 0) return ['ok' => false, 'error' => "php-fpm restart failed: {$o}", 'steps' => $steps];
         return ['ok' => true, 'steps' => $steps];
+    }
+
+    const CLAUDE_LOGIN = '.aibuilder/state/claude/.credentials.json';
+
+    /**
+     * The app's own Claude login (what its admin pasted for its pipeline agents; the first link
+     * of AgentStep::agentEnv's chain), into the tenant at the same path, mode 0600. On an isolated
+     * host clone only the pool user can read it (its ACL mask), so it is read through the pool.
+     * Never printed. No login is not a fault: the app then uses its key or connection, or none.
+     */
+    public static function carryClaudeLogin(object $inst): array {
+        $dir = self::hostDir((string) $inst->slug);
+        $file = "{$dir}/" . self::CLAUDE_LOGIN;
+        if (!file_exists($file)) return ['ok' => true, 'step' => 'claude login: none on the host clone'];
+        $json = @file_get_contents($file);
+        if ($json === false) {
+            $r = IsolatedPool::runAsPool($dir, '<?php echo base64_encode((string) file_get_contents(' . var_export($file, true) . '));');
+            $json = base64_decode((string) $r['output'], true);
+            if ($r['status'] !== 0 || $json === false) return ['ok' => false, 'error' => "{$file} exists but could not be read, even through the pool"];
+        }
+        if (!is_array(json_decode($json, true))) return ['ok' => false, 'error' => "{$file} is not a Claude credential (not JSON)"];
+        [$c, $o] = TenantHost::ssh($inst, 'app', 'mkdir -p /srv/app/.aibuilder/state/claude && umask 077 && cat > /srv/app/' . self::CLAUDE_LOGIN, $json, 60);
+        sodium_memzero($json);
+        if ($c !== 0) return ['ok' => false, 'error' => "writing the claude login into the tenant failed: {$o}"];
+        return ['ok' => true, 'step' => 'claude login carried (' . self::CLAUDE_LOGIN . ')'];
     }
 
     /** The databases once more, the real base URL, the domain(s) proxied to the tenant. */

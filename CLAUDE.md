@@ -743,10 +743,12 @@ one-off script that writes instance data goes through `IsolatedPool::runAsPool($
   controller/view mismatch surfaces immediately instead of rendering blank
 - **A lead is written one way:** `Model_Lead::capture($email, $first, $last, ['gate' => …])`
   — one lead per email, blanks filled in, `source` set on create. The `gate` is required:
-  `LeadGate::forPublicForm($params, $ip, [...])` for anything a visitor posted (Turnstile
-  must be connected under Connections → Security, or it throws; honeypot, timing and content
-  checks flag the lead as spam rather than refuse it), or `LeadGate::trusted('why')` when no
-  visitor is involved. Never `Bean::dispense('lead')` in a controller.
+  `LeadGate::forPublicForm($params, $ip, [...])` for anything a visitor posted (Turnstile when
+  it is connected — optional: without it the lead records that no bot check ran and the admins
+  are told in Communications to connect it; honeypot, timing and content checks flag the lead
+  as spam rather than refuse it), or `LeadGate::trusted('why')` when no visitor is involved.
+  Never `Bean::dispense('lead')` in a controller. A form's own `catch` around the gate must not
+  say "the bot check is not set up" — the gate no longer throws for that.
 
 ## See Also
 

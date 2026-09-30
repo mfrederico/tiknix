@@ -80,7 +80,9 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
   include __DIR__ . '/_models.php';
   ?>
 
-  <?php if (!empty($publishDrivers)): ?>
+  <?php if (!empty($inContainer)): ?>
+    <?php include __DIR__ . '/_domains.php'; ?>
+  <?php elseif (!empty($publishDrivers)): ?>
     <!--
       Hosting. First on the hub because it answers the question everything else assumes:
       where does this instance actually run. Previously this lived on the GitHub

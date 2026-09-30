@@ -55,7 +55,9 @@ class Connections extends Control {
         $inst = Bean::load('instance', $id);
         if (!$inst->id) return null;
         if ((int)$inst->memberId !== (int)$this->member->id) return null;
-        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        // A project in its own container has no app on this disk (its folder here is the
+        // builder's workspace); a host clone must have one.
+        if (!\Model_Instance::tenantRow($inst) && !is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;
     }
 
@@ -65,7 +67,7 @@ class Connections extends Control {
         if (!$id) return null;
         $inst = Bean::load('instance', $id);
         if (!$inst->id || !$inst->accessibleBy((int)$this->member->id)) return null;
-        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        if (!\Model_Instance::tenantRow($inst) && !is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;
     }
 
@@ -516,6 +518,75 @@ class Connections extends Control {
             'Deployed to /hosted/' . $domain . ' — provision TLS + nginx to finish going live.');
     }
 
+    // ---------------------------------------------------------------- Domains
+    //
+    // A project in its own container answers on its main address and on any other domain
+    // pointed at it, each of those a site of its own (its own config and database in the app;
+    // app\Host, lib/TenantDomains.php). Core owns the parts outside the app: DNS check,
+    // certificate, routing. Viewing is for anyone on the project; adding and removing are
+    // the owner's.
+
+    /** The selected (or ?id=) project when it lives in its own container, and the member may see it. */
+    private function tenantProject(bool $owner) {
+        $id = (int) $this->getParam('id', 0);
+        if ($id <= 0) { $p = ProjectContext::current((int) $this->member->id); $id = $p ? (int) $p->id : 0; }
+        $inst = $id > 0 ? Bean::load('instance', $id) : null;
+        if (!$inst || !$inst->id || !$inst->accessibleBy((int) $this->member->id)) return null;
+        if ($owner && !$inst->ownedBy((int) $this->member->id)) return null;
+        return \Model_Instance::tenantRow($inst) ? $inst : null;
+    }
+
+    /** GET: the project's addresses — its main one and each domain with its certificate. */
+    public function domains($params = []): void {
+        if (!$this->requireLogin()) return;
+        $inst = $this->tenantProject(false);
+        if (!$inst) { $this->jsonError('No project in its own container is selected.', 404); return; }
+        $out = [];
+        foreach (\app\TenantDomains::of($inst) as $d) {
+            $exp = \app\TenantDomains::certExpires($d);
+            $out[] = ['domain' => $d, 'cert_expires' => $exp, 'cert' => $exp !== '' ? 'own' : 'wildcard'];
+        }
+        $this->jsonSuccess([
+            'main'      => (string) $inst->ctDomain,
+            'domains'   => $out,
+            'server_ip' => \app\TenantDomains::ourAddress(),
+            'can_manage' => $inst->ownedBy((int) $this->member->id),
+        ]);
+    }
+
+    /** POST domain: point it at this project as a site of its own. */
+    public function domainadd($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->tenantProject(true);
+        if (!$inst) { $this->jsonError('Only the project\'s owner can add a domain, and only to a project in its own container.', 403); return; }
+        // Custom domains come with a paid project — the same rule the old hosting card had.
+        if (!\app\ProjectQuota::canUseCustomDomain((int) $inst->memberId)) {
+            $this->jsonError('Custom domains come with a paid project ($' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT, 0)
+                . '/mo). Add a card on the Billing page and this unlocks.', 402);
+            return;
+        }
+        $domain = (string) $this->getParam('domain', '');
+        set_time_limit(300);   // DNS, a Let's Encrypt order, the app's database: under a minute, usually
+        $r = \app\TenantDomains::add($inst, $domain);
+        $this->logger->info('Domain add', ['instance' => $inst->slug, 'domain' => $domain, 'ok' => $r['ok'], 'error' => $r['error'] ?? '']);
+        if (!$r['ok']) { $this->jsonError($r['error'], 400); return; }
+        $this->jsonSuccess(['steps' => $r['steps'], 'url' => $r['url']], $r['url'] . ' is live — its first visit sets up its own admin.');
+    }
+
+    /** POST domain: stop serving it (the site's data stays in the app). */
+    public function domainremove($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $inst = $this->tenantProject(true);
+        if (!$inst) { $this->jsonError('Only the project\'s owner can remove a domain.', 403); return; }
+        $domain = (string) $this->getParam('domain', '');
+        $r = \app\TenantDomains::remove($inst, $domain);
+        $this->logger->info('Domain remove', ['instance' => $inst->slug, 'domain' => $domain, 'ok' => $r['ok'], 'error' => $r['error'] ?? '']);
+        if (!$r['ok']) { $this->jsonError($r['error'], 400); return; }
+        $this->jsonSuccess(['steps' => $r['steps']], "{$domain} is no longer served. Its data stays in the app.");
+    }
+
     // ---------------------------------------------------------------- LXC hosting
     //
     // Deploying an instance to its own container is a CORE action, not a builder-sidecar
@@ -855,6 +926,8 @@ class Connections extends Control {
             'pipelines'      => \app\InstanceAutomations::pipelines($this->instanceDir($inst->slug)),
             'environments'   => ['development', 'production'],
             'categoryOrder'  => ['Deploy', 'Project', 'Payments', 'Stores', 'Messaging', 'Social', 'Other'],
+            // In its own container: the Deploy section is its domains (views/connections/_domains.php).
+            'inContainer'    => \Model_Instance::tenantRow($inst),
         ]);
     }
 

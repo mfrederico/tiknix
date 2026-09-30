@@ -35,7 +35,8 @@ class TenantCarry {
     /** Paths never carried as code: data, the host's, the builder's, or regenerated. */
     const NOT_CODE = ['vendor/', 'data/', 'database/', 'log/', 'logs/', 'cache/', 'secure/', 'conf/',
         'backups/', 'storage/', 'public/uploads/', 'uploads/', '.aibuilder/', 'bin/', 'docker/', 'sql/',
-        '.mcp.json', 'CLAUDE.md', 'concepts.lock', '.release', 'composer.json', 'composer.lock', '.gitignore'];
+        '.mcp.json', 'CLAUDE.md', 'concepts.lock', '.release', 'composer.json', 'composer.lock', '.gitignore',
+        '.fpm-isolated'];   // the host's isolated-pool marker: a tenant is its own pool
 
     /** Run in the tenant: trash authcontrol rows whose controller is in no controls/ dir. */
     const PRUNE_PHP = <<<'PHP'

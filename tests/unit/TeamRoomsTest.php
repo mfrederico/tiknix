@@ -53,4 +53,24 @@ class TeamRoomsTest extends ConceptsTestCase {
         $team->box()->syncRooms();                    // … and then this
         $this->assertSame([(int) $owner->id], array_values($room->box()->participantIds()), 'the one who left is out of #general');
     }
+
+    public function testARoomAboutAnAppsRecordIsCalledByItsName(): void {
+        $owner = $this->member('relowner');
+        $team = Bean::dispense('team');
+        $team->name = 'Crew'; $team->slug = 'crew-' . bin2hex(random_bytes(3)); $team->ownerId = (int) $owner->id; $team->isActive = 1;
+        Bean::store($team);
+        $room = $team->box()->generalRoom();
+        $room->relatedType = 'trip'; $room->relatedId = 5;
+        Bean::store($room);
+        \Model_Thread::$related['trip'] = ['label' => fn(int $id) => $id === 5 ? 'Reno run' : null, 'url' => fn(int $id) => '/trip/view?id=' . $id];
+        try {
+            $this->assertSame('Reno run', $room->box()->title());
+            $this->assertSame('/trip/view?id=5', $room->box()->relatedUrl());
+            $room->relatedId = 6;                                  // a trip that is gone
+            $this->assertSame('#general · Crew', $room->box()->title(), 'falls back to the room\'s own name');
+            $this->assertNull($room->box()->relatedUrl(), 'no link to a record that is not there');
+        } finally {
+            \Model_Thread::$related = [];
+        }
+    }
 }

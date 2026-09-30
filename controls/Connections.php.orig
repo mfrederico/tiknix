@@ -892,9 +892,6 @@ class Connections extends Control {
                     'enabled'     => (int) $c->enabled === 1,
                     'revoked'     => !empty($c->revokedAt),
                     'last_used'   => (string) ($c->lastUsedAt ?? ''),
-                    // Same field webhooksecret() writes — this install's own key opened
-                    // it, unlike the core-proxied view which can only report presence.
-                    'webhookSet'  => (string) ($c->webhookSecret ?? '') !== '',
                 ];
             }
             return $rows;
@@ -920,14 +917,6 @@ class Connections extends Control {
                    as "unavailable" hid the Shopify card completely, which is exactly the
                    case a merchant's own app exists to serve. */
                 'custom_ok'  => method_exists($c, 'isConfiguredFor'),
-                // api_key connectors: the label/placeholder/hint for the key field itself,
-                // and any declared EXTRA non-secret fields (e.g. WhatsApp's Phone Number
-                // ID) — declaredFields() reads these same names back out of the request.
-                'key_label'       => (string) ($m['key_label'] ?? 'Secret key'),
-                'key_placeholder' => (string) ($m['key_placeholder'] ?? 'sk_live_… / rk_live_…'),
-                'key_hint'        => (string) ($m['key_hint'] ?? ''),
-                'key_required'    => (bool) ($m['key_required'] ?? true),
-                'fields'          => (array) ($m['fields'] ?? []),
             ];
         }
 

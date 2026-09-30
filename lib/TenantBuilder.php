@@ -104,6 +104,37 @@ class TenantBuilder {
     }
 
     /**
+     * The app's code as it runs — its container's HEAD (merge is publish) — as a directory
+     * on core, for an export driver (rsync) to ship from: `git archive` over SSH, extracted
+     * into a temp dir that is its own git repository, so Publish\Snapshot lists it exactly
+     * as it lists a host clone (tracked files, minus what is ours or secret). The caller
+     * removes it with removeExport(). Throws when the container does not answer.
+     */
+    public static function exportTree(object $inst): string {
+        $dir = sys_get_temp_dir() . '/tiknix-export-' . $inst->slug . '-' . bin2hex(random_bytes(4));
+        if (!@mkdir($dir, 0700, true)) throw new \RuntimeException("could not create {$dir}");
+        $tar = $dir . '.tar';
+        try {
+            [$code, $out] = TenantHost::ssh($inst, 'app', 'cd /srv/app && git archive --format=tar HEAD > /tmp/export.tar && base64 -w0 /tmp/export.tar; rm -f /tmp/export.tar', null, 300);
+            if ($code !== 0 || trim($out) === '') throw new \RuntimeException("{$inst->slug}'s container gave no code (exit {$code}): " . mb_substr(trim($out), 0, 200));
+            $bytes = base64_decode(trim($out), true);
+            if ($bytes === false || file_put_contents($tar, $bytes) === false) throw new \RuntimeException("{$inst->slug}'s code came back unreadable");
+            exec('tar -xf ' . escapeshellarg($tar) . ' -C ' . escapeshellarg($dir) . ' 2>&1 && env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE git -C ' . escapeshellarg($dir) . ' init -q 2>&1', $o, $c);
+            if ($c !== 0) throw new \RuntimeException('could not unpack the code: ' . implode(' ', $o));
+            return $dir;
+        } catch (\Throwable $e) {
+            self::removeExport($dir);
+            throw $e;
+        } finally {
+            @unlink($tar);
+        }
+    }
+
+    public static function removeExport(string $dir): void {
+        if (str_starts_with($dir, sys_get_temp_dir() . '/tiknix-export-') && is_dir($dir)) exec('rm -rf ' . escapeshellarg($dir));
+    }
+
+    /**
      * What the builder's agent picker offers for a project in its own container: the app's
      * Claude account state and its agents, from the app (clitool --agents; no keys leave it).
      * Throws when the container does not answer: an empty list would read as "no agents".

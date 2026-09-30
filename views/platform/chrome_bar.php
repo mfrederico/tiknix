@@ -16,7 +16,7 @@
         <nav class="ui-pb-actions" aria-label="Project actions">
           <?php /* Feature-gated like every sidecar: offering Publish without the flag lands on a plugin they cannot open. */ ?>
           <?php if (\app\Feature::isEnabled('publisher', $__pmid, $__level)): ?>
-            <a href="/sidecar/app/publisher" class="btn btn-dark btn-sm" title="Where and how this project goes live"><i class="bi bi-cloud-upload"></i><span class="ui-pb-label">Publish</span></a>
+            <a href="/deploy" class="btn btn-dark btn-sm" title="Where this project goes live: its domains and exports"><i class="bi bi-rocket-takeoff"></i><span class="ui-pb-label">Deploy</span></a>
           <?php endif; ?>
           <a href="/connections" class="btn btn-outline-secondary btn-sm" title="Store &amp; service connections for this project"><i class="bi bi-plug"></i><span class="ui-pb-label">Connections</span></a>
           <a href="/teams" class="btn btn-outline-secondary btn-sm" title="Share this project with a team"><i class="bi bi-people"></i><span class="ui-pb-label">Share</span></a>

@@ -81,7 +81,10 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
   ?>
 
   <?php if (!empty($inContainer)): ?>
-    <?php include __DIR__ . '/_domains.php'; ?>
+    <div class="alert alert-light border py-2 small mt-3 mb-0">
+      <i class="bi bi-rocket-takeoff me-1"></i>Its domains and exports to your own servers are on
+      <a href="/deploy" class="text-decoration-underline">Deploy</a>.
+    </div>
   <?php elseif (!empty($publishDrivers)): ?>
     <!--
       Hosting. First on the hub because it answers the question everything else assumes:

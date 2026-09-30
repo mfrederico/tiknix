@@ -38,8 +38,11 @@
         <?php if ($__enabledPlugins): ?>
           <div class="ui-nav-heading">Build</div>
           <?php if ($__hasProject): ?>
-            <?php foreach ($__enabledPlugins as $__pname => $__p): ?>
-              <a class="ui-nav-link<?= $__active('/sidecar/app/' . $__pname) ?>" href="/sidecar/app/<?= htmlspecialchars($__pname) ?>"><i class="bi <?= htmlspecialchars($__p['icon']) ?>"></i> <?= htmlspecialchars($__p['label']) ?></a>
+            <?php foreach ($__enabledPlugins as $__pname => $__p):
+                /* Deploy is core's page (controls/Deploy.php): a project's domains and exports.
+                   The Publisher sidecar is reached from it for a project still on the host. */
+                $__href = $__pname === 'publisher' ? '/deploy' : '/sidecar/app/' . $__pname; ?>
+              <a class="ui-nav-link<?= $__active($__href) ?>" href="<?= htmlspecialchars($__href) ?>"><i class="bi <?= htmlspecialchars($__p['icon']) ?>"></i> <?= htmlspecialchars($__p['label']) ?></a>
             <?php endforeach; ?>
           <?php else: ?>
             <a class="ui-nav-link" href="/projects"><i class="bi bi-plus-circle"></i> New Project</a>

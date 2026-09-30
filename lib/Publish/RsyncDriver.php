@@ -37,9 +37,27 @@ class RsyncDriver extends SshTargetDriver {
         $p = self::remotePath($config);
         if (empty($p['ok'])) return ['ok' => false, 'error' => (string) $p['error']];
 
-        $dir = self::instanceDir($inst);
-        if (!is_dir($dir)) return ['ok' => false, 'error' => 'This project has no working directory on the control plane.'];
+        // A project in its own container ships what the container runs (its HEAD — merge is
+        // publish), exported to a temp dir on core for the length of this call; a host
+        // clone ships its working directory here.
+        $tenant = \app\TenantBuilder::bySlug((string) $inst->slug);
+        $export = '';
+        if ($tenant) {
+            try { $dir = $export = \app\TenantBuilder::exportTree($tenant); }
+            catch (\Throwable $e) { return ['ok' => false, 'error' => 'Could not take the code from the project\'s container: ' . $e->getMessage()]; }
+        } else {
+            $dir = self::instanceDir($inst);
+            if (!is_dir($dir)) return ['ok' => false, 'error' => 'This project has no working directory on the control plane.'];
+        }
+        try {
+            return $this->ship($inst, $config, $c, $p, $dir);
+        } finally {
+            if ($export !== '') \app\TenantBuilder::removeExport($export);
+        }
+    }
 
+    /** rsync the snapshot of $dir to the target. */
+    private function ship(object $inst, array $config, array $c, array $p, string $dir): array {
         $files = Snapshot::files($dir, !empty($inst->isDefault));
         if (!$files) return ['ok' => false, 'error' => 'Nothing to publish — the project has no tracked files.'];
 

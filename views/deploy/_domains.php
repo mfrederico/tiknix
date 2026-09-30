@@ -1,6 +1,6 @@
 <?php
 /**
- * Deploy → Domains, for a project in its own container (lib/TenantDomains.php).
+ * Domains, for a project in its own container (lib/TenantDomains.php).
  *
  * Its main address, and each other domain pointed at it — every one a site of its own, with
  * its own admin, database and data in the app. Adding checks the domain's DNS, gets its
@@ -12,7 +12,6 @@
  */
 $__iid = (int) $instance->id;
 ?>
-<h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em">Deploy</h2>
 <div class="card shadow-sm mb-2" id="domains-card">
   <div class="card-body">
     <div class="d-flex align-items-start gap-3">
@@ -81,7 +80,7 @@ $__iid = (int) $instance->id;
     document.querySelectorAll('.dom-rm').forEach(b => b.addEventListener('click', () => remove(b.dataset.d)));
   }
   async function load() {
-    const j = await call('/connections/domains');
+    const j = await call('/deploy/domains');
     if (!j.success) { $('dom-list').innerHTML = `<span class="text-danger">${esc(j.message)}</span>`; return; }
     render(j.data);
   }
@@ -90,7 +89,7 @@ $__iid = (int) $instance->id;
     if (!domain) return;
     $('dom-go').disabled = true;
     say('text-body-secondary', `Checking ${esc(domain)}'s DNS, getting its certificate, setting up its site…`);
-    const j = await call('/connections/domainadd', {domain});
+    const j = await call('/deploy/domainadd', {domain});
     $('dom-go').disabled = false;
     if (!j.success) { say('text-danger', esc(j.message)); return; }
     $('dom-input').value = '';
@@ -100,7 +99,7 @@ $__iid = (int) $instance->id;
   async function remove(domain) {
     if (!await tkConfirm(`Stop serving ${domain}? Its site stops answering; its data stays in the app.`, {okText: 'Remove', danger: true})) return;
     say('text-body-secondary', `Removing ${esc(domain)}…`);
-    const j = await call('/connections/domainremove', {domain});
+    const j = await call('/deploy/domainremove', {domain});
     if (!j.success) { say('text-danger', esc(j.message)); return; }
     say('text-success', esc(j.message));
     load();

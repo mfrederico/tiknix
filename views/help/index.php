@@ -120,7 +120,7 @@ $has = fn(string $flag) => $__signedIn
             our system, deploy to yours.
           </p>
           <?php if ($has('publisher')): ?>
-            <a href="/sidecar/app/publisher" class="stretched-link small">Open Deploy &rarr;</a>
+            <a href="/deploy" class="stretched-link small">Open Deploy &rarr;</a>
           <?php else: ?>
             <span class="small text-body-secondary"><i class="bi bi-lock"></i> Ask an admin to enable this</span>
           <?php endif; ?>

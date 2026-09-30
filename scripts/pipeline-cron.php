@@ -31,6 +31,7 @@ require_once BASE_PATH . '/bootstrap.php';
 new \app\Bootstrap('conf/config.ini');
 
 use app\Bean;
+use app\InstanceRepo;
 use app\Pipeline\Scheduler;
 
 const CONCURRENCY = 5;
@@ -52,6 +53,9 @@ foreach (Bean::find('instance', "status = 'active' ORDER BY slug") as $inst) {
     $dir  = \Model_Instance::dirFrom($slug, (string) ($inst->app ?: ''));
     if (!is_dir($dir)) { $skips[] = "{$slug}: no directory at {$dir}"; continue; }
     if (realpath($dir) === realpath(BASE_PATH)) continue;   // core, ticked above
+    // Carried into its own container (tiknix2 TenantCarry::cutover): it ticks itself from its
+    // own crontab, and this host copy no longer answers for it.
+    if (InstanceRepo::carried($slug) !== null) continue;
     $ini = @parse_ini_file($dir . '/conf/config.ini', true);
     if (!is_array($ini)) { $skips[] = "{$slug}: conf/config.ini could not be parsed"; continue; }
     $base   = rtrim((string) ($ini['app']['baseurl'] ?? ''), '/');

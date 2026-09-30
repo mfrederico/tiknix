@@ -156,4 +156,24 @@ class InstanceRepoTest extends TestCase {
         try { InstanceRepo::createOrigin('nogit', $bare); $this->fail('no .git'); }
         catch (\RuntimeException $e) { $this->assertStringContainsString('no .git directory', $e->getMessage()); }
     }
+
+    public function testACarriedProjectIsNotBuiltHere(): void {
+        InstanceRepo::createOrigin(self::SLUG, $this->live);
+        $this->assertNull(InstanceRepo::carried(self::SLUG));
+        InstanceRepo::assertNotCarried(self::SLUG);   // still lives here: no refusal
+
+        $marker = InstanceRepo::originPath(self::SLUG) . '/' . InstanceRepo::CARRIED_MARKER;
+        file_put_contents($marker, json_encode(['container' => 100, 'domain' => 'demo.tiknix.com', 'at' => '2026-09-30 12:00:00']));
+        try {
+            InstanceRepo::addWorktree(self::SLUG, $this->root . '/wt', 'task-1', 'main');
+            $this->fail('a worktree was cut for a project that lives in its container');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('now lives in its own container (100, https://demo.tiknix.com', $e->getMessage());
+        }
+        $this->assertDirectoryDoesNotExist($this->root . '/wt');
+
+        file_put_contents($marker, 'not json');
+        try { InstanceRepo::carried(self::SLUG); $this->fail('a broken record read as "not carried"'); }
+        catch (\RuntimeException $e) { $this->assertStringContainsString('not a cutover record', $e->getMessage()); }
+    }
 }

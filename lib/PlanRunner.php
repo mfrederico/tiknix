@@ -190,6 +190,7 @@ class PlanRunner {
      * session name. Throws on setup failure.
      */
     public function start(string $goal, array $supersedeIds = [], bool $autoBuild = false, int $promptId = 0): string {
+        InstanceRepo::assertNotCarried($this->slug);
         $this->supersedeIds = array_values(array_filter(array_map('intval', $supersedeIds)));
         $this->autoBuild    = $autoBuild;
         $this->promptId     = max(0, $promptId);

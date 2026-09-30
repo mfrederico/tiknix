@@ -8,6 +8,10 @@
  *   php scripts/tenant.php --publish=SLUG --domain=HOST   serve HOST from the container
  *   php scripts/tenant.php --up=SLUG --domain=HOST        create + provision + publish
  *   php scripts/tenant.php --ssh=SLUG [--root] -- CMD…    run a command in the tenant (as app)
+ *   php scripts/tenant.php --clitool=SLUG -- ARGS…        the app's own clitool, in /srv/app (as app)
+ *   php scripts/tenant.php --task=SLUG --id=ID < prompt   the builder: an agent task in the tenant
+ *   php scripts/tenant.php --merge=SLUG --id=ID           merge a task branch (then the seeds)
+ *   php scripts/tenant.php --discard=SLUG --id=ID         throw a task away
  *   php scripts/tenant.php --status=SLUG
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving
  */
@@ -23,7 +27,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'root', 'status:', 'destroy:', 'yes', 'domain:']);
+$o = getopt('', ['new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -61,9 +65,32 @@ if (isset($o['up'])) {
 }
 if (isset($o['ssh'])) {
     if (!$argvRest) { fwrite(STDERR, "ERROR give the command after --\n"); exit(2); }
-    [$code, $out] = TenantHost::ssh(inst($o['ssh']), isset($o['root']) ? 'root' : 'app', implode(' ', array_map('escapeshellarg', $argvRest)));
+    // Forward our stdin when something is piped in (a file, a prompt); a terminal is not read.
+    $stdin = posix_isatty(STDIN) ? null : (string) stream_get_contents(STDIN);
+    [$code, $out] = TenantHost::ssh(inst($o['ssh']), isset($o['root']) ? 'root' : 'app', implode(' ', array_map('escapeshellarg', $argvRest)), $stdin);
     echo $out;
     exit($code);
+}
+if (isset($o['clitool'])) {
+    // The app's CLI in its own home: e2e suites and operators reach a tenant's clitool through this.
+    $cmd = 'cd /srv/app && php scripts/clitool.php ' . implode(' ', array_map('escapeshellarg', $argvRest));
+    [$code, $out] = TenantHost::ssh(inst($o['clitool']), 'app', $cmd);
+    echo $out;
+    exit($code);
+}
+if (isset($o['task']) || isset($o['merge']) || isset($o['discard'])) {
+    $id = (string) ($o['id'] ?? '');
+    if ($id === '') { fwrite(STDERR, "ERROR --id=TASK is required\n"); exit(2); }
+    if (isset($o['task'])) {
+        $prompt = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
+        $r = TenantHost::task(inst($o['task']), $id, $prompt);
+    } elseif (isset($o['merge'])) {
+        $r = TenantHost::mergeTask(inst($o['merge']), $id);
+    } else {
+        $r = TenantHost::discardTask(inst($o['discard']), $id);
+    }
+    echo json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    exit(!empty($r['ok']) ? 0 : 1);
 }
 if (isset($o['status'])) {
     $i = inst($o['status']);

@@ -107,6 +107,15 @@ fi
 grep -cE ": ok$" /tmp/tiknix-build.log | sed 's/^/seeds ok: /'
 sudo -u app php scripts/clitool.php --agent-sync | tail -1
 
+say "the app's own agent (the builder runs it here: clitool --agent-task)"
+if [ ! -x /home/app/.local/bin/claude ]; then
+  sudo -iu app bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >/dev/null
+fi
+sudo -iu app /home/app/.local/bin/claude --version | head -1
+# bin/claude: a link inside the app (app\ClaudeBinary), found by agent steps and tasks
+sudo -u app HOME=/home/app php -r 'require "/srv/app/vendor/autoload.php"; $r = \app\ClaudeBinary::link("/srv/app", realpath("/home/app/.local/bin/claude")); echo "bin/claude: {$r["action"]} — {$r["detail"]}\n";'
+if [ ! -f conf/aibuilder.ini ] && [ -f conf/aibuilder.example.ini ]; then sudo -u app cp conf/aibuilder.example.ini conf/aibuilder.ini; fi
+
 say "php-fpm pool and nginx"
 cat > /etc/php/$PHPV/fpm/pool.d/app.conf <<EOF
 [app]

@@ -155,6 +155,25 @@ class TenantHost {
         return [proc_close($p), $out];
     }
 
+    /**
+     * The builder over SSH: ask the tenant to run one task (runtime AgentTask — a worktree on
+     * task/<id>, the app's own agent and credentials, changes committed). The prompt travels on
+     * stdin. Returns the tenant's JSON answer, or a refusal naming what failed on the way.
+     */
+    public static function task(object $inst, string $id, string $prompt, int $timeout = 1800): array {
+        return self::taskCall($inst, '--agent-task=' . escapeshellarg($id) . ' --timeout=' . (int) $timeout, $prompt, $timeout + 120);
+    }
+
+    public static function mergeTask(object $inst, string $id): array   { return self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600); }
+    public static function discardTask(object $inst, string $id): array { return self::taskCall($inst, '--agent-discard=' . escapeshellarg($id), null, 120); }
+
+    private static function taskCall(object $inst, string $args, ?string $stdin, int $timeout): array {
+        [$code, $out] = self::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php ' . $args, $stdin, $timeout);
+        $json = json_decode(substr($out, (int) strpos($out, '{')), true);
+        if (!is_array($json)) return ['ok' => false, 'status' => 'failed', 'error' => "the tenant answered (exit {$code}) with no JSON: " . mb_substr(trim($out), 0, 400)];
+        return $json;
+    }
+
     public static function destroy(object $inst): array {
         $vmid = (int) $inst->ctVmid;
         if ($vmid <= 0) return ['ok' => false, 'error' => "{$inst->slug} has no container"];

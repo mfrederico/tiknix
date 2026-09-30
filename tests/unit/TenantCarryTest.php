@@ -57,6 +57,9 @@ smtp_password = "x"
 
 [maintenance]
 enabled = false
+
+[concepts]
+catalog_dir = "/var/www/html/default/tiknix-concepts"
 {$extra}
 INI;
     }
@@ -76,6 +79,7 @@ INI;
         $this->assertArrayNotHasKey('firehose', $c, "reporting to core is the control plane's");
         $this->assertArrayNotHasKey('mail', $c, 'mail is a connection, never config');
         $this->assertSame('false', $c['maintenance']['enabled'], 'a section the template lacks comes along');
+        $this->assertArrayNotHasKey('catalog_dir', $c['concepts'] ?? [], "the catalog the control plane serves is not an app's");
     }
 
     public function testTheProjectsAppKeyWinsWhenItHasOne(): void {

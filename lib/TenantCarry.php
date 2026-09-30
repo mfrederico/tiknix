@@ -335,7 +335,8 @@ PHP;
      * The tenant's config.ini (the template's, as provisioning wrote it) with the project's own
      * settings over it, key by key — except what belonged to the host or the control plane: the
      * base URL (https://$domain here), the cache's version store (a valkey on the host), [firehose]
-     * (reporting to core) and [mail] (never read: mail is a connection). The project's app_key wins
+     * (reporting to core), [mail] (never read: mail is a connection) and [concepts] catalog_dir
+     * (the catalog the control plane serves; an app reaches it with its broker key). The project's app_key wins
      * when it has one (its encrypted data needs it); when it has none, nothing was encrypted with
      * one and the tenant's own stays. Refuses a host path it cannot rewrite.
      */
@@ -352,7 +353,8 @@ PHP;
 
         $hostOnly = fn(string $sec, string $key) => in_array($sec, ['firehose', 'mail'], true)
             || ($sec === 'app' && $key === 'baseurl')
-            || ($sec === 'cache' && in_array($key, ['version_store', 'redis_host', 'redis_port', 'redis_database', 'redis_password'], true));
+            || ($sec === 'cache' && in_array($key, ['version_store', 'redis_host', 'redis_port', 'redis_database', 'redis_password'], true))
+            || ($sec === 'concepts' && $key === 'catalog_dir');   // the catalog the control plane SERVES
         $values = self::iniLines($old, $hostOnly);
         $values['app']['baseurl'] = 'baseurl = "https://' . $domain . '"';
 

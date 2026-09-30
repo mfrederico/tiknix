@@ -83,6 +83,22 @@ fi
 grep -cE ": ok$" /tmp/tiknix-build.log | sed 's/^/seeds ok: /'
 sudo -u app php scripts/clitool.php --agent-sync | tail -1
 
+say "the app's system packages (its system-packages file)"
+# Programs the app runs that the template does not carry (discotuba's tracker runs ffmpeg).
+# One Debian package per line; # comments. A name that is not a package name stops here.
+if [ -f "$APP_DIR/system-packages" ]; then
+  pkgs=$(grep -vE '^[[:space:]]*(#|$)' "$APP_DIR/system-packages" | tr -d '[:blank:]')
+  for p in $pkgs; do
+    [[ "$p" =~ ^[a-z0-9][a-z0-9+.-]*$ ]] || { echo "app.sh: '$p' in system-packages is not a package name" >&2; exit 6; }
+  done
+  if [ -n "$pkgs" ]; then
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends $pkgs >/dev/null
+    echo "installed: $pkgs"
+  fi
+else
+  echo "none declared"
+fi
+
 say "the app's heartbeat: its own pipelines and durable objects, every minute"
 # The app schedules itself (scripts/pipeline-cron.php ticks it in-process); nothing on core has
 # to know its files. Written whole, so re-running this script never duplicates the line.

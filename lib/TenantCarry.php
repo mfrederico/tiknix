@@ -33,7 +33,9 @@ class TenantCarry {
     const BRANCH = 'app';
 
     /** Paths never carried as code: data, the host's, the builder's, or regenerated. */
-    const NOT_CODE = ['vendor/', 'data/', 'database/', 'log/', 'logs/', 'cache/', 'secure/', 'conf/',
+    // database/ is NOT here: its .db/.sqlite files are data (notCode's extension rule), but an app's
+    // own database/seeds/*.php is code — it was dropped from every carry until 2026-09-30.
+    const NOT_CODE = ['vendor/', 'data/', 'log/', 'logs/', 'cache/', 'secure/', 'conf/',
         'backups/', 'storage/', 'public/uploads/', 'uploads/', '.aibuilder/', 'bin/', 'docker/', 'sql/',
         '.mcp.json', 'CLAUDE.md', 'concepts.lock', '.release', 'composer.json', 'composer.lock', '.gitignore',
         '.fpm-isolated'];   // the host's isolated-pool marker: a tenant is its own pool
@@ -415,6 +417,18 @@ PHP;
             . "changed into an extension point (a controller of the app's own, a Chrome slot, a Contact\n"
             . "category, a view override) or drop it, then delete it here and under `.carry/edited/`.\n\n";
         foreach ($inv['edited'] ?: ['(none)'] as $p) $out .= "- [ ] `{$p}`\n";
+        $seeds = array_values(array_filter($inv['own'], fn($p) => str_starts_with($p, 'database/') && str_ends_with($p, '.php')));
+        if ($seeds) {
+            $out .= "\n## Seeds under `database/` — to port
+
+"
+                . "Old-style scripts (they load a `bootstrap.php` the app no longer has); the runtime runs only\n"
+                . "`services/Schema/Seeds/`. Their effects are already in the carried database, but a NEW domain\n"
+                . "of this app starts from a fresh one: move each permission rule and schema step into a seed\n"
+                . "under `services/Schema/Seeds/` (PermissionCache::seedRule, padded ghosts), drop one-off\n"
+                . "backfills, then delete it here.\n\n";
+            foreach ($seeds as $p) $out .= "- [ ] `{$p}`\n";
+        }
         return $out;
     }
 

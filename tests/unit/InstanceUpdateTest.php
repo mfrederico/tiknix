@@ -83,6 +83,10 @@ class InstanceUpdateTest extends TestCase {
                 $this->lock('v' . $m[1], false, $dir);
                 return [0, ['Upgrading tiknix/runtime']];
             }
+            if (str_contains($cmd, '--agent-sync')) {   // the new release's guidance differs
+                file_put_contents($dir . '/CLAUDE.md', 'guidance ' . count($this->ran) . "\n");
+                return [0, ['# CLAUDE.md: regenerated (0 enabled concept(s))']];
+            }
             return [0, ['ok']];
         }, fn(string $url) => 200);
     }
@@ -141,7 +145,10 @@ class InstanceUpdateTest extends TestCase {
         $this->assertSame('v2.0.0-alpha.10', InstanceUpdate::installedRuntime($this->app)['version']);
         $this->assertSame('v2.0.0-alpha.10', InstanceUpdate::pinned($this->app));
         $this->assertSame('', $this->git($this->app, 'status --porcelain -- composer.lock'), 'the new lock is committed');
-        $this->assertStringContainsString('runtime v2.0.0-alpha.10 (was v2.0.0-alpha.1)', $this->git($this->app, 'log -1 --format=%s'));
+        $this->assertStringContainsString('runtime v2.0.0-alpha.10 (was v2.0.0-alpha.1)', $this->git($this->app, 'log -2 --format=%s'));
+        $this->assertSame('', $this->git($this->app, 'status --porcelain -- CLAUDE.md'), 'the regenerated guidance is committed');
+        $this->assertSame('CLAUDE.md regenerated for the runtime update', $this->git($this->app, 'log -1 --format=%s -- CLAUDE.md'));
+        $this->assertStringContainsString('agent guidance: ok', implode("\n", $r['lines']));
 
         // the checkpoint: a local tag holding the database as it was, and NOT on the origin
         $ck = trim(explode("\n", $this->git($this->app, 'tag --list checkpoint-update-*'))[0]);

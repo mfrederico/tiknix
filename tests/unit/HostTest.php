@@ -77,6 +77,12 @@ class HostTest extends TestCase {
         $this->assertSame($this->app . '/conf/hosts/client1.example.com.ini', Host::configFile($this->app));
     }
 
+    public function testTheProxyNamedByTheServerIsBelievedFromAPublicAddress(): void {
+        // A container sees capricorn arrive from core's public address, set in the pool.
+        $this->asWeb(['HTTP_HOST' => '10.10.10.106', 'HTTP_X_FORWARDED_HOST' => 'client1.example.com', 'REMOTE_ADDR' => '198.51.100.7', 'TIKNIX_TRUSTED_PROXY' => '198.51.100.7']);
+        $this->assertSame($this->app . '/conf/hosts/client1.example.com.ini', Host::configFile($this->app));
+    }
+
     public function testAVisitorCannotClaimAHostWithTheHeader(): void {
         // From a public address the header is the visitor's own words: the Host header decides.
         $this->asWeb(['HTTP_HOST' => 'main.example.com', 'HTTP_X_FORWARDED_HOST' => 'client1.example.com', 'REMOTE_ADDR' => '203.0.113.9']);

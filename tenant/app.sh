@@ -36,6 +36,12 @@ say() { echo "== $*"; }
 
 say "core is $CORE_HOST at $CORE_IP"
 grep -q " $CORE_HOST\$" /etc/hosts || echo "$CORE_IP $CORE_HOST" >> /etc/hosts
+# capricorn on core is the proxy in front: requests arrive from $CORE_IP, and the name the
+# visitor asked for comes as X-Forwarded-Host, which the app believes from that address only
+# (app\Host — one app, several domains).
+POOL=$(ls /etc/php/*/fpm/pool.d/app.conf | head -1)
+sed -i '/^env\[TIKNIX_TRUSTED_PROXY\]/d' "$POOL"
+echo "env[TIKNIX_TRUSTED_PROXY] = $CORE_IP" >> "$POOL"
 
 say "the app user"
 id app >/dev/null 2>&1 || { echo "app.sh: no app user — run tenant/base.sh first" >&2; exit 5; }

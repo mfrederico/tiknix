@@ -234,6 +234,62 @@ control-plane route. Fixed on the way: a guest at `/contact` got the member supp
 (the public-user bean has an id — also true on tiknix.com main); Docs used a constant only the
 web entry point defines. Still pre-existing: `/permissions` has no views.
 
+## 5c. Step 3 status (2026-09-30)
+
+Three repositories now, all on this host:
+
+| repo | what it is |
+|---|---|
+| `/var/www/html/default/tiknix-runtime` | **tiknix/runtime**, the package. History from the move onward (`git subtree split`). Releases are tags; `v2.0.0-alpha.7` is current |
+| `/var/www/html/default/tiknix-app` | **the template** an app starts from: composer.json requiring `tiknix/runtime ^2.0@alpha` (VCS repository = the runtime repo), `public/index.php`, `public/rt` → the runtime's assets, `scripts/*.php` one-line doors to the runtime's commands, the code-standards hook, a trimmed config example, empty app directories, generated CLAUDE.md. Tracks composer.lock (the lock IS the record of the runtime it runs) |
+| this repository (branch `runtime-split`) | the control plane, requiring the runtime through a **path repository** (`../tiknix-runtime`, symlinked) because the two are developed together |
+
+What the package needed, and got:
+
+- **Everything an app runs is in the package**: `Bootstrap` (autoloaded), the front controller
+  (`app\Front::serve()`; an app's `public/index.php` is the fatal handler + autoloader + that
+  call), route files (`Paths::route()`: app first), the CLI and runtime scripts (`bin/`, run
+  from the app root — `bin/_boot.php` refuses anything else), assets (`public/`, served at
+  `/rt/`), agent guidance sections (runtime's, app's of the same name replace them), the
+  code-standards hook (`bin/hooks/`, which now also BLOCKS any edit under
+  `vendor/tiknix/runtime/` with the override command in its message).
+- **`--update` is a package update**: optional pull from an `origin`, the newest (or named)
+  release Composer can see, refuse uncommitted edits, LOCAL checkpoint, `composer update
+  tiknix/runtime --with=…` (the app's own constraint still governs — a new major is a
+  deliberate edit), restore composer.json/lock/vendor on failure, commit the lock, seeds,
+  guidance, cache, smoke test, overrides (STALE named), pin `.release`. A path-repository
+  checkout refuses ("developed, not updated"); `--release` tags that checkout's main after
+  the suite passes; `--releases` lists what Composer can install.
+- **App-shaped seeds**: the 20 control-plane permission rows left the runtime's seed for core's
+  `25_ControlPlaneRoutes` (and the runtime removes the copies its older versions wrote on apps
+  without those controllers); an app's Connections/Integrations are admin pages in the table as
+  in the controller (core moves its rows back to member level for its hub, only when they still
+  say what the runtime's seed wrote).
+
+Proved, by Playwright as ROOT, ADMIN and MEMBER (tiknix-e2e `08-roles`, `01`, `02`, `09`):
+
+- core (tiknix2.tiknix.com) on the package: 51/51.
+- a fresh app built from the template (`rtdemo.tiknix.com`): the setup wizard, the owner's
+  first sign-in, a shell with no control-plane link, assets from `/rt/`, the wizard locked
+  after (`09`); the role sweep 6/6 — control-plane pages absent (404), everything the table
+  grants works, everything it refuses is refused.
+- the app **updated itself three times** (alpha.4 → 5 → 6 → 7) with `--update`; on the last one
+  it had overridden `views/dashboard/index.php`, the release changed that view, and the update
+  left the app's copy alone and named it STALE — the owner's rule, end to end.
+
+Fixed on the way, each found by the role sweep or the fresh app: moved files that found the
+app by their own location (a second, empty connection store inside `runtime/`); unknown routes
+answering login instead of 404 (and build mode writing a row per scanner path); a 403 sent
+with status 200; `/permissions`, `/mcp/registry`, the maintenance page and `Test` — dead code
+with missing views; control-plane links and rules on app pages; form `pattern`s invalid in the
+browser's v-mode; seed schema changes printed as ERRORs; a missing connection store and an
+unreadable one both answering "nothing connected" (`ConnectionStore::readOwn`).
+
+Still open: the runtime package has no test suite of its own yet (core's suite exercises it
+through the path repository); the admin's `maintenance_mode` setting is stored but enforced
+nowhere; the runtime repo is local to this host — tenants will fetch releases from core's git
+endpoint (step 4). Not merged to main; nothing released to the existing instances.
+
 ## 6. Order of work
 
 1. Move the files in §3 into a `runtime/` directory inside this repo first, with the

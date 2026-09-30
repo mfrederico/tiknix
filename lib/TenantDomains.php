@@ -122,13 +122,51 @@ class TenantDomains {
         }
         $email = self::legoEmail();
         if ($email === '') return ['ok' => false, 'error' => 'no lego account in ' . self::LEGO_PATH . '/accounts — cannot request a certificate'];
-        $cmd = 'lego run --accept-tos --ari-disable --path ' . escapeshellarg(self::LEGO_PATH) . ' --pem --email ' . escapeshellarg($email)
-             . ' --http --http.webroot ' . escapeshellarg(self::ACME_WEBROOT) . ' -d ' . escapeshellarg($d) . ' 2>&1';
+        // This lego has one command for both: `run` issues a first certificate, and renews an
+        // existing one when it is within --renew-days of expiry (options after the command).
+        $cmd = 'lego run --accept-tos --ari-disable --no-random-sleep --renew-days 30 --path ' . escapeshellarg(self::LEGO_PATH)
+             . ' --pem --email ' . escapeshellarg($email) . ' --http --http.webroot ' . escapeshellarg(self::ACME_WEBROOT)
+             . ' -d ' . escapeshellarg($d) . ' 2>&1';
+        $before = is_file($pem) ? filemtime($pem) : 0;
         exec($cmd, $out, $code);
-        if ($code !== 0 || !is_file($pem)) {
-            return ['ok' => false, 'error' => "Let's Encrypt did not issue a certificate for {$d}: " . trim(implode(' ', array_slice($out, -3)))];
+        clearstatcache();
+        if ($code !== 0 || !is_file($pem) || filemtime($pem) === $before) {
+            return ['ok' => false, 'error' => "Let's Encrypt did not " . ($before ? 'renew' : 'issue') . " the certificate for {$d}: " . trim(implode(' ', array_slice($out, -3)))];
         }
-        return ['ok' => true, 'step' => "issued a certificate for {$d} (HTTP-01)"];
+        return ['ok' => true, 'step' => ($before ? 'renewed' : 'issued') . " the certificate for {$d} (HTTP-01)"];
+    }
+
+    /** When $d's own certificate expires ('' = it has none: a wildcard covers it, or none was issued). */
+    public static function certExpires(string $d): string {
+        $crt = self::CERT_DIR . "/{$d}.crt";
+        if (!is_file($crt)) return '';
+        exec('openssl x509 -enddate -noout -in ' . escapeshellarg($crt) . ' 2>&1', $o, $c);
+        return $c === 0 && str_contains((string) ($o[0] ?? ''), '=') ? trim(explode('=', $o[0], 2)[1]) : '';
+    }
+
+    /**
+     * Renew what is due: every custom domain of every project in its own container, run daily
+     * from this machine's crontab (tenant.php --renew-certs) — TLS ends at capricorn here, so
+     * the certificates are here, not in the containers. A certificate with more than 30 days
+     * left is left alone; a failure is logged at ERROR, named, and fails the run.
+     *
+     * @return array{ok:bool, steps:string[], error:string}
+     */
+    public static function renewAll(): array {
+        $steps = []; $failed = [];
+        $rows = CoreDb::with(fn() => array_values(Bean::find('instance', "ct_hosts IS NOT NULL AND ct_hosts != '' AND ct_hosts != '[]' ORDER BY slug")), null);
+        if ($rows === null) return ['ok' => false, 'steps' => [], 'error' => "core's registry could not be read: " . CoreDb::lastError()];
+        foreach ($rows as $inst) {
+            foreach (self::of($inst) as $d) {
+                $r = self::ensureCert($d);
+                if ($r['ok']) { $steps[] = "{$inst->slug} {$d}: {$r['step']}"; continue; }
+                $failed[] = "{$inst->slug} {$d}";
+                $steps[] = "{$inst->slug} {$d}: FAILED — {$r['error']}";
+                error_log("ERROR TenantDomains::renewAll: {$d} ({$inst->slug}): {$r['error']}");
+            }
+        }
+        if (!$steps) $steps[] = 'no custom domains';
+        return ['ok' => !$failed, 'steps' => $steps, 'error' => $failed ? 'not renewed: ' . implode(', ', $failed) : ''];
     }
 
     private static function legoEmail(): string {

@@ -22,6 +22,8 @@
  *                                                         conf/hosts/<HOST>.ini + database, routing
  *   php scripts/tenant.php --domain-remove=SLUG --domain=HOST  stop serving it (its data stays in the app)
  *   php scripts/tenant.php --domains=SLUG
+ *   php scripts/tenant.php --renew-certs                  renew custom domains' certificates due within
+ *                                                         30 days (this machine's crontab, daily)
  *   php scripts/tenant.php --status=SLUG
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving
  *
@@ -49,7 +51,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -134,6 +136,7 @@ if (isset($o['workspace'])) {
 // Other domains, each its own site in the project's container (lib/TenantDomains.php).
 if (isset($o['domain-add']))    { done(\app\TenantDomains::add(inst($o['domain-add']), domain($o)), 'domain ' . domain($o) . ' for ' . $o['domain-add']); exit(0); }
 if (isset($o['domain-remove'])) { done(\app\TenantDomains::remove(inst($o['domain-remove']), domain($o)), 'domain ' . domain($o) . ' removed from ' . $o['domain-remove']); exit(0); }
+if (isset($o['renew-certs'])) { echo '[' . date('c') . "]\n"; done(\app\TenantDomains::renewAll(), 'certificate renewal'); exit(0); }
 if (isset($o['domains'])) {
     $i = inst($o['domains']);
     echo "main site: {$i->ctDomain}\n";

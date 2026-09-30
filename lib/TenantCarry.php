@@ -281,6 +281,10 @@ PHP;
         $inst->ctDomain = $domain;
         $inst->ctAliases = implode(',', $aliases);
         Bean::store($inst);
+        // The tenant is the live app now: it runs its own schedule (off while it was staging).
+        $h = TenantHost::heartbeat($inst, true);
+        if (!$h['ok']) return ['ok' => false, 'error' => "the site is served from the tenant, but its heartbeat could not be switched on: {$h['error']}", 'steps' => $steps];
+        $steps[] = $h['step'];
         // The host clone no longer serves the site: core's builder must not build into it.
         $marker = InstanceRepo::originPath((string) $inst->slug) . '/' . InstanceRepo::CARRIED_MARKER;
         $rec = ['slug' => (string) $inst->slug, 'container' => (int) $inst->ctVmid, 'ip' => (string) $inst->ctIp,
@@ -297,6 +301,9 @@ PHP;
         if (!$hosts) return ['ok' => false, 'error' => "{$inst->slug} records no domain proxied to its tenant"];
         foreach ($hosts as $h) if (!ProxmoxDeploy::removeProxy($h)) return ['ok' => false, 'error' => "could not remove the proxy file for {$h}"];
         $steps = array_map(fn($h) => "{$h} → the host clone again", $hosts);
+        $h = TenantHost::heartbeat($inst, false);   // the clone runs the schedule again, not both
+        if (!$h['ok']) return ['ok' => false, 'error' => "the domains are back on the host clone, but the tenant's heartbeat is still on: {$h['error']}", 'steps' => $steps];
+        $steps[] = $h['step'];
         $marker = InstanceRepo::originPath((string) $inst->slug) . '/' . InstanceRepo::CARRIED_MARKER;
         if (is_file($marker) && !unlink($marker)) return ['ok' => false, 'error' => "the domains are back on the host clone, but {$marker} could not be removed — its builder is still blocked", 'steps' => $steps];
         $steps[] = 'builder on the host clone unblocked';

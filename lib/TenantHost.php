@@ -180,6 +180,18 @@ class TenantHost {
      * of the script on stdin — never on a command line, where the deploy token would sit in
      * a process list.
      */
+    /**
+     * The minute heartbeat (tenant/app.sh). A new app gets it here; an app carried from a host
+     * clone gets it at cutover — a staging copy must not run the live app's schedule.
+     */
+    public static function heartbeat(object $inst, bool $on): array {
+        $cmd = $on
+            ? "printf '%s\\n' '* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1' | crontab -u app - && crontab -l -u app"
+            : 'crontab -r -u app 2>/dev/null; crontab -l -u app 2>&1 | head -1';
+        [$c, $o] = self::ssh($inst, 'root', $cmd, null, 60);
+        return ['ok' => $c === 0, 'step' => 'heartbeat ' . ($on ? 'on' : 'off') . ': ' . trim($o), 'error' => $c === 0 ? '' : "crontab in {$inst->ctIp} failed: {$o}"];
+    }
+
     public static function provision(object $inst, string $domain, string $branch = 'main'): array {
         if ((int) $inst->ctVmid <= 0) return ['ok' => false, 'error' => "{$inst->slug} has no container (create it first)"];
         $core = (string) parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST);
@@ -196,6 +208,7 @@ class TenantHost {
             'APP_NAME'       => (string) ($inst->displayName ?: $inst->slug),
             'APP_KEY'        => bin2hex(random_bytes(32)),
             'APP_BRANCH'     => $branch,
+            'APP_HEARTBEAT'  => $branch === 'main' ? 'on' : 'off',
         ];
         $script = '';
         foreach ($env as $k => $v) $script .= "export {$k}=" . escapeshellarg($v) . "\n";

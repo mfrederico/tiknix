@@ -24,8 +24,9 @@
 #   APP_KEY         64 hex chars, [security] app_key
 #   APP_BRANCH      the origin branch the app starts from: main for a new app, app for one
 #                   carried from a host clone (its main is still the host clone's)
+#   APP_HEARTBEAT   on | off — the minute crontab; off for a carried app until its cutover
 set -euo pipefail
-for v in APP_SLUG CORE_HOST CORE_IP DEPLOY_TOKEN BUILDER_PUBKEY APP_BASEURL APP_NAME APP_KEY APP_BRANCH; do
+for v in APP_SLUG CORE_HOST CORE_IP DEPLOY_TOKEN BUILDER_PUBKEY APP_BASEURL APP_NAME APP_KEY APP_BRANCH APP_HEARTBEAT; do
   if [ -z "${!v:-}" ]; then echo "provision: $v is not set" >&2; exit 2; fi
 done
 export DEBIAN_FRONTEND=noninteractive
@@ -85,8 +86,15 @@ sudo -u app php scripts/clitool.php --agent-sync | tail -1
 say "the app's heartbeat: its own pipelines and durable objects, every minute"
 # The app schedules itself (scripts/pipeline-cron.php ticks it in-process); nothing on core has
 # to know its files. Written whole, so re-running this script never duplicates the line.
-printf '%s\n' '* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1' | crontab -u app -
-crontab -l -u app | sed 's/^/crontab: /'
+# APP_HEARTBEAT=off for an app carried from a host clone: a staging copy must not run the live
+# app's schedule (its sends, its polls) while the clone still does — cutover switches it on.
+if [ "$APP_HEARTBEAT" = on ]; then
+  printf '%s\n' '* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1' | crontab -u app -
+  crontab -l -u app | sed 's/^/crontab: /'
+else
+  crontab -r -u app 2>/dev/null || true
+  echo "heartbeat: off (switched on at cutover)"
+fi
 
 say "the app's agent: bin/claude and its engines"
 sudo -u app HOME=/home/app php -r 'require "/srv/app/vendor/autoload.php"; $r = \app\ClaudeBinary::link("/srv/app", realpath("/home/app/.local/bin/claude")); echo "bin/claude: {$r["action"]} — {$r["detail"]}\n";'

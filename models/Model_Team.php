@@ -85,6 +85,15 @@ class Model_Team extends \RedBeanPHP\SimpleModel {
             [$teamId, 'general']));
     }
 
+    /**
+     * Every room of this team brought in line with who is in the team now — called when
+     * someone leaves or is removed, because a room they stayed in would keep showing them
+     * the team's conversation after they are out of it.
+     */
+    public function syncRooms(): void {
+        foreach ($this->rooms() as $room) $room->box()->syncWithTeam();
+    }
+
     public function room(string $slug): ?\RedBeanPHP\OODBBean {
         $teamId = (int) $this->bean->id;
         if ($teamId <= 0) return null;

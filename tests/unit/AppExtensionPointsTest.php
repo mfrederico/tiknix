@@ -18,6 +18,18 @@ class AppExtensionPointsTest extends TestCase {
     protected function setUp(): void { $this->cats = Contact::$categories; $this->names = Chrome::$levelNames; }
     protected function tearDown(): void { Contact::$categories = $this->cats; Chrome::$levelNames = $this->names; }
 
+    public function testTheDashboardIsASlotAndAnUnknownSlotIsRefused(): void {
+        $parts = Chrome::$parts;
+        try {
+            Chrome::add('dashboard', 'invoicing/_dashboard');
+            $this->assertSame(['invoicing/_dashboard'], Chrome::$parts['dashboard']);
+            try { Chrome::add('dashbaord', 'x'); $this->fail('a misspelled slot was accepted'); }
+            catch (\InvalidArgumentException $e) { $this->assertStringContainsString("'dashbaord' does not exist", $e->getMessage()); }
+        } finally {
+            Chrome::$parts = $parts;
+        }
+    }
+
     public function testACategoryAddsItsStatusesAfterTheQueuesOwn(): void {
         $this->assertSame(Contact::STATUSES, Contact::statuses(), 'nothing registered: the queue as it always was');
         Contact::$categories = ['appointment' => ['label' => 'Appointments', 'statuses' => ['scheduled' => 'success', 'declined' => 'secondary']]];

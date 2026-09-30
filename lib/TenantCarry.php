@@ -100,6 +100,8 @@ PHP;
             if ($r[0] !== 0) throw new \RuntimeException("git archive of {$inv['dir']} failed: {$r[1]}");
             foreach ($inv['own'] as $p) self::copy("{$src}/{$p}", "{$work}/{$p}");
             foreach ($inv['edited'] as $p) self::copy("{$src}/{$p}", "{$work}/.carry/edited/{$p}");
+            // Which plugins it has and which are on: its lock, with the concepts/ it names (own files).
+            if (is_file("{$src}/concepts.lock")) { self::copy("{$src}/concepts.lock", "{$work}/concepts.lock"); $steps[] = 'concepts.lock carried'; }
             file_put_contents("{$work}/CARRY.md", self::report($inst, $inv));
             $steps[] = count($inv['own']) . ' own file(s) carried; ' . count($inv['edited']) . ' edited core file(s) kept under .carry/edited/ to port; ' . $inv['core'] . ' core file(s) left to the runtime';
 
@@ -165,12 +167,19 @@ PHP;
         [$c, $o] = TenantHost::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --build 2>&1 | tail -40; exit ${PIPESTATUS[0]}', null, 900);
         if ($c !== 0) return ['ok' => false, 'error' => "clitool --build failed on the carried data:\n" . trim($o), 'steps' => $steps];
         $steps[] = 'seeds ran on the carried database';
+        [$c, $o] = TenantHost::ssh($inst, 'app', 'cd /srv/app && if [ -f concepts.lock ]; then php scripts/clitool.php --concept-seeds=all 2>&1 | tail -20; exit ${PIPESTATUS[0]}; fi', null, 900);
+        if ($c !== 0) return ['ok' => false, 'error' => "the plugins' seeds failed on the carried database:\n" . trim($o), 'steps' => $steps];
+        if (trim($o) !== '') $steps[] = "plugins' seeds ran";
         // Permission rows for controllers that are nowhere now (control-plane pages the host clone
         // had: teams, workbench, …) would claim routes the app does not answer. Named, then gone.
         [$c, $o] = TenantHost::ssh($inst, 'app', 'cd /srv/app && php -r ' . escapeshellarg(self::PRUNE_PHP) . ' 2>&1', null, 120);
         if ($c !== 0) return ['ok' => false, 'error' => "pruning permission rows failed: {$o}", 'steps' => $steps];
         $steps[] = trim(implode(' ', array_filter(explode("\n", $o), fn($l) => !str_contains($l, 'Deprecated'))));
-        TenantHost::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --agent-sync >/dev/null 2>&1 && php scripts/resetcache.php >/dev/null 2>&1', null, 300);
+        // The guidance regenerated for this app (its plugins) is committed: the tree stays clean,
+        // or its first --update refuses on "uncommitted code edits".
+        [$c, $o] = TenantHost::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --agent-sync >/dev/null && php scripts/resetcache.php >/dev/null'
+            . ' && { git diff --quiet -- CLAUDE.md || git commit -q -m "CLAUDE.md regenerated for the carried app" -- CLAUDE.md; }', null, 300);
+        if ($c !== 0) return ['ok' => false, 'error' => "agent guidance / permission cache failed: {$o}", 'steps' => $steps];
         [$c, $o] = TenantHost::ssh($inst, 'root', 'systemctl restart php8.5-fpm', null, 120);
         if ($c !== 0) return ['ok' => false, 'error' => "php-fpm restart failed: {$o}", 'steps' => $steps];
         return ['ok' => true, 'steps' => $steps];
@@ -223,16 +232,18 @@ PHP;
     // ------------------------------------------------------------------------------------------
 
     /**
-     * conf/*.ini the app owns: [carried, core's]. A name core's conf/ also has came from core's
-     * provisioning and holds core's credentials (an older copy of them, even when it differs):
-     * never carried. Only a file core has no counterpart for is the app's own.
+     * conf/*.ini the app owns: [carried, core's]. A name core's conf/ also has — the file, or
+     * an .example.ini of it — came from core's provisioning and holds core's credentials (an
+     * older copy of them, even when it differs): never carried. Only a file core has no
+     * counterpart for is the app's own.
      */
     private static function appConf(string $dir): array {
         $carried = []; $coreCopies = [];
         foreach (glob("{$dir}/conf/*.ini") ?: [] as $f) {
             $b = basename($f);
             if (in_array($b, self::HOST_CONF, true) || preg_match('/^config\..+\.ini$|\.bak|\.example\./', $b)) continue;
-            if (is_file(self::CORE . "/conf/{$b}")) $coreCopies[] = $b;
+            // core's own file, or one core ships an example of (provisioning copied it from there)
+            if (is_file(self::CORE . "/conf/{$b}") || is_file(self::CORE . '/conf/' . substr($b, 0, -4) . '.example.ini')) $coreCopies[] = $b;
             else $carried[] = $b;
         }
         return [$carried, $coreCopies];

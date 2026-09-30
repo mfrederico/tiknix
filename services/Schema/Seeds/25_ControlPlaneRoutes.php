@@ -6,13 +6,11 @@
  * controllers, so it must not carry their rows either. Each through seedRule(), which
  * corrects a row the framework invented and keeps one a person set.
  */
-echo '  authcontrol: teams::join => ' . \app\PermissionCache::seedRule('teams', 'join', 101, 'Accept a team invite via token (public, self-serve account create)') . "\n";
 echo '  authcontrol: pricing::* => ' . \app\PermissionCache::seedRule('pricing', '*', 101, 'Public marketing pricing page (flagship-gated in-controller)') . "\n";
 echo '  authcontrol: stories::* => ' . \app\PermissionCache::seedRule('stories', '*', 101, 'Public founder stories page (flagship-gated in-controller)') . "\n";
 echo '  authcontrol: neosaas::* => ' . \app\PermissionCache::seedRule('neosaas', '*', 101, 'Public NeoSaaS manifesto page (flagship-gated in-controller)') . "\n";
 echo '  authcontrol: about::* => ' . \app\PermissionCache::seedRule('about', '*', 101, 'Public Who-we-are page (flagship-gated in-controller)') . "\n";
 echo '  authcontrol: sidecar::* => ' . \app\PermissionCache::seedRule('sidecar', '*', 100, 'Sidecar plugin launcher (per-plugin feature-gated)') . "\n";
-echo '  authcontrol: teams::* => ' . \app\PermissionCache::seedRule('teams', '*', 100, 'Teams management') . "\n";
 echo '  authcontrol: brokerinfo::connections => ' . \app\PermissionCache::seedRule('brokerinfo', 'connections', 101, 'Instance connection lookup (self-authenticating broker key)') . "\n";
 echo '  authcontrol: brokerinfo::connectors => ' . \app\PermissionCache::seedRule('brokerinfo', 'connectors', 101, 'Available connectors for the instance connect flow (broker key)') . "\n";
 echo '  authcontrol: brokerinfo::connectkey => ' . \app\PermissionCache::seedRule('brokerinfo', 'connectkey', 101, 'Instance-driven api_key connect (broker key)') . "\n";

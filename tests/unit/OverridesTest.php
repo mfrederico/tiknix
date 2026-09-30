@@ -96,10 +96,12 @@ class OverridesTest extends TestCase {
         foreach (['app\\PlanExecutor', 'app\\Help', 'app\\Docs', 'app\\Hooks', 'app\\Teams'] as $c) {
             $this->assertFalse($fromRuntime($c), "{$c} is the control plane's");
         }
-        // Core overrides exactly the three role-shaped controllers (RUNTIME-SPLIT-MAP.md step
-        // 2): its marketing home, its builder hub for other projects, and the hub's
-        // integrations — each recorded, so a runtime change to the app version shows STALE.
-        $this->assertSame(['controls/Connections.php', 'controls/Index.php', 'controls/Integrations.php'],
+        // Core overrides exactly the role-shaped controllers (RUNTIME-SPLIT-MAP.md step 2): its
+        // marketing home, its builder hub for other projects, the hub's integrations, and (step
+        // 5) Teams with project sharing, builder tasks and plan gates over the runtime's app-user
+        // teams — each recorded, so a runtime change to the app version shows STALE.
+        $this->assertSame(['controls/Connections.php', 'controls/Index.php', 'controls/Integrations.php', 'controls/Teams.php',
+                           'views/teams/create.php', 'views/teams/index.php', 'views/teams/members.php', 'views/teams/settings.php', 'views/teams/view.php'],
             Overrides::shadowing(\app\Paths::root(), \app\Paths::runtime()));
         foreach (Overrides::report() as $rel => $r) $this->assertSame('current', $r['status'], $rel);
     }

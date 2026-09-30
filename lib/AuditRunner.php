@@ -74,6 +74,7 @@ class AuditRunner {
      * @param int   $planId
      */
     public function start(array $creds, array $checklist, int $planId): string {
+        \app\InstanceRepo::assertNotCarried($this->slug);
         if ($this->running()) {
             throw new \Exception('An audit is already running for this instance.');
         }

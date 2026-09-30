@@ -44,6 +44,31 @@ class InstanceRepo {
 
     public static function hasOrigin(string $slug): bool { return is_file(self::originPath($slug) . '/HEAD'); }
 
+    /**
+     * A project carried into a tenant container (RUNTIME-SPLIT-MAP.md step 5, tiknix2's
+     * TenantCarry::cutover) records it here, beside its origin. From then on its host clone no
+     * longer serves the site, so building into it would report success for changes nobody sees:
+     * every builder entry point refuses, naming where the project lives now. Rollback removes it.
+     */
+    public const CARRIED_MARKER = 'carried-to-tenant.json';
+
+    /** @return array|null  the cutover record, or null when the project still lives here */
+    public static function carried(string $slug): ?array {
+        $f = self::originPath($slug) . '/' . self::CARRIED_MARKER;
+        if (!is_file($f)) return null;
+        $d = json_decode((string) file_get_contents($f), true);
+        if (!is_array($d)) throw new \RuntimeException("InstanceRepo: {$f} is not a cutover record (unreadable JSON) — fix or remove it");
+        return $d;
+    }
+
+    public static function assertNotCarried(string $slug): void {
+        $c = self::carried($slug);
+        if ($c === null) return;
+        throw new \RuntimeException("{$slug} now lives in its own container (" . ($c['container'] ?? '?') . ', https://' . ($c['domain'] ?? '?')
+            . ', since ' . ($c['at'] ?? '?') . "): its copy on this host no longer serves the site, so the builder here will not build it. "
+            . 'Building in containers is RUNTIME-SPLIT-MAP.md step 5; until then, change it in the container (scripts/tenant.php on tiknix2).');
+    }
+
     /** `<slug>.<app>` → slug. A path that is not an instance directory is refused, not guessed. */
     public static function slugFromDir(string $dir): string {
         $base = basename(rtrim($dir, '/'));
@@ -125,6 +150,7 @@ class InstanceRepo {
     /** Cut a worktree of the origin at $abs on $branch (created from $base unless it exists). */
     public static function addWorktree(string $slug, string $abs, string $branch, string $base): void {
         self::assertOrigin($slug);
+        self::assertNotCarried($slug);
         $origin = self::originPath($slug);
         self::git($origin, ['worktree', 'prune']);
         if (is_dir($abs)) throw new \RuntimeException("InstanceRepo: {$abs} exists and is not a worktree the origin knows about; remove it before running this task.");

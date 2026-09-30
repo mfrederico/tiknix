@@ -64,6 +64,8 @@ class PlanRemediator {
         }
 
         $runner = new PlanRunner($slug, $dir, $memberId, $memberLevel, $engine);
+        // The re-plan runs on the agent the failed plan ran on — never quietly on another.
+        if ((string) ($parent->agent ?? '') !== '') $runner->useAgent((string) $parent->agent);
         if ($runner->running()) {
             return ['action' => 'escalate', 'why' => 'a planner is already running for this project'];
         }

@@ -34,7 +34,7 @@
         "symfony/http-client": "^6.0",
         "symfony/yaml": "^8.1",
         "tiknix/runtime": "*@dev",
-        "tiknix/sidecar-kit": "^0.1.0",
+        "tiknix/sidecar-kit": "*@dev",
         "translatify/translatify": "^0.1",
         "vlucas/phpdotenv": "^5.5"
     },
@@ -88,8 +88,11 @@
             "url": "/var/www/html/default/billing.clicksimple/packages/billing-client"
         },
         "sidecar-kit": {
-            "type": "vcs",
-            "url": "git@github.com:mfrederico/sidecar-kit.tiknix.git"
+            "type": "path",
+            "url": "../sidecar-kit.tiknix",
+            "options": {
+                "symlink": true
+            }
         },
         "tiknix-runtime": {
             "type": "path",

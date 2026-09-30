@@ -661,7 +661,10 @@ class PlanExecutor {
             @unlink($out);
             file_put_contents($brief, $this->buildTaskBrief($t, []));
             $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int) $t->id, $this->slug);
-            TenantBuilder::launch($this->tenant, $session, TenantBuilder::tenantCommand($this->tenant, 'task', $id, $brief, $out), $id);
+            // The app's agent the plan runs on (the builder's picker); '' = the app's default.
+            $agent = PlanIngestor::agentName($t->agent ?? '');
+            TenantBuilder::launch($this->tenant, $session, TenantBuilder::tenantCommand($this->tenant, 'task', $id, $brief, $out, $agent !== '' ? ['agent' => $agent] : []), $id);
+            $this->logEvent($t, 'info', "Build agent started in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
         } catch (\Throwable $e) {
             $this->fail($t, 'could not start the task in the container: ' . $e->getMessage());
             return false;

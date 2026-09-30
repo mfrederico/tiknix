@@ -45,6 +45,8 @@ class PlanRunner {
      */
     private int $promptId = 0;
 
+    private string $agent = '';
+
     public function __construct(string $slug, string $instanceDir, int $memberId, int $memberLevel = 50, string $engine = 'claude') {
         $this->slug        = $slug;
         $this->instanceDir = rtrim($instanceDir, '/');
@@ -58,6 +60,18 @@ class PlanRunner {
     }
 
     public function getSessionName(): string { return $this->sessionName; }
+
+    /**
+     * The app's agent to plan on — a project in its own container (the builder's agent
+     * picker; its AI agents page). '' = the app's default agent. The plan's tasks inherit it
+     * (PlanIngestor). A host project has no app agents: naming one there is refused.
+     */
+    public function useAgent(string $agent): self {
+        $agent = PlanIngestor::agentName($agent);
+        if ($agent !== '' && !$this->tenant) throw new \RuntimeException("{$this->slug} does not live in its own container, so it has no app agents to pick from");
+        $this->agent = $agent;
+        return $this;
+    }
     private function abDir(): string { return $this->instanceDir . '/.aibuilder'; }
     public function planFile(): string { return $this->abDir() . '/plan.json'; }
     public function logFile(): string  { return $this->abDir() . '/planner.log'; }
@@ -325,11 +339,12 @@ class PlanRunner {
             // In the app's container, on the app's own credential (AgentTask::plan); the plan
             // (or plan-complete.md) is unpacked here, where the ingest below looks for it.
             $out = $ws . '/.aibuilder/tenant-plan.json';
-            $runBlock = 'rm -f ' . escapeshellarg($out) . ' && '
-                      . TenantBuilder::tenantCommand($this->tenant, 'plan', 'plan-' . date('Ymd-His'), $this->requestFile(), $out, ['member' => $this->memberId])
+            $runBlock = '{ rm -f ' . escapeshellarg($out) . ' && '
+                      . TenantBuilder::tenantCommand($this->tenant, 'plan', 'plan-' . date('Ymd-His'), $this->requestFile(), $out,
+                                                     ['member' => $this->memberId] + ($this->agent !== '' ? ['agent' => $this->agent] : []))
                       . ' > /dev/null; php -r ' . escapeshellarg('require ' . var_export($mainProjectRoot . '/vendor/autoload.php', true)
                       . '; exit(\\app\\TenantBuilder::unpackPlan(' . var_export($out, true) . ', ' . var_export($ws . '/.aibuilder', true)
-                      . ', ' . var_export($this->slug, true) . ', ' . (int) $this->memberId . '));');
+                      . ', ' . var_export($this->slug, true) . ', ' . (int) $this->memberId . ', ' . var_export($this->agent, true) . '));') . '; }';
         } else {
         // Planner is SELECTABLE: the model comes from the engine's planner tier in the
         // registry (§7), not a hardcoded opus. claude's planner tier is opus (unchanged);

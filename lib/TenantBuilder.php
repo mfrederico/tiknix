@@ -87,7 +87,7 @@ class TenantBuilder {
         $script = "{$ws}/.aibuilder/run-{$label}.sh";
         $body = "#!/bin/bash\n# {$label} for {$inst->slug}, in its container (lib/TenantBuilder.php)\n"
               . "cd " . escapeshellarg(Paths::root()) . "\n"
-              . "env -u TIKNIX_WORKBENCH_DB " . $command . "\n";
+              . $command . "\n";
         if (file_put_contents($script, $body) === false) throw new \RuntimeException("could not write {$script}");
         @chmod($script, 0755);
         if (!TmuxManager::create($session, $script, $ws)) throw new \RuntimeException("could not start the tmux session {$session}");
@@ -97,8 +97,24 @@ class TenantBuilder {
     public static function tenantCommand(object $inst, string $verb, string $id, string $inputFile, string $outFile, array $extra = []): string {
         $args = ['--' . $verb . '=' . $inst->slug, '--id=' . $id, '--out=' . $outFile];
         foreach ($extra as $k => $v) $args[] = "--{$k}={$v}";
-        return 'php ' . escapeshellarg(Paths::root() . '/scripts/tenant.php') . ' '
+        // Never with the task board as its database: a builder process carries
+        // TIKNIX_WORKBENCH_DB, and tenant.php booted on it finds no instance registry.
+        return 'env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg(Paths::root() . '/scripts/tenant.php') . ' '
              . implode(' ', array_map('escapeshellarg', $args)) . ' < ' . escapeshellarg($inputFile);
+    }
+
+    /**
+     * What the builder's agent picker offers for a project in its own container: the app's
+     * Claude account state and its agents, from the app (clitool --agents; no keys leave it).
+     * Throws when the container does not answer: an empty list would read as "no agents".
+     */
+    public static function agents(object $inst): array {
+        [$code, $out] = TenantHost::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --agents', null, 60);
+        $d = json_decode((string) $out, true);
+        if ($code !== 0 || !is_array($d) || !isset($d['agents'])) {
+            throw new \RuntimeException("{$inst->slug}'s container did not list its agents (exit {$code}): " . mb_substr(trim((string) $out), 0, 300));
+        }
+        return $d;
     }
 
     /** The JSON a finished session wrote, or null when there is none (the session died first). */
@@ -129,7 +145,7 @@ class TenantBuilder {
      * the agent found the goal already built. Returns the process exit code (0 = something
      * was delivered).
      */
-    public static function unpackPlan(string $outFile, string $abDir, string $slug, int $memberId): int {
+    public static function unpackPlan(string $outFile, string $abDir, string $slug, int $memberId, string $agent = ''): int {
         $r = self::result($outFile);
         if ($r === null) { echo "[planner] the container planner left no result ({$outFile})\n"; return 1; }
         if (!empty($r['credential'])) echo "[planner] ran in {$slug}'s container on {$r['credential']}\n";
@@ -146,6 +162,7 @@ class TenantBuilder {
         $plan = json_decode((string) $r['plan'], true);
         if (!is_array($plan)) { echo "[planner] the plan is not JSON\n"; return 1; }
         $plan['instance'] = $slug;   // submit_plan stamped the container's throwaway worktree
+        $plan['agent']    = $agent;  // the agent it was planned on; its tasks run on it too (PlanIngestor)
         $file = "{$abDir}/{$memberId}-" . date('Ymd-His') . '-' . substr(bin2hex(random_bytes(4)), 0, 6) . '.plan.json';
         if (file_put_contents($file, json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) { echo "[planner] could not write {$file}\n"; return 1; }
         echo '[planner] plan received from the container: "' . ($plan['title'] ?? '?') . '" (' . count($plan['subtasks'] ?? []) . " task(s))\n";

@@ -26,7 +26,7 @@ class TenantHost {
     /** Proxmox's stock template (on the node's `local` template storage). */
     const TEMPLATE   = 'local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst';
     const ROOTFS     = 'local-lvm';
-    const ROOTFS_GB  = 8;
+    const ROOTFS_GB  = 4;
     const MEMORY_MB  = 1024;
     const SWAP_MB    = 512;
     const CORES      = 2;

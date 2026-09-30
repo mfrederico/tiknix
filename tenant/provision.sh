@@ -56,6 +56,9 @@ if ! command -v composer >/dev/null 2>&1; then
   php /tmp/composer-setup.php --quiet --install-dir=/usr/local/bin --filename=composer
   rm -f /tmp/composer-setup.php
 fi
+# The downloaded .debs and package lists are only needed to install; ~350 MB left behind otherwise.
+apt-get clean
+rm -rf /var/lib/apt/lists/*
 php -v | head -1; composer --version 2>/dev/null | head -1
 
 say "core is $CORE_HOST at $CORE_IP"

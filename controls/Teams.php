@@ -668,6 +668,7 @@ class Teams extends Control {
         $membership = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, $this->member->id]);
         if ($membership) {
             Bean::trash($membership);
+            $team->box()->syncRooms();   // out of the team's rooms too, or they keep reading them
             $this->logger->info('User left team', ['team_id' => $teamId, 'member_id' => $this->member->id]);
         }
 
@@ -714,6 +715,7 @@ class Teams extends Control {
         }
 
         Bean::trash($membership);
+        $team->box()->syncRooms();   // out of the team's rooms too, or they keep reading them
 
         $this->logger->info('Member removed from team', [
             'team_id' => $teamId,

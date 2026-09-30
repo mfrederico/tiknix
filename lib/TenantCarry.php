@@ -178,6 +178,7 @@ PHP;
 
     /** The databases once more, the real base URL, the domain(s) proxied to the tenant. */
     public static function cutover(object $inst, string $domain, array $aliases = []): array {
+        $staging = (string) $inst->ctDomain;   // where it was proved; retired once the real domain serves
         $d = self::data($inst, $domain, true);
         if (!$d['ok']) return $d;
         $steps = $d['steps'];
@@ -189,9 +190,20 @@ PHP;
             if (!$p['ok']) return ['ok' => false, 'error' => "proxy for {$host}: " . ($p['error'] ?? 'failed'), 'steps' => $steps];
             $steps[] = "{$host} → {$inst->ctIp}";
         }
+        if ($staging !== '' && $staging !== $domain && !in_array($staging, $aliases, true)) {
+            if (!ProxmoxDeploy::removeProxy($staging)) return ['ok' => false, 'error' => "could not retire the staging host {$staging}", 'steps' => $steps];
+            $steps[] = "{$staging} retired";
+        }
         $inst->ctDomain = $domain;
         $inst->ctAliases = implode(',', $aliases);
         Bean::store($inst);
+        // The host clone no longer serves the site: core's builder must not build into it.
+        $marker = InstanceRepo::originPath((string) $inst->slug) . '/' . InstanceRepo::CARRIED_MARKER;
+        $rec = ['slug' => (string) $inst->slug, 'container' => (int) $inst->ctVmid, 'ip' => (string) $inst->ctIp,
+                'domain' => $domain, 'aliases' => $aliases, 'at' => date('Y-m-d H:i:s')];
+        if (file_put_contents($marker, json_encode($rec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n") === false)
+            return ['ok' => false, 'error' => "the site is served from the tenant, but {$marker} could not be written — the host clone's builder is NOT blocked", 'steps' => $steps];
+        $steps[] = "builder on the host clone blocked ({$marker})";
         return ['ok' => true, 'steps' => $steps];
     }
 
@@ -200,7 +212,12 @@ PHP;
         $hosts = array_values(array_filter(array_merge([(string) $inst->ctDomain], explode(',', (string) $inst->ctAliases))));
         if (!$hosts) return ['ok' => false, 'error' => "{$inst->slug} records no domain proxied to its tenant"];
         foreach ($hosts as $h) if (!ProxmoxDeploy::removeProxy($h)) return ['ok' => false, 'error' => "could not remove the proxy file for {$h}"];
-        return ['ok' => true, 'steps' => array_map(fn($h) => "{$h} → the host clone again", $hosts)];
+        $steps = array_map(fn($h) => "{$h} → the host clone again", $hosts);
+        $marker = InstanceRepo::originPath((string) $inst->slug) . '/' . InstanceRepo::CARRIED_MARKER;
+        if (is_file($marker) && !unlink($marker)) return ['ok' => false, 'error' => "the domains are back on the host clone, but {$marker} could not be removed — its builder is still blocked", 'steps' => $steps];
+        $steps[] = 'builder on the host clone unblocked';
+        $steps[] = 'NOTE: anything written to the tenant since the cutover is not in the host clone';
+        return ['ok' => true, 'steps' => $steps];
     }
 
     // ------------------------------------------------------------------------------------------

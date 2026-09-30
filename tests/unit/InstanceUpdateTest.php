@@ -88,7 +88,7 @@ class InstanceUpdateTest extends TestCase {
                 return [0, ['# CLAUDE.md: regenerated (0 enabled concept(s))']];
             }
             return [0, ['ok']];
-        }, fn(string $url) => 200);
+        }, fn(string $url) => str_contains($url, "/site/status?probe=") ? 204 : 200);   // the app answers its identity probe
     }
 
     public function testRefusals(): void {
@@ -173,7 +173,8 @@ class InstanceUpdateTest extends TestCase {
             if (str_contains($cmd, ' show tiknix/runtime --all')) return [0, [json_encode(['versions' => $this->published])]];
             if (preg_match("/ update tiknix\\/runtime --with='tiknix\\/runtime:([^']+)'/", $cmd, $m)) { $this->lock('v' . $m[1], false, $dir); return [0, []]; }
             return [0, ['ok']];
-        }, function (string $url) use (&$wizard): int { return str_ends_with($url, '/install') ? $wizard : 303; });
+        }, function (string $url) use (&$wizard): int { if (str_contains($url, '/site/status?probe=')) return 204;   // /site/status is not behind the wizard
+            return str_ends_with($url, '/install') ? $wizard : 303; });
         $r = $u->run($this->app);
         $this->assertSame('updated', $r['status'], implode("\n", $r['lines']));
         $this->assertStringContainsString('not set up yet', implode("\n", $r['lines']));

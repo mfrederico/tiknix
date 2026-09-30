@@ -420,3 +420,85 @@ audit verbs are the work), and with it the host builder's jail and pool code goe
 
 Rough size: steps 1–3 about three days; 4 two days; 5 a day per project that has its own
 code (Serenity, lead-machine, partsdna, collectiq, invoza), minutes for empty ones.
+
+## 7. Migration to tiknix.com (written 2026-09-30)
+
+What it takes for tiknix.com to run this branch, from where things stand tonight.
+
+### Where things stand
+
+| | tiknix.com (`main`, live) | tiknix2.tiknix.com (`runtime-split`) |
+|---|---|---|
+| code | host clones, host builder, Publisher | runtime package + app template, containers; 48 commits ahead of `main` (`main` has 3 not here) |
+| database | the real members, billing, teams | a copy of tiknix.com's from 2026-09-29, plus container state since: `ct_*` columns, `ct_hosts`, `deploytarget`, the `catpoobox` row |
+| projects | registry for everyone; the carried ones marked `carried-to-tenant.json` and skipped | drives the 11 containers (`tenant.php`, workbench2, Deploy) |
+
+Since §5e, this branch gained: the builder in containers (planner, tasks, audit routes;
+workbench2 at workbench2.tiknix.com with an agent picker over the app's own agents), the
+app's AI agents page (`/agents`: Sign in with Claude, provider presets), domains per app
+(`app\Host`, `conf/hosts/<host>.ini`; `tenant.php --domain-add`, certificates renewed daily
+from this machine's crontab), and the Deploy page (`/deploy`: Domains and Export — rsync
+and SSH command, keys sealed on core, the container's HEAD shipped).
+
+Still on the host: **collectiq, partsdna, Serenity** (paused — they rewrote core's dashboard,
+admin, auth and layout), **testfv**, and the original **cleans-cat-poo-boxes** clone (rebuilt
+as `catpoobox`; retire it).
+
+Every container fetches the runtime from `https://tiknix2.tiknix.com/git/runtime.git`, so
+tiknix2's address is in every app's `composer.json`.
+
+### Phase A — finish what containers need
+
+1. **The last host projects.** collectiq, partsdna and Serenity each port their core edits to
+   runtime extension points (about a day each, §6). Retire testfv and the old cat-poo-box
+   clone, or carry them if they matter. `main` cannot drop host isolation until this is done.
+2. **The builder in containers, complete.** Plans work in workbench2; the Terminal tab and
+   single (non-plan) tasks still assume a host folder, and the post-plan audit runs on core's
+   credentials, not the app's agent. Then workbench2's branch becomes the workbench.
+3. **The other sidecars, each decided.**
+   - Publisher: retired — Deploy replaces it. (GitHub pull-request export for container
+     projects is not built; decide whether it is wanted.)
+   - Explorer, Insights: they read host folders — adapt to containers, or retire.
+
+### Phase B — make this branch releasable
+
+4. **Real dependencies.** The runtime and the sidecar kit are path repos here (local
+   checkouts); `main` takes tagged releases. The apps' runtime URL moves to tiknix.com — an
+   update can rewrite each app's `composer.json`.
+5. **Crons into the main tree:** the heartbeat, the daily certificate renewal (it points at
+   `tiknix2.tiknix` today), screenshot capture.
+6. **A dress rehearsal, repeated until it is clean.**
+   - Copy tiknix.com's current database into tiknix2 and bring the container state across.
+   - Run the seeds, then the whole Playwright suite, including 03/04 (project lifecycle),
+     which are not run against tiknix2 today.
+   - Confirm `[security] app_key` is tiknix.com's, or 2FA secrets and encrypted settings
+     break.
+
+### Phase C — cutover, one short maintenance window
+
+7. tiknix.com into maintenance; a final database backup.
+8. Merge `runtime-split` into `main`; deploy it in the tiknix folder (composer install, seeds,
+   cache reset); apply the container state from tiknix2's database.
+9. Point the workbench sidecar at `main` (workbench2's branch merged); switch the apps'
+   runtime URL; run the suite.
+10. **Rollback:** a tag on the old tree plus the database backup — one command back, kept
+    until the new one has proven itself.
+
+### Phase D — cleanup
+
+11. Delete the host machinery:
+    - `IsolatedPool`, `CoreDb`, the host builder's jail and pool code, Tiknix-Hosted publish,
+      ProxmoxDeploy's OCI path.
+    - capricorn's `isolate-instance.sh` / `jail-run.sh`.
+    - The old host clone folders, after archiving them.
+12. Tell the other project owners (members 9, 12, 24) their projects moved; where the app's
+    agent login has expired (pd, blower4free, bookingscheduler), they sign in again on the
+    app's AI agents page.
+
+### Decisions open
+
+| decision | options | recommendation |
+|---|---|---|
+| collectiq, partsdna, Serenity | port now, or keep them frozen on the host and delay removing the host machinery | port — it is most of the remaining work, and nothing else can be deleted until it is done |
+| cutover style | merge into `main` and deploy in place, or swap folders so tiknix.com points at this tree | merge in place — git stays the record; swapping is quicker to flip, messier to keep |
+| GitHub pull-request export for containers | build it, or rsync/SSH are enough | the owner's call |

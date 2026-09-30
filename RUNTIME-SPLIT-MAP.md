@@ -290,6 +290,73 @@ through the path repository); the admin's `maintenance_mode` setting is stored b
 nowhere; the runtime repo is local to this host — tenants will fetch releases from core's git
 endpoint (step 4). Not merged to main; nothing released to the existing instances.
 
+## 5d. Step 4 status (2026-09-30)
+
+**The tenant "image" is a script, not an image.** Publishing an OCI image needed a registry
+off the `.tiknix` domains, and there is no docker on this host. A system container needs
+neither: `lib/TenantHost.php` creates one from Proxmox's stock `ubuntu-24.04-standard`
+template (already on the node) with core's tenant SSH key for root, and
+`tenant/provision.sh` — versioned here, idempotent — installs PHP 8.5 from the same PPA core
+uses, nginx, a PHP-FPM pool running as the `app` user, Composer, the app's own Claude Code
+(linked as `bin/claude`), read-only credentials for core's git endpoint, then clones and
+builds the app. SSH is the exec channel the Proxmox API never had, so the old design's
+self-bootstrapping entrypoint is unnecessary.
+
+**Apps come from the template; their runtime comes from core.** `lib/TenantApp.php` registers
+the app (instance row, deploy token) and makes its origin from `tiknix-app`, with the runtime
+repository pointed at this control plane's `/git/runtime.git` (new: served to any active
+instance by its slug + deploy token, like `core.git`) and the lock re-resolved there. The git
+endpoint now answers a credential-less first request with the Basic challenge — before, git
+never retried with its password and every fetch of `core.git`/`runtime.git` failed. After the
+first clone the tenant's repository is the app's home (`origin` renamed `seed`).
+
+**The builder works in the container.** `clitool --agent-task=<id>` (runtime `AgentTask`,
+prompt on stdin) makes a worktree on `task/<id>`, runs the app's own agent there with the
+app's own credential chain (the pipeline agent step's: login → key file → `anthropic`
+connection — never anyone else's) and commits; `--agent-merge` / `--agent-discard` finish it.
+Core drives it over SSH: `TenantHost::task/mergeTask/discardTask`, `scripts/tenant.php
+--task/--merge/--discard`, plus `--ssh` and `--clitool`.
+
+**cat-poo-box, rebuilt** as `catpoobox` (container 104, `https://catpoobox.tiknix.com`), its
+code carried into the container over SSH and committed there. Everything it had done by
+editing core became an extension point in the runtime instead — none is an override:
+
+| cat-poo-box edited core's… | now |
+|---|---|
+| `Contact::book` + contact admin/view views | its own `Book` controller (`/book`); requests are a registered support-queue category (`Contact::$categories`: tab, statuses, summary/details partials) |
+| header nav, guest button, footer link | `Chrome` slots `prepare`, `actions`, `footer` (the last two new) |
+| a `roleLabel()` in functions.php | `Chrome::$levelNames` (an unnamed level logs, never "Member") |
+| `PermissionCache::seedRule` | fixed upstream: an auto row at the seeded level is claimed |
+| `views/index/index.php` | an app's home page IS its `views/index/index.php` (the runtime ships none) |
+
+Wired in the app's `lib/app.php` (new in the template: Composer `files`), with a test harness
+(`phpunit.xml`, `tests/bootstrap.php`) — its 8 tests pass inside the container.
+
+**Proved** (Playwright, root/admin/member):
+
+| target | result |
+|---|---|
+| catpoobox in its container: 09 fresh app (wizard, REQUIRED 2FA enrolled with a computed TOTP, app-only shell, `/rt/` assets, wizard locked) | pass |
+| catpoobox: 08 roles (its own nav — My orders, All orders — per level; control-plane pages absent) | 6/6 |
+| core on alpha.11: 01 + 02 + 08 | 51/51 |
+| rtdemo, updated alpha.7 → alpha.11 in one `--update`: 08 | 6/6 |
+
+The container updated ITSELF four times (`--update`, runtime fetched from core's endpoint), the
+last with the smoke test passing through its public host.
+
+**Found and fixed in capricorn** (committed there; they take effect when openresty reloads):
+static files (css/js/images/fonts, favicon, robots) of every PROXIED host were answered from
+core's disk and 404'd; and the proxy cache stored responses for a minute ignoring the app's
+`Cache-Control`, never recognised a tiknix session cookie, and stored bypassed and
+cookie-setting responses — a proxied app's page (CSRF token included) was served to the next
+visitor. Until the reload, the container was proved through an SSH tunnel to it.
+
+**Open**: the builder's agent needs the app's own credential (a Claude login or an Anthropic
+key/connection in the app) — deliberately not copied from anyone; the mechanics are proved by
+`AgentTaskTest` with a stand-in agent. The workbench/plan executor still dispatch to host
+clones — wiring them to `TenantHost::task` is step 5, with deleting the isolation machinery.
+Old cat-poo-box (`cleans-cat-poo-boxes-937cab`) is untouched.
+
 ## 6. Order of work
 
 1. Move the files in §3 into a `runtime/` directory inside this repo first, with the

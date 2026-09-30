@@ -180,7 +180,7 @@ class TenantHost {
      * of the script on stdin — never on a command line, where the deploy token would sit in
      * a process list.
      */
-    public static function provision(object $inst, string $domain): array {
+    public static function provision(object $inst, string $domain, string $branch = 'main'): array {
         if ((int) $inst->ctVmid <= 0) return ['ok' => false, 'error' => "{$inst->slug} has no container (create it first)"];
         $core = (string) parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST);
         if ($core === '') return ['ok' => false, 'error' => '[app] baseurl in conf/config.ini names no host — the tenant cannot find core'];
@@ -195,6 +195,7 @@ class TenantHost {
             'APP_BASEURL'    => 'https://' . $domain,
             'APP_NAME'       => (string) ($inst->displayName ?: $inst->slug),
             'APP_KEY'        => bin2hex(random_bytes(32)),
+            'APP_BRANCH'     => $branch,
         ];
         $script = '';
         foreach ($env as $k => $v) $script .= "export {$k}=" . escapeshellarg($v) . "\n";
@@ -218,7 +219,7 @@ class TenantHost {
      * Run a command in the tenant. `app` is the builder's user, `root` provisioning's.
      * @return array{0:int,1:string}  exit code and combined output
      */
-    public static function ssh(object $inst, string $user, string $command, ?string $stdin = null, int $timeout = 600): array {
+    public static function ssh(object $inst, string $user, string $command, ?string $stdin = null, int $timeout = 600, ?string $stdinFile = null): array {
         if (!in_array($user, ['app', 'root'], true)) throw new \InvalidArgumentException("tenant user must be app or root, not {$user}");
         $ip = (string) $inst->ctIp;
         if (!preg_match('/^10\.10\.10\.\d{1,3}$/', $ip)) throw new \RuntimeException("{$inst->slug} has no tenant address ({$ip})");
@@ -228,10 +229,15 @@ class TenantHost {
             "{$user}@{$ip}", $command];
         // ssh forwards LANG/LC_* (SendEnv); core's locale may not exist in the tenant. C.UTF-8 does.
         $env = array_merge(getenv(), ['LANG' => 'C.UTF-8', 'LC_ALL' => 'C.UTF-8']);
-        $p = proc_open($cmd, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes, null, $env);
+        // $stdinFile streams a file (an archive of an app's data can be hundreds of MB).
+        if ($stdinFile !== null && !is_readable($stdinFile)) throw new \RuntimeException("cannot read {$stdinFile}");
+        $in = $stdinFile !== null ? ['file', $stdinFile, 'r'] : ['pipe', 'r'];
+        $p = proc_open($cmd, [0 => $in, 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes, null, $env);
         if (!is_resource($p)) return [255, 'could not start ssh'];
-        if ($stdin !== null) fwrite($pipes[0], $stdin);
-        fclose($pipes[0]);
+        if ($stdinFile === null) {
+            if ($stdin !== null) fwrite($pipes[0], $stdin);
+            fclose($pipes[0]);
+        }
         $out = (string) stream_get_contents($pipes[1]);
         fclose($pipes[1]);
         return [proc_close($p), $out];

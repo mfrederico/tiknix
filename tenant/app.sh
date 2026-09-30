@@ -22,8 +22,10 @@
 #   APP_BASEURL     https://<the app's public host>
 #   APP_NAME        the app's display name
 #   APP_KEY         64 hex chars, [security] app_key
+#   APP_BRANCH      the origin branch the app starts from: main for a new app, app for one
+#                   carried from a host clone (its main is still the host clone's)
 set -euo pipefail
-for v in APP_SLUG CORE_HOST CORE_IP DEPLOY_TOKEN BUILDER_PUBKEY APP_BASEURL APP_NAME APP_KEY; do
+for v in APP_SLUG CORE_HOST CORE_IP DEPLOY_TOKEN BUILDER_PUBKEY APP_BASEURL APP_NAME APP_KEY APP_BRANCH; do
   if [ -z "${!v:-}" ]; then echo "provision: $v is not set" >&2; exit 2; fi
 done
 export DEBIAN_FRONTEND=noninteractive
@@ -54,7 +56,8 @@ chmod 600 /home/app/.git-credentials /home/app/.config/composer/auth.json
 
 say "the app"
 if [ ! -d "$APP_DIR/.git" ]; then
-  sudo -u app git clone -q "https://$CORE_HOST/git/$APP_SLUG.git" "$APP_DIR"
+  sudo -u app git clone -q -b "$APP_BRANCH" "https://$CORE_HOST/git/$APP_SLUG.git" "$APP_DIR"
+  [ "$APP_BRANCH" = main ] || sudo -u app git -C "$APP_DIR" branch -m "$APP_BRANCH" main
   # From here the tenant's repository is the app's home: the builder works in it over SSH and
   # the control plane reads from it. It never pulls "builds" from core, so no origin.
   sudo -u app git -C "$APP_DIR" remote rename origin seed

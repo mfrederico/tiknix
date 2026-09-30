@@ -37,32 +37,14 @@ class TenantApp {
         $inst->createdAt = date('Y-m-d H:i:s');
         $inst->ctVmid = 0; $inst->ctIp = ''; $inst->ctDomain = '';
         Bean::store($inst);
-        $token = GitHttp::deployToken($inst);
+        GitHttp::deployToken($inst);
 
         $steps = [];
         $work = sys_get_temp_dir() . '/tenantapp-' . $slug . '-' . bin2hex(random_bytes(3));
-        $git = fn(string $dir, string $args) => self::sh("git -C " . escapeshellarg($dir) . " {$args}");
         try {
-            $r = self::sh('git clone -q ' . escapeshellarg(self::TEMPLATE) . ' ' . escapeshellarg($work));
-            if ($r[0] !== 0) throw new \RuntimeException('clone of the template failed: ' . $r[1]);
-
-            // The runtime comes from this control plane's endpoint, as the tenant will fetch it.
-            $cj = json_decode((string) file_get_contents("{$work}/composer.json"), true);
-            if (!is_array($cj)) throw new \RuntimeException("the template's composer.json is not JSON");
-            $cj['repositories']['tiknix-runtime'] = ['type' => 'vcs', 'url' => "https://{$core}/git/runtime.git"];
-            $cj['name'] = 'tiknix-app/' . $slug;
-            file_put_contents("{$work}/composer.json", json_encode($cj, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-            $auth = json_encode(['http-basic' => [$core => ['username' => $slug, 'password' => $token]]]);
-            $r = self::sh('cd ' . escapeshellarg($work) . ' && COMPOSER_AUTH=' . escapeshellarg($auth)
-                . ' php -d error_reporting=0 $(command -v composer) update tiknix/runtime --no-install --no-interaction 2>&1');
-            if ($r[0] !== 0) throw new \RuntimeException("composer could not resolve tiknix/runtime from https://{$core}/git/runtime.git: " . substr($r[1], -600));
-            $steps[] = "runtime from https://{$core}/git/runtime.git";
-
-            // The app's own name on its config example and README title.
-            $ex = "{$work}/conf/config.example.ini";
-            file_put_contents($ex, preg_replace('/^name = ".*"$/m', 'name = ' . json_encode($name), (string) file_get_contents($ex)));
-            $git($work, 'add -A');
-            $git($work, '-c user.email=core@tiknix.local -c user.name=tiknix commit -q -m ' . escapeshellarg("{$name}: new app from the tiknix-app template"));
+            $steps[] = self::prepareRepo($work, $inst, $core);
+            self::git($work, 'add -A');
+            self::git($work, '-c user.email=core@tiknix.local -c user.name=tiknix commit -q -m ' . escapeshellarg("{$name}: new app from the tiknix-app template"));
 
             $origin = InstanceRepo::originPath($slug);
             $r = self::sh('git init -q --bare -b main ' . escapeshellarg($origin));
@@ -80,8 +62,39 @@ class TenantApp {
         return ['ok' => true, 'inst' => $inst, 'steps' => $steps];
     }
 
+    /**
+     * A working copy of the template at $work made into THIS app: its tiknix/runtime repository
+     * pointed at this control plane's git endpoint and the lock re-resolved there (as the tenant
+     * will fetch it, with the app's own deploy token), its name on the config example. Nothing
+     * is committed. Throws, naming what failed.
+     */
+    public static function prepareRepo(string $work, object $inst, string $core): string {
+        $slug = (string) $inst->slug;
+        $name = (string) ($inst->displayName ?: $slug);
+        $r = self::sh('git clone -q ' . escapeshellarg(self::TEMPLATE) . ' ' . escapeshellarg($work));
+        if ($r[0] !== 0) throw new \RuntimeException('clone of the template failed: ' . $r[1]);
+
+        $cj = json_decode((string) file_get_contents("{$work}/composer.json"), true);
+        if (!is_array($cj)) throw new \RuntimeException("the template's composer.json is not JSON");
+        $cj['repositories']['tiknix-runtime'] = ['type' => 'vcs', 'url' => "https://{$core}/git/runtime.git"];
+        $cj['name'] = 'tiknix-app/' . $slug;
+        file_put_contents("{$work}/composer.json", json_encode($cj, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        $auth = json_encode(['http-basic' => [$core => ['username' => $slug, 'password' => GitHttp::deployToken($inst)]]]);
+        $r = self::sh('cd ' . escapeshellarg($work) . ' && COMPOSER_AUTH=' . escapeshellarg($auth)
+            . ' php -d error_reporting=0 $(command -v composer) update tiknix/runtime --no-install --no-interaction 2>&1');
+        if ($r[0] !== 0) throw new \RuntimeException("composer could not resolve tiknix/runtime from https://{$core}/git/runtime.git: " . substr($r[1], -600));
+
+        $ex = "{$work}/conf/config.example.ini";
+        file_put_contents($ex, preg_replace('/^name = ".*"$/m', 'name = ' . json_encode($name), (string) file_get_contents($ex)));
+        return "runtime from https://{$core}/git/runtime.git";
+    }
+
+    public static function git(string $dir, string $args): array {
+        return self::sh('git -C ' . escapeshellarg($dir) . ' ' . $args);
+    }
+
     /** @return array{0:int,1:string} */
-    private static function sh(string $cmd): array {
+    public static function sh(string $cmd): array {
         exec('env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE bash -c ' . escapeshellarg($cmd) . ' 2>&1', $out, $code);
         return [$code, implode("\n", $out)];
     }

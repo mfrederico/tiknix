@@ -111,6 +111,6 @@ class OverridesTest extends TestCase {
             foreach (\app\Chrome::files($slot) as $f) $this->assertStringStartsWith(\app\Paths::root() . '/views/', (string) realpath($f));
         }
         $this->expectException(\InvalidArgumentException::class);
-        \app\Chrome::add('footer', 'x');
+        \app\Chrome::add('sidebar-bottom', 'x');
     }
 }

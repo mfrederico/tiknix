@@ -432,7 +432,7 @@ class ProxmoxDeploy {
      * reading .proxy.<name>, so removing the file is exactly "we no longer answer here".
      * Returns false only when the file exists and cannot be removed.
      */
-    private static function removeProxy(string $domain): bool {
+    public static function removeProxy(string $domain): bool {
         $parts = explode('.', $domain);
         if (count($parts) < 2) return true;
         array_pop($parts);
@@ -441,7 +441,7 @@ class ProxmoxDeploy {
         return @unlink($file);
     }
 
-    private static function writeProxy(string $domain, string $ip): array {
+    public static function writeProxy(string $domain, string $ip): array {
         $parts = explode('.', $domain);
         if (count($parts) < 2) return ['ok' => false, 'error' => 'domain needs at least one dot: ' . $domain];
         array_pop($parts);                       // drop the tld, exactly as capricorn does

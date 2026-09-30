@@ -34,6 +34,12 @@ class GitHttp {
     /** The repo name under which the control plane's own repository is served (releases). */
     const CORE = 'core';
 
+    /** The tiknix/runtime package (RUNTIME-SPLIT-MAP.md step 3): an app's composer fetches it here. */
+    const RUNTIME = 'runtime';
+
+    /** Where the runtime package repository lives on core's disk. */
+    const RUNTIME_DIR = '/var/www/html/default/tiknix-runtime';
+
     /** Where provisioned instances live, mirroring ProvisionService::instanceDir(). */
     const INSTANCE_ROOT = '/var/www/html/default';
 
@@ -51,16 +57,18 @@ class GitHttp {
         // releases from (§13 C2: `core` remote). It is served to ANY active instance
         // presenting its own deploy token, with its slug as the Basic username (authorize()
         // checks the token of the instance the username names). Read-only like the rest.
-        if ($slug === self::CORE) {
+        // `/git/runtime.git` — the tiknix/runtime package an app's composer installs — is
+        // served on the same terms: any active instance, its slug as the username.
+        if ($slug === self::CORE || $slug === self::RUNTIME) {
             $caller = strtolower(trim((string) self::basicUsername()));
-            if (!preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $caller) || $caller === self::CORE) {
-                return ['ok' => false, 'error' => 'core.git is fetched with an instance\'s slug as the username and its deploy token as the password', 'code' => 401];
+            if (!preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $caller) || in_array($caller, [self::CORE, self::RUNTIME], true)) {
+                return ['ok' => false, 'error' => "{$slug}.git is fetched with an instance's slug as the username and its deploy token as the password", 'code' => 401];
             }
             $inst = Bean::findOne('instance', 'slug = ?', [$caller]);
             if (!$inst || !$inst->id || (string) $inst->status !== 'active') return ['ok' => false, 'error' => 'Unknown instance', 'code' => 404];
-            $core = \Model_Instance::ROOT . '/tiknix';
-            if (!is_dir($core . '/.git')) return ['ok' => false, 'error' => 'The control plane has no repository at ' . $core, 'code' => 500];
-            return ['ok' => true, 'dir' => $core, 'bean' => $inst];
+            $dir = $slug === self::CORE ? \Model_Instance::ROOT . '/tiknix' : self::RUNTIME_DIR;
+            if (!is_dir($dir . '/.git')) return ['ok' => false, 'error' => "No repository at {$dir}", 'code' => 500];
+            return ['ok' => true, 'dir' => $dir, 'bean' => $inst];
         }
         $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
         if (!$inst || !$inst->id)                  return ['ok' => false, 'error' => 'Unknown instance', 'code' => 404];

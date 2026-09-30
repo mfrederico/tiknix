@@ -65,20 +65,39 @@ PHP;
         return $dir;
     }
 
-    /** @return array{dir:string,head:string,own:string[],edited:string[],core:int} */
+    /**
+     * What the project has beyond core, from its WORKING TREE — tracked files as they are on disk
+     * and untracked ones git does not ignore — so work nobody committed comes along too (a host
+     * clone is edited in place; bookingscheduler's theme and booking pages were never committed).
+     *
+     * @return array{dir:string,head:string,own:string[],edited:string[],core:int,uncommitted:string[]}
+     */
     public static function inventory(string $slug): array {
         $dir = self::hostDir($slug);
         [$blobs, $paths] = self::coreHistory();
+        $list = array_unique(array_merge(self::lines(self::gitOut($dir, 'ls-files')), self::lines(self::gitOut($dir, 'ls-files --others --exclude-standard'))));
+        $list = array_values(array_filter($list, fn($p) => !self::notCode($p) && is_file("{$dir}/{$p}") && !is_link("{$dir}/{$p}")));
+        $shas = self::hashes($dir, $list);
         $own = []; $edited = []; $core = 0;
-        foreach (self::lines(self::gitOut($dir, 'ls-tree -r HEAD')) as $l) {
-            if (!preg_match('/^\d+ blob ([0-9a-f]{40})\t(.+)$/', $l, $m)) continue;
-            [$sha, $path] = [$m[1], $m[2]];
-            if (self::notCode($path)) continue;
+        foreach ($list as $i => $path) {
             if (!isset($paths[$path])) $own[] = $path;
-            elseif (!isset($blobs[$sha])) $edited[] = $path;
+            elseif (!isset($blobs[$shas[$i]])) $edited[] = $path;
             else $core++;
         }
-        return ['dir' => $dir, 'head' => trim(self::gitOut($dir, 'rev-parse --short HEAD')), 'own' => $own, 'edited' => $edited, 'core' => $core];
+        $dirty = array_values(array_filter(array_map(fn($l) => substr($l, 3), self::lines(self::gitOut($dir, 'status --porcelain --untracked-files=all'))),
+            fn($p) => in_array($p, $own, true) || in_array($p, $edited, true)));
+        return ['dir' => $dir, 'head' => trim(self::gitOut($dir, 'rev-parse --short HEAD')), 'own' => $own, 'edited' => $edited, 'core' => $core, 'uncommitted' => $dirty];
+    }
+
+    /** git's blob id of each file as it is on disk, in order. */
+    private static function hashes(string $dir, array $paths): array {
+        if (!$paths) return [];
+        $p = proc_open(['env', '-u', 'GIT_DIR', '-u', 'GIT_WORK_TREE', '-u', 'GIT_INDEX_FILE', 'git', '-C', $dir, 'hash-object', '--stdin-paths'],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        fwrite($pipes[0], implode("\n", $paths) . "\n"); fclose($pipes[0]);
+        $out = self::lines((string) stream_get_contents($pipes[1])); fclose($pipes[1]); fclose($pipes[2]);
+        if (proc_close($p) !== 0 || count($out) !== count($paths)) throw new \RuntimeException("git hash-object in {$dir} did not hash every file");
+        return $out;
     }
 
     public static function seed(object $inst): array {
@@ -93,14 +112,13 @@ PHP;
 
         $steps = [];
         $tmp = sys_get_temp_dir() . '/tenantcarry-' . $slug . '-' . bin2hex(random_bytes(3));
-        $work = "{$tmp}/app"; $src = "{$tmp}/src";
+        $work = "{$tmp}/app";
         try {
-            @mkdir($src, 0700, true);
             $steps[] = TenantApp::prepareRepo($work, $inst, $core);
-            $r = self::sh('git -C ' . escapeshellarg($inv['dir']) . ' archive HEAD | tar -x -C ' . escapeshellarg($src));
-            if ($r[0] !== 0) throw new \RuntimeException("git archive of {$inv['dir']} failed: {$r[1]}");
+            $src = $inv['dir'];   // the working tree, uncommitted work included
             foreach ($inv['own'] as $p) self::copy("{$src}/{$p}", "{$work}/{$p}");
             foreach ($inv['edited'] as $p) self::copy("{$src}/{$p}", "{$work}/.carry/edited/{$p}");
+            if ($inv['uncommitted']) $steps[] = count($inv['uncommitted']) . ' of them uncommitted in the host clone: ' . implode(', ', $inv['uncommitted']);
             // Which plugins it has and which are on: its lock, with the concepts/ it names (own files).
             if (is_file("{$src}/concepts.lock")) { self::copy("{$src}/concepts.lock", "{$work}/concepts.lock"); $steps[] = 'concepts.lock carried'; }
             file_put_contents("{$work}/CARRY.md", self::report($inst, $inv));
@@ -319,7 +337,7 @@ PHP;
 
     private static function report(object $inst, array $inv): string {
         $out = "# {$inst->slug}: carried from its host clone\n\n"
-            . "Carried by `scripts/tenant.php --carry` from `{$inv['dir']}` at `{$inv['head']}` onto the tiknix-app\n"
+            . "Carried by `scripts/tenant.php --carry` from `{$inv['dir']}` (its working tree; HEAD `{$inv['head']}`) onto the tiknix-app\n"
             . "template: " . count($inv['own']) . " file(s) of its own came along; " . $inv['core'] . " file(s) were core at some version\n"
             . "and are the runtime's now.\n\n## Core files this project edited — to port\n\n"
             . "Each is kept as the project had it under `.carry/edited/`. None is loaded: port what it\n"

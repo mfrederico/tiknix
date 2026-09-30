@@ -578,12 +578,12 @@ TOTP-based 2FA for admin users (level ≤ 50) and workbench users. Whether it is
 ```ini
 [security]
 two_factor_enabled = true   ; master switch — false disables 2FA entirely (no setup, no verify)
-two_factor_enforce = true   ; false = OPTIONAL (eligible users prompted but can "Skip for now"); true = required
+two_factor_enforce = false  ; false (default) = OPTIONAL (eligible users prompted but can "Skip for now"); true = required
 ```
 
 - **enabled=false** → 2FA completely off (handy for local dev).
-- **enabled=true, enforce=false** → optional: eligible users are prompted at login but may hit **Skip for now** (`/auth/twofaskip`, session-scoped); anyone who opts in still verifies each login.
-- **enabled=true, enforce=true** → required for `REQUIRED_LEVELS` (default, secure).
+- **enabled=true, enforce=false** (the default) → optional: eligible users are prompted at login but may hit **Skip for now** (`/auth/twofaskip`, session-scoped); anyone who opts in still verifies each login.
+- **enabled=true, enforce=true** → required for `REQUIRED_LEVELS`.
 
 The enforcement choke points are `TwoFactorAuth::needsSetup()` / `needsVerification()`; policy is read via `policyEnabled()` / `policyEnforced()`. Level scope in `vendor/tiknix/runtime/lib/TwoFactorAuth.php`:
 

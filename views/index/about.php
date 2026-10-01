@@ -19,7 +19,7 @@ $jsonld = [
          'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about', 'image' => $site . '/img/matt.jpg',
          'sameAs' => ['https://linkedin.com/in/mattfred', 'https://github.com/mfrederico', 'https://clicksimple.com/about.php'],
          'knowsAbout' => ['AI agent orchestration', 'Model Context Protocol', 'Ecommerce systems', 'Warehouse management software', 'Laravel', 'PHP', 'Shopify', 'Stripe']],
-        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder', 'worksFor' => ['@id' => $site . '/#org'],
+        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder', 'knowsLanguage' => ['English', 'Spanish'], 'worksFor' => ['@id' => $site . '/#org'],
          'knowsAbout' => ['Dealer and channel network enablement', 'Shopify Plus', 'B2B SaaS partnerships', 'AI-enabled commerce', 'Ecommerce operations'],
          'url' => $site . '/about', 'sameAs' => ['https://www.linkedin.com/in/fabianduarteb/']],
         ['@type' => 'AboutPage', '@id' => $site . '/about#page', 'url' => $site . '/about', 'name' => 'Who we are', 'mainEntity' => ['@id' => $site . '/#org']],
@@ -128,7 +128,8 @@ $jsonld = [
           modernize their dealer and distributor networks &mdash; one place to run the channel, less
           coordination by hand, and clear sight of what&rsquo;s happening. Before that: <strong>Shopify Plus</strong>
           platform leadership, global ecommerce operations, migrations and conversion work, contributing to more
-          than <strong>$60 million in direct-to-consumer growth</strong>. He builds client apps on tiknix every day.
+          than <strong>$60 million in direct-to-consumer growth</strong>. He builds client apps on tiknix every day &mdash;
+          and he speaks Spanish, so you can ask for help in English or <em>en espa&ntilde;ol</em>.
         </p>
         <div class="links">
           <a href="https://www.linkedin.com/in/fabianduarteb/" rel="noopener">LinkedIn</a>
@@ -151,7 +152,7 @@ $jsonld = [
       <h2 style="margin-top:12px;">We&rsquo;re with you on the way to software sovereignty</h2>
       <p>Owning your software shouldn&rsquo;t mean being on your own with it. Ask us anything, any time &mdash; a person answers.</p>
       <div class="grid">
-        <div class="card"><h3>Ask from inside your project</h3><p>Support is in every project&rsquo;s menu. Write to us and Matt or Fabian answers &mdash; in your Communications and by email.</p></div>
+        <div class="card"><h3>Ask from inside your project</h3><p>Support is in every project&rsquo;s menu. Write to us and Matt or Fabian answers &mdash; in your Communications and by email, in English or Spanish.</p></div>
         <div class="card"><h3>Your AI agent can call us too</h3><p>When your project&rsquo;s agent hits a problem on our side, it asks you first, then sends us what it tried and what it saw &mdash; so you never have to explain it twice.</p></div>
         <div class="card"><h3>See it before you start</h3><p>Thirty minutes with Matt, watching a real project get built. No slides, no sales script.</p></div>
       </div>

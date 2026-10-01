@@ -543,7 +543,7 @@ $hasShowcase = !empty($showcase);
     <div class="grid-3">
       <div class="card pcard">
         <h3 style="font-size:20px;">Ask from inside your project</h3>
-        <p>Support is in every project&rsquo;s menu. A person answers, in your Communications and by email.</p>
+        <p>Support is in every project&rsquo;s menu. A person answers, in your Communications and by email &mdash; in English or Spanish.</p>
       </div>
       <div class="card pcard">
         <h3 style="font-size:20px;">Your AI agent can call us</h3>

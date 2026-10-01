@@ -58,7 +58,14 @@ if ($gone) passthru("php scripts/resetcache.php >/dev/null");
 PHP;
 
     /** conf/ files that are the host's or the builder's, never the app's. */
-    const HOST_CONF = ['config.ini', 'aibuilder.ini', 'broker.ini', 'nginx-fpm.conf', 'proxmox.ini'];
+    const HOST_CONF = ['config.ini', 'aibuilder.ini', 'nginx-fpm.conf', 'proxmox.ini'];
+
+    /**
+     * conf/ files that are the app's own although core has one of the same name: broker.ini is
+     * THIS app's key to core's broker (its connected stores' tokens are held there) — every app
+     * carried before 2026-10-01 arrived without it, and partsdna's Shopify pulls stopped.
+     */
+    const APP_CONF = ['broker.ini'];
 
     public static function hostDir(string $slug): string {
         $dir = self::HOSTS . '/' . $slug . '.tiknix';
@@ -367,6 +374,7 @@ PHP;
         foreach (glob("{$dir}/conf/*.ini") ?: [] as $f) {
             $b = basename($f);
             if (in_array($b, self::HOST_CONF, true) || preg_match('/^config\..+\.ini$|\.bak|\.example\./', $b)) continue;
+            if (in_array($b, self::APP_CONF, true)) { $carried[] = $b; continue; }
             // core's own file, or one core ships an example of (provisioning copied it from there)
             if (is_file(self::CORE . "/conf/{$b}") || is_file(self::CORE . '/conf/' . substr($b, 0, -4) . '.example.ini')) $coreCopies[] = $b;
             else $carried[] = $b;

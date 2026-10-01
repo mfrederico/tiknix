@@ -259,7 +259,7 @@ class ProxmoxDeploy {
         $inst->ctVmid    = $vmid;
         $inst->ctIp      = $addr;
         $inst->ctDomain  = $domain;
-        $inst->ctAliases = $aliases ? json_encode(array_values($aliases)) : null;
+        $inst->ctAliases = $aliases ? implode(',', array_values($aliases)) : null;   // the comma list TenantCarry reads
         Bean::store($inst);
 
         return ['ok' => true, 'vmid' => $vmid, 'ip' => $addr, 'domain' => $domain,
@@ -423,8 +423,7 @@ class ProxmoxDeploy {
 
     /** Aliases currently recorded on the instance. */
     private static function storedAliases(object $inst): array {
-        $j = json_decode((string) ($inst->ctAliases ?? ''), true);
-        return is_array($j) ? array_values(array_filter(array_map('strval', $j))) : [];
+        return array_values(array_filter(array_map('trim', explode(',', (string) ($inst->ctAliases ?? '')))));
     }
 
     /**
@@ -618,7 +617,7 @@ class ProxmoxDeploy {
                     : 'could not stop serving ' . $gone . ' (proxy file not writable)';
             }
         }
-        $inst->ctAliases = $aliases ? json_encode(array_values($aliases)) : null;
+        $inst->ctAliases = $aliases ? implode(',', array_values($aliases)) : null;   // the comma list TenantCarry reads
         Bean::store($inst);
 
         return ['ok' => true, 'aliases' => $aliases, 'steps' => $steps];

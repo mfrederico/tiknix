@@ -31,8 +31,8 @@ $hasShowcase = !empty($showcase);
   <section class="hero">
     <div>
       <span class="pill"><span class="dot"></span> Code sovereignty</span>
-      <h1 style="margin-top:26px;">A real, custom app — built, deployed, and running in a week.<br><span style="color:var(--accent2);">Yours to keep, full source in hand.</span></h1>
-      <p class="sub">Describe what you need and tiknix's AI builds the real thing — its own database, auth, and encrypted connections to Stripe, Shopify and more. Publish it to your own (or your client's) GitHub, host it anywhere, walk away anytime. Not a subscription you rent and never control — <em>you</em> own every line, whether you review each one or never touch the code.</p>
+      <h1 style="margin-top:26px;">Describe it. We build it.<br><span style="color:var(--accent2);">You own it.</span></h1>
+      <p class="sub">A real app with its own database, sign-in and connections to Stripe, Shopify and more — running in a week. Publish it to your GitHub, host it anywhere, leave anytime.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
         <a class="btn btn-ghost" href="#how">See how it works

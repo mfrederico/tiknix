@@ -5,7 +5,7 @@
  * whose task is gone.
  *
  * The Stop hook releases a task when Claude finishes normally. It cannot help
- * when there IS no normal finish: the jail dies, the box reboots, somebody kills
+ * when there IS no normal finish: a session dies, the box reboots, somebody kills
  * the pane, PHP fatals mid-run. The task then reads `running` forever, its port
  * and session name stay claimed, and every later attempt is refused with "a
  * session for this task is already active" — naming a session for work that
@@ -298,8 +298,8 @@ foreach (array_keys($live) as $name) {
              . ' "#{session_created}" 2>/dev/null', $cr);
         if (!empty($cr[0]) && ctype_digit(trim($cr[0]))) $age = time() - (int) trim($cr[0]);
 
-        // A grace period on top, because both are briefly alive before bwrap starts and
-        // briefly alive after it exits while the script ingests what it produced —
+        // A grace period on top, because both are briefly alive before the container run starts
+        // and briefly alive after it ends while the script ingests what it produced —
         // killing it in either window would lose the plan or manifest it just wrote.
         if ($age < max($grace, 120)) continue;
 
@@ -318,33 +318,17 @@ foreach (array_keys($live) as $name) {
 
 /* ─── THE PROCESS SWEEP ──────────────────────────────────────────────────────
  *
- * Everything above reaps BOOKKEEPING: a tmux session, a task row. None of it
- * verifies that the agent's processes actually died, and routinely they do not.
- * `tmux kill-session` hangs up the pane; the runner's tree underneath it —
- * run-claude.sh → jail-run.sh → bwrap → claude → npm exec → playwright-mcp →
- * chrome — does not reliably go with it. What survives stays parented to the
- * tmux SERVER rather than to init, so it does not even read as an orphan in ps.
+ * Everything above reaps BOOKKEEPING: a tmux session, a task row. The agents themselves run in
+ * the projects' containers; what runs HERE is an audit's runner (run-audit.sh): the browser it
+ * serves the container's agent (npx @playwright/mcp → chrome) and the SSH tunnel to it. When its
+ * session is killed the runner's EXIT trap ends both — but a tree that outlives its session
+ * stays parented to the tmux SERVER rather than to init, so it does not read as an orphan in ps,
+ * and a browser holds hundreds of MB.
  *
- * Measured on this box before this sweep existed: nine such trees, the oldest
- * twelve days old, holding ~2.5 GB. That is enough to fill an 8 GB container's
- * entire 1 GB of swap, and it did. Their sessions were long gone and their task
- * rows still said `running`, so the sweep above reported them released and moved
- * on while every byte stayed allocated. Reaping the row without reaping the tree
- * is the failure this whole file was written for, repeated one level down.
- *
- * IDENTITY COMES FROM THE PROCESS'S OWN ENVIRONMENT, never from a pattern over
- * ps output. Each runner exports TIKNIX_SESSION_NAME (PlanExecutor through its
- * run-agent.sh, AuditRunner through run-audit.sh), so the tree states which
- * session owns it. When that cannot be read the tree is REPORTED AND LEFT
- * RUNNING: killing a process we could not identify is how a cleaner becomes the
- * outage, and this file already carries four comments about exactly that.
- *
- * ONLY run-claude.sh AND run-audit.sh. The aibuilder runner (run-agent.sh) is
- * deliberately absent: it runs on a PRIVATE tmux socket under the instance's
- * .aibuilder/, which `tmux list-sessions` here never sees. Every one of its live
- * agents would therefore look sessionless and be killed on the first sweep.
- * Reaping those needs the per-instance socket enumerated first; until then they
- * are out of scope rather than guessed at.
+ * IDENTITY COMES FROM THE PROCESS'S OWN ENVIRONMENT, never from a pattern over ps output: the
+ * runner exports TIKNIX_SESSION_NAME, so the tree states which session owns it. When that cannot
+ * be read the tree is REPORTED AND LEFT RUNNING: killing a process we could not identify is how a
+ * cleaner becomes the outage.
  * ─────────────────────────────────────────────────────────────────────────── */
 
 /** pid => ppid for everything visible. One /proc walk: a recursive descent that
@@ -464,11 +448,11 @@ $treesReaped = 0; $procsKilled = 0;
 
 foreach ($cmdlines as $pid => $cmd) {
     // TWO tests, because either alone matches the wrong thing. The path shape
-    // (a slash before the name) rejects someone's `grep run-claude.sh`, and the
-    // comm check rejects `vim /tmp/…/run-claude.sh` and `tail -f` on the same
+    // (a slash before the name) rejects someone's `grep run-audit.sh`, and the
+    // comm check rejects `vim …/run-audit.sh` and `tail -f` on the same
     // path — a runner IS the shell executing the script, so anything whose comm
     // is not a shell is looking at the file rather than running it.
-    if (!preg_match('#(^|\s)\S*/run-(claude|audit)\.sh(\s|$)#', $cmd)) continue;
+    if (!preg_match('#(^|\s)\S*/run-audit\.sh(\s|$)#', $cmd)) continue;
     $comm = trim((string) @file_get_contents("/proc/$pid/comm"));
     if ($comm !== 'bash' && $comm !== 'sh') continue;
     if (isset($selfChain[$pid])) continue;
@@ -476,7 +460,7 @@ foreach ($cmdlines as $pid => $cmd) {
     $tree = procTree($pid, $kids);
 
     // THE WRAPPER'S OWN environ DOES NOT CARRY THIS. /proc/<pid>/environ is the
-    // block handed over at execve and nothing more: run-claude.sh sets
+    // block handed over at execve and nothing more: a runner script sets
     // TIKNIX_SESSION_NAME with `export` while it is ALREADY RUNNING, so the
     // variable never appears in the environ of the shell that exported it. Read
     // it there and every runner on the box looks unidentifiable — the first
@@ -484,8 +468,8 @@ foreach ($cmdlines as $pid => $cmd) {
     // written for, and said so in a warning that looked like a permissions
     // problem.
     //
-    // The children are the record. jail-run.sh, bwrap and claude are all exec'd
-    // AFTER the export, so each inherits the finished environment. Any one of
+    // The children are the record. The browser (npx), the tunnel (ssh) and the waiter (php) are
+    // all exec'd AFTER the export, so each inherits the finished environment. Any one of
     // them answers the question; the first that does, wins.
     $session = null;
     foreach ($tree as $tp) {

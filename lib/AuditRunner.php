@@ -143,6 +143,9 @@ class AuditRunner {
 #!/bin/bash
 # Tiknix audit — {$this->slug}, in its container; the browser runs here (lib/AuditRunner.php)
 export PATH={$path}:\$PATH
+# Names this tree for the reaper's process sweep (scripts/reap-stale-tasks.php): the browser and
+# the tunnel inherit it, so a tree that outlives its session can be identified and ended.
+export TIKNIX_SESSION_NAME="{$this->sessionName}"
 echo "[audit] instance {$this->slug} starting \$(date); browser on 127.0.0.1:{$port} for {$origin}" | tee {$log}
 rm -f {$this->escaped($out)}
 {$browser} > {$blog} 2>&1 &

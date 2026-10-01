@@ -71,15 +71,30 @@ final class TenantRun {
     /** The session's screen (last $lines lines). Throws when the container cannot be asked. */
     public static function capture(object $inst, string $session, int $lines = 100): string {
         if (!preg_match(self::SESSION_RE, $session)) return '';
-        [$c, $o] = TenantHost::ssh($inst, 'app', 'tmux capture-pane -p -J -S -' . max(1, $lines) . ' -t ' . escapeshellarg('=' . $session) . ' 2>/dev/null || true', null, 20);
+        [$c, $o] = TenantHost::ssh($inst, 'app', 'tmux capture-pane -p -J -S -' . max(1, $lines) . ' -t ' . escapeshellarg('=' . $session . ':') . ' 2>/dev/null || true', null, 20);
         if ($c !== 0) throw new \RuntimeException("cannot read {$session} in {$inst->slug}'s container: " . trim((string) $o));
         return (string) $o;
     }
 
-    /** End the session (and so the work in it). Absent is fine; unreachable throws. */
+    /**
+     * End the session AND every process under it. Absent is fine; unreachable throws.
+     *
+     * Killing the tmux session alone hangs up only the pane's process group — and the agent is not
+     * in it: clitool runs it under `timeout`, which puts its child in a group of its own. The agent
+     * then kept working with no session and no branch (the proof run's stopped task #7). So the
+     * pane's whole tree is collected first, sent TERM, then KILL for whatever is still up.
+     */
     public static function kill(object $inst, string $session): void {
         if (!preg_match(self::SESSION_RE, $session)) return;
-        [$c, $o] = TenantHost::ssh($inst, 'app', 'tmux kill-session -t ' . escapeshellarg('=' . $session) . ' 2>/dev/null; true', null, 20);
+        $t = escapeshellarg('=' . $session);
+        // list-panes takes a SESSION target (display-message wants a pane, and `=name` is not one —
+        // it answered nothing and the tree was never found).
+        $script = 'pid=$(tmux list-panes -t ' . $t . " -F '#{pane_pid}' 2>/dev/null | head -1); "
+                . 'if [ -n "$pid" ]; then '
+                . 'tree() { for c in $(pgrep -P "$1"); do tree "$c"; echo "$c"; done; }; '
+                . 'all="$(tree "$pid") $pid"; kill -TERM $all 2>/dev/null; sleep 2; kill -KILL $all 2>/dev/null; '
+                . 'fi; tmux kill-session -t ' . $t . ' 2>/dev/null; true';
+        [$c, $o] = TenantHost::ssh($inst, 'app', $script, null, 30);
         if ($c !== 0) throw new \RuntimeException("cannot stop {$session} in {$inst->slug}'s container: " . trim((string) $o));
     }
 

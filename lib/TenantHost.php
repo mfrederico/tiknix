@@ -294,7 +294,7 @@ class TenantHost {
      * Run a command in the tenant. `app` is the builder's user, `root` provisioning's.
      * @return array{0:int,1:string}  exit code and combined output
      */
-    public static function ssh(object $inst, string $user, string $command, ?string $stdin = null, int $timeout = 600, ?string $stdinFile = null): array {
+    public static function ssh(object $inst, string $user, string $command, ?string $stdin = null, int $timeout = 600, ?string $stdinFile = null, ?string $stdoutFile = null): array {
         if (!in_array($user, ['app', 'root'], true)) throw new \InvalidArgumentException("tenant user must be app or root, not {$user}");
         $ip = (string) $inst->ctIp;
         if (!preg_match('/^10\.10\.10\.\d{1,3}$/', $ip)) throw new \RuntimeException("{$inst->slug} has no tenant address ({$ip})");
@@ -307,14 +307,20 @@ class TenantHost {
         // $stdinFile streams a file (an archive of an app's data can be hundreds of MB).
         if ($stdinFile !== null && !is_readable($stdinFile)) throw new \RuntimeException("cannot read {$stdinFile}");
         $in = $stdinFile !== null ? ['file', $stdinFile, 'r'] : ['pipe', 'r'];
-        $p = proc_open($cmd, [0 => $in, 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes, null, $env);
+        // $stdoutFile takes the remote command's stdout as a file (an archive streamed back);
+        // stderr then comes back as the output string, so a failure still says why.
+        $io = $stdoutFile !== null
+            ? [0 => $in, 1 => ['file', $stdoutFile, 'w'], 2 => ['pipe', 'w']]
+            : [0 => $in, 1 => ['pipe', 'w'], 2 => ['redirect', 1]];
+        $p = proc_open($cmd, $io, $pipes, null, $env);
         if (!is_resource($p)) return [255, 'could not start ssh'];
         if ($stdinFile === null) {
             if ($stdin !== null) fwrite($pipes[0], $stdin);
             fclose($pipes[0]);
         }
-        $out = (string) stream_get_contents($pipes[1]);
-        fclose($pipes[1]);
+        $read = $stdoutFile !== null ? 2 : 1;
+        $out = (string) stream_get_contents($pipes[$read]);
+        fclose($pipes[$read]);
         return [proc_close($p), $out];
     }
 
@@ -359,7 +365,10 @@ class TenantHost {
         $pve->stopCt($node, $vmid);
         $d = $pve->destroyCt($node, $vmid);
         if (!$d['ok']) return ['ok' => false, 'error' => "destroy {$vmid} failed: {$d['exit']}"];
-        if ((string) $inst->ctDomain !== '') ProxmoxDeploy::removeProxy((string) $inst->ctDomain);
+        // Every name it was served under: its domain, the aliases, and the domains it serves as
+        // sites of their own — a proxy file left behind routes a name to an address now unused.
+        $names = array_merge([(string) $inst->ctDomain], explode(',', (string) $inst->ctAliases), TenantDomains::of($inst));
+        foreach (array_unique(array_filter(array_map('trim', $names))) as $name) ProxmoxDeploy::removeProxy($name);
         self::forgetHostKey((string) $inst->ctIp);
         $inst->ctVmid = 0; $inst->ctIp = ''; $inst->ctDomain = ''; $inst->ctKind = '';
         Bean::store($inst);

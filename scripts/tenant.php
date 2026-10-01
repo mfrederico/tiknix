@@ -214,8 +214,13 @@ if (isset($o['cutover'])) {
 }
 if (isset($o['rollback'])) { done(TenantCarry::rollback(inst($o['rollback'])), 'rollback ' . $o['rollback']); exit(0); }
 if (isset($o['destroy'])) {
-    if (!isset($o['yes'])) { fwrite(STDERR, "ERROR destroying a tenant deletes its container and everything in it; add --yes\n"); exit(2); }
-    done(TenantHost::destroy(inst($o['destroy'])), 'destroy ' . $o['destroy']);
+    if (!isset($o['yes'])) { fwrite(STDERR, "ERROR destroying a project deletes its container, its origin and its registry row (archived first to secure/archives); add --yes\n"); exit(2); }
+    // The same teardown as deleting it on the Projects page (ProvisionService::delete →
+    // deleteTenant): archives, container, every domain, origin, workspace, tasks, registry row.
+    $i = inst($o['destroy']);
+    $svc = new \app\ProvisionService();
+    $r = $svc->delete((int) $i->memberId, ['id' => (int) $i->id, 'confirm' => $svc->confirmPhrase((string) $i->slug)]);
+    done(['ok' => !empty($r['ok']), 'steps' => $r['steps'] ?? [], 'error' => $r['error'] ?? ''], 'destroy ' . $o['destroy']);
     exit(0);
 }
 fwrite(STDERR, "usage: see the header of scripts/tenant.php\n");

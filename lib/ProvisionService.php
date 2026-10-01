@@ -447,27 +447,36 @@ class ProvisionService {
         if (!hash_equals($domain, trim((string) ($p['confirm'] ?? ''))))
             return ['ok' => false, 'error' => 'Confirmation does not match — type "' . $domain . '" exactly.', 'code' => 400];
 
-        $dir = $this->instanceDir($slug);
-        // Deliberately recomputed INLINE rather than through instanceDir(): this is the
-        // guard standing in front of an rm -rf, and a guard that calls the thing it is
-        // guarding cannot catch that thing being wrong.
-        if ($dir !== '/var/www/html/default/' . $slug . '.' . $this->appNamespace() || strpos(basename($dir), '.') === false)
-            return ['ok' => false, 'error' => 'Refusing to delete: path failed validation', 'code' => 400];
+        $tenant = \Model_Instance::tenantRow($inst);
+        if ($tenant) {
+            // In its own container: archive the app (code + data) and its origin + board, then the
+            // container, every name it was served under, the origin and the workspace (deleteTenant).
+            $t = $this->deleteTenant($inst, $slug);
+            if (!$t['ok']) return ['ok' => false, 'error' => $t['error'], 'code' => 500];
+            $steps = $t['steps'];
+        } else {
+            $dir = $this->instanceDir($slug);
+            // Deliberately recomputed INLINE rather than through instanceDir(): this is the
+            // guard standing in front of an rm -rf, and a guard that calls the thing it is
+            // guarding cannot catch that thing being wrong.
+            if ($dir !== '/var/www/html/default/' . $slug . '.' . $this->appNamespace() || strpos(basename($dir), '.') === false)
+                return ['ok' => false, 'error' => 'Refusing to delete: path failed validation', 'code' => 400];
 
-        $steps = [];
-        $sock = $dir . '/.aibuilder/tmux.sock';
-        if (@file_exists($sock)) { @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1'); $steps[] = 'killed jailed session'; }
+            $steps = [];
+            $sock = $dir . '/.aibuilder/tmux.sock';
+            if (@file_exists($sock)) { @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1'); $steps[] = 'killed jailed session'; }
 
-        // No connector cleanup here any more: the connections live in the instance's
-        // own data/connections.db, sealed with its own secure/connections.key, and
-        // both are inside $dir. Archiving the directory takes them with it — and
-        // keeps them recoverable from the tombstone, which deleting rows here did not.
+            // No connector cleanup here any more: the connections live in the instance's
+            // own data/connections.db, sealed with its own secure/connections.key, and
+            // both are inside $dir. Archiving the directory takes them with it — and
+            // keeps them recoverable from the tombstone, which deleting rows here did not.
 
-        if (is_dir($dir)) {
-            $res = $this->archiveInstance($dir, $slug);   // wipes the dir (incl. its workbench.db) → tombstone zip
-            if (!$res['ok']) return ['ok' => false, 'error' => 'Archive failed: ' . $res['error'], 'code' => 500];
-            $steps[] = $res['message'];
-        } else { $steps[] = 'folder already absent'; }
+            if (is_dir($dir)) {
+                $res = $this->archiveInstance($dir, $slug);   // wipes the dir (incl. its workbench.db) → tombstone zip
+                if (!$res['ok']) return ['ok' => false, 'error' => 'Archive failed: ' . $res['error'], 'code' => 500];
+                $steps[] = $res['message'];
+            } else { $steps[] = 'folder already absent'; }
+        }
 
         // Clean core's task records for this instance (stale copies + sessions + /projects clones).
         $tasks = Bean::find('workbenchtask', 'instance_id = ?', [$instanceId]);
@@ -505,7 +514,7 @@ class ProvisionService {
         // any earlier let the reload race THIS request's response and surface as a client
         // "network error" (the delete still completed). The worker frees the uid/pool/socket
         // async; the marker is already gone with the wiped dir, so routing has fallen back.
-        $this->deprovisionIsolation($slug, $instanceId);
+        if (!$tenant) $this->deprovisionIsolation($slug, $instanceId);
 
         return ['ok' => true, 'slug' => $slug, 'domain' => $domain, 'steps' => $steps];
     }
@@ -534,6 +543,62 @@ class ProvisionService {
             else $failed[] = ['slug' => (string) $inst->slug, 'error' => (string) ($res['error'] ?? 'unknown')];
         }
         return ['ok' => empty($failed), 'deleted' => $deleted, 'failed' => $failed];
+    }
+
+    /**
+     * Tear down a project that lives in its own container — what deleting it means now, for the
+     * Projects page and `tenant.php --destroy` alike. Nothing is removed until it is archived:
+     *
+     *   secure/archives/<slug>-<stamp>-app.tgz    the app from its container (/srv/app: code AND
+     *                                             data — its databases, secure/, uploads; not vendor/)
+     *   secure/archives/<slug>-<stamp>-origin.tgz its origin repository + builder board (_origins,
+     *                                             _workspaces) — the history, the plans
+     *
+     * then the container (TenantHost::destroy: every name it was served under), the origin and
+     * the workspace. The caller removes the task records and the registry row.
+     */
+    private function deleteTenant(object $inst, string $slug): array {
+        $root = \Model_Instance::ROOT;
+        $workspace = \Model_Instance::dirOf($inst);   // before destroy(), which clears ct_kind
+        $origins = array_values(array_filter([
+            "{$root}/_origins/{$slug}.git", "{$root}/_origins/{$slug}.merge", "{$root}/_origins/{$slug}.lock",
+        ], 'file_exists'));
+        if ($workspace !== "{$root}/_workspaces/{$slug}") return ['ok' => false, 'error' => "refusing: {$slug}'s workspace resolved to {$workspace}"];
+
+        $archiveDir = dirname(__DIR__) . '/secure/archives';
+        if (!is_dir($archiveDir) && !@mkdir($archiveDir, 0700, true)) return ['ok' => false, 'error' => "could not create {$archiveDir}"];
+        $stamp = date('Ymd-His');
+        $steps = [];
+
+        if ((int) $inst->ctVmid > 0) {
+            $appTgz = "{$archiveDir}/{$slug}-{$stamp}-app.tgz";
+            [$c, $err] = TenantHost::ssh($inst, 'root', 'tar czf - -C /srv --exclude=app/vendor --exclude=app/node_modules --exclude=app/bin/claude app', null, 1800, null, $appTgz);
+            exec('gzip -t ' . escapeshellarg($appTgz) . ' 2>&1', $gz, $gzc);
+            if ($c !== 0 || $gzc !== 0 || filesize($appTgz) < 1024) {
+                @unlink($appTgz);
+                return ['ok' => false, 'error' => "could not archive {$slug}'s app from its container (nothing removed): " . trim($err)];
+            }
+            $steps[] = 'archived the app to secure/archives/' . basename($appTgz) . ' (' . round(filesize($appTgz) / 1048576, 1) . ' MB)';
+        }
+        $rel = array_map(fn($p) => substr($p, strlen($root) + 1), array_merge($origins, is_dir($workspace) ? [$workspace] : []));
+        if ($rel) {
+            $originTgz = "{$archiveDir}/{$slug}-{$stamp}-origin.tgz";
+            exec('tar czf ' . escapeshellarg($originTgz) . ' -C ' . escapeshellarg($root) . ' ' . implode(' ', array_map('escapeshellarg', $rel)) . ' 2>&1', $o, $tc);
+            if ($tc !== 0) { @unlink($originTgz); return ['ok' => false, 'error' => "could not archive {$slug}'s origin (nothing removed): " . implode(' ', array_slice($o, -2))]; }
+            $steps[] = 'archived origin + board to secure/archives/' . basename($originTgz);
+        }
+
+        if ((int) $inst->ctVmid > 0) {
+            $d = TenantHost::destroy($inst);
+            if (!$d['ok']) return ['ok' => false, 'error' => 'the archives are made, the container is not destroyed: ' . $d['error'], 'steps' => $steps];
+            $steps[] = $d['step'];
+        }
+        foreach (array_merge($origins, is_dir($workspace) ? [$workspace] : []) as $p) {
+            // Each path rebuilt from the slug above; never a caller's string.
+            exec('rm -rf ' . escapeshellarg($p) . ' 2>&1');
+        }
+        if ($rel) $steps[] = 'removed ' . implode(', ', $rel);
+        return ['ok' => true, 'steps' => $steps];
     }
 
     /** Archive an instance folder to core secure/archives (not web-served), then wipe. */

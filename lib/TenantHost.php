@@ -261,8 +261,23 @@ class TenantHost {
         [$code, $out] = self::ssh($inst, 'root', 'bash -s', $script, 1800);
         if ($code !== 0) return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => "app.sh exited {$code} in {$inst->ctIp}"];
         $t = self::terminal($inst);
-        return ['ok' => $t['ok'], 'exit' => $code, 'output' => $out . "\nterminal: " . implode('; ', $t['steps'] ?? []),
-                'error' => $t['ok'] ? '' : 'the app is up, its builder terminal is not: ' . $t['error']];
+        if (!$t['ok']) return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => 'the app is up, its builder terminal is not: ' . $t['error']];
+        $out .= "\nterminal: " . implode('; ', $t['steps'] ?? []);
+
+        // A NEW app (a carried one brings its own members): its seeded ROOT becomes the person
+        // who created the project — installed, no /install wizard; they come in from Tiknix
+        // (the project's pages in the nav sign them in, /projects/open → the app's /auth/launch).
+        if ($branch === 'main') {
+            $owner = Bean::load('member', (int) $inst->memberId);
+            $email = strtolower(trim((string) $owner->email));
+            if (!$owner->id || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => "the project's owner (member #{$inst->memberId}) has no email to make its admin"];
+            }
+            [$c, $o] = self::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --claim-root=' . escapeshellarg($email), null, 60);
+            if ($c !== 0) return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => 'the app is up, its owner account is not: ' . trim((string) $o)];
+            $out .= "\nowner: " . trim((string) $o);
+        }
+        return ['ok' => true, 'exit' => $code, 'output' => $out, 'error' => ''];
     }
 
     /** Serve https://<domain> from the tenant (capricorn's proxy file; TLS per ProxmoxDeploy). */

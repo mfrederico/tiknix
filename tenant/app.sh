@@ -82,6 +82,13 @@ if [ ! -f conf/config.ini ]; then
     -e "s#^debug = .*#debug = false#" \
     conf/config.ini
 fi
+if [ "${APP_CARRIED:-0}" != 1 ]; then
+  # A new app starts on the NEWEST runtime release, not the one the template's lock happens to
+  # pin (it pinned alpha.27 while apps ran alpha.65: no terminal bridge, no sign-in hand-off).
+  # The app's own update, from core's git endpoint; it commits the bump on main.
+  say "the runtime: the newest release"
+  sudo -u app php scripts/clitool.php --update 2>&1 | tail -2
+fi
 if [ "${APP_CARRIED:-0}" = 1 ]; then
   # Carried: its data arrives next (TenantCarry::data), and the build runs against that.
   echo "seeds: deferred to the carried data"

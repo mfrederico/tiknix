@@ -12,14 +12,14 @@ $jsonld = [
     '@graph' => [
         ['@type' => 'Organization', '@id' => $site . '/#org', 'name' => 'tiknix', 'url' => $site . '/', 'logo' => $site . '/rt/img/tiknix.svg',
          'parentOrganization' => ['@type' => 'Organization', 'name' => 'ClickSimple LLC', 'url' => 'https://clicksimple.com/'],
-         'founder' => ['@id' => 'https://clicksimple.com/#matt'],
+         'founder' => [['@id' => 'https://clicksimple.com/#matt'], ['@id' => $site . '/about#fabian']],
          'address' => ['@type' => 'PostalAddress', 'addressLocality' => 'Mooresville', 'addressRegion' => 'NC', 'addressCountry' => 'US'],
          'sameAs' => ['https://clicksimple.com/', 'https://github.com/mfrederico']],
         ['@type' => 'Person', '@id' => 'https://clicksimple.com/#matt', 'name' => 'Matthew Frederico', 'jobTitle' => 'Founder & CTO',
          'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about', 'image' => $site . '/img/matt.jpg',
          'sameAs' => ['https://linkedin.com/in/mattfred', 'https://github.com/mfrederico', 'https://clicksimple.com/about.php'],
          'knowsAbout' => ['AI agent orchestration', 'Model Context Protocol', 'Ecommerce systems', 'Warehouse management software', 'Laravel', 'PHP', 'Shopify', 'Stripe']],
-        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder, Kafanix', 'worksFor' => ['@id' => $site . '/#org'],
+        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder', 'worksFor' => ['@id' => $site . '/#org'],
          'knowsAbout' => ['Dealer and channel network enablement', 'Shopify Plus', 'B2B SaaS partnerships', 'AI-enabled commerce', 'Ecommerce operations'],
          'url' => $site . '/about', 'sameAs' => ['https://www.linkedin.com/in/fabianduarteb/']],
         ['@type' => 'AboutPage', '@id' => $site . '/about#page', 'url' => $site . '/about', 'name' => 'Who we are', 'mainEntity' => ['@id' => $site . '/#org']],
@@ -121,9 +121,9 @@ $jsonld = [
       <div class="initials" aria-hidden="true">FD</div>
       <div>
         <h2>Fabian Duarte</h2>
-        <div class="role">Co-Founder, Kafanix &middot; Strategic Partner, DealerYes</div>
+        <div class="role">Co-Founder, tiknix &middot; Co-Founder, Kafanix &middot; Strategic Partner, DealerYes</div>
         <p>
-          Fabian works where commerce, operations and technology meet. As co-founder of Kafanix and a
+          Fabian co-founded tiknix, and works where commerce, operations and technology meet. As co-founder of Kafanix and a
           strategic partner for <a href="https://dealeryes.com" rel="noopener">DealerYes</a>, he helps manufacturers
           modernize their dealer and distributor networks &mdash; one place to run the channel, less
           coordination by hand, and clear sight of what&rsquo;s happening. Before that: <strong>Shopify Plus</strong>

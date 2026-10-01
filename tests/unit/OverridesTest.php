@@ -100,8 +100,11 @@ class OverridesTest extends TestCase {
         // marketing home, its builder hub for other projects, the hub's integrations, and (step
         // 5) Teams with project sharing, builder tasks and plan gates over the runtime's app-user
         // teams, and Tiknix's own Terms and Privacy over the runtime's per-site ones ([legal]) —
-        // each recorded, so a runtime change to the app version shows STALE.
+        // each recorded, so a runtime change to the app version shows STALE. Also the support
+        // escalation tool: an app's agent reaches core over its broker key (the runtime's), while
+        // core's own MCP opens the ticket for the member directly.
         $this->assertSame(['controls/Connections.php', 'controls/Index.php', 'controls/Integrations.php', 'controls/Teams.php',
+                           'mcptools/SendToTiknixSupportTool.php',
                            'views/privacy/index.php',
                            'views/teams/create.php', 'views/teams/index.php', 'views/teams/members.php', 'views/teams/settings.php', 'views/teams/view.php',
                            'views/terms/index.php'],

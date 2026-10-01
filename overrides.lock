@@ -21,6 +21,11 @@
             "release": "dev-main",
             "recorded_at": "2026-09-30T17:02:29+00:00"
         },
+        "mcptools/SendToTiknixSupportTool.php": {
+            "base": "sha256:ee082865247fd5e071bae6e21cadce65712a964b7062f19540321bf8f74bacb7",
+            "release": "dev-main",
+            "recorded_at": "2026-10-01T20:22:42+00:00"
+        },
         "views/privacy/index.php": {
             "base": "sha256:b375c53e58b911b374af555f7afd993c46519df5c23b0442cdd68a4a168b6c3f",
             "release": "dev-main",

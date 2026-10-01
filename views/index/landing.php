@@ -83,17 +83,17 @@ $hasShowcase = !empty($showcase);
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
         <h3>Walled off by default</h3>
-        <p>Every project runs in its own environment — separate OS user, process, and data. One client can never reach another's. Isolation you can put in a contract.</p>
+        <p>Every project runs in its own container with its own data. One client can never reach another's.</p>
       </div>
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
         <h3>Real backend, real integrations</h3>
-        <p>Not a static page: database, logins, admin, and encrypted connections to Stripe, Shopify, QuickBooks and more — each key scoped to the one project that owns it.</p>
+        <p>Database, logins, admin, and Stripe, Shopify or QuickBooks — each key locked to its own project.</p>
       </div>
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7"/><path d="M18 10.5c0 4-6 2-6 5.5"/></svg></div>
         <h3>Own every line — no lock-in</h3>
-        <p>The code the AI writes is yours. Publish it to your (or your client's) GitHub, host it anywhere, walk away anytime. Software sovereignty — not another subscription you rent and never control.</p>
+        <p>Publish to your GitHub, host it anywhere, walk away anytime.</p>
       </div>
     </div>
   </section>
@@ -103,26 +103,26 @@ $hasShowcase = !empty($showcase);
     <div class="band-head">
       <div class="eyebrow">Collaboration by design</div>
       <h2>Your whole team, in one project</h2>
-      <p>Developers, PMs and clients work in the same project — direct the build in plain language or drop into the code, review a live preview together, and ship as one. Every paid project includes your whole team, with <strong>no per-seat fees</strong>.</p>
+      <p>Developers, PMs and clients in one project — build in plain language or in code, and review a live preview together. <strong>No per-seat fees.</strong></p>
     </div>
     <div class="grid-2">
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/><path d="m13 5-2 14"/></svg></div>
         <h3>For developers</h3>
         <div class="feat" style="margin-top:14px;">
-          <div><span class="ck">✓</span> Skip the boilerplate — real, conventional PHP you can read and own</div>
-          <div><span class="ck">✓</span> Connect the client's real services, keys scoped per project</div>
-          <div><span class="ck">✓</span> Publish to your (or their) GitHub and self-host anytime</div>
+          <div><span class="ck">✓</span> Readable, conventional PHP — no boilerplate</div>
+          <div><span class="ck">✓</span> The client's own services, keys per project</div>
+          <div><span class="ck">✓</span> Publish to GitHub, self-host anytime</div>
         </div>
       </div>
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h4"/><path d="M7 13h6"/><path d="m16 16 1.5 1.5L21 14"/></svg></div>
         <h3>For product &amp; project managers</h3>
         <div class="feat" style="margin-top:14px;">
-          <div><span class="ck">✓</span> Describe what the client needs in plain language — no code to start</div>
-          <div><span class="ck">✓</span> Watch it become a working app you can click, share and demo</div>
-          <div><span class="ck">✓</span> Move a project forward without waiting in the engineering queue</div>
-          <div><span class="ck">✓</span> Hand the client a real, isolated app with their name on it</div>
+          <div><span class="ck">✓</span> Describe it in plain language</div>
+          <div><span class="ck">✓</span> Click, share and demo it as it's built</div>
+          <div><span class="ck">✓</span> No waiting on the engineering queue</div>
+          <div><span class="ck">✓</span> Hand off a real app with the client's name on it</div>
         </div>
       </div>
     </div>
@@ -133,7 +133,7 @@ $hasShowcase = !empty($showcase);
     <div class="band-head">
       <div class="eyebrow">Your AI dev team</div>
       <h2>A whole dev team, on tap</h2>
-      <p>No contractors to chase, no ticket backlog to groom. Brief the goal and tiknix's agents plan it, build it in parallel, and review each other's work — a planner, builders, and a reviewer you never had to hire. You watch it happen and steer.</p>
+      <p>Brief the goal. Agents plan it, build it in parallel and review each other's work — you steer.</p>
     </div>
 
     <div class="frame" style="max-width:820px; margin:0 auto;">
@@ -196,17 +196,17 @@ $hasShowcase = !empty($showcase);
       <div class="card pcard">
         <div class="step-n">01</div>
         <h3 style="font-size:21px; margin-top:14px;">Describe the app</h3>
-        <p>Say what your client needs in plain language — no code to start. tiknix scaffolds a real full-stack app: routes, models, admin, all on consistent conventions.</p>
+        <p>Plain language, no code. You get a real full-stack app: data, logins, admin.</p>
       </div>
       <div class="card pcard">
         <div class="step-n">02</div>
         <h3 style="font-size:21px; margin-top:14px;">Build &amp; connect</h3>
-        <p>Iterate with AI, then wire up the client's own Stripe, Shopify or QuickBooks. Their keys, encrypted, scoped to this project alone.</p>
+        <p>Refine it with AI, then connect the client's Stripe, Shopify or QuickBooks.</p>
       </div>
       <div class="card pcard">
         <div class="step-n">03</div>
         <h3 style="font-size:21px; margin-top:14px;">Publish &amp; hand off</h3>
-        <p>Ship to their repo or domain, bill them, and move to the next one. Cancel a project when it's done — you stop paying for it.</p>
+        <p>Ship to their repo or domain. Cancel the project when you're done.</p>
       </div>
     </div>
   </section>
@@ -229,23 +229,23 @@ $hasShowcase = !empty($showcase);
     <div class="band-head">
       <div class="eyebrow">What you build — and own</div>
       <h2>From Shopify apps to the SaaS you'd rather own</h2>
-      <p>Whatever you ship, it's yours — every line, no lock-in. Build the thing your client keeps renting and hand them software they actually control.</p>
+      <p>Build what your client keeps renting — and hand them the keys.</p>
     </div>
     <div class="grid-3">
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
         <h3 style="font-size:20px;">Shopify apps &amp; storefronts</h3>
-        <p>Build the embedded app or store tool you need — orders, inventory, custom checkout — instead of renting one that half-fits. The store's keys stay scoped to that one project.</p>
+        <p>Orders, inventory, custom checkout — built to fit, not rented.</p>
       </div>
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0"/></svg></div>
         <h3 style="font-size:20px;">The SaaS you'd rather own</h3>
-        <p>Replace the monthly subscription your client keeps paying — CRM, scheduling, dashboards — built once and owned outright. No per-seat fees, no vendor setting the roadmap.</p>
+        <p>CRM, scheduling, dashboards — built once, owned outright.</p>
       </div>
       <div class="card pcard">
         <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9 16h4"/></svg></div>
         <h3 style="font-size:20px;">Client portals &amp; internal tools</h3>
-        <p>Member logins, back-office dashboards and admin — each isolated per client and handed off to their own repo. Real software with their name on it, not a locked SaaS seat.</p>
+        <p>Member logins, dashboards and admin — one isolated app per client.</p>
       </div>
     </div>
   </section>
@@ -256,7 +256,7 @@ $hasShowcase = !empty($showcase);
     <div class="band-head">
       <div class="eyebrow">Founder stories</div>
       <h2><?= count($stories) === 1 ? 'A founder' : ucfirst(['', 'one', 'two', 'three', 'four', 'five', 'six'][count($stories)] ?? (string) count($stories)) . ' founders' ?>. One common thread.</h2>
-      <p>Different people, different industries, real software shipped &mdash; and every one of them built it on tiknix.</p>
+      <p>Different people, different industries &mdash; all shipped on tiknix.</p>
     </div>
     <div class="grid-3">
       <?php foreach ($stories as $st): ?>
@@ -284,9 +284,9 @@ $hasShowcase = !empty($showcase);
       </div>
       <div>
         <div class="thread-pts">
-          <div><b>An idea, not a spec</b>A business plan, a problem worth solving, a client&rsquo;s catalogue. That was enough to start.</div>
-          <div><b>An AI dev team did the heavy lifting</b>They described what they wanted, reviewed each task and approved what shipped.</div>
-          <div><b>Real software, running</b>Their own database, their own logins, running live &mdash; not a prototype.</div>
+          <div><b>An idea, not a spec</b>A plan, a problem, a catalogue &mdash; enough to start.</div>
+          <div><b>An AI dev team did the heavy lifting</b>They described it, reviewed each task, approved what shipped.</div>
+          <div><b>Real software, running</b>Their own database and logins, live &mdash; not a prototype.</div>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:22px;">
           <a class="btn btn-primary" href="/auth/register" style="padding:11px 20px; font-size:15px;">Start yours free</a>
@@ -348,7 +348,7 @@ $hasShowcase = !empty($showcase);
     <div class="band-head">
       <div class="eyebrow">Pricing</div>
       <h2>Priced per project, like your invoices</h2>
-      <p>Your first project is free. After that you pay per project, never per seat. <strong>Bring your own model</strong> &mdash; Claude Code or any API key &mdash; and build without credits, tokens or a meter.</p>
+      <p>First project free. Then per project, never per seat. <strong>Bring your own model</strong> &mdash; no credits, no meter.</p>
     </div>
     <div class="price-grid">
       <div class="card plan">
@@ -357,8 +357,8 @@ $hasShowcase = !empty($showcase);
         <div class="fine">forever, no card to start</div>
         <div class="hr"></div>
         <div class="feat">
-          <div><span class="ck">✓</span> One full-stack builder instance</div>
-          <div><span class="ck">✓</span> Its own isolated environment &amp; database</div>
+          <div><span class="ck">✓</span> One full-stack app</div>
+          <div><span class="ck">✓</span> Its own container &amp; database</div>
           <div><span class="ck">✓</span> Unlimited edits on your own model</div>
           <div><span class="ck">✓</span> Publish to your GitHub</div>
         </div>
@@ -387,23 +387,23 @@ $hasShowcase = !empty($showcase);
   <section class="band">
     <h2 style="font-size:clamp(26px,3vw,34px); text-align:center; margin-bottom:44px;">The questions everyone asks first</h2>
     <div class="faq-grid">
-      <div class="card qa"><h3>Do I need my own AI model?</h3><p>Yes, and that is the point. Plug in Claude Code or any API key and build as much as you like. We never sell credits, tokens or a meter, so nobody rations your builds, and the model relationship is yours like the app is.</p></div>
-      <div class="card qa"><h3>Do I need to write code?</h3><p>No. Start by describing what you want in plain language and refine from there. Developers can drop into the code anytime — project leads never have to.</p></div>
-      <div class="card qa"><h3>Can my team work on a project together?</h3><p>Yes — every paid project includes your whole team at <strong>no per-seat cost</strong>. Invite teammates, share a live preview with the client, and review in the same place you build. (The free project is a solo workspace.)</p></div>
-      <div class="card qa"><h3>Is the code mine?</h3><p>Completely — every line the AI generates is yours. Publish it to your own GitHub, host it anywhere, and keep it if you ever leave. No lock-in, no proprietary runtime holding it hostage.</p></div>
-      <div class="card qa"><h3>Why build it instead of buying SaaS?</h3><p>Because you stop renting. A tool you build here is a one-time asset you own and change on your terms — no per-seat fees, no vendor setting your roadmap or raising the price. We call it <a href="/neosaas">NeoSaaS</a>.</p></div>
-      <div class="card qa"><h3>Can I build a Shopify app?</h3><p>Yes — connect a store and build the embedded app, storefront tool or ops dashboard you need. The store's keys stay encrypted and scoped to that one project.</p></div>
-      <div class="card qa"><h3>How isolated are projects?</h3><p>Each runs under its own OS user and process with its own data — and can get a dedicated container. No project can read another's.</p></div>
-      <div class="card qa"><h3>What's the stack?</h3><p><span class="code">PHP (FlightPHP)</span> + <span class="code">SQLite</span> — conventional and readable, so it stays maintainable long after handoff.</p></div>
-      <div class="card qa"><h3>Can my client run it without tiknix?</h3><p>Yes — eject to their repo and host it themselves. tiknix is where you build it, not a place it's trapped.</p></div>
+      <div class="card qa"><h3>Do I need my own AI model?</h3><p>Yes. Plug in Claude Code or any API key and build as much as you like &mdash; we never sell credits or meter your builds.</p></div>
+      <div class="card qa"><h3>Do I need to write code?</h3><p>No. Describe it in plain language; developers can drop into the code anytime.</p></div>
+      <div class="card qa"><h3>Can my team work on a project together?</h3><p>Yes &mdash; every paid project includes your whole team at <strong>no per-seat cost</strong>. (The free project is solo.)</p></div>
+      <div class="card qa"><h3>Is the code mine?</h3><p>Every line. Publish to your GitHub, host it anywhere, keep it if you leave.</p></div>
+      <div class="card qa"><h3>Why build it instead of buying SaaS?</h3><p>You stop renting: build it once, own it, change it on your terms. We call it <a href="/neosaas">NeoSaaS</a>.</p></div>
+      <div class="card qa"><h3>Can I build a Shopify app?</h3><p>Yes &mdash; embedded apps, storefront tools, ops dashboards. The store's keys stay locked to that project.</p></div>
+      <div class="card qa"><h3>How isolated are projects?</h3><p>Each project runs in its own container with its own data. No project can read another's.</p></div>
+      <div class="card qa"><h3>What's the stack?</h3><p><span class="code">PHP (FlightPHP)</span> + <span class="code">SQLite</span> &mdash; conventional and readable, easy to maintain after handoff.</p></div>
+      <div class="card qa"><h3>Can my client run it without tiknix?</h3><p>Yes &mdash; publish to their repo and they host it themselves.</p></div>
     </div>
   </section>
 
   <!-- FINAL CTA -->
   <section class="final">
     <div class="eyebrow" style="justify-content:center;">Now's the time</div>
-    <h2 style="margin-top:14px;">A great time to get excited about your business again.</h2>
-    <p>If you're a product-minded person with a brilliant software idea, tiknix turns it into the real thing — running, custom, and yours to own, every line.</p>
+    <h2 style="margin-top:14px;">Bring the idea. Leave with real software.</h2>
+    <p>A running, custom app &mdash; yours to own, every line.</p>
     <div class="hero-cta" style="justify-content:center; margin-top:32px;">
       <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
       <a class="btn btn-ghost" href="/contact">Reach out — I'd love to show you</a>

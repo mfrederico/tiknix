@@ -5,7 +5,7 @@
  * Carries Person + Organization JSON-LD so "who makes tiknix" resolves here.
  */
 $logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
-$desc  = 'tiknix is built by ClickSimple LLC, a software shop in Mooresville, North Carolina. Founder and CTO Matthew Frederico has spent fifteen-plus years building the machinery under the button: ShipCannon, DealerYes, and tiknix itself.';
+$desc  = 'tiknix is built by ClickSimple LLC, a software shop in Mooresville, North Carolina. Co-founder and CTO Matthew Frederico has spent fifteen-plus years building the machinery under the button: ShipCannon, DealerYes, and tiknix itself.';
 $site  = 'https://tiknix.com';
 $jsonld = [
     '@context' => 'https://schema.org',
@@ -15,11 +15,11 @@ $jsonld = [
          'founder' => [['@id' => 'https://clicksimple.com/#matt'], ['@id' => $site . '/about#fabian']],
          'address' => ['@type' => 'PostalAddress', 'addressLocality' => 'Mooresville', 'addressRegion' => 'NC', 'addressCountry' => 'US'],
          'sameAs' => ['https://clicksimple.com/', 'https://github.com/mfrederico']],
-        ['@type' => 'Person', '@id' => 'https://clicksimple.com/#matt', 'name' => 'Matthew Frederico', 'jobTitle' => 'Founder & CTO',
+        ['@type' => 'Person', '@id' => 'https://clicksimple.com/#matt', 'name' => 'Matthew Frederico', 'jobTitle' => 'Co-Founder & CTO',
          'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about', 'image' => $site . '/img/matt.jpg',
          'sameAs' => ['https://linkedin.com/in/mattfred', 'https://github.com/mfrederico', 'https://clicksimple.com/about.php'],
          'knowsAbout' => ['AI agent orchestration', 'Model Context Protocol', 'Ecommerce systems', 'Warehouse management software', 'Laravel', 'PHP', 'Shopify', 'Stripe']],
-        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder', 'knowsLanguage' => ['English', 'Spanish'], 'worksFor' => ['@id' => $site . '/#org'],
+        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder', 'knowsLanguage' => ['English', 'Spanish'], 'image' => $site . '/img/fabian.jpg', 'worksFor' => ['@id' => $site . '/#org'],
          'knowsAbout' => ['Dealer and channel network enablement', 'Shopify Plus', 'B2B SaaS partnerships', 'AI-enabled commerce', 'Ecommerce operations'],
          'url' => $site . '/about', 'sameAs' => ['https://www.linkedin.com/in/fabianduarteb/']],
         ['@type' => 'AboutPage', '@id' => $site . '/about#page', 'url' => $site . '/about', 'name' => 'Who we are', 'mainEntity' => ['@id' => $site . '/#org']],
@@ -62,14 +62,12 @@ $jsonld = [
         .facts .n{ font-family:var(--serif); font-size:30px; font-weight:600; color:var(--text); }
         .facts .k{ font-size:13px; color:var(--dim); margin-top:6px; line-height:1.4; }
         .person + .person{ margin-top:56px; }
-        .person .initials{ width:100%; aspect-ratio:1; border-radius:16px; border:1px solid var(--line2); display:flex; align-items:center;
-                           justify-content:center; font-family:var(--serif); font-size:52px; color:var(--accent2); background:rgba(59,118,240,0.08); }
         .quest{ max-width:920px; margin:0 auto; }
         .quest h2{ font-size:clamp(28px,3.2vw,40px); text-align:center; }
         .quest > p{ text-align:center; color:var(--soft); font-size:clamp(16px,1.5vw,18px); max-width:640px; margin:16px auto 0; }
         .quest .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin-top:34px; }
         .quest .card{ padding:24px; } .quest .card h3{ font-size:20px; margin-bottom:8px; } .quest .card p{ color:var(--soft); line-height:1.6; margin:0; }
-        @media (max-width:640px){ .person{ grid-template-columns:1fr; } .person .photo, .person .initials{ max-width:140px; } }
+        @media (max-width:640px){ .person{ grid-template-columns:1fr; } .person .photo{ max-width:140px; } }
     </style>
     <script type="application/ld+json"><?= json_encode($jsonld, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?></script>
 </head>
@@ -93,10 +91,10 @@ $jsonld = [
   <!-- THE PERSON -->
   <section class="band">
     <div class="person">
-      <img class="photo" src="/img/matt.jpg" width="800" height="800" alt="Matthew Frederico, founder and CTO" loading="lazy">
+      <img class="photo" src="/img/matt.jpg" width="800" height="800" alt="Matthew Frederico, co-founder and CTO" loading="lazy">
       <div>
         <h2>Matthew Frederico</h2>
-        <div class="role">Founder &amp; CTO · Mooresville, NC</div>
+        <div class="role">Co-Founder &amp; CTO · Mooresville, NC</div>
         <p>
           Fifteen-plus years of building the machinery under the button. Matt was co-founder and CTO
           of a platform that grew from <strong>$100 million to $1.2 billion</strong> in revenue in under two
@@ -118,7 +116,7 @@ $jsonld = [
     </div>
 
     <div class="person">
-      <div class="initials" aria-hidden="true">FD</div>
+      <img class="photo" src="/img/fabian.jpg" width="800" height="800" alt="Fabian Duarte, co-founder" loading="lazy">
       <div>
         <h2>Fabian Duarte</h2>
         <div class="role">Co-Founder, tiknix &middot; Co-Founder, Kafanix &middot; Strategic Partner, DealerYes</div>

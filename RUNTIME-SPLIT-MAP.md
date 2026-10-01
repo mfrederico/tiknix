@@ -565,3 +565,28 @@ A third worktree, `tiknix-next.tiknix` (served as tiknix-next.tiknix.com), on br
 `cutover-rehearsal` = `runtime-split` + `main`, with a fresh snapshot of tiknix.com's database,
 secure files and config (`baseurl` → tiknix-next), then steps 4 and 8 against it. It runs no
 cron and is not the broker, so it touches nothing live. Results below, per run.
+
+**Run 1 — 2026-10-01, clean.** `cutover-rehearsal` at tiknix-next.tiknix.com, on a sqlite
+`.backup` of tiknix.com's live databases taken at 22:40.
+
+- *Merge:* `main` into `runtime-split` conflicts in 10 files. Each one resolves to
+  runtime-split's side, because main's 4 commits are already here in another form: Team rooms
+  (0b43732), the carried-project refusal (601b594), and the GET deletes (in the runtime since
+  alpha.59). main's pipeline-cron change (f93dea0) is replaced by the runtime's command. That
+  merge commit is reusable as-is for step 2.
+- *Found:* `instance.ct_aliases` on tiknix.com is INTEGER, born from a null. The first domain
+  the migration wrote into it would have rebuilt the table. Seed 31 now makes it TEXT, and
+  refuses if the old column holds values. While looking, ProxmoxDeploy turned out to write the
+  column as JSON while TenantCarry reads a comma list. ProxmoxDeploy now uses the comma list.
+- *Build:* every seed ok. Afterwards the schema equals tiknix2's, table for table and column
+  for column.
+- *Migrate:* 70 column changes over 14 projects. Every one filled an empty field; nothing
+  tiknix.com held was overwritten. catpoobox was inserted, keeping id 101. A second run
+  reports 0 changes. 15 instances, and integrity_check is ok.
+- *Verify:* e2e 08 + 01 + 02 passed 52/52, as root, admin and member. 0 ERROR lines in the
+  log, no mail sent, no e2e accounts left over. `tenant.php --status` from the rehearsal tree
+  reaches pd, serenity, partsdna, catpoobox and start.
+- *Not covered by the rehearsal (it cannot be, while tiknix2 exists):* the `tiknix2.tiknix` →
+  `tiknix` symlink that keeps `/git/` answering for the containers; workbench2's SSO against
+  tiknix.com; the crontab swap. The real window covers these (steps 5–8). Do them first, and
+  prove them with one `tenant.php --update` and a workbench sign-in.

@@ -337,6 +337,10 @@ class ProvisionService {
         if ($shared) $teams[$team->id] = $team; else unset($teams[$team->id]);
         $inst->sharedTeamList = $teams;
         Bean::store($inst);
+        // Unshared: the team's members who can no longer use it lose the account Tiknix made in its app.
+        $revokeErrors = [];
+        if (!$shared) foreach (AppAccess::teamMembers($teamId) as $mid) $revokeErrors = array_merge($revokeErrors, AppAccess::revokeLost($mid, [$instanceId])['errors']);
+        if ($revokeErrors) return ['ok' => false, 'error' => 'Unshared, but: ' . implode('; ', $revokeErrors), 'code' => 502];
 
         return ['ok' => true, 'team_id' => $teamId, 'team_name' => (string) $team->name, 'shared' => $shared,
                 'shared_team_ids' => array_values(array_map('intval', array_keys($inst->sharedTeamList)))];

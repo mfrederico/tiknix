@@ -22,11 +22,16 @@ final class AppToken {
         ]);
     }
 
-    /** $to: a path on the app ("/agents"); the person is named by email — the app finds its own member. */
-    public static function launch(object $inst, string $email, string $to, int $ttl = 60): string {
+    /**
+     * $to: a path on the app ("/agents"); the person is named by email — the app finds its own member.
+     * $level: what Tiknix vouches for (AppAccess::level) — the app creates a MISSING account at it,
+     * never changes an existing one; null = no account is created.
+     */
+    public static function launch(object $inst, string $email, string $to, ?int $level = null, int $ttl = 60): string {
+        if ($level !== null && !in_array($level, [1, 50, 100], true)) throw new \InvalidArgumentException("not a level an app account can be made at: {$level}");
         if ($to === '' || $to[0] !== '/' || str_starts_with($to, '//')) throw new \InvalidArgumentException("not a path on the app: {$to}");
         return self::sign($inst, [
-            'aud' => 'launch', 'sub' => (string) $inst->slug, 'email' => strtolower(trim($email)), 'to' => $to,
+            'aud' => 'launch', 'sub' => (string) $inst->slug, 'email' => strtolower(trim($email)), 'to' => $to, 'level' => $level,
             'nonce' => bin2hex(random_bytes(16)), 'exp' => time() + $ttl,
         ]);
     }

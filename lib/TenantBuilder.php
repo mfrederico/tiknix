@@ -162,6 +162,28 @@ class TenantBuilder {
             if (!empty($r['output'])) echo "[audit] agent output (tail):\n" . mb_substr((string) $r['output'], -1500) . "\n";
             return 1;
         }
+        // The browser saved each screenshot under its own name in the shots dir; the agent records
+        // them as best it can. Point every entry at the file that is really there (by basename);
+        // one that is not is dropped and counted, never linked to a missing image.
+        $m = json_decode((string) $r['manifest'], true);
+        if (!is_array($m)) { echo "[audit] ERROR the manifest is not JSON\n"; return 1; }
+        $shotsRel = "public/uploads/audit/{$planId}";
+        $dropped = 0;
+        $fix = static function (array $screens) use ($ws, $shotsRel, &$dropped): array {
+            $out = [];
+            foreach ($screens as $p) {
+                $b = basename((string) $p);
+                if ($b !== '' && is_file("{$ws}/{$shotsRel}/{$b}")) $out[] = "{$shotsRel}/{$b}"; else $dropped++;
+            }
+            return $out;
+        };
+        foreach (['levels', 'checks', 'failures'] as $k) {
+            foreach (($m[$k] ?? []) as $i => $entry) {
+                if (is_array($entry) && isset($entry['screens']) && is_array($entry['screens'])) $m[$k][$i]['screens'] = $fix($entry['screens']);
+            }
+        }
+        if ($dropped) echo "[audit] {$dropped} screenshot reference(s) named no file the browser saved — dropped\n";
+        $r['manifest'] = json_encode($m, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if (file_put_contents($manifestFile . '.tmp', (string) $r['manifest']) === false || !rename($manifestFile . '.tmp', $manifestFile)) {
             echo "[audit] ERROR could not write {$manifestFile}\n"; return 1;
         }
@@ -170,7 +192,11 @@ class TenantBuilder {
         if (!is_dir($shots)) { echo "[audit] no screenshots were taken\n"; return 0; }
         $inst = self::bySlug($slug);
         $tar = tempnam(sys_get_temp_dir(), 'audit-shots-');
-        exec('tar czf ' . escapeshellarg($tar) . ' -C ' . escapeshellarg("{$ws}/public/uploads/audit") . ' ' . escapeshellarg((string) $planId) . ' 2>&1', $o, $c);
+        // Images only: the browser also writes its console logs into this folder, and the app serves
+        // public/ — those stay here, with the audit.
+        $pngs = array_map(fn($f) => $planId . '/' . basename($f), glob("{$shots}/*.png") ?: []);
+        if (!$pngs) { echo "[audit] no screenshots were taken\n"; return 0; }
+        exec('tar czf ' . escapeshellarg($tar) . ' -C ' . escapeshellarg("{$ws}/public/uploads/audit") . ' ' . implode(' ', array_map('escapeshellarg', $pngs)) . ' 2>&1', $o, $c);
         [$sc, $so] = $c === 0 && $inst
             ? TenantHost::ssh($inst, 'app', 'mkdir -p /srv/app/public/uploads/audit && tar xzf - -C /srv/app/public/uploads/audit', null, 120, $tar)
             : [1, $c !== 0 ? implode(' ', $o) : "no project {$slug}"];

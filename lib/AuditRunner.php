@@ -124,11 +124,15 @@ class AuditRunner {
             $port = $p;
         }
         if ($port === 0) throw new \RuntimeException('no free local port for the audit browser');
+        // Screenshots: the browser saves UNNAMED ones here (a named file it resolves against the
+        // agent's working directory, which is in the container — not this machine).
+        $shotsDir = $ws . '/public/uploads/audit/' . (int) $this->planId;
+        if (!is_dir($shotsDir) && !@mkdir($shotsDir, 0775, true)) throw new \RuntimeException("could not create {$shotsDir}");
         $u = parse_url($this->baseUrl);
         $origin = ($u['scheme'] ?? 'https') . '://' . ($u['host'] ?? '');
         $browser = escapeshellarg($npx) . ' -y @playwright/mcp@0.0.83 --headless --isolated --browser chromium --host 127.0.0.1 --port ' . $port
                  . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}") . ' --allowed-origins ' . escapeshellarg($origin)
-                 . ' --output-dir ' . escapeshellarg($ws);
+                 . ' --output-dir ' . escapeshellarg($shotsDir);
         $out = $ws . '/.aibuilder/audit-result.json';
         $audit = TenantBuilder::tenantCommand($tenant, 'audit', $this->tenantAuditId(), $this->requestFile(), $out,
                                               ['browser-mcp' => "http://127.0.0.1:{$port}/mcp"]);
@@ -234,11 +238,11 @@ the whole audit for that.
 
 ## Screenshot output convention (IMPORTANT)
 
-Take every screenshot with `browser_take_screenshot`, passing
-`filename: "public/uploads/audit/{$planId}/<level>-<short-label>.png"`
-(e.g. `public/uploads/audit/{$planId}/admin-leads-page.png`). The browser saves it there itself —
-do not create directories or files for screenshots. They become web-accessible at
-`{$base}/uploads/audit/{$planId}/...` and are attached to the report. Use lowercase, hyphenated labels.
+Take every screenshot with `browser_take_screenshot` and **no `filename`** — the browser runs
+elsewhere and names and saves the file itself; its reply tells you the saved file's name. Record
+each one in the manifest as `public/uploads/audit/{$planId}/<that file name>`. Do not create
+directories or files for screenshots. They become web-accessible at
+`{$base}/uploads/audit/{$planId}/...` and are attached to the report.
 
 ## Deliverable — write `.aibuilder/audit.json` (and nothing else)
 

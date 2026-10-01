@@ -394,11 +394,13 @@ class PlanExecutor {
 
     /**
      * The rollback point in the container: a tag on the app's HEAD and a consistent copy of
-     * each of its databases (backups/<tag>/), taken over SSH before the first task.
+     * each of its databases (.aibuilder/backups/<tag>/), taken over SSH before the first task.
      */
     private function checkpointTenant($plan): array {
         $tag = 'checkpoint-plan-' . $this->planId . '-' . date('Ymd-His');
-        $php = '$d = "backups/' . $tag . '"; @mkdir($d, 0700, true); foreach (glob("database/*.db") ?: [] as $f) { '
+        // Under .aibuilder/ (which apps ignore): copies of the app's databases must never be
+        // committable — `git add -A` in the app, or a code export, would carry user data.
+        $php = '$d = ".aibuilder/backups/' . $tag . '"; @mkdir($d, 0700, true); foreach (glob("database/*.db") ?: [] as $f) { '
              . '$s = new SQLite3($f, SQLITE3_OPEN_READONLY); $o = new SQLite3($d . "/" . basename($f)); '
              . 'if (!$s->backup($o)) { fwrite(STDERR, "backup of $f failed\n"); exit(1); } echo basename($f), " "; }';
         [$code, $out] = TenantHost::ssh($this->tenant, 'app', 'cd /srv/app && git tag ' . escapeshellarg($tag)
@@ -411,7 +413,7 @@ class PlanExecutor {
         $plan->planCheckpoint = $tag;
         $plan->updatedAt      = date('Y-m-d H:i:s');
         Bean::store($plan);
-        $this->logEvent($plan, 'info', "Checkpoint {$tag} taken in the container before the first task (git tag + backups/{$tag}/: " . trim($out) . ') — roll back to it if this plan goes wrong');
+        $this->logEvent($plan, 'info', "Checkpoint {$tag} taken in the container before the first task (git tag + .aibuilder/backups/{$tag}/: " . trim($out) . ') — roll back to it if this plan goes wrong');
         return ['ok' => true, 'tag' => $tag, 'message' => "checkpoint {$tag} taken"];
     }
 

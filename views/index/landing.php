@@ -20,6 +20,37 @@ $hasShowcase = !empty($showcase);
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
     <?php include __DIR__ . '/_marketing-style.php'; ?>
+    <style>
+        /* The hero asks the wizard's first question itself; the answer rides into start.tiknix. */
+        .ask{ margin-top:30px; max-width:560px; }
+        .ask label{ display:block; font-family:var(--serif); font-size:20px; font-weight:600; margin-bottom:10px; }
+        .ask-row{ display:flex; gap:10px; flex-wrap:wrap; }
+        .ask-row input{ flex:1 1 260px; min-width:0; padding:14px 16px; border-radius:11px; border:1px solid var(--line2);
+                        background:rgba(255,255,255,0.04); color:var(--text); font:inherit; font-size:16px; }
+        .ask-row input::placeholder{ color:var(--dim); }
+        .ask-row input:focus{ outline:none; border-color:var(--accent2); box-shadow:0 0 0 3px rgba(59,118,240,0.25); }
+        .ask-how{ display:inline-block; margin-top:14px; font-size:14px; color:var(--soft); }
+        /* A real plan the wizard wrote, cut off — "see what it would write for yours". */
+        .peek{ position:relative; max-width:860px; margin:0 auto; border:1px solid var(--line2); border-radius:16px;
+               background:linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01)); overflow:hidden; }
+        .peek-bar{ display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid var(--line);
+                   font-family:var(--mono); font-size:12.5px; color:var(--soft); }
+        .peek-body{ padding:24px 28px 0; max-height:840px; overflow:hidden; }
+        .peek-body h3{ font-size:22px; margin-bottom:16px; }
+        .peek-body h4{ font-family:var(--sans); font-size:13px; letter-spacing:0.08em; text-transform:uppercase; color:var(--accent2); margin:22px 0 8px; }
+        .peek-body .quote{ border-left:3px solid var(--line2); padding:4px 0 4px 14px; color:var(--text); font-style:italic; }
+        .peek-body ul{ margin:0; padding-left:20px; color:var(--soft); } .peek-body li{ margin:4px 0; }
+        .peek-body li b{ color:var(--text); font-weight:600; }
+        .peek-body table{ width:100%; border-collapse:collapse; font-size:14px; }
+        .peek-body td{ padding:7px 10px 7px 0; border-bottom:1px solid var(--line); color:var(--soft); vertical-align:top; }
+        .peek-body td code{ font-family:var(--mono); font-size:13px; color:var(--text); }
+        .peek-body .lvl{ font-family:var(--mono); font-size:12px; color:var(--dim); white-space:nowrap; }
+        .peek-fade{ position:absolute; left:0; right:0; bottom:0; height:230px; display:flex; flex-direction:column; align-items:center;
+                    justify-content:flex-end; gap:10px; padding-bottom:30px; text-align:center;
+                    background:linear-gradient(180deg, rgba(8,14,32,0) 0%, rgba(8,14,32,0.92) 38%, #080e20 58%); }
+        .peek-fade p{ color:var(--soft); font-size:15px; margin:0; }
+        @media (max-width: 520px){ .peek-body{ padding:20px 18px 0; max-height:1000px; } .peek-body .lvl{ display:none; } }
+    </style>
 </head>
 <body>
 
@@ -33,12 +64,17 @@ $hasShowcase = !empty($showcase);
       <span class="pill"><span class="dot"></span> Code sovereignty</span>
       <h1 style="margin-top:26px;">Describe it. We build it.<br><span style="color:var(--accent2);">You own it.</span></h1>
       <p class="sub">A real app with its own database, sign-in and connections to Stripe, Shopify and more — running in a week. Publish it to your GitHub, host it anywhere, leave anytime.</p>
-      <div class="hero-cta">
-        <a class="btn btn-primary" href="https://start.tiknix.com/start">Start your first project — free</a>
-        <a class="btn btn-ghost" href="#how">See how it works
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
-        </a>
-      </div>
+      <?php /* The wizard's first question, asked right here: the answer goes to start.tiknix.com/start?about=…,
+               shown there and kept as the first answer, so the visitor is already one question in. */ ?>
+      <form class="ask" action="https://start.tiknix.com/start" method="get">
+        <label for="ask-about">What does your business do?</label>
+        <div class="ask-row">
+          <input id="ask-about" name="about" maxlength="300" required autocomplete="off"
+                 placeholder="e.g. We groom dogs from two vans">
+          <button class="btn btn-primary" type="submit">Show me my plan</button>
+        </div>
+        <a class="ask-how" href="#plan">See a plan it wrote &darr;</a>
+      </form>
       <p class="hero-fine">First project free · <span style="color:var(--soft);">$49/mo per project after</span> · bring your own model, no credits · no card to start</p>
     </div>
 
@@ -73,6 +109,52 @@ $hasShowcase = !empty($showcase);
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
           Published → github.com/acme-co/booking
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PLAN PEEK: real output of the Get-started wizard (its PlanRenderer) for a gemstone shop that runs
+       classes — rendered from those answers, nothing added; shown half, the rest behind the wizard. -->
+  <section class="band" id="plan" style="border-top:none;">
+    <div class="band-head">
+      <div class="eyebrow">A real plan</div>
+      <h2>The plan tiknix wrote for a gemstone shop</h2>
+      <p>Six plain questions in, this is what came out &mdash; the shop&rsquo;s problem in its own words, turned into an app to build.</p>
+    </div>
+    <div class="peek">
+      <div class="peek-bar"><span class="tl" style="background:#f0655b;"></span><span class="tl" style="background:#f2bd4a;"></span><span class="tl" style="background:#43c86a;"></span><span style="margin-left:6px;">PLAN.md</span></div>
+      <div class="peek-body" aria-hidden="false">
+        <h3>A gemstone and crystal shop that runs hands-on classes &mdash; build plan</h3>
+        <h4>What&rsquo;s painful right now</h4>
+        <div class="quote">Class sign-ups live in a spreadsheet and a paper list; people pay at the door and seats get double-booked.</div>
+        <h4>The end goal</h4>
+        <div class="quote">Sell seats for classes online, take payment up front, and keep one list of who is coming.</div>
+        <h4>People and roles</h4>
+        <ul>
+          <li><b>Visitor</b> browses and books</li>
+          <li><b>Attendee</b> sees their tickets</li>
+          <li><b>Door staff / admin</b> checks people in, manages events</li>
+        </ul>
+        <h4>Pages</h4>
+        <table>
+          <tr><td><code>/events</code></td><td>Public calendar and catalogue</td><td class="lvl">anyone</td></tr>
+          <tr><td><code>/events/view</code></td><td>One event and its booking</td><td class="lvl">anyone</td></tr>
+          <tr><td><code>/tickets</code></td><td>My tickets</td><td class="lvl">signed in</td></tr>
+          <tr><td><code>/checkin</code></td><td>Door check-in</td><td class="lvl">staff</td></tr>
+          <tr><td><code>/admin/events</code></td><td>Manage events and orders</td><td class="lvl">staff</td></tr>
+        </table>
+        <h4>Phases</h4>
+        <ul>
+          <li><b>Phase 1</b> &mdash; Foundation: accounts, roles, branding and permission rows</li>
+          <li><b>Phase 2</b> &mdash; Branding, event catalogue, public calendar and host pages</li>
+          <li><b>Phase 3</b> &mdash; Stripe checkout with seat holds</li>
+          <li><b>Phase 4</b> &mdash; QR tickets, emails, door check-in</li>
+          <li><b>Phase 5</b> &mdash; Recurring series, reminders, reports</li>
+        </ul>
+      </div>
+      <div class="peek-fade">
+        <p>&hellip; and the data model, connections, acceptance checks.</p>
+        <a class="btn btn-primary" href="#ask-about" onclick="setTimeout(function(){var i=document.getElementById('ask-about'); if(i) i.focus();},350)">See what it would write for yours &rarr;</a>
       </div>
     </div>
   </section>

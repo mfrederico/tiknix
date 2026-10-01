@@ -91,7 +91,7 @@ $jsonld = [
   <!-- THE PERSON -->
   <section class="band">
     <div class="person">
-      <img class="photo" src="/img/matt.webp" width="800" height="800" alt="Matthew Frederico, co-founder and CTO" loading="lazy">
+      <img class="photo" src="/img/matt.webp" width="400" height="400" alt="Matthew Frederico, co-founder and CTO" loading="lazy">
       <div>
         <h2>Matthew Frederico</h2>
         <div class="role">Co-Founder &amp; CTO · Mooresville, NC</div>
@@ -116,7 +116,7 @@ $jsonld = [
     </div>
 
     <div class="person">
-      <img class="photo" src="/img/fabian.webp" width="800" height="800" alt="Fabian Duarte, co-founder" loading="lazy">
+      <img class="photo" src="/img/fabian.webp" width="400" height="400" alt="Fabian Duarte, co-founder" loading="lazy">
       <div>
         <h2>Fabian Duarte</h2>
         <div class="role">Co-Founder, tiknix &middot; Co-Founder, Kafanix &middot; Strategic Partner, DealerYes</div>

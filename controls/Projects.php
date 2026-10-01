@@ -197,7 +197,7 @@ class Projects extends BaseControls\Control {
         if ($warning !== '') $this->logger->warning('project created with a warning', ['id' => $id, 'warning' => $warning]);
 
         $this->jsonSuccess(['id' => $id, 'slug' => (string) ($res['slug'] ?? ''), 'warning' => $warning],
-            $warning !== '' ? $warning : 'Created and selected. Provisioning can take a minute.');
+            $warning !== '' ? $warning : 'Created and selected. Its container is being set up — about two minutes.');
     }
 
     /**
@@ -342,7 +342,7 @@ class Projects extends BaseControls\Control {
             // Async per-instance isolation state, so the picker can say "finishing setup" vs
             // "isolated" instead of the member wondering whether provisioning worked. Read
             // from the pool itself (marker + socket), not the column alone — see the model.
-            'isolation'    => \Model_Instance::isolationStateFor($inst),
+            'setup'        => \Model_Instance::setupStateFor($inst),
             'created'      => (string) $inst->createdAt,
             // Hosting: a container is the strongest signal of "published"; fall back to
             // nothing rather than inventing a date we cannot substantiate.

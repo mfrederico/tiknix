@@ -231,20 +231,42 @@ class ProvisionService {
         $member = Bean::load('member', $memberId);
         if (!$member->id) return ['ok' => false, 'error' => 'Unknown member.', 'code' => 403];
 
-        // capricorn clones the app, seeds an isolated sqlite db + guardrails + reset secrets.
-        $out = $this->runScript('provision-instance.sh',
-            [$this->appNamespace(), $slug, '--admin', (string) $member->email, '--name', $name]);
-        if (!is_file($this->instanceDir($slug) . '/public/index.php'))
-            return ['ok' => false, 'error' => 'Provisioning failed. ' . substr(trim($out['out']), -300), 'code' => 500];
+        // A project lives in its own container. Now: its registry row and its repository (TenantApp —
+        // the app template, the creator's project). Then, in the background (about two minutes):
+        // the container created, provisioned — its owner account is the creator (claim-root), its
+        // broker key, its builder terminal — and published at <slug>.<app>.com (tenant.php --up).
+        $t = TenantApp::create($slug, $name, $memberId);
+        if (!$t['ok']) return ['ok' => false, 'error' => 'Could not create the project: ' . $t['error'], 'code' => 500];
+        $inst = $t['inst'];
+        $inst->app       = $this->appNamespace();
+        $inst->engine    = $engine;
+        $inst->plan      = ProjectQuota::kindOf($plan);
+        $inst->isDefault = $isDefault ? 1 : 0;
+        Bean::store($inst);
+        try {
+            $this->setUpContainer($inst);
+        } catch (\RuntimeException $e) {
+            Flight::get('log')->error('project container setup could not start', ['slug' => $slug, 'err' => $e->getMessage()]);
+            return ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'warning' => 'The project exists, but setting up its container could not start: ' . $e->getMessage()];
+        }
+        return ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
+    }
 
-        @file_put_contents($this->instanceDir($slug) . '/.aibuilder/engine', $engine . "\n");
-        $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, $isDefault, $plan);
-        // Isolate now that the id exists (uid = 30000 + id). No-op unless enabled; never fatal.
-        $this->isolateInstance($slug, (int) $inst->id);
-        $this->createOrigin($slug);
-        $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
-        if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
-        return $out;
+    /**
+     * `tenant.php --up` for a new project, detached: its container created, provisioned and
+     * published at <slug>.<app>.com. Its progress — and any ERROR — is in its workspace's
+     * .aibuilder/provision.log, which the project card reads (Model_Instance::setupStateFor).
+     */
+    private function setUpContainer(object $inst): void {
+        $slug = (string) $inst->slug;
+        $ab = \Model_Instance::workspaceFrom($slug) . '/.aibuilder';
+        if (!is_dir($ab) && !@mkdir($ab, 0775, true)) throw new \RuntimeException("could not create {$ab}");
+        $log = $ab . '/provision.log';
+        $domain = $slug . '.' . $this->appNamespace() . '.com';
+        $cmd = 'cd ' . escapeshellarg(dirname(__DIR__)) . ' && echo "[setup] $(date) ' . $slug . ' -> ' . $domain . '"'
+             . ' && env -u TIKNIX_WORKBENCH_DB php scripts/tenant.php --up=' . escapeshellarg($slug) . ' --domain=' . escapeshellarg($domain);
+        exec('nohup bash -lc ' . escapeshellarg('(' . $cmd . ') >> ' . escapeshellarg($log) . ' 2>&1') . ' > /dev/null 2>&1 &', $o, $c);
+        if ($c !== 0) throw new \RuntimeException("could not start tenant.php --up for {$slug}");
     }
 
     /**

@@ -276,6 +276,9 @@ class TenantHost {
             [$c, $o] = self::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --claim-root=' . escapeshellarg($email), null, 60);
             if ($c !== 0) return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => 'the app is up, its owner account is not: ' . trim((string) $o)];
             $out .= "\nowner: " . trim((string) $o);
+            // Its key to this control plane's broker (its connected stores: Shopify …).
+            try { $out .= "\nbroker: " . BrokerService::ensureContainerConfig($inst, (int) $inst->memberId); }
+            catch (\RuntimeException $e) { return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => 'the app is up, its broker key is not: ' . $e->getMessage()]; }
         }
         return ['ok' => true, 'exit' => $code, 'output' => $out, 'error' => ''];
     }

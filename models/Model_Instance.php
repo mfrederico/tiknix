@@ -156,6 +156,19 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      * The isolation state to show: 'active' when the pool is live (and the column is
      * corrected to say so), else whatever was recorded ('pending' | 'failed' | '').
      */
+    /**
+     * A project's container setup, for its card: 'active' once its container is published,
+     * 'failed' when the setup log (its workspace's .aibuilder/provision.log, written by the
+     * background `tenant.php --up` ProvisionService::create starts) records an ERROR, 'pending'
+     * while that log exists without either, '' when there is no record of a setup at all.
+     */
+    public static function setupStateFor($inst): string {
+        if ((int) $inst->ctVmid > 0 && trim((string) $inst->ctDomain) !== '') return 'active';
+        $log = self::workspaceFrom((string) $inst->slug) . '/.aibuilder/provision.log';
+        if (!is_file($log)) return '';
+        return preg_match('/^ERROR /m', (string) file_get_contents($log)) ? 'failed' : 'pending';
+    }
+
     public static function isolationStateFor(\RedBeanPHP\OODBBean $inst): string {
         $recorded = (string) ($inst->isolationState ?? '');
         $dir = self::dirOf($inst);

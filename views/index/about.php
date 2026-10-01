@@ -16,10 +16,10 @@ $jsonld = [
          'address' => ['@type' => 'PostalAddress', 'addressLocality' => 'Mooresville', 'addressRegion' => 'NC', 'addressCountry' => 'US'],
          'sameAs' => ['https://clicksimple.com/', 'https://github.com/mfrederico']],
         ['@type' => 'Person', '@id' => 'https://clicksimple.com/#matt', 'name' => 'Matthew Frederico', 'jobTitle' => 'Co-Founder & CTO',
-         'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about', 'image' => $site . '/img/matt.jpg',
+         'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about', 'image' => $site . '/img/matt.webp',
          'sameAs' => ['https://linkedin.com/in/mattfred', 'https://github.com/mfrederico', 'https://clicksimple.com/about.php'],
          'knowsAbout' => ['AI agent orchestration', 'Model Context Protocol', 'Ecommerce systems', 'Warehouse management software', 'Laravel', 'PHP', 'Shopify', 'Stripe']],
-        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder', 'knowsLanguage' => ['English', 'Spanish'], 'image' => $site . '/img/fabian.jpg', 'worksFor' => ['@id' => $site . '/#org'],
+        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder', 'knowsLanguage' => ['English', 'Spanish'], 'image' => $site . '/img/fabian.webp', 'worksFor' => ['@id' => $site . '/#org'],
          'knowsAbout' => ['Dealer and channel network enablement', 'Shopify Plus', 'B2B SaaS partnerships', 'AI-enabled commerce', 'Ecommerce operations'],
          'url' => $site . '/about', 'sameAs' => ['https://www.linkedin.com/in/fabianduarteb/']],
         ['@type' => 'AboutPage', '@id' => $site . '/about#page', 'url' => $site . '/about', 'name' => 'Who we are', 'mainEntity' => ['@id' => $site . '/#org']],
@@ -91,7 +91,7 @@ $jsonld = [
   <!-- THE PERSON -->
   <section class="band">
     <div class="person">
-      <img class="photo" src="/img/matt.jpg" width="800" height="800" alt="Matthew Frederico, co-founder and CTO" loading="lazy">
+      <img class="photo" src="/img/matt.webp" width="800" height="800" alt="Matthew Frederico, co-founder and CTO" loading="lazy">
       <div>
         <h2>Matthew Frederico</h2>
         <div class="role">Co-Founder &amp; CTO · Mooresville, NC</div>
@@ -116,7 +116,7 @@ $jsonld = [
     </div>
 
     <div class="person">
-      <img class="photo" src="/img/fabian.jpg" width="800" height="800" alt="Fabian Duarte, co-founder" loading="lazy">
+      <img class="photo" src="/img/fabian.webp" width="800" height="800" alt="Fabian Duarte, co-founder" loading="lazy">
       <div>
         <h2>Fabian Duarte</h2>
         <div class="role">Co-Founder, tiknix &middot; Co-Founder, Kafanix &middot; Strategic Partner, DealerYes</div>

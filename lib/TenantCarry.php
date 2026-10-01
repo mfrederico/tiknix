@@ -72,7 +72,7 @@ PHP;
      * and untracked ones git does not ignore — so work nobody committed comes along too (a host
      * clone is edited in place; bookingscheduler's theme and booking pages were never committed).
      *
-     * @return array{dir:string,head:string,own:string[],edited:string[],core:int,uncommitted:string[]}
+     * @return array{dir:string,head:string,own:string[],edited:string[],core:int,strays:string[],uncommitted:string[]}
      */
     public static function inventory(string $slug): array {
         $dir = self::hostDir($slug);
@@ -80,15 +80,18 @@ PHP;
         $list = array_unique(array_merge(self::lines(self::gitOut($dir, 'ls-files')), self::lines(self::gitOut($dir, 'ls-files --others --exclude-standard'))));
         $list = array_values(array_filter($list, fn($p) => !self::notCode($p) && is_file("{$dir}/{$p}") && !is_link("{$dir}/{$p}")));
         $shas = self::hashes($dir, $list);
-        $own = []; $edited = []; $core = 0;
+        $own = []; $edited = []; $core = 0; $strays = [];
         foreach ($list as $i => $path) {
-            if (!isset($paths[$path])) $own[] = $path;
+            // At a path core never had, but byte-for-byte a file core once had somewhere: a stray
+            // copy of core's code (partsdna's root PlanExecutor.php, auto-committed by a builder
+            // checkpoint) — not the app's, and it names the host's paths. Left behind, by name.
+            if (!isset($paths[$path])) { if (isset($blobs[$shas[$i]])) $strays[] = $path; else $own[] = $path; }
             elseif (!isset($blobs[$shas[$i]])) $edited[] = $path;
             else $core++;
         }
         $dirty = array_values(array_filter(array_map(fn($l) => substr($l, 3), self::lines(self::gitOut($dir, 'status --porcelain --untracked-files=all'))),
             fn($p) => in_array($p, $own, true) || in_array($p, $edited, true)));
-        return ['dir' => $dir, 'head' => trim(self::gitOut($dir, 'rev-parse --short HEAD')), 'own' => $own, 'edited' => $edited, 'core' => $core, 'uncommitted' => $dirty];
+        return ['dir' => $dir, 'head' => trim(self::gitOut($dir, 'rev-parse --short HEAD')), 'own' => $own, 'edited' => $edited, 'core' => $core, 'strays' => $strays, 'uncommitted' => $dirty];
     }
 
     /** git's blob id of each file as it is on disk, in order. */
@@ -126,6 +129,7 @@ PHP;
             if (is_file("{$src}/concepts.lock")) { self::copy("{$src}/concepts.lock", "{$work}/concepts.lock"); $steps[] = 'concepts.lock carried'; }
             file_put_contents("{$work}/CARRY.md", self::report($inst, $inv));
             $steps[] = count($inv['own']) . ' own file(s) carried; ' . count($inv['edited']) . ' edited core file(s) kept under .carry/edited/ to port; ' . $inv['core'] . ' core file(s) left to the runtime';
+            if ($inv['strays']) $steps[] = 'left behind, copies of core files at paths core never used: ' . implode(', ', $inv['strays']);
 
             self::must(TenantApp::git($work, 'add -A'), 'git add');
             self::must(TenantApp::git($work, '-c user.email=core@tiknix.local -c user.name=tiknix commit -q -m '
@@ -163,7 +167,8 @@ PHP;
                 foreach (['secure', 'public/uploads', 'uploads', 'conf/sites'] as $p) {
                     if (!is_dir("{$dir}/{$p}")) continue;
                     @mkdir(dirname("{$stage}/root/{$p}"), 0755, true);
-                    self::must(self::sh('cp -a ' . escapeshellarg("{$dir}/{$p}") . ' ' . escapeshellarg("{$stage}/root/{$p}")), "copy {$p}");
+                    if (is_file("{$dir}/.fpm-isolated")) self::copyThroughPool($dir, $p, "{$stage}/root/{$p}");
+                    else self::must(self::sh('cp -a ' . escapeshellarg("{$dir}/{$p}") . ' ' . escapeshellarg("{$stage}/root/{$p}")), "copy {$p}");
                     $steps[] = "{$p}/";
                 }
                 [$carried, $coreCopies] = self::appConf($dir);
@@ -212,6 +217,27 @@ PHP;
         [$c, $o] = TenantHost::ssh($inst, 'root', 'systemctl restart php8.5-fpm', null, 120);
         if ($c !== 0) return ['ok' => false, 'error' => "php-fpm restart failed: {$o}", 'steps' => $steps];
         return ['ok' => true, 'steps' => $steps];
+    }
+
+    /**
+     * $dir/$rel copied to $dest by the clone's own pool user. On an isolated host clone the pool
+     * owns what it wrote, and a directory it made 0700 collapsed the ACL mask (CLAUDE.md, "never
+     * chmod"): Serenity's secure/uploads/digital-products is readable by the pool alone. The pool
+     * packs it into a tar under the shared temp dir, this side unpacks it, the pool removes it.
+     */
+    private static function copyThroughPool(string $dir, string $rel, string $dest): void {
+        $tar = sys_get_temp_dir() . '/tenantcarry-' . bin2hex(random_bytes(6)) . '.tar';
+        $pack = '<?php $t = ' . var_export($tar, true) . '; $a = new PharData($t); $a->buildFromDirectory(' . var_export("{$dir}/{$rel}", true) . ');'
+              . ' chmod($t, 0644); echo "ok ", $a->count();';
+        try {
+            $r = IsolatedPool::runAsPool($dir, $pack);
+            if ($r['status'] !== 0 || !str_starts_with($r['output'], 'ok ')) throw new \RuntimeException("the pool could not pack {$rel}: {$r['output']}");
+            @mkdir($dest, 0755, true);
+            self::must(self::sh('tar -xf ' . escapeshellarg($tar) . ' -C ' . escapeshellarg($dest)), "unpack {$rel}");
+        } finally {
+            IsolatedPool::runAsPool($dir, '<?php @unlink(' . var_export($tar, true) . ');');
+            if (is_file($tar)) throw new \RuntimeException("{$tar} (a copy of {$rel}, secrets included) could not be removed — remove it by hand");
+        }
     }
 
     /**

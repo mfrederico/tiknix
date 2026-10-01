@@ -209,6 +209,10 @@ class TenantHost {
             'APP_KEY'        => bin2hex(random_bytes(32)),
             'APP_BRANCH'     => $branch,
             'APP_HEARTBEAT'  => $branch === 'main' ? 'on' : 'off',
+            // A carried app's seeds are written for ITS data, which TenantCarry::data() copies in
+            // next and builds against; on the template's empty database they can only fail
+            // (Serenity's migrations of its own live rows).
+            'APP_CARRIED'    => $branch === TenantCarry::BRANCH ? '1' : '0',
         ];
         $script = '';
         foreach ($env as $k => $v) $script .= "export {$k}=" . escapeshellarg($v) . "\n";

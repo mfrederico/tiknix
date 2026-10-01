@@ -81,12 +81,16 @@ if [ ! -f conf/config.ini ]; then
     -e "s#^debug = .*#debug = false#" \
     conf/config.ini
 fi
-if ! sudo -u app php scripts/clitool.php --build > /tmp/tiknix-build.log 2>&1; then
+if [ "${APP_CARRIED:-0}" = 1 ]; then
+  # Carried: its data arrives next (TenantCarry::data), and the build runs against that.
+  echo "seeds: deferred to the carried data"
+elif ! sudo -u app php scripts/clitool.php --build > /tmp/tiknix-build.log 2>&1; then
   grep -E "error|FAILED" /tmp/tiknix-build.log | tail -20 >&2
   echo "provision: clitool --build failed (full output in the tenant's /tmp/tiknix-build.log)" >&2
   exit 4
+else
+  grep -cE ": ok$" /tmp/tiknix-build.log | sed 's/^/seeds ok: /'
 fi
-grep -cE ": ok$" /tmp/tiknix-build.log | sed 's/^/seeds ok: /'
 sudo -u app php scripts/clitool.php --agent-sync | tail -1
 
 say "the app's system packages (its system-packages file)"

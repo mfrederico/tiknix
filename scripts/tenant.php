@@ -157,6 +157,7 @@ if (isset($o['inventory'])) {
     echo "{$inv['dir']} at {$inv['head']}: " . count($inv['own']) . " own file(s), " . count($inv['edited']) . " edited core file(s), {$inv['core']} core file(s)\n";
     echo "edited core files (to port):\n" . ($inv['edited'] ? '  ' . implode("\n  ", $inv['edited']) : '  (none)') . "\n";
     echo "own files:\n" . ($inv['own'] ? '  ' . implode("\n  ", $inv['own']) : '  (none)') . "\n";
+    if ($inv['strays']) echo "stray copies of core files (not carried):\n  " . implode("\n  ", $inv['strays']) . "\n";
     exit(0);
 }
 if (isset($o['carry'])) {

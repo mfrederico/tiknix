@@ -4,7 +4,7 @@
  * wizard produced becomes a project of theirs.
  *
  * Expects: $state ('offered' | 'claimed' | 'unknown'), $handoff (bean or null), $brief (array),
- *          $engines (name => label), $refusal (array|null from ProjectQuota), $project (PlanHandoff::state)
+ *          $engines (unused since projects build on their app's own agents), $refusal (array|null from ProjectQuota), $project (PlanHandoff::state)
  */
 $h = $handoff;
 ?>
@@ -97,7 +97,7 @@ $h = $handoff;
             $v = $brief[$k]; ?>
           <div class="mb-1"><span class="text-body-secondary"><?= $label ?>:</span>
             <?php if (is_array($v)): ?>
-              <?= htmlspecialchars(implode(', ', array_map(fn($x) => is_array($x) ? (string) ($x['title'] ?? $x['name'] ?? $x['id'] ?? json_encode($x)) : (string) $x, $v))) ?>
+              <?= htmlspecialchars(implode(', ', array_map(fn($x) => is_array($x) ? (string) ($x['title'] ?? $x['text'] ?? $x['name'] ?? $x['id'] ?? json_encode($x)) : (string) $x, $v))) ?>
             <?php else: ?>
               <?= htmlspecialchars((string) $v) ?>
             <?php endif; ?>
@@ -121,29 +121,23 @@ $h = $handoff;
       <?php else: ?>
         <form id="handoffForm" class="row g-2 align-items-end">
           <input type="hidden" name="token" value="<?= htmlspecialchars((string) $h->token) ?>">
-          <div class="col-12 col-sm-7">
+          <div class="col-12 col-sm-9">
             <label class="form-label small mb-0" for="handoff-name">Project name</label>
             <input id="handoff-name" name="name" class="form-control" maxlength="60" required value="<?= htmlspecialchars((string) $h->name) ?>">
           </div>
-          <div class="col-8 col-sm-3">
-            <label class="form-label small mb-0" for="handoff-engine">Engine</label>
-            <select id="handoff-engine" name="engine" class="form-select">
-              <?php foreach ($engines as $engName => $engLabel): ?>
-                <option value="<?= htmlspecialchars((string) $engName) ?>"><?= htmlspecialchars((string) $engLabel) ?></option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-          <div class="col-4 col-sm-2">
+          <?php /* No engine to pick: a project builds with its own app's agents (its AI agents page). */ ?>
+          <input type="hidden" name="engine" value="claude">
+          <div class="col-12 col-sm-3">
             <button class="btn btn-primary w-100" type="submit" id="handoff-build">Build it</button>
           </div>
           <div class="col-12">
             <div class="form-check">
               <input type="hidden" name="decompose" value="0">
               <input class="form-check-input" type="checkbox" id="handoff-decompose" name="decompose" value="1" checked>
-              <label class="form-check-label" for="handoff-decompose">Plan Phase 1 now — the Builder reads PLAN.md and lays out the first tasks for you to approve (recommended)</label>
+              <label class="form-check-label" for="handoff-decompose">Plan Phase 1 as soon as the project has an AI agent (recommended)</label>
             </div>
           </div>
-          <div class="col-12 form-text">Your first project is free. Provisioning takes about a minute; you land in the Builder with the plan in place.</div>
+          <div class="col-12 form-text">Your first project is free. Setting it up takes a minute or two; this page follows it.</div>
         </form>
         <div id="handoff-error" class="alert alert-danger mt-3 d-none"></div>
       <?php endif; ?>

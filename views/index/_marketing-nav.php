@@ -13,6 +13,6 @@
       <a href="/pricing">Pricing</a>
       <a href="/contact">Contact</a>
       <a href="/auth/login">Sign in</a>
-      <a class="nav-cta" href="/auth/register">Start free</a>
+      <a class="nav-cta" href="https://start.tiknix.com/start">Start free</a>
     </div>
   </nav>

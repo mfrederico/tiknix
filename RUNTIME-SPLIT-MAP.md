@@ -550,8 +550,9 @@ deprovisioned, `testfv` and the old cat-poo-box clone are out of the registry. W
    `php scripts/resetcache.php`.
 5. Config: `[sidecar.workbench]` → workbench2's url and secret; workbench2's `core_root` →
    `/var/www/html/default/tiknix`, `core_url` → `https://tiknix.com`.
-6. Cron: drop the host-builder lines (`reap-stale-tasks`, `prompt-queue-drain`, the host
-   `pipeline-cron` heartbeat for host clones); add `tenant.php --renew-certs` from `tiknix/`.
+6. Cron: move `tenant.php --renew-certs` to `tiknix/`. The other four lines stay:
+   `reap-stale-tasks`, `prompt-queue-drain`, `pipeline-cron` and `capture-showcase` are
+   control-plane jobs, and the builder in containers still uses them.
 7. Replace the `tiknix2.tiknix` worktree with a symlink to `tiknix` (keeps `/git/` answering
    for the containers); remove the worktree with `git worktree remove`.
 8. Verify: e2e 01, 02, 08 on tiknix.com; every app's `--update` reaches the runtime; one
@@ -590,3 +591,41 @@ cron and is not the broker, so it touches nothing live. Results below, per run.
   `tiknix` symlink that keeps `/git/` answering for the containers; workbench2's SSO against
   tiknix.com; the crontab swap. The real window covers these (steps 5–8). Do them first, and
   prove them with one `tenant.php --update` and a workbench sign-in.
+
+**Done — 2026-10-01, 02:51 UTC.** tiknix.com runs this branch: `main` = 9b4fb3d (fast-forwarded
+from 7608ae1, tagged `pre-runtime-split`). Steps 3–8 went as rehearsed:
+
+- vendor was swapped in pre-built from tiknix2 (the old vendor is `vendor.pre-cutover`).
+- `--build` was clean, and the migration made 70 changes plus catpoobox (#101).
+- workbench2 uses `core_root` = `tiknix`; tiknix.com's `[sidecar.workbench]` points at
+  workbench2.
+- The renew-certs cron runs from `tiknix/`.
+- `tiknix2.tiknix` is a symlink to `tiknix`, and the worktree is gone. Its databases, conf, log
+  and secrets are in `arc/tiknix2.tiknix.zip`; its `secure/archives` were checksum-identical to
+  tiknix's.
+- Before-images are in `arc/cutover-20261001/`: databases, config.ini, workbench2's config.ini
+  and the crontab.
+
+Verified on the live site:
+
+- e2e 08 + 01 + 02 passed 52/52.
+- No ERROR lines since the switch.
+- `tenant.php --status` reaches all 14 containers (all on alpha.59).
+- From inside catpoobox, the seed remote and `runtime.git` fetch through
+  `tiknix2.tiknix.com/git/`, authenticated against tiknix.com's database.
+- workbench2 sign-in goes to tiknix.com.
+
+Found afterwards: the runtime heartbeat reported each container project as "no directory"
+every minute. It now skips anything with `ct_kind` (tiknix-runtime b8c6150), since those
+projects tick from their own crontab.
+
+Rollback, if ever needed:
+
+- `git reset --hard pre-runtime-split`, then `mv vendor.pre-cutover vendor`.
+- Restore `arc/cutover-20261001/tiknix/*`, the crontab, and workbench2's config.
+- Remove the symlink and unzip `arc/tiknix2.tiknix.zip` into a fresh `runtime-split`
+  worktree.
+
+Left to do: GitHub's `main` still needs the PR (`runtime-split` → `main`; `main` is
+PR-protected). Once nothing references them, drop `vendor.pre-cutover` and
+`composer.lock.pre-cutover`.

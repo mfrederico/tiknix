@@ -43,9 +43,18 @@ class AgentTaskTest extends TestCase {
         $this->git('-c user.email=t@e -c user.name=t commit -q -m app');
         Paths::useRoot($this->app);
         EngineRegistry::flush();
+        $this->as('Pat Member', 'pat@example.com');   // core names the member (TenantHost::gitEnv)
+    }
+
+    /** The member a run's commits are by, as core's TenantHost::gitEnv hands it over. */
+    private function as(?string $name, ?string $email): void {
+        foreach (['NAME' => $name, 'EMAIL' => $email] as $k => $v) {
+            foreach (['GIT_AUTHOR_', 'GIT_COMMITTER_'] as $p) putenv($v === null ? "{$p}{$k}" : "{$p}{$k}={$v}");
+        }
     }
 
     protected function tearDown(): void {
+        $this->as(null, null);
         if ($this->prevDb !== null && Bean::hasDatabase($this->prevDb)) Bean::selectDatabase($this->prevDb);
         Paths::useRoot(null);
         EngineRegistry::flush();
@@ -78,6 +87,7 @@ class AgentTaskTest extends TestCase {
         $this->assertStringContainsString('done', $r['output']);
         $this->assertSame("an app\n", file_get_contents("{$this->app}/README.md"), 'the app is untouched until the task is merged');
         $this->assertSame('task t1: Add a line to the README', $this->git('log -1 --format=%s task/t1'));
+        $this->assertSame('Pat Member <pat@example.com>', $this->git('log -1 --format="%an <%ae>" task/t1'), "the task's commit is the member's");
         $this->assertStringContainsString('already has a worktree', AgentTask::start($this->app, 't1', 'again')['error']);
 
         $m = AgentTask::merge($this->app, 't1');
@@ -85,6 +95,17 @@ class AgentTaskTest extends TestCase {
         $this->assertStringContainsString('the agent was here', (string) file_get_contents("{$this->app}/README.md"));
         $this->assertDirectoryDoesNotExist("{$this->app}/.aibuilder/wt/t1");
         $this->assertSame('', $this->git('branch --list task/t1'), 'the task branch is gone');
+        $this->assertSame('Pat Member <pat@example.com>', $this->git('log -1 --format="%an <%ae>"'), "the merge is the member's");
+        $this->assertSame('Pat Member', $this->git('log -1 --format=%cn'));
+    }
+
+    public function testNoMemberNoCommit(): void {
+        $this->as(null, null);
+        $r = AgentTask::start($this->app, 't3', 'do it');
+        $this->assertSame('refused', $r['status']);
+        $this->assertStringContainsString('no member to author the commit', $r['error']);
+        $this->assertDirectoryDoesNotExist("{$this->app}/.aibuilder/wt/t3", 'refused before a worktree existed');
+        $this->assertStringContainsString('no member to author the commit', AgentTask::merge($this->app, 't3')['error']);
     }
 
     public function testDiscardLeavesTheAppAsItWas(): void {

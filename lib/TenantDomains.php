@@ -71,6 +71,10 @@ class TenantDomains {
 
         $inst->ctHosts = json_encode(array_values(array_unique(array_merge(self::of($inst), [$d]))));
         CoreDb::with(fn() => Bean::store($inst));
+        // 5) its own MQTT listener, when the app has a broker (TenantHost::mqttSync)
+        $m = TenantHost::mqttSync($inst);
+        if (!$m['ok']) return ['ok' => false, 'error' => "{$d} is served, but its MQTT listener is not: " . $m['error'], 'steps' => $steps];
+        $steps = array_merge($steps, $m['steps']);
         return ['ok' => true, 'steps' => $steps, 'url' => 'https://' . $d];
     }
 
@@ -85,6 +89,8 @@ class TenantDomains {
         $steps[] = 'app: ' . trim((string) preg_replace('/^# /m', '', $out));
         $inst->ctHosts = json_encode(array_values(array_diff(self::of($inst), [$d])));
         CoreDb::with(fn() => Bean::store($inst));
+        $m = TenantHost::mqttSync($inst);   // its listener goes; its accounts stay in data/mosquitto/<domain>/
+        if (!$m['ok']) return ['ok' => false, 'error' => "{$d} is removed, but the broker's listeners were not updated: " . $m['error'], 'steps' => $steps];
         $steps[] = 'its certificate, if it has one, is left to expire in ' . self::CERT_DIR;
         return ['ok' => true, 'steps' => $steps];
     }

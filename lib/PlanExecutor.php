@@ -338,7 +338,7 @@ class PlanExecutor {
             $agent = PlanIngestor::agentName($t->agent ?? '');
             // In a tmux session IN the container (TenantRun): it outlives anything on core.
             TenantRun::start($this->tenant, $session, $id,
-                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=1800', $this->buildTaskBrief($t));
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=1800', $this->buildTaskBrief($t), $this->author());
             $this->logEvent($t, 'info', "Build agent started in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
         } catch (\Throwable $e) {
             $this->fail($t, 'could not start the task in the container: ' . $e->getMessage());
@@ -386,7 +386,11 @@ class PlanExecutor {
         }
         if (!empty($r['diffstat'])) $this->logEvent($t, 'info', "Changed ({$r['commit']}):\n" . $r['diffstat']);
         // Merging IS publishing: the app's branch in its container, then its seeds.
-        $m = TenantHost::mergeTask($this->tenant, $id);
+        try {
+            $m = TenantHost::mergeTask($this->tenant, $id, $this->author());
+        } catch (\RuntimeException $e) {
+            $m = ['ok' => false, 'error' => $e->getMessage()];
+        }
         if (!empty($m['ok'])) { $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?')); return; }
         $err = (string) ($m['error'] ?? 'the merge failed');
         $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err);
@@ -398,23 +402,29 @@ class PlanExecutor {
      */
     private function checkpointTenant($plan): array {
         $tag = 'checkpoint-plan-' . $this->planId . '-' . date('Ymd-His');
-        // Under .aibuilder/ (which apps ignore): copies of the app's databases must never be
-        // committable — `git add -A` in the app, or a code export, would carry user data.
-        $php = '$d = ".aibuilder/backups/' . $tag . '"; @mkdir($d, 0700, true); foreach (glob("database/*.db") ?: [] as $f) { '
-             . '$s = new SQLite3($f, SQLITE3_OPEN_READONLY); $o = new SQLite3($d . "/" . basename($f)); '
-             . 'if (!$s->backup($o)) { fwrite(STDERR, "backup of $f failed\n"); exit(1); } echo basename($f), " "; }';
-        [$code, $out] = TenantHost::ssh($this->tenant, 'app', 'cd /srv/app && git tag ' . escapeshellarg($tag)
-            . ' && php -r ' . escapeshellarg($php), null, 300);
-        if ($code !== 0) {
-            $msg = "cannot checkpoint {$this->slug}'s container (exit {$code}): " . trim($out) . '; the plan will not run without a rollback point';
+        try {
+            $c = TenantHost::checkpoint($this->tenant, $tag, 'plan: ' . mb_substr((string) $plan->title, 0, 80), $this->author());
+        } catch (\RuntimeException $e) {
+            $c = ['ok' => false, 'error' => $e->getMessage()];
+        }
+        if (!$c['ok']) {
+            $msg = $c['error'] . '; the plan will not run without a rollback point';
             $this->logEvent($plan, 'error', $msg);
             return ['ok' => false, 'tag' => '', 'message' => $msg];
         }
         $plan->planCheckpoint = $tag;
         $plan->updatedAt      = date('Y-m-d H:i:s');
         Bean::store($plan);
-        $this->logEvent($plan, 'info', "Checkpoint {$tag} taken in the container before the first task (git tag + .aibuilder/backups/{$tag}/: " . trim($out) . ') — roll back to it if this plan goes wrong');
+        $this->logEvent($plan, 'info', "Checkpoint {$tag} taken in the container before the first task (" . ($c['committed'] ? 'uncommitted changes committed, ' : '')
+            . "git tag + .aibuilder/backups/{$tag}/: {$c['databases']}) — roll back to it if this plan goes wrong");
         return ['ok' => true, 'tag' => $tag, 'message' => "checkpoint {$tag} taken"];
+    }
+
+    /** The plan's member — the author of every commit its build makes (TenantHost::author). */
+    private function author(): array {
+        $memberId = (int) ($this->plan()->memberId ?? 0);
+        if ($memberId <= 0) throw new \RuntimeException("plan #{$this->planId} records no member, so nobody can author its commits");
+        return TenantHost::author($memberId);
     }
 
     // ---- readiness / status helpers ---------------------------------------

@@ -13,10 +13,20 @@
 namespace app;
 
 final class AppToken {
-    public static function terminal(object $inst, int $memberId, bool $resume, int $ttl = 120): string {
+    /**
+     * The terminal token names the member ('author': TenantHost::author) — the app makes them the
+     * repository's git identity while they are at the terminal, so what its agent commits is theirs.
+     */
+    /**
+     * $agent: one of the app's agents (its AI agents page) by name, '' = its default. The session is
+     * the member's own on that agent (aib-<agent>-m<member>) — see terminalSession().
+     */
+    public static function terminal(object $inst, int $memberId, bool $resume, string $agent, int $ttl = 120): string {
+        if ($memberId <= 0) throw new \InvalidArgumentException('a terminal token names its member');
+        if ($agent !== '' && !preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,40}$/', $agent)) throw new \InvalidArgumentException("'{$agent}' is not an agent name");
         return self::sign($inst, [
-            'sub' => (string) $inst->slug, 'member_id' => $memberId,
-            'agent' => '',                            // the app's default agent (its AI agents page)
+            'sub' => (string) $inst->slug, 'member_id' => $memberId, 'author' => TenantHost::author($memberId),
+            'agent' => $agent,
             'resume' => $resume,
             'nonce' => bin2hex(random_bytes(8)), 'exp' => time() + $ttl,
         ]);
@@ -34,6 +44,11 @@ final class AppToken {
             'aud' => 'launch', 'sub' => (string) $inst->slug, 'email' => strtolower(trim($email)), 'to' => $to, 'level' => $level,
             'nonce' => bin2hex(random_bytes(16)), 'exp' => time() + $ttl,
         ]);
+    }
+
+    /** The tmux session a member's terminal on $agent runs in — the runtime bridge's name for it. */
+    public static function terminalSession(int $memberId, string $agent): string {
+        return 'aib-' . ($agent !== '' ? $agent : 'default') . '-m' . $memberId;
     }
 
     private static function sign(object $inst, array $claims): string {

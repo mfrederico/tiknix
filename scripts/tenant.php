@@ -10,8 +10,8 @@
  *   php scripts/tenant.php --up=SLUG --domain=HOST        create + provision + publish
  *   php scripts/tenant.php --ssh=SLUG [--root] -- CMD…    run a command in the tenant (as app)
  *   php scripts/tenant.php --clitool=SLUG -- ARGS…        the app's own clitool, in /srv/app (as app)
- *   php scripts/tenant.php --task=SLUG --id=ID [--agent=NAME] < prompt   the builder: an agent task in the tenant
- *   php scripts/tenant.php --merge=SLUG --id=ID           merge a task branch (then the seeds)
+ *   php scripts/tenant.php --task=SLUG --id=ID --member=N [--agent=NAME] < prompt   an agent task in the tenant, its commits by member N
+ *   php scripts/tenant.php --merge=SLUG --id=ID --member=N   merge a task branch (then the seeds), the merge by member N
  *   php scripts/tenant.php --discard=SLUG --id=ID         throw a task away
  *   php scripts/tenant.php --plan=SLUG --id=ID --member=N [--agent=NAME] < request   the builder's planner in the tenant
  *        (--task and --plan also take --out=FILE: the JSON result written there as well)
@@ -25,7 +25,7 @@
  *   php scripts/tenant.php --renew-certs                  renew custom domains' certificates due within
  *                                                         30 days (this machine's crontab, daily)
  *   php scripts/tenant.php --status=SLUG
- *   php scripts/tenant.php --system=SLUG|all               system software its enabled plugins need (pdf → Google Chrome)
+ *   php scripts/tenant.php --system=SLUG|all               system software its enabled plugins ask for (requires.system → TenantHost::SYSTEM_RECIPES: google-chrome, mosquitto)
  *   php scripts/tenant.php --terminal=SLUG|all             the app's builder terminal (runtime bin/terminal-bridge.php):
  *                                                         its key, its crontab line, the bridge started
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving
@@ -103,7 +103,7 @@ if (isset($o['task']) || isset($o['plan']) || isset($o['audit']) || isset($o['me
     if ($id === '') { fwrite(STDERR, "ERROR --id=TASK is required\n"); exit(2); }
     if (isset($o['task'])) {
         $prompt = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
-        $r = TenantHost::task(inst($o['task']), $id, $prompt, 1800, (string) ($o['agent'] ?? ''));
+        $r = TenantHost::task(inst($o['task']), $id, $prompt, TenantHost::author((int) ($o['member'] ?? 0)), 1800, (string) ($o['agent'] ?? ''));
     } elseif (isset($o['plan'])) {
         $request = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
         $r = TenantHost::plan(inst($o['plan']), $id, $request, (int) ($o['member'] ?? 0), 1800, (string) ($o['agent'] ?? ''));
@@ -111,7 +111,7 @@ if (isset($o['task']) || isset($o['plan']) || isset($o['audit']) || isset($o['me
         $brief = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
         $r = TenantHost::audit(inst($o['audit']), $id, $brief, (string) ($o['browser-mcp'] ?? ''), 1800, (string) ($o['agent'] ?? ''));
     } elseif (isset($o['merge'])) {
-        $r = TenantHost::mergeTask(inst($o['merge']), $id);
+        $r = TenantHost::mergeTask(inst($o['merge']), $id, TenantHost::author((int) ($o['member'] ?? 0)));
     } else {
         $r = TenantHost::discardTask(inst($o['discard']), $id);
     }

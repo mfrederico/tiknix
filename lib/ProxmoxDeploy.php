@@ -446,6 +446,20 @@ class ProxmoxDeploy {
         return self::PROXY_DIR . '/.proxy.' . implode('.', $parts);
     }
 
+    /**
+     * Set (or, with null, drop) a domain's mqttport= line in its proxy file, keeping the rest:
+     * capricorn's /mqtt (xpi/mqtt.conf) sends wss://<domain>/mqtt to <proxyhost>:<mqttport>, the
+     * app's broker listener for that domain (TenantHost::mqttSync).
+     */
+    public static function setMqttPort(string $domain, ?int $port): array {
+        $file = self::proxyPath($domain);
+        if (!is_file($file)) return ['ok' => false, 'error' => "{$domain} has no proxy file ({$file})"];
+        $lines = array_values(array_filter(explode("\n", (string) file_get_contents($file)), fn($l) => $l !== '' && !str_starts_with($l, 'mqttport=')));
+        if ($port !== null) $lines[] = 'mqttport=' . $port;
+        if (@file_put_contents($file, implode("\n", $lines) . "\n") === false) return ['ok' => false, 'error' => $file . ' is not writable by the web user'];
+        return ['ok' => true];
+    }
+
     public static function writeProxy(string $domain, string $ip): array {
         $parts = explode('.', $domain);
         if (count($parts) < 2) return ['ok' => false, 'error' => 'domain needs at least one dot: ' . $domain];

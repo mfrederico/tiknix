@@ -24,15 +24,19 @@ final class TenantRun {
     private const ID_RE = '/^[a-z0-9][a-z0-9-]{0,80}$/';
     private const SESSION_RE = '/^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}$/';
 
-    /** Start `clitool $clitoolArgs` in session $session, stdin from $input; throws when it cannot. */
-    public static function start(object $inst, string $session, string $id, string $clitoolArgs, ?string $input): void {
+    /**
+     * Start `clitool $clitoolArgs` in session $session, stdin from $input; throws when it cannot.
+     * $author (TenantHost::author) is who every commit the run makes is by — [] for a run that
+     * commits nothing (a plan, an audit).
+     */
+    public static function start(object $inst, string $session, string $id, string $clitoolArgs, ?string $input, array $author): void {
         self::check($session, $id);
         $dir = self::DIR . '/' . $id;
         if (self::alive($inst, $session)) throw new \RuntimeException("{$inst->slug} already has a session {$session} running");
         [$c, $o] = TenantHost::ssh($inst, 'app', 'mkdir -p ' . escapeshellarg($dir) . ' && cd ' . escapeshellarg($dir)
             . ' && rm -f result.json output.log exit && cat > input', (string) $input, 60);
         if ($c !== 0) throw new \RuntimeException("could not write the run's input in {$inst->slug}'s container: " . trim((string) $o));
-        $run = 'php scripts/clitool.php ' . $clitoolArgs
+        $run = TenantHost::gitEnv($author) . 'php scripts/clitool.php ' . $clitoolArgs
              . ' < ' . escapeshellarg("{$dir}/input") . ' > ' . escapeshellarg("{$dir}/result.json")
              . ' 2> ' . escapeshellarg("{$dir}/output.log") . '; echo $? > ' . escapeshellarg("{$dir}/exit");
         [$c, $o] = TenantHost::ssh($inst, 'app', 'tmux new-session -d -s ' . escapeshellarg($session) . ' -c /srv/app ' . escapeshellarg($run), null, 30);

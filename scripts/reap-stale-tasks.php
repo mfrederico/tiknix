@@ -59,22 +59,22 @@ $say('  ' . count($live) . ' live tmux session(s)');
 
 $released = 0; $killed = 0; $claimed = [];
 
-foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) {
-    // The glob matches core.tiknix, which is a SYMLINK to the control plane and has a
-    // data/workbench.db of its own — so this sweep would release and reap core's tasks
-    // believing they belonged to a customer project. Decide by structure, never by name.
-    if (!\Model_Instance::isProvisionedInstance(dirname(dirname($db)))) continue;
-
-    // THE DIRECTORY IS <slug>.<app>; THE SLUG IS NOT THE DIRECTORY.
-    //
-    // Session names are built from the bare instance slug, so reading the directory
-    // name whole gave "mileage.tiknix" where every session says "mileage", and the
-    // orchestrator probe below looked for tiknix-mileage-tiknix-plan72-orchestrator —
-    // a name nothing ever creates. It therefore answered "the orchestrator is gone"
-    // for every plan on every instance, and this sweep marked each actively-building
-    // plan failed/stalled five minutes after it started. The glob is *.tiknix, so the
-    // suffix to drop is exact rather than guessed.
-    $slug = preg_replace('/\.tiknix$/', '', basename(dirname(dirname($db))));
+// The boards: every project in its own container keeps its task board on core, in its workspace
+// (_workspaces/<slug>/data/workbench.db); its tasks run in the container (TenantRun), so whether
+// a task's session is alive is asked THERE — once per project per sweep. A container that does
+// not answer has its board left alone this sweep: "unreachable" is not "gone".
+$boards = [];
+foreach (Bean::find('instance', "status = 'active' AND ct_kind = 'tenant' AND ct_ip IS NOT NULL AND ct_ip <> ''") as $__inst) {
+    $db = \Model_Instance::dirOf($__inst) . '/data/workbench.db';
+    if (is_file($db)) $boards[] = [$db, (string) $__inst->slug, $__inst];
+}
+foreach ($boards as [$db, $slug, $inst]) {
+    try {
+        $liveCt = array_flip(\app\TenantRun::list($inst, 'tiknix-'));
+    } catch (Throwable $e) {
+        $say("  ! {$slug}: container not reachable — its board is left alone this sweep (" . $e->getMessage() . ')');
+        continue;
+    }
 
     try {
         // One named connection per file. Bean:: rather than raw PDO (CLAUDE.md): a
@@ -161,7 +161,7 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
 
         // A task with no session recorded and no agent is stale too: that is the
         // shape left by a run that died before it could store the name.
-        if ($session !== '' && isset($live[$session])) continue;
+        if ($session !== '' && (isset($live[$session]) || isset($liveCt[$session]))) continue;
 
         $why = $session === '' ? 'never recorded a session' : "session {$session} is gone";
         $say(sprintf('  %-24s task %-4s %s (%s, %s)',
@@ -265,18 +265,9 @@ foreach (array_keys($live) as $name) {
     // orchestrator exceptions were each added to fix, arriving once more through the
     // one session shape nobody had named yet.
     //
-    // The test is not age. It is whether the jailed agent is still there: both runner
-    // scripts wrap `bwrap … claude -p`, so one with no bwrap child is a shell sitting on
-    // a corpse. Age alone would kill live work — an observed decompose took 3 minutes,
-    // but a large goal can run far longer, and guessing a number is how a cleaner starts
-    // eating real runs.
-    //
-    // (Both runners fall back to an UNJAILED `claude -p` when jailFor() finds no jail
-    // script — a workspace outside /var/www/html/default, or one with no public/index.php.
-    // No provisioned instance looks like that, so the bwrap test holds for every session
-    // this sweep can actually see. If that ever stops being true the symptom is a live
-    // run killed after the grace period, and the fix is to test the pane's process tree
-    // for a live claude rather than to widen the pattern.)
+    // The test is not age. It is whether the agent is still running — in the project's
+    // CONTAINER, where the planner and the audit run (this session only waits for them).
+    // Age alone would kill live work: a large goal plans for a long time.
     if (preg_match('/^tiknix-\d+-(plan|audit)-(.+)$/', $name, $pm)) {
         $kind     = $pm[1];                       // 'plan' | 'audit'
         $instSlug = $pm[2];
@@ -288,17 +279,19 @@ foreach (array_keys($live) as $name) {
         // session's clock. For two sessions created hours apart that difference decides
         // the kill, and it silently made the grace period meaningless for every planner
         // after the first.
-        $bw = [];
         $cr = [];
 
-        $alive = 0;
-        // pgrep -f against the instance directory: the bwrap command line names it, and
-        // it is the one string that distinguishes THIS instance's agent from another's.
-        exec('pgrep -fa ' . escapeshellarg('bwrap') . ' 2>/dev/null', $bw);
-        foreach ($bw as $line) {
-            if (strpos($line, '/' . $instSlug . '.') !== false) { $alive++; break; }
+        // The agent runs in the project's container (TenantHost::plan / the audit runner →
+        // tmux session tiknix-run-planner-m<member> | tiknix-run-audit-m<member> there); this
+        // session only waits for it. Alive there = leave it. Unreachable = leave it too.
+        $pm2 = [];
+        preg_match('/^tiknix-(\d+)-/', $name, $pm2);
+        $runSession = 'tiknix-run-' . ($kind === 'plan' ? 'planner' : 'audit') . '-m' . (int) ($pm2[1] ?? 0);
+        $ctInst = Bean::findOne('instance', 'slug = ?', [$instSlug]);
+        if ($ctInst && \Model_Instance::tenantRow($ctInst)) {
+            try { if (\app\TenantRun::alive($ctInst, $runSession)) continue; }
+            catch (Throwable $e) { $say("  ! {$name}: cannot ask {$instSlug}'s container — left alone"); continue; }
         }
-        if ($alive) continue;                       // still working — leave it
 
         $age = 0;
         exec('tmux display-message -p -t ' . escapeshellarg($name)
@@ -311,7 +304,7 @@ foreach (array_keys($live) as $name) {
         if ($age < max($grace, 120)) continue;
 
         $say('  ' . ($apply ? 'KILLED  ' : 'would kill ') . $name
-            . " ({$kind}: no jailed agent, idle " . (int) round($age / 60) . 'm — the lock it holds'
+            . " ({$kind}: its agent is no longer running in the container, idle " . (int) round($age / 60) . 'm — the lock it holds'
             . " blocks every future {$blocks} for this instance)");
         if ($apply) exec('tmux kill-session -t ' . escapeshellarg($name) . ' 2>/dev/null');
         $killed++;

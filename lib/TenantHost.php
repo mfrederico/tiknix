@@ -330,19 +330,48 @@ class TenantHost {
      * stdin. Returns the tenant's JSON answer, or a refusal naming what failed on the way.
      */
     public static function task(object $inst, string $id, string $prompt, int $timeout = 1800, string $agent = ''): array {
-        return self::taskCall($inst, '--agent-task=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $prompt, $timeout + 120);
+        return self::runAndWait($inst, $id, '--agent-task=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $prompt, $timeout);
     }
 
     /** The builder's planner in the tenant (clitool --agent-plan): the plan's JSON in 'plan'. */
     public static function plan(object $inst, string $id, string $request, int $memberId, int $timeout = 1800, string $agent = ''): array {
-        return self::taskCall($inst, '--agent-plan=' . escapeshellarg($id) . ' --member=' . (int) $memberId . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $request, $timeout + 120);
+        return self::runAndWait($inst, $id, '--agent-plan=' . escapeshellarg($id) . ' --member=' . (int) $memberId . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $request, $timeout);
+    }
+
+    /**
+     * Run `clitool $args` in a tmux session IN the container (TenantRun, session tiknix-run-<id>)
+     * and wait here for its JSON answer. The agent lives in the container: this waiter dying (a
+     * core restart, a dropped SSH) does not stop it, and calling again with the same id while
+     * that session is still running waits for it instead of starting another.
+     */
+    private static function runAndWait(object $inst, string $id, string $args, ?string $input, int $timeout): array {
+        $session = 'tiknix-run-' . $id;
+        if (!TenantRun::alive($inst, $session)) TenantRun::start($inst, $session, $id, $args, $input);
+        $deadline = time() + $timeout + 300;
+        while (true) {
+            sleep(5);
+            try {
+                $done = TenantRun::result($inst, $id);
+                if ($done === null && !TenantRun::alive($inst, $session)) {
+                    $done = TenantRun::result($inst, $id);   // its exit file is written before the session ends
+                    if ($done === null) return ['ok' => false, 'status' => 'failed', 'error' => "{$session} ended in {$inst->slug}'s container without finishing (stopped, or the container restarted)"];
+                }
+            } catch (\RuntimeException $e) {
+                error_log("ERROR TenantHost::runAndWait {$id}: " . $e->getMessage() . ' (still waiting)');
+                $done = null;
+            }
+            if ($done !== null) break;
+            if (time() > $deadline) return ['ok' => false, 'status' => 'failed', 'error' => "no answer from {$id} after {$timeout}s; it may still be running in {$inst->slug}'s container (tmux session {$session})"];
+        }
+        if ($done['result'] === null) return ['ok' => false, 'status' => 'failed', 'error' => "{$id} exited {$done['exit']} in the container with no answer: " . mb_substr($done['log'], -800)];
+        return $done['result'];
     }
 
     public static function mergeTask(object $inst, string $id): array   { return self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600); }
     public static function discardTask(object $inst, string $id): array { return self::taskCall($inst, '--agent-discard=' . escapeshellarg($id), null, 120); }
 
     /** --agent=NAME for one of the app's agents (its AI agents page); '' = the app's default. */
-    private static function agentArg(string $agent): string {
+    public static function agentArg(string $agent): string {
         if ($agent === '') return '';
         if (!preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/D', $agent)) throw new \InvalidArgumentException("'{$agent}' is not an agent name");
         return ' --agent=' . escapeshellarg($agent);

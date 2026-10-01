@@ -298,7 +298,15 @@ class PlanRunner {
     }
 
     /** Kill the planner session (cancel). */
-    public function stop(): bool { return TmuxManager::kill($this->sessionName); }
+    public function stop(): bool {
+        // A container's planner runs in its container (TenantHost::plan → tmux there); the session
+        // here only waits for it. Stopping must end the agent, not just the wait.
+        if ($this->tenant) TenantRun::kill($this->tenant, 'tiknix-run-' . $this->tenantPlanId());
+        return TmuxManager::kill($this->sessionName);
+    }
+
+    /** The container run id of this member's planner on this project (one at a time — start() locks). */
+    private function tenantPlanId(): string { return 'planner-m' . (int) $this->memberId; }
 
     /**
      * jail-run.sh path when the workspace is a jailable capricorn instance,
@@ -340,7 +348,7 @@ class PlanRunner {
             // (or plan-complete.md) is unpacked here, where the ingest below looks for it.
             $out = $ws . '/.aibuilder/tenant-plan.json';
             $runBlock = '{ rm -f ' . escapeshellarg($out) . ' && '
-                      . TenantBuilder::tenantCommand($this->tenant, 'plan', 'plan-' . date('Ymd-His'), $this->requestFile(), $out,
+                      . TenantBuilder::tenantCommand($this->tenant, 'plan', $this->tenantPlanId(), $this->requestFile(), $out,
                                                      ['member' => $this->memberId] + ($this->agent !== '' ? ['agent' => $this->agent] : []))
                       . ' > /dev/null; php -r ' . escapeshellarg('require ' . var_export($mainProjectRoot . '/vendor/autoload.php', true)
                       . '; exit(\\app\\TenantBuilder::unpackPlan(' . var_export($out, true) . ', ' . var_export($ws . '/.aibuilder', true)

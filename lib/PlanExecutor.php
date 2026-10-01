@@ -637,12 +637,6 @@ class PlanExecutor {
     /** AgentTask's id for a subtask: [a-z0-9-], unique per plan and task. */
     private function tenantTaskId($t): string { return 'plan-' . $this->planId . '-task-' . (int) $t->id; }
 
-    private function tenantDir(): string {
-        $d = $this->instanceDir . '/.aibuilder/tenant';
-        if (!is_dir($d) && !@mkdir($d, 0775, true)) throw new \RuntimeException("could not create {$d}");
-        return $d;
-    }
-
     /**
      * The subtask runs IN THE APP'S CONTAINER: its own agent on its own credential, in a
      * worktree on task/<id> there (AgentTask), inside a detached session here whose ending
@@ -655,15 +649,12 @@ class PlanExecutor {
         }
         $id = $this->tenantTaskId($t);
         try {
-            $dir = $this->tenantDir();
-            $brief = "{$dir}/{$id}.md";
-            $out = "{$dir}/{$id}.json";
-            @unlink($out);
-            file_put_contents($brief, $this->buildTaskBrief($t, []));
             $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int) $t->id, $this->slug);
             // The app's agent the plan runs on (the builder's picker); '' = the app's default.
             $agent = PlanIngestor::agentName($t->agent ?? '');
-            TenantBuilder::launch($this->tenant, $session, TenantBuilder::tenantCommand($this->tenant, 'task', $id, $brief, $out, $agent !== '' ? ['agent' => $agent] : []), $id);
+            // In a tmux session IN the container (TenantRun): it outlives anything on core.
+            TenantRun::start($this->tenant, $session, $id,
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=1800', $this->buildTaskBrief($t, []));
             $this->logEvent($t, 'info', "Build agent started in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
         } catch (\Throwable $e) {
             $this->fail($t, 'could not start the task in the container: ' . $e->getMessage());
@@ -681,11 +672,18 @@ class PlanExecutor {
     /** The container task's session ended: read its result, then merge (publish) or discard. */
     private function reapTenantTask($t): void {
         $id = $this->tenantTaskId($t);
-        $out = $this->instanceDir . '/.aibuilder/tenant/' . $id . '.json';
-        $r = TenantBuilder::result($out);
+        try {
+            $run = TenantRun::result($this->tenant, $id);
+        } catch (\RuntimeException $e) {
+            $this->logEvent($t, 'error', 'could not read the result from the container (will retry): ' . $e->getMessage());
+            return;
+        }
+        $r = $run['result'] ?? null;
         if ($r === null) {
             TenantHost::discardTask($this->tenant, $id);
-            $this->finish($t, 'failed', "the container task ended without a result ({$out}) — the session died or could not reach the container");
+            $why = $run === null ? 'its session ended before it finished (stopped, or the container restarted)'
+                 : "it exited {$run['exit']} without an answer" . ($run['log'] !== '' ? ': ' . mb_substr($run['log'], -800) : '');
+            $this->finish($t, 'failed', "the container task gave no result — {$why}");
             return;
         }
         $tail = trim((string) ($r['output'] ?? ''));
@@ -1419,7 +1417,12 @@ MD;
     }
 
     private function sessionAlive(string $session): bool {
-        return $session !== '' && TmuxManager::exists($session);
+        if ($session === '') return false;
+        if (!$this->tenant) return TmuxManager::exists($session);
+        // In the container (TenantRun). Unreachable is not "ended": reaping now would discard
+        // a live task's work, so it counts as alive until the container answers.
+        try { return TenantRun::alive($this->tenant, $session); }
+        catch (\RuntimeException $e) { error_log('ERROR PlanExecutor: ' . $e->getMessage()); return true; }
     }
 
     /**

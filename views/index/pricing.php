@@ -140,7 +140,7 @@
 
         <div class="form-card" style="text-align:center; max-width:460px; margin-left:auto; margin-right:auto;">
             <h2>Ready when you are</h2>
-            <a href="/auth/register" style="display:inline-block;margin-top:0.5rem;padding:0.95rem 1.7rem;border-radius:11px;background:#3b76f0;color:#fff;font-weight:700;text-decoration:none;box-shadow:0 8px 26px rgba(59,118,240,0.4);">Start your first project &mdash; free</a>
+            <a href="https://start.tiknix.com/start" style="display:inline-block;margin-top:0.5rem;padding:0.95rem 1.7rem;border-radius:11px;background:#3b76f0;color:#fff;font-weight:700;text-decoration:none;box-shadow:0 8px 26px rgba(59,118,240,0.4);">Start your first project &mdash; free</a>
             <p class="note">Your first builder instance is free &mdash; no card to start, and the code you build is yours to keep.</p>
         </div>
 

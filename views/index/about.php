@@ -121,7 +121,7 @@ $jsonld = [
     <p>Matt will show you a real project being built. Thirty minutes, no slides.</p>
     <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin-top:30px;">
       <a class="btn btn-primary" href="/contact">Reach out</a>
-      <a class="btn btn-ghost" href="/auth/register">Start your first project — free</a>
+      <a class="btn btn-ghost" href="https://start.tiknix.com/start">Start your first project — free</a>
     </div>
   </section>
 

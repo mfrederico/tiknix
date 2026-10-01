@@ -110,7 +110,7 @@ $logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
         </div>
 
         <div class="cta">
-            <a class="btn primary" href="/auth/register">Start free</a>
+            <a class="btn primary" href="https://start.tiknix.com/start">Start free</a>
             <a class="btn ghost" href="/index/pricing">See pricing</a>
         </div>
         <div class="mini-links">

@@ -244,7 +244,7 @@ $jsonld = [
     <h2 style="margin-top:14px;">Build the thing that fits.</h2>
     <p>Your first project is free. No card, no lease, and the code is yours from the first commit.</p>
     <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin-top:30px;">
-      <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
+      <a class="btn btn-primary" href="https://start.tiknix.com/start">Start your first project — free</a>
       <a class="btn btn-ghost" href="/#how">See how it works</a>
     </div>
   </section>

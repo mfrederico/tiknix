@@ -34,7 +34,7 @@ $hasShowcase = !empty($showcase);
       <h1 style="margin-top:26px;">Describe it. We build it.<br><span style="color:var(--accent2);">You own it.</span></h1>
       <p class="sub">A real app with its own database, sign-in and connections to Stripe, Shopify and more — running in a week. Publish it to your GitHub, host it anywhere, leave anytime.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
+        <a class="btn btn-primary" href="https://start.tiknix.com/start">Start your first project — free</a>
         <a class="btn btn-ghost" href="#how">See how it works
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
         </a>
@@ -289,7 +289,7 @@ $hasShowcase = !empty($showcase);
           <div><b>Real software, running</b>Their own database and logins, live &mdash; not a prototype.</div>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:22px;">
-          <a class="btn btn-primary" href="/auth/register" style="padding:11px 20px; font-size:15px;">Start yours free</a>
+          <a class="btn btn-primary" href="https://start.tiknix.com/start" style="padding:11px 20px; font-size:15px;">Start yours free</a>
           <a class="btn btn-ghost" href="/stories" style="padding:11px 20px; font-size:15px;">Read their stories</a>
         </div>
       </div>
@@ -378,7 +378,7 @@ $hasShowcase = !empty($showcase);
       </div>
     </div>
     <div style="display:flex; flex-direction:column; align-items:center; gap:12px; margin-top:34px;">
-      <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
+      <a class="btn btn-primary" href="https://start.tiknix.com/start">Start your first project — free</a>
       <div style="font-size:14px; color:var(--dim);">No card to start. Add a card when you add your second project.</div>
     </div>
   </section>
@@ -405,7 +405,7 @@ $hasShowcase = !empty($showcase);
     <h2 style="margin-top:14px;">Bring the idea. Leave with real software.</h2>
     <p>A running, custom app &mdash; yours to own, every line.</p>
     <div class="hero-cta" style="justify-content:center; margin-top:32px;">
-      <a class="btn btn-primary" href="/auth/register">Start your first project — free</a>
+      <a class="btn btn-primary" href="https://start.tiknix.com/start">Start your first project — free</a>
       <a class="btn btn-ghost" href="/contact">Reach out — I'd love to show you</a>
     </div>
   </section>

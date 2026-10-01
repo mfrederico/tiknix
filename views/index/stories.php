@@ -90,7 +90,7 @@ $names = array_map(fn($s) => $s['founder'], $stories);
     <h2 style="margin-top:14px;">Start with what you have. Ship real software.</h2>
     <p>A plan, an idea or a client&rsquo;s catalogue is enough. Your first project is free.</p>
     <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin-top:30px;">
-      <a class="btn btn-primary" href="/auth/register">Start yours free</a>
+      <a class="btn btn-primary" href="https://start.tiknix.com/start">Start yours free</a>
       <a class="btn btn-ghost" href="/pricing">See pricing</a>
     </div>
   </section>

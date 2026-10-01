@@ -533,6 +533,29 @@ $hasShowcase = !empty($showcase);
     </div>
   </section>
 
+  <!-- SUPPORT: real people, in things that exist (Support desk, the agent's escalation, a walkthrough) -->
+  <section class="band" id="support">
+    <div class="band-head">
+      <div class="eyebrow">On your side</div>
+      <h2>Real people, on your quest to software sovereignty</h2>
+      <p>Owning your software doesn&rsquo;t mean being alone with it. Ask us anything &mdash; <a href="/about">Matt or Fabian</a> answers.</p>
+    </div>
+    <div class="grid-3">
+      <div class="card pcard">
+        <h3 style="font-size:20px;">Ask from inside your project</h3>
+        <p>Support is in every project&rsquo;s menu. A person answers, in your Communications and by email.</p>
+      </div>
+      <div class="card pcard">
+        <h3 style="font-size:20px;">Your AI agent can call us</h3>
+        <p>When your project&rsquo;s agent hits a problem on our side, it asks you, then sends us what it tried and saw.</p>
+      </div>
+      <div class="card pcard">
+        <h3 style="font-size:20px;">See it first</h3>
+        <p>Thirty minutes watching a real project get built. <a href="/contact">Reach out</a> &mdash; no slides.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- FAQ -->
   <section class="band">
     <h2 style="font-size:clamp(26px,3vw,34px); text-align:center; margin-bottom:44px;">The questions everyone asks first</h2>

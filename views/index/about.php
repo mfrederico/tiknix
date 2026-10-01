@@ -1,6 +1,6 @@
 <?php
 /**
- * Who we are — the company behind tiknix and the person who builds it. Standalone like
+ * Who we are — the company behind tiknix and the people who build it and answer you. Standalone like
  * the landing (no app layout), rendered by About::index() on the flagship host only.
  * Carries Person + Organization JSON-LD so "who makes tiknix" resolves here.
  */
@@ -19,6 +19,8 @@ $jsonld = [
          'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about', 'image' => $site . '/img/matt.jpg',
          'sameAs' => ['https://linkedin.com/in/mattfred', 'https://github.com/mfrederico', 'https://clicksimple.com/about.php'],
          'knowsAbout' => ['AI agent orchestration', 'Model Context Protocol', 'Ecommerce systems', 'Warehouse management software', 'Laravel', 'PHP', 'Shopify', 'Stripe']],
+        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'worksFor' => ['@id' => $site . '/#org'],
+         'url' => $site . '/about', 'sameAs' => ['https://www.linkedin.com/in/fabianduarteb/']],
         ['@type' => 'AboutPage', '@id' => $site . '/about#page', 'url' => $site . '/about', 'name' => 'Who we are', 'mainEntity' => ['@id' => $site . '/#org']],
         ['@type' => 'BreadcrumbList', 'itemListElement' => [['@type' => 'ListItem', 'position' => 1, 'name' => 'tiknix', 'item' => $site . '/'], ['@type' => 'ListItem', 'position' => 2, 'name' => 'Who we are', 'item' => $site . '/about']]],
     ],
@@ -58,7 +60,16 @@ $jsonld = [
         .facts .card{ padding:22px; }
         .facts .n{ font-family:var(--serif); font-size:30px; font-weight:600; color:var(--text); }
         .facts .k{ font-size:13px; color:var(--dim); margin-top:6px; line-height:1.4; }
-        @media (max-width:640px){ .person{ grid-template-columns:1fr; } .person .photo{ max-width:140px; } }
+        .person + .person{ margin-top:56px; }
+        .person h2 + p{ margin-top:14px; }
+        .person .initials{ width:100%; aspect-ratio:1; border-radius:16px; border:1px solid var(--line2); display:flex; align-items:center;
+                           justify-content:center; font-family:var(--serif); font-size:52px; color:var(--accent2); background:rgba(59,118,240,0.08); }
+        .quest{ max-width:920px; margin:0 auto; }
+        .quest h2{ font-size:clamp(28px,3.2vw,40px); text-align:center; }
+        .quest > p{ text-align:center; color:var(--soft); font-size:clamp(16px,1.5vw,18px); max-width:640px; margin:16px auto 0; }
+        .quest .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin-top:34px; }
+        .quest .card{ padding:24px; } .quest .card h3{ font-size:20px; margin-bottom:8px; } .quest .card p{ color:var(--soft); line-height:1.6; margin:0; }
+        @media (max-width:640px){ .person{ grid-template-columns:1fr; } .person .photo, .person .initials{ max-width:140px; } }
     </style>
     <script type="application/ld+json"><?= json_encode($jsonld, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?></script>
 </head>
@@ -106,11 +117,39 @@ $jsonld = [
       </div>
     </div>
 
+    <div class="person">
+      <div class="initials" aria-hidden="true">FD</div>
+      <div>
+        <h2>Fabian Duarte</h2>
+        <p>
+          Fabian builds client apps on tiknix every day &mdash; the same Builder, the same agents, the same
+          projects you get. When something in it gets in a builder&rsquo;s way, he&rsquo;s the first to know.
+        </p>
+        <div class="links">
+          <a href="https://www.linkedin.com/in/fabianduarteb/" rel="noopener">LinkedIn</a>
+        </div>
+      </div>
+    </div>
+
     <div class="facts">
       <div class="card"><div class="n">2019</div><div class="k">ClickSimple starts building for clients</div></div>
       <div class="card"><div class="n">31M+</div><div class="k">packages shipped through CannonWMS</div></div>
       <div class="card"><div class="n">~48k</div><div class="k">lines in the tiknix engine, and growing</div></div>
-      <div class="card"><div class="n">1</div><div class="k">person to reach when something breaks</div></div>
+      <div class="card"><div class="n">2</div><div class="k">people who answer when something breaks</div></div>
+    </div>
+  </section>
+
+  <!-- SUPPORT: what being on your side means, in things that exist -->
+  <section class="band" id="support">
+    <div class="quest">
+      <div class="eyebrow" style="text-align:center;">On your side</div>
+      <h2 style="margin-top:12px;">We&rsquo;re with you on the way to software sovereignty</h2>
+      <p>Owning your software shouldn&rsquo;t mean being on your own with it. Ask us anything, any time &mdash; a person answers.</p>
+      <div class="grid">
+        <div class="card"><h3>Ask from inside your project</h3><p>Support is in every project&rsquo;s menu. Write to us and Matt or Fabian answers &mdash; in your Communications and by email.</p></div>
+        <div class="card"><h3>Your AI agent can call us too</h3><p>When your project&rsquo;s agent hits a problem on our side, it asks you first, then sends us what it tried and what it saw &mdash; so you never have to explain it twice.</p></div>
+        <div class="card"><h3>See it before you start</h3><p>Thirty minutes with Matt, watching a real project get built. No slides, no sales script.</p></div>
+      </div>
     </div>
   </section>
 

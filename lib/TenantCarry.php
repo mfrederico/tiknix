@@ -156,11 +156,20 @@ PHP;
         try {
             @mkdir("{$stage}/root/database", 0755, true);
             // The app's databases (security.db included) and the connections store: consistent backups.
-            $dbs = glob("{$dir}/database/*.db") ?: [];
+            // Every *.db under database/, at any depth: partsdna keeps one per Shopify store in
+            // database/stores/ (StoreDb), and the top-level glob this was carried neither of them
+            // (found after its cutover, 2026-10-01).
+            $dbs = [];
+            $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator("{$dir}/database", \FilesystemIterator::SKIP_DOTS));
+            foreach ($it as $f) if ($f->isFile() && str_ends_with($f->getFilename(), '.db')) $dbs[] = substr($f->getPathname(), strlen("{$dir}/database/"));
+            sort($dbs);
             if (!$dbs) throw new \RuntimeException("{$dir}/database has no *.db — nothing to carry is not a success");
-            foreach ($dbs as $db) { self::backup($db, "{$stage}/root/database/" . basename($db)); }
+            foreach ($dbs as $rel) {
+                @mkdir(dirname("{$stage}/root/database/{$rel}"), 0755, true);
+                self::backup("{$dir}/database/{$rel}", "{$stage}/root/database/{$rel}");
+            }
             if (is_file("{$dir}/data/connections.db")) { @mkdir("{$stage}/root/data", 0755, true); self::backup("{$dir}/data/connections.db", "{$stage}/root/data/connections.db"); }
-            $steps[] = 'databases: ' . implode(', ', array_map('basename', $dbs)) . (is_file("{$dir}/data/connections.db") ? ', data/connections.db' : '');
+            $steps[] = 'databases: ' . implode(', ', $dbs) . (is_file("{$dir}/data/connections.db") ? ', data/connections.db' : '');
 
             if (!$databasesOnly) {
                 // Not data/pipe-runs: past runs' scratch sandboxes (the runs themselves are rows).

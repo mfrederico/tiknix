@@ -37,6 +37,10 @@
  *                                                         databases once more, base URL HOST, HOST
  *                                                         (and aliases) proxied to the tenant
  *   php scripts/tenant.php --rollback=SLUG                the clone serves the domain(s) again
+ *
+ * Lending Tiknix's own connections (lib/TenantShare.php):
+ *   php scripts/tenant.php --share=SLUG --connector=mailgun [--bind=core.mail]   into the app's store, bound
+ *   php scripts/tenant.php --unshare=SLUG --connector=mailgun                    the shared rows and bindings go
  */
 
 if (php_sapi_name() !== 'cli') { http_response_code(403); exit("cli only\n"); }
@@ -51,7 +55,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'connector:', 'bind:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -171,6 +175,18 @@ if (isset($o['carry'])) {
     done(TenantHost::provision($i, $d, TenantCarry::BRANCH), 'provision');
     done(TenantCarry::data($i, $d), 'data');
     done(TenantHost::publish($i, $d), 'publish');
+    exit(0);
+}
+if (isset($o['share']) || isset($o['unshare'])) {
+    // --share=SLUG --connector=mailgun [--bind=core.mail,…]  |  --unshare=SLUG --connector=mailgun
+    $type = (string) ($o['connector'] ?? '');
+    if ($type === '') { fwrite(STDERR, "ERROR --connector=TYPE is required (shareable: " . implode(', ', array_keys(\app\TenantShare::SHAREABLE)) . ")\n"); exit(2); }
+    if (isset($o['share'])) {
+        $bind = array_values(array_filter(array_map('trim', explode(',', (string) ($o['bind'] ?? '')))));
+        done(\app\TenantShare::share(inst($o['share']), $type, $bind), "share {$type} with {$o['share']}");
+    } else {
+        done(\app\TenantShare::unshare(inst($o['unshare']), $type), "unshare {$type} from {$o['unshare']}");
+    }
     exit(0);
 }
 if (isset($o['carry-data'])) { done(TenantCarry::data(inst($o['carry-data']), domain($o)), 'data'); exit(0); }

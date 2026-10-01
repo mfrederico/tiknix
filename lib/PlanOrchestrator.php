@@ -89,11 +89,10 @@ class PlanOrchestrator {
     ): bool {
         $planId = (int) $planId;
         if ($planId <= 0) { self::fail('orchestrator launch without a plan id', []); return false; }
-        // A project in its own container builds there (PlanExecutor's tenant route); only a
-        // carried host clone that no longer serves the site is refused.
+        // A project builds in its own container (PlanExecutor); anything else has nowhere to build.
         if (!TenantBuilder::bySlug($slug)) {
-            try { InstanceRepo::assertNotCarried($slug); }
-            catch (\RuntimeException $e) { self::fail($e->getMessage(), ['plan' => $planId, 'slug' => $slug]); return false; }
+            self::fail("{$slug} is not running in its own container — plans build only in a project's container", ['plan' => $planId, 'slug' => $slug]);
+            return false;
         }
 
         // Already building — under either name. Checked before the scoped name is

@@ -22,12 +22,9 @@
 #   APP_BASEURL     https://<the app's public host>
 #   APP_NAME        the app's display name
 #   APP_KEY         64 hex chars, [security] app_key
-#   APP_BRANCH      the origin branch the app starts from: main for a new app, app for one
-#                   carried from a host clone (its main is still the host clone's)
-#   APP_HEARTBEAT   on | off — the minute crontab; off for a carried app until its cutover
 #   APP_CRONTAB     the app user's crontab while the heartbeat is on (TenantHost::CRONTAB, the one definition)
 set -euo pipefail
-for v in APP_SLUG CORE_HOST CORE_IP DEPLOY_TOKEN BUILDER_PUBKEY APP_BASEURL APP_NAME APP_KEY APP_BRANCH APP_HEARTBEAT APP_CRONTAB; do
+for v in APP_SLUG CORE_HOST CORE_IP DEPLOY_TOKEN BUILDER_PUBKEY APP_BASEURL APP_NAME APP_KEY APP_CRONTAB; do
   if [ -z "${!v:-}" ]; then echo "provision: $v is not set" >&2; exit 2; fi
 done
 export DEBIAN_FRONTEND=noninteractive
@@ -64,8 +61,7 @@ chmod 600 /home/app/.git-credentials /home/app/.config/composer/auth.json
 
 say "the app"
 if [ ! -d "$APP_DIR/.git" ]; then
-  sudo -u app git clone -q -b "$APP_BRANCH" "https://$CORE_HOST/git/$APP_SLUG.git" "$APP_DIR"
-  [ "$APP_BRANCH" = main ] || sudo -u app git -C "$APP_DIR" branch -m "$APP_BRANCH" main
+  sudo -u app git clone -q -b main "https://$CORE_HOST/git/$APP_SLUG.git" "$APP_DIR"
   # From here the tenant's repository is the app's home: the builder works in it over SSH and
   # the control plane reads from it. It never pulls "builds" from core, so no origin.
   sudo -u app git -C "$APP_DIR" remote rename origin seed
@@ -82,17 +78,12 @@ if [ ! -f conf/config.ini ]; then
     -e "s#^debug = .*#debug = false#" \
     conf/config.ini
 fi
-if [ "${APP_CARRIED:-0}" != 1 ]; then
-  # A new app starts on the NEWEST runtime release, not the one the template's lock happens to
-  # pin (it pinned alpha.27 while apps ran alpha.65: no terminal bridge, no sign-in hand-off).
-  # The app's own update, from core's git endpoint; it commits the bump on main.
-  say "the runtime: the newest release"
-  sudo -u app php scripts/clitool.php --update 2>&1 | tail -2
-fi
-if [ "${APP_CARRIED:-0}" = 1 ]; then
-  # Carried: its data arrives next (TenantCarry::data), and the build runs against that.
-  echo "seeds: deferred to the carried data"
-elif ! sudo -u app php scripts/clitool.php --build > /tmp/tiknix-build.log 2>&1; then
+# A new app starts on the NEWEST runtime release, not the one the template's lock happens to
+# pin (it pinned alpha.27 while apps ran alpha.65: no terminal bridge, no sign-in hand-off).
+# The app's own update, from core's git endpoint; it commits the bump on main.
+say "the runtime: the newest release"
+sudo -u app php scripts/clitool.php --update 2>&1 | tail -2
+if ! sudo -u app php scripts/clitool.php --build > /tmp/tiknix-build.log 2>&1; then
   grep -E "error|FAILED" /tmp/tiknix-build.log | tail -20 >&2
   echo "provision: clitool --build failed (full output in the tenant's /tmp/tiknix-build.log)" >&2
   exit 4
@@ -120,15 +111,8 @@ fi
 say "the app's heartbeat: its own pipelines and durable objects, every minute"
 # The app schedules itself (scripts/pipeline-cron.php ticks it in-process); nothing on core has
 # to know its files. Written whole, so re-running this script never duplicates the line.
-# APP_HEARTBEAT=off for an app carried from a host clone: a staging copy must not run the live
-# app's schedule (its sends, its polls) while the clone still does — cutover switches it on.
-if [ "$APP_HEARTBEAT" = on ]; then
-  printf '%s' "$APP_CRONTAB" | crontab -u app -
-  crontab -l -u app | sed 's/^/crontab: /'
-else
-  crontab -r -u app 2>/dev/null || true
-  echo "heartbeat: off (switched on at cutover)"
-fi
+printf '%s' "$APP_CRONTAB" | crontab -u app -
+crontab -l -u app | sed 's/^/crontab: /'
 
 say "the app's agent: bin/claude and its engines"
 sudo -u app HOME=/home/app php -r 'require "/srv/app/vendor/autoload.php"; $r = \app\ClaudeBinary::link("/srv/app", realpath("/home/app/.local/bin/claude")); echo "bin/claude: {$r["action"]} — {$r["detail"]}\n";'

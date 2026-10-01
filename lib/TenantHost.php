@@ -181,8 +181,8 @@ class TenantHost {
      * a process list.
      */
     /**
-     * The app's crontab while its heartbeat is on — the ONE definition: tenant/app.sh gets it as
-     * APP_CRONTAB, heartbeat() writes it at cutover. Its schedule (pipeline-cron) and its builder
+     * The app's crontab — the ONE definition: tenant/app.sh writes it (APP_CRONTAB), terminal()
+     * refreshes it. Its schedule (pipeline-cron) and its builder
      * terminal (bin/terminal-bridge.php, kept running: flock admits one, the next minute restarts it).
      */
     const CRONTAB = "* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1\n"
@@ -221,18 +221,7 @@ class TenantHost {
         return ['ok' => true, 'steps' => $steps];
     }
 
-    /**
-     * The minute heartbeat (tenant/app.sh). A new app gets it here; an app carried from a host
-     * clone gets it at cutover — a staging copy must not run the live app's schedule.
-     */
-    public static function heartbeat(object $inst, bool $on): array {
-        [$c, $o] = $on
-            ? self::ssh($inst, 'root', 'crontab -u app - && crontab -l -u app', self::CRONTAB, 60)
-            : self::ssh($inst, 'root', 'crontab -r -u app 2>/dev/null; crontab -l -u app 2>&1 | head -1', null, 60);
-        return ['ok' => $c === 0, 'step' => 'heartbeat ' . ($on ? 'on' : 'off') . ': ' . trim($o), 'error' => $c === 0 ? '' : "crontab in {$inst->ctIp} failed: {$o}"];
-    }
-
-    public static function provision(object $inst, string $domain, string $branch = 'main'): array {
+    public static function provision(object $inst, string $domain): array {
         if ((int) $inst->ctVmid <= 0) return ['ok' => false, 'error' => "{$inst->slug} has no container (create it first)"];
         $core = (string) parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST);
         if ($core === '') return ['ok' => false, 'error' => '[app] baseurl in conf/config.ini names no host — the tenant cannot find core'];
@@ -247,13 +236,7 @@ class TenantHost {
             'APP_BASEURL'    => 'https://' . $domain,
             'APP_NAME'       => (string) ($inst->displayName ?: $inst->slug),
             'APP_KEY'        => bin2hex(random_bytes(32)),
-            'APP_BRANCH'     => $branch,
-            'APP_HEARTBEAT'  => $branch === 'main' ? 'on' : 'off',
             'APP_CRONTAB'    => self::CRONTAB,
-            // A carried app's seeds are written for ITS data, which TenantCarry::data() copies in
-            // next and builds against; on the template's empty database they can only fail
-            // (Serenity's migrations of its own live rows).
-            'APP_CARRIED'    => $branch === TenantCarry::BRANCH ? '1' : '0',
         ];
         $script = '';
         foreach ($env as $k => $v) $script .= "export {$k}=" . escapeshellarg($v) . "\n";
@@ -264,10 +247,9 @@ class TenantHost {
         if (!$t['ok']) return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => 'the app is up, its builder terminal is not: ' . $t['error']];
         $out .= "\nterminal: " . implode('; ', $t['steps'] ?? []);
 
-        // A NEW app (a carried one brings its own members): its seeded ROOT becomes the person
-        // who created the project — installed, no /install wizard; they come in from Tiknix
+        // Its seeded ROOT becomes the person who created the project — installed, no /install wizard; they come in from Tiknix
         // (the project's pages in the nav sign them in, /projects/open → the app's /auth/launch).
-        if ($branch === 'main') {
+        {
             $owner = Bean::load('member', (int) $inst->memberId);
             $email = strtolower(trim((string) $owner->email));
             if (!$owner->id || !filter_var($email, FILTER_VALIDATE_EMAIL)) {

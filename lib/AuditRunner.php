@@ -32,6 +32,7 @@ class AuditRunner {
     private int $memberId;
     private int $memberLevel;
     private string $sessionName;
+    private int $planId = 0;
 
     public function __construct(string $slug, string $instanceDir, string $baseUrl, int $memberId, int $memberLevel = 50) {
         $this->slug        = $slug;
@@ -85,6 +86,7 @@ class AuditRunner {
         @unlink($this->manifestFile());
         @unlink($this->logFile());
 
+        $this->planId = $planId;
         file_put_contents($this->requestFile(), $this->buildAuditRequest($creds, $checklist, $planId));
 
         $scriptFile = $ab . '/run-audit.sh';
@@ -99,7 +101,72 @@ class AuditRunner {
         return $this->sessionName;
     }
 
-    public function stop(): bool { return TmuxManager::kill($this->sessionName); }
+    public function stop(): bool {
+        // A container's audit runs in its container; the session here only waits for it.
+        if ($t = TenantBuilder::bySlug($this->slug)) TenantRun::kill($t, 'tiknix-run-' . $this->tenantAuditId());
+        return TmuxManager::kill($this->sessionName);
+    }
+
+    /** The container run id of this member's audit on this project. */
+    private function tenantAuditId(): string { return 'audit-m' . (int) $this->memberId; }
+
+    /**
+     * The audit of a project in its own container: its agent runs THERE (clitool --agent-audit,
+     * the app's own credential), driving a browser that runs HERE — a Playwright MCP server on
+     * 127.0.0.1:<port>, allowed to open only the project's own public origin, reached from the
+     * container through an SSH tunnel (TenantHost::tunnelCommand). Both live for this audit only.
+     * Screenshots land in the workspace (the server's --output-dir); unpackAudit() delivers the
+     * manifest where plan-audit.php reads it and copies the screenshots into the app.
+     */
+    private function tenantRunnerScript(object $tenant): string {
+        $ws = $this->instanceDir;
+        $npx = trim((string) shell_exec('bash -lc ' . escapeshellarg('command -v npx') . ' 2>/dev/null'));
+        if ($npx === '') throw new \RuntimeException("npx is not on this machine's PATH — the audit's browser (Playwright MCP) needs Node here");
+        $port = 0;
+        for ($i = 0; $i < 50 && $port === 0; $i++) {
+            $p = random_int(28000, 28999);
+            $sock = @fsockopen('127.0.0.1', $p, $e, $es, 0.2);
+            if ($sock) { fclose($sock); continue; }
+            $port = $p;
+        }
+        if ($port === 0) throw new \RuntimeException('no free local port for the audit browser');
+        $u = parse_url($this->baseUrl);
+        $origin = ($u['scheme'] ?? 'https') . '://' . ($u['host'] ?? '');
+        $browser = escapeshellarg($npx) . ' -y @playwright/mcp@0.0.83 --headless --isolated --browser chromium --host 127.0.0.1 --port ' . $port
+                 . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}") . ' --allowed-origins ' . escapeshellarg($origin)
+                 . ' --output-dir ' . escapeshellarg($ws);
+        $out = $ws . '/.aibuilder/audit-result.json';
+        $audit = TenantBuilder::tenantCommand($tenant, 'audit', $this->tenantAuditId(), $this->requestFile(), $out,
+                                              ['browser-mcp' => "http://127.0.0.1:{$port}/mcp"]);
+        $unpack = 'php -r ' . escapeshellarg('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true)
+                . '; exit(\app\TenantBuilder::unpackAudit(' . var_export($out, true) . ', ' . var_export($this->manifestFile(), true)
+                . ', ' . var_export($this->slug, true) . ', ' . var_export($ws, true) . ', ' . (int) $this->planId . '));');
+        $log = escapeshellarg($this->logFile());
+        $blog = escapeshellarg($ws . '/.aibuilder/audit-browser.log');
+        $path = escapeshellarg(dirname($npx));
+        $tunnel = TenantHost::tunnelCommand($tenant, $port);
+        return <<<BASH
+#!/bin/bash
+# Tiknix audit — {$this->slug}, in its container; the browser runs here (lib/AuditRunner.php)
+export PATH={$path}:\$PATH
+echo "[audit] instance {$this->slug} starting \$(date); browser on 127.0.0.1:{$port} for {$origin}" | tee {$log}
+rm -f {$this->escaped($out)}
+{$browser} > {$blog} 2>&1 &
+BROWSER=\$!
+TUNNEL=
+trap 'kill \$BROWSER \$TUNNEL 2>/dev/null' EXIT
+for i in \$(seq 1 90); do curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp && break; sleep 1; done
+curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp || { echo "[audit] ERROR the browser did not start (see {$ws}/.aibuilder/audit-browser.log)" | tee -a {$log}; exit 1; }
+{$tunnel} &
+TUNNEL=\$!
+sleep 3
+kill -0 \$TUNNEL 2>/dev/null || { echo "[audit] ERROR the tunnel into the container did not open" | tee -a {$log}; exit 1; }
+{ {$audit} > /dev/null; {$unpack}; } 2>&1 | tee -a {$log}
+echo "[audit] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$log}
+BASH;
+    }
+
+    private function escaped(string $s): string { return escapeshellarg($s); }
 
     /** jail-run.sh path when the workspace is a jailable capricorn instance, else ''. */
     private function jailFor(): string {
@@ -123,6 +190,7 @@ class AuditRunner {
     /** The detached runner: headless `claude -p` pointed at the brief file. Model = sonnet
      *  (the QA work is procedural browser driving, not deep reasoning). */
     private function buildRunnerScript(): string {
+        if ($t = TenantBuilder::bySlug($this->slug)) return $this->tenantRunnerScript($t);
         $ws  = $this->instanceDir;
         $log = $this->logFile();
         $shortPrompt = 'Read the file .aibuilder/audit-request.md and follow its instructions exactly. '
@@ -242,13 +310,11 @@ the whole audit for that.
 
 ## Screenshot output convention (IMPORTANT)
 
-Save every screenshot INTO the instance under:
-
-`public/uploads/audit/{$planId}/<level>-<short-label>.png`
-
-e.g. `public/uploads/audit/{$planId}/admin-leads-page.png`. These become web-accessible at
-`{$base}/uploads/audit/{$planId}/...` and are attached to the report. Create the directory
-if needed (`mkdir -p public/uploads/audit/{$planId}`). Use lowercase, hyphenated labels.
+Take every screenshot with `browser_take_screenshot`, passing
+`filename: "public/uploads/audit/{$planId}/<level>-<short-label>.png"`
+(e.g. `public/uploads/audit/{$planId}/admin-leads-page.png`). The browser saves it there itself —
+do not create directories or files for screenshots. They become web-accessible at
+`{$base}/uploads/audit/{$planId}/...` and are attached to the report. Use lowercase, hyphenated labels.
 
 ## Deliverable — write `.aibuilder/audit.json` (and nothing else)
 

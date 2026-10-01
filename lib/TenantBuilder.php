@@ -148,6 +148,39 @@ class TenantBuilder {
         return $d;
     }
 
+    /**
+     * The audit's answer (tenant.php --audit --out) into the workspace: the manifest where
+     * plan-audit.php reads it, and the screenshots — which the control plane's browser saved
+     * HERE (its --output-dir is the workspace) — copied into the app, where the report links them
+     * (public/uploads/audit/<plan>/). Returns the exit code (0 = a manifest was delivered).
+     */
+    public static function unpackAudit(string $outFile, string $manifestFile, string $slug, string $ws, int $planId): int {
+        $r = self::result($outFile);
+        if ($r === null) { echo "[audit] ERROR no answer from the container ({$outFile})\n"; return 1; }
+        if (empty($r['ok']) || (string) ($r['manifest'] ?? '') === '') {
+            echo '[audit] ERROR the audit gave no manifest: ' . ($r['error'] ?? '?') . "\n";
+            if (!empty($r['output'])) echo "[audit] agent output (tail):\n" . mb_substr((string) $r['output'], -1500) . "\n";
+            return 1;
+        }
+        if (file_put_contents($manifestFile . '.tmp', (string) $r['manifest']) === false || !rename($manifestFile . '.tmp', $manifestFile)) {
+            echo "[audit] ERROR could not write {$manifestFile}\n"; return 1;
+        }
+        echo '[audit] manifest delivered' . (!empty($r['credential']) ? ' (ran on ' . $r['credential'] . ')' : '') . "\n";
+        $shots = "{$ws}/public/uploads/audit/{$planId}";
+        if (!is_dir($shots)) { echo "[audit] no screenshots were taken\n"; return 0; }
+        $inst = self::bySlug($slug);
+        $tar = tempnam(sys_get_temp_dir(), 'audit-shots-');
+        exec('tar czf ' . escapeshellarg($tar) . ' -C ' . escapeshellarg("{$ws}/public/uploads/audit") . ' ' . escapeshellarg((string) $planId) . ' 2>&1', $o, $c);
+        [$sc, $so] = $c === 0 && $inst
+            ? TenantHost::ssh($inst, 'app', 'mkdir -p /srv/app/public/uploads/audit && tar xzf - -C /srv/app/public/uploads/audit', null, 120, $tar)
+            : [1, $c !== 0 ? implode(' ', $o) : "no project {$slug}"];
+        @unlink($tar);
+        $n = count(glob("{$shots}/*.png") ?: []);
+        echo $sc === 0 ? "[audit] {$n} screenshot(s) copied into the app (public/uploads/audit/{$planId})\n"
+                       : "[audit] ERROR the screenshots stay on core ({$shots}); copying them into the app failed: " . trim((string) $so) . "\n";
+        return 0;
+    }
+
     /** The JSON a finished session wrote, or null when there is none (the session died first). */
     public static function result(string $outFile): ?array {
         if (!is_file($outFile)) return null;

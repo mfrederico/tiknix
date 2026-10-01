@@ -57,7 +57,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'connector:', 'bind:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'audit:', 'browser-mcp:', 'connector:', 'bind:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -109,7 +109,7 @@ if (isset($o['clitool'])) {
     echo $out;
     exit($code);
 }
-if (isset($o['task']) || isset($o['plan']) || isset($o['merge']) || isset($o['discard'])) {
+if (isset($o['task']) || isset($o['plan']) || isset($o['audit']) || isset($o['merge']) || isset($o['discard'])) {
     $id = (string) ($o['id'] ?? '');
     if ($id === '') { fwrite(STDERR, "ERROR --id=TASK is required\n"); exit(2); }
     if (isset($o['task'])) {
@@ -118,6 +118,9 @@ if (isset($o['task']) || isset($o['plan']) || isset($o['merge']) || isset($o['di
     } elseif (isset($o['plan'])) {
         $request = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
         $r = TenantHost::plan(inst($o['plan']), $id, $request, (int) ($o['member'] ?? 0), 1800, (string) ($o['agent'] ?? ''));
+    } elseif (isset($o['audit'])) {
+        $brief = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
+        $r = TenantHost::audit(inst($o['audit']), $id, $brief, (string) ($o['browser-mcp'] ?? ''), 1800, (string) ($o['agent'] ?? ''));
     } elseif (isset($o['merge'])) {
         $r = TenantHost::mergeTask(inst($o['merge']), $id);
     } else {

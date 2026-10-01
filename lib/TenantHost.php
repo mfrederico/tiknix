@@ -367,6 +367,29 @@ class TenantHost {
         return $done['result'];
     }
 
+    /**
+     * The builder's audit in the tenant (clitool --agent-audit): its agent drives the control
+     * plane's browser at $browserMcp (a tunnel into the container — tunnelCommand()); the manifest
+     * comes back in 'manifest'.
+     */
+    public static function audit(object $inst, string $id, string $brief, string $browserMcp, int $timeout = 1800, string $agent = ''): array {
+        return self::runAndWait($inst, $id, '--agent-audit=' . escapeshellarg($id) . ' --browser-mcp=' . escapeshellarg($browserMcp)
+            . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $brief, $timeout);
+    }
+
+    /**
+     * The command that makes 127.0.0.1:$port inside the container reach 127.0.0.1:$port HERE, for
+     * as long as it runs (ssh -R; nothing is exposed beyond this machine and that container).
+     */
+    public static function tunnelCommand(object $inst, int $port): string {
+        $ip = (string) $inst->ctIp;
+        if (!preg_match('/^10\.10\.10\.\d{1,3}$/', $ip)) throw new \RuntimeException("{$inst->slug} has no tenant address ({$ip})");
+        if ($port < 1024 || $port > 65535) throw new \InvalidArgumentException("not a port: {$port}");
+        return implode(' ', array_map('escapeshellarg', ['ssh', '-i', self::KEY, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
+            '-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=' . self::KNOWN, '-o', 'LogLevel=ERROR',
+            '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=30', '-N', '-R', "127.0.0.1:{$port}:127.0.0.1:{$port}", "app@{$ip}"]));
+    }
+
     public static function mergeTask(object $inst, string $id): array   { return self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600); }
     public static function discardTask(object $inst, string $id): array { return self::taskCall($inst, '--agent-discard=' . escapeshellarg($id), null, 120); }
 

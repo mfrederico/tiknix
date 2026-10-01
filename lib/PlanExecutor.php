@@ -3,13 +3,11 @@
  * PlanExecutor — runs an approved plan as parallel, dependency-ordered build
  * agents in git worktrees of ONE instance.
  *
- * Model (verified against capricorn/bin/jail-run.sh):
- *   - Each subtask gets a git worktree at <instance>/.aibuilder/wt/task-<id> on a
- *     branch plan-<planId>/task-<id>, cut from the instance's current base branch.
- *   - A jailed `claude -p` agent runs with cwd = that worktree (via jail-run.sh's
- *     JAIL_CMD), so the shared .git is reachable and edits are isolated per task.
- *   - When an agent exits, the orchestrator commits whatever it changed, merges
- *     the branch back into the base branch, and unlocks dependents.
+ * Model — everything runs IN THE PROJECT'S CONTAINER (the control plane only orchestrates):
+ *   - Each subtask runs `clitool --agent-task` there in its own tmux session (TenantRun): the app's
+ *     own agent and credential, in a worktree on task/plan-<planId>-task-<id> (AgentTask).
+ *   - When the run ends, the orchestrator reads its result from the container and merges the
+ *     branch into the app there (merge is publish; the app's seeds run), or discards it.
  *   - A task is "ready" only when every task in its depends_on is merged, so
  *     dependents build on top of their prerequisites' merged code. Independent
  *     tasks (empty depends_on) run in parallel, capped at MAX_CONCURRENT.
@@ -45,7 +43,10 @@ class PlanExecutor {
         $this->memberLevel = $memberLevel;
         // The registry is core's database; the orchestrator's ambient one is the task board.
         $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ?', [$slug]));
-        if ($inst && $inst->id && \Model_Instance::tenantRow($inst)) $this->tenant = $inst;
+        if (!$inst || !$inst->id || !\Model_Instance::tenantRow($inst)) {
+            throw new \RuntimeException("{$slug} is not running in its own container — plans build only in a project's container");
+        }
+        $this->tenant = $inst;
     }
 
     /** Per-task budget when there is not enough history to measure one. */
@@ -283,353 +284,36 @@ class PlanExecutor {
      * so a resumed orchestrator never double-applies. Returns human-readable log lines.
      */
     public function finalize(): array {
-        // In a container every merge already ran the app's seeds (AgentTask::merge → --build).
-        if ($this->tenant) return ['seeds: run in the container at each merge (' . $this->slug . ')'];
-        return self::applySeeds($this->instanceDir, $this->instanceDir . '/.aibuilder/plan-' . $this->planId . '-seeds.txt');
+        // Every merge already ran the app's seeds in its container (AgentTask::merge → --build).
+        return ['seeds: run in the container at each merge (' . $this->slug . ')'];
     }
 
     /**
-     * Take the plan's rollback checkpoint before its first task runs — once per plan.
+     * Take the plan's rollback checkpoint before its first task runs — once per plan: a git tag
+     * on the app's HEAD in its container plus a consistent copy of each of its databases
+     * (checkpointTenant). A relaunch — a retry, a resumed build — keeps the first one: that IS the
+     * before-the-plan point. A plan that cannot be checkpointed does not run (ok=false, logged).
      *
-     * The Task Board has no Checkpoint button (that is Advanced Builder's), and the first
-     * dogfood plan on start.tiknix ran eight tasks with nothing but the provisioning
-     * baseline to fall back on. A plan run now checkpoints itself, in the one place every
-     * launch path (board, Advanced Builder, planner auto-build, audit relaunch) comes
-     * through: the orchestrator, outside any jail. The same snapshot-instance.sh the
-     * Checkpoint button runs makes the tag, `checkpoint-plan-<id>`, and the plan records
-     * it (`plan_checkpoint`, which the Advanced Builder plan panel shows). A relaunch —
-     * a retry, a resumed build — keeps the first tag: that IS the before-the-plan point.
-     *
-     * A plan that cannot be checkpointed does not run: the caller gets ok=false and the
-     * reason, logged on the plan. Rolling back is the promise a plan run makes.
-     *
-     * @param string|null $script the snapshot script, for tests; null = [ops] bin_dir's
      * @return array{ok:bool, tag:string, message:string}
      */
-    public function checkpointBeforeRun(?string $script = null): array {
+    public function checkpointBeforeRun(): array {
         $plan = $this->plan();
         if (!$plan->id) return ['ok' => false, 'tag' => '', 'message' => "no plan #{$this->planId} in the tasks db"];
         $have = trim((string) ($plan->planCheckpoint ?? ''));
         if ($have !== '') return ['ok' => true, 'tag' => $have, 'message' => "checkpoint {$have} already taken for this plan — kept"];
-        if ($this->tenant) return $this->checkpointTenant($plan);
-
-        $real = realpath($this->instanceDir) ?: $this->instanceDir;
-        $base = basename($real);                              // <slug>.<app>
-        $app  = strpos($base, '.') !== false ? substr($base, strpos($base, '.') + 1) : '';
-        if ($app === '') {
-            $msg = "cannot checkpoint: {$real} is not an <slug>.<app> instance directory";
-            $this->logEvent($plan, 'error', $msg);
-            return ['ok' => false, 'tag' => '', 'message' => $msg];
-        }
-
-        $cfg    = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
-        $prefix = $script === null ? trim((string) ($cfg['ops']['sudo_prefix'] ?? '')) : '';
-        $script = $script ?? rtrim((string) ($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin'), '/') . '/snapshot-instance.sh';
-        if (!is_file($script)) {
-            $msg = "cannot checkpoint: snapshot script missing at {$script} (conf/aibuilder.ini [ops] bin_dir)";
-            $this->logEvent($plan, 'error', $msg);
-            return ['ok' => false, 'tag' => '', 'message' => $msg];
-        }
-
-        $label = 'plan-' . $this->planId;
-        $cmd = ($prefix !== '' ? $prefix . ' ' : '') . escapeshellarg($script) . ' ' . escapeshellarg($app)
-             . ' ' . escapeshellarg($this->slug) . ' ' . escapeshellarg($label);
-        $out = []; $code = 0;
-        exec($cmd . ' 2>&1', $out, $code);
-        $tag = '';
-        foreach (array_reverse(array_filter(array_map('trim', $out))) as $line) {
-            if (preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $line)) { $tag = $line; break; }
-        }
-        if ($code !== 0 || $tag === '') {
-            $said = trim(implode(' ', array_slice(array_filter(array_map('trim', $out)), -3)));
-            $msg = "cannot checkpoint: snapshot-instance.sh exited {$code}" . ($said !== '' ? " — {$said}" : '') . '; the plan will not run without a rollback point';
-            $this->logEvent($plan, 'error', $msg);
-            return ['ok' => false, 'tag' => '', 'message' => $msg];
-        }
-
-        $plan->planCheckpoint = $tag;
-        $plan->updatedAt      = date('Y-m-d H:i:s');
-        Bean::store($plan);
-        $this->logEvent($plan, 'info', "Checkpoint {$tag} taken before the first task — roll the project back to it if this plan goes wrong");
-        return ['ok' => true, 'tag' => $tag, 'message' => "checkpoint {$tag} taken"];
-    }
-
-    /**
-     * Apply merged seeds to a LIVE instance: the one post-merge step, shared by a finished
-     * plan (finalize) and a standalone task merged from the board (Workbench::localMergeBack).
-     * Until 2026-09-25 only a plan ran it, so a standalone task's seeds reached the live
-     * instance only by hand — task #10 on start.tiknix merged green with its tables unbuilt.
-     *
-     * @param string $instanceDir the live instance root
-     * @param string $ledgerFile  where the once-only database/seeds/ applications are recorded
-     * @return string[] human-readable log lines; a FAILED line is the caller's to surface
-     */
-    public static function applySeeds(string $instanceDir, string $ledgerFile): array {
-        $instanceDir = rtrim($instanceDir, '/');
-        $log = [];
-        $seedDir    = $instanceDir . '/database/seeds';
-        $applied    = is_file($ledgerFile)
-            ? array_values(array_filter(array_map('trim', explode("\n", (string)file_get_contents($ledgerFile)))))
-            : [];
-        $appliedSet = array_flip($applied);
-
-        if (is_dir($seedDir)) {
-            $seeds = glob($seedDir . '/*.php') ?: [];
-            sort($seeds);
-            foreach ($seeds as $seed) {
-                $name = basename($seed);
-                if (isset($appliedSet[$name])) { $log[] = "seed {$name}: already applied"; continue; }
-                [$code, $out] = self::runIn($instanceDir, 'php ' . escapeshellarg($seed));
-                $tail = trim(implode(' ', array_map('trim', array_slice($out, -2))));
-                $log[] = "seed {$name}: " . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
-                if ($code === 0) { $applied[] = $name; }
-            }
-            if (!is_dir(dirname($ledgerFile))) @mkdir(dirname($ledgerFile), 0775, true);
-            @file_put_contents($ledgerFile, implode("\n", array_values(array_unique($applied))) . "\n");
-        } else {
-            $log[] = 'no database/seeds/ — nothing to apply';
-        }
-
-        // The schema seeds (services/Schema/Seeds/NN_*.php — the convention the guidelines
-        // mandate) are idempotent by contract and run as a set through the schema builder,
-        // so no ledger: every merge that ships one gets it applied to the live instance here.
-        // Until 2026-09-25 only database/seeds/ was applied, and a plan whose permission
-        // seed lived in services/Schema/Seeds/ merged green with its routes still admin-only.
-        if (is_dir($instanceDir . '/services/Schema/Seeds') && is_file($instanceDir . '/scripts/clitool.php')) {
-            [$code, $out] = self::runIn($instanceDir, 'php scripts/clitool.php --build');
-            $tail = trim(implode(' ', array_map('trim', array_slice($out, -2))));
-            $log[] = 'schema seeds (clitool --build): ' . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
-        }
-
-        // Every enabled plugin's own seeds, on the live database. A plan that enables a
-        // plugin does so inside a task worktree: the flag arrives through the merged lock
-        // file, the seeds ran against the worktree's copy — Serenity came up with profiles
-        // on and their permission rows and label setting missing (2026-09-26).
-        if (is_file($instanceDir . '/concepts.lock') && is_file($instanceDir . '/scripts/clitool.php')) {
-            [$code, $out] = self::runIn($instanceDir, 'php scripts/clitool.php --concept-seeds=all');
-            $tail = trim(implode(' ', array_map('trim', array_slice($out, -2))));
-            $log[] = 'plugin seeds (clitool --concept-seeds=all): ' . ($code === 0 ? 'ok' : 'FAILED') . ($tail !== '' ? ' — ' . $tail : '');
-        }
-
-        // Rebuild the permission cache so any new authcontrol rows take effect at once
-        // (a direct DB insert doesn't bump the APCu cache version on its own).
-        $rc = $instanceDir . '/scripts/resetcache.php';
-        if (is_file($rc)) {
-            [$code] = self::runIn($instanceDir, 'php ' . escapeshellarg($rc));
-            $log[] = 'resetcache: ' . ($code === 0 ? 'ok' : 'FAILED');
-        }
-        return $log;
+        return $this->checkpointTenant($plan);
     }
 
     // ---- task lifecycle ----------------------------------------------------
 
-    /** Create the worktree + brief and spawn the jailed agent. */
+    /** Start the subtask in the project's container. */
     private function launchTask($t): bool {
-        if ($this->tenant) return $this->launchTenantTask($t);
-        $base   = $this->baseBranch();
-        $branch = 'plan-' . $this->planId . '/task-' . (int)$t->id;
-        $wtRel  = '.aibuilder/wt/task-' . (int)$t->id;
-        $wtAbs  = $this->instanceDir . '/' . $wtRel;
-
-        // Fresh worktree cut from the ORIGIN's current base (which now includes merged deps),
-        // after the live tree's own commits (a checkpoint) have reached the origin — a task
-        // that started from a base missing them would merge back onto history the site
-        // never had. The worktree lives in the live tree's .aibuilder/ (what the jail binds)
-        // but belongs to the origin (InstanceRepo, §13 C1).
-        $sync = InstanceRepo::syncLive($this->instanceDir);
-        if ($sync['status'] === 'failed') { $this->fail($t, 'live tree and origin out of step: ' . $sync['out']); return false; }
-        try {
-            InstanceRepo::removeWorktree($wtAbs, true, $branch);   // a leftover from an earlier attempt
-        } catch (\Throwable $e) {
-            $this->fail($t, 'worktree add failed: ' . $e->getMessage()); return false;
-        }
-        try {
-            InstanceRepo::addWorktree($this->slug, $wtAbs, $branch, $base);
-        } catch (\Throwable $e) {
-            $this->fail($t, 'worktree add failed: ' . $e->getMessage()); return false;
-        }
-
-        // Adopted concepts land in the worktree BEFORE the agent starts, so the task is to
-        // adapt code that is there rather than to write it. Before the brief, because the
-        // brief describes what was installed.
-        $adopted = $this->installAdopted($t, $wtAbs);
-        if ($adopted === null) {               // already failed, with the reason
-            $this->cleanupWorktree($wtRel, $branch, false);
-            return false;
-        }
-
-        // An INSTALL task has no agent: the concepts just copied in ARE the work. It is left
-        // 'running' with no session, which is exactly what reapTask() looks for — so the
-        // install is committed and merged by the same code, on the same terms, as any task.
-        // That is the point of doing it here: a button that wrote into the live tree would
-        // leave files no worktree can see, because every worktree is cut from the COMMITTED base.
-        if ((string) $t->taskType === 'install') {
-            $ok = $this->finishInstallTask($t, $wtAbs, $branch, $adopted);
-            if (!$ok) $this->cleanupWorktree($wtRel, $branch, false);
-            return $ok;
-        }
-
-        // Brief + MCP config live under the worktree's .aibuilder (gitignored, not committed).
-        @mkdir($wtAbs . '/.aibuilder', 0775, true);
-        file_put_contents($wtAbs . '/.aibuilder/task.md', $this->buildTaskBrief($t, $adopted));
-        if (is_file($this->instanceDir . '/.mcp.json')) {
-            @copy($this->instanceDir . '/.mcp.json', $wtAbs . '/.mcp.json');
-        }
-        // The worktree gets what a standalone task's workspace gets: its own vendor/ (own
-        // autoload map, the project's packages by symlink) and a conf/config.ini. Until
-        // 2026-09-25 a plan task had neither — git carries no vendor — so an agent that
-        // needed to run tests improvised: task 136 on Serenity symlinked the LIVE vendor
-        // into its worktree and ran composer dump-autoload through it, which rewrote the
-        // live autoloader with worktree paths and took the site down (500 on every page).
-        try {
-            $wm = new WorkspaceManager(null, $this->instanceDir);
-            $wm->setupVendor($wtAbs);
-            $wm->updateConfig($wtAbs, $this->instanceBaseUrl());
-        } catch (\Throwable $e) {
-            $this->fail($t, 'workspace preparation failed: ' . $e->getMessage());
-            $this->cleanupWorktree($wtRel, $branch, false);
-            return false;
-        }
-
-        // Resolve the per-task engine through the registry (§7). An engine with no proven
-        // headless launcher fails the task below rather than quietly running elsewhere.
-        // One resolution for engine and model (app\AgentContext). buildRunnerScript
-        // derives the credential store from the same engine value below.
-        try {
-            $ctx = AgentContext::for($this->planMemberId(), 'worker', $this->instanceDir,
-                                     (string) ($t->engine ?? ''), (string) ($t->model ?? ''));
-        } catch (\RuntimeException $e) {
-            // No owning member, or no credential store for them (AgentState): the task
-            // fails saying so. It never runs on the project's leftover credential.
-            $this->fail($t, $e->getMessage());
-            $this->cleanupWorktree($wtRel, $branch, false);
-            return false;
-        }
-        $reqEngine = $ctx->engine;
-        $prompt = 'Read .aibuilder/task.md and implement it fully in this working directory, following the codebase conventions. Do not touch files outside your task. When finished, stop.';
-        /* The model must come from the SAME engine this task runs on. A single model for
-           the whole plan was a claude-only assumption: the caller resolved claude's worker
-           tier and every task got it, so a task on another provider was launched asking for
-           a model that provider has never heard of. Per-task, via the registry, with the
-           task's own explicit model winning if the planner set one. */
-        $taskModel = $ctx->model;
-        $inner  = EngineRegistry::agentCommand($reqEngine, $prompt, $taskModel, ['stream' => true]);
-        $ranOn  = $reqEngine;
-        if ($inner === null) {
-            // FAIL, do not substitute. This used to run the task on claude and log a
-            // warning, which meant a plan could complete "successfully" with work done by
-            // a provider nobody chose — billed to a different account, and invisible unless
-            // somebody read the event log. A task that cannot run on its assigned engine is
-            // not a task that runs somewhere else; it is a task that cannot run.
-            $msg = "engine '{$reqEngine}' has no headless launcher, so this task cannot be built. "
-                 . "Assign an engine with headless_ready = true in [engine.{$reqEngine}], or move the task to one.";
-            $this->logEvent($t, 'error', $msg);
-            $t->status       = 'failed';
-            $t->errorMessage = $msg;
-            Bean::store($t);
-            return false;
-        }
-        // Absolute: the worktree is bound at its own path inside the jail (and is the cwd
-        // there), and the direct path starts wherever the shell happens to be.
-        $inner = 'cd ' . escapeshellarg($wtAbs) . ' && ' . $inner;
-
-        // Project-scoped: plan ids AND subtask ids both come from this instance's own
-        // workbench.db, so the unscoped name collided across every project at once.
-        $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int)$t->id, $this->slug);
-        try {
-            $script = $this->buildRunnerScript($inner, $wtAbs, $session, $ranOn);
-        } catch (\RuntimeException $e) {
-            // Credentials could not be resolved for this run (AgentState): the task fails
-            // with the reason, and nothing runs on a credential nobody chose.
-            $this->fail($t, $e->getMessage());
-            $this->cleanupWorktree($wtRel, $branch, false);
-            return false;
-        }
-        $scriptFile = $wtAbs . '/.aibuilder/run-agent.sh';
-        file_put_contents($scriptFile, $script);
-        @chmod($scriptFile, 0755);
-
-        if (!TmuxManager::create($session, $scriptFile, $this->instanceDir)) {
-            $this->fail($t, 'could not start agent session');
-            return false;
-        }
-
-        $t->status         = 'running';
-        $t->worktreeBranch = $branch;       // fluid
-        $t->agentSession   = $session;      // fluid
-        $t->startedAt      = date('Y-m-d H:i:s');
-        Bean::store($t);
-        $this->logEvent($t, 'info', 'Build agent started on ' . $branch . ' (engine ' . $ranOn . ')');
-        return true;
+        return $this->launchTenantTask($t);
     }
 
     /** Agent finished: commit its changes, merge back, unlock dependents. */
     private function reapTask($t): void {
-        if ($this->tenant) { $this->reapTenantTask($t); return; }
-        $base   = $this->baseBranch();
-        $branch = (string)$t->worktreeBranch;
-        $wtRel  = '.aibuilder/wt/task-' . (int)$t->id;
-
-        // Save what the agent actually DID before the worktree (and its log) are deleted.
-        //
-        // Every exit path below ends in cleanupWorktree(), which removes the directory
-        // holding .aibuilder/agent.log — so the evidence for a task disappeared at the
-        // exact moment the task finished. That hurt most for 'resolved': a task that
-        // changed nothing leaves no diff to inspect either, so all that survived was the
-        // words "nothing to change", with no way to tell a verification that genuinely
-        // passed from an agent that died on its first tool call. Both look identical.
-        //
-        // Called once here, at the top, because the agent has exited by the time we reap
-        // and every branch below leads to cleanup.
-        $this->captureAgentFindings($t, $wtRel);
-
-        // The force-tracked SQLite DB is runtime state, not a build artifact. Discard
-        // any writes the agent's app made to it in the worktree so plan branches never
-        // carry (and merge-clobber) the binary DB. Intentional DB / permission changes
-        // travel as database/seeds/*.php (committed code), applied to the LIVE instance
-        // in finalize(). Best-effort: only if a tracked DB was actually modified.
-        $modDb = $this->gitAt($wtRel, ['ls-files', '-m', '--', '*.db', '*.sqlite']);
-        $dbFiles = array_values(array_filter(array_map('trim', explode("\n", (string)$modDb['out']))));
-        if ($dbFiles !== []) {   // check out the exact files (a wildcard that matches none aborts the whole checkout)
-            $this->gitAt($wtRel, array_merge(['checkout', '--'], $dbFiles));
-        }
-
-        // Commit whatever the agent produced (don't rely on the agent committing).
-        $this->gitAt($wtRel, ['add', '-A']);
-        $staged = $this->gitAt($wtRel, ['diff', '--cached', '--quiet']);
-        if ($staged['ok']) {   // exit 0 = no staged changes
-            // RESOLVED, not failed. An empty diff means the goal of this subtask was
-            // already satisfied — a verification that passed, or work an earlier task
-            // had already landed. Calling that a failure made a checking task
-            // impossible to succeed at, and stalled everything downstream of it.
-            //
-            // It is NOT called success either: an agent that died early also produces
-            // no diff, and we cannot tell the two apart from here. So it gets its own
-            // terminal state and says exactly what is known — nothing changed — leaving
-            // the reader to judge whether that was the right outcome.
-            $this->finish($t, 'resolved', 'nothing to change — the task\'s goal was already satisfied, or the agent made no edits');
-            $this->cleanupWorktree($wtRel, $branch, false);
-            return;
-        }
-        $author = '-c user.email=aibuilder@tiknix.local -c user.name=aibuilder';
-        $msg = 'plan-' . $this->planId . ' task-' . (int)$t->id . ': ' . substr((string)$t->title, 0, 72);
-        $commit = $this->gitAtRaw($wtRel, $author . ' commit -q -m ' . escapeshellarg($msg));
-        if (!$commit['ok']) { $this->finish($t, 'failed', 'commit failed: ' . $commit['out']); $this->cleanupWorktree($wtRel, $branch, false); return; }
-
-        // Merge the branch into base (the main working tree is on base).
-        $merge = $this->mergeBack($branch, $base);
-        if ($merge['status'] === 'merged')        $this->finish($t, 'merged', '');
-        elseif ($merge['status'] === 'conflict')  $this->finish($t, 'conflict', $merge['out']);
-        else                                      $this->finish($t, 'failed', $merge['out']);
-
-        $this->cleanupWorktree($wtRel, $branch, $merge['status'] === 'merged');
-
-        // An install that is merged but not switched on is half a job from the owner's
-        // side ("what does switch on mean?"). The files are in the live tree now, so the
-        // enable runs here, in the project's own process — its DB, its config, its CLAUDE.md.
-        if ($merge['status'] === 'merged' && (string) $t->taskType === 'install') {
-            $this->enableAdopted($t);
-        }
+        $this->reapTenantTask($t);
     }
 
     /* ---- a project in its own container (TenantBuilder, RUNTIME-SPLIT-MAP.md step 5) ---------- */
@@ -654,7 +338,7 @@ class PlanExecutor {
             $agent = PlanIngestor::agentName($t->agent ?? '');
             // In a tmux session IN the container (TenantRun): it outlives anything on core.
             TenantRun::start($this->tenant, $session, $id,
-                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=1800', $this->buildTaskBrief($t, []));
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=1800', $this->buildTaskBrief($t));
             $this->logEvent($t, 'info', "Build agent started in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
         } catch (\Throwable $e) {
             $this->fail($t, 'could not start the task in the container: ' . $e->getMessage());
@@ -729,148 +413,6 @@ class PlanExecutor {
         Bean::store($plan);
         $this->logEvent($plan, 'info', "Checkpoint {$tag} taken in the container before the first task (git tag + backups/{$tag}/: " . trim($out) . ') — roll back to it if this plan goes wrong');
         return ['ok' => true, 'tag' => $tag, 'message' => "checkpoint {$tag} taken"];
-    }
-
-    /**
-     * Run a command in the project's live directory, as the project — with THIS process's
-     * TIKNIX_WORKBENCH_DB scrubbed. The orchestrator carries that variable and exec() hands
-     * its environment to the child; the project's bootstrap honours it, so anything run
-     * without the scrub writes to workbench.db instead of the app's database and reports
-     * success. It happened to the seed runner (rows the app never read) and to the plugin
-     * enable (flag in the wrong file: "enabled" on the task, "disabled" on the page).
-     *
-     * @return array{0:int,1:string[]} exit code, output lines
-     */
-    private function runInProject(string $command): array {
-        return self::runIn($this->instanceDir, $command);
-    }
-
-    /** The scrubbed runner behind runInProject(), for the static applySeeds() as well. */
-    private static function runIn(string $dir, string $command): array {
-        $out = []; $code = 0;
-        exec('env -u TIKNIX_WORKBENCH_DB sh -c ' . escapeshellarg('cd ' . escapeshellarg($dir) . ' && ' . $command) . ' 2>&1', $out, $code);
-        return [$code, $out];
-    }
-
-    /**
-     * Switch on every concept an install task adopted, requirements first (that is the
-     * order installPlan wrote them in). Runs the project's own clitool so the seeds hit the
-     * project's database and its guidance regenerates. A concept that will not enable is
-     * reported on the task and left installed — the code is merged and nothing is undone;
-     * the Plugins page shows the problem and has the Enable button.
-     */
-    private function enableAdopted($t): void {
-        $names = json_decode((string) ($t->adopts ?? ''), true);
-        if (!is_array($names) || !$names) return;
-        foreach ($names as $name) {
-            $name = (string) $name;
-            [$code, $out] = $this->runInProject('php scripts/clitool.php --concept-enable=' . escapeshellarg($name));
-            $said = trim(implode(' ', array_slice(array_filter(array_map('trim', $out)), -3)));
-            if ($code === 0) {
-                $this->logEvent($t, 'info', "Plugin '{$name}' switched on: {$said}");
-            } else {
-                $this->logEvent($t, 'warning', "Plugin '{$name}' is installed but could NOT be switched on (clitool --concept-enable exited {$code}): {$said}. It stays installed; enable it from Admin → Plugins once the problem is fixed.");
-            }
-        }
-    }
-
-    /**
-     * Persist an agent's own account of its work into tasklog, before the worktree goes.
-     *
-     * Two things are kept, and they answer different questions:
-     *
-     *   - the agent's CLOSING message — what it says it found. Useful, and not to be
-     *     taken on trust.
-     *   - a census of the tools it actually called — what it did, which is checkable.
-     *     A verification task claiming success with no browser calls in its census is
-     *     visibly a task that wrote about testing rather than testing, and that exact
-     *     failure has happened here: a subtask reported an end-to-end smoke test and had
-     *     committed a document instead.
-     *
-     * Best-effort by design: a missing or unreadable log must never change a task's
-     * outcome, so failures are noted in the row rather than raised.
-     */
-    private function captureAgentFindings($t, string $wtRel): void {
-        $log = $this->instanceDir . '/' . $wtRel . '/.aibuilder/agent.log';
-        if (!is_file($log)) return;
-
-        $fh = @fopen($log, 'r');
-        if (!$fh) { $this->logEvent($t, 'warning', 'Agent findings: could not open ' . basename($log)); return; }
-
-        $texts = [];       // rolling tail of assistant prose; only the last few are kept
-        $tools = [];       // tool name => call count
-        $lines = 0;
-        while (($line = fgets($fh)) !== false) {
-            $lines++;
-            $line = ltrim($line);
-            if ($line === '' || $line[0] !== '{') continue;
-            $o = json_decode($line, true);
-            if (!is_array($o)) continue;
-            $msg = $o['message'] ?? null;
-            if (!is_array($msg) || ($msg['role'] ?? '') !== 'assistant') continue;
-            foreach ((array) ($msg['content'] ?? []) as $c) {
-                if (!is_array($c)) continue;
-                if (($c['type'] ?? '') === 'text' && trim((string) $c['text']) !== '') {
-                    $texts[] = trim((string) $c['text']);
-                    if (count($texts) > 4) array_shift($texts);   // bounded: logs reach megabytes
-                } elseif (($c['type'] ?? '') === 'tool_use' && ($c['name'] ?? '') !== '') {
-                    $name = (string) $c['name'];
-                    $tools[$name] = ($tools[$name] ?? 0) + 1;
-                }
-            }
-        }
-        fclose($fh);
-
-        if (!$texts && !$tools) {
-            // An agent that produced neither prose nor a tool call did essentially nothing.
-            // Worth recording as such, because it is indistinguishable from success once
-            // the worktree is gone.
-            $this->logEvent($t, 'warning', "Agent findings: the log held no assistant output and no tool calls ({$lines} line(s)) — the agent may have failed to start.");
-            return;
-        }
-
-        arsort($tools);
-        $census = [];
-        foreach (array_slice($tools, 0, 12, true) as $name => $n) $census[] = $name . ' x' . $n;
-
-        $out  = "Agent findings (kept before the worktree was removed)\n\n";
-        $out .= "What it did — " . array_sum($tools) . " tool call(s): " . (implode(', ', $census) ?: 'none') . "\n\n";
-        if ($texts) {
-            $out .= "What it said, closing:\n" . mb_substr(implode("\n\n", $texts), -3000);
-        }
-        $this->logEvent($t, 'info', $out);
-    }
-
-    /** Merge a task branch into base; abort cleanly on conflict. */
-    /**
-     * Merge the task branch on the ORIGIN (its merge worktree, under the instance lock), then
-     * bring the live tree level. The live tree is never the merge target any more (§13 C1);
-     * its expected churn — the force-tracked runtime database — cannot block a merge that
-     * does not happen there. A live tree that cannot take the sync is reported as a failure
-     * naming why: the merge is on the origin, and a re-run merges nothing new and syncs again.
-     */
-    private function mergeBack(string $branch, string $base): array {
-        try {
-            $m = InstanceRepo::merge($this->slug, $branch, 'merge ' . $branch);
-        } catch (\Throwable $e) {
-            return ['status' => 'failed', 'out' => $e->getMessage()];
-        }
-        if ($m['status'] !== 'merged') {
-            return ['status' => $m['status'], 'out' => trim($m['out']) . ($m['files'] ? ' — conflicting: ' . implode(', ', $m['files']) : '')];
-        }
-        $s = InstanceRepo::syncLive($this->instanceDir);
-        if ($s['status'] === 'failed') {
-            return ['status' => 'failed', 'out' => "merged on the origin ({$m['sha']}) but the live tree could not take it: {$s['out']}"];
-        }
-        return ['status' => 'merged', 'out' => ''];
-    }
-
-    private function cleanupWorktree(string $wtRel, string $branch, bool $dropBranch): void {
-        try {
-            InstanceRepo::removeWorktree($this->instanceDir . '/' . $wtRel, $dropBranch, $branch);
-        } catch (\Throwable $e) {
-            \Flight::get('log')?->warning('PlanExecutor: worktree cleanup failed', ['worktree' => $wtRel, 'err' => $e->getMessage()]);
-        }
     }
 
     // ---- readiness / status helpers ---------------------------------------
@@ -1021,8 +563,6 @@ class PlanExecutor {
             $this->logEvent($t, 'error', 'Auto-retry stopped — same failure repeated (' . $tri['class'] . '); correction did not resolve it');
             return false;
         }
-
-        $this->applyCorrection($tri['class']);
         $t->retryCount     = $retries + 1;
         $t->lastFailReason = mb_substr($note, 0, 1000);
         $t->status         = 'pending';   // orchestrator re-launches it next tick
@@ -1035,25 +575,10 @@ class PlanExecutor {
     /** Classify a failure reason → correction class + whether it's auto-retryable. */
     private function triage(string $note): array {
         $n = strtolower($note);
-        if (strpos($n, 'uncommitted edits') !== false)     return ['class' => 'dirty-tree', 'retryable' => true];
-        if (strpos($n, 'worktree add failed') !== false)   return ['class' => 'worktree',   'retryable' => true];
-        if (strpos($n, 'could not start agent') !== false) return ['class' => 'session',    'retryable' => true];
-        // Merge conflicts and code/logic failures are NOT mechanically correctable —
-        // they need a rebase or a correction agent (a follow-up), so let them fail.
+        // Starting a run in the container is mechanical; a fresh launch is the retry. Merge
+        // conflicts and code/logic failures are not — they need a rebase or a correction agent.
+        if (strpos($n, 'could not start the task in the container') !== false) return ['class' => 'session', 'retryable' => true];
         return ['class' => 'unknown', 'retryable' => false];
-    }
-
-    /** Apply the mechanical correction for a failure class before re-queueing. */
-    private function applyCorrection(string $class): void {
-        if ($class === 'dirty-tree') {
-            // Commit the instance's stray working-tree edits so the merge guard passes
-            // on the next attempt — exactly the "checkpoint, then re-run" the guard asks
-            // for. Fully recoverable via git history.
-            $this->git(['add', '-A']);
-            $this->git(['commit', '-m', 'checkpoint: auto-commit stray edits before plan retry']);
-        }
-        // 'worktree' / 'session': no correction needed — a fresh launch (new worktree /
-        // new tmux session) is itself the retry.
     }
 
     /**
@@ -1077,202 +602,12 @@ class PlanExecutor {
 
     // ---- agent invocation --------------------------------------------------
 
-    /**
-     * The jailed agent runner script (detached in tmux). $inner is the engine
-     * command already resolved through EngineRegistry (incl. `cd <wtRel> &&`) —
-     * see launchTask. The command uses stream-json (+ required --verbose) so each
-     * tool use / message is emitted as its own JSON line to agent.log as work
-     * happens; reapTask never parses this log (it merges on git diff), so that is
-     * display-only. bypassPermissions is explicit because JAIL_CMD replaces
-     * jail-run.sh's own permission wrapper.
-     */
-    /**
-     * @param string $engine  The engine this task ACTUALLY runs on ($ranOn in launchTask),
-     *                        after the headless-launcher fallback has been applied.
-     *
-     * Passed in rather than read from the instance's .aibuilder/engine file, which is the
-     * PROJECT's engine and says nothing about a task that overrides it. Reading the file
-     * here bound one provider's credential store while the agent talked to another, and
-     * left the jail to default the provider — so a task marked zai built on Anthropic and
-     * the log still said zai.
-     */
-    protected function buildRunnerScript(string $inner, string $wtAbs, string $session, string $engine): string {
-        $mainProjectRoot = dirname(__DIR__);
-        $log = $wtAbs . '/.aibuilder/agent.log';
-        $jail = $this->jailFor();
-
-        if ($jail !== '') {
-            // ENGINE selects the provider inside the jail. Without it the jail fell back to
-            // the project's engine file, so a task assigned another engine still built on
-            // whatever the project defaulted to.
-            //
-            // The jail's root is the WORKTREE, as it is for a standalone task: jail-run.sh
-            // recognises <project>/.aibuilder/wt/<task> and binds that read-write, the
-            // project's .git read-write, the project's vendor/ read-only — and nothing
-            // else of the project. Until 2026-09-25 this passed the instance directory, so
-            // a plan task's agent had the whole LIVE project read-write with the worktree
-            // as a mere subdirectory: task 136 on Serenity rewrote the live vendor's
-            // autoloader from inside its "jail" and took the site down.
-            $run = 'ENGINE=' . escapeshellarg($engine) . ' JAIL_CMD=' . escapeshellarg($inner) . ' ' . escapeshellarg($jail) . ' ' . escapeshellarg($wtAbs);
-        } else {
-            // Non-jailed (isolated clone): run inner directly, from the worktree.
-            $run = AgentContext::directEnvShell($engine, AgentState::resolve($this->planMemberId(), $engine, $this->instanceDir))
-                 . 'cd ' . escapeshellarg($wtAbs) . ' && ' . $inner;
-        }
-        $logArg = escapeshellarg($log);
-        // Credentials follow the PERSON who owns this plan, not the project — the build
-        // agents must run as the same account the planner did. See app\AgentState.
-        $agentStateArg = escapeshellarg(
-            AgentState::resolve($this->planMemberId(), $engine, $this->instanceDir)
-        );
-        return <<<BASH
-#!/bin/bash
-export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
-export TIKNIX_AGENT_STATE={$agentStateArg}
-export TIKNIX_PROJECT_ROOT="{$mainProjectRoot}"
-export TIKNIX_WORKSPACE="{$this->instanceDir}"
-export CLAUDE_CODE_MAX_OUTPUT_TOKENS=250000
-echo "[agent] {$session} start \$(date)" | tee {$logArg}
-{$run} 2>&1 | tee -a {$logArg}
-echo "[agent] {$session} exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
-BASH;
-    }
-
-    /**
-     * Copy every concept this task adopts into its worktree, from the catalog.
-     *
-     * This is how a plugin gets installed by a build: not by the agent (a worktree has no
-     * conf/broker.ini — it is gitignored — so it could not reach the catalog) and not by a
-     * web button writing into the live tree (every worktree is cut from the COMMITTED base,
-     * so an uncommitted install is invisible to every agent). The executor has the catalog
-     * and the worktree, and the install is committed and merged with the rest of the task.
-     *
-     * A concept already in the worktree — installed by an earlier, merged task — is left
-     * exactly as it is: it is this project's own code and may have been adapted.
-     *
-     * @return array<int,array{name:string,version:string,status:string,blurb:string,files:int}>|null
-     *         null when the task was failed (the reason is already recorded)
-     */
-    private function installAdopted($t, string $wtAbs): ?array {
-        $names = json_decode((string) ($t->adopts ?? ''), true);
-        if (!is_array($names) || !$names) return [];
-
-        try {
-            $catalog = $this->catalog();
-        } catch (ConceptException $e) {
-            $this->fail($t, 'cannot adopt ' . implode(', ', $names) . ': ' . $e->getMessage());
-            return null;
-        }
-
-        $out = [];
-        foreach ($names as $name) {
-            $name = (string) $name;
-            try {
-                if (is_dir("{$wtAbs}/" . Concepts::DIR . "/{$name}")) {
-                    $m = ConceptManifest::load("{$wtAbs}/" . Concepts::DIR . "/{$name}", $name);
-                    $out[] = ['name' => $name, 'version' => $m->version, 'status' => 'already in this project', 'blurb' => $m->blurb, 'files' => 0,
-                              'guidelines' => self::guidelinesOf($m->dir)];
-                    $this->logEvent($t, 'info', "Concept '{$name}' v{$m->version} is already in this project; left as it is.");
-                    continue;
-                }
-                $r = $catalog->install($name, $wtAbs);
-                $m = ConceptManifest::load($r['dir'], $name);
-                $out[] = ['name' => $name, 'version' => $r['version'], 'status' => 'installed from the catalog', 'blurb' => $m->blurb, 'files' => $r['files'],
-                          'guidelines' => self::guidelinesOf($r['dir'])];
-                $this->logEvent($t, 'info', "Adopted concept '{$name}' v{$r['version']} ({$r['files']} files) into the worktree.");
-            } catch (ConceptException $e) {
-                $this->fail($t, "could not adopt concept '{$name}': " . $e->getMessage());
-                return null;
-            }
-        }
-
-        // What each one requires must be there too — present already, or adopted alongside.
-        // Named here, because the agent would otherwise meet it as a fatal at enable time.
-        foreach ($out as $a) {
-            $m = ConceptManifest::load("{$wtAbs}/" . Concepts::DIR . "/{$a['name']}", $a['name']);
-            foreach ($m->requiresConcepts as $req) {
-                if (!is_dir("{$wtAbs}/" . Concepts::DIR . "/{$req}")) {
-                    $this->fail($t, "concept '{$a['name']}' requires concept '{$req}', which is neither in this project nor in this task's 'adopts'.");
-                    return null;
-                }
-            }
-        }
-        return $out;
-    }
-
-    /**
-     * Close out an install-only task: check what landed, then hand it to the reaper.
-     *
-     * The check is the static lint, nothing more. A concept's own tests are deliberately NOT
-     * run here: this process is the orchestrator, outside the jail every build agent runs
-     * in, and executing catalog code from it would give a published concept the builder's
-     * own privileges. Tests run where agents run.
-     */
-    private function finishInstallTask($t, string $wtAbs, string $branch, array $adopted): bool {
-        if (!$adopted) {
-            $this->fail($t, "this is an install task, but its 'adopts' list is empty — there is nothing to install.");
-            return false;
-        }
-        foreach ($adopted as $a) {
-            $errors = array_filter(ConceptLint::check("{$wtAbs}/" . Concepts::DIR . "/{$a['name']}"),
-                                   fn(array $f) => $f['severity'] === ConceptLint::ERROR);
-            if ($errors) {
-                $first = reset($errors);
-                $this->fail($t, "concept '{$a['name']}' did not pass the lint once installed (" . count($errors)
-                              . " error(s)); first: {$first['file']} — {$first['message']}");
-                return false;
-            }
-        }
-        $t->status         = 'running';
-        $t->worktreeBranch = $branch;
-        $t->agentSession   = '';                    // no agent: reaped on the next tick
-        $t->startedAt      = date('Y-m-d H:i:s');
-        Bean::store($t);
-        $this->logEvent($t, 'info', 'Install task: ' . implode(', ', array_map(fn($a) => "{$a['name']} v{$a['version']} ({$a['status']})", $adopted))
-                                   . ' — no agent; it will be committed and merged like any task.');
-        return true;
-    }
-
-    /** The catalog adopted concepts come from. Its own method so a test can supply one. */
-    protected function catalog(): ConceptCatalog {
-        return ConceptCatalog::forInstall();
-    }
-
-    /** What the agent is told about the concepts installed for it. */
-    /** The concept's own rules for agents (guidelines.md), or '' — the brief says which. */
-    private static function guidelinesOf(string $dir): string {
-        $f = rtrim($dir, '/') . '/' . \app\AgentGuidance::CONCEPT_FILE;
-        return is_file($f) ? trim((string) file_get_contents($f)) : '';
-    }
-
-    private function adoptedBrief(array $adopted): string {
-        if (!$adopted) return '';
-        $lines = [];
-        $rules = [];
-        foreach ($adopted as $a) {
-            $lines[] = "- **concepts/{$a['name']}/** v{$a['version']} ({$a['status']})" . ($a['blurb'] !== '' ? " — {$a['blurb']}" : '');
-            // The concept's own guidance, verbatim: the worker starts knowing its rules, not
-            // a pointer to a README it may or may not open.
-            $rules[] = "### Concept: {$a['name']} — how to use it\n\n"
-                     . (($a['guidelines'] ?? '') !== '' ? $a['guidelines'] : "_(this concept ships no guidelines.md; read its README.md before touching it)_");
-        }
-        return "\n## Adopted concepts — already installed for you, do not rewrite them\n"
-             . implode("\n", $lines) . "\n\n"
-             . "Each is a self-contained directory (`concept.json`, `lib/`, `controls/`, `views/`, `seeds/`, `tests/`, and a\n"
-             . "`README.md`). It was COPIED in and is this project's own code now: adapt it freely, and\n"
-             . "wire it into the rest of the app. Its classes are `app\\concepts\\<name>\\…`. Keep `concept.json` truthful\n"
-             . "as you change it (`requires.lib`, `uses.beans`, `provides`). You cannot switch it on from here — a concept\n"
-             . "is enabled after merge, on the Plugins page — so do not depend on its routes answering while you work;\n"
-             . "its own tests (`vendor/bin/phpunit concepts/<name>/tests`) are how you check it.\n\n"
-             . implode("\n\n", $rules) . "\n";
-    }
-
-    private function buildTaskBrief($t, array $adopted = []): string {
+    private function buildTaskBrief($t): string {
         $files = json_decode(((string)$t->relatedFiles) ?? '', true);
         $files = is_array($files) ? implode("\n", array_map(fn($f) => "- $f", $files)) : '';
         $title = (string)$t->title;
         $desc  = (string)$t->description;
-        $reuse = $this->reuseBrief($t) . $this->adoptedBrief($adopted);
+        $reuse = $this->reuseBrief($t);
         return <<<MD
 # Build task: {$title}
 
@@ -1348,124 +683,22 @@ MD;
     private function reuseBrief($t): string {
         $reuses = json_decode((string)$t->reuses, true);
         if (!is_array($reuses) || !$reuses) return '';
-        try {
-            $file = \app\Paths::runtime() . '/mcptools/Introspector.php';
-            if (is_file($file)) require_once $file;
-            $cls = 'app\\mcptools\\Introspector';
-            if (!class_exists($cls)) throw new \RuntimeException('mcptools/Introspector.php is missing from this project');
-            $intro = new $cls($this->instanceDir);
-        } catch (\Throwable $e) {
-            // The agent was told to EXTEND these; an empty brief would let it re-invent
-            // them. Say what is missing so the brief itself carries the instruction.
-            $this->logEvent($t, 'warning', 'Reuse brief unavailable: ' . $e->getMessage());
-            return "- **Reuse inventory unavailable** (" . $e->getMessage() . "). Before adding any controller, model or lib, call reuse_digest / describe yourself — the items this task must extend were: " . implode(', ', array_map('strval', $reuses)) . "\n";
-        }
-
-        $lines = [];
-        foreach ($reuses as $r) {
-            $r = trim((string)$r);
-            if ($r === '') continue;
-            // "kind/name" — honor the kind prefix so model/member doesn't also pull the Member controller.
-            $kind = ''; $name = $r;
-            if (strpos($r, '/') !== false) { [$kind, $name] = explode('/', $r, 2); $kind = strtolower(trim($kind)); }
-            try { $hits = $intro->describe($name); } catch (\Throwable $e) { $hits = []; }
-            $kindMap = ['controller' => 'controller', 'controllers' => 'controller', 'model' => 'model', 'models' => 'model', 'lib' => 'lib', 'libs' => 'lib', 'service' => 'lib'];
-            $want = $kindMap[$kind] ?? '';
-            if ($want !== '') $hits = array_values(array_filter($hits, fn($h) => ($h['kind'] ?? '') === $want));
-            if (!$hits) { $lines[] = "- **{$r}** — not found in the current codebase; verify it exists before assuming."; continue; }
-            foreach ($hits as $h) {
-                if (($h['kind'] ?? '') === 'controller') {
-                    $routes = array_map(fn($x) => $x['method'] . ($x['level'] !== null ? "[{$x['level']}]" : ''), $h['routes']);
-                    $lines[] = "- **controller/{$h['name']}** ({$h['path']}) — routes: " . implode(', ', array_slice($routes, 0, 16));
-                } elseif (($h['kind'] ?? '') === 'model') {
-                    $cols = array_column($h['columns'], 'name');
-                    $rel  = array_map(fn($x) => '→' . $x['belongsTo'], $h['relations']);
-                    $lines[] = "- **model/{$h['name']}** (table {$h['table']}) — cols: " . implode(', ', $cols) . ($rel ? '  rel: ' . implode(' ', $rel) : '');
-                } elseif (($h['kind'] ?? '') === 'lib') {
-                    $lines[] = "- **lib/{$h['name']}** ({$h['path']}) — methods: " . implode(', ', array_slice($h['methods'], 0, 16));
-                }
-            }
-        }
-        if (!$lines) return '';
-        return "\n## Reuse these — build on them, do not reinvent\n" . implode("\n", $lines) . "\n";
+        // The code is in the app's container, not here: the agent looks each one up with the app's
+        // own `describe` tool (its MCP server) rather than reading an inventory taken elsewhere.
+        $items = array_values(array_filter(array_map(fn($r) => trim((string) $r), $reuses)));
+        if (!$items) return '';
+        return "\n## Reuse these — build on them, do not reinvent\n" . implode("\n", array_map(fn($r) => "- **{$r}**", $items))
+             . "\n\nBefore writing code, call the `describe` tool (this app's MCP server) for each of these and extend them — do not add a new controller, model or lib where one of these fits.\n";
     }
 
     // ---- git plumbing ------------------------------------------------------
 
-    /** The origin's branch — what worktrees are cut from and merged into (instance/<slug>). */
-    private function baseBranch(): string {
-        return InstanceRepo::baseBranch($this->slug);
-    }
-
-    /** git -C <instance> <args…> (array form, auto-escaped). */
-    private function git(array $args): array {
-        return $this->gitRaw(implode(' ', array_map('escapeshellarg', $args)));
-    }
-    private function gitRaw(string $argStr): array {
-        $cmd = 'git -C ' . escapeshellarg($this->instanceDir) . ' ' . $argStr . ' 2>&1';
-        exec($cmd, $out, $code);
-        return ['ok' => $code === 0, 'out' => implode("\n", $out)];
-    }
-    /** git -C <instance>/<wtRel> — operate inside a worktree. */
-    private function gitAt(string $wtRel, array $args): array {
-        return $this->gitAtRaw($wtRel, implode(' ', array_map('escapeshellarg', $args)));
-    }
-    private function gitAtRaw(string $wtRel, string $argStr): array {
-        $cmd = 'git -C ' . escapeshellarg($this->instanceDir . '/' . $wtRel) . ' ' . $argStr . ' 2>&1';
-        exec($cmd, $out, $code);
-        return ['ok' => $code === 0, 'out' => implode("\n", $out)];
-    }
-
     private function sessionAlive(string $session): bool {
         if ($session === '') return false;
-        if (!$this->tenant) return TmuxManager::exists($session);
         // In the container (TenantRun). Unreachable is not "ended": reaping now would discard
         // a live task's work, so it counts as alive until the container answers.
         try { return TenantRun::alive($this->tenant, $session); }
         catch (\RuntimeException $e) { error_log('ERROR PlanExecutor: ' . $e->getMessage()); return true; }
     }
 
-    /**
-     * The member this plan belongs to — whose credentials its agents run with. A plan
-     * with no member is refused, not run as 0: AgentState::resolve(0) used to mean "the
-     * project's credential store", i.e. whichever account that folder happened to hold.
-     */
-    private function planMemberId(): int {
-        $plan = Bean::load('workbenchtask', $this->planId);
-        $id = (int) ($plan->memberId ?? 0);
-        if (!$plan->id || $id <= 0) {
-            throw new \RuntimeException("plan-{$this->planId}: no plan row or no member_id on it, so its agents have no account to run as.");
-        }
-        return $id;
-    }
-
-    /**
-     * The live project's [app] baseurl, for the worktree's own config. Required: a
-     * worktree whose config carries no address has agents guessing where hooks report.
-     */
-    private function instanceBaseUrl(): string {
-        $cfg = @parse_ini_file($this->instanceDir . '/conf/config.ini', true) ?: [];
-        $url = trim((string) ($cfg['app']['baseurl'] ?? ''));
-        if ($url === '') throw new \RuntimeException("{$this->instanceDir}/conf/config.ini has no [app] baseurl");
-        return $url;
-    }
-
-    /** jail-run.sh path when the instance is jailable, else '' (mirrors PlanRunner). */
-    protected function jailFor(): string {
-        // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
-        // is outside the boundary (is_file() would throw) and re-jailing is redundant. Direct.
-        // (IsolatedPool, not a bare open_basedir test: a CLI process started BY the pool — a
-        // pipeline worker fanning out child runs — has no open_basedir and still IS the pool.)
-        if (\app\IsolatedPool::inside($this->instanceDir)) return '';
-
-        $root = '/var/www/html/default';
-        $real = realpath($this->instanceDir) ?: $this->instanceDir;
-        if (strpos(basename($real), '.') === false) return '';
-        if (strpos($real, $root . '/') !== 0) return '';
-        if (!is_file("$real/public/index.php")) return '';
-        $cfg = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
-        $binDir = rtrim($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin', '/');
-        $script = "$binDir/jail-run.sh";
-        return is_file($script) ? $script : '';
-    }
 }

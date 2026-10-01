@@ -181,14 +181,54 @@ class TenantHost {
      * a process list.
      */
     /**
+     * The app's crontab while its heartbeat is on — the ONE definition: tenant/app.sh gets it as
+     * APP_CRONTAB, heartbeat() writes it at cutover. Its schedule (pipeline-cron) and its builder
+     * terminal (bin/terminal-bridge.php, kept running: flock admits one, the next minute restarts it).
+     */
+    const CRONTAB = "* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1\n"
+        . "* * * * * cd /srv/app && flock -n /tmp/aib-terminal.lock php vendor/tiknix/runtime/bin/terminal-bridge.php >> log/terminal-bridge.log 2>&1\n";
+
+    /**
+     * The app's builder terminal (runtime bin/terminal-bridge.php on <ip>:3990): its key — minted
+     * once, kept on the instance (instance.terminal_key; the builder signs the browser's token
+     * with it) and in the app (secure/terminal.key) — the crontab line that keeps it running when
+     * the heartbeat is on, and the bridge started now. A minted key restarts a running bridge,
+     * which read the old one; attached tabs drop and reconnect, the agents in tmux keep running.
+     */
+    public static function terminal(object $inst): array {
+        if ((string) $inst->ctIp === '') return ['ok' => false, 'error' => "{$inst->slug} has no container address"];
+        $steps = [];
+        [$c, $o] = self::ssh($inst, 'app', 'test -f /srv/app/vendor/tiknix/runtime/bin/terminal-bridge.php', null, 30);
+        if ($c !== 0) return ['ok' => false, 'error' => "{$inst->slug}'s runtime has no bin/terminal-bridge.php — update it first (tenant.php --clitool={$inst->slug} -- --update)"];
+
+        $key = (string) $inst->terminalKey;
+        $minted = strlen($key) < 64;
+        if ($minted) { $key = bin2hex(random_bytes(32)); $inst->terminalKey = $key; Bean::store($inst); }
+        [$c, $o] = self::ssh($inst, 'app', 'umask 077 && mkdir -p /srv/app/secure && cat > /srv/app/secure/terminal.key.new && mv /srv/app/secure/terminal.key.new /srv/app/secure/terminal.key', $key, 30);
+        if ($c !== 0) return ['ok' => false, 'error' => "could not write secure/terminal.key in {$inst->ctIp}: {$o}"];
+        $steps[] = $minted ? 'key minted and installed' : 'key installed (unchanged)';
+
+        [$c, $o] = self::ssh($inst, 'root', 'if crontab -l -u app 2>/dev/null | grep -q pipeline-cron; then crontab -u app - && echo on; else cat >/dev/null; echo off; fi', self::CRONTAB, 30);
+        if ($c !== 0) return ['ok' => false, 'error' => "crontab in {$inst->ctIp} failed: {$o}", 'steps' => $steps];
+        $steps[] = trim($o) === 'on' ? 'crontab: heartbeat + terminal' : 'crontab: heartbeat off, so the terminal is not kept running (cutover switches both on)';
+
+        $start = ($minted ? "pkill -f '^php vendor/tiknix/runtime/bin/terminal-bridge.php' ; sleep 1 ; " : '')
+            . "cd /srv/app && setsid -f sh -c 'flock -n /tmp/aib-terminal.lock php vendor/tiknix/runtime/bin/terminal-bridge.php >> log/terminal-bridge.log 2>&1' </dev/null >/dev/null 2>&1 ; "
+            . "for i in 1 2 3 4 5 6; do ss -ltn | grep -q ':3990 ' && { echo listening; exit 0; }; sleep 1; done; tail -3 log/terminal-bridge.log; exit 1";
+        [$c, $o] = self::ssh($inst, 'app', $start, null, 60);
+        if ($c !== 0) return ['ok' => false, 'error' => "the terminal bridge is not listening on {$inst->ctIp}:3990: " . trim($o), 'steps' => $steps];
+        $steps[] = "bridge listening on {$inst->ctIp}:3990";
+        return ['ok' => true, 'steps' => $steps];
+    }
+
+    /**
      * The minute heartbeat (tenant/app.sh). A new app gets it here; an app carried from a host
      * clone gets it at cutover — a staging copy must not run the live app's schedule.
      */
     public static function heartbeat(object $inst, bool $on): array {
-        $cmd = $on
-            ? "printf '%s\\n' '* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1' | crontab -u app - && crontab -l -u app"
-            : 'crontab -r -u app 2>/dev/null; crontab -l -u app 2>&1 | head -1';
-        [$c, $o] = self::ssh($inst, 'root', $cmd, null, 60);
+        [$c, $o] = $on
+            ? self::ssh($inst, 'root', 'crontab -u app - && crontab -l -u app', self::CRONTAB, 60)
+            : self::ssh($inst, 'root', 'crontab -r -u app 2>/dev/null; crontab -l -u app 2>&1 | head -1', null, 60);
         return ['ok' => $c === 0, 'step' => 'heartbeat ' . ($on ? 'on' : 'off') . ': ' . trim($o), 'error' => $c === 0 ? '' : "crontab in {$inst->ctIp} failed: {$o}"];
     }
 
@@ -209,6 +249,7 @@ class TenantHost {
             'APP_KEY'        => bin2hex(random_bytes(32)),
             'APP_BRANCH'     => $branch,
             'APP_HEARTBEAT'  => $branch === 'main' ? 'on' : 'off',
+            'APP_CRONTAB'    => self::CRONTAB,
             // A carried app's seeds are written for ITS data, which TenantCarry::data() copies in
             // next and builds against; on the template's empty database they can only fail
             // (Serenity's migrations of its own live rows).
@@ -218,8 +259,10 @@ class TenantHost {
         foreach ($env as $k => $v) $script .= "export {$k}=" . escapeshellarg($v) . "\n";
         $script .= (string) file_get_contents(self::APP_SH);
         [$code, $out] = self::ssh($inst, 'root', 'bash -s', $script, 1800);
-        return ['ok' => $code === 0, 'exit' => $code, 'output' => $out,
-                'error' => $code === 0 ? '' : "app.sh exited {$code} in {$inst->ctIp}"];
+        if ($code !== 0) return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => "app.sh exited {$code} in {$inst->ctIp}"];
+        $t = self::terminal($inst);
+        return ['ok' => $t['ok'], 'exit' => $code, 'output' => $out . "\nterminal: " . implode('; ', $t['steps'] ?? []),
+                'error' => $t['ok'] ? '' : 'the app is up, its builder terminal is not: ' . $t['error']];
     }
 
     /** Serve https://<domain> from the tenant (capricorn's proxy file; TLS per ProxmoxDeploy). */

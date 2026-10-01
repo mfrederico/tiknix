@@ -25,6 +25,8 @@
  *   php scripts/tenant.php --renew-certs                  renew custom domains' certificates due within
  *                                                         30 days (this machine's crontab, daily)
  *   php scripts/tenant.php --status=SLUG
+ *   php scripts/tenant.php --terminal=SLUG|all             the app's builder terminal (runtime bin/terminal-bridge.php):
+ *                                                         its key, its crontab line, the bridge started
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving
  *
  * Carrying a project that lives as a host clone of core (step 5; lib/TenantCarry.php):
@@ -55,7 +57,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'connector:', 'bind:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'connector:', 'bind:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -146,6 +148,20 @@ if (isset($o['domains'])) {
     echo "main site: {$i->ctDomain}\n";
     foreach (\app\TenantDomains::of($i) as $d) echo "own site:  {$d}\n";
     exit(0);
+}
+if (isset($o['terminal'])) {
+    // One app, or every app in a container: the same steps each (TenantHost::terminal).
+    $slugs = $o['terminal'] === 'all'
+        ? array_values(array_map(fn($b) => (string) $b->slug, \app\Bean::find('instance', "status = 'active' AND ct_ip IS NOT NULL AND ct_ip <> '' ORDER BY ct_vmid")))
+        : [(string) $o['terminal']];
+    $failed = 0;
+    foreach ($slugs as $slug) {
+        echo "{$slug}\n";
+        $r = TenantHost::terminal(inst($slug));
+        foreach ($r['steps'] ?? [] as $st) echo "  {$st}\n";
+        if (!$r['ok']) { $failed++; fwrite(STDERR, "ERROR terminal for {$slug}: {$r['error']}\n"); }
+    }
+    exit($failed ? 1 : 0);
 }
 if (isset($o['status'])) {
     $i = inst($o['status']);

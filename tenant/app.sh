@@ -25,8 +25,9 @@
 #   APP_BRANCH      the origin branch the app starts from: main for a new app, app for one
 #                   carried from a host clone (its main is still the host clone's)
 #   APP_HEARTBEAT   on | off — the minute crontab; off for a carried app until its cutover
+#   APP_CRONTAB     the app user's crontab while the heartbeat is on (TenantHost::CRONTAB, the one definition)
 set -euo pipefail
-for v in APP_SLUG CORE_HOST CORE_IP DEPLOY_TOKEN BUILDER_PUBKEY APP_BASEURL APP_NAME APP_KEY APP_BRANCH APP_HEARTBEAT; do
+for v in APP_SLUG CORE_HOST CORE_IP DEPLOY_TOKEN BUILDER_PUBKEY APP_BASEURL APP_NAME APP_KEY APP_BRANCH APP_HEARTBEAT APP_CRONTAB; do
   if [ -z "${!v:-}" ]; then echo "provision: $v is not set" >&2; exit 2; fi
 done
 export DEBIAN_FRONTEND=noninteractive
@@ -115,7 +116,7 @@ say "the app's heartbeat: its own pipelines and durable objects, every minute"
 # APP_HEARTBEAT=off for an app carried from a host clone: a staging copy must not run the live
 # app's schedule (its sends, its polls) while the clone still does — cutover switches it on.
 if [ "$APP_HEARTBEAT" = on ]; then
-  printf '%s\n' '* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1' | crontab -u app -
+  printf '%s' "$APP_CRONTAB" | crontab -u app -
   crontab -l -u app | sed 's/^/crontab: /'
 else
   crontab -r -u app 2>/dev/null || true

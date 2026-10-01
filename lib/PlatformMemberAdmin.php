@@ -83,4 +83,12 @@ class PlatformMemberAdmin implements MemberAdminExtension {
         // An admin-created member is a billing subject too. Non-fatal.
         SignupFlow::ensureTenantFor((int) $member->id);
     }
+
+    public function beforeCreate(OODBBean $member, object $data, int $adminId): void {
+        // Stamped like every other creation path: a NULL tier reads as "unset", and the
+        // grandfather migration would sweep it into legacy.
+        $member->planTier = 'free';
+    }
+
+    public function addView(): array { return []; }
 }

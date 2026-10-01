@@ -189,6 +189,38 @@ class TenantHost {
         . "* * * * * cd /srv/app && flock -n /tmp/aib-terminal.lock php vendor/tiknix/runtime/bin/terminal-bridge.php >> log/terminal-bridge.log 2>&1\n";
 
     /**
+     * System software an app's ENABLED plugins need that a container does not carry by default
+     * (it is not in the base template, so not every app pays for it). Plugin → what it runs:
+     * `pdf` drives headless Chrome (concepts/pdf finds google-chrome on the PATH). Ubuntu's own
+     * chromium is a snap, which does not run in these containers; Google's .deb from Google's apt
+     * repository is what the host used. Idempotent: what is already installed is left alone.
+     */
+    public const SYSTEM_NEEDS = ['pdf' => 'google-chrome'];
+
+    public static function system(object $inst): array {
+        [$c, $o] = self::ssh($inst, 'app', 'cd /srv/app && php -r ' . escapeshellarg(
+            '$l = json_decode((string) @file_get_contents("concepts.lock"), true); foreach (($l["concepts"] ?? []) as $n => $c) if (!empty($c["enabled"])) echo $n, "\n";'), null, 30);
+        if ($c !== 0) return ['ok' => false, 'error' => "could not read {$inst->slug}'s concepts.lock: " . trim((string) $o)];
+        $enabled = array_filter(array_map('trim', explode("\n", (string) $o)));
+        $needs = array_values(array_unique(array_filter(array_map(fn($n) => self::SYSTEM_NEEDS[$n] ?? null, $enabled))));
+        if (!$needs) return ['ok' => true, 'steps' => ['nothing its enabled plugins need beyond the base']];
+        $steps = [];
+        foreach ($needs as $need) {
+            if ($need === 'google-chrome') {
+                $script = 'set -e; if command -v google-chrome >/dev/null; then echo "google-chrome already installed: $(google-chrome --version)"; exit 0; fi; '
+                        . 'export DEBIAN_FRONTEND=noninteractive; install -d -m 0755 /etc/apt/keyrings; '
+                        . 'curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg; '
+                        . 'echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list; '
+                        . 'apt-get update -qq >/dev/null && apt-get install -y -qq google-chrome-stable >/dev/null; echo "installed: $(google-chrome --version)"';
+                [$c, $o] = self::ssh($inst, 'root', $script, null, 900);
+                if ($c !== 0) return ['ok' => false, 'error' => "installing Google Chrome in {$inst->slug} failed: " . trim((string) $o), 'steps' => $steps];
+                $steps[] = trim((string) $o) . ' (for the pdf plugin)';
+            }
+        }
+        return ['ok' => true, 'steps' => $steps];
+    }
+
+    /**
      * The app's builder terminal (runtime bin/terminal-bridge.php on <ip>:3990): its key — minted
      * once, kept on the instance (instance.terminal_key; the builder signs the browser's token
      * with it) and in the app (secure/terminal.key) — the crontab line that keeps it running when

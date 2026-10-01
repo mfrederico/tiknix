@@ -502,3 +502,66 @@ tiknix2's address is in every app's `composer.json`.
 | collectiq, partsdna, Serenity | port now, or keep them frozen on the host and delay removing the host machinery | port — it is most of the remaining work, and nothing else can be deleted until it is done |
 | cutover style | merge into `main` and deploy in place, or swap folders so tiknix.com points at this tree | merge in place — git stays the record; swapping is quicker to flip, messier to keep |
 | GitHub pull-request export for containers | build it, or rsync/SSH are enough | the owner's call |
+
+## 8. Cutover runbook — tiknix.com onto this branch (written 2026-10-01)
+
+§7 Phase A is done: **every project is in its own container** (14, incl. collectiq, partsdna,
+Serenity), the host clones are archived to `arc/<slug>.tiknix.zip` and their php-fpm pools
+deprovisioned, `testfv` and the old cat-poo-box clone are out of the registry. What is left is
+§7 Phases B–D. This section is the exact recipe, from measuring both sides.
+
+### What actually differs (measured 2026-10-01)
+
+| | tiknix.com (`main`) | tiknix2 (`runtime-split`) | cutover takes |
+|---|---|---|---|
+| commits | 4 not in `runtime-split` (incl. the GET-delete hotfix, `7608ae1`) | 59 not in `main` | merge `main` → `runtime-split`, then `runtime-split` → `main` (a PR: `main` is protected) |
+| schema | — | `deploytarget` table; `agent.preset/auth/fast_model`; `instance.ct_hosts/ct_kind/lent_connections` | tiknix2's seeds, run on the live database |
+| data | **the truth**: members, keys, teams, billing, run history, logs | a 2026-09-28 copy + container state | only the container state (below); everything else stays tiknix.com's |
+| container state | none | 13 instances' `deploy_token, ct_vmid, ct_ip, ct_domain, ct_aliases, ct_hosts, ct_kind, lent_connections`; instance #101 `catpoobox` exists only here | `scripts/cutover-migrate.php --from=<tiknix2 db>` |
+| config | — | only `[app] baseurl` and `[sidecar.workbench] url/sso_secret` differ | keep tiknix.com's; switch `[sidecar.workbench]` to workbench2 |
+| own connections | `data/connections.db`: turnstile #4, mailgun #5 | identical, same `secure/connections.key` | nothing |
+| e2e noise | — | settings rows with no member (feature grants of deleted e2e operators), thread members | not carried |
+
+### Dependencies that pin names and paths
+
+- **The broker is tiknix.com.** Every app's `conf/broker.ini` (and tiknix2's own) points at
+  `https://tiknix.com/mcp/message`; its keys and the stores' tokens are tiknix.com's data. So
+  tiknix.com's database must be the one that survives.
+- **The containers fetch from `tiknix2.tiknix.com/git/`** — the runtime
+  (`composer.json` → `https://tiknix2.tiknix.com/git/runtime.git`) and their own seed remote.
+  After the cutover that name must keep answering: keep `tiknix2.tiknix` as a symlink to the
+  `tiknix` tree (the sweeps already refuse symlinked dirs), or rewrite each app's URL with a
+  runtime update. The symlink first; the rewrite at leisure.
+- **`/var/www/html/default/tiknix` is the git repository**; tiknix2 is a worktree of it. It is
+  not moved or archived — `main` is updated in place.
+- Paths on `tiknix/`: 4 cron lines, the old workbench and explorer sidecars (`core_root`),
+  `TenantCarry::CORE`, capricorn. workbench2's `core_root` is `tiknix2.tiknix` today → `tiknix`.
+- `[security] app_key` is the same in both (2FA secrets and encrypted settings keep working).
+
+### The steps
+
+1. **Rehearse** (below) until clean.
+2. Merge the open hotfix PR (`hotfix/get-deletes`) so `main` is current; merge `main` into
+   `runtime-split`; open the PR `runtime-split` → `main`.
+3. Maintenance window: sqlite `.backup` of `database/*.db` and `data/connections.db`; tag the
+   old `main` (`pre-runtime-split`).
+4. Merge the PR; in `tiknix/`: `composer install`, `php scripts/clitool.php --build`,
+   `php scripts/cutover-migrate.php --from=../tiknix2.tiknix/database/tiknix.db --apply`,
+   `php scripts/resetcache.php`.
+5. Config: `[sidecar.workbench]` → workbench2's url and secret; workbench2's `core_root` →
+   `/var/www/html/default/tiknix`, `core_url` → `https://tiknix.com`.
+6. Cron: drop the host-builder lines (`reap-stale-tasks`, `prompt-queue-drain`, the host
+   `pipeline-cron` heartbeat for host clones); add `tenant.php --renew-certs` from `tiknix/`.
+7. Replace the `tiknix2.tiknix` worktree with a symlink to `tiknix` (keeps `/git/` answering
+   for the containers); remove the worktree with `git worktree remove`.
+8. Verify: e2e 01, 02, 08 on tiknix.com; every app's `--update` reaches the runtime; one
+   `tenant.php --share` and one `--status`.
+9. **Rollback:** `git reset --hard pre-runtime-split` in `tiknix/`, restore the backups, restore
+   the crontab and `[sidecar.workbench]`, undo the symlink.
+
+### Rehearsal
+
+A third worktree, `tiknix-next.tiknix` (served as tiknix-next.tiknix.com), on branch
+`cutover-rehearsal` = `runtime-split` + `main`, with a fresh snapshot of tiknix.com's database,
+secure files and config (`baseurl` → tiknix-next), then steps 4 and 8 against it. It runs no
+cron and is not the broker, so it touches nothing live. Results below, per run.

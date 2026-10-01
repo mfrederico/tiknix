@@ -19,7 +19,8 @@ $jsonld = [
          'worksFor' => ['@id' => $site . '/#org'], 'url' => $site . '/about', 'image' => $site . '/img/matt.jpg',
          'sameAs' => ['https://linkedin.com/in/mattfred', 'https://github.com/mfrederico', 'https://clicksimple.com/about.php'],
          'knowsAbout' => ['AI agent orchestration', 'Model Context Protocol', 'Ecommerce systems', 'Warehouse management software', 'Laravel', 'PHP', 'Shopify', 'Stripe']],
-        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'worksFor' => ['@id' => $site . '/#org'],
+        ['@type' => 'Person', '@id' => $site . '/about#fabian', 'name' => 'Fabian Duarte', 'jobTitle' => 'Co-Founder, Kafanix', 'worksFor' => ['@id' => $site . '/#org'],
+         'knowsAbout' => ['Dealer and channel network enablement', 'Shopify Plus', 'B2B SaaS partnerships', 'AI-enabled commerce', 'Ecommerce operations'],
          'url' => $site . '/about', 'sameAs' => ['https://www.linkedin.com/in/fabianduarteb/']],
         ['@type' => 'AboutPage', '@id' => $site . '/about#page', 'url' => $site . '/about', 'name' => 'Who we are', 'mainEntity' => ['@id' => $site . '/#org']],
         ['@type' => 'BreadcrumbList', 'itemListElement' => [['@type' => 'ListItem', 'position' => 1, 'name' => 'tiknix', 'item' => $site . '/'], ['@type' => 'ListItem', 'position' => 2, 'name' => 'Who we are', 'item' => $site . '/about']]],
@@ -61,7 +62,6 @@ $jsonld = [
         .facts .n{ font-family:var(--serif); font-size:30px; font-weight:600; color:var(--text); }
         .facts .k{ font-size:13px; color:var(--dim); margin-top:6px; line-height:1.4; }
         .person + .person{ margin-top:56px; }
-        .person h2 + p{ margin-top:14px; }
         .person .initials{ width:100%; aspect-ratio:1; border-radius:16px; border:1px solid var(--line2); display:flex; align-items:center;
                            justify-content:center; font-family:var(--serif); font-size:52px; color:var(--accent2); background:rgba(59,118,240,0.08); }
         .quest{ max-width:920px; margin:0 auto; }
@@ -121,9 +121,14 @@ $jsonld = [
       <div class="initials" aria-hidden="true">FD</div>
       <div>
         <h2>Fabian Duarte</h2>
+        <div class="role">Co-Founder, Kafanix &middot; Strategic Partner, DealerYes</div>
         <p>
-          Fabian builds client apps on tiknix every day &mdash; the same Builder, the same agents, the same
-          projects you get. When something in it gets in a builder&rsquo;s way, he&rsquo;s the first to know.
+          Fabian works where commerce, operations and technology meet. As co-founder of Kafanix and a
+          strategic partner for <a href="https://dealeryes.com" rel="noopener">DealerYes</a>, he helps manufacturers
+          modernize their dealer and distributor networks &mdash; one place to run the channel, less
+          coordination by hand, and clear sight of what&rsquo;s happening. Before that: <strong>Shopify Plus</strong>
+          platform leadership, global ecommerce operations, migrations and conversion work, contributing to more
+          than <strong>$60 million in direct-to-consumer growth</strong>. He builds client apps on tiknix every day.
         </p>
         <div class="links">
           <a href="https://www.linkedin.com/in/fabianduarteb/" rel="noopener">LinkedIn</a>

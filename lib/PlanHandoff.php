@@ -108,24 +108,23 @@ class PlanHandoff {
 
     /** What the wizard's status page may know: where the plan stands, never who claimed it. */
     public static function state(\RedBeanPHP\OODBBean $h): array {
-        $out = ['status' => (string) $h->status, 'name' => (string) $h->name, 'project_slug' => '', 'project_url' => ''];
+        $out = ['status' => (string) $h->status, 'name' => (string) $h->name, 'project_slug' => '', 'project_url' => '',
+                'progress' => (string) ($h->progress ?? ''), 'note' => (string) ($h->progressNote ?? '')];
         if ((int) $h->instanceRef > 0) {
             $inst = Bean::load('instance', (int) $h->instanceRef);
             if ($inst->id) {
                 $out['project_slug'] = (string) $inst->slug;
                 $out['project_url']  = 'https://' . $inst->slug . '.' . ($inst->app ?: 'tiknix') . '.com';
+                // The container's own setup failing is said here too — finish() never runs then.
+                if ($out['progress'] === 'setting-up' && \Model_Instance::setupStateFor($inst) === 'failed') {
+                    $out['progress'] = 'failed';
+                    $out['note'] = 'setting up the project\'s container failed — see its provision log';
+                }
             }
         }
         return $out;
     }
 
-    /**
-     * Turn a claimed offer into the member's project: provision (the plan gate and the
-     * name rules are ProvisionService::create's), commit PLAN.md + blueprint.json into it,
-     * select it for the member, mark the offer claimed.
-     *
-     * @return array ok/slug/id/url, or ok=false/error/code (+action_url from a plan refusal)
-     */
     /**
      * The planner's goal for a project that has just received its PLAN.md (§8 step 6):
      * decompose Phase 1 as the plan defines it, nothing more.
@@ -140,9 +139,14 @@ class PlanHandoff {
         . 'naming what each reuses from the codebase.';
 
     /**
-     * @param bool $decompose start the planner on Phase 1 right after the commit (§8 step 6).
-     *                        The project exists either way; a planner that does not start is
-     *                        reported in `planner`, never hidden.
+     * Claim an offer: create the member's project (ProvisionService::create — the plan gate and
+     * the name rules are its) and select it. The project lives in its own container, which takes
+     * a couple of minutes to set up in the background; the rest — PLAN.md committed into it and
+     * Phase 1 planned — is finish(), run right after the setup succeeds (tenant.php
+     * --handoff-finish). The claim page follows it through state().
+     *
+     * @param bool $decompose start the Phase 1 planner once PLAN.md is in (when the app has an
+     *                        agent signed in — else the member is asked to connect one first)
      */
     public static function create(int $memberId, \RedBeanPHP\OODBBean $h, string $name, string $engine, bool $decompose = true): array {
         if ((string) $h->status !== 'offered') {
@@ -153,63 +157,104 @@ class PlanHandoff {
         $base = self::slugBase($name);
         if ($base === '') return ['ok' => false, 'code' => 400, 'error' => 'The name needs at least two letters or digits to make a project id from.'];
 
-        $res = (new ProvisionService())->create($memberId, ['slug' => $base, 'name' => $name, 'engine' => $engine, 'plan' => 'project']);
+        $res = (new ProvisionService())->create($memberId, ['slug' => $base, 'name' => $name, 'engine' => $engine, 'plan' => 'project',
+            'then' => ['--handoff-finish=' . $h->token]]);
         if (empty($res['ok'])) return $res;
 
-        $inst = Bean::load('instance', (int) $res['id']);
-        $dir  = \Model_Instance::dirOf($inst);
-        $member = Bean::load('member', $memberId);
-        self::commitPlan($dir, (string) $h->planMd, (string) $h->blueprintJson,
-            trim((string) (($member->firstName ?? '') . ' ' . ($member->lastName ?? ''))) ?: (string) ($member->username ?? 'member'),
-            (string) ($member->email ?? ''), (string) $h->planSha);
-
-        $h->status      = 'claimed';
-        $h->memberRef   = $memberId;
-        $h->instanceRef = (int) $inst->id;
-        $h->claimedAt   = date('Y-m-d H:i:s');
+        $h->status       = 'claimed';
+        $h->memberRef    = $memberId;
+        $h->instanceRef  = (int) $res['id'];
+        $h->claimedAt    = date('Y-m-d H:i:s');
+        $h->progress     = 'setting-up';
+        $h->progressNote = $res['warning'] ?? '';
+        $h->decompose    = $decompose ? 1 : 0;
         Bean::store($h);
-        ProjectContext::set($memberId, (int) $inst->id);
-
-        // §8 step 6: the plan is decomposed the moment the project exists, so the member
-        // lands on a board with Phase 1 already being planned — not on an empty board
-        // wondering what to type. The first hand-off (2026-09-26) landed on the empty board.
-        $planner = 'not requested';
-        if ($decompose) {
-            try {
-                $runner  = new PlanRunner((string) $inst->slug, $dir, $memberId, (int) ($member->level ?? LEVELS['MEMBER']), $engine);
-                $session = $runner->start(self::PHASE_ONE_GOAL);
-                $planner = 'started (' . $session . ')';
-            } catch (\Throwable $e) {
-                Flight::get('log')?->error('handoff: the Phase 1 planner did not start', ['slug' => (string) $inst->slug, 'err' => $e->getMessage()]);
-                $planner = 'NOT started: ' . $e->getMessage() . ' — start it from Advanced Builder → Plan with the goal "Build Phase 1 of PLAN.md"';
-            }
-        }
-        return ['ok' => true, 'slug' => (string) $inst->slug, 'id' => (int) $inst->id, 'planner' => $planner,
-                'url' => '/sidecar/app/workbench?to=' . rawurlencode('/workbench')];
+        ProjectContext::set($memberId, (int) $res['id']);
+        return ['ok' => true, 'slug' => (string) $res['slug'], 'id' => (int) $res['id'],
+                'url' => '/handoff/claim/' . $h->token, 'planner' => 'starts once the project is set up'];
     }
 
     /**
-     * Write PLAN.md and .aibuilder/blueprint.json into a project and commit them as the
-     * member. blueprint.json sits in an ignored directory, so it is force-added — the
-     * plan and its blueprint are the project's contract, not build scratch.
+     * The rest of a claim, once the project's container is up (tenant.php --handoff-finish):
+     * PLAN.md and .aibuilder/blueprint.json committed into the app as the member, then Phase 1
+     * (startPhaseOne). Safe to run again: PLAN.md is committed once.
+     */
+    public static function finish(string $token): array {
+        $h = self::byToken($token);
+        if (!$h) return ['ok' => false, 'error' => 'no such hand-off'];
+        if ((string) $h->status !== 'claimed' || (int) $h->instanceRef <= 0) return ['ok' => false, 'error' => "hand-off is '{$h->status}', not a claimed one with a project"];
+        $inst = Bean::load('instance', (int) $h->instanceRef);
+        if (!$inst->id || !\Model_Instance::tenantRow($inst)) return self::fail($h, 'the project is not running in its own container');
+        if (in_array((string) $h->progress, ['setting-up', 'failed', ''], true)) {
+            try {
+                self::commitPlan($inst, $h, TenantHost::author((int) $h->memberRef));
+            } catch (\Throwable $e) {
+                return self::fail($h, 'committing PLAN.md into the project failed: ' . $e->getMessage());
+            }
+            $h->progress = 'plan-committed'; $h->progressNote = ''; $h->finishedAt = date('Y-m-d H:i:s');
+            Bean::store($h);
+        }
+        if (empty($h->decompose)) return ['ok' => true] + self::state($h);
+        return self::startPhaseOne($h);
+    }
+
+    /**
+     * Plan Phase 1 of PLAN.md — on the app's own agent, so only once one is signed in on the
+     * app's AI agents page. Without one, the hand-off waits ('waiting-agent') and the member
+     * starts it from the claim page after connecting it.
+     */
+    public static function startPhaseOne(\RedBeanPHP\OODBBean $h): array {
+        $inst = Bean::load('instance', (int) $h->instanceRef);
+        if (!$inst->id) return self::fail($h, 'the project is gone');
+        if (!in_array((string) $h->progress, ['plan-committed', 'waiting-agent', 'planning'], true)) {
+            return ['ok' => false, 'error' => "PLAN.md is not in the project yet ({$h->progress})"] + self::state($h);
+        }
+        [$c, $o] = TenantHost::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --agent-ready 2>&1', null, 60);
+        if ($c !== 0) {
+            $h->progress = 'waiting-agent';
+            $h->progressNote = trim((string) $o) ?: 'no AI agent is signed in on this app yet';
+            Bean::store($h);
+            return ['ok' => true] + self::state($h);
+        }
+        $member = Bean::load('member', (int) $h->memberRef);
+        try {
+            $runner  = new PlanRunner((string) $inst->slug, \Model_Instance::dirOf($inst), (int) $h->memberRef, (int) ($member->level ?? LEVELS['MEMBER']), (string) ($inst->engine ?: 'claude'));
+            $session = $runner->start(self::PHASE_ONE_GOAL);
+        } catch (\Throwable $e) {
+            return self::fail($h, 'the Phase 1 planner did not start: ' . $e->getMessage());
+        }
+        $h->progress = 'planning'; $h->progressNote = "planner {$session}";
+        Bean::store($h);
+        return ['ok' => true] + self::state($h);
+    }
+
+    private static function fail(\RedBeanPHP\OODBBean $h, string $why): array {
+        Flight::get('log')?->error('handoff: ' . $why, ['token' => substr((string) $h->token, 0, 8) . '…', 'instance' => (int) $h->instanceRef]);
+        error_log('ERROR handoff ' . substr((string) $h->token, 0, 8) . '…: ' . $why);
+        $h->progress = 'failed'; $h->progressNote = $why;
+        Bean::store($h);
+        return ['ok' => false, 'error' => $why] + self::state($h);
+    }
+
+    /**
+     * PLAN.md and .aibuilder/blueprint.json into the app's repository in its container,
+     * committed as the member (blueprint.json is force-added: .aibuilder/ is ignored, but the
+     * plan and its blueprint are the project's contract). Skips the commit when PLAN.md is
+     * already there with this content.
      *
      * @throws \RuntimeException with git's own words when the commit does not happen
      */
-    public static function commitPlan(string $dir, string $planMd, string $blueprintJson, string $authorName, string $authorEmail, string $planSha = ''): void {
-        if (!is_dir($dir . '/.git')) throw new \RuntimeException("handoff: {$dir} is not a git repository");
-        if (!is_dir($dir . '/.aibuilder') && !@mkdir($dir . '/.aibuilder', 0775, true)) throw new \RuntimeException("handoff: cannot create {$dir}/.aibuilder");
-        if (file_put_contents($dir . '/PLAN.md', $planMd) === false) throw new \RuntimeException("handoff: cannot write {$dir}/PLAN.md");
-        if (file_put_contents($dir . '/.aibuilder/blueprint.json', $blueprintJson) === false) throw new \RuntimeException("handoff: cannot write {$dir}/.aibuilder/blueprint.json");
-        $git = 'git -C ' . escapeshellarg($dir);
-        // --author, not -c user.*: a GIT_AUTHOR_NAME/EMAIL in the environment (a git hook,
-        // a CI runner) overrides -c config, and the member's name is the point here.
-        $who = $authorEmail !== '' ? ($authorName !== '' ? $authorName : $authorEmail) . ' <' . $authorEmail . '>' : '';
-        $author = $who !== '' ? ' --author=' . escapeshellarg($who) : '';
-        $msg = 'PLAN.md from the Get-started wizard' . ($planSha !== '' ? ' (plan ' . substr($planSha, 0, 12) . ')' : '');
-        $cmd = "$git add PLAN.md && $git add -f .aibuilder/blueprint.json && $git -c user.name=tiknix -c user.email=noreply@tiknix.com commit -q" . $author . ' -m ' . escapeshellarg($msg);
-        $out = []; $code = 0;
-        exec($cmd . ' 2>&1', $out, $code);
-        if ($code !== 0) throw new \RuntimeException('handoff: committing PLAN.md failed — ' . trim(implode(' ', $out)));
+    public static function commitPlan(object $inst, \RedBeanPHP\OODBBean $h, array $author): void {
+        $git = TenantHost::gitAs($author);
+        if ($git === null) throw new \RuntimeException('the member has no name and email to commit as');
+        $msg = 'PLAN.md from the Get-started wizard' . ((string) $h->planSha !== '' ? ' (plan ' . substr((string) $h->planSha, 0, 12) . ')' : '');
+        $write = '$j = json_decode(stream_get_contents(STDIN), true); if (!is_array($j)) { fwrite(STDERR, "no package on stdin\n"); exit(1); } '
+               . '@mkdir(".aibuilder", 0775, true); '
+               . 'if (file_put_contents("PLAN.md", $j["plan"]) === false || file_put_contents(".aibuilder/blueprint.json", $j["blueprint"]) === false) { fwrite(STDERR, "could not write the plan files\n"); exit(1); }';
+        $script = 'set -e; cd /srv/app; php -r ' . escapeshellarg($write) . '; git add PLAN.md; git add -f .aibuilder/blueprint.json; '
+                . 'if git diff --cached --quiet; then echo "PLAN.md already committed"; else ' . $git . ' commit -q -m ' . escapeshellarg($msg) . '; git log -1 --format=%h; fi';
+        [$c, $o] = TenantHost::ssh($inst, 'app', $script . ' 2>&1', json_encode(['plan' => (string) $h->planMd, 'blueprint' => (string) $h->blueprintJson]), 120);
+        if ($c !== 0) throw new \RuntimeException(trim((string) $o));
     }
 
     /** "My Shop Portal" → "my-shop-portal"; '' when nothing usable is left. */

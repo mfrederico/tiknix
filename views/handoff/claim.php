@@ -17,11 +17,71 @@ $h = $handoff;
   </div></div>
 
 <?php elseif ($state === 'claimed'): ?>
+  <?php $mine = (int) $h->memberRef === (int) ($member->id ?? 0); ?>
   <div class="card"><div class="card-body">
-    <h1 class="h4">This plan is already a project</h1>
-    <p class="mb-3">It became <strong><?= htmlspecialchars($project['project_slug'] ?: (string) $h->name) ?></strong> on <?= htmlspecialchars((string) $h->claimedAt) ?>.</p>
-    <a class="btn btn-primary" href="/sidecar/app/workbench?to=<?= rawurlencode('/workbench') ?>">Open the Builder</a>
-    <a class="btn btn-outline-secondary ms-2" href="/projects">All projects</a>
+    <?php if (!$mine): ?>
+      <h1 class="h4">This plan is already a project</h1>
+      <p class="mb-3">It became a project on <?= htmlspecialchars((string) $h->claimedAt) ?>.</p>
+      <a class="btn btn-outline-secondary" href="/projects">Your projects</a>
+    <?php else: ?>
+      <h1 class="h4 mb-1"><?= htmlspecialchars((string) $h->name) ?></h1>
+      <p class="text-body-secondary small mb-3"><?= htmlspecialchars($project['project_url'] ?? '') ?></p>
+      <?php /* Follows PlanHandoff::state() — the container setting up, PLAN.md going in, Phase 1. */ ?>
+      <ol class="list-unstyled mb-3" id="handoff-steps">
+        <li data-step="setting-up"><span class="hs-ic"></span> Setting up your project &mdash; about two minutes</li>
+        <li data-step="plan-committed"><span class="hs-ic"></span> <code>PLAN.md</code> committed to your project</li>
+        <li data-step="planning"><span class="hs-ic"></span> Phase 1 being planned</li>
+      </ol>
+      <div id="handoff-agent" class="alert alert-info d-none">
+        <div class="mb-2"><strong>Connect an AI agent to plan Phase 1.</strong> Your project builds with its own agent &mdash; sign one in on the project's AI agents page, then start Phase 1.</div>
+        <a class="btn btn-sm btn-primary" href="/projects/open?to=<?= rawurlencode('/agents') ?>" target="_blank" rel="noopener">Connect an agent</a>
+        <button class="btn btn-sm btn-outline-primary ms-2" id="handoff-phaseone" type="button">Start Phase 1</button>
+        <div class="small text-body-secondary mt-2" id="handoff-agent-note"></div>
+      </div>
+      <div id="handoff-failed" class="alert alert-danger d-none"></div>
+      <a class="btn btn-primary" id="handoff-open" href="/sidecar/app/workbench?to=<?= rawurlencode('/workbench') ?>">Open the Builder</a>
+      <a class="btn btn-outline-secondary ms-2" href="/projects">All projects</a>
+      <style>
+        #handoff-steps li { padding: .3rem 0; color: var(--bs-secondary-color); }
+        #handoff-steps li.done { color: var(--bs-body-color); }
+        #handoff-steps li.now { color: var(--bs-body-color); font-weight: 600; }
+        .hs-ic { display: inline-block; width: 1.2rem; }
+        #handoff-steps li.done .hs-ic::before { content: "✓"; color: var(--bs-success); }
+        #handoff-steps li.now .hs-ic::before { content: "…"; }
+      </style>
+      <script>
+      (function () {
+        var token = <?= json_encode((string) $h->token) ?>, order = ['setting-up', 'plan-committed', 'planning'];
+        var csrf = <?= json_encode(csrf_token()) ?>, timer = null;
+        function show(st) {
+          var p = st.progress || 'setting-up', at = order.indexOf(p === 'waiting-agent' ? 'plan-committed' : p);
+          document.querySelectorAll('#handoff-steps li').forEach(function (li, i) {
+            li.className = (p === 'planning' && i <= at) || i < at || (p === 'waiting-agent' && i <= at) ? 'done' : (i === at ? 'now' : '');
+          });
+          document.getElementById('handoff-agent').classList.toggle('d-none', p !== 'waiting-agent');
+          if (p === 'waiting-agent') document.getElementById('handoff-agent-note').textContent = st.note || '';
+          var f = document.getElementById('handoff-failed');
+          f.classList.toggle('d-none', p !== 'failed');
+          if (p === 'failed') f.textContent = 'Something went wrong: ' + (st.note || 'see the project log') + '.';
+          if (p === 'planning' || p === 'failed') { clearInterval(timer); timer = null; }
+        }
+        function poll() {
+          fetch('/handoff/state?token=' + token, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+            .then(function (r) { return r.json(); }).then(function (d) { if (d.success) show(d.data); }).catch(function () {});
+        }
+        document.getElementById('handoff-phaseone').addEventListener('click', function () {
+          var b = this; b.disabled = true;
+          var body = new URLSearchParams({token: token, _csrf_token: csrf});
+          fetch('/handoff/phaseone', {method: 'POST', body: body, headers: {'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'}})
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (d.data) show(d.data); if (!d.success) { var f = document.getElementById('handoff-failed'); f.textContent = d.message; f.classList.remove('d-none'); } })
+            .finally(function () { b.disabled = false; });
+        });
+        show(<?= json_encode($project) ?>);
+        poll(); timer = setInterval(poll, 4000);
+      })();
+      </script>
+    <?php endif; ?>
   </div></div>
 
 <?php else: ?>
@@ -109,12 +169,7 @@ $h = $handoff;
         var r = await fetch('/handoff/create', {method: 'POST', body: body, headers: {'X-CSRF-TOKEN': <?= json_encode(csrf_token()) ?>}});
         var d = await r.json();
         if (d.success) {
-          // The project exists. A planner that did not start is said here, with the way in — not lost behind a redirect.
-          if (d.data.planner && d.data.planner.indexOf('NOT started') === 0) {
-            err.innerHTML = 'Project created, but the Phase 1 planner was ' + d.data.planner + ' <a class="alert-link" href="' + d.data.url + '">Open the Builder</a>';
-            err.classList.remove('d-none');
-            return;
-          }
+          // The project exists; this page now follows its setup, PLAN.md and Phase 1.
           window.location.href = d.data.url; return;
         }
         err.innerHTML = (d.message || 'The project was not created.') + (d.action_url ? ' <a class="alert-link" href="' + d.action_url + '">Continue</a>' : '');

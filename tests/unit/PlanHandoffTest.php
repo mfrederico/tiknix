@@ -55,7 +55,7 @@ class PlanHandoffTest extends ConceptsTestCase {
         $this->assertSame((int) $h->id, (int) PlanHandoff::byToken((string) $h->token)->id);
         $this->assertNull(PlanHandoff::byToken('not-a-token'));
         $this->assertNull(PlanHandoff::byToken(str_repeat('0', 48)));
-        $this->assertSame(['status' => 'offered', 'name' => 'Shop Portal', 'project_slug' => '', 'project_url' => ''], PlanHandoff::state($h));
+        $this->assertSame(['status' => 'offered', 'name' => 'Shop Portal', 'project_slug' => '', 'project_url' => '', 'progress' => '', 'note' => ''], PlanHandoff::state($h));
     }
 
     public function testTheObjectsMayArriveInlineOrAsStrings(): void {
@@ -92,20 +92,20 @@ class PlanHandoffTest extends ConceptsTestCase {
         $this->assertSame(0, Bean::count('planhandoff'));
     }
 
-    public function testCommitPlanWritesAndCommitsAsTheMember(): void {
-        $repo = $this->root . '/proj.tiknix';
-        mkdir($repo, 0700, true);
-        exec('git -C ' . escapeshellarg($repo) . ' init -q && git -C ' . escapeshellarg($repo) . ' -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init');
-        file_put_contents($repo . '/.gitignore', ".aibuilder/\n");
-        PlanHandoff::commitPlan($repo, "# PLAN\n", '{"id":"client-portal"}', 'Ana López', 'ana@example.com', hash('sha256', "# PLAN\n"));
-        $this->assertSame("# PLAN\n", file_get_contents($repo . '/PLAN.md'));
-        $this->assertSame('{"id":"client-portal"}', file_get_contents($repo . '/.aibuilder/blueprint.json'));
-        $log = trim((string) shell_exec('git -C ' . escapeshellarg($repo) . ' log -1 --format="%an <%ae> %s" 2>&1'));
-        $this->assertStringStartsWith('Ana López <ana@example.com> PLAN.md from the Get-started wizard (plan ', $log);
-        $tracked = trim((string) shell_exec('git -C ' . escapeshellarg($repo) . ' ls-files PLAN.md .aibuilder/blueprint.json'));
-        $this->assertSame(".aibuilder/blueprint.json\nPLAN.md", $tracked, 'blueprint.json force-added past .gitignore');
-        $this->expectExceptionMessage('not a git repository');
-        PlanHandoff::commitPlan($this->root . '/nowhere', '#', '{}', 'x', 'x@example.com');
+    public function testFinishAndPhaseOneRefuseWhatIsNotReady(): void {
+        $this->assertSame('no such hand-off', PlanHandoff::finish(str_repeat('0', 48))['error']);
+        $h = PlanHandoff::offer(7, $this->package());
+        $this->assertStringContainsString("is 'offered'", PlanHandoff::finish((string) $h->token)['error'], 'a plan nobody claimed has no project to finish');
+
+        $inst = Bean::dispense('instance'); $inst->slug = 'shop-portal-cd34ef'; $inst->app = 'tiknix'; $inst->status = 'active'; Bean::store($inst);
+        $h->status = 'claimed'; $h->instanceRef = (int) $inst->id; $h->memberRef = 3; $h->progress = 'setting-up'; Bean::store($h);
+        $r = PlanHandoff::startPhaseOne($h);
+        $this->assertFalse($r['ok']);
+        $this->assertStringContainsString('PLAN.md is not in the project yet', $r['error'], 'Phase 1 waits for PLAN.md');
+
+        $h->progress = 'waiting-agent'; $h->progressNote = 'no agent signed in'; Bean::store($h);
+        $st = PlanHandoff::state($h);
+        $this->assertSame(['claimed', 'waiting-agent', 'no agent signed in', 'shop-portal-cd34ef'], [$st['status'], $st['progress'], $st['note'], $st['project_slug']]);
     }
 
     public function testAClaimedOfferIsNotCreatedTwice(): void {

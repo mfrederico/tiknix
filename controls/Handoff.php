@@ -90,6 +90,20 @@ class Handoff extends Control {
         }
         $this->logger->info('handoff claimed', ['token' => substr((string) $h->token, 0, 8) . '…', 'member' => (int) $this->member->id, 'slug' => $res['slug']]);
         Flight::jsonSuccess(['slug' => $res['slug'], 'url' => $res['url'], 'planner' => $res['planner']],
-            'Project created — PLAN.md is committed; Phase 1 planner ' . $res['planner'] . '.');
+            'Project created — its container is being set up; PLAN.md goes in and Phase 1 is planned right after.');
+    }
+
+    /**
+     * POST /handoff/phaseone — plan Phase 1 of a claimed hand-off once its app has an agent
+     * (PlanHandoff::startPhaseOne). Only the member who claimed it.
+     */
+    public function phaseone($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!$this->validateCSRF()) return;
+        $h = PlanHandoff::byToken((string) $this->getParam('token', ''));
+        if (!$h || (int) $h->memberRef !== (int) $this->member->id) { $this->jsonError('No such hand-off of yours.', 404); return; }
+        $r = PlanHandoff::startPhaseOne($h);
+        if (empty($r['ok'])) { $this->jsonError((string) ($r['error'] ?? 'Phase 1 did not start.'), 409); return; }
+        Flight::jsonSuccess($r, $r['progress'] === 'planning' ? 'Phase 1 is being planned.' : 'This app has no AI agent signed in yet.');
     }
 }

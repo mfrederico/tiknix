@@ -117,7 +117,7 @@ class ProvisionService {
         $inst->isDefault = $isDefault ? 1 : 0;
         Bean::store($inst);
         try {
-            $this->setUpContainer($inst);
+            $this->setUpContainer($inst, (array) ($p['then'] ?? []));
         } catch (\RuntimeException $e) {
             Flight::get('log')->error('project container setup could not start', ['slug' => $slug, 'err' => $e->getMessage()]);
             return ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'warning' => 'The project exists, but setting up its container could not start: ' . $e->getMessage()];
@@ -129,8 +129,11 @@ class ProvisionService {
      * `tenant.php --up` for a new project, detached: its container created, provisioned and
      * published at <slug>.<app>.com. Its progress — and any ERROR — is in its workspace's
      * .aibuilder/provision.log, which the project card reads (Model_Instance::setupStateFor).
+     *
+     * @param string[] $then tenant.php arguments to run once the container is up — only if it
+     *                       came up (&&): the Get-started hand-off's --handoff-finish=<token>
      */
-    private function setUpContainer(object $inst): void {
+    private function setUpContainer(object $inst, array $then = []): void {
         $slug = (string) $inst->slug;
         $ab = \Model_Instance::workspaceFrom($slug) . '/.aibuilder';
         if (!is_dir($ab) && !@mkdir($ab, 0775, true)) throw new \RuntimeException("could not create {$ab}");
@@ -138,6 +141,12 @@ class ProvisionService {
         $domain = $slug . '.' . $this->appNamespace() . '.com';
         $cmd = 'cd ' . escapeshellarg(dirname(__DIR__)) . ' && echo "[setup] $(date) ' . $slug . ' -> ' . $domain . '"'
              . ' && env -u TIKNIX_WORKBENCH_DB php scripts/tenant.php --up=' . escapeshellarg($slug) . ' --domain=' . escapeshellarg($domain);
+        if ($then) {
+            foreach ($then as $a) {
+                if (!preg_match('/^--[a-z][a-z-]*(=[A-Za-z0-9._-]+)?$/D', (string) $a)) throw new \RuntimeException("not a tenant.php argument: {$a}");
+            }
+            $cmd .= ' && echo "[then] $(date) ' . implode(' ', $then) . '" && env -u TIKNIX_WORKBENCH_DB php scripts/tenant.php ' . implode(' ', array_map('escapeshellarg', $then));
+        }
         exec('nohup bash -lc ' . escapeshellarg('(' . $cmd . ') >> ' . escapeshellarg($log) . ' 2>&1') . ' > /dev/null 2>&1 &', $o, $c);
         if ($c !== 0) throw new \RuntimeException("could not start tenant.php --up for {$slug}");
     }

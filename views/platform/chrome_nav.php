@@ -48,3 +48,25 @@
             <a class="ui-nav-link" href="/projects"><i class="bi bi-plus-circle"></i> New Project</a>
           <?php endif; ?>
         <?php endif; ?>
+
+        <?php
+        /* The selected project's OWN pages. A project in its own container is an app with its own
+           AI agents, pipelines, connections, settings and members — not these pages of Tiknix, which
+           are the platform's own (under Admin). Each link goes through /projects/open, which signs
+           you in there (as that app's account with your email, at its level) and lands on the page.
+           A new tab: it is another site. */
+        if ($__loggedIn && $__hasProject && trim((string) ($__proj->ctIp ?? '')) !== ''):
+            $__projPages = [
+                ['/dashboard', 'speedometer2', 'Dashboard'],
+                ['/agents', 'robot', 'AI agents'],
+                ['/pipelines', 'diagram-2', 'Data'],
+                ['/connections', 'plug', 'Connections'],
+                ['/integrations', 'diagram-3', 'Integrations'],
+                ['/settings', 'gear', 'Settings'],
+                ['/admin', 'people', 'Members'],
+            ]; ?>
+          <div class="ui-nav-heading text-truncate" title="Pages of <?= htmlspecialchars((string) ($__proj->displayName ?: $__proj->slug)) ?>, opened signed in"><?= htmlspecialchars((string) ($__proj->displayName ?: $__proj->slug)) ?></div>
+          <?php foreach ($__projPages as [$__pPath, $__pIcon, $__pLabel]): ?>
+            <a class="ui-nav-link" href="/projects/open?to=<?= rawurlencode($__pPath) ?>" target="_blank" rel="noopener"><i class="bi bi-<?= $__pIcon ?>"></i> <?= $__pLabel ?> <i class="bi bi-box-arrow-up-right ms-auto opacity-50" style="font-size:.7rem"></i></a>
+          <?php endforeach; ?>
+        <?php endif; ?>

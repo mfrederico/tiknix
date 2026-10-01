@@ -70,7 +70,7 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
   /* This site's own sign-up gate (Turnstile). Install-local, so on the control plane it
      manages THIS site's registration, not the selected project's — kept at the top and
      under its own "Security" heading so it does not read as a per-project connector. */
-  include __DIR__ . '/_turnstile.php';
+  include \Flight::view()->getTemplate('connections/_turnstile');
   ?>
 
   <?php
@@ -80,7 +80,12 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
   include __DIR__ . '/_models.php';
   ?>
 
-  <?php if (!empty($publishDrivers)): ?>
+  <?php if (!empty($inContainer)): ?>
+    <div class="alert alert-light border py-2 small mt-3 mb-0">
+      <i class="bi bi-rocket-takeoff me-1"></i>Its domains and exports to your own servers are on
+      <a href="/deploy" class="text-decoration-underline">Deploy</a>.
+    </div>
+  <?php elseif (!empty($publishDrivers)): ?>
     <!--
       Hosting. First on the hub because it answers the question everything else assumes:
       where does this instance actually run. Previously this lived on the GitHub

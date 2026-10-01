@@ -1,0 +1,60 @@
+{
+    "version": 1,
+    "overrides": {
+        "controls/Connections.php": {
+            "base": "sha256:5c822eb9adba6f82f58c223d3494f73d24736c1bfc98dff3d0226b6f945bb780",
+            "release": "dev-main",
+            "recorded_at": "2026-10-01T00:17:07+00:00"
+        },
+        "controls/Index.php": {
+            "base": "sha256:06e2e7ecefff961520862d859508d2f03e75e67ad6c779974ec00ffdbdd624e6",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T16:14:57+00:00"
+        },
+        "controls/Integrations.php": {
+            "base": "sha256:c67718880d5de8608739633fd0789975e507e2373237b3eba89ec6d8d359fc92",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T02:30:25+00:00"
+        },
+        "controls/Teams.php": {
+            "base": "sha256:d59790a7926aeec2d1411735cbb34085cf02179e518443b71b2209c212d332dc",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T17:02:29+00:00"
+        },
+        "views/privacy/index.php": {
+            "base": "sha256:b375c53e58b911b374af555f7afd993c46519df5c23b0442cdd68a4a168b6c3f",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T23:56:00+00:00"
+        },
+        "views/teams/create.php": {
+            "base": "sha256:000744cfbf7c64137886ec4cc0501d39c7f83bce4884406abfa0d581e7815267",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T16:56:03+00:00"
+        },
+        "views/teams/index.php": {
+            "base": "sha256:c2ad92482f7c57ba734e580eda11cf4d631699676e4a98adca439aa34bb7c469",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T16:56:03+00:00"
+        },
+        "views/teams/members.php": {
+            "base": "sha256:36bddfcabf746915a8ecaf60b028f972b8048bdeb6bb1cd6a75b44def4b71c04",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T16:56:03+00:00"
+        },
+        "views/teams/settings.php": {
+            "base": "sha256:f33c071595e8d9028e240c7a64a5559714681f1b724944572bcae4e3267d9dac",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T16:56:04+00:00"
+        },
+        "views/teams/view.php": {
+            "base": "sha256:a5c1af646a7d6f680f1cc4af684d3a3db9306c28d10144a16a8d01b5dd4fe772",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T17:01:39+00:00"
+        },
+        "views/terms/index.php": {
+            "base": "sha256:755af9ced85ab760bd3070e6c18f12894e128399c779748425d1f6156c824a78",
+            "release": "dev-main",
+            "recorded_at": "2026-09-30T23:56:00+00:00"
+        }
+    }
+}

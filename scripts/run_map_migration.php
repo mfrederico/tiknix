@@ -13,7 +13,7 @@ if (php_sapi_name() !== 'cli') {
 }
 
 // Load bootstrap
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use app\Bean;
 

@@ -1,11 +1,11 @@
 <?php
 namespace app\mcptools\workbench;
 
-use app\mcptools\BaseTool;
+use app\mcptools\workbench\WorkbenchTool;
 use \app\Bean;
 use \app\GitHubService;
 
-class CompleteTaskTool extends BaseTool {
+class CompleteTaskTool extends WorkbenchTool {
 
     public static string $name = 'complete_task';
 

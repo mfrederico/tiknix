@@ -12,7 +12,7 @@
  *   php scripts/merge-threads.php 14 15 16
  */
 
-require __DIR__ . '/../bootstrap.php';
+require __DIR__ . '/../vendor/autoload.php';
 
 use app\Bean;
 

@@ -32,12 +32,12 @@ $iid = (int)$instance->id;
      instance you were not working on; a second label is how the two come to disagree. */
   ?>
 
-  <?php include __DIR__ . '/../partials/connected-services.php'; ?>
+  <?php include \Flight::view()->getTemplate('partials/connected-services'); ?>
 
   <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em">Pipelines &amp; automations</h2>
   <?php
     $canRun = true;
     $runId  = $iid;
-    include __DIR__ . '/../partials/pipeline-automations.php';
+    include \Flight::view()->getTemplate('partials/pipeline-automations');
   ?>
 </div>

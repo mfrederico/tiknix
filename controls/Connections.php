@@ -55,7 +55,9 @@ class Connections extends Control {
         $inst = Bean::load('instance', $id);
         if (!$inst->id) return null;
         if ((int)$inst->memberId !== (int)$this->member->id) return null;
-        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        // A project in its own container has no app on this disk (its folder here is the
+        // builder's workspace); a host clone must have one.
+        if (!\Model_Instance::tenantRow($inst) && !is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;
     }
 
@@ -65,13 +67,13 @@ class Connections extends Control {
         if (!$id) return null;
         $inst = Bean::load('instance', $id);
         if (!$inst->id || !$inst->accessibleBy((int)$this->member->id)) return null;
-        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        if (!\Model_Instance::tenantRow($inst) && !is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;
     }
 
     /** The enabled GitHub connection bound to member + instance, or null. */
     private function githubConn(int $instanceId) {
-        return \app\ConnectionStore::forInstall($instanceId, 'github');
+        return \app\InstanceConnections::forInstall($instanceId, 'github');
     }
 
     private function connSummary($conn): array {
@@ -254,7 +256,7 @@ class Connections extends Control {
      * answer to that is to stop, not to invent an address no provider will accept.
      */
     private function requestHost(): string {
-        $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        $host = \app\Host::visitorHost();
         if ($host === '') {
             $msg = 'OAuth callback URL requested with no Host header — cannot build a '
                  . 'redirect_uri. Refusing rather than sending a provider an invented host.';
@@ -266,8 +268,7 @@ class Connections extends Control {
 
     /** https when the request (or the proxy in front of it) says so. */
     private function requestIsHttps(): bool {
-        return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        return \app\Host::https();
     }
 
     private function redirectUri(): string {
@@ -623,7 +624,6 @@ class Connections extends Control {
     }
 
     private function mcGate(bool $json = false): bool {
-        if (!builder_tools_enabled()) { $json ? Flight::jsonError('Model connections are a builder feature.', 403) : Flight::redirect('/connections'); return false; }
         if (Flight::request()->method !== 'POST') { $json ? Flight::jsonError('POST only.', 405) : Flight::redirect('/connections'); return false; }
         if (!Flight::csrf()->validateRequest()) { $json ? Flight::jsonError('Invalid CSRF token.', 403) : $this->flash('error', 'Invalid CSRF token.'); if (!$json) Flight::redirect('/connections#models'); return false; }
         return true;
@@ -717,7 +717,6 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         // Inside an instance there is no owner/instance picker — show the read-only
         // list of what this app is connected to (metadata via the broker).
-        if (!builder_tools_enabled()) { $this->instanceConnections(); return; }
         $instances = Bean::find('instance', 'member_id = ? ORDER BY created_at DESC', [(int)$this->member->id]);
 
         // An explicit ?id= wins (deep links from the builder), then the project the
@@ -762,7 +761,7 @@ class Connections extends Control {
         // in a catch, so the hint silently rendered blank and looked like "no secret
         // set". Core now reports only WHETHER one is set, which is the whole of what
         // it honestly knows.
-        $byType = ConnectionStore::withInstall((int)$inst->id, function () {
+        $byType = InstanceConnections::withInstall((int)$inst->id, function () {
             $out = [];
             foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
                 if (!$c->id) continue;
@@ -857,6 +856,8 @@ class Connections extends Control {
             'pipelines'      => \app\InstanceAutomations::pipelines($this->instanceDir($inst->slug)),
             'environments'   => ['development', 'production'],
             'categoryOrder'  => ['Deploy', 'Project', 'Payments', 'Stores', 'Messaging', 'Social', 'Other'],
+            // In its own container: where it goes live is the Deploy page (controls/Deploy.php).
+            'inContainer'    => \Model_Instance::tenantRow($inst),
         ]);
     }
 
@@ -879,7 +880,7 @@ class Connections extends Control {
         if (!Flight::hasLevel(LEVELS['ADMIN'])) { Flight::redirect('/dashboard'); return; }
         $root = dirname(__DIR__);
 
-        $connections = ConnectionStore::withOwnDb(function () {
+        $connections = ConnectionStore::readOwn(function () {
             $rows = [];
             foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
                 if (!$c->id) continue;
@@ -892,6 +893,9 @@ class Connections extends Control {
                     'enabled'     => (int) $c->enabled === 1,
                     'revoked'     => !empty($c->revokedAt),
                     'last_used'   => (string) ($c->lastUsedAt ?? ''),
+                    // Same field webhooksecret() writes — this install's own key opened
+                    // it, unlike the core-proxied view which can only report presence.
+                    'webhookSet'  => (string) ($c->webhookSecret ?? '') !== '',
                 ];
             }
             return $rows;
@@ -917,6 +921,14 @@ class Connections extends Control {
                    as "unavailable" hid the Shopify card completely, which is exactly the
                    case a merchant's own app exists to serve. */
                 'custom_ok'  => method_exists($c, 'isConfiguredFor'),
+                // api_key connectors: the label/placeholder/hint for the key field itself,
+                // and any declared EXTRA non-secret fields (e.g. WhatsApp's Phone Number
+                // ID) — declaredFields() reads these same names back out of the request.
+                'key_label'       => (string) ($m['key_label'] ?? 'Secret key'),
+                'key_placeholder' => (string) ($m['key_placeholder'] ?? 'sk_live_… / rk_live_…'),
+                'key_hint'        => (string) ($m['key_hint'] ?? ''),
+                'key_required'    => (bool) ($m['key_required'] ?? true),
+                'fields'          => (array) ($m['fields'] ?? []),
             ];
         }
 
@@ -1039,11 +1051,10 @@ class Connections extends Control {
 
     /** Guard for the instance-side manage actions: instance context (not control plane) + ADMIN. */
     private function instanceManageGuard(bool $json): bool {
-        if (builder_tools_enabled()) {   // on the control plane, use the owner-scoped flow instead
-            if ($json) $this->jsonError('Manage connections from the control-plane Connections page.', 400);
-            else Flight::redirect('/connections');
-            return false;
-        }
+        // The control plane manages a project's connections through the owner-scoped flow.
+        if ($json) $this->jsonError('Manage connections from the control-plane Connections page.', 400);
+        else Flight::redirect('/connections');
+        return false;
         if (!Flight::hasLevel(LEVELS['ADMIN'])) {
             if ($json) $this->jsonError('Admins only.', 403);
             else Flight::redirect('/integrations');
@@ -1275,7 +1286,7 @@ class Connections extends Control {
 
         // Advisory allowlist: the connectors this instance actually has connections
         // for, read from its own store.
-        $keys = ConnectionStore::withInstall((int)$inst->id, function () {
+        $keys = InstanceConnections::withInstall((int)$inst->id, function () {
             $k = [];
             foreach (Bean::find('connections', 'enabled = 1') as $c) {
                 if ($c->connectorType) $k[(string)$c->connectorType] = true;
@@ -1807,7 +1818,7 @@ class Connections extends Control {
         // decrypted with that instance's key (ownToken), and the outcome is written
         // back to the same file. Carrying the bean out and storing it afterwards
         // would save it to core -- see ConnectionStore::withInstall.
-        $res = ConnectionStore::withInstall($iid, function () use ($cid) {
+        $res = InstanceConnections::withInstall($iid, function () use ($cid) {
             $conn = Bean::load('connections', $cid);
             if (!$conn->id) return ['error' => 'Connection not found', 'code' => 404];
 
@@ -1837,7 +1848,7 @@ class Connections extends Control {
         if (($t = $this->hubTarget()) === null) return;
         [$iid, $cid] = $t;
 
-        $gone = ConnectionStore::withInstall($iid, function () use ($cid) {
+        $gone = InstanceConnections::withInstall($iid, function () use ($cid) {
             $conn = Bean::load('connections', $cid);
             if (!$conn->id) return false;
             Bean::trash($conn);
@@ -1863,11 +1874,9 @@ class Connections extends Control {
         // for an instance would seal it with core's key and hand the instance a value
         // it can never verify against -- and the failure would show up as an HMAC
         // mismatch on a live webhook, nowhere near the button that caused it.
-        if (builder_tools_enabled()) {
-            $this->jsonError('Set the webhook secret from the instance\'s own Connections page: '
-                . 'it is encrypted with that install\'s key, which the control plane does not hold.', 409);
-            return;
-        }
+        $this->jsonError('Set the webhook secret from the instance\'s own Connections page: '
+            . 'it is encrypted with that install\'s key, which the control plane does not hold.', 409);
+        return;
 
         $cid = (int)$this->getParam('cid', 0);
         if ($cid <= 0) { $this->jsonError('Connection not found', 404); return; }
@@ -1907,7 +1916,7 @@ class Connections extends Control {
         // database is fine -- it is store() that writes to whatever is selected, which
         // is why nothing here saves it. The token must be decrypted inside, while the
         // instance's key is the one in scope.
-        $src = ConnectionStore::withInstall($iid, function () use ($cid) {
+        $src = InstanceConnections::withInstall($iid, function () use ($cid) {
             $conn = Bean::load('connections', $cid);
             if (!$conn->id) return null;
             return ['conn' => $conn, 'token' => ConnectionStore::ownToken($conn)];

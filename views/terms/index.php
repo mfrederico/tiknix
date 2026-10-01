@@ -1,5 +1,8 @@
 <?php
 /*
+ * Core's own copy (an override of the runtime's generic page): Tiknix's terms, operated by
+ * ClickSimple LLC, with the platform's billing and isolation text and its /index/security page.
+ *
  * Terms of Service — canonical page. Served by Terms::index() at /terms (the URL the signup
  * form links to). Uses the app layout (Bootstrap card).
  *

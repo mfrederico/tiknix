@@ -65,6 +65,14 @@ class Git extends BaseControls\Control {
      */
     private function gate(string $slug): ?array {
         $r = GitHttp::resolve($slug);
+        // core.git / runtime.git are resolved by the CALLER's slug, which is in the Basic
+        // credentials — and git's first request carries none. Answer that with the challenge,
+        // not a bare 401: without WWW-Authenticate git never retries with its password, and
+        // every tenant fetch of the runtime failed as "Authentication failed".
+        if (!$r['ok'] && (int) ($r['code'] ?? 0) === 401) {
+            GitHttp::requireAuth();
+            return null;
+        }
         if (!$r['ok']) {
             // Same status for "no such instance" and "not active" — an unauthenticated
             // caller should not be able to enumerate which instances exist.

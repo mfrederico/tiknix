@@ -6,7 +6,7 @@
     ?>
         <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
             <?= htmlspecialchars(($msg['message']) ?? '') ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="alert"></button>
         </div>
     <?php endforeach; ?>
 
@@ -251,12 +251,12 @@
                 <?php endforeach; ?>
                 <div class="modal-header">
                     <h5 class="modal-title">Add MCP Server</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Name</label>
-                        <input type="text" class="form-control" name="slug" required pattern="[a-z0-9][a-z0-9-]*" placeholder="my-server">
+                        <input type="text" class="form-control" name="slug" required pattern="[a-z0-9][a-z0-9\-]*" placeholder="my-server">
                         <div class="form-text">Lowercase alphanumeric with dashes</div>
                     </div>
                     <div class="mb-3">
@@ -307,7 +307,7 @@
                 <input type="hidden" name="slug" id="editServerSlug">
                 <div class="modal-header">
                     <h5 class="modal-title">Edit Server: <span id="editServerName"></span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -353,7 +353,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Delete Server</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <p>Delete server <strong id="deleteServerName"></strong>?</p>

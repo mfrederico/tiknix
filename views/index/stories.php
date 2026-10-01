@@ -6,7 +6,7 @@
  * Vars: $stories (Model_Showcase::stories() — founder, role, headline, startedWith,
  *       summary, body[], built[], stats[{v,k}], image, slug, title, url)
  */
-$logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
+$logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
 $names = array_map(fn($s) => $s['founder'], $stories);
 ?>
 <!DOCTYPE html>

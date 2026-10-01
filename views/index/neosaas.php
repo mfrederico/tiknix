@@ -6,7 +6,7 @@
  * Carries its own JSON-LD (Article + DefinedTerm + FAQPage) because search engines and AI
  * assistants are the second audience: the page exists so "what is NeoSaaS" resolves here.
  */
-$logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
+$logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
 $desc  = 'NeoSaaS is first-party software with SaaS upkeep: built to fit one business exactly, owned by that business like first-party data is, hosted and maintained like SaaS, and never rented. Here is the argument, with a suit in it.';
 $faqs  = [
     ['What is NeoSaaS?', 'Software built to fit one business exactly, owned by that business, and run wherever it chooses. It keeps what people like about SaaS, which is that someone hosts it, patches it and keeps it current, and drops what they hate: renting forever, paying per seat, and bending the company around a vendor\'s roadmap.'],
@@ -24,7 +24,7 @@ $faqNodes = array_map(fn($f) => ['@type' => 'Question', 'name' => $f[0], 'accept
 $jsonld = [
     '@context' => 'https://schema.org',
     '@graph' => [
-        ['@type' => 'Organization', '@id' => $site . '/#org', 'name' => 'tiknix', 'url' => $site . '/', 'logo' => $site . '/img/tiknix.svg', 'parentOrganization' => ['@type' => 'Organization', 'name' => 'ClickSimple', 'url' => 'https://clicksimple.com/'], 'sameAs' => ['https://clicksimple.com/', 'https://github.com/mfrederico']],
+        ['@type' => 'Organization', '@id' => $site . '/#org', 'name' => 'tiknix', 'url' => $site . '/', 'logo' => $site . '/rt/img/tiknix.svg', 'parentOrganization' => ['@type' => 'Organization', 'name' => 'ClickSimple', 'url' => 'https://clicksimple.com/'], 'sameAs' => ['https://clicksimple.com/', 'https://github.com/mfrederico']],
         ['@type' => 'Person', '@id' => 'https://clicksimple.com/#matt', 'name' => 'Matthew Frederico', 'url' => 'https://clicksimple.com/about.php', 'sameAs' => ['https://github.com/mfrederico', 'https://linkedin.com/in/mattfred']],
         ['@type' => 'DefinedTerm', '@id' => $site . '/neosaas#term', 'name' => 'NeoSaaS', 'url' => $site . '/neosaas', 'description' => 'First-party software with SaaS upkeep: built to fit one business exactly, owned by that business, and run wherever it chooses, with the hosting and maintenance of SaaS and none of the renting.', 'inDefinedTermSet' => ['@type' => 'DefinedTermSet', 'name' => 'tiknix glossary', 'url' => $site . '/neosaas']],
         ['@type' => 'Article', '@id' => $site . '/neosaas#article', 'headline' => 'NeoSaaS: you can\'t grow into a suit that wasn\'t cut for you', 'description' => $desc, 'url' => $site . '/neosaas', 'mainEntityOfPage' => $site . '/neosaas', 'author' => ['@id' => 'https://clicksimple.com/#matt'], 'publisher' => ['@id' => $site . '/#org'], 'datePublished' => '2026-09-25', 'dateModified' => date('Y-m-d'), 'about' => ['@id' => $site . '/neosaas#term']],

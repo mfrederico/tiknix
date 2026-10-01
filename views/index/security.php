@@ -10,7 +10,7 @@
  * Stripe (no card numbers stored), TOTP 2FA for admins. If any of that changes, change
  * this page.
  */
-$logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
+$logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -33,7 +33,7 @@ $logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
             background:radial-gradient(1100px 520px at 50% -8%,var(--glow),transparent 62%),linear-gradient(160deg,var(--bg1) 0%,var(--bg2) 100%);min-height:100vh}
         .wrap{max-width:980px;margin:0 auto;padding:clamp(2.5rem,6vh,4rem) 1.5rem}
         .logo{display:inline-flex;align-items:center;gap:.7rem;margin-bottom:1.75rem;color:var(--text);text-decoration:none}
-        .logo-mark{width:44px;height:44px;flex:0 0 auto;background:currentColor;-webkit-mask:url(/img/tiknix.svg?v=<?= $logoV ?>) center/contain no-repeat;mask:url(/img/tiknix.svg?v=<?= $logoV ?>) center/contain no-repeat}
+        .logo-mark{width:44px;height:44px;flex:0 0 auto;background:currentColor;-webkit-mask:url(/rt/img/tiknix.svg?v=<?= $logoV ?>) center/contain no-repeat;mask:url(/rt/img/tiknix.svg?v=<?= $logoV ?>) center/contain no-repeat}
         .logo-word{font-family:'Playfair Display',Georgia,serif;font-weight:600;font-size:1.9rem;line-height:1}
         .badge{display:inline-block;padding:.4rem 1rem;border:1px solid rgba(255,255,255,.4);border-radius:999px;font-size:.78rem;letter-spacing:.15em;text-transform:uppercase;margin-bottom:1.1rem;opacity:.9}
         h1{font-size:clamp(2rem,6vw,3rem);font-weight:800;line-height:1.12;margin-bottom:.75rem}

@@ -1,10 +1,10 @@
 <?php
 namespace app\mcptools\workbench;
 
-use app\mcptools\BaseTool;
+use app\mcptools\workbench\WorkbenchTool;
 use \app\Bean;
 
-class AddTaskLogTool extends BaseTool {
+class AddTaskLogTool extends WorkbenchTool {
 
     public static string $name = 'add_task_log';
 

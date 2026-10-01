@@ -110,7 +110,7 @@ class MicrosoftConnectorCharacterizationTest extends TestCase {
 
     public function testBrokerToolNamesExact(): void {
         $this->assertSame(
-            ['send_mail', 'list_messages', 'get_message', 'list_events', 'create_event', 'update_event'],
+            ['send_mail', 'list_messages', 'find_conversation_message', 'get_message', 'list_events', 'create_event', 'update_event'],
             array_keys($this->toolsByName())
         );
     }
@@ -181,8 +181,11 @@ class MicrosoftConnectorCharacterizationTest extends TestCase {
 
     public function testSendMailThreadedReplyUsesCreateReply(): void {
         $c = $this->connector();
-        $c->queueJson(201, ['id' => 'reply-draft-1', 'conversationId' => 'conv-9']);
-        $c->queueEmpty(202);
+        // createReply returns the draft with the original quoted in its body
+        $c->queueJson(201, ['id' => 'reply-draft-1', 'conversationId' => 'conv-9',
+                            'body' => ['contentType' => 'html', 'content' => '<html><body><p>Original</p></body></html>']]);
+        $c->queueJson(200, ['id' => 'reply-draft-1']);   // PATCH
+        $c->queueEmpty(202);                              // send
 
         $result = $c->callBrokerTool('send_mail', null, 'tok', [
             'to'                  => 'lead@example.com',
@@ -191,17 +194,24 @@ class MicrosoftConnectorCharacterizationTest extends TestCase {
             'in_reply_to_message' => 'orig-msg-1',
         ]);
 
-        $this->assertCount(2, $c->requests);
+        $this->assertCount(3, $c->requests);
 
         $replyReq = $c->requests[0];
         $this->assertSame('POST', $replyReq['method']);
         $this->assertSame(
             'https://graph.microsoft.com/v1.0/me/messages/orig-msg-1/createReply', $replyReq['url']
         );
-        $replyBody = json_decode((string) $replyReq['opts']['body'], true);
-        $this->assertSame('<p>Following up</p>', $replyBody['comment']);
 
-        $sendReq = $c->requests[1];
+        // Replying to a message WE sent would address it back to us: the recipient is set to the
+        // person written to, and our content goes above the quoted original, inside its <body>.
+        $patch = $c->requests[1];
+        $this->assertSame('PATCH', $patch['method']);
+        $this->assertSame('https://graph.microsoft.com/v1.0/me/messages/reply-draft-1', $patch['url']);
+        $patchBody = json_decode((string) $patch['opts']['body'], true);
+        $this->assertSame('lead@example.com', $patchBody['toRecipients'][0]['emailAddress']['address']);
+        $this->assertSame('<html><body><p>Following up</p><br><p>Original</p></body></html>', $patchBody['body']['content']);
+
+        $sendReq = $c->requests[2];
         $this->assertSame(
             'https://graph.microsoft.com/v1.0/me/messages/reply-draft-1/send', $sendReq['url']
         );

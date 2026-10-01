@@ -17,7 +17,6 @@ use \Flight as Flight;
 class Stories extends BaseControls\Control {
 
     public function index($params = []) {
-        if (!is_control_plane()) { Flight::redirect('/'); return; }
         $this->render('index/stories', [
             'title'   => 'Founder stories — tiknix',
             'stories' => \Model_Showcase::stories(Bean::find('showcase', 'enabled = 1 ORDER BY sort_order ASC, id ASC')),

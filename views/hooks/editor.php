@@ -17,7 +17,7 @@ $isEdit = !$isNew;
             ?>
                 <div class="alert alert-<?= $msg['type'] === 'error' ? 'danger' : $msg['type'] ?> alert-dismissible fade show">
                     <?= htmlspecialchars(($msg['message']) ?? '') ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endforeach; ?>
 
@@ -53,7 +53,7 @@ $isEdit = !$isNew;
                                 <div class="col-auto">
                                     <input type="text" class="form-control form-control-sm font-monospace"
                                            id="file_name" name="file_name"
-                                           pattern="[a-z][a-z0-9-]*\.php"
+                                           pattern="[a-z][a-z0-9\-]*\.php"
                                            placeholder="my-custom-hook.php"
                                            value="<?= htmlspecialchars(($fileName) ?? '') ?>"
                                            required style="width: 250px;">
@@ -76,7 +76,7 @@ $isEdit = !$isNew;
                         <?php
                         $editorCode = $code ?? '';
                         $editorHeight = '500px';
-                        include dirname(__DIR__) . '/components/php-editor.php';
+                        include \Flight::view()->getTemplate('components/php-editor');
                         ?>
 
                         <div class="p-3 border-top bg-light d-flex gap-2">

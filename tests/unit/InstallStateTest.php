@@ -131,8 +131,10 @@ class InstallStateTest extends ConceptsTestCase {
 
     public function testTheLoginsRefuseTheSeedBeforeVerifying(): void {
         // Both password logins call passwordIsSeeded() ahead of password_verify().
-        foreach (['controls/Auth.php', 'controls/Mcp.php'] as $f) {
-            $src = file_get_contents(dirname(__DIR__, 2) . '/' . $f);
+        // Located by the autoloader, not by path: controllers live in the app or the runtime.
+        foreach (['app\\Auth', 'app\\Mcp'] as $cls) {
+            $f = (new \ReflectionClass($cls))->getFileName();
+            $src = file_get_contents($f);
             $seed = strpos($src, 'passwordIsSeeded()');
             $verify = strpos($src, 'password_verify($password, $member->password)');
             $this->assertNotFalse($seed, "$f does not refuse the seeded password");

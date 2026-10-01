@@ -16,6 +16,14 @@
 # in a test file must be SEEN, not swallowed into a bare exit 255.
 set -euo pipefail
 
+# The pre-commit hook runs this with git's environment set for THIS repository (GIT_DIR,
+# GIT_INDEX_FILE, …). Tests build throwaway repositories and run `git -C <tmp>`, which does
+# NOT override GIT_DIR — so every git call a test or the library under test makes would act
+# on this repository instead. On main the hook's GIT_DIR is the relative ".git" and resolves
+# inside each temp repo by luck; in a worktree it is absolute and the tests wrote into it.
+# (2026-09-28: a fixture staged core's whole tree as deleted.) Cleared here, for every test.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PHPUNIT="$ROOT/vendor/bin/phpunit"
 

@@ -42,12 +42,8 @@ class Agentsetup extends Control {
         return Feature::allows('mcp', (int) $this->member->id, (int) $this->member->level);
     }
 
-    private function denyConfigure(): void {
-        $this->logger->warning('Ungranted member attempted to reach Agent Setup', [
-            'member_id' => $this->member->id, 'member_level' => $this->member->level, 'feature' => 'mcp',
-        ]);
-        http_response_code(403);   // see Mcptools: status() alone is not flushed
-        Flight::renderView('error/403', ['title' => '403 - Forbidden']);
+    private function denyConfigure(): never {
+        $this->forbid('Ungranted member attempted to reach Agent Setup', ['feature' => 'mcp']);
     }
 
     /** @var array{id:int,slug:string,name:string,dir:string,url:string,here:bool}|null the project this page configures */
@@ -55,7 +51,6 @@ class Agentsetup extends Control {
 
     public function __construct() {
         parent::__construct();
-        $this->requireBuilderTools('Agent Setup');
     }
 
     /**

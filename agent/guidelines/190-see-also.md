@@ -5,3 +5,4 @@
 - `REDBEAN_README.md` - Detailed RedBeanPHP reference
 - `FLIGHTPHP_README.md` - Detailed FlightPHP reference
 - https://redbeanphp.com/ - Official RedBeanPHP documentation
+- `vendor/tiknix/runtime/README.md` - the runtime package: what it is, how an app extends or overrides it

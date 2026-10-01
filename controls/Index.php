@@ -74,15 +74,12 @@ class Index extends BaseControls\Control {
     }
 
     /**
-     * Whether THIS deploy is the primary marketing site (the root control plane),
-     * as opposed to a provisioned instance clone. Marketing surfaces (showcase +
-     * pricing) show only here. Reuses the established host-based detection
-     * (lib/functions.php is_control_plane — keys off baseurl host vs the apex, so
-     * an instance served at <slug>.tiknix.com self-identifies as a sandbox and
-     * nothing has to change in provisioning). Same signal that gates builder tools.
+     * Whether this is the platform's marketing site (showcase + pricing). It is: this
+     * controller is the control plane's own override of the runtime's Index — an app never
+     * runs it.
      */
     public static function isFlagship(): bool {
-        return !function_exists('is_control_plane') || is_control_plane();
+        return true;
     }
 
     /**

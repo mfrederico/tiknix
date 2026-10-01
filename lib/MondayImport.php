@@ -74,7 +74,7 @@ class MondayImport {
         // The instance owns its connectors, so there is one place to look and no
         // fallback to a platform copy — there is no platform copy any more.
         if ($instanceId !== null && $instanceId > 0) {
-            return ConnectionStore::forInstall($instanceId, 'monday');
+            return InstanceConnections::forInstall($instanceId, 'monday');
         }
 
         // No instance named means no connection. There is deliberately no fallback:

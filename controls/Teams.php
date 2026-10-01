@@ -669,6 +669,9 @@ class Teams extends Control {
         if ($membership) {
             Bean::trash($membership);
             $team->box()->syncRooms();   // out of the team's rooms too, or they keep reading them
+            // ...and out of the apps of the projects the team shared (AppAccess: the account Tiknix made there).
+            $revoked = AppAccess::revokeLost((int) $this->member->id, AppAccess::teamProjects($teamId));
+            if (!$revoked['ok']) $this->flash('warning', 'Left the team, but: ' . implode('; ', $revoked['errors']));
             $this->logger->info('User left team', ['team_id' => $teamId, 'member_id' => $this->member->id]);
         }
 
@@ -716,6 +719,9 @@ class Teams extends Control {
 
         Bean::trash($membership);
         $team->box()->syncRooms();   // out of the team's rooms too, or they keep reading them
+        // ...and out of the apps of the projects the team shared (AppAccess: the account Tiknix made there).
+        $revoked = AppAccess::revokeLost($memberId, AppAccess::teamProjects($teamId));
+        if (!$revoked['ok']) $this->logger->error('Member removed, app access not revoked everywhere', ['errors' => $revoked['errors']]);
 
         $this->logger->info('Member removed from team', [
             'team_id' => $teamId,
@@ -874,6 +880,10 @@ class Teams extends Control {
             return;
         }
 
+        // Who loses what, read before the rows go (AppAccess::revokeLost after the commit).
+        $lostMembers = AppAccess::teamMembers($teamId);
+        $lostProjects = AppAccess::teamProjects($teamId);
+
         try {
             $this->beginTransaction();
 
@@ -898,6 +908,9 @@ class Teams extends Control {
             $this->commit();
 
             $this->logger->info('Team deleted', ['team_id' => $teamId, 'deleted_by' => $this->member->id]);
+            $revokeErrors = [];
+            foreach ($lostMembers as $mid) $revokeErrors = array_merge($revokeErrors, AppAccess::revokeLost($mid, $lostProjects)['errors']);
+            if ($revokeErrors) $this->flash('warning', 'Team deleted, but: ' . implode('; ', $revokeErrors));
 
             $this->flash('success', 'Team deleted');
             Flight::redirect('/teams');

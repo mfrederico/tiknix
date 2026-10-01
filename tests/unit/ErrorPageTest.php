@@ -15,7 +15,7 @@ class ErrorPageTest extends TestCase {
     private const BROWSER_THRESHOLD = 512;
 
     public static function setUpBeforeClass(): void {
-        require_once dirname(__DIR__, 2) . '/lib/fatal-handler.php';
+        require_once \app\Paths::runtime() . '/lib/fatal-handler.php';
     }
 
     public function testTheLastResortPageIsBigEnoughToBeShown(): void {
@@ -38,7 +38,7 @@ class ErrorPageTest extends TestCase {
 
     /** @dataProvider errorViews */
     public function testEveryErrorViewIsBigEnoughToBeShown(string $view): void {
-        $file = dirname(__DIR__, 2) . "/views/error/{$view}.php";
+        $file = \app\Paths::runtime() . "/views/error/{$view}.php";
         $this->assertFileExists($file);
         // The source is a floor for the rendered page: the markup and CSS are static, and the
         // PHP in these views only ever adds to them.
@@ -52,15 +52,22 @@ class ErrorPageTest extends TestCase {
     public function testTheFrontControllerLoadsTheHandlerBeforeAnythingElse(): void {
         // CODE only — comments stripped by the tokenizer. The file's own comment quotes the old
         // ini_set line to explain why it went, and a text match would read that as the line.
-        $index = '';
-        foreach (token_get_all(file_get_contents(dirname(__DIR__, 2) . '/public/index.php')) as $tok) {
-            if (is_array($tok) && in_array($tok[0], [T_COMMENT, T_DOC_COMMENT], true)) continue;
-            $index .= is_array($tok) ? $tok[1] : $tok;
-        }
-        $handler  = strpos($index, "lib/fatal-handler.php");
-        $autoload = strpos($index, 'bootstrap.php');
-        $this->assertNotFalse($handler, 'public/index.php must require lib/fatal-handler.php');
-        $this->assertLessThan($autoload, $handler, 'the handler must be registered before the app boots — a fatal during boot is the case it exists for');
-        $this->assertStringNotContainsString("ini_set('display_errors', 1)", $index, 'raw PHP errors must not be shown unconditionally');
+        $code = static function (string $file): string {
+            $out = '';
+            foreach (token_get_all((string) file_get_contents($file)) as $tok) {
+                if (is_array($tok) && in_array($tok[0], [T_COMMENT, T_DOC_COMMENT], true)) continue;
+                $out .= is_array($tok) ? $tok[1] : $tok;
+            }
+            return $out;
+        };
+        $index = $code(dirname(__DIR__, 2) . '/public/index.php');
+        $handler  = strpos($index, "/lib/fatal-handler.php");
+        $autoload = strpos($index, 'vendor/autoload.php');
+        $this->assertNotFalse($handler, "public/index.php must require the runtime's lib/fatal-handler.php");
+        $this->assertNotFalse($autoload, 'public/index.php must load the Composer autoloader');
+        $this->assertLessThan($autoload, $handler, 'the handler must be registered before Composer and the app boot — a fatal there is the case it exists for');
+        // display_errors is the runtime's front controller's business now (app\Front)
+        $this->assertStringNotContainsString("ini_set('display_errors', 1)", $code(\app\Paths::runtime() . '/lib/Front.php'),
+            'raw PHP errors must not be shown unconditionally');
     }
 }

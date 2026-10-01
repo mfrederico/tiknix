@@ -6,7 +6,7 @@
  *
  * Vars: $showcase (array of showcase beans, may be empty)
  */
-$logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
+$logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
 $hasShowcase = !empty($showcase);
 ?>
 <!DOCTYPE html>

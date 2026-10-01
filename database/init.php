@@ -8,7 +8,7 @@
  *   --fresh: Drop existing database and create new one
  */
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use RedBeanPHP\R;
 use app\Bean;

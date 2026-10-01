@@ -48,7 +48,7 @@ class CoreDb {
      * database, and there is no second one to reach for.
      */
     public static function path(): string {
-        $root = dirname(__DIR__);
+        $root = \app\Paths::root();
         /* A SIDECAR is not its own registry. The Sidecar Kit loads the SIDECAR's config into
            Flight, so database.path there is the sidecar's own file (data/workbench.db) — and
            resolved against core's root it named tiknix/data/workbench.db, an empty file. In

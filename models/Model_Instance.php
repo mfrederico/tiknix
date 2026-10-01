@@ -27,9 +27,48 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
     /** Default app namespace when a row does not carry one. */
     public const DEFAULT_APP = 'tiknix';
 
-    /** Absolute on-disk path to this instance directory. */
+    /** Where the builder's records for projects in their own containers live (dirOf). */
+    public const WORKSPACES = self::ROOT . '/_workspaces';
+
+    /** Absolute on-disk path to this instance's directory on core (dirOf). */
     public function dir(): string {
-        return self::dirFrom((string) $this->bean->slug, (string) $this->bean->app);
+        return self::dirOf($this->bean);
+    }
+
+    /** Does this project live in its own container (TenantHost, instance.ct_kind = 'tenant')? */
+    public function isTenant(): bool {
+        return self::tenantRow($this->bean);
+    }
+
+    /** The same question for a bean or a plain row (a sidecar's array). */
+    public static function tenantRow($inst): bool {
+        $kind = is_array($inst) ? (string) ($inst['ct_kind'] ?? $inst['ctKind'] ?? '') : (string) ($inst->ctKind ?? '');
+        return $kind === 'tenant';
+    }
+
+    /**
+     * WHERE CORE KEEPS A PROJECT'S FILES — one rule for every caller. A host clone: its own
+     * directory (dirFrom). A project in its own container: its WORKSPACE, _workspaces/<slug>,
+     * which holds the builder's records only (the task board data/workbench.db, plans, logs);
+     * the app itself is in the container, reached over SSH (TenantHost). A caller that went on
+     * to read the app's code or config from here finds nothing — and fails saying so, rather
+     * than acting on a host copy that no longer serves the site.
+     *
+     * @param \RedBeanPHP\OODBBean|array $inst  a bean, or a row (slug, app, ct_kind)
+     */
+    public static function dirOf($inst): string {
+        $slug = is_array($inst) ? (string) ($inst['slug'] ?? '') : (string) ($inst->slug ?? '');
+        $app  = is_array($inst) ? (string) ($inst['app'] ?? '') : (string) ($inst->app ?? '');
+        return self::tenantRow($inst) ? self::workspaceFrom($slug) : self::dirFrom($slug, $app);
+    }
+
+    /** _workspaces/<slug> for a slug (validated like dirFrom). */
+    public static function workspaceFrom(string $slug): string {
+        $slug = trim($slug);
+        if (!preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $slug)) {
+            throw new \RuntimeException("Model_Instance::workspaceFrom(): '{$slug}' is not a slug");
+        }
+        return self::WORKSPACES . '/' . $slug;
     }
 
     /**
@@ -78,6 +117,7 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      */
     public static function dirForSlug(string $slug, string $fallbackApp = self::DEFAULT_APP): string {
         $bean = \app\Bean::findOne('instance', 'slug = ?', [$slug]);
+        if ($bean && $bean->id && self::tenantRow($bean)) return self::dirOf($bean);
         $app  = ($bean && $bean->id && $bean->app) ? (string) $bean->app : $fallbackApp;
         return self::dirFrom($slug, $app);
     }
@@ -91,7 +131,7 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      * tasks believing it is tidying a customer project. Naming conventions also break the
      * moment somebody adds an alias.
      *
-     * Two structural facts define one, both already used by scripts/upgrade-instances.php:
+     * Two structural facts define one:
      *   - its git origin IS core (realpath, so a symlinked path collapses to the truth)
      *   - it sits on an `instance/<slug>` branch, which only provisioning creates
      *
@@ -118,7 +158,7 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      */
     public static function isolationStateFor(\RedBeanPHP\OODBBean $inst): string {
         $recorded = (string) ($inst->isolationState ?? '');
-        $dir = self::dirFrom((string) $inst->slug, (string) ($inst->app ?: 'tiknix'));
+        $dir = self::dirOf($inst);
         if (self::isolationLive($dir)) {
             if ($recorded !== 'active') { $inst->isolationState = 'active'; \app\Bean::store($inst); }
             return 'active';

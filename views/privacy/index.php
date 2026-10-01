@@ -1,5 +1,8 @@
 <?php
 /*
+ * Core's own copy (an override of the runtime's generic page): Tiknix's privacy policy, operated by
+ * ClickSimple LLC, with the platform's projects, billing and isolation text and its /index/security page.
+ *
  * Privacy Policy — canonical page. Served by Privacy::index() at /privacy (the URL the
  * signup form links to). Uses the app layout (Bootstrap card), like the rest of the site.
  *

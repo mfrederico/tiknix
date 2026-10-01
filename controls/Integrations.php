@@ -32,8 +32,7 @@ class Integrations extends Control {
      */
     public function index($params = []) {
         if (!$this->requireLogin()) return;
-        if (builder_tools_enabled()) { $this->controlPlane(); return; }
-        $this->instanceView();
+        $this->controlPlane();
     }
 
     /** Control-plane hub — the selected project's automations. */
@@ -57,7 +56,7 @@ class Integrations extends Control {
         $dir = $this->instanceDir($inst->slug);
         // Connected services for the selected instance, service+status only (the owner
         // sees full detail on /connections; this catalog never carries identifiers).
-        $services = \app\ConnectionStore::withInstall((int)$inst->id, function () {
+        $services = \app\InstanceConnections::withInstall((int)$inst->id, function () {
             $out = [];
             foreach (Bean::find('connections', 'enabled = 1') as $c) {
                 $svc = (string)$c->connectorType; if ($svc === '') continue;
@@ -79,25 +78,6 @@ class Integrations extends Control {
     }
 
     /**
-     * Inside-an-instance read-only catalog. Open to ALL members (non-admin included) —
-     * the point is that builders can discover what's available to integrate with.
-     * Connections show as SERVICE + STATUS only (never account identifiers); managing
-     * them stays admin-only on /connections.
-     */
-    private function instanceView(): void {
-        $root = dirname(__DIR__);                       // the app root this code runs in
-        $this->render('integrations/index', [
-            'title'          => 'Integrations',
-            'pipelines'      => InstanceAutomations::pipelines($root),
-            'durableObjects' => InstanceAutomations::durableObjects($root),
-            'appName'        => basename($root),
-            // This instance's own public base URL — used to show the concrete
-            // MCP tool + REST API paths on the exposed pipeline cards.
-            'baseUrl'        => rtrim((string) (Flight::get('app.baseurl') ?: ''), '/'),
-        ] + $this->connectedServices($root));
-    }
-
-    /**
      * Service+status-only connected-services list for the instance catalog, read from
      * THIS install's own store.
      *
@@ -108,7 +88,7 @@ class Integrations extends Control {
      * There is no remote call left to fail, so there is nothing left to flatten.
      */
     private function connectedServices(string $root): array {
-        $services = \app\ConnectionStore::withOwnDb(function () {
+        $services = \app\ConnectionStore::readOwn(function () {
             $out = [];
             foreach (Bean::find('connections') as $c) {
                 $svc = (string)$c->connectorType; if ($svc === '') continue;

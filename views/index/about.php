@@ -4,13 +4,13 @@
  * the landing (no app layout), rendered by About::index() on the flagship host only.
  * Carries Person + Organization JSON-LD so "who makes tiknix" resolves here.
  */
-$logoV = @filemtime(dirname(__DIR__, 2) . '/public/img/tiknix.svg') ?: '1';
+$logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
 $desc  = 'tiknix is built by ClickSimple LLC, a software shop in Mooresville, North Carolina. Founder and CTO Matthew Frederico has spent fifteen-plus years building the machinery under the button: ShipCannon, DealerYes, and tiknix itself.';
 $site  = 'https://tiknix.com';
 $jsonld = [
     '@context' => 'https://schema.org',
     '@graph' => [
-        ['@type' => 'Organization', '@id' => $site . '/#org', 'name' => 'tiknix', 'url' => $site . '/', 'logo' => $site . '/img/tiknix.svg',
+        ['@type' => 'Organization', '@id' => $site . '/#org', 'name' => 'tiknix', 'url' => $site . '/', 'logo' => $site . '/rt/img/tiknix.svg',
          'parentOrganization' => ['@type' => 'Organization', 'name' => 'ClickSimple LLC', 'url' => 'https://clicksimple.com/'],
          'founder' => ['@id' => 'https://clicksimple.com/#matt'],
          'address' => ['@type' => 'PostalAddress', 'addressLocality' => 'Mooresville', 'addressRegion' => 'NC', 'addressCountry' => 'US'],

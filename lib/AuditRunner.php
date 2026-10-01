@@ -74,7 +74,7 @@ class AuditRunner {
      * @param int   $planId
      */
     public function start(array $creds, array $checklist, int $planId): string {
-        \app\InstanceRepo::assertNotCarried($this->slug);
+        if (!TenantBuilder::bySlug($this->slug)) \app\InstanceRepo::assertNotCarried($this->slug);   // a tenant is audited over its public URL
         if ($this->running()) {
             throw new \Exception('An audit is already running for this instance.');
         }

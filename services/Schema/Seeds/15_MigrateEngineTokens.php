@@ -16,7 +16,7 @@
  */
 use \RedBeanPHP\R;
 
-if (is_core_install() && $_tableCheck('modelconnection') && $_tableCheck('settings')) {
+if ($_tableCheck('modelconnection') && $_tableCheck('settings')) {
     $rows = R::getAll("SELECT id, member_id, setting_key, setting_value FROM settings WHERE setting_key LIKE 'engine.%.auth_token'");
     foreach ($rows as $row) {
         if (!preg_match('/^engine\.([a-z0-9_-]+)\.auth_token$/', (string) $row['setting_key'], $m)) continue;

@@ -20,7 +20,7 @@
 
 if (php_sapi_name() !== 'cli') { die("CLI only\n"); }
 
-require_once __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 $app = new app\Bootstrap('conf/config.ini');
 
 use app\Bean;
@@ -43,7 +43,7 @@ if ($token === '' && isset($opts['connection'])) {
     };
 
     $token = (string) ($iid > 0
-        ? \app\ConnectionStore::withInstall($iid, $reader, '')
+        ? \app\InstanceConnections::withInstall($iid, $reader, '')
         : \app\ConnectionStore::withOwnDb($reader, ''));
 
     if ($token === '') {

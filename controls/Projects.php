@@ -273,6 +273,45 @@ class Projects extends BaseControls\Control {
     }
 
     /**
+     * GET /projects/open?to=/agents — a page of the SELECTED project's own app, signed in.
+     *
+     * A project in its own container has its own AI agents, pipelines, connections and settings;
+     * the nav's project section links here, and this hands you over: an AppToken::launch naming
+     * you by email, POSTed (never in a URL) to the app's /auth/launch, which signs in ITS member
+     * with that address at ITS level. You must be able to use the project here first.
+     */
+    public function open($params = []): void {
+        if (!$this->requireLogin()) return;
+        $memberId = (int) $this->member->id;
+        $inst = ProjectContext::current($memberId);
+        if (!$inst) { $this->flash('error', 'Choose a project first.'); Flight::redirect('/projects'); return; }
+        $to = (string) $this->getParam('to', '/dashboard');
+        if (!preg_match('#^/[A-Za-z0-9/_.?=&-]*$#', $to) || str_starts_with($to, '//')) { $this->flash('error', 'Not a page of the project: ' . $to); Flight::redirect('/projects'); return; }
+        $domain = strtolower(trim((string) $inst->ctDomain));
+        if (trim((string) $inst->ctIp) === '' || $domain === '') {
+            $this->flash('error', ($inst->displayName ?: $inst->slug) . ' is not running in its own container, so it has no pages of its own to open.');
+            Flight::redirect('/projects');
+            return;
+        }
+        try {
+            $token = AppToken::launch($inst, (string) $this->member->email, $to, AppAccess::level($memberId, $inst));
+        } catch (\RuntimeException $e) {
+            $this->logger->error('Project open: cannot sign the hand-off', ['slug' => $inst->slug, 'err' => $e->getMessage()]);
+            $this->flash('error', $e->getMessage());
+            Flight::redirect('/projects');
+            return;
+        }
+        $this->logger->info('project page opened', ['slug' => $inst->slug, 'to' => $to, 'member' => $memberId]);
+        $action = 'https://' . $domain . '/auth/launch';
+        $name = htmlspecialchars((string) ($inst->displayName ?: $inst->slug));
+        header('Cache-Control: no-store');
+        echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opening ' . $name . '</title></head>'
+            . '<body onload="document.forms[0].submit()" style="font-family:system-ui,sans-serif;padding:2rem">'
+            . '<form method="post" action="' . htmlspecialchars($action) . '"><input type="hidden" name="t" value="' . htmlspecialchars($token) . '">'
+            . '<p>Opening ' . $name . '…</p><noscript><button type="submit">Continue to ' . $name . '</button></noscript></form></body></html>';
+    }
+
+    /**
      * One card's worth of data.
      *
      * Sourced from where the truth actually lives rather than from columns that would

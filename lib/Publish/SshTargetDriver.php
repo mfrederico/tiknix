@@ -156,7 +156,7 @@ abstract class SshTargetDriver implements PublishDriver {
      */
     protected static function keyConnection(object $inst, string $driverKey, bool $create = true) {
         // Scoping (and enabled/revoked) via ConnectionStore -- see its docblock.
-        $conn = \app\ConnectionStore::forInstall((int) $inst->id, $driverKey);
+        $conn = \app\InstanceConnections::forInstall((int) $inst->id, $driverKey);
         if ($conn) return $conn;
         if (!$create) return null;
 
@@ -171,7 +171,7 @@ abstract class SshTargetDriver implements PublishDriver {
         //
         // SshKey::seal is deliberately kept: these are core-minted deploy keys and
         // core has to be able to use them. What changes is only WHERE the row lives.
-        \app\ConnectionStore::withInstall((int) $inst->id, function () use ($inst, $driverKey, $kp) {
+        \app\InstanceConnections::withInstall((int) $inst->id, function () use ($inst, $driverKey, $kp) {
             $conn = Bean::dispense('connections');
             $conn->connectorType = $driverKey;
             $conn->environment   = 'production';
@@ -189,7 +189,7 @@ abstract class SshTargetDriver implements PublishDriver {
 
         // Re-read through the same door every other caller uses, so a failed write
         // surfaces here as "no connection" rather than as a bean that looks stored.
-        return \app\ConnectionStore::forInstall((int) $inst->id, $driverKey);
+        return \app\InstanceConnections::forInstall((int) $inst->id, $driverKey);
     }
 
     /**
@@ -204,7 +204,7 @@ abstract class SshTargetDriver implements PublishDriver {
         $id = (int) $conn->id;
         if ($id <= 0) return;
 
-        \app\ConnectionStore::withInstall((int) $inst->id, function () use ($id, $ok, $error) {
+        \app\InstanceConnections::withInstall((int) $inst->id, function () use ($id, $ok, $error) {
             $row = Bean::load('connections', $id);
             if (!$row->id) return false;
             $row->lastUsedAt = date('Y-m-d H:i:s');

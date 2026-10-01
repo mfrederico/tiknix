@@ -6,7 +6,7 @@
 1. **Check logs first** when something misbehaves: the `last_error` MCP tool (newest ERROR with what preceded it), or `tail -50 log/app-$(date +%Y-%m-%d).log`
 2. Use the CLI tool for DB ops: `php scripts/clitool.php --help` (see [CLI Tool](#cli-tool))
 3. **No explicit routes** — `Flight::defaultRoute()` auto-routes `/controller/method`
-4. Use the `Bean::` wrapper (`lib/Bean.php`), never `R::` directly (except bootstrap + schema seeds)
+4. Use the `Bean::` wrapper (`vendor/tiknix/runtime/lib/Bean.php`), never `R::` directly (except bootstrap + schema seeds)
 5. String external IDs use the `_eid` suffix, never `_id` (reserved for RedBeanPHP integer FKs)
 6. **No fallbacks. Fail loudly.** When something required is missing or wrong, raise or log
    an ERROR that names it. Never substitute a placeholder, a default, or the nearest working
@@ -71,8 +71,8 @@ Prefer Mantic over `grep` or `glob` for discovery tasks.
 
 ## Codebase Introspection (MCP)
 
-Inside an AI Builder instance, the `tiknix` MCP server exposes structural
-primitives — prefer them over scanning the tree:
+The app's own `tiknix` MCP server (`/mcp/message`, or the stdio server in the runtime) exposes
+structural primitives — prefer them over scanning the tree:
 
 - `reuse_digest` — the pre-baked "what already exists" inventory in ONE call: controllers (+levels), models (+columns/relations), lib services (+methods), authcontrol wildcards, config sections, seeders. Call this FIRST when adding a feature.
 - `codebase_map` — orient first: controllers (+route counts), models+tables, lib classes, config sections.
@@ -90,16 +90,6 @@ They return pointers, not file bodies — `Read` the file at the pointer for det
 - `database_query(sql)` — ADMIN and HTTP only (not for jailed agents): ONE read-only statement (SELECT / WITH / EXPLAIN / read-only PRAGMA), capped at 200 rows, credential columns withheld.
 
 Every string these return is scrubbed of credential shapes (`Redact`). A value that reads `[redacted …]` was there and was withheld — that is not the same as empty.
-
-### When the platform is at fault — offer to escalate, then ask
-
-If, while working out why something does not work, the cause looks like the **Tiknix
-platform** (the builder, pipelines runtime, hosting, connectors, billing) rather than this
-app's own code, ASK the user: **"Should I escalate this to Tiknix support?"** Only on a yes,
-call `send_to_tiknix_support(user_agreed: true, subject, message)` — the message written for
-a support engineer: what was attempted, what happened (exact errors, URLs, times), what you
-already checked, what you suspect. The ticket names this project; the answer reaches the
-user in Communications and by email. Never send one without asking; 5 per hour at most.
 
 ### Reuse first (MANDATORY when adding functionality)
 
@@ -141,6 +131,16 @@ A plan's seeds reach the live instance when the plan finishes (the orchestrator 
 `clitool --build`), never from a task's worktree.
 RedBean auto-creates a model's table on first store, so there is no `CREATE TABLE`.
 
+## When the Platform Is at Fault — Offer to Escalate, Then Ask
+
+If, while working out why something does not work, the cause looks like the **Tiknix
+platform** (the builder, pipelines runtime, hosting, connectors, billing) rather than this
+app's own code, ASK the user: **"Should I escalate this to Tiknix support?"** Only on a yes,
+call `send_to_tiknix_support(user_agreed: true, subject, message)` — the message written for
+a support engineer: what was attempted, what happened (exact errors, URLs, times), what you
+already checked, what you suspect. The ticket names this project; the answer reaches the
+user in Communications and by email. Never send one without asking; 5 per hour at most.
+
 ## Framework Standards
 
 This project uses FlightPHP and RedBeanPHP. You MUST follow these conventions strictly.
@@ -150,7 +150,7 @@ This project uses FlightPHP and RedBeanPHP. You MUST follow these conventions st
 > **Official Documentation**: https://redbeanphp.com/
 > Always refer to the official docs for the most accurate information.
 
-### Bean Wrapper Class (lib/Bean.php) — REQUIRED
+### Bean Wrapper Class (vendor/tiknix/runtime/lib/Bean.php) — REQUIRED
 
 **ALWAYS use `Bean::` for database operations. Never call `R::` directly.**
 
@@ -233,8 +233,8 @@ $conn->external_eid = 'acme-store.myshopify.com';
 
 Use `_ref` (not `_id`) when the target is a real row but a FOREIGN KEY would be harmful:
 - The bean type is **plural** (`connections`), so `connection_id` would point at a bean
-  type `connection` that does not exist — see `services/Schema/Seeds/04_ExternalIdentity.php`
-  and `lib/Mentions.php` (`thread_ref`, `message_ref`).
+  type `connection` that does not exist — see `vendor/tiknix/runtime/services/Schema/Seeds/04_ExternalIdentity.php`
+  and `vendor/tiknix/runtime/lib/Mentions.php` (`thread_ref`, `message_ref`).
 - The parent is **hard deleted** (`Bean::trash`), and SQLite's default `NO ACTION` would
   make that delete fail forever — e.g. `externalidentity.member_ref`.
 
@@ -467,26 +467,49 @@ LEVELS['PUBLIC'] = 101  // Not logged in (guest)
 
 Lower number = higher privilege. Check with `Flight::hasLevel(LEVELS['ADMIN'])`.
 
-## File Structure
+## File Structure — the runtime and the app
+
+A tiknix app is a Composer project that requires the **runtime**, `tiknix/runtime`
+(RUNTIME-SPLIT-MAP.md). The runtime is installed at `vendor/tiknix/runtime/`, a versioned
+package; the app is everything else at the root.
 
 ```
-/controls       - Controllers (auto-routed by URL)
-/views          - PHP view templates
-/lib            - Core libraries
-/models         - RedBeanPHP FUSE models
-/routes         - Route bootstraps (default.php just calls Flight::defaultRoute())
-/services       - Business logic, connectors, Schema/Seeds
-/conf           - Configuration files
+vendor/tiknix/runtime/{controls,lib,models,       the RUNTIME: primitives (Bean, Sites, Mailer,
+  services,mcptools,views,routes,bin,public}      ConnectionBindings…), stock pages, MCP tools,
+                                                  pipelines, connectors, runtime seeds, commands
+/controls /lib /models /services /mcptools /views the APP's own code
+/routes                                           the app's route files (routes/<segment>.php)
+/concepts /connectors                             installed plugins and connector manifests
+/conf /data /database /secure /log /public        the app's config, data and web root
+/scripts/clitool.php …                            one-line doors to the runtime's commands
+/public/rt                                        the runtime's assets (a link into the package)
 ```
+
+**Never edit a file under `vendor/tiknix/runtime/`.** The runtime is upgraded as a whole; an
+edit there is overwritten by the next update. To change a runtime page, controller or library:
+
+1. **Extend it** — a slot, a setting, or your own class that calls the runtime's. Always first.
+2. **Override it** — `php scripts/clitool.php --override=controls/Help.php` copies the runtime
+   file to the same path in the app. The app's file then REPLACES the runtime's (controllers
+   and libraries through the autoloader, views through the view resolver, seeds, route files
+   and agent guidance sections by file name). An overridden file is **never upgraded again**:
+   `--update` moves the rest of the runtime and names the override STALE when the runtime
+   changed it; its owner reconciles it by hand and runs `--override-record=<path>`.
+   `--overrides` lists them all. Override the smallest thing that works — a view, not its
+   controller.
+
+Find the app root with `\app\Paths::root()` and the runtime's tree with
+`\app\Paths::runtime()` — never `dirname(__DIR__)`, which means a different directory
+depending on where a file lives. Runtime commands run from the app root.
 
 ## Code Validation Hook
 
-A validation hook at `scripts/hooks/validate-tiknix-php.php` (wired up as a `Write|Edit`
+A validation hook at `scripts/hooks/validate-tiknix-php.php` (the app's door to the runtime's `bin/hooks/validate-tiknix-php.php`) (wired up as a `Write|Edit`
 PreToolUse hook in `.claude/settings.json`) enforces these standards:
 - **Blocks** on raw `R::<method>` where `Bean::` wraps it — see the table above. Methods
   `Bean::` does NOT wrap (`setup`, `close`, `testConnection`, `getWriter`, `nuke`) pass,
   because blocking a call with no alternative just teaches people to route around the hook.
-  Allowlisted files: `bootstrap.php`, `services/Schema/Seeds/*.php`, `lib/Bean.php`.
+  Allowlisted files: the runtime's own `lib/Bootstrap.php` and `lib/Bean.php`, and `services/Schema/Seeds/*.php`.
 - **Blocks** on invalid `R::dispense` bean names (underscores, uppercase)
 - **Warns** on `exec` for CRUD — `Bean::exec` too, not just `R::exec`: the wrapper bypasses
   FUSE models exactly the same way, and checking only `R::` meant converting a file to the
@@ -515,7 +538,6 @@ The MCP server (`/mcp/message`) uses **two-layer authentication**:
 ### Layer 1: Route-Level (authcontrol table)
 ```
 mcp::message = 101 (PUBLIC)
-mcp::registry = 101 (PUBLIC)
 ```
 **This is intentional!** These endpoints handle their own authentication.
 Setting them to PUBLIC just means they're *reachable*, not *unprotected*.
@@ -556,14 +578,14 @@ TOTP-based 2FA for admin users (level ≤ 50) and workbench users. Whether it is
 ```ini
 [security]
 two_factor_enabled = true   ; master switch — false disables 2FA entirely (no setup, no verify)
-two_factor_enforce = true   ; false = OPTIONAL (eligible users prompted but can "Skip for now"); true = required
+two_factor_enforce = false  ; false (default) = OPTIONAL (eligible users prompted but can "Skip for now"); true = required
 ```
 
 - **enabled=false** → 2FA completely off (handy for local dev).
-- **enabled=true, enforce=false** → optional: eligible users are prompted at login but may hit **Skip for now** (`/auth/twofaskip`, session-scoped); anyone who opts in still verifies each login.
-- **enabled=true, enforce=true** → required for `REQUIRED_LEVELS` (default, secure).
+- **enabled=true, enforce=false** (the default) → optional: eligible users are prompted at login but may hit **Skip for now** (`/auth/twofaskip`, session-scoped); anyone who opts in still verifies each login.
+- **enabled=true, enforce=true** → required for `REQUIRED_LEVELS`.
 
-The enforcement choke points are `TwoFactorAuth::needsSetup()` / `needsVerification()`; policy is read via `policyEnabled()` / `policyEnforced()`. Level scope in `lib/TwoFactorAuth.php`:
+The enforcement choke points are `TwoFactorAuth::needsSetup()` / `needsVerification()`; policy is read via `policyEnabled()` / `policyEnforced()`. Level scope in `vendor/tiknix/runtime/lib/TwoFactorAuth.php`:
 
 ```php
 public const TRUST_DURATION = 30 * 24 * 60 * 60;  // 30 days device trust
@@ -578,7 +600,7 @@ public const REQUIRED_LEVELS = [1, 50];            // ROOT, ADMIN in scope for 2
 5. Device trusted for 30 days (no 2FA prompt on same device)
 
 **Key files:**
-- `lib/TwoFactorAuth.php` - Core 2FA logic
+- `vendor/tiknix/runtime/lib/TwoFactorAuth.php` - Core 2FA logic
 - `views/auth/2fa-setup.php` - QR code setup page
 - `views/auth/2fa-verify.php` - Login verification page
 - `views/auth/2fa-recovery-codes.php` - Recovery codes display
@@ -595,7 +617,7 @@ Available in all views via `lib/functions.php`:
 
 ## Email (Mailer)
 
-Mail is a CONNECTION, not config. `lib/Mailer.php`, the comms inbox (`services/NotifyService.php`)
+Mail is a CONNECTION, not config. `vendor/tiknix/runtime/lib/Mailer.php`, the comms inbox (`vendor/tiknix/runtime/services/NotifyService.php`)
 and `/webhook/mailgun` all read `Mailer::settings()`: the install's Mailgun connection bound to
 core's `mail` role (`ConnectionBindings::for('core', 'mail')`). Connect one under Connections →
 Mailgun (private API key + sending domain; optional from-address, inbound domain, webhook
@@ -664,51 +686,29 @@ cleanly; the lock's hash shows an in-place edit as `EDITED`, and updating such a
 becomes a merge task. Need behaviour it lacks? Extend it in your own code, or change the
 plugin at its source and publish a new version.
 
-## Storing Secrets on Disk (secure/) — never chmod on an isolated instance
+## Storing Secrets on Disk (secure/)
 
-Encrypted credentials live in `secure/` (gitignored). On an **isolated instance** the
-per-instance php-fpm pool runs as `tiknix-i<id>` and is NOT the file owner (owner is
-`ubuntu`); it reaches `secure/` only through a POSIX ACL (`user:tiknix-i<id>:rwx` + an
-inherited default ACL) that provisioning sets up.
-
-**`chmod` recalculates the ACL mask from the mode's group bits.** So `chmod($dir, 0700)`
-or `chmod($file, 0600)` forces `mask::---`, which drops the pool's grant to
-`#effective:---` — the very next write fails with "attempt to write a readonly database"
-or "Could not write … key", and an existing key becomes unreadable. **umask cannot undo
-this** (it only removes bits, never lifts the mask); the repair is `setfacl -m m::rwx`.
-
-When you generate code that persists a secret to `secure/` (or any ACL-managed instance
-dir), detect isolation and leave permissions to the ACL — the inherited `default:other::---`
-already keeps `other` out, so there is nothing to tighten:
+Encrypted credentials live in `secure/` (gitignored): the connections store's key
+(`secure/connections.key`), an agent's API key (`secure/anthropic.key.enc`), keys an app's own
+services keep. The app runs in its own container as the `app` user, which owns the whole tree
+(`/srv/app`) — `secure/` is the app's, so keep it private the ordinary way:
 
 ```php
-$isolated = is_file(dirname(__DIR__) . '/.fpm-isolated');   // marker at the instance root
-if (!is_dir($dir)) @mkdir($dir, $isolated ? 0770 : 0700, true);
-@file_put_contents($file, $encrypted);
-if (!$isolated) @chmod($file, 0600);   // only a non-isolated install needs the mode tightened
+if (!is_dir($dir)) @mkdir($dir, 0700, true);
+file_put_contents($file, $encrypted) !== false
+    or throw new \RuntimeException("could not write {$file}");
+@chmod($file, 0600);
 ```
 
-`lib/ConnectionStore.php` and the generated `services/*Credential.php` follow this rule;
-copy it, don't re-introduce a bare `chmod 0600`/`mkdir 0700` on `secure/`.
+Encrypt with the app's own key — `EncryptionService::encryptWith($value, ConnectionStore::ownKey())`
+for anything the connections store sits beside, `[security] app_key` otherwise — and treat a
+stored value that will not decrypt as a fault to report, never as "not set".
 
-**The pool's ACL is narrow (C4, `scripts/instance-acl.php`).** The pool user reads the tree
-and writes only `data database secure log logs cache backups storage public/uploads
-.aibuilder conf pipelines mcptools scripts/hooks .claude` and the root files `concepts.lock
-CLAUDE.md .mcp.json`. Code the app generates for itself that must be writable at runtime
-belongs in one of those (a pipeline JSON, an MCP tool, a hook) — never write into `lib/`,
-`controls/`, `views/`… from a request; it is refused, and that refusal is the point.
-
-**Never WRITE an isolated instance's own data as the tree owner.** A CLI run as `ubuntu`
-(clitool, a seed, a scratch script) that creates `data/connections.db` leaves it with mask
-`r--` — SQLite opens at 0644 — and the pool gets "attempt to write a readonly database" on
-its own store (Serenity, 2026-09-28; repair `setfacl -m m::rwx`, never chmod).
-`ConnectionStore::put()/setAlias()` and store creation refuse this
-(`IsolatedPool::ownerOnIsolated`). Code files (`concepts/`, `connectors/*.json`,
-`concepts.lock`) are the owner's, like every merge; DATA the pool must write is the pool's:
-`clitool --build` and `--concept-seeds` already run every seed AS THE POOL on an isolated
-instance (`IsolatedPool::runAsPoolBooted`), so a seed never needs to think about it; a
-one-off script that writes instance data goes through `IsolatedPool::runAsPool($root, $php)`
-(cgi-fcgi to the socket named in `.fpm-isolated`).
+**Code is not data.** Whatever the app must write while it runs belongs under `data/`,
+`database/`, `secure/`, `log/`, `cache/`, `storage/`, `public/uploads/`, `pipelines/` or
+`.aibuilder/` — never `lib/`, `controls/`, `views/`… from a request. Code changes are commits,
+made by the builder's tasks and merged into the app, so the app's git history is the record of
+what it runs.
 
 ## Gotchas
 
@@ -721,10 +721,12 @@ one-off script that writes instance data goes through `IsolatedPool::runAsPool($
   controller/view mismatch surfaces immediately instead of rendering blank
 - **A lead is written one way:** `Model_Lead::capture($email, $first, $last, ['gate' => …])`
   — one lead per email, blanks filled in, `source` set on create. The `gate` is required:
-  `LeadGate::forPublicForm($params, $ip, [...])` for anything a visitor posted (Turnstile
-  must be connected under Connections → Security, or it throws; honeypot, timing and content
-  checks flag the lead as spam rather than refuse it), or `LeadGate::trusted('why')` when no
-  visitor is involved. Never `Bean::dispense('lead')` in a controller.
+  `LeadGate::forPublicForm($params, $ip, [...])` for anything a visitor posted (Turnstile when
+  it is connected — optional: without it the lead records that no bot check ran and the admins
+  are told in Communications to connect it; honeypot, timing and content checks flag the lead
+  as spam rather than refuse it), or `LeadGate::trusted('why')` when no visitor is involved.
+  Never `Bean::dispense('lead')` in a controller. A form's own `catch` around the gate must not
+  say "the bot check is not set up" — the gate no longer throws for that.
 
 ## See Also
 
@@ -733,5 +735,6 @@ one-off script that writes instance data goes through `IsolatedPool::runAsPool($
 - `REDBEAN_README.md` - Detailed RedBeanPHP reference
 - `FLIGHTPHP_README.md` - Detailed FlightPHP reference
 - https://redbeanphp.com/ - Official RedBeanPHP documentation
+- `vendor/tiknix/runtime/README.md` - the runtime package: what it is, how an app extends or overrides it
 
 <!-- tiknix:managed end -->

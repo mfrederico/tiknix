@@ -23,7 +23,7 @@ if ($_tableCheck('thread') && !array_key_exists('project_slug', R::inspect('thre
     echo "  thread.project_slug added\n";
 }
 
-if (is_core_install() && $_tableCheck('thread') && $_tableCheck('message') && $_tableCheck('instance')) {
+if ($_tableCheck('thread') && $_tableCheck('message') && $_tableCheck('instance')) {
     $slugOf = function (string $body): string {
         return preg_match('/(?:finished on|planner for)\s+([a-z0-9][a-z0-9.-]*[a-z0-9])/i', $body, $m) ? strtolower($m[1]) : '';
     };

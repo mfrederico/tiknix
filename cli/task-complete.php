@@ -21,7 +21,7 @@ $workspacePath = getenv('TIKNIX_WORKSPACE') ?: getenv('CLAUDE_PROJECT_DIR') ?: d
 
 // Bootstrap from main project (for database access)
 chdir($mainProject);
-require_once $mainProject . '/bootstrap.php';
+require_once $mainProject . '/vendor/autoload.php';
 
 // Initialize the application
 $app = new \app\Bootstrap('conf/config.ini');

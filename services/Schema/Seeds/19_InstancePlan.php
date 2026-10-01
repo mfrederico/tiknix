@@ -10,7 +10,7 @@
  * allowance is the member's oldest projects, worked out at read time (ProjectQuota), so a
  * deleted first project hands the allowance to the next one without a migration.
  *
- * Padded TEXT ghost, guarded on existence — the pattern of 09_InstanceIsolation.
+ * Padded TEXT ghost, guarded on existence.
  */
 
 use \RedBeanPHP\R;

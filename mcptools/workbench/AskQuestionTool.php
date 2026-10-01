@@ -1,10 +1,10 @@
 <?php
 namespace app\mcptools\workbench;
 
-use app\mcptools\BaseTool;
+use app\mcptools\workbench\WorkbenchTool;
 use \app\Bean;
 
-class AskQuestionTool extends BaseTool {
+class AskQuestionTool extends WorkbenchTool {
 
     public static string $name = 'ask_question';
 

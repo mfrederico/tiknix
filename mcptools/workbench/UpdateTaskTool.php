@@ -1,10 +1,10 @@
 <?php
 namespace app\mcptools\workbench;
 
-use app\mcptools\BaseTool;
+use app\mcptools\workbench\WorkbenchTool;
 use \app\Bean;
 
-class UpdateTaskTool extends BaseTool {
+class UpdateTaskTool extends WorkbenchTool {
 
     public static string $name = 'update_task';
 

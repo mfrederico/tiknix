@@ -48,6 +48,7 @@ class MailSettingsTest extends ConceptsTestCase {
     private $savedLog = null;
 
     protected function tearDown(): void {
+        \app\Paths::useRoot(null);
         ConnectionStore::useOwnInstall();
         \Flight::set('site.config_applied', null);
         \Flight::set('log', $this->savedLog);
@@ -101,13 +102,11 @@ class MailSettingsTest extends ConceptsTestCase {
     }
 
     public function testTheSeedMigratesAnIniOnceAndThenKeeps(): void {
-        $seed = dirname(__DIR__, 2) . '/services/Schema/Seeds/23_MailConnection.php';
-        // The seed reads <root>/conf/mailgun.ini of the CODE's install; run it against a copy
-        // that points at this test's root by rewriting its root line.
-        $code = str_replace('$root = dirname(__DIR__, 3);', '$root = ' . var_export($this->root, true) . ';', (string) file_get_contents($seed));
-        $this->assertNotSame((string) file_get_contents($seed), $code, 'the root line is what the seed anchors on');
-        $file = "{$this->root}/_seed23.php";
-        file_put_contents($file, $code);
+        // The seed reads <app root>/conf/mailgun.ini, and the app root is \app\Paths::root():
+        // point that at this test's root and run the real seed file.
+        $file = \app\Paths::runtime() . '/services/Schema/Seeds/23_MailConnection.php';
+        \app\Paths::useRoot($this->root);
+        $this->addToAssertionCount(1);
 
         ob_start(); include $file; $out = ob_get_clean();
         $this->assertStringContainsString('nothing to migrate', $out);

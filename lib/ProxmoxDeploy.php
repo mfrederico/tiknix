@@ -259,7 +259,7 @@ class ProxmoxDeploy {
         $inst->ctVmid    = $vmid;
         $inst->ctIp      = $addr;
         $inst->ctDomain  = $domain;
-        $inst->ctAliases = $aliases ? json_encode(array_values($aliases)) : null;
+        $inst->ctAliases = $aliases ? implode(',', array_values($aliases)) : null;   // the comma list TenantCarry reads
         Bean::store($inst);
 
         return ['ok' => true, 'vmid' => $vmid, 'ip' => $addr, 'domain' => $domain,
@@ -423,8 +423,7 @@ class ProxmoxDeploy {
 
     /** Aliases currently recorded on the instance. */
     private static function storedAliases(object $inst): array {
-        $j = json_decode((string) ($inst->ctAliases ?? ''), true);
-        return is_array($j) ? array_values(array_filter(array_map('strval', $j))) : [];
+        return array_values(array_filter(array_map('trim', explode(',', (string) ($inst->ctAliases ?? '')))));
     }
 
     /**
@@ -432,16 +431,22 @@ class ProxmoxDeploy {
      * reading .proxy.<name>, so removing the file is exactly "we no longer answer here".
      * Returns false only when the file exists and cannot be removed.
      */
-    private static function removeProxy(string $domain): bool {
+    public static function removeProxy(string $domain): bool {
         $parts = explode('.', $domain);
         if (count($parts) < 2) return true;
-        array_pop($parts);
-        $file = self::PROXY_DIR . '/.proxy.' . implode('.', $parts);
+        $file = self::proxyPath($domain);
         if (!is_file($file)) return true;
         return @unlink($file);
     }
 
-    private static function writeProxy(string $domain, string $ip): array {
+    /** capricorn's proxy file for a domain: .proxy.<domain without its tld>. */
+    public static function proxyPath(string $domain): string {
+        $parts = explode('.', $domain);
+        array_pop($parts);                       // drop the tld, exactly as capricorn does
+        return self::PROXY_DIR . '/.proxy.' . implode('.', $parts);
+    }
+
+    public static function writeProxy(string $domain, string $ip): array {
         $parts = explode('.', $domain);
         if (count($parts) < 2) return ['ok' => false, 'error' => 'domain needs at least one dot: ' . $domain];
         array_pop($parts);                       // drop the tld, exactly as capricorn does
@@ -612,7 +617,7 @@ class ProxmoxDeploy {
                     : 'could not stop serving ' . $gone . ' (proxy file not writable)';
             }
         }
-        $inst->ctAliases = $aliases ? json_encode(array_values($aliases)) : null;
+        $inst->ctAliases = $aliases ? implode(',', array_values($aliases)) : null;   // the comma list TenantCarry reads
         Bean::store($inst);
 
         return ['ok' => true, 'aliases' => $aliases, 'steps' => $steps];

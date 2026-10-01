@@ -32,6 +32,8 @@ class PlanExecutor {
     private string $slug;
     private string $instanceDir;
     private int $memberLevel;
+    /** The instance row when this project lives in its own container (the builder works there). */
+    private ?object $tenant = null;
 
     /* No model parameter: the model is resolved per task from that task's engine
        (launchTask). One model for a whole plan could only ever be right when every task
@@ -41,6 +43,9 @@ class PlanExecutor {
         $this->slug        = $slug;
         $this->instanceDir = rtrim($instanceDir, '/');
         $this->memberLevel = $memberLevel;
+        // The registry is core's database; the orchestrator's ambient one is the task board.
+        $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ?', [$slug]));
+        if ($inst && $inst->id && \Model_Instance::tenantRow($inst)) $this->tenant = $inst;
     }
 
     /** Per-task budget when there is not enough history to measure one. */
@@ -278,6 +283,8 @@ class PlanExecutor {
      * so a resumed orchestrator never double-applies. Returns human-readable log lines.
      */
     public function finalize(): array {
+        // In a container every merge already ran the app's seeds (AgentTask::merge → --build).
+        if ($this->tenant) return ['seeds: run in the container at each merge (' . $this->slug . ')'];
         return self::applySeeds($this->instanceDir, $this->instanceDir . '/.aibuilder/plan-' . $this->planId . '-seeds.txt');
     }
 
@@ -304,6 +311,7 @@ class PlanExecutor {
         if (!$plan->id) return ['ok' => false, 'tag' => '', 'message' => "no plan #{$this->planId} in the tasks db"];
         $have = trim((string) ($plan->planCheckpoint ?? ''));
         if ($have !== '') return ['ok' => true, 'tag' => $have, 'message' => "checkpoint {$have} already taken for this plan — kept"];
+        if ($this->tenant) return $this->checkpointTenant($plan);
 
         $real = realpath($this->instanceDir) ?: $this->instanceDir;
         $base = basename($real);                              // <slug>.<app>
@@ -417,6 +425,7 @@ class PlanExecutor {
 
     /** Create the worktree + brief and spawn the jailed agent. */
     private function launchTask($t): bool {
+        if ($this->tenant) return $this->launchTenantTask($t);
         $base   = $this->baseBranch();
         $branch = 'plan-' . $this->planId . '/task-' . (int)$t->id;
         $wtRel  = '.aibuilder/wt/task-' . (int)$t->id;
@@ -556,6 +565,7 @@ class PlanExecutor {
 
     /** Agent finished: commit its changes, merge back, unlock dependents. */
     private function reapTask($t): void {
+        if ($this->tenant) { $this->reapTenantTask($t); return; }
         $base   = $this->baseBranch();
         $branch = (string)$t->worktreeBranch;
         $wtRel  = '.aibuilder/wt/task-' . (int)$t->id;
@@ -620,6 +630,107 @@ class PlanExecutor {
         if ($merge['status'] === 'merged' && (string) $t->taskType === 'install') {
             $this->enableAdopted($t);
         }
+    }
+
+    /* ---- a project in its own container (TenantBuilder, RUNTIME-SPLIT-MAP.md step 5) ---------- */
+
+    /** AgentTask's id for a subtask: [a-z0-9-], unique per plan and task. */
+    private function tenantTaskId($t): string { return 'plan-' . $this->planId . '-task-' . (int) $t->id; }
+
+    private function tenantDir(): string {
+        $d = $this->instanceDir . '/.aibuilder/tenant';
+        if (!is_dir($d) && !@mkdir($d, 0775, true)) throw new \RuntimeException("could not create {$d}");
+        return $d;
+    }
+
+    /**
+     * The subtask runs IN THE APP'S CONTAINER: its own agent on its own credential, in a
+     * worktree on task/<id> there (AgentTask), inside a detached session here whose ending
+     * is the signal — the same contract as a local task, so runOnce() reaps it the same way.
+     */
+    private function launchTenantTask($t): bool {
+        if ((string) $t->taskType === 'install') {
+            $this->fail($t, "a plugin install is not built into a container yet — install it in the app: php scripts/tenant.php --clitool={$this->slug} -- --concept-install=NAME, then --concept-enable=NAME");
+            return false;
+        }
+        $id = $this->tenantTaskId($t);
+        try {
+            $dir = $this->tenantDir();
+            $brief = "{$dir}/{$id}.md";
+            $out = "{$dir}/{$id}.json";
+            @unlink($out);
+            file_put_contents($brief, $this->buildTaskBrief($t, []));
+            $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int) $t->id, $this->slug);
+            // The app's agent the plan runs on (the builder's picker); '' = the app's default.
+            $agent = PlanIngestor::agentName($t->agent ?? '');
+            TenantBuilder::launch($this->tenant, $session, TenantBuilder::tenantCommand($this->tenant, 'task', $id, $brief, $out, $agent !== '' ? ['agent' => $agent] : []), $id);
+            $this->logEvent($t, 'info', "Build agent started in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
+        } catch (\Throwable $e) {
+            $this->fail($t, 'could not start the task in the container: ' . $e->getMessage());
+            return false;
+        }
+        $t->status         = 'running';
+        $t->worktreeBranch = 'task/' . $id;   // the container's branch
+        $t->agentSession   = $session;
+        $t->startedAt      = date('Y-m-d H:i:s');
+        Bean::store($t);
+        $this->logEvent($t, 'info', "Build agent started in {$this->slug}'s container on task/{$id} (the app's own credential)");
+        return true;
+    }
+
+    /** The container task's session ended: read its result, then merge (publish) or discard. */
+    private function reapTenantTask($t): void {
+        $id = $this->tenantTaskId($t);
+        $out = $this->instanceDir . '/.aibuilder/tenant/' . $id . '.json';
+        $r = TenantBuilder::result($out);
+        if ($r === null) {
+            TenantHost::discardTask($this->tenant, $id);
+            $this->finish($t, 'failed', "the container task ended without a result ({$out}) — the session died or could not reach the container");
+            return;
+        }
+        $tail = trim((string) ($r['output'] ?? ''));
+        if ($tail !== '') $this->logEvent($t, 'info', 'Agent output (tail): ' . mb_substr($tail, -1500));
+        if (!empty($r['credential'])) $this->logEvent($t, 'info', 'Ran on ' . $r['credential']);
+        $status = (string) ($r['status'] ?? '');
+        if ($status === 'no-change') {
+            TenantHost::discardTask($this->tenant, $id);
+            $this->finish($t, 'resolved', "nothing to change — the task's goal was already satisfied, or the agent made no edits");
+            return;
+        }
+        if ($status !== 'changed') {
+            TenantHost::discardTask($this->tenant, $id);
+            $this->finish($t, 'failed', (string) ($r['error'] ?? '') !== '' ? (string) $r['error'] : "the container task ended '{$status}'");
+            return;
+        }
+        if (!empty($r['diffstat'])) $this->logEvent($t, 'info', "Changed ({$r['commit']}):\n" . $r['diffstat']);
+        // Merging IS publishing: the app's branch in its container, then its seeds.
+        $m = TenantHost::mergeTask($this->tenant, $id);
+        if (!empty($m['ok'])) { $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?')); return; }
+        $err = (string) ($m['error'] ?? 'the merge failed');
+        $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err);
+    }
+
+    /**
+     * The rollback point in the container: a tag on the app's HEAD and a consistent copy of
+     * each of its databases (backups/<tag>/), taken over SSH before the first task.
+     */
+    private function checkpointTenant($plan): array {
+        $tag = 'checkpoint-plan-' . $this->planId . '-' . date('Ymd-His');
+        $php = '$d = "backups/' . $tag . '"; @mkdir($d, 0700, true); foreach (glob("database/*.db") ?: [] as $f) { '
+             . '$s = new SQLite3($f, SQLITE3_OPEN_READONLY); $o = new SQLite3($d . "/" . basename($f)); '
+             . 'if (!$s->backup($o)) { fwrite(STDERR, "backup of $f failed\n"); exit(1); } echo basename($f), " "; }';
+        [$code, $out] = TenantHost::ssh($this->tenant, 'app', 'cd /srv/app && git tag ' . escapeshellarg($tag)
+            . ' && php -r ' . escapeshellarg($php), null, 300);
+        if ($code !== 0) {
+            $msg = "cannot checkpoint {$this->slug}'s container (exit {$code}): " . trim($out) . '; the plan will not run without a rollback point';
+            $this->logEvent($plan, 'error', $msg);
+            return ['ok' => false, 'tag' => '', 'message' => $msg];
+        }
+        $plan->planCheckpoint = $tag;
+        $plan->updatedAt      = date('Y-m-d H:i:s');
+        Bean::store($plan);
+        $this->logEvent($plan, 'info', "Checkpoint {$tag} taken in the container before the first task (git tag + backups/{$tag}/: " . trim($out) . ') — roll back to it if this plan goes wrong');
+        return ['ok' => true, 'tag' => $tag, 'message' => "checkpoint {$tag} taken"];
     }
 
     /**
@@ -1209,7 +1320,7 @@ commit and merge your work — you just make the code changes.
   one, use the \\app\\Bean wrapper (Bean::findOne / dispense / store).
   The seed file lives TWO levels below the instance root, so bootstrap the app with
   EXACTLY this (do not add a chdir, the CWD is already the instance root):
-      require_once __DIR__ . '/../../bootstrap.php';
+      require_once __DIR__ . '/../../vendor/autoload.php';
       \$app = new \\app\\Bootstrap();
   A wrong relative depth (e.g. '/../bootstrap.php') will fatal — the seed is two dirs deep.
 - **NO FALLBACKS. Fail loudly.** If something you need is missing — a config key, a
@@ -1240,7 +1351,7 @@ MD;
         $reuses = json_decode((string)$t->reuses, true);
         if (!is_array($reuses) || !$reuses) return '';
         try {
-            $file = dirname(__DIR__) . '/mcptools/Introspector.php';
+            $file = \app\Paths::runtime() . '/mcptools/Introspector.php';
             if (is_file($file)) require_once $file;
             $cls = 'app\\mcptools\\Introspector';
             if (!class_exists($cls)) throw new \RuntimeException('mcptools/Introspector.php is missing from this project');

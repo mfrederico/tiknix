@@ -82,6 +82,9 @@ class PlanIngestor
         $parent->instanceId     = (int)$inst->id;
         $parent->instanceTag    = $tag;
         $parent->engine         = $inst->engine;
+        // The app's agent the whole plan runs on (the builder's agent picker; a project in its
+        // own container). '' = the app's default agent. Every task below inherits it.
+        $parent->agent          = self::agentName($plan['agent'] ?? '');
         $parent->memberId       = $memberId;
         $parent->planCheckpoint = $checkpointTag;
         // A plan's identity that does NOT depend on which database it lives in.
@@ -123,6 +126,7 @@ class PlanIngestor
             $t->instanceId   = (int)$inst->id;
             $t->instanceTag  = $tag;
             $t->engine       = self::engineFor($st, (string) $inst->engine);
+            $t->agent        = (string) $parent->agent;
             $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
             $t->reuses       = json_encode(is_array($st['reuses'] ?? null) ? array_values($st['reuses']) : []);
             $t->adopts       = json_encode(self::adopts($st['adopts'] ?? null, (string) $st['title']));
@@ -161,6 +165,13 @@ class PlanIngestor
             'checkpoint' => $checkpointTag,
             'subtasks'   => $subs,
         ];
+    }
+
+    /** An agent name as the app spells them (Model_Agent::NAME_RE), or '' — anything else is refused. */
+    public static function agentName($name): string {
+        $name = trim((string) $name);
+        if ($name !== '' && !preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/D', $name)) throw new \RuntimeException("'{$name}' is not an agent name");
+        return $name;
     }
 
     /**

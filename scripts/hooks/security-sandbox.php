@@ -55,19 +55,10 @@ if ($workspaceRoot) {
     $workspaceRoot = rtrim(realpath($workspaceRoot) ?: $workspaceRoot, '/');
 }
 
-// Are we running INSIDE the bubblewrap jail? jail-run.sh mounts a tmpfs at
-// /aibhome and exports AIBUILDER_INSTANCE; neither exists on the host.
-//
-// This matters because not every agent is jailed. The plan runners' jailFor() returns
-// no jail for an isolated task workspace (no dot in the basename, or outside
-// /var/www/html/default, or no public/index.php) — those run on the HOST, where
-// this hook is the only boundary there is. So rules are not deleted for being
-// redundant under bwrap; they are scoped, and only skipped where the jail really
-// does enforce them.
-// An EMPTY value is not "jailed": getenv() returns '' for a variable that exists
-// but is blank, and !== false would have quietly treated the host as a jail and
-// switched off every rule scoped to it.
-$inJail = is_dir('/aibhome') || (string) getenv('AIBUILDER_INSTANCE') !== '';
+// There is no jail any more: builder agents run in the projects' containers, and anything this
+// hook guards runs on the host with nothing else holding the line. (It used to switch rules off
+// when /aibhome existed or AIBUILDER_INSTANCE was set — an environment variable anyone can set,
+// so with no jail left it was only a way around these rules.)
 
 // Security log file
 $securityLogPath = $projectDir . '/log/security.log';
@@ -99,25 +90,14 @@ foreach ($dbCandidates as $root => $candidate) {
 }
 
 if ($securityDbPath === '') {
-    // WHO IS THE BOUNDARY HERE?
-    //
-    // INSIDE THE JAIL bwrap is. It binds the workspace and its vendor and nothing else:
-    // other tenants, host secrets and /etc are not in the namespace at all, so they
-    // cannot be reached whatever these rules say. A jailed workspace legitimately ships
-    // no security.db, and refusing every tool for its absence would stop the agent doing
-    // the work it was jailed in order to be allowed to do.
-    //
-    // UNJAILED nothing else is holding the line — the agent runs as a real uid on the
-    // host with permission prompts off — so these rules are the only guard, and their
-    // absence is a broken install rather than a deliberate one. Fail closed: "no rules
-    // loaded, so permit everything" is indistinguishable from a clean pass, and silent.
-    if ($inJail) {
-        exit(0);
-    }
+    // Nothing else is holding the line — the agent runs as a real uid on the host with permission
+    // prompts off — so these rules are the only guard, and their absence is a broken install
+    // rather than a deliberate one. Fail closed: "no rules loaded, so permit everything" is
+    // indistinguishable from a clean pass, and silent.
     fwrite(STDERR,
         "SECURITY BLOCK: no security.db found (looked in: "
-        . implode(', ', array_keys($dbCandidates)) . ") and this session is NOT jailed, so "
-        . "nothing else constrains it. Refusing every tool rather than running with all "
+        . implode(', ', array_keys($dbCandidates)) . ") and nothing else constrains this "
+        . "session. Refusing every tool rather than running with all "
         . "path rules disabled. Fix: restore database/security.db in the install, or point "
         . "TIKNIX_PROJECT_ROOT at one that has it.\n");
     exit(2);
@@ -151,17 +131,6 @@ try {
     $rules = Bean::find('securitycontrol',
         "is_active = 1 ORDER BY CASE action WHEN 'allow' THEN 0 ELSE 1 END, priority ASC");
 
-    // Inside the jail, drop the rules bwrap already enforces. /root, /boot, /sys,
-    // /home and /var/log are not bind-mounted at all, and a jailed process holds
-    // CapEff=0 with NoNewPrivs=1 and no block devices — so reboot/shutdown/sudo/
-    // mkfs/dd-to-device cannot succeed regardless. Keeping them only produces
-    // false positives on commands that MENTION the word.
-    // A rule with no scope (older row, hand-added) is treated as 'always'.
-    if ($inJail) {
-        $rules = array_filter($rules, static function ($r) {
-            return (string) ($r->scope ?? 'always') !== 'unjailed';
-        });
-    }
 } catch (Exception $e) {
     fwrite(STDERR, "WARNING: Failed to load security rules: " . $e->getMessage() . "\n");
     exit(0); // Allow on error - fail open (could change to fail closed with exit(2))

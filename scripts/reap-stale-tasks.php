@@ -5,7 +5,7 @@
  * whose task is gone.
  *
  * The Stop hook releases a task when Claude finishes normally. It cannot help
- * when there IS no normal finish: the jail dies, the box reboots, somebody kills
+ * when there IS no normal finish: a session dies, the box reboots, somebody kills
  * the pane, PHP fatals mid-run. The task then reads `running` forever, its port
  * and session name stay claimed, and every later attempt is refused with "a
  * session for this task is already active" — naming a session for work that
@@ -59,22 +59,22 @@ $say('  ' . count($live) . ' live tmux session(s)');
 
 $released = 0; $killed = 0; $claimed = [];
 
-foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) {
-    // The glob matches core.tiknix, which is a SYMLINK to the control plane and has a
-    // data/workbench.db of its own — so this sweep would release and reap core's tasks
-    // believing they belonged to a customer project. Decide by structure, never by name.
-    if (!\Model_Instance::isProvisionedInstance(dirname(dirname($db)))) continue;
-
-    // THE DIRECTORY IS <slug>.<app>; THE SLUG IS NOT THE DIRECTORY.
-    //
-    // Session names are built from the bare instance slug, so reading the directory
-    // name whole gave "mileage.tiknix" where every session says "mileage", and the
-    // orchestrator probe below looked for tiknix-mileage-tiknix-plan72-orchestrator —
-    // a name nothing ever creates. It therefore answered "the orchestrator is gone"
-    // for every plan on every instance, and this sweep marked each actively-building
-    // plan failed/stalled five minutes after it started. The glob is *.tiknix, so the
-    // suffix to drop is exact rather than guessed.
-    $slug = preg_replace('/\.tiknix$/', '', basename(dirname(dirname($db))));
+// The boards: every project in its own container keeps its task board on core, in its workspace
+// (_workspaces/<slug>/data/workbench.db); its tasks run in the container (TenantRun), so whether
+// a task's session is alive is asked THERE — once per project per sweep. A container that does
+// not answer has its board left alone this sweep: "unreachable" is not "gone".
+$boards = [];
+foreach (Bean::find('instance', "status = 'active' AND ct_kind = 'tenant' AND ct_ip IS NOT NULL AND ct_ip <> ''") as $__inst) {
+    $db = \Model_Instance::dirOf($__inst) . '/data/workbench.db';
+    if (is_file($db)) $boards[] = [$db, (string) $__inst->slug, $__inst];
+}
+foreach ($boards as [$db, $slug, $inst]) {
+    try {
+        $liveCt = array_flip(\app\TenantRun::list($inst, 'tiknix-'));
+    } catch (Throwable $e) {
+        $say("  ! {$slug}: container not reachable — its board is left alone this sweep (" . $e->getMessage() . ')');
+        continue;
+    }
 
     try {
         // One named connection per file. Bean:: rather than raw PDO (CLAUDE.md): a
@@ -161,7 +161,7 @@ foreach (glob('/var/www/html/default/*.tiknix/data/workbench.db') ?: [] as $db) 
 
         // A task with no session recorded and no agent is stale too: that is the
         // shape left by a run that died before it could store the name.
-        if ($session !== '' && isset($live[$session])) continue;
+        if ($session !== '' && (isset($live[$session]) || isset($liveCt[$session]))) continue;
 
         $why = $session === '' ? 'never recorded a session' : "session {$session} is gone";
         $say(sprintf('  %-24s task %-4s %s (%s, %s)',
@@ -265,18 +265,9 @@ foreach (array_keys($live) as $name) {
     // orchestrator exceptions were each added to fix, arriving once more through the
     // one session shape nobody had named yet.
     //
-    // The test is not age. It is whether the jailed agent is still there: both runner
-    // scripts wrap `bwrap … claude -p`, so one with no bwrap child is a shell sitting on
-    // a corpse. Age alone would kill live work — an observed decompose took 3 minutes,
-    // but a large goal can run far longer, and guessing a number is how a cleaner starts
-    // eating real runs.
-    //
-    // (Both runners fall back to an UNJAILED `claude -p` when jailFor() finds no jail
-    // script — a workspace outside /var/www/html/default, or one with no public/index.php.
-    // No provisioned instance looks like that, so the bwrap test holds for every session
-    // this sweep can actually see. If that ever stops being true the symptom is a live
-    // run killed after the grace period, and the fix is to test the pane's process tree
-    // for a live claude rather than to widen the pattern.)
+    // The test is not age. It is whether the agent is still running — in the project's
+    // CONTAINER, where the planner and the audit run (this session only waits for them).
+    // Age alone would kill live work: a large goal plans for a long time.
     if (preg_match('/^tiknix-\d+-(plan|audit)-(.+)$/', $name, $pm)) {
         $kind     = $pm[1];                       // 'plan' | 'audit'
         $instSlug = $pm[2];
@@ -288,30 +279,32 @@ foreach (array_keys($live) as $name) {
         // session's clock. For two sessions created hours apart that difference decides
         // the kill, and it silently made the grace period meaningless for every planner
         // after the first.
-        $bw = [];
         $cr = [];
 
-        $alive = 0;
-        // pgrep -f against the instance directory: the bwrap command line names it, and
-        // it is the one string that distinguishes THIS instance's agent from another's.
-        exec('pgrep -fa ' . escapeshellarg('bwrap') . ' 2>/dev/null', $bw);
-        foreach ($bw as $line) {
-            if (strpos($line, '/' . $instSlug . '.') !== false) { $alive++; break; }
+        // The agent runs in the project's container (TenantHost::plan / the audit runner →
+        // tmux session tiknix-run-planner-m<member> | tiknix-run-audit-m<member> there); this
+        // session only waits for it. Alive there = leave it. Unreachable = leave it too.
+        $pm2 = [];
+        preg_match('/^tiknix-(\d+)-/', $name, $pm2);
+        $runSession = 'tiknix-run-' . ($kind === 'plan' ? 'planner' : 'audit') . '-m' . (int) ($pm2[1] ?? 0);
+        $ctInst = Bean::findOne('instance', 'slug = ?', [$instSlug]);
+        if ($ctInst && \Model_Instance::tenantRow($ctInst)) {
+            try { if (\app\TenantRun::alive($ctInst, $runSession)) continue; }
+            catch (Throwable $e) { $say("  ! {$name}: cannot ask {$instSlug}'s container — left alone"); continue; }
         }
-        if ($alive) continue;                       // still working — leave it
 
         $age = 0;
         exec('tmux display-message -p -t ' . escapeshellarg($name)
              . ' "#{session_created}" 2>/dev/null', $cr);
         if (!empty($cr[0]) && ctype_digit(trim($cr[0]))) $age = time() - (int) trim($cr[0]);
 
-        // A grace period on top, because both are briefly alive before bwrap starts and
-        // briefly alive after it exits while the script ingests what it produced —
+        // A grace period on top, because both are briefly alive before the container run starts
+        // and briefly alive after it ends while the script ingests what it produced —
         // killing it in either window would lose the plan or manifest it just wrote.
         if ($age < max($grace, 120)) continue;
 
         $say('  ' . ($apply ? 'KILLED  ' : 'would kill ') . $name
-            . " ({$kind}: no jailed agent, idle " . (int) round($age / 60) . 'm — the lock it holds'
+            . " ({$kind}: its agent is no longer running in the container, idle " . (int) round($age / 60) . 'm — the lock it holds'
             . " blocks every future {$blocks} for this instance)");
         if ($apply) exec('tmux kill-session -t ' . escapeshellarg($name) . ' 2>/dev/null');
         $killed++;
@@ -325,33 +318,17 @@ foreach (array_keys($live) as $name) {
 
 /* ─── THE PROCESS SWEEP ──────────────────────────────────────────────────────
  *
- * Everything above reaps BOOKKEEPING: a tmux session, a task row. None of it
- * verifies that the agent's processes actually died, and routinely they do not.
- * `tmux kill-session` hangs up the pane; the runner's tree underneath it —
- * run-claude.sh → jail-run.sh → bwrap → claude → npm exec → playwright-mcp →
- * chrome — does not reliably go with it. What survives stays parented to the
- * tmux SERVER rather than to init, so it does not even read as an orphan in ps.
+ * Everything above reaps BOOKKEEPING: a tmux session, a task row. The agents themselves run in
+ * the projects' containers; what runs HERE is an audit's runner (run-audit.sh): the browser it
+ * serves the container's agent (npx @playwright/mcp → chrome) and the SSH tunnel to it. When its
+ * session is killed the runner's EXIT trap ends both — but a tree that outlives its session
+ * stays parented to the tmux SERVER rather than to init, so it does not read as an orphan in ps,
+ * and a browser holds hundreds of MB.
  *
- * Measured on this box before this sweep existed: nine such trees, the oldest
- * twelve days old, holding ~2.5 GB. That is enough to fill an 8 GB container's
- * entire 1 GB of swap, and it did. Their sessions were long gone and their task
- * rows still said `running`, so the sweep above reported them released and moved
- * on while every byte stayed allocated. Reaping the row without reaping the tree
- * is the failure this whole file was written for, repeated one level down.
- *
- * IDENTITY COMES FROM THE PROCESS'S OWN ENVIRONMENT, never from a pattern over
- * ps output. Each runner exports TIKNIX_SESSION_NAME (PlanExecutor through its
- * run-agent.sh, AuditRunner through run-audit.sh), so the tree states which
- * session owns it. When that cannot be read the tree is REPORTED AND LEFT
- * RUNNING: killing a process we could not identify is how a cleaner becomes the
- * outage, and this file already carries four comments about exactly that.
- *
- * ONLY run-claude.sh AND run-audit.sh. The aibuilder runner (run-agent.sh) is
- * deliberately absent: it runs on a PRIVATE tmux socket under the instance's
- * .aibuilder/, which `tmux list-sessions` here never sees. Every one of its live
- * agents would therefore look sessionless and be killed on the first sweep.
- * Reaping those needs the per-instance socket enumerated first; until then they
- * are out of scope rather than guessed at.
+ * IDENTITY COMES FROM THE PROCESS'S OWN ENVIRONMENT, never from a pattern over ps output: the
+ * runner exports TIKNIX_SESSION_NAME, so the tree states which session owns it. When that cannot
+ * be read the tree is REPORTED AND LEFT RUNNING: killing a process we could not identify is how a
+ * cleaner becomes the outage.
  * ─────────────────────────────────────────────────────────────────────────── */
 
 /** pid => ppid for everything visible. One /proc walk: a recursive descent that
@@ -471,11 +448,11 @@ $treesReaped = 0; $procsKilled = 0;
 
 foreach ($cmdlines as $pid => $cmd) {
     // TWO tests, because either alone matches the wrong thing. The path shape
-    // (a slash before the name) rejects someone's `grep run-claude.sh`, and the
-    // comm check rejects `vim /tmp/…/run-claude.sh` and `tail -f` on the same
+    // (a slash before the name) rejects someone's `grep run-audit.sh`, and the
+    // comm check rejects `vim …/run-audit.sh` and `tail -f` on the same
     // path — a runner IS the shell executing the script, so anything whose comm
     // is not a shell is looking at the file rather than running it.
-    if (!preg_match('#(^|\s)\S*/run-(claude|audit)\.sh(\s|$)#', $cmd)) continue;
+    if (!preg_match('#(^|\s)\S*/run-audit\.sh(\s|$)#', $cmd)) continue;
     $comm = trim((string) @file_get_contents("/proc/$pid/comm"));
     if ($comm !== 'bash' && $comm !== 'sh') continue;
     if (isset($selfChain[$pid])) continue;
@@ -483,7 +460,7 @@ foreach ($cmdlines as $pid => $cmd) {
     $tree = procTree($pid, $kids);
 
     // THE WRAPPER'S OWN environ DOES NOT CARRY THIS. /proc/<pid>/environ is the
-    // block handed over at execve and nothing more: run-claude.sh sets
+    // block handed over at execve and nothing more: a runner script sets
     // TIKNIX_SESSION_NAME with `export` while it is ALREADY RUNNING, so the
     // variable never appears in the environ of the shell that exported it. Read
     // it there and every runner on the box looks unidentifiable — the first
@@ -491,8 +468,8 @@ foreach ($cmdlines as $pid => $cmd) {
     // written for, and said so in a warning that looked like a permissions
     // problem.
     //
-    // The children are the record. jail-run.sh, bwrap and claude are all exec'd
-    // AFTER the export, so each inherits the finished environment. Any one of
+    // The children are the record. The browser (npx), the tunnel (ssh) and the waiter (php) are
+    // all exec'd AFTER the export, so each inherits the finished environment. Any one of
     // them answers the question; the first that does, wins.
     $session = null;
     foreach ($tree as $tp) {

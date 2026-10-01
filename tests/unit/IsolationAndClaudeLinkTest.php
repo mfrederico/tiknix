@@ -1,11 +1,7 @@
 <?php
 /**
- * Two things that failed together on lead-machine and looked like one flaky bug:
- *
- *  - IsolatedPool::inside() — "am I the confined pool?" used to be a test for open_basedir,
- *    which a CLI process started by the pool does not have.
- *  - ClaudeBinary — <root>/bin/claude was a symlink to the operator's home, which dangles
- *    inside the builder sandbox.
+ * ClaudeBinary — <root>/bin/claude is a HARD LINK inside the app (a symlink to the operator's
+ * home dangled inside the builder sandbox, and looked like a flaky bug on lead-machine).
  */
 
 namespace tests\unit;
@@ -13,39 +9,13 @@ namespace tests\unit;
 require_once __DIR__ . '/ConceptsTestCase.php';
 
 use app\ClaudeBinary;
-use app\IsolatedPool;
 
 class IsolationAndClaudeLinkTest extends ConceptsTestCase {
 
     private function instance(bool $isolated): string {
         $root = $this->root . '/inst' . ($isolated ? 'iso' : 'plain');
         mkdir($root, 0700, true);
-        if ($isolated) touch($root . '/' . IsolatedPool::MARKER);
         return $root;
-    }
-
-    /* ---- IsolatedPool ---- */
-
-    public function testTheTreeOwnerIsNotThePool(): void {
-        $root = $this->instance(true);
-        // The operator / builder: same uid as the tree's owner. It may jail what it launches.
-        $this->assertFalse(IsolatedPool::inside($root, fileowner($root)));
-    }
-
-    public function testAnyoneElseInAnIsolatedTreeIsThePool(): void {
-        $root = $this->instance(true);
-        // tiknix-i<id>: a CLI worker started by the pool. No open_basedir, and still the pool.
-        $this->assertSame('', (string) ini_get('open_basedir'), 'this test must run without open_basedir to mean anything');
-        $this->assertTrue(IsolatedPool::inside($root, fileowner($root) + 30086));
-    }
-
-    public function testAnInstanceWithoutTheMarkerIsNeverThePool(): void {
-        $root = $this->instance(false);
-        $this->assertFalse(IsolatedPool::inside($root, fileowner($root) + 30086));
-    }
-
-    public function testNoRootIsNotThePool(): void {
-        $this->assertFalse(IsolatedPool::inside('', 12345));
     }
 
     /* ---- ClaudeBinary ---- */

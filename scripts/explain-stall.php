@@ -36,7 +36,8 @@ $apply = isset($opt['apply']);
 
 $targets = [];
 if (isset($opt['all'])) {
-    foreach (glob('/var/www/html/default/*/data/workbench.db') ?: [] as $f) $targets[basename(dirname(dirname($f)))] = $f;
+    // Every project's board lives in its workspace on core (_workspaces/<slug>), its code in its container.
+    foreach (glob('/var/www/html/default/_workspaces/*/data/workbench.db') ?: [] as $f) $targets[basename(dirname(dirname($f)))] = $f;
 } elseif (!empty($opt['db'])) {
     $targets[basename(dirname(dirname((string) $opt['db'])))] = (string) $opt['db'];
 } else {

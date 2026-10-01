@@ -181,12 +181,44 @@ class TenantHost {
      * a process list.
      */
     /**
-     * The app's crontab while its heartbeat is on — the ONE definition: tenant/app.sh gets it as
-     * APP_CRONTAB, heartbeat() writes it at cutover. Its schedule (pipeline-cron) and its builder
+     * The app's crontab — the ONE definition: tenant/app.sh writes it (APP_CRONTAB), terminal()
+     * refreshes it. Its schedule (pipeline-cron) and its builder
      * terminal (bin/terminal-bridge.php, kept running: flock admits one, the next minute restarts it).
      */
     const CRONTAB = "* * * * * cd /srv/app && php scripts/pipeline-cron.php >> log/pipeline-cron.log 2>&1\n"
         . "* * * * * cd /srv/app && flock -n /tmp/aib-terminal.lock php vendor/tiknix/runtime/bin/terminal-bridge.php >> log/terminal-bridge.log 2>&1\n";
+
+    /**
+     * System software an app's ENABLED plugins need that a container does not carry by default
+     * (it is not in the base template, so not every app pays for it). Plugin → what it runs:
+     * `pdf` drives headless Chrome (concepts/pdf finds google-chrome on the PATH). Ubuntu's own
+     * chromium is a snap, which does not run in these containers; Google's .deb from Google's apt
+     * repository is what the host used. Idempotent: what is already installed is left alone.
+     */
+    public const SYSTEM_NEEDS = ['pdf' => 'google-chrome'];
+
+    public static function system(object $inst): array {
+        [$c, $o] = self::ssh($inst, 'app', 'cd /srv/app && php -r ' . escapeshellarg(
+            '$l = json_decode((string) @file_get_contents("concepts.lock"), true); foreach (($l["concepts"] ?? []) as $n => $c) if (!empty($c["enabled"])) echo $n, "\n";'), null, 30);
+        if ($c !== 0) return ['ok' => false, 'error' => "could not read {$inst->slug}'s concepts.lock: " . trim((string) $o)];
+        $enabled = array_filter(array_map('trim', explode("\n", (string) $o)));
+        $needs = array_values(array_unique(array_filter(array_map(fn($n) => self::SYSTEM_NEEDS[$n] ?? null, $enabled))));
+        if (!$needs) return ['ok' => true, 'steps' => ['nothing its enabled plugins need beyond the base']];
+        $steps = [];
+        foreach ($needs as $need) {
+            if ($need === 'google-chrome') {
+                $script = 'set -e; if command -v google-chrome >/dev/null; then echo "google-chrome already installed: $(google-chrome --version)"; exit 0; fi; '
+                        . 'export DEBIAN_FRONTEND=noninteractive; install -d -m 0755 /etc/apt/keyrings; '
+                        . 'curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg; '
+                        . 'echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list; '
+                        . 'apt-get update -qq >/dev/null && apt-get install -y -qq google-chrome-stable >/dev/null; echo "installed: $(google-chrome --version)"';
+                [$c, $o] = self::ssh($inst, 'root', $script, null, 900);
+                if ($c !== 0) return ['ok' => false, 'error' => "installing Google Chrome in {$inst->slug} failed: " . trim((string) $o), 'steps' => $steps];
+                $steps[] = trim((string) $o) . ' (for the pdf plugin)';
+            }
+        }
+        return ['ok' => true, 'steps' => $steps];
+    }
 
     /**
      * The app's builder terminal (runtime bin/terminal-bridge.php on <ip>:3990): its key — minted
@@ -221,18 +253,7 @@ class TenantHost {
         return ['ok' => true, 'steps' => $steps];
     }
 
-    /**
-     * The minute heartbeat (tenant/app.sh). A new app gets it here; an app carried from a host
-     * clone gets it at cutover — a staging copy must not run the live app's schedule.
-     */
-    public static function heartbeat(object $inst, bool $on): array {
-        [$c, $o] = $on
-            ? self::ssh($inst, 'root', 'crontab -u app - && crontab -l -u app', self::CRONTAB, 60)
-            : self::ssh($inst, 'root', 'crontab -r -u app 2>/dev/null; crontab -l -u app 2>&1 | head -1', null, 60);
-        return ['ok' => $c === 0, 'step' => 'heartbeat ' . ($on ? 'on' : 'off') . ': ' . trim($o), 'error' => $c === 0 ? '' : "crontab in {$inst->ctIp} failed: {$o}"];
-    }
-
-    public static function provision(object $inst, string $domain, string $branch = 'main'): array {
+    public static function provision(object $inst, string $domain): array {
         if ((int) $inst->ctVmid <= 0) return ['ok' => false, 'error' => "{$inst->slug} has no container (create it first)"];
         $core = (string) parse_url((string) \Flight::get('app.baseurl'), PHP_URL_HOST);
         if ($core === '') return ['ok' => false, 'error' => '[app] baseurl in conf/config.ini names no host — the tenant cannot find core'];
@@ -247,13 +268,7 @@ class TenantHost {
             'APP_BASEURL'    => 'https://' . $domain,
             'APP_NAME'       => (string) ($inst->displayName ?: $inst->slug),
             'APP_KEY'        => bin2hex(random_bytes(32)),
-            'APP_BRANCH'     => $branch,
-            'APP_HEARTBEAT'  => $branch === 'main' ? 'on' : 'off',
             'APP_CRONTAB'    => self::CRONTAB,
-            // A carried app's seeds are written for ITS data, which TenantCarry::data() copies in
-            // next and builds against; on the template's empty database they can only fail
-            // (Serenity's migrations of its own live rows).
-            'APP_CARRIED'    => $branch === TenantCarry::BRANCH ? '1' : '0',
         ];
         $script = '';
         foreach ($env as $k => $v) $script .= "export {$k}=" . escapeshellarg($v) . "\n";
@@ -264,10 +279,9 @@ class TenantHost {
         if (!$t['ok']) return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => 'the app is up, its builder terminal is not: ' . $t['error']];
         $out .= "\nterminal: " . implode('; ', $t['steps'] ?? []);
 
-        // A NEW app (a carried one brings its own members): its seeded ROOT becomes the person
-        // who created the project — installed, no /install wizard; they come in from Tiknix
+        // Its seeded ROOT becomes the person who created the project — installed, no /install wizard; they come in from Tiknix
         // (the project's pages in the nav sign them in, /projects/open → the app's /auth/launch).
-        if ($branch === 'main') {
+        {
             $owner = Bean::load('member', (int) $inst->memberId);
             $email = strtolower(trim((string) $owner->email));
             if (!$owner->id || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -276,6 +290,9 @@ class TenantHost {
             [$c, $o] = self::ssh($inst, 'app', 'cd /srv/app && php scripts/clitool.php --claim-root=' . escapeshellarg($email), null, 60);
             if ($c !== 0) return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => 'the app is up, its owner account is not: ' . trim((string) $o)];
             $out .= "\nowner: " . trim((string) $o);
+            // Its key to this control plane's broker (its connected stores: Shopify …).
+            try { $out .= "\nbroker: " . BrokerService::ensureContainerConfig($inst, (int) $inst->memberId); }
+            catch (\RuntimeException $e) { return ['ok' => false, 'exit' => $code, 'output' => $out, 'error' => 'the app is up, its broker key is not: ' . $e->getMessage()]; }
         }
         return ['ok' => true, 'exit' => $code, 'output' => $out, 'error' => ''];
     }
@@ -330,19 +347,71 @@ class TenantHost {
      * stdin. Returns the tenant's JSON answer, or a refusal naming what failed on the way.
      */
     public static function task(object $inst, string $id, string $prompt, int $timeout = 1800, string $agent = ''): array {
-        return self::taskCall($inst, '--agent-task=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $prompt, $timeout + 120);
+        return self::runAndWait($inst, $id, '--agent-task=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $prompt, $timeout);
     }
 
     /** The builder's planner in the tenant (clitool --agent-plan): the plan's JSON in 'plan'. */
     public static function plan(object $inst, string $id, string $request, int $memberId, int $timeout = 1800, string $agent = ''): array {
-        return self::taskCall($inst, '--agent-plan=' . escapeshellarg($id) . ' --member=' . (int) $memberId . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $request, $timeout + 120);
+        return self::runAndWait($inst, $id, '--agent-plan=' . escapeshellarg($id) . ' --member=' . (int) $memberId . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $request, $timeout);
+    }
+
+    /**
+     * Run `clitool $args` in a tmux session IN the container (TenantRun, session tiknix-run-<id>)
+     * and wait here for its JSON answer. The agent lives in the container: this waiter dying (a
+     * core restart, a dropped SSH) does not stop it, and calling again with the same id while
+     * that session is still running waits for it instead of starting another.
+     */
+    private static function runAndWait(object $inst, string $id, string $args, ?string $input, int $timeout): array {
+        $session = 'tiknix-run-' . $id;
+        if (!TenantRun::alive($inst, $session)) TenantRun::start($inst, $session, $id, $args, $input);
+        $deadline = time() + $timeout + 300;
+        while (true) {
+            sleep(5);
+            try {
+                $done = TenantRun::result($inst, $id);
+                if ($done === null && !TenantRun::alive($inst, $session)) {
+                    $done = TenantRun::result($inst, $id);   // its exit file is written before the session ends
+                    if ($done === null) return ['ok' => false, 'status' => 'failed', 'error' => "{$session} ended in {$inst->slug}'s container without finishing (stopped, or the container restarted)"];
+                }
+            } catch (\RuntimeException $e) {
+                error_log("ERROR TenantHost::runAndWait {$id}: " . $e->getMessage() . ' (still waiting)');
+                $done = null;
+            }
+            if ($done !== null) break;
+            if (time() > $deadline) return ['ok' => false, 'status' => 'failed', 'error' => "no answer from {$id} after {$timeout}s; it may still be running in {$inst->slug}'s container (tmux session {$session})"];
+        }
+        if ($done['result'] === null) return ['ok' => false, 'status' => 'failed', 'error' => "{$id} exited {$done['exit']} in the container with no answer: " . mb_substr($done['log'], -800)];
+        return $done['result'];
+    }
+
+    /**
+     * The builder's audit in the tenant (clitool --agent-audit): its agent drives the control
+     * plane's browser at $browserMcp (a tunnel into the container — tunnelCommand()); the manifest
+     * comes back in 'manifest'.
+     */
+    public static function audit(object $inst, string $id, string $brief, string $browserMcp, int $timeout = 1800, string $agent = ''): array {
+        return self::runAndWait($inst, $id, '--agent-audit=' . escapeshellarg($id) . ' --browser-mcp=' . escapeshellarg($browserMcp)
+            . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $brief, $timeout);
+    }
+
+    /**
+     * The command that makes 127.0.0.1:$port inside the container reach 127.0.0.1:$port HERE, for
+     * as long as it runs (ssh -R; nothing is exposed beyond this machine and that container).
+     */
+    public static function tunnelCommand(object $inst, int $port): string {
+        $ip = (string) $inst->ctIp;
+        if (!preg_match('/^10\.10\.10\.\d{1,3}$/', $ip)) throw new \RuntimeException("{$inst->slug} has no tenant address ({$ip})");
+        if ($port < 1024 || $port > 65535) throw new \InvalidArgumentException("not a port: {$port}");
+        return implode(' ', array_map('escapeshellarg', ['ssh', '-i', self::KEY, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
+            '-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=' . self::KNOWN, '-o', 'LogLevel=ERROR',
+            '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=30', '-N', '-R', "127.0.0.1:{$port}:127.0.0.1:{$port}", "app@{$ip}"]));
     }
 
     public static function mergeTask(object $inst, string $id): array   { return self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600); }
     public static function discardTask(object $inst, string $id): array { return self::taskCall($inst, '--agent-discard=' . escapeshellarg($id), null, 120); }
 
     /** --agent=NAME for one of the app's agents (its AI agents page); '' = the app's default. */
-    private static function agentArg(string $agent): string {
+    public static function agentArg(string $agent): string {
         if ($agent === '') return '';
         if (!preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/D', $agent)) throw new \InvalidArgumentException("'{$agent}' is not an agent name");
         return ' --agent=' . escapeshellarg($agent);

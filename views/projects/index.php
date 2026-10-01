@@ -236,20 +236,18 @@ $fmt = function (string $iso): string {
                     <?php endif; ?>
                   </dd>
                 </div>
-                <?php if (($p['isolation'] ?? '') !== ''): ?>
+                <?php if (($p['setup'] ?? '') !== '' && $p['setup'] !== 'active'): ?>
                 <div class="d-flex justify-content-between border-top py-1">
-                  <dt class="fw-normal text-body-secondary">Isolation</dt>
+                  <dt class="fw-normal text-body-secondary">Container</dt>
                   <dd class="mb-0 text-end">
-                    <?php if ($p['isolation'] === 'active'): ?>
-                      <span class="text-success"><i class="bi bi-shield-check"></i> Isolated</span>
-                    <?php elseif ($p['isolation'] === 'pending'): ?>
-                      <span class="text-body-secondary" title="Your project is already live on the shared pool; its own isolated environment is being set up (usually seconds).">
+                    <?php if ($p['setup'] === 'pending'): ?>
+                      <span class="text-body-secondary" title="Its own container is being created, provisioned and published — usually about two minutes.">
                         <span class="spinner-border spinner-border-sm" style="width:.6rem;height:.6rem" role="status"></span>
-                        Live · finishing setup…
+                        Setting up…
                       </span>
-                    <?php else: /* failed — still live, maintenance will retry */ ?>
-                      <span class="text-warning-emphasis" title="Your project is live and usable. Its isolated environment is delayed and will be retried automatically — no action needed.">
-                        <i class="bi bi-shield-exclamation"></i> Live · isolation delayed
+                    <?php else: ?>
+                      <span class="text-danger" title="Setting up its container failed — the reason is in its setup log (_workspaces/<?= htmlspecialchars($p['slug']) ?>/.aibuilder/provision.log).">
+                        <i class="bi bi-exclamation-octagon"></i> Setup failed
                       </span>
                     <?php endif; ?>
                   </dd>

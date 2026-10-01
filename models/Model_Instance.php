@@ -123,47 +123,20 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
     }
 
     /**
-     * Is $dir a PROVISIONED INSTANCE, or something else that merely sits under ROOT?
-     *
-     * Anything scanning glob(ROOT . '/*.tiknix') has to answer this, and answering it by
-     * NAME is wrong: core.tiknix is a symlink to the control plane itself, so a scanner
-     * that trusts the directory name will happily rotate core's keys or reap core's
-     * tasks believing it is tidying a customer project. Naming conventions also break the
-     * moment somebody adds an alias.
-     *
-     * Two structural facts define one:
-     *   - its git origin IS core (realpath, so a symlinked path collapses to the truth)
-     *   - it sits on an `instance/<slug>` branch, which only provisioning creates
-     *
-     * Neither can be faked by what the directory is called.
-     */
-    /**
-     * Is this instance's isolated pool actually there? The truth is structural: the marker
-     * provisioning drops at the instance root (`.fpm-isolated`, "SOCK=/run/php/tiknix-i<id>.sock")
-     * and that socket existing. The `isolation_state` column is set to 'pending' when
-     * isolation is queued and nothing on this side ever hears the worker finish, so three
-     * isolated projects read "finishing setup…" for days (2026-09-26). Readers use this;
-     * the column follows it.
-     */
-    public static function isolationLive(string $dir): bool {
-        $marker = rtrim($dir, '/') . '/' . \app\IsolatedPool::MARKER;
-        if (!is_file($marker)) return false;
-        if (!preg_match('/^SOCK=(\S+)/m', (string) file_get_contents($marker), $m)) return false;
-        return file_exists($m[1]);
-    }
-
-    /**
      * The isolation state to show: 'active' when the pool is live (and the column is
      * corrected to say so), else whatever was recorded ('pending' | 'failed' | '').
      */
-    public static function isolationStateFor(\RedBeanPHP\OODBBean $inst): string {
-        $recorded = (string) ($inst->isolationState ?? '');
-        $dir = self::dirOf($inst);
-        if (self::isolationLive($dir)) {
-            if ($recorded !== 'active') { $inst->isolationState = 'active'; \app\Bean::store($inst); }
-            return 'active';
-        }
-        return $recorded;
+    /**
+     * A project's container setup, for its card: 'active' once its container is published,
+     * 'failed' when the setup log (its workspace's .aibuilder/provision.log, written by the
+     * background `tenant.php --up` ProvisionService::create starts) records an ERROR, 'pending'
+     * while that log exists without either, '' when there is no record of a setup at all.
+     */
+    public static function setupStateFor($inst): string {
+        if ((int) $inst->ctVmid > 0 && trim((string) $inst->ctDomain) !== '') return 'active';
+        $log = self::workspaceFrom((string) $inst->slug) . '/.aibuilder/provision.log';
+        if (!is_file($log)) return '';
+        return preg_match('/^ERROR /m', (string) file_get_contents($log)) ? 'failed' : 'pending';
     }
 
     public static function isProvisionedInstance(string $dir): bool {

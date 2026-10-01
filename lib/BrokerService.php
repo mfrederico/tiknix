@@ -107,15 +107,20 @@ class BrokerService {
         return 'https://' . $host . '/mcp/message';
     }
 
+    /** The text of an app's conf/broker.ini for $rawKey. */
+    public static function configBody(string $rawKey): string {
+        return "; Auto-managed by tiknix — do not edit or commit. Lets this instance\n"
+             . "; read its connected stores. Managed from the Connections page.\n\n"
+             . "[broker]\n"
+             . 'endpoint = "' . self::endpoint() . '"' . "\n"
+             . 'key = "' . $rawKey . '"' . "\n";
+    }
+
     /** Write the instance's conf/broker.ini so its app can reach its stores. */
     public static function writeInstanceConfig(string $instanceDir, string $rawKey): bool {
         $confDir = rtrim($instanceDir, '/') . '/conf';
         if (!is_dir($confDir)) return false;
-        $body = "; Auto-managed by tiknix — do not edit or commit. Lets this instance\n"
-              . "; read its connected stores. Managed from the Connections page.\n\n"
-              . "[broker]\n"
-              . 'endpoint = "' . self::endpoint() . '"' . "\n"
-              . 'key = "' . $rawKey . '"' . "\n";
+        $body = self::configBody($rawKey);
         if (@file_put_contents($confDir . '/broker.ini', $body) === false) return false;
         @chmod($confDir . '/broker.ini', 0640);
         return true;
@@ -142,6 +147,29 @@ class BrokerService {
         }
         $res = self::mint($instanceId, $memberId, []);
         self::writeInstanceConfig($instanceDir, $res['token']);
+    }
+
+    /**
+     * ensureInstanceConfig() for an app in its own container: its conf/broker.ini is THERE, read
+     * and written over SSH. A file holding a live key is left alone (re-provisioning does not
+     * rotate it); otherwise a key is minted and installed. Throws when the container does not answer.
+     */
+    public static function ensureContainerConfig(object $inst, int $memberId): string {
+        [$c, $o] = TenantHost::ssh($inst, 'app', 'cat /srv/app/conf/broker.ini 2>/dev/null; true', null, 20);
+        if ($c !== 0) throw new \RuntimeException("cannot read {$inst->slug}'s conf/broker.ini: " . trim((string) $o));
+        $fileKey = (string) ((@parse_ini_string((string) $o, true) ?: [])['broker']['key'] ?? '');
+        if ($fileKey !== '') {
+            $row = self::forInstance((int) $inst->id);
+            if ($row && $row->id && (int) $row->isActive === 1
+                && hash_equals((string) $row->tokenHash, EncryptionService::hashHex($fileKey))) {
+                return 'broker key in place';
+            }
+        }
+        $res = self::mint((int) $inst->id, $memberId, []);
+        [$c, $o] = TenantHost::ssh($inst, 'app', 'umask 027 && cat > /srv/app/conf/broker.ini.new && mv /srv/app/conf/broker.ini.new /srv/app/conf/broker.ini',
+                                   self::configBody($res['token']), 20);
+        if ($c !== 0) throw new \RuntimeException("cannot write {$inst->slug}'s conf/broker.ini: " . trim((string) $o));
+        return 'broker key minted and installed';
     }
 
     /** Revoke (deactivate) the instance's broker key. */

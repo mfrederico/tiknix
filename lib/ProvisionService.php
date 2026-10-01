@@ -75,134 +75,7 @@ class ProvisionService {
         return '';
     }
 
-    /** Run a capricorn instance script (args already validated). Returns ok/out/code. */
-    private function runScript(string $script, array $args): array {
-        $cfg    = $this->cfg();
-        $binDir = rtrim((string) ($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin'), '/');
-        $prefix = trim((string) ($cfg['ops']['sudo_prefix'] ?? ''));
-        $cmd = ($prefix ? $prefix . ' ' : '') . escapeshellarg($binDir . '/' . $script);
-        foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string) $a); }
-        $lines = []; $code = 0;
-        exec($cmd . ' 2>&1', $lines, $code);
-        return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
-    }
-
-    // ---- per-instance OS isolation (uid + fpm pool + open_basedir) ---------------------
-    //
-    // Gated OFF by default. Enable in conf/aibuilder.ini once the sudoers rule and the
-    // one-time Lua router snippet are installed:
-    //   [isolation]
-    //   enabled = true
-    //   bin     = /home/ubuntu/capricorn/bin/isolate-instance.sh
-    // The boundary is per INSTANCE (uid = 30000 + instance_id), never per member — teams
-    // share a project, so the OS user is the project and app-layer rules gate who reaches it.
-
-    private function isolationEnabled(): bool {
-        return filter_var($this->cfg()['isolation']['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
-    }
-
-    /** The isolation spool the root systemd worker drains (capricorn isolation-worker.sh). */
-    private function isolationQueueDir(): string {
-        return (string) ($this->cfg()['isolation']['queue'] ?? '/var/spool/tiknix-isolation/queue');
-    }
-
-    /**
-     * Enqueue an isolation request for the root worker. The web tier NEVER runs privileged
-     * isolation itself — it drops a file, a systemd .path watch wakes the root worker (see
-     * capricorn isolation-worker.sh), which does useradd/pool/reload outside this sandbox.
-     * So: no sudo, no read-only-/etc escape, no per-request fpm reload. One file per instance
-     * (dedup); tmp+rename so the worker never reads a half-written request.
-     */
-    private function enqueueIsolation(string $op, string $slug, int $instanceId): bool {
-        $dir = $this->isolationQueueDir();
-        if (!is_dir($dir) || !is_writable($dir)) {
-            Flight::get('log')?->error('isolation spool missing/unwritable — cannot enqueue', [
-                'op' => $op, 'slug' => $slug, 'instance_id' => $instanceId, 'queue' => $dir,
-            ]);
-            return false;
-        }
-        $body  = "op={$op}\nslug={$slug}\niid={$instanceId}\nhost=local\n";
-        $final = $dir . '/' . $instanceId . '.req';
-        $tmp   = $final . '.tmp';
-        if (@file_put_contents($tmp, $body) === false || !@rename($tmp, $final)) {
-            @unlink($tmp);
-            Flight::get('log')?->error('isolation enqueue failed', ['op' => $op, 'slug' => $slug]);
-            return false;
-        }
-        Flight::get('log')?->info('isolation enqueued', ['op' => $op, 'slug' => $slug, 'instance_id' => $instanceId]);
-        return true;
-    }
-
-    /**
-     * Queue isolation for a freshly registered instance. Non-fatal: the project is usable on
-     * the shared pool until the worker applies isolation (seconds); the worker's .timer sweep
-     * and backfill-isolate.sh catch anything that slips. State is tracked on the instance
-     * (isolation_state) so the UI shows "finishing setup" vs "isolated" instead of the member
-     * wondering whether provisioning failed.
-     */
-    private function isolateInstance(string $slug, int $instanceId): void {
-        if (!$this->isolationEnabled() || $instanceId <= 0) return;
-        $ok = $this->enqueueIsolation('apply', $slug, $instanceId);
-        $inst = Bean::load('instance', $instanceId);
-        if ($inst->id) {
-            $inst->isolationState = $ok ? 'pending' : 'failed';
-            $inst->isolatedAt     = date('Y-m-d H:i:s');
-            if (empty($inst->host)) $inst->host = 'local';   // multi-node: which node holds it
-            Bean::store($inst);
-        }
-        if (!$ok) {
-            $this->lastWarning = trim($this->lastWarning
-                . ' The project is usable; per-instance isolation could not be queued and'
-                . ' will be applied by the next maintenance sweep.');
-        }
-    }
-
-    /** Queue isolation teardown on delete (worker frees the uid/pool/socket asynchronously). */
-    private function deprovisionIsolation(string $slug, int $instanceId): void {
-        if (!$this->isolationEnabled() || $instanceId <= 0) return;
-        // Non-fatal: an orphaned pool is a cleanup task the worker's sweep also catches, never
-        // a reason to block the member's delete.
-        $this->enqueueIsolation('deprovision', $slug, $instanceId);
-    }
-
-    /** Register an instance bean owned by $memberId (shared by create/fork). */
-    private function registerInstanceBean(int $memberId, string $slug, string $name, string $engine, bool $isDefault, string $plan = 'project'): object {
-        $member = Bean::load('member', $memberId);
-        $inst = Bean::dispense('instance');
-        $inst->slug        = $slug;
-        $inst->app         = $this->appNamespace();
-        $inst->displayName = $name;
-        $inst->engine      = $engine;
-        // The priced KIND (pricing page: Project $49 / Client project $99). Normalised so
-        // a bad value cannot invent a tier; whether it is FREE is decided at read time.
-        $inst->plan        = ProjectQuota::kindOf($plan);
-        $inst->status      = 'active';
-        $inst->isDefault   = $isDefault ? 1 : 0;
-        $inst->createdAt   = date('Y-m-d H:i:s');
-        $member->ownInstanceList[] = $inst;   // sets member_id via the association
-        Bean::store($member);
-        // The broker key is what lets this project talk to the control plane at all —
-        // publish, connected stores, the lot. Failing to write it used to be swallowed on
-        // the theory that it could be minted later, which produced a project that looked
-        // finished and could not ship, with nothing in the log to say why. It is LOUD now:
-        // the error is recorded, and the caller is told so it can reach the person who
-        // just made the project. Provisioning still succeeds — the working copy exists and
-        // the Connections page can mint the key — but nobody is left guessing.
-        try {
-            BrokerService::ensureInstanceConfig((int) $inst->id, $memberId, $this->instanceDir($slug));
-        } catch (\Throwable $e) {
-            Flight::get('log')->error('broker key not written at provision', [
-                'instance' => (int) $inst->id, 'slug' => $slug, 'err' => $e->getMessage(),
-            ]);
-            // Deliberately NOT stored on the bean: a property set here would have RedBean
-            // grow an instance column the schema never asked for.
-            $this->lastWarning = 'This project was created, but its broker key could not be '
-                . 'written (' . $e->getMessage() . '). Open Connections to mint it before publishing.';
-        }
-        return $inst;
-    }
-
-    /** Provision a NEW isolated instance owned by $memberId. */
+    /** A NEW project owned by $memberId, in its own container. */
     public function create(int $memberId, array $p): array {
         $base   = strtolower(trim((string) ($p['slug'] ?? '')));
         $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
@@ -231,38 +104,42 @@ class ProvisionService {
         $member = Bean::load('member', $memberId);
         if (!$member->id) return ['ok' => false, 'error' => 'Unknown member.', 'code' => 403];
 
-        // capricorn clones the app, seeds an isolated sqlite db + guardrails + reset secrets.
-        $out = $this->runScript('provision-instance.sh',
-            [$this->appNamespace(), $slug, '--admin', (string) $member->email, '--name', $name]);
-        if (!is_file($this->instanceDir($slug) . '/public/index.php'))
-            return ['ok' => false, 'error' => 'Provisioning failed. ' . substr(trim($out['out']), -300), 'code' => 500];
-
-        @file_put_contents($this->instanceDir($slug) . '/.aibuilder/engine', $engine . "\n");
-        $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, $isDefault, $plan);
-        // Isolate now that the id exists (uid = 30000 + id). No-op unless enabled; never fatal.
-        $this->isolateInstance($slug, (int) $inst->id);
-        $this->createOrigin($slug);
-        $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
-        if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
-        return $out;
+        // A project lives in its own container. Now: its registry row and its repository (TenantApp —
+        // the app template, the creator's project). Then, in the background (about two minutes):
+        // the container created, provisioned — its owner account is the creator (claim-root), its
+        // broker key, its builder terminal — and published at <slug>.<app>.com (tenant.php --up).
+        $t = TenantApp::create($slug, $name, $memberId);
+        if (!$t['ok']) return ['ok' => false, 'error' => 'Could not create the project: ' . $t['error'], 'code' => 500];
+        $inst = $t['inst'];
+        $inst->app       = $this->appNamespace();
+        $inst->engine    = $engine;
+        $inst->plan      = ProjectQuota::kindOf($plan);
+        $inst->isDefault = $isDefault ? 1 : 0;
+        Bean::store($inst);
+        try {
+            $this->setUpContainer($inst);
+        } catch (\RuntimeException $e) {
+            Flight::get('log')->error('project container setup could not start', ['slug' => $slug, 'err' => $e->getMessage()]);
+            return ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'warning' => 'The project exists, but setting up its container could not start: ' . $e->getMessage()];
+        }
+        return ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug];
     }
 
     /**
-     * The instance's ORIGIN — the bare repository its builds land on and it pulls from
-     * (lib/InstanceRepo.php, §13 C1). After isolation, so the pool user gets its ACL. An
-     * instance without one is live but cannot build: said in the warning and the log,
-     * with the command that repairs it, never swallowed.
+     * `tenant.php --up` for a new project, detached: its container created, provisioned and
+     * published at <slug>.<app>.com. Its progress — and any ERROR — is in its workspace's
+     * .aibuilder/provision.log, which the project card reads (Model_Instance::setupStateFor).
      */
-    private function createOrigin(string $slug): void {
-        $dir = $this->instanceDir($slug);
-        try {
-            $steps = InstanceRepo::createOrigin($slug, $dir, IsolatedPool::user($dir));
-            error_log("[provision] origin for {$slug}: " . implode('; ', $steps));
-        } catch (\Throwable $e) {
-            $this->lastWarning = trim($this->lastWarning . " No origin repository for {$slug} (" . $e->getMessage()
-                . ") — builds refuse until `php scripts/instance-origin.php --slug={$slug}` succeeds.");
-            error_log("ERROR provision: origin for {$slug} — " . $e->getMessage());
-        }
+    private function setUpContainer(object $inst): void {
+        $slug = (string) $inst->slug;
+        $ab = \Model_Instance::workspaceFrom($slug) . '/.aibuilder';
+        if (!is_dir($ab) && !@mkdir($ab, 0775, true)) throw new \RuntimeException("could not create {$ab}");
+        $log = $ab . '/provision.log';
+        $domain = $slug . '.' . $this->appNamespace() . '.com';
+        $cmd = 'cd ' . escapeshellarg(dirname(__DIR__)) . ' && echo "[setup] $(date) ' . $slug . ' -> ' . $domain . '"'
+             . ' && env -u TIKNIX_WORKBENCH_DB php scripts/tenant.php --up=' . escapeshellarg($slug) . ' --domain=' . escapeshellarg($domain);
+        exec('nohup bash -lc ' . escapeshellarg('(' . $cmd . ') >> ' . escapeshellarg($log) . ' 2>&1') . ' > /dev/null 2>&1 &', $o, $c);
+        if ($c !== 0) throw new \RuntimeException("could not start tenant.php --up for {$slug}");
     }
 
     // ---- authorization (core is the authority; the caller passes ids, we re-check) ----
@@ -273,27 +150,6 @@ class ProvisionService {
     private function ownsInstance(int $memberId, int $instanceId): bool {
         return $instanceId > 0 && Bean::load('instance', $instanceId)->ownedBy($memberId);
     }
-    private function canAccessInstance(int $memberId, int $instanceId): bool {
-        return $instanceId > 0 && Bean::load('instance', $instanceId)->accessibleBy($memberId);
-    }
-
-    /** Run git inside an instance's own repo. */
-    private function gitInstance(string $slug, array $args): array {
-        if (!preg_match(self::SLUG_RE, $slug)) return ['ok' => false, 'out' => '', 'code' => 1];
-        $cmd = 'git -C ' . escapeshellarg($this->instanceDir($slug));
-        foreach ($args as $a) { $cmd .= ' ' . escapeshellarg((string) $a); }
-        $lines = []; $code = 0;
-        exec($cmd . ' 2>&1', $lines, $code);
-        return ['ok' => $code === 0, 'out' => implode("\n", $lines), 'code' => $code];
-    }
-
-    /** The configured sqlite db path (relative) for an instance, e.g. "database/foo.db". */
-    private function instanceDbRel(string $slug): string {
-        $ini = @parse_ini_file($this->instanceDir($slug) . '/conf/config.ini', true) ?: [];
-        $p   = (string) ($ini['database']['path'] ?? '');
-        return preg_match('#^database/[A-Za-z0-9._-]+\.db$#', $p) ? $p : 'database/' . $slug . '.db';
-    }
-
     /**
      * Change a project's priced KIND (Project ↔ Client project). Owner only; the billing
      * consequence is whatever ProjectQuota::breakdown says next time it is asked, so there
@@ -349,74 +205,10 @@ class ProvisionService {
     // ---- fork: new instance from a source instance's checkpoint (code + tracked db) ----
 
     public function fork(int $memberId, array $p): array {
-        $srcId  = (int) ($p['id'] ?? 0);
-        $ckpt   = (string) ($p['checkpoint'] ?? 'checkpoint-baseline');
-        $base   = strtolower(trim((string) ($p['slug'] ?? '')));
-        $name   = trim((string) ($p['name'] ?? '')) ?: ucfirst($base);
-        if (!$this->canAccessInstance($memberId, $srcId)) return ['ok' => false, 'error' => 'No such source instance', 'code' => 404];
-        $srcSlug = (string) Bean::getCell('SELECT slug FROM instance WHERE id = ?', [$srcId]);
-        // Copied as-is, including empty: an unset engine means "the default at run time"
-        // (PlanIngestor::engineFor); stamping claude here would make it look chosen.
-        $engine  = (string) Bean::getCell('SELECT engine FROM instance WHERE id = ?', [$srcId]);
-        // A fork inherits the source's kind unless the caller says otherwise: a copy of a
-        // client project is presumably also for that client.
-        $plan    = ProjectQuota::kindOf((string) ($p['plan'] ?? Bean::load('instance', $srcId)->plan ?? 'project'));
-        if (!preg_match('/^checkpoint-[A-Za-z0-9._-]+$/', $ckpt)) return ['ok' => false, 'error' => 'Invalid checkpoint name', 'code' => 400];
-        if (trim($this->gitInstance($srcSlug, ['tag', '-l', $ckpt])['out']) !== $ckpt)
-            return ['ok' => false, 'error' => 'Checkpoint not found in source instance', 'code' => 404];
-        if (!preg_match(self::BASE_RE, $base)) return ['ok' => false, 'error' => 'Invalid name.', 'code' => 400];
-
-        // A fork is a NEW project and costs a slot exactly like create(). Gating create
-        // and not fork would leave the free tier one button away from unlimited, and a
-        // fork gate is precisely what somebody at the cap would go looking for.
-        if ($refusal = ProjectQuota::refusalFor($memberId, 1)) return $refusal;
-
-        $slug = $this->mintSlug($base);   // fresh {base}-{hash}; the base may repeat across tenants
-        if ($slug === '') return ['ok' => false, 'error' => 'Could not allocate a unique instance id.', 'code' => 500];
-
-        $member = Bean::load('member', $memberId);
-        $srcDir = $this->instanceDir($srcSlug);
-        $newDir = $this->instanceDir($slug);
-
-        $out = $this->runScript('provision-instance.sh',
-            [$this->appNamespace(), $slug, '--admin', (string) $member->email, '--name', $name]);
-        if (!is_file($newDir . '/public/index.php'))
-            return ['ok' => false, 'error' => 'Provisioning failed. ' . substr(trim($out['out']), -300), 'code' => 500];
-
-        // Overlay the checkpoint code (minus database/, which is instance-specific).
-        $tar = $newDir . '/.aibuilder/fork-src.tar';
-        @mkdir(dirname($tar), 0775, true);
-        $a = []; $ac = 0;
-        exec('git -C ' . escapeshellarg($srcDir) . ' archive ' . escapeshellarg($ckpt) . ' -o ' . escapeshellarg($tar) . ' 2>&1', $a, $ac);
-        if ($ac !== 0) return ['ok' => false, 'error' => 'Could not read the checkpoint tree.', 'code' => 500];
-        $e = []; $ec = 0;
-        exec('tar -xf ' . escapeshellarg($tar) . ' -C ' . escapeshellarg($newDir)
-             . ' --exclude=' . escapeshellarg('database') . ' --exclude=' . escapeshellarg('database/*') . ' 2>&1', $e, $ec);
-        @unlink($tar);
-        if ($ec !== 0) return ['ok' => false, 'error' => 'Could not apply the checkpoint code (permissions?).', 'code' => 500];
-
-        // Carry DATA: stream the checkpoint's tracked sqlite db into the new db path.
-        $srcDbRel = $this->instanceDbRel($srcSlug);
-        $newDb    = $newDir . '/' . $this->instanceDbRel($slug);
-        $carried  = false;
-        if ($this->gitInstance($srcSlug, ['cat-file', '-e', $ckpt . ':' . $srcDbRel])['ok']) {
-            $d = []; $dc = 0;
-            exec('git -C ' . escapeshellarg($srcDir) . ' show ' . escapeshellarg($ckpt . ':' . $srcDbRel)
-                 . ' > ' . escapeshellarg($newDb) . ' 2>&1', $d, $dc);
-            $carried = ($dc === 0 && is_file($newDb) && filesize($newDb) > 0);
-        }
-
-        $this->gitInstance($slug, ['add', '-A']);
-        $this->gitInstance($slug, ['commit', '--no-verify', '-m',
-            'Fork from ' . $srcSlug . '@' . $ckpt . ($carried ? ' (code+data)' : ' (code only)')]);
-
-        $inst = $this->registerInstanceBean($memberId, $slug, $name, $engine, false, $plan);
-        // A fork is a new instance with its own id — isolate it like create(). No-op unless enabled.
-        $this->isolateInstance($slug, (int) $inst->id);
-        $this->createOrigin($slug);
-        $out = ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'data_carried' => $carried];
-        if ($this->lastWarning !== '') $out['warning'] = $this->lastWarning;
-        return $out;
+        // Copying a project was a host-clone operation (capricorn's provision-instance.sh + a checkout
+        // of the source's checkpoint). Projects live in their own containers now; a container copy
+        // is not built yet — refused by name rather than producing a host clone nothing can build.
+        return ['ok' => false, 'error' => 'Copying a project is not available yet for projects in their own container.', 'code' => 409];
     }
 
     // ---- delete: confirm-gated teardown (kill jail, unlink connectors, archive, trash) ----
@@ -459,27 +251,7 @@ class ProvisionService {
             if (!$t['ok']) return ['ok' => false, 'error' => $t['error'], 'code' => 500];
             $steps = $t['steps'];
         } else {
-            $dir = $this->instanceDir($slug);
-            // Deliberately recomputed INLINE rather than through instanceDir(): this is the
-            // guard standing in front of an rm -rf, and a guard that calls the thing it is
-            // guarding cannot catch that thing being wrong.
-            if ($dir !== '/var/www/html/default/' . $slug . '.' . $this->appNamespace() || strpos(basename($dir), '.') === false)
-                return ['ok' => false, 'error' => 'Refusing to delete: path failed validation', 'code' => 400];
-
-            $steps = [];
-            $sock = $dir . '/.aibuilder/tmux.sock';
-            if (@file_exists($sock)) { @exec('tmux -S ' . escapeshellarg($sock) . ' kill-server 2>&1'); $steps[] = 'killed jailed session'; }
-
-            // No connector cleanup here any more: the connections live in the instance's
-            // own data/connections.db, sealed with its own secure/connections.key, and
-            // both are inside $dir. Archiving the directory takes them with it — and
-            // keeps them recoverable from the tombstone, which deleting rows here did not.
-
-            if (is_dir($dir)) {
-                $res = $this->archiveInstance($dir, $slug);   // wipes the dir (incl. its workbench.db) → tombstone zip
-                if (!$res['ok']) return ['ok' => false, 'error' => 'Archive failed: ' . $res['error'], 'code' => 500];
-                $steps[] = $res['message'];
-            } else { $steps[] = 'folder already absent'; }
+            return ['ok' => false, 'error' => "{$slug} is not running in its own container — nothing here knows how to delete it.", 'code' => 409];
         }
 
         // Clean core's task records for this instance (stale copies + sessions + /projects clones).
@@ -512,13 +284,6 @@ class ProvisionService {
 
         Bean::trash($inst);
         $steps[] = 'removed instance record';
-
-        // Enqueue isolation teardown LAST — after the slow archive + all DB work. The queue
-        // worker's fpm reload (freeing the pool) fires the moment this file lands, so doing it
-        // any earlier let the reload race THIS request's response and surface as a client
-        // "network error" (the delete still completed). The worker frees the uid/pool/socket
-        // async; the marker is already gone with the wiped dir, so routing has fallen back.
-        if (!$tenant) $this->deprovisionIsolation($slug, $instanceId);
 
         return ['ok' => true, 'slug' => $slug, 'domain' => $domain, 'steps' => $steps];
     }
@@ -605,36 +370,4 @@ class ProvisionService {
         return ['ok' => true, 'steps' => $steps];
     }
 
-    /** Archive an instance folder to core secure/archives (not web-served), then wipe. */
-    private function archiveInstance(string $dir, string $slug): array {
-        foreach (glob($dir . '/conf/*.ini') ?: [] as $ini) {
-            if (substr($ini, -12) === '.example.ini') continue;
-            $example = substr($ini, 0, -4) . '.example.ini';
-            if (is_file($example)) @copy($example, $ini); else @unlink($ini);
-        }
-        $tmpZip = sys_get_temp_dir() . '/' . $slug . '-' . date('Ymd-His') . '.zip';
-        @unlink($tmpZip);
-        $cmd = 'cd ' . escapeshellarg($dir) . ' && zip -r -q ' . escapeshellarg($tmpZip) . " . -x 'vendor/*' 'node_modules/*' '.git/*'";
-        $out = []; $code = 0; @exec($cmd . ' 2>&1', $out, $code);
-        if (!is_file($tmpZip)) return ['ok' => false, 'error' => 'zip produced no archive: ' . implode(' ', array_slice($out, -2))];
-        @exec('rm -rf ' . escapeshellarg($dir) . ' 2>&1');
-
-        /* NOT public/. That is the instance's web root, so every deleted project used to
-           publish its own database — the member table with password hashes and reset
-           tokens, API keys, all app data — at https://<slug>.tiknix.com/<slug>.zip to
-           anyone who guessed the name, which is just the slug. Thirteen were live and
-           returning HTTP 200 when this was found (2026-09-11). conf/*.ini is scrubbed to
-           its .example above, but the databases are not, so scrubbing config was never
-           enough. The archive goes to core's secure/ instead: gitignored, served by no
-           vhost, owner-only. Recovering a deleted project is an operator action, not a
-           public download. */
-        $archiveDir = dirname(__DIR__) . '/secure/archives';
-        if (!@mkdir($archiveDir, 0700, true) && !is_dir($archiveDir))
-            return ['ok' => false, 'error' => 'could not create secure/archives (archive kept at ' . $tmpZip . ')'];
-        $dest = $archiveDir . '/' . $slug . '-' . date('Ymd-His') . '.zip';
-        if (!@rename($tmpZip, $dest)) { @copy($tmpZip, $dest); @unlink($tmpZip); }
-        @chmod($dest, 0600);
-        $kb = (int) round((@filesize($dest) ?: 0) / 1024);
-        return ['ok' => true, 'message' => 'archived to secure/archives/' . basename($dest) . ' (' . $kb . ' KB)'];
-    }
 }

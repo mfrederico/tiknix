@@ -25,20 +25,10 @@
  *   php scripts/tenant.php --renew-certs                  renew custom domains' certificates due within
  *                                                         30 days (this machine's crontab, daily)
  *   php scripts/tenant.php --status=SLUG
+ *   php scripts/tenant.php --system=SLUG|all               system software its enabled plugins need (pdf → Google Chrome)
  *   php scripts/tenant.php --terminal=SLUG|all             the app's builder terminal (runtime bin/terminal-bridge.php):
  *                                                         its key, its crontab line, the bridge started
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving
- *
- * Carrying a project that lives as a host clone of core (step 5; lib/TenantCarry.php):
- *   php scripts/tenant.php --inventory=SLUG               its own files and the core files it edited
- *   php scripts/tenant.php --carry=SLUG --domain=HOST     seed branch `app`, a container, provision it
- *                                                         from `app`, its data, serve it at HOST (a
- *                                                         staging host: the real domain stays on the clone)
- *   php scripts/tenant.php --carry-data=SLUG --domain=HOST   the data again (config.ini gets HOST)
- *   php scripts/tenant.php --cutover=SLUG --domain=HOST [--aliases=A,B]
- *                                                         databases once more, base URL HOST, HOST
- *                                                         (and aliases) proxied to the tenant
- *   php scripts/tenant.php --rollback=SLUG                the clone serves the domain(s) again
  *
  * Lending Tiknix's own connections (lib/TenantShare.php):
  *   php scripts/tenant.php --share=SLUG --connector=mailgun [--bind=core.mail]   into the app's store, bound
@@ -51,13 +41,12 @@ require dirname(__DIR__) . '/vendor/autoload.php';
 new \app\Bootstrap();
 
 use app\TenantApp;
-use app\TenantCarry;
 use app\TenantHost;
 
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'inventory:', 'carry:', 'carry-data:', 'cutover:', 'aliases:', 'rollback:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'connector:', 'bind:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -109,7 +98,7 @@ if (isset($o['clitool'])) {
     echo $out;
     exit($code);
 }
-if (isset($o['task']) || isset($o['plan']) || isset($o['merge']) || isset($o['discard'])) {
+if (isset($o['task']) || isset($o['plan']) || isset($o['audit']) || isset($o['merge']) || isset($o['discard'])) {
     $id = (string) ($o['id'] ?? '');
     if ($id === '') { fwrite(STDERR, "ERROR --id=TASK is required\n"); exit(2); }
     if (isset($o['task'])) {
@@ -118,6 +107,9 @@ if (isset($o['task']) || isset($o['plan']) || isset($o['merge']) || isset($o['di
     } elseif (isset($o['plan'])) {
         $request = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
         $r = TenantHost::plan(inst($o['plan']), $id, $request, (int) ($o['member'] ?? 0), 1800, (string) ($o['agent'] ?? ''));
+    } elseif (isset($o['audit'])) {
+        $brief = posix_isatty(STDIN) ? '' : (string) stream_get_contents(STDIN);
+        $r = TenantHost::audit(inst($o['audit']), $id, $brief, (string) ($o['browser-mcp'] ?? ''), 1800, (string) ($o['agent'] ?? ''));
     } elseif (isset($o['merge'])) {
         $r = TenantHost::mergeTask(inst($o['merge']), $id);
     } else {
@@ -149,6 +141,20 @@ if (isset($o['domains'])) {
     foreach (\app\TenantDomains::of($i) as $d) echo "own site:  {$d}\n";
     exit(0);
 }
+if (isset($o['system'])) {
+    // System software the app's enabled plugins need (TenantHost::system — pdf → Google Chrome).
+    $slugs = $o['system'] === 'all'
+        ? array_values(array_map(fn($b) => (string) $b->slug, \app\Bean::find('instance', "status = 'active' AND ct_ip IS NOT NULL AND ct_ip <> '' ORDER BY ct_vmid")))
+        : [(string) $o['system']];
+    $failed = 0;
+    foreach ($slugs as $slug) {
+        echo "{$slug}\n";
+        $r = TenantHost::system(inst($slug));
+        foreach ($r['steps'] ?? [] as $st) echo "  {$st}\n";
+        if (!$r['ok']) { $failed++; fwrite(STDERR, "ERROR system for {$slug}: {$r['error']}\n"); }
+    }
+    exit($failed ? 1 : 0);
+}
 if (isset($o['terminal'])) {
     // One app, or every app in a container: the same steps each (TenantHost::terminal).
     $slugs = $o['terminal'] === 'all'
@@ -172,27 +178,6 @@ if (isset($o['status'])) {
     }
     exit(0);
 }
-if (isset($o['inventory'])) {
-    $inv = TenantCarry::inventory((string) $o['inventory']);
-    echo "{$inv['dir']} at {$inv['head']}: " . count($inv['own']) . " own file(s), " . count($inv['edited']) . " edited core file(s), {$inv['core']} core file(s)\n";
-    echo "edited core files (to port):\n" . ($inv['edited'] ? '  ' . implode("\n  ", $inv['edited']) : '  (none)') . "\n";
-    echo "own files:\n" . ($inv['own'] ? '  ' . implode("\n  ", $inv['own']) : '  (none)') . "\n";
-    if ($inv['strays']) echo "stray copies of core files (not carried):\n  " . implode("\n  ", $inv['strays']) . "\n";
-    exit(0);
-}
-if (isset($o['carry'])) {
-    $i = inst($o['carry']); $d = domain($o);
-    $origin = \app\InstanceRepo::originPath($i->slug);
-    if (TenantApp::sh('git -C ' . escapeshellarg($origin) . ' rev-parse -q --verify refs/heads/' . TenantCarry::BRANCH)[0] !== 0) done(TenantCarry::seed($i), 'seed');
-    else echo "  {$origin} already has branch " . TenantCarry::BRANCH . ": not seeded again\n";
-    if ((int) $i->ctVmid <= 0) done(TenantHost::create($i), 'container');
-    // Staging until the cutover: the host clone is still the app, and its builder works there.
-    if ((string) $i->ctKind !== 'tenant') { $i->ctKind = 'staging'; \app\Bean::store($i); }
-    done(TenantHost::provision($i, $d, TenantCarry::BRANCH), 'provision');
-    done(TenantCarry::data($i, $d), 'data');
-    done(TenantHost::publish($i, $d), 'publish');
-    exit(0);
-}
 if (isset($o['share']) || isset($o['unshare'])) {
     // --share=SLUG --connector=mailgun [--bind=core.mail,…]  |  --unshare=SLUG --connector=mailgun
     $type = (string) ($o['connector'] ?? '');
@@ -205,14 +190,6 @@ if (isset($o['share']) || isset($o['unshare'])) {
     }
     exit(0);
 }
-if (isset($o['carry-data'])) { done(TenantCarry::data(inst($o['carry-data']), domain($o)), 'data'); exit(0); }
-if (isset($o['cutover'])) {
-    $aliases = array_values(array_filter(array_map('trim', explode(',', (string) ($o['aliases'] ?? '')))));
-    foreach ($aliases as $a) if (!preg_match('/^[a-z0-9-]+(\.[a-z0-9-]+)+$/', $a)) { fwrite(STDERR, "ERROR alias '{$a}' is not a host name\n"); exit(2); }
-    done(TenantCarry::cutover(inst($o['cutover']), domain($o), $aliases), 'cutover ' . $o['cutover']);
-    exit(0);
-}
-if (isset($o['rollback'])) { done(TenantCarry::rollback(inst($o['rollback'])), 'rollback ' . $o['rollback']); exit(0); }
 if (isset($o['destroy'])) {
     if (!isset($o['yes'])) { fwrite(STDERR, "ERROR destroying a project deletes its container, its origin and its registry row (archived first to secure/archives); add --yes\n"); exit(2); }
     // The same teardown as deleting it on the Projects page (ProvisionService::delete →

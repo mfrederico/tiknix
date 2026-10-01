@@ -2,20 +2,15 @@
 /**
  * AuditRunner — headless "Definition of Done" QA pass for a completed plan.
  *
- * When a decomposed plan finishes (all subtasks merged into the instance's live
- * branch), this launches a jailed, non-interactive `claude -p` agent whose only
- * job is to VERIFY the running site with Playwright: log in as each pre-created
- * test user level (ROOT/ADMIN/MEMBER), exercise the new interactions the plan
- * introduced, screenshot each, and write a structured manifest to
- * `<instance>/.aibuilder/audit.json`. The control-plane driver (plan-audit.php)
- * consumes that manifest: posts results onto each subtask, reports failures to
- * the firehose, and emails proof-of-life to the owner + shared teams.
- *
- * Mirrors PlanRunner exactly (jail-run.sh when the workspace is a capricorn
- * instance; direct otherwise). The agent READS the site over its PUBLIC url —
- * the jail blocks loopback, and Playwright is registered per-instance as an MCP
- * server, so browser_navigate / browser_click / browser_take_screenshot work
- * against https://<slug>.<app>.com only.
+ * When a decomposed plan finishes (all subtasks merged into the app in its container), this
+ * runs the project's own agent IN ITS CONTAINER (clitool --agent-audit, the app's credential)
+ * whose only job is to VERIFY the running site with Playwright: log in as each pre-created test
+ * user level (ROOT/ADMIN/MEMBER), exercise the new interactions the plan introduced, screenshot
+ * each, and write a structured manifest. The browser runs HERE — a per-audit Playwright MCP on
+ * 127.0.0.1, allowed only the project's own public origin, reached from the container through an
+ * SSH tunnel (tenantRunnerScript). The manifest is delivered to `<workspace>/.aibuilder/audit.json`,
+ * which the control-plane driver (plan-audit.php) consumes: posts results onto each subtask,
+ * reports failures to the firehose, and emails proof-of-life to the owner + shared teams.
  *
  * The test users are created and torn down by the control-plane driver (via the
  * instance's own clitool), NOT here — so the agent just drives the browser with
@@ -32,6 +27,7 @@ class AuditRunner {
     private int $memberId;
     private int $memberLevel;
     private string $sessionName;
+    private int $planId = 0;
 
     public function __construct(string $slug, string $instanceDir, string $baseUrl, int $memberId, int $memberLevel = 50) {
         $this->slug        = $slug;
@@ -74,7 +70,6 @@ class AuditRunner {
      * @param int   $planId
      */
     public function start(array $creds, array $checklist, int $planId): string {
-        if (!TenantBuilder::bySlug($this->slug)) \app\InstanceRepo::assertNotCarried($this->slug);   // a tenant is audited over its public URL
         if ($this->running()) {
             throw new \Exception('An audit is already running for this instance.');
         }
@@ -85,6 +80,7 @@ class AuditRunner {
         @unlink($this->manifestFile());
         @unlink($this->logFile());
 
+        $this->planId = $planId;
         file_put_contents($this->requestFile(), $this->buildAuditRequest($creds, $checklist, $planId));
 
         $scriptFile = $ab . '/run-audit.sh';
@@ -99,86 +95,86 @@ class AuditRunner {
         return $this->sessionName;
     }
 
-    public function stop(): bool { return TmuxManager::kill($this->sessionName); }
-
-    /** jail-run.sh path when the workspace is a jailable capricorn instance, else ''. */
-    private function jailFor(): string {
-        // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
-        // is outside the boundary (is_file() would throw) and re-jailing is redundant. Direct.
-        // (IsolatedPool, not a bare open_basedir test: a CLI process started BY the pool — a
-        // pipeline worker fanning out child runs — has no open_basedir and still IS the pool.)
-        if (\app\IsolatedPool::inside($this->instanceDir)) return '';
-
-        $root = '/var/www/html/default';
-        $real = realpath($this->instanceDir) ?: $this->instanceDir;
-        if (strpos(basename($real), '.') === false) return '';
-        if (strpos($real, $root . '/') !== 0) return '';
-        if (!is_file("$real/public/index.php")) return '';
-        $cfg = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
-        $binDir = rtrim($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin', '/');
-        $script = "$binDir/jail-run.sh";
-        return is_file($script) ? $script : '';
+    public function stop(): bool {
+        // A container's audit runs in its container; the session here only waits for it.
+        if ($t = TenantBuilder::bySlug($this->slug)) TenantRun::kill($t, 'tiknix-run-' . $this->tenantAuditId());
+        return TmuxManager::kill($this->sessionName);
     }
+
+    /** The container run id of this member's audit on this project. */
+    private function tenantAuditId(): string { return 'audit-m' . (int) $this->memberId; }
+
+    /**
+     * The audit of a project in its own container: its agent runs THERE (clitool --agent-audit,
+     * the app's own credential), driving a browser that runs HERE — a Playwright MCP server on
+     * 127.0.0.1:<port>, allowed to open only the project's own public origin, reached from the
+     * container through an SSH tunnel (TenantHost::tunnelCommand). Both live for this audit only.
+     * Screenshots land in the workspace (the server's --output-dir); unpackAudit() delivers the
+     * manifest where plan-audit.php reads it and copies the screenshots into the app.
+     */
+    private function tenantRunnerScript(object $tenant): string {
+        $ws = $this->instanceDir;
+        $npx = trim((string) shell_exec('bash -lc ' . escapeshellarg('command -v npx') . ' 2>/dev/null'));
+        if ($npx === '') throw new \RuntimeException("npx is not on this machine's PATH — the audit's browser (Playwright MCP) needs Node here");
+        $port = 0;
+        for ($i = 0; $i < 50 && $port === 0; $i++) {
+            $p = random_int(28000, 28999);
+            $sock = @fsockopen('127.0.0.1', $p, $e, $es, 0.2);
+            if ($sock) { fclose($sock); continue; }
+            $port = $p;
+        }
+        if ($port === 0) throw new \RuntimeException('no free local port for the audit browser');
+        // Screenshots: the browser saves UNNAMED ones here (a named file it resolves against the
+        // agent's working directory, which is in the container — not this machine).
+        $shotsDir = $ws . '/public/uploads/audit/' . (int) $this->planId;
+        if (!is_dir($shotsDir) && !@mkdir($shotsDir, 0775, true)) throw new \RuntimeException("could not create {$shotsDir}");
+        $u = parse_url($this->baseUrl);
+        $origin = ($u['scheme'] ?? 'https') . '://' . ($u['host'] ?? '');
+        $browser = escapeshellarg($npx) . ' -y @playwright/mcp@0.0.83 --headless --isolated --browser chromium --host 127.0.0.1 --port ' . $port
+                 . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}") . ' --allowed-origins ' . escapeshellarg($origin)
+                 . ' --output-dir ' . escapeshellarg($shotsDir);
+        $out = $ws . '/.aibuilder/audit-result.json';
+        $audit = TenantBuilder::tenantCommand($tenant, 'audit', $this->tenantAuditId(), $this->requestFile(), $out,
+                                              ['browser-mcp' => "http://127.0.0.1:{$port}/mcp"]);
+        $unpack = 'php -r ' . escapeshellarg('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true)
+                . '; exit(\app\TenantBuilder::unpackAudit(' . var_export($out, true) . ', ' . var_export($this->manifestFile(), true)
+                . ', ' . var_export($this->slug, true) . ', ' . var_export($ws, true) . ', ' . (int) $this->planId . '));');
+        $log = escapeshellarg($this->logFile());
+        $blog = escapeshellarg($ws . '/.aibuilder/audit-browser.log');
+        $path = escapeshellarg(dirname($npx));
+        $tunnel = TenantHost::tunnelCommand($tenant, $port);
+        return <<<BASH
+#!/bin/bash
+# Tiknix audit — {$this->slug}, in its container; the browser runs here (lib/AuditRunner.php)
+export PATH={$path}:\$PATH
+# Names this tree for the reaper's process sweep (scripts/reap-stale-tasks.php): the browser and
+# the tunnel inherit it, so a tree that outlives its session can be identified and ended.
+export TIKNIX_SESSION_NAME="{$this->sessionName}"
+echo "[audit] instance {$this->slug} starting \$(date); browser on 127.0.0.1:{$port} for {$origin}" | tee {$log}
+rm -f {$this->escaped($out)}
+{$browser} > {$blog} 2>&1 &
+BROWSER=\$!
+TUNNEL=
+trap 'kill \$BROWSER \$TUNNEL 2>/dev/null' EXIT
+for i in \$(seq 1 90); do curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp && break; sleep 1; done
+curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp || { echo "[audit] ERROR the browser did not start (see {$ws}/.aibuilder/audit-browser.log)" | tee -a {$log}; exit 1; }
+{$tunnel} &
+TUNNEL=\$!
+sleep 3
+kill -0 \$TUNNEL 2>/dev/null || { echo "[audit] ERROR the tunnel into the container did not open" | tee -a {$log}; exit 1; }
+{ {$audit} > /dev/null; {$unpack}; } 2>&1 | tee -a {$log}
+echo "[audit] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$log}
+BASH;
+    }
+
+    private function escaped(string $s): string { return escapeshellarg($s); }
 
     /** The detached runner: headless `claude -p` pointed at the brief file. Model = sonnet
      *  (the QA work is procedural browser driving, not deep reasoning). */
     private function buildRunnerScript(): string {
-        $ws  = $this->instanceDir;
-        $log = $this->logFile();
-        $shortPrompt = 'Read the file .aibuilder/audit-request.md and follow its instructions exactly. '
-                     . 'You MUST finish by writing the manifest to .aibuilder/audit.json.';
-        /* THE PROJECT'S engine, resolved once and used for all three things that must
-           agree: the model asked for, the credential store bound, and the provider the jail
-           points the CLI at. The auditor is instance-level (no per-task engine), so the
-           instance's own .aibuilder/engine is the right source — it is the instance
-           directory here, not a workspace clone.
-
-           The model used to come from EngineRegistry::defaultEngine() — the CONF default,
-           not this project's engine. On a project running anything else that asked for
-           claude's auditor tier ('sonnet') and handed it to another provider. */
-        // $ws IS the instance directory here (the auditor is instance-level, no per-task
-        // engine), so AgentContext reads the project's engine file itself.
-        $ctx    = AgentContext::for($this->memberId, 'auditor', $ws);
-        $engine = $ctx->engine;
-        $model  = $ctx->model;
-
-        $jail = $this->jailFor();
-        if ($jail !== '') {
-            /* ENGINE ships with the model, as in PlanRunner. It worked here only by
-               coincidence: $ws is the instance directory, so jail-run.sh's own fallback read
-               the same file and happened to agree. Point the auditor at a worktree and that
-               coincidence ends — it would run one provider while holding another's
-               credentials. State it rather than rely on the two paths matching. */
-            $runBlock = 'ENGINE=' . escapeshellarg($engine) . ' '
-                      . escapeshellarg($jail) . ' ' . escapeshellarg($ws)
-                      . ' -- -p ' . escapeshellarg($shortPrompt) . ' --model ' . escapeshellarg($model);
-        } else {
-            $claude = 'claude -p ' . escapeshellarg($shortPrompt)
-                    . ' --model ' . escapeshellarg($model) . ' --dangerously-skip-permissions';
-            $runBlock = AgentContext::directEnvShell($engine, $ctx->stateDir) . 'cd ' . escapeshellarg($ws) . " && " . $claude;
-        }
-
-        $logArg = escapeshellarg($log);
-        // Credentials follow the PERSON, not the project (app\AgentState) — the auditor
-        // must run as the same account the planner and the build agents did. Without
-        // this it used the per-project store, which for any project relying on a member
-        // store is empty: the QA agent died in a second with "Not logged in" and the
-        // driver reported only "no manifest produced within the time budget".
-        $agentStateArg = escapeshellarg($ctx->stateDir);
-        return <<<BASH
-#!/bin/bash
-# Tiknix headless auditor (claude -p) — instance {$this->slug}
-export TIKNIX_MEMBER_ID={$this->memberId}
-export TIKNIX_AGENT_STATE={$agentStateArg}
-export TIKNIX_MEMBER_LEVEL={$this->memberLevel}
-export TIKNIX_SESSION_NAME="{$this->sessionName}"
-export TIKNIX_WORKSPACE="{$ws}"
-export CLAUDE_CODE_MAX_OUTPUT_TOKENS=250000
-
-echo "[audit] instance {$this->slug} starting \$(date)" | tee {$logArg}
-{$runBlock} 2>&1 | tee -a {$logArg}
-echo "[audit] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$logArg}
-BASH;
+        $t = TenantBuilder::bySlug($this->slug);
+        if (!$t) throw new \RuntimeException("{$this->slug} is not running in its own container — audits run in a project's container");
+        return $this->tenantRunnerScript($t);
     }
 
     /**
@@ -209,7 +205,7 @@ the live site. Your ONLY job is to **verify the running site with Playwright** a
 user levels, capture proof-of-life screenshots, and write a results manifest. You do NOT
 edit code.
 
-## Target (PUBLIC url only — the jail cannot reach localhost)
+## Target (its PUBLIC url — the browser may open nothing else)
 
 `{$base}`
 
@@ -242,13 +238,11 @@ the whole audit for that.
 
 ## Screenshot output convention (IMPORTANT)
 
-Save every screenshot INTO the instance under:
-
-`public/uploads/audit/{$planId}/<level>-<short-label>.png`
-
-e.g. `public/uploads/audit/{$planId}/admin-leads-page.png`. These become web-accessible at
-`{$base}/uploads/audit/{$planId}/...` and are attached to the report. Create the directory
-if needed (`mkdir -p public/uploads/audit/{$planId}`). Use lowercase, hyphenated labels.
+Take every screenshot with `browser_take_screenshot` and **no `filename`** — the browser runs
+elsewhere and names and saves the file itself; its reply tells you the saved file's name. Record
+each one in the manifest as `public/uploads/audit/{$planId}/<that file name>`. Do not create
+directories or files for screenshots. They become web-accessible at
+`{$base}/uploads/audit/{$planId}/...` and are attached to the report.
 
 ## Deliverable — write `.aibuilder/audit.json` (and nothing else)
 

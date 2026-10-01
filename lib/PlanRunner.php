@@ -2,9 +2,9 @@
 /**
  * PlanRunner — headless "decompose a goal into a multi-agent plan" pass.
  *
- * Headless: this runs
- * `claude -p` (print / non-interactive) in a detached tmux session against a
- * single instance. The planner is instructed to ground itself with the tiknix
+ * Headless: the project's own agent (`clitool --agent-plan`, the app's credential) runs IN ITS
+ * CONTAINER (TenantHost::plan → a tmux session there); a detached session here waits for it, then
+ * unpacks and ingests the plan. The planner is instructed to ground itself with the tiknix
  * MCP (codebase_map / whatprovides / describe) and then call the submit_plan
  * MCP tool, which writes <instance>/.aibuilder/plan.json. The app's
  * planingest() endpoint turns that file into a reviewable workbench task tree.
@@ -12,10 +12,6 @@
  * The planner only READS the codebase and WRITES the plan file — it does not
  * build anything. Execution of the plan is a separate step (the worktree
  * orchestrator, Phase 2).
- *
- * Jailing: when the workspace is a capricorn
- * instance we run inside jail-run.sh; otherwise (an isolated clone) we run
- * direct, relying on the PreToolUse security-sandbox hook for confinement.
  */
 
 namespace app;
@@ -51,7 +47,10 @@ class PlanRunner {
         $this->slug        = $slug;
         $this->instanceDir = rtrim($instanceDir, '/');
         $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ?', [$slug]));
-        if ($inst && $inst->id && \Model_Instance::tenantRow($inst)) $this->tenant = $inst;
+        if (!$inst || !$inst->id || !\Model_Instance::tenantRow($inst)) {
+            throw new \RuntimeException("{$slug} is not running in its own container — plans are made in a project's container");
+        }
+        $this->tenant = $inst;
         $this->memberId    = $memberId;
         $this->memberLevel = $memberLevel;
         $this->engine      = $engine;
@@ -68,7 +67,6 @@ class PlanRunner {
      */
     public function useAgent(string $agent): self {
         $agent = PlanIngestor::agentName($agent);
-        if ($agent !== '' && !$this->tenant) throw new \RuntimeException("{$this->slug} does not live in its own container, so it has no app agents to pick from");
         $this->agent = $agent;
         return $this;
     }
@@ -137,61 +135,19 @@ class PlanRunner {
      *         tell", and the caller must not render it as either.
      */
     public function activity(): ?array {
-        $stateDir = AgentContext::for($this->memberId, 'planner', $this->instanceDir, $this->engine)->stateDir;
-        // The CLI names a project folder after its working directory, with the separators
-        // and dots flattened to dashes.
-        $projects = rtrim($stateDir, '/') . '/projects';
-        $encoded  = str_replace(['/', '.'], '-', $this->instanceDir);
-        $dir      = $projects . '/' . $encoded;
-        if (!is_dir($dir)) return null;
-
-        /* SCOPED TO THIS PLANNER. The terminal session runs in the same working directory,
-           so it writes transcripts to the same folder — "newest file here" reported terminal
-           typing as planner progress. Two filters, both cheap:
-
-             1. Started no earlier than this run. planner.log is written at launch, so its
-                mtime is the run's start; a slack of a minute covers the gap between the log
-                line and the CLI opening its transcript.
-             2. Contains the planner's own prompt. Only the planner is told to read
-                .aibuilder/plan-request.md, which makes it an unambiguous marker.
-
-           The marker scan reads a bounded head of each candidate, not the whole file —
-           these reach hundreds of KB and this is polled. */
+        // The planner runs in the container; its CLI transcript is in the app's agent HOME there.
+        // Scoped to this run (started after planner.log was written) and to the planner (only it
+        // is told to read plan-request.md); a bounded head of each candidate is read.
         $startedAt = (int) @filemtime($this->logFile());
-        $newest = null; $newestAt = 0;
-        foreach (glob($dir . '/*.jsonl') ?: [] as $f) {
-            $m = @filemtime($f);
-            if (!$m || $m <= $newestAt) continue;
-            if ($startedAt > 0 && $m < $startedAt - 60) continue;   // an older session
-            if (!self::mentions($f, 'plan-request.md')) continue;    // not the planner
-            $newestAt = $m; $newest = $f;
-        }
-        if ($newest === null) return null;
-
-        $age = time() - $newestAt;
-        return [
-            'bytes'   => (int) @filesize($newest),
-            'updated' => $newestAt,
-            'age_sec' => $age,
-            // Two minutes of no new turns while the session is alive is worth surfacing.
-            // Not a verdict — a long tool call or a slow provider can exceed it.
-            'alive'   => $age < 120,
-        ];
-    }
-
-    /**
-     * Does this transcript's opening contain $needle?
-     *
-     * Bounded read: the prompt is in the first turn, and these files grow past a megabyte
-     * while this is polled every few seconds. 256KB is far more than the first turn needs
-     * and still cheap.
-     */
-    private static function mentions(string $file, string $needle): bool {
-        $fh = @fopen($file, 'rb');
-        if (!$fh) return false;
-        $head = (string) @fread($fh, 262144);
-        @fclose($fh);
-        return $head !== '' && str_contains($head, $needle);
+        $php = '$best = null; $bt = 0; foreach (glob("/srv/app/.aibuilder/home/.claude/projects/*/*.jsonl") ?: [] as $f) {'
+             . ' $m = (int) filemtime($f); if ($m <= $bt || $m < ' . ($startedAt - 60) . ') continue;'
+             . ' if (!str_contains((string) file_get_contents($f, false, null, 0, 262144), "plan-request.md")) continue;'
+             . ' $bt = $m; $best = $f; } echo $best === null ? "none" : (filesize($best) . " " . $bt);';
+        try { [$c, $o] = TenantHost::ssh($this->tenant, 'app', 'php -r ' . escapeshellarg($php), null, 20); }
+        catch (\RuntimeException $e) { return null; }
+        if ($c !== 0 || !preg_match('/^(\d+) (\d+)$/', trim((string) $o), $m)) return null;
+        $age = time() - (int) $m[2];
+        return ['bytes' => (int) $m[1], 'updated' => (int) $m[2], 'age_sec' => $age, 'alive' => $age < 120];
     }
 
     /** Last N lines of the planner log for the UI. */
@@ -208,7 +164,6 @@ class PlanRunner {
      * session name. Throws on setup failure.
      */
     public function start(string $goal, array $supersedeIds = [], bool $autoBuild = false, int $promptId = 0): string {
-        if (!$this->tenant) InstanceRepo::assertNotCarried($this->slug);   // a tenant plans in its container
         $this->supersedeIds = array_values(array_filter(array_map('intval', $supersedeIds)));
         $this->autoBuild    = $autoBuild;
         $this->promptId     = max(0, $promptId);
@@ -298,34 +253,19 @@ class PlanRunner {
     }
 
     /** Kill the planner session (cancel). */
-    public function stop(): bool { return TmuxManager::kill($this->sessionName); }
-
-    /**
-     * jail-run.sh path when the workspace is a jailable capricorn instance,
-     * else '' (run direct).
-     */
-    private function jailFor(): string {
-        // Already inside an isolated pool (open_basedir set)? We ARE the jail — jail-run.sh
-        // is outside the boundary (is_file() would throw) and re-jailing is redundant. Direct.
-        // (IsolatedPool, not a bare open_basedir test: a CLI process started BY the pool — a
-        // pipeline worker fanning out child runs — has no open_basedir and still IS the pool.)
-        if (\app\IsolatedPool::inside($this->instanceDir)) return '';
-
-        $root = '/var/www/html/default';
-        $real = realpath($this->instanceDir) ?: $this->instanceDir;
-        if (strpos(basename($real), '.') === false) return '';
-        if (strpos($real, $root . '/') !== 0) return '';
-        if (!is_file("$real/public/index.php")) return '';
-        $cfg = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
-        $binDir = rtrim($cfg['ops']['bin_dir'] ?? '/home/ubuntu/capricorn/bin', '/');
-        $script = "$binDir/jail-run.sh";
-        return is_file($script) ? $script : '';
+    public function stop(): bool {
+        // A container's planner runs in its container (TenantHost::plan → tmux there); the session
+        // here only waits for it. Stopping must end the agent, not just the wait.
+        if ($this->tenant) TenantRun::kill($this->tenant, 'tiknix-run-' . $this->tenantPlanId());
+        return TmuxManager::kill($this->sessionName);
     }
 
+    /** The container run id of this member's planner on this project (one at a time — start() locks). */
+    private function tenantPlanId(): string { return 'planner-m' . (int) $this->memberId; }
+
     /**
-     * The detached runner script. Headless `claude -p` with a tiny, quote-safe
-     * positional prompt that points at the full brief file (so no long/complex
-     * text has to survive escaping through jail-run.sh). Planner model = opus.
+     * The detached runner script: start the planner in the container and wait for it
+     * (tenant.php --plan), unpack its plan here, then ingest it into the board.
      */
     private function buildRunnerScript(): string {
         $mainProjectRoot = dirname(__DIR__);
@@ -334,49 +274,16 @@ class PlanRunner {
         // Kept minimal + quote-safe: the real instructions live in plan-request.md,
         // which the planner reads with its own Read tool inside the workspace.
         $shortPrompt = 'Read the file .aibuilder/plan-request.md and follow its instructions exactly. You MUST finish by calling the submit_plan tool.';
-        $ctx = null;
-        if ($this->tenant) {
+        {
             // In the app's container, on the app's own credential (AgentTask::plan); the plan
             // (or plan-complete.md) is unpacked here, where the ingest below looks for it.
             $out = $ws . '/.aibuilder/tenant-plan.json';
             $runBlock = '{ rm -f ' . escapeshellarg($out) . ' && '
-                      . TenantBuilder::tenantCommand($this->tenant, 'plan', 'plan-' . date('Ymd-His'), $this->requestFile(), $out,
+                      . TenantBuilder::tenantCommand($this->tenant, 'plan', $this->tenantPlanId(), $this->requestFile(), $out,
                                                      ['member' => $this->memberId] + ($this->agent !== '' ? ['agent' => $this->agent] : []))
                       . ' > /dev/null; php -r ' . escapeshellarg('require ' . var_export($mainProjectRoot . '/vendor/autoload.php', true)
                       . '; exit(\\app\\TenantBuilder::unpackPlan(' . var_export($out, true) . ', ' . var_export($ws . '/.aibuilder', true)
                       . ', ' . var_export($this->slug, true) . ', ' . (int) $this->memberId . ', ' . var_export($this->agent, true) . '));') . '; }';
-        } else {
-        // Planner is SELECTABLE: the model comes from the engine's planner tier in the
-        // registry (§7), not a hardcoded opus. claude's planner tier is opus (unchanged);
-        // another engine declares its own. Dispatch stays on the claude launcher until a
-        // non-claude engine's headless jail path is wired (Phase A) — the tier still applies.
-        // One resolution for engine, model and credential store (app\AgentContext).
-        $ctx    = AgentContext::for($this->memberId, 'planner', $this->instanceDir, $this->engine);
-        $engine = $ctx->engine;
-        // The member who triggered the decompose may override the planner (decomp) model
-        // in their settings; absent an override this is the engine's registry planner tier.
-        $model  = $ctx->model;
-
-        $jail = $this->jailFor();
-        if ($jail !== '') {
-            // jail-run.sh <workspace> -- <claude args>. The jail itself runs
-            //   claude --permission-mode bypassPermissions <our args>
-            // (see capricorn/bin/jail-run.sh:152), so we only add -p + model —
-            // permissions are already bypassed and creds are the instance's own.
-            //
-            // ENGINE decides which provider the jail points the CLI at, and it MUST be sent
-            // alongside --model: the model above comes from this engine's registry tier, so
-            // without it the jail ran on the default provider and handed it another
-            // provider's model id. The executor already did this; the planner did not, which
-            // made "decompose on z.ai" a claude run asking Anthropic for glm-5.3.
-            $enginePrefix = 'ENGINE=' . escapeshellarg($engine) . ' ';
-            $runBlock = $enginePrefix . escapeshellarg($jail) . ' ' . escapeshellarg($ws)
-                      . ' -- -p ' . escapeshellarg($shortPrompt) . ' --model ' . escapeshellarg($model);
-        } else {
-            $claude = 'claude -p ' . escapeshellarg($shortPrompt)
-                    . ' --model ' . escapeshellarg($model) . ' --dangerously-skip-permissions';
-            $runBlock = AgentContext::directEnvShell($engine, $ctx->stateDir) . 'cd ' . escapeshellarg($ws) . " && " . $claude;
-        }
         }
 
         $logArg     = escapeshellarg($log);
@@ -404,13 +311,7 @@ class PlanRunner {
         // Sidecar workspace DB: propagate the per-instance workbench.db path (set by the AI
         // Projects sidecar via putenv) so plan-ingest.php's bootstrap writes the decomposed
         // plan to THAT db, not core's. INERT for core's own /workbench (env unset).
-        // Credentials follow the PERSON, not the project (app\AgentState). jail-run.sh
-        // binds whatever this names as the agent's ~/.claude.
-        // $engine, not $this->engine: the run above normalizes an unset/invalid engine to the
-        // registry default, and the credential store must be the one the CLI will actually
-        // use. Resolving them from different values binds a store for one provider while the
-        // agent talks to another — a login that appears to succeed and never takes effect.
-        $agentStateArg = $ctx ? escapeshellarg($ctx->stateDir) : "''";   // a container run uses the app's credential
+        $agentStateArg = "''";   // the run is in the container, on the app's own credential
         $wsDbEnv  = getenv('TIKNIX_WORKBENCH_DB');
         $wsExport = ($wsDbEnv !== false && $wsDbEnv !== '')
             ? "export TIKNIX_WORKBENCH_DB=" . escapeshellarg($wsDbEnv) . "\n" : '';
@@ -577,16 +478,6 @@ MD;
      * root. Never throws — a digest failure must not block planning.
      */
     private function codebaseDigest(): string {
-        if ($this->tenant) return TenantBuilder::digest($this->tenant);
-        try {
-            $file = \app\Paths::runtime() . '/mcptools/Introspector.php';
-            if (is_file($file)) require_once $file;
-            $cls = 'app\\mcptools\\Introspector';
-            if (!class_exists($cls)) return '_(codebase inventory unavailable)_';
-            $d = (new $cls($this->instanceDir))->digest();
-            return $d !== '' ? $d : '_(codebase inventory unavailable)_';
-        } catch (\Throwable $e) {
-            return '_(codebase inventory unavailable: ' . $e->getMessage() . ')_';
-        }
+        return TenantBuilder::digest($this->tenant);
     }
 }

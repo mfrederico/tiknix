@@ -126,9 +126,12 @@
                                             <i class="bi bi-plug"></i> Use
                                         </button>
                                         <a href="/apikeys/edit?id=<?= $key->id ?>" class="btn btn-sm btn-outline-primary">Edit</a>
-                                        <a href="/apikeys/delete?id=<?= $key->id ?>"
-                                           class="btn btn-sm btn-outline-danger"
-                                           data-confirm="Delete this API key? This cannot be undone." data-confirm-ok="Delete" data-confirm-danger>Delete</a>
+                                        <form method="post" action="/apikeys/delete" class="d-inline"
+                                              data-confirm="Delete this API key? This cannot be undone." data-confirm-ok="Delete" data-confirm-danger>
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="id" value="<?= (int) $key->id ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                        </form>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

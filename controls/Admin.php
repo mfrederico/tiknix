@@ -71,9 +71,14 @@ class Admin extends Control {
         
         $request = Flight::request();
         
-        // Handle delete action
-        if ($request->query->delete && is_numeric($request->query->delete)) {
-            $this->deleteMember($request->query->delete);
+        // Delete: a POST with a CSRF token, as on the permissions page. This was a bare GET
+        // `?delete=<id>` — anything that fetched a link on this page deleted that member: a
+        // link checker did (2026-10-01, five accounts on a staging copy), and so would an
+        // <img src> on any page an admin opens.
+        $deleteId = (int) $this->getParam('delete', 0);
+        if ($deleteId > 0) {
+            if (!$this->requirePost()) return;
+            $this->deleteMember($deleteId);
             Flight::redirect('/admin/members');
             return;
         }

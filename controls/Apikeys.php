@@ -148,8 +148,11 @@ class Apikeys extends Control {
      * Delete API key
      */
     public function delete($params = []) {
+        // A POST with a CSRF token: as a GET link, anything that fetched the page's links (a
+        // link checker, an <img src> elsewhere) deleted the viewer's keys.
+        if (!$this->requirePost()) return;
         $request = Flight::request();
-        $keyId = $request->query->id ?? null;
+        $keyId = $request->data->id ?? null;
 
         if (!$keyId) {
             Flight::redirect('/apikeys');

@@ -148,9 +148,12 @@
                         <td>
                             <a href="/admin/editMember?id=<?= $member->id ?>" class="btn btn-sm btn-outline-primary">Edit</a>
                             <?php if ($member->id != PUBLIC_USER_ID && $member->id != SYSTEM_ADMIN_ID && $member->id != $_SESSION['member']['id']): ?>
-                                <a href="/admin/members?delete=<?= $member->id ?>" 
-                                   class="btn btn-sm btn-outline-danger"
-                                   data-confirm="Delete this member?" data-confirm-ok="Delete" data-confirm-danger>Delete</a>
+                                <form method="post" action="/admin/members" class="d-inline"
+                                      data-confirm="Delete this member?" data-confirm-ok="Delete" data-confirm-danger>
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="delete" value="<?= (int) $member->id ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                </form>
                             <?php endif; ?>
                         </td>
                     </tr>

@@ -256,7 +256,7 @@ class Connections extends Control {
      * answer to that is to stop, not to invent an address no provider will accept.
      */
     private function requestHost(): string {
-        $host = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+        $host = \app\Host::visitorHost();
         if ($host === '') {
             $msg = 'OAuth callback URL requested with no Host header — cannot build a '
                  . 'redirect_uri. Refusing rather than sending a provider an invented host.';
@@ -268,8 +268,7 @@ class Connections extends Control {
 
     /** https when the request (or the proxy in front of it) says so. */
     private function requestIsHttps(): bool {
-        return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        return \app\Host::https();
     }
 
     private function redirectUri(): string {

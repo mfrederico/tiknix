@@ -215,57 +215,125 @@ $hasShowcase = !empty($showcase);
     <div class="band-head">
       <div class="eyebrow">Your AI dev team</div>
       <h2>A whole dev team, on tap</h2>
-      <p>Brief the goal. Agents plan it, build it in parallel and review each other's work — you steer.</p>
+      <p>Brief the goal. Agents plan it, build it in parallel and review each other's work — you steer. Below is a real one: how tiknix built its own Get-started wizard.</p>
     </div>
 
-    <div class="frame" style="max-width:820px; margin:0 auto;">
+    <?php /* A REAL build, replayed: tiknix's own Get-started wizard (start.tiknix), plan #1 on its task
+             board, 2026-09-25 — the task titles, which ran in parallel and when each finished are from
+             the board (_workspaces/start-201e11/data/workbench.db), times relative to 19:42:20 and sped
+             up 30x. The reviewer's audit then failed and filed three fixes; they merged that evening. */ ?>
+    <div class="frame replay" id="replay" style="max-width:820px; margin:0 auto;">
       <div class="frame-bar">
         <div style="display:flex; align-items:center; gap:8px;">
           <span class="tl" style="background:#f0655b;"></span>
           <span class="tl" style="background:#f2bd4a;"></span>
           <span class="tl" style="background:#43c86a;"></span>
-          <span class="url" style="margin-left:12px;">Builder · Acme Co — Booking Portal</span>
+          <span class="url" style="margin-left:12px;">Builder · start.tiknix — Get-started wizard</span>
         </div>
-        <span class="badge-iso" style="color:var(--accent2); border-color:rgba(59,118,240,0.4);"><span class="dot-b" style="width:9px; height:9px;"></span> Building</span>
+        <span class="badge-iso" id="replay-badge" style="color:var(--accent2); border-color:rgba(59,118,240,0.4);">Planned</span>
       </div>
       <div style="padding:20px 22px;">
         <div style="font-size:13px; color:var(--dim);">Goal</div>
-        <div style="font-size:16px; font-weight:600; margin-top:3px;">"Add online booking with Stripe deposits and an admin schedule."</div>
-
-        <div class="roles-row" style="margin-top:16px;">
-          <span class="role-chip"><span class="dot" style="background:var(--accent2); box-shadow:none;"></span>Planner</span>
-          <span class="role-chip"><span class="dot-b" style="width:8px; height:8px;"></span>Builder</span>
-          <span class="role-chip"><span class="dot-b" style="width:8px; height:8px;"></span>Builder</span>
-          <span class="role-chip"><span class="ring" style="width:10px; height:10px;"></span>Reviewer</span>
+        <div style="font-size:15.5px; font-weight:600; margin-top:3px;">&ldquo;Build the &lsquo;Get started&rsquo; discovery wizard &mdash; the front door where a new customer answers questions about their business and end goal, sees the concept played back as a qualified brief, gets modules recommended, and receives a PLAN.md they can hand to the Builder.&rdquo;</div>
+        <div class="roles-row" style="margin-top:16px;" id="replay-roles">
+          <span class="role-chip" data-role="planner"><span class="dot" style="background:var(--accent2); box-shadow:none;"></span>Planner</span>
+          <span class="role-chip" data-role="b1"><span class="dot-b" style="width:8px; height:8px;"></span>Builder</span>
+          <span class="role-chip" data-role="b2"><span class="dot-b" style="width:8px; height:8px;"></span>Builder</span>
+          <span class="role-chip" data-role="reviewer"><span class="ring" style="width:10px; height:10px;"></span>Reviewer</span>
         </div>
-
-        <div class="tasklist">
-          <div class="task">
-            <span class="st"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--good)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.3 12 2.5 2.6 4.9-5.4"/></svg></span>
-            Plan the data model &amp; routes<span class="role">Planner</span>
-          </div>
-          <div class="task">
-            <span class="st"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--good)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.3 12 2.5 2.6 4.9-5.4"/></svg></span>
-            Build the booking form &amp; calendar<span class="role">Builder</span>
-          </div>
-          <div class="task">
-            <span class="st"><span class="dot-b"></span></span>
-            Wire Stripe deposit checkout<span class="role">Builder · 62%</span>
-          </div>
-          <div class="task q">
-            <span class="st"><span class="ring"></span></span>
-            Add the admin schedule view<span class="role">Queued</span>
-          </div>
-          <div class="task q">
-            <span class="st"><span class="ring"></span></span>
-            Review &amp; test the full flow<span class="role">Reviewer</span>
-          </div>
-        </div>
+        <div class="tasklist" id="replay-tasks"></div>
       </div>
-      <div class="frame-foot" style="color:var(--soft); background:rgba(255,255,255,0.02);">
-        <span style="color:var(--good);">✓ 2 done</span> · <span style="color:var(--accent2);">1 building</span> · 2 queued — you steer, they ship
+      <div class="frame-foot replay-foot" style="color:var(--soft); background:rgba(255,255,255,0.02);">
+        <span id="replay-count">8 tasks planned</span>
+        <span class="replay-note">A real build &mdash; our own Get-started wizard, Sep 25 &middot; replayed 30&times; faster <button type="button" id="replay-again" class="replay-again" hidden>Replay</button></span>
       </div>
     </div>
+    <style>
+      .replay .task{ transition:opacity .4s ease, color .4s ease; }
+      .replay .task.q{ opacity:.55; }
+      .replay .task .when{ font-family:var(--mono); font-size:12px; color:var(--dim); padding-left:12px; white-space:nowrap; min-width:72px; text-align:right; }
+      .replay .task.fix{ border-left:2px solid #f2bd4a; padding-left:10px; }
+      .replay .role-chip{ opacity:.45; transition:opacity .3s ease; } .replay .role-chip.on{ opacity:1; }
+      .replay-foot{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; }
+      .replay-note{ color:var(--dim); font-size:12.5px; }
+      .replay-again{ margin-left:8px; background:none; border:1px solid var(--line2); color:var(--soft); border-radius:7px; padding:2px 9px; font:inherit; font-size:12px; cursor:pointer; }
+    </style>
+    <script>
+    (function () {
+      // From the board: [title, started (s after 19:42:20), finished, builder lane]. Fixes: filed by the
+      // reviewer's audit at the end, merged later that evening (21:20, 22:05, 22:20).
+      var TASKS = [
+        ['Blueprints + the component check',            0, 151, 'b1'],
+        ['Interview step machine &amp; discovery questions', 0, 161, 'b2'],
+        ['Permission rows for the public /start wizard', 30, 71, 'b1'],
+        ['Recommender + concept brief builder',        161, 271, 'b1'],
+        ['Wizard pages, save &amp; resume, Turnstile',  161, 301, 'b2'],
+        ['Plan renderer with golden tests',            271, 432, 'b1'],
+        ['Brief page &amp; module recommendation cards', 302, 452, 'b2'],
+        ['Preview + Build it hand-off',                452, 592, 'b1']
+      ];
+      var FIXES = ['Fix: /start was not public for signed-in members', 'Fix: Start button disabled — Turnstile not connected', 'Fix: verify the downstream wizard flow end to end'];
+      var SPEED = 30, box = document.getElementById('replay'); if (!box) return;
+      var list = document.getElementById('replay-tasks'), badge = document.getElementById('replay-badge'),
+          count = document.getElementById('replay-count'), again = document.getElementById('replay-again');
+      var CHECK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--good)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.3 12 2.5 2.6 4.9-5.4"/></svg>';
+      var rows = [], timers = [];
+      function role(r, on) { var c = box.querySelector('[data-role="' + r + '"]'); if (c) c.classList.toggle('on', on); }
+      function fmt(sec) { return Math.floor(sec / 60) + 'm' + ('0' + (sec % 60)).slice(-2) + 's'; }
+      function setRow(i, st, sec) {
+        var r = rows[i], t = TASKS[i];
+        r.className = 'task' + (st === 'q' ? ' q' : '');
+        r.innerHTML = '<span class="st">' + (st === 'done' ? CHECK : st === 'run' ? '<span class="dot-b"></span>' : '<span class="ring"></span>') + '</span>'
+          + t[0] + '<span class="role">' + (st === 'done' ? 'Builder · merged' : st === 'run' ? 'Builder' : 'Queued') + '</span>'
+          + '<span class="when">' + (st === 'done' ? 'at ' + fmt(sec) : '') + '</span>';
+      }
+      function tally() {
+        var d = 0, b = 0; rows.forEach(function (r, i) { if (r.dataset.st === 'done') d++; else if (r.dataset.st === 'run') b++; });
+        count.innerHTML = '<span style="color:var(--good);">✓ ' + d + ' done</span> · <span style="color:var(--accent2);">' + b + ' building</span> · ' + (TASKS.length - d - b) + ' queued';
+      }
+      function at(sec, fn) { timers.push(setTimeout(fn, sec * 1000 / SPEED)); }
+      function reset() {
+        timers.forEach(clearTimeout); timers = []; list.innerHTML = ''; rows = [];
+        TASKS.forEach(function (t, i) { var r = document.createElement('div'); r.dataset.st = 'q'; list.appendChild(r); rows.push(r); setRow(i, 'q'); });
+        ['planner', 'b1', 'b2', 'reviewer'].forEach(function (r) { role(r, false); });
+        badge.textContent = 'Planned'; again.hidden = true; count.textContent = '8 tasks planned';
+      }
+      function finalState() {
+        reset();
+        TASKS.forEach(function (t, i) { rows[i].dataset.st = 'done'; setRow(i, 'done', t[2]); });
+        FIXES.forEach(function (f) { var r = document.createElement('div'); r.className = 'task fix'; r.innerHTML = '<span class="st">' + CHECK + '</span>' + f + '<span class="role">Reviewer found it · fixed</span>'; list.appendChild(r); });
+        badge.textContent = 'Merged'; count.innerHTML = '<span style="color:var(--good);">✓ 8 tasks built in 10 minutes</span> · the reviewer caught 3 problems, fixed that evening';
+      }
+      function play() {
+        reset(); role('planner', true);
+        at(0, function () { badge.textContent = 'Building'; role('planner', false); tally(); });
+        TASKS.forEach(function (t, i) {
+          at(t[1], function () { rows[i].dataset.st = 'run'; setRow(i, 'run'); role(t[3], true); tally(); });
+          at(t[2], function () {
+            rows[i].dataset.st = 'done'; setRow(i, 'done', t[2]);
+            var busy = rows.some(function (r, j) { return r.dataset.st === 'run' && TASKS[j][3] === t[3]; }); if (!busy) role(t[3], false);
+            tally();
+          });
+        });
+        at(600, function () { badge.textContent = 'Reviewing'; role('reviewer', true); count.innerHTML = '<span style="color:var(--good);">✓ 8 tasks built in 10 minutes</span> · reviewer testing the full flow…'; });
+        FIXES.forEach(function (f, k) {
+          at(690 + k * 30, function () { var r = document.createElement('div'); r.className = 'task fix'; r.innerHTML = '<span class="st"><span class="ring"></span></span>' + f + '<span class="role">Reviewer found it</span>'; list.appendChild(r); });
+        });
+        at(840, function () {
+          list.querySelectorAll('.task.fix').forEach(function (r) { r.querySelector('.st').innerHTML = CHECK; r.querySelector('.role').textContent = 'Reviewer found it · fixed'; });
+          role('reviewer', false); badge.textContent = 'Merged';
+          count.innerHTML = '<span style="color:var(--good);">✓ 8 tasks built in 10 minutes</span> · the reviewer caught 3 problems, fixed that evening';
+          again.hidden = false;
+        });
+      }
+      again.addEventListener('click', play);
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { finalState(); return; }
+      reset();
+      if (!('IntersectionObserver' in window)) { play(); return; }
+      var io = new IntersectionObserver(function (es) { if (es[0].isIntersecting) { io.disconnect(); play(); } }, {threshold: 0.35});
+      io.observe(box);
+    })();
+    </script>
   </section>
 
   <!-- HOW IT WORKS -->

@@ -80,6 +80,16 @@ class ConnectorPush {
     }
 
     /**
+     * Ask the app one of its own connector doors (/connectorapi/list, /connectorapi/disconnect)
+     * with its broker key. The decoded answer, or a RuntimeException saying what went wrong.
+     */
+    public static function ask(int $instanceId, string $path, array $body = []): array {
+        if (!preg_match('#^/connectorapi/[a-z]+$#', $path)) throw new \RuntimeException("ConnectorPush: {$path} is not a connector door.");
+        $target = self::target($instanceId);
+        return self::post($target['url'] . $path, $target['key'], $body);
+    }
+
+    /**
      * WHERE to push, and WITH WHICH KEY — resolved together, because they are one
      * answer. Connectorapi authenticates against the broker key in the conf/ of the
      * install that is SERVING, so a URL from one copy and a key from another is a
@@ -100,8 +110,14 @@ class ConnectorPush {
         $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) throw new \RuntimeException('ConnectorPush: no instance ' . $instanceId . '.');
 
-        // 1. Deployed container: the canonical domain the deploy wrote as BASE_URL.
         $domain = strtolower(trim((string) ($inst->ctDomain ?? '')));
+        // 0. An app in its own container: its domain, and the key in its own conf/broker.ini.
+        if (\Model_Instance::tenantRow($inst)) {
+            if ($domain === '') throw new \RuntimeException("ConnectorPush: {$inst->slug} runs in its own container but has no domain yet.");
+            return ['url' => 'https://' . $domain, 'key' => BrokerService::containerKey($inst, (int) $inst->memberId)[0], 'how' => 'container'];
+        }
+
+        // 1. Deployed container: the canonical domain the deploy wrote as BASE_URL.
         if ($domain !== '') {
             $sealed = (string) ($inst->brokerKey ?? '');
             if ($sealed === '') {

@@ -71,6 +71,17 @@ class Connections extends Control {
         return $inst;
     }
 
+    /**
+     * True (after answering 409) when the project runs in its own container: its connections
+     * live in the app, and the things this route does — GitHub publish, tokens read on this
+     * host — are the app's own, on its Connections page.
+     */
+    private function appOwnsThis($inst): bool {
+        if (!\Model_Instance::tenantRow($inst)) return false;
+        $this->jsonError(($inst->displayName ?: $inst->slug) . ' runs in its own container. This is done on its own Connections page (the project\'s section of the menu).', 409);
+        return true;
+    }
+
     /** The enabled GitHub connection bound to member + instance, or null. */
     private function githubConn(int $instanceId) {
         return \app\InstanceConnections::forInstall($instanceId, 'github');
@@ -98,6 +109,17 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::redirect('/sidecar/app/workbench'); return; }
+        if (\Model_Instance::tenantRow($inst)) {
+            // /projects/open opens the SELECTED project's app; never another one's page under this one's name
+            $sel = ProjectContext::current((int) $this->member->id);
+            if (!$sel || (int) $sel->id !== (int) $inst->id) {
+                $this->flash('info', 'Select ' . ($inst->displayName ?: $inst->slug) . ' first, then open its page.');
+                Flight::redirect('/projects');
+                return;
+            }
+            Flight::redirect('/projects/open?to=' . rawurlencode('/connections'));
+            return;
+        }
         // Default (tiknix-core) instances publish back to main — root only.
         $isDefault = (bool)$inst->isDefault;
         if ($isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { Flight::redirect('/sidecar/app/workbench'); return; }
@@ -122,6 +144,7 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         $conn = $this->githubConn((int)$inst->id);
         $this->jsonSuccess([
             'connected'  => (bool)($conn && $conn->id),
@@ -150,6 +173,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { $this->jsonError('Only root can configure the tiknix-core connection.', 403); return; }
 
         $type = strtolower(trim((string)$this->getParam('type', 'github')));
@@ -374,6 +398,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         $sess = $_SESSION['gh_oauth'] ?? null;
         if (!$sess || empty($sess['token']) || (int)($sess['instance_id'] ?? 0) !== (int)$inst->id) {
             $this->jsonError('GitHub authorization expired — reconnect.', 400); return;
@@ -399,6 +424,7 @@ class Connections extends Control {
         if (!$this->requireLogin()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         $conn = $this->githubConn((int)$inst->id);
         if (!$conn || !$conn->id) { $this->jsonError('Connect a GitHub repo first.', 400); return; }
         $meta = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
@@ -414,6 +440,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         // Custom domains and containers come with a PAID project (pricing page); the free
         // project lives on its tiknix subdomain. One predicate, ProjectQuota::canUseCustomDomain,
         // which also respects the enforcement flag.
@@ -444,6 +471,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         $conn = $this->githubConn((int)$inst->id);
         if (!$conn || !$conn->id) { $this->jsonError('No connection', 400); return; }
         $domain = strtolower(trim((string)$this->getParam('domain', '')));
@@ -472,6 +500,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         $conn = $this->githubConn((int)$inst->id);
         if (!$conn || !$conn->id) { $this->jsonError('No connection', 400); return; }
         $domain = strtolower(trim((string)$this->getParam('domain', '')));
@@ -487,6 +516,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         // Custom domains and containers come with a PAID project (pricing page); the free
         // project lives on its tiknix subdomain. One predicate, ProjectQuota::canUseCustomDomain,
         // which also respects the enforcement flag.
@@ -761,6 +791,25 @@ class Connections extends Control {
         // in a catch, so the hint silently rendered blank and looked like "no secret
         // set". Core now reports only WHETHER one is set, which is the whole of what
         // it honestly knows.
+        $listError = '';
+        if (\Model_Instance::tenantRow($inst)) {
+            $byType = [];
+            try {
+                $rows = \app\ConnectorPush::ask((int) $inst->id, '/connectorapi/list')['connections'] ?? null;
+                if (!is_array($rows)) throw new \RuntimeException("{$inst->slug}'s /connectorapi/list answered without a connections list.");
+                foreach ($rows as $c) {
+                    $byType[(string) $c['connector']][] = [
+                        'id' => (int) $c['id'], 'environment' => (string) $c['environment'], 'name' => (string) $c['name'],
+                        'eid' => '', 'url' => (string) $c['url'], 'enabled' => (bool) $c['enabled'], 'revoked' => (bool) $c['revoked'],
+                        // the app's own page has these; its list door gives metadata only
+                        'lastError' => null, 'webhookSet' => false, 'webhookHint' => '', 'keyHint' => '', 'specOps' => 0,
+                    ];
+                }
+            } catch (\RuntimeException $e) {
+                $this->logger->error('Connections: could not list the app\'s connections', ['slug' => $inst->slug, 'err' => $e->getMessage()]);
+                $listError = $e->getMessage();
+            }
+        } else
         $byType = InstanceConnections::withInstall((int)$inst->id, function () {
             $out = [];
             foreach (Bean::find('connections', 'ORDER BY connector_type, environment') as $c) {
@@ -842,6 +891,8 @@ class Connections extends Control {
             'canManage'      => $inst->ownedBy((int)$this->member->id),
             'ownerEmail'     => (string) (Bean::load('member', (int)$inst->memberId)->email ?? ''),
             'cards'          => $cards,
+            // could not ask the app what it is connected to — said on the page, never shown as "nothing connected"
+            'listError'      => $listError,
             // This site's own sign-up gate — install-local, so this is CORE's Turnstile.
             'turnstile'      => \app\Turnstile::state(),
             // A manifest that will not load must SAY so here. A declarative connector
@@ -853,7 +904,8 @@ class Connections extends Control {
             'publishDrivers' => \app\Publish\PublishRegistry::hosting(),
             // Only for the GitHub deploy-webhook hint ("a push fires N pipelines");
             // the pipelines themselves are shown on /integrations, not here.
-            'pipelines'      => \app\InstanceAutomations::pipelines($this->instanceDir($inst->slug)),
+            // a container app's pipelines are in the app, not on this host
+            'pipelines'      => \Model_Instance::tenantRow($inst) ? [] : \app\InstanceAutomations::pipelines($this->instanceDir($inst->slug)),
             'environments'   => ['development', 'production'],
             'categoryOrder'  => ['Deploy', 'Project', 'Payments', 'Stores', 'Messaging', 'Social', 'Other'],
             // In its own container: where it goes live is the Deploy page (controls/Deploy.php).
@@ -1102,6 +1154,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { Flight::jsonError('Instance not found.', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         $slug = (string) $this->getParam('slug');
         if ($slug === '') { Flight::jsonError('slug is required.', 400); return; }
         $res = \app\InstanceAutomations::trigger($this->instanceDir($inst->slug), $slug);
@@ -1810,9 +1863,10 @@ class Connections extends Control {
      *
      * @return array{0:int,1:int}|null [instanceId, connectionId], or null having sent the error
      */
-    private function hubTarget(): ?array {
+    private function hubTarget(bool $remoteOk = false): ?array {
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found.', 404); return null; }
+        if (!$remoteOk && $this->appOwnsThis($inst)) return null;
         $cid = (int)$this->getParam('cid', 0);
         if ($cid <= 0) { $this->jsonError('Connection not found', 404); return null; }
         return [(int)$inst->id, $cid];
@@ -1856,8 +1910,15 @@ class Connections extends Control {
     public function disconnect($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
-        if (($t = $this->hubTarget()) === null) return;
+        if (($t = $this->hubTarget(true)) === null) return;
         [$iid, $cid] = $t;
+
+        if (\Model_Instance::tenantRow(Bean::load('instance', $iid))) {
+            try { \app\ConnectorPush::ask($iid, '/connectorapi/disconnect', ['id' => $cid]); }
+            catch (\RuntimeException $e) { $this->jsonError($e->getMessage(), 502); return; }
+            $this->jsonSuccess([], 'Disconnected');
+            return;
+        }
 
         $gone = InstanceConnections::withInstall($iid, function () use ($cid) {
             $conn = Bean::load('connections', $cid);
@@ -2003,6 +2064,7 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        if ($this->appOwnsThis($inst)) return;
         if ($inst->isDefault && !Flight::hasLevel(LEVELS['ROOT'])) { $this->jsonError('Only root can publish to tiknix main.', 403); return; }
 
         $conn = $this->githubConn((int)$inst->id);

@@ -186,9 +186,12 @@ class Brokerinfo extends Control {
         if (!$inst->id) return '';
         $p = parse_url($url);
         if (($p['scheme'] ?? '') !== 'https' || empty($p['host'])) return '';
-        $dir = $inst->dir();
-        $ini = @parse_ini_file($dir . '/conf/config.ini', true) ?: [];
-        $expected = strtolower((string) parse_url((string) ($ini['app']['baseurl'] ?? ''), PHP_URL_HOST));
+        if (\Model_Instance::tenantRow($inst)) {
+            $expected = strtolower(trim((string) $inst->ctDomain));
+        } else {
+            $ini = @parse_ini_file($inst->dir() . '/conf/config.ini', true) ?: [];
+            $expected = strtolower((string) parse_url((string) ($ini['app']['baseurl'] ?? ''), PHP_URL_HOST));
+        }
         if ($expected === '' || strtolower((string) $p['host']) !== $expected) return '';
         return $url;
     }

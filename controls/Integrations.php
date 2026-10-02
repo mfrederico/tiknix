@@ -52,6 +52,19 @@ class Integrations extends Control {
             if ($project) $inst = $this->accessibleInstance((int)$project->id);
         }
         if (!$inst) { Flight::redirect('/projects'); return; }
+        // An app in its own container has this page itself (its pipelines and objects are there,
+        // not on this host): open it, signed in.
+        if (\Model_Instance::tenantRow($inst)) {
+            // /projects/open opens the SELECTED project's app; never another one's page under this one's name
+            $sel = \app\ProjectContext::current((int) $this->member->id);
+            if (!$sel || (int) $sel->id !== (int) $inst->id) {
+                $this->flash('info', 'Select ' . ($inst->displayName ?: $inst->slug) . ' first, then open its page.');
+                Flight::redirect('/projects');
+                return;
+            }
+            Flight::redirect('/projects/open?to=' . rawurlencode('/integrations'));
+            return;
+        }
 
         $dir = $this->instanceDir($inst->slug);
         // Connected services for the selected instance, service+status only (the owner
@@ -114,7 +127,7 @@ class Integrations extends Control {
         if (!$id) return null;
         $inst = Bean::load('instance', $id);
         if (!$inst->id || (int)$inst->memberId !== (int)$this->member->id) return null;
-        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        if (!\Model_Instance::tenantRow($inst) && !is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;
     }
 
@@ -124,7 +137,7 @@ class Integrations extends Control {
         if (!$id) return null;
         $inst = Bean::load('instance', $id);
         if (!$inst->id || !$inst->accessibleBy((int)$this->member->id)) return null;
-        if (!is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
+        if (!\Model_Instance::tenantRow($inst) && !is_file($this->instanceDir($inst->slug) . '/public/index.php')) return null;
         return $inst;
     }
 

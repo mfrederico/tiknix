@@ -155,6 +155,17 @@ class BrokerService {
      * rotate it); otherwise a key is minted and installed. Throws when the container does not answer.
      */
     public static function ensureContainerConfig(object $inst, int $memberId): string {
+        return self::containerKey($inst, $memberId)[1];
+    }
+
+    /**
+     * A container app's broker key — the one in ITS conf/broker.ini, which is the only copy
+     * (core keeps the hash). Minted and installed first when the file has none or core no
+     * longer knows it. What core presents to the app's own doors (/connectorapi/*).
+     *
+     * @return array{0:string,1:string} [the key, what was done]
+     */
+    public static function containerKey(object $inst, int $memberId): array {
         [$c, $o] = TenantHost::ssh($inst, 'app', 'cat /srv/app/conf/broker.ini 2>/dev/null; true', null, 20);
         if ($c !== 0) throw new \RuntimeException("cannot read {$inst->slug}'s conf/broker.ini: " . trim((string) $o));
         $fileKey = (string) ((@parse_ini_string((string) $o, true) ?: [])['broker']['key'] ?? '');
@@ -162,14 +173,14 @@ class BrokerService {
             $row = self::forInstance((int) $inst->id);
             if ($row && $row->id && (int) $row->isActive === 1
                 && hash_equals((string) $row->tokenHash, EncryptionService::hashHex($fileKey))) {
-                return 'broker key in place';
+                return [$fileKey, 'broker key in place'];
             }
         }
         $res = self::mint((int) $inst->id, $memberId, []);
         [$c, $o] = TenantHost::ssh($inst, 'app', 'umask 027 && cat > /srv/app/conf/broker.ini.new && mv /srv/app/conf/broker.ini.new /srv/app/conf/broker.ini',
                                    self::configBody($res['token']), 20);
         if ($c !== 0) throw new \RuntimeException("cannot write {$inst->slug}'s conf/broker.ini: " . trim((string) $o));
-        return 'broker key minted and installed';
+        return [$res['token'], 'broker key minted and installed'];
     }
 
     /** Revoke (deactivate) the instance's broker key. */

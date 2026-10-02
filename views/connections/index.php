@@ -58,6 +58,19 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
     The automations it <em>exposes</em> (pipelines, tools &amp; APIs) live on the
     <a href="/integrations?id=<?= $iid ?>" class="text-decoration-underline">Integrations</a> page.
   </div>
+  <?php if (!empty($listError)): ?>
+    <div class="alert alert-danger py-2 small mb-4">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      Could not ask this project what it is connected to, so the cards below show no connections — that is not the same as none.
+      <code><?= htmlspecialchars($listError) ?></code>
+    </div>
+  <?php elseif (!empty($inContainer)): ?>
+    <div class="alert alert-light border py-2 small mb-4">
+      <i class="bi bi-box-arrow-up-right me-1"></i>
+      This project keeps its connections in its own app. Connect and disconnect here; webhook secrets, GitHub and social feeds are on
+      <a href="/projects/open?to=<?= rawurlencode('/connections') ?>" target="_blank" rel="noopener" class="text-decoration-underline">its own Connections page</a>.
+    </div>
+  <?php endif; ?>
 
   <?php
   /* NO INSTANCE SWITCHER, and no project name repeated here either. This page shows the
@@ -194,7 +207,7 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
                         </div>
                         <button class="btn btn-sm btn-outline-danger py-0 px-1" data-disconnect="<?= (int)$cn['id'] ?>" title="Disconnect"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <?php if (($card['category'] ?? '') === 'Payments' && empty($cn['revoked'])): ?>
+                      <?php if (($card['category'] ?? '') === 'Payments' && empty($cn['revoked']) && empty($inContainer)): ?>
                         <form data-whsec class="d-flex align-items-center gap-1 mt-1" style="max-width:480px">
                           <?= csrf_field() ?>
                           <input type="hidden" name="cid" value="<?= (int)$cn['id'] ?>">
@@ -222,7 +235,7 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
                         </div>
                       <?php endif; ?>
 
-                      <?php if (($card['category'] ?? '') === 'Social' && empty($cn['revoked'])): ?>
+                      <?php if (($card['category'] ?? '') === 'Social' && empty($cn['revoked']) && empty($inContainer)): ?>
                         <form data-social-publish class="d-flex align-items-center gap-1 mt-1 flex-wrap" style="max-width:520px">
                           <?= csrf_field() ?>
                           <input type="hidden" name="cid" value="<?= (int)$cn['id'] ?>">
@@ -235,7 +248,7 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
                       <?php endif; ?>
 
                       <?php // --- GitHub push→deploy webhook --- ?>
-                      <?php if (($card['key'] ?? '') === 'github' && empty($cn['revoked'])): ?>
+                      <?php if (($card['key'] ?? '') === 'github' && empty($cn['revoked']) && empty($inContainer)): ?>
                         <div class="mt-2 pt-2 border-top" style="max-width:520px">
                           <div class="d-flex align-items-center gap-2 flex-wrap">
                             <button class="btn btn-sm btn-outline-<?= !empty($cn['webhookSet']) ? 'secondary' : 'dark' ?>" data-github-webhook>

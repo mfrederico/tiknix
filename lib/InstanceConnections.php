@@ -5,7 +5,8 @@
  * ever knows its own install). Core acts for an instance here — MCP tool calls, publish
  * drivers, the Connections hub, Brokerinfo — by resolving the instance's directory from the
  * registry and pointing ConnectionStore at it for one unit of work. Only possible while the
- * project shares core's disk; in the container model these calls go over HTTP instead.
+ * project shares core's disk: for an app in its own container both methods THROW, and callers
+ * ask the app instead (ConnectorPush::ask → its /connectorapi/* doors).
  */
 
 namespace app;
@@ -30,6 +31,13 @@ class InstanceConnections {
 
         $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) return null;
+
+        // An app in its own container keeps its store there. Its folder here is the builder's
+        // workspace: it has no connections.db, and reading it answers "nothing connected".
+        if (\Model_Instance::tenantRow($inst)) {
+            throw new \RuntimeException("{$inst->slug} runs in its own container: its connections are in the app, "
+                . 'not on this host. Ask the app (ConnectorPush::ask, /connectorapi/*) or use them from the app.');
+        }
 
         $dir = $inst->box()->dir();
         if ($dir === '' || !is_dir($dir)) {
@@ -104,6 +112,13 @@ class InstanceConnections {
 
         $inst = Bean::load('instance', $instanceId);
         if (!$inst->id) return $onError;
+
+        // An app in its own container keeps its store there. Its folder here is the builder's
+        // workspace: it has no connections.db, and reading it answers "nothing connected".
+        if (\Model_Instance::tenantRow($inst)) {
+            throw new \RuntimeException("{$inst->slug} runs in its own container: its connections are in the app, "
+                . 'not on this host. Ask the app (ConnectorPush::ask, /connectorapi/*) or use them from the app.');
+        }
 
         $dir = $inst->box()->dir();
         if ($dir === '' || !is_dir($dir)) {

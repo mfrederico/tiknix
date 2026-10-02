@@ -206,6 +206,23 @@ $fmt = function (string $iso): string {
                 <?php elseif (!$p['owned']): ?>
                   <span class="badge bg-secondary-subtle text-secondary">Shared</span>
                 <?php endif; ?>
+                <?php if (!empty($p['value']) && $p['value']['dollars'] > 0): $v = $p['value'];
+                  // What this would have cost as a custom build — the breakdown on hover (lib/ProjectValue.php).
+                  $__h = fn($x) => htmlspecialchars((string) $x, ENT_QUOTES);
+                  $__span = function (int $m): string { if ($m < 60) return $m . ' min'; $h = intdiv($m, 60); if ($h < 48) return $h . ' h ' . ($m % 60) . ' min'; return intdiv($h, 24) . ' days ' . ($h % 24) . ' h'; };
+                  $__rows = '';
+                  foreach ($v['areas'] as $ar) $__rows .= '<tr><td>' . $__h($ar['area']) . '</td><td class="text-end">' . number_format($ar['lines']) . '</td></tr>';
+                  $__pop = '<table class="table table-sm mb-2"><tbody>' . $__rows . '<tr class="fw-semibold"><td>Lines written for it</td><td class="text-end">' . number_format($v['lines']) . '</td></tr></tbody></table>'
+                         . '<div class="small">At ' . $__h($v['lines_per_hour']) . ' finished lines an hour: <strong>' . number_format($v['hours'], 0) . ' hours</strong> of a developer\'s time.'
+                         . ' At $' . $__h($v['hourly_rate']) . '/hour: <strong>$' . number_format($v['dollars']) . '</strong>.</div>'
+                         . (!empty($v['tiknix']) ? '<div class="small mt-2">tiknix: ' . (int) $v['tiknix']['tasks'] . ' build task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ', first started to last finished in <strong>' . $__h($__span((int) $v['tiknix']['minutes'])) . '</strong>.</div>' : '')
+                         . '<div class="small text-body-secondary mt-2">Its own code, not the platform\'s; counted ' . $__h(substr((string) $v['computed_at'], 0, 10)) . '.</div>';
+                ?>
+                  <button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 proj-value" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true" data-bs-placement="left"
+                          data-bs-title="As a custom build, about $<?= number_format($v['dollars']) ?>" data-bs-content="<?= $__h($__pop) ?>" aria-label="What this project would have cost as a custom build">
+                    ≈ $<?= number_format($v['dollars']) ?>
+                  </button>
+                <?php endif; ?>
                 <?php if (!empty($p['free'])): ?>
                   <span class="badge bg-success-subtle text-success" title="Inside your free allowance">Free</span>
                 <?php elseif (($p['kind'] ?? 'project') === 'client' && \app\ProjectQuota::CLIENT_TIER_OFFERED): ?>
@@ -516,4 +533,5 @@ $fmt = function (string $iso): string {
     });
   }
 })();
+document.querySelectorAll('.proj-value').forEach(el => new bootstrap.Popover(el));
 </script>

@@ -352,6 +352,8 @@ class Projects extends BaseControls\Control {
             'lastBy'       => $last['who'],
             'lastSubject'  => $last['subject'],
             'teams'        => $this->teams($inst),
+            // What it would have cost as a custom build, from its lines of code (ProjectValue, cached nightly).
+            'value'        => ProjectValue::read($inst),
         ];
     }
 

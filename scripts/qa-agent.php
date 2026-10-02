@@ -26,6 +26,12 @@
  *       commits), each file with its patch and what the platform's validators say about the
  *       change (lib/QaDiff.php). Read over SSH; nothing is run. Prints JSON.
  *
+ *   php scripts/qa-agent.php --notify < note.json
+ *       note: {slug, subject, html}
+ *       Tells the project's OWNER (in Communications and by email, lib/QaNotifier.php) — a scheduled
+ *       suite that went red, or came back. The owner is read from the registry, never taken
+ *       from the caller. Prints {ok, email}.
+ *
  *   php scripts/qa-agent.php --plan-checks=SLUG
  *       The "Acceptance" part of the project's PLAN.md, as JSON {ok, text} — what the plan
  *       itself says should be true, for the owner to turn into tests.
@@ -37,7 +43,7 @@ new \app\Bootstrap();
 
 use app\Bean;
 
-$o = getopt('', ['author', 'ask', 'to-builder', 'plan-checks:', 'diff:', 'since:']);
+$o = getopt('', ['author', 'ask', 'to-builder', 'notify', 'plan-checks:', 'diff:', 'since:']);
 $say = function (array $r): void { echo json_encode($r, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), "\n"; exit(empty($r['ok']) ? 1 : 0); };
 $project = function (string $slug) use ($say): object {
     $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
@@ -69,6 +75,13 @@ try {
 
     if (isset($o['diff'])) {
         $say(\app\QaDiff::read($project((string) $o['diff']), (string) ($o['since'] ?? '')));
+    }
+
+    if (isset($o['notify'])) {
+        $n = json_decode((string) stream_get_contents(STDIN), true);
+        if (!is_array($n) || trim((string) ($n['subject'] ?? '')) === '' || trim((string) ($n['html'] ?? '')) === '') $say(['ok' => false, 'error' => 'the note on stdin needs a subject and html']);
+        $inst = $project((string) ($n['slug'] ?? ''));
+        $say(\app\QaNotifier::tell($inst, mb_substr((string) $n['subject'], 0, 200), (string) $n['html']));
     }
 
     if (isset($o['ask'])) {
@@ -120,7 +133,7 @@ try {
         unset($r['text']);
         $say($r);
     }
-    fwrite(STDERR, "usage: --author < job.json | --ask < job.json | --to-builder < plan.json | --plan-checks=SLUG | --diff=SLUG [--since=COMMIT]\n"); exit(2);
+    fwrite(STDERR, "usage: --author < job.json | --ask < job.json | --to-builder < plan.json | --plan-checks=SLUG | --diff=SLUG [--since=COMMIT] | --notify < note.json\n"); exit(2);
 } catch (\Throwable $e) {
     $say(['ok' => false, 'error' => $e->getMessage()]);
 }

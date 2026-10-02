@@ -1,6 +1,6 @@
 # QA Testing — plan
 
-Status: phases 0–5 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
+Status: phases 0–6 built — the plan is complete (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
 existing system (sidecar kit, the post-plan audit, the builder's job model, feature flags).
 
 ## What it is
@@ -319,4 +319,33 @@ project's owner.
     builder model.
   - Page: a test is edited in place, inside its own row (the one form, moved in), and each
     test's icons sit on a line of their own.
+- **Phase 6 (2026-10-02):** machines and the clock.
+  - **Keys** (`QaKey`): a request with a key instead of a browser session, checked by core on
+    every request. The project's own broker key (the one in its `conf/broker.ini`) reads and
+    runs and can do nothing else — no editing, nothing that spends on the model. A member's
+    API key with `X-Tiknix-Project: <slug>` acts as that member (owner or team member). Either
+    way the project's owner must have QA Testing switched on. CSRF is for browser sessions only.
+  - **MCP** at `/qa/mcp` (JSON-RPC over POST, in the sidecar — not in core's gateway, so QA
+    stays one thing): `qa_suites`, `qa_tests`, `qa_run`, `qa_run_status`, `qa_receipt`,
+    `qa_report`, `qa_review`. Read and run only. `initialize`, `tools/list` and `ping` answer
+    anyone; `tools/call` needs a key.
+  - **Schedules** (`QaSchedule`, in the sidecar's own db so the minute drain sees what is due):
+    a suite runs every 5 / 15 / 60 / 360 / 1440 minutes, as its owner; a turn is skipped when a
+    run of that project is going; nothing runs for an owner whose flag is off. The owner is
+    told (core's `QaNotifier`: one "QA Testing: <project>" conversation, plus email) when a
+    scheduled suite goes red and when it is green again — on the change, not on every red run.
+  - **The pipeline step**: the runtime's `qa` step (alpha.94) — `{"type":"qa","suite":"webapp"}`
+    — asks core where QA Testing is (`/brokerinfo/qa`, broker key), starts the suite, follows
+    the run, and fails the pipeline when anything is red (`fail_on_red`, `wait`, `timeout`).
+    "Build, test, then deploy only if green" is this step before the deploy.
+  - **MCP tests** (`QaMcpTest`): `list` the tools or `call` one, at `/mcp/message` or a path
+    given; expectations `tool`, `no_tool`, `answered`, `refused`, `text`, `max_ms`. No persona =
+    a caller nobody knows, which is how "tools/call needs a key" is tested. A call that is not
+    expected to be refused needs the changes-data mark. A missing tool's message names a
+    near match (`codebase_map` → "it offers tiknix:codebase_map").
+  - **Usage**: `/qa/api/usage` and a line on the page — this month's runs, tests run, model
+    jobs and their cost, from the queue rows.
+  - Not done: writing tests, suites and sign-ins through MCP (owner work stays on the page);
+    a member-key request was not exercised end to end (no key was made on a real account to
+    try it); a platform-wide usage page for Tiknix's admins.
 

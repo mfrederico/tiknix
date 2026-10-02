@@ -1,6 +1,6 @@
 # QA Testing — plan
 
-Status: phases 0–4 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
+Status: phases 0–5 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
 existing system (sidecar kit, the post-plan audit, the builder's job model, feature flags).
 
 ## What it is
@@ -291,4 +291,32 @@ project's owner.
   - A one-off test that has passed says it can be retired — a hint, the click is the owner's.
   - Still to come with phase 6: a schedule per suite, and one pipeline step in a project that
     runs a suite by name and reads its result (needs the machine key for the QA API).
+- **Phase 5 (2026-10-02):** the code review pane.
+  - **What is read:** the project's commits since the last review ended (the first time: its
+    last 10), added and changed files only — vendored code, lock files, minified assets, images
+    and the generated CLAUDE.md are left out; at most 40 files and 12 KB of patch each, and
+    what was not read is named. Read over SSH by core (`lib/QaDiff.php`,
+    `scripts/qa-agent.php --diff`); nothing of the project is run.
+  - **Facts first:** `ValidationService` on each changed PHP file, kept only where it is about
+    THIS change (a line the change added, or anywhere in a file it created), and the app's
+    unrecorded overrides (the catcafe Admin failure, as a check).
+  - **The agent** (`qa`, no tools) reads the patches under a contract built against a model's
+    urge to say something: only amber/red files are listed; at most 3 findings a file and 12 a
+    review; each must quote ONE added line (verified against the patch — else dropped) and be
+    marked proven by the patch itself (else dropped); the prompt carries the platform's facts
+    (wildcard permission seeds, Bean::, no migrations) so they are not "found"; style, praise,
+    "consider…" and refactors are named as not findings. Readable over clever: nested ternaries,
+    dense one-liners and magic values are amber.
+  - **Dismissals** are kept per project by the line of code (path + the quoted line), so the
+    same finding is not raised again while that line stands.
+  - **Send to Builder:** ticked findings → one draft plan, as for a run's findings.
+  - `[qa] review_max_usd` (1.00) and `review_daily` (10). First real review (catcafe, 19 files):
+    13 seconds, 6 cents, 18 files green, one finding. The first attempt also produced a guess
+    about wildcard permission seeds — which is what added the "proven" rule and the platform
+    facts.
+  - Not done: reviewing a single task branch before it merges (the plan's other input); the
+    review model is the `qa` agent's, which is not guaranteed to differ from a project's
+    builder model.
+  - Page: a test is edited in place, inside its own row (the one form, moved in), and each
+    test's icons sit on a line of their own.
 

@@ -21,6 +21,11 @@
  *       Refused when the member does not own the project, or a draft plan already waits.
  *       Prints {ok, plan_id, tasks}.
  *
+ *   php scripts/qa-agent.php --diff=SLUG [--since=COMMIT]
+ *       What changed in the project's code since COMMIT (the first time: its last few
+ *       commits), each file with its patch and what the platform's validators say about the
+ *       change (lib/QaDiff.php). Read over SSH; nothing is run. Prints JSON.
+ *
  *   php scripts/qa-agent.php --plan-checks=SLUG
  *       The "Acceptance" part of the project's PLAN.md, as JSON {ok, text} — what the plan
  *       itself says should be true, for the owner to turn into tests.
@@ -32,7 +37,7 @@ new \app\Bootstrap();
 
 use app\Bean;
 
-$o = getopt('', ['author', 'ask', 'to-builder', 'plan-checks:']);
+$o = getopt('', ['author', 'ask', 'to-builder', 'plan-checks:', 'diff:', 'since:']);
 $say = function (array $r): void { echo json_encode($r, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), "\n"; exit(empty($r['ok']) ? 1 : 0); };
 $project = function (string $slug) use ($say): object {
     $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
@@ -60,6 +65,10 @@ try {
         }
         if (!$out) $say(['ok' => false, 'error' => 'PLAN.md has no section about acceptance checks']);
         $say(['ok' => true, 'text' => mb_substr(implode("\n\n", $out), 0, 6000)]);
+    }
+
+    if (isset($o['diff'])) {
+        $say(\app\QaDiff::read($project((string) $o['diff']), (string) ($o['since'] ?? '')));
     }
 
     if (isset($o['ask'])) {
@@ -111,7 +120,7 @@ try {
         unset($r['text']);
         $say($r);
     }
-    fwrite(STDERR, "usage: --author < job.json | --ask < job.json | --to-builder < plan.json | --plan-checks=SLUG\n"); exit(2);
+    fwrite(STDERR, "usage: --author < job.json | --ask < job.json | --to-builder < plan.json | --plan-checks=SLUG | --diff=SLUG [--since=COMMIT]\n"); exit(2);
 } catch (\Throwable $e) {
     $say(['ok' => false, 'error' => $e->getMessage()]);
 }

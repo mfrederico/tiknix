@@ -434,6 +434,17 @@ truth: it is what already exists right now. You do NOT need to call `codebase_ma
    permission row and any starter data MUST be shipped as a seed task. Reuse an
    existing `<controller>::* = <level>` permission pattern from the inventory.
 
+6. **Honour the owner's two answers, when the goal ends with them.**
+   - `## Who it is for` — who the new pages and endpoints are for, and the authcontrol level
+     to seed them at. Use that level for every route the plan adds, unless the goal itself
+     names a different audience for a particular page (a public booking form with an
+     admin-only list behind it is two levels: say which page gets which). State the level in
+     the description of each task that adds a route. Without this section, choose the most
+     restrictive level that still lets the page do its job, and say what you chose and why.
+   - `## How we will know it worked` — the owner's own checks. Every one of them must be
+     covered by some task: quote the check in the description of the task that satisfies it.
+     A check no task covers means the plan is not finished.
+
 ## First — is the goal already met?
 
 Before decomposing, check the goal against the inventory above (what already exists in THIS

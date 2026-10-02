@@ -13,8 +13,8 @@
  *
  *   lines_per_hour   how many finished lines a web developer delivers in an hour. Calibrated
  *                    on the owner's own quotes (2026-10-02): dealeryes ≈ 77,000 lines quoted
- *                    at $85k, partsdna ≈ 28,000 at $50k — about $1.30 a line, 65 lines an
- *                    hour at $85.
+ *                    at $85k, partsdna ≈ 28,000 at $50k — about $1.30 a line, which at a
+ *                    mid-level developer's $73 an hour is 56 lines an hour.
  *   hourly_rate      what that developer costs, in dollars
  *
  * Beside the estimate, how long tiknix took: from the first Builder task started to the last

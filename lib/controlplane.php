@@ -82,6 +82,13 @@
 // Google sign-in — a new member is a billing subject like any other: register their tenant.
 \app\plugins\GoogleAuth::$onNewMember = static fn(int $memberId) => \app\SignupFlow::ensureTenantFor($memberId);
 
+// Tiknix's own agents (the AI agents page here, ROOT only — seed 34) run Tiknix's own tooling:
+// QA Testing, and pipelines of this install. Their keys are the platform's money, so no builder
+// verb may ever run on them — a task, plan, audit, terminal or merge asked of this install is
+// refused before a credential is looked at. Projects build in their containers, on their agents.
+\app\AgentTask::$platformOnly = "tiknix.com's agents are for Tiknix's own tooling and never build a project: "
+    . 'a project is planned and built in its own container, on the agents of its own AI agents page.';
+
 // Admin — quotas, free-project grants, plan tiers, billing tenant/lifecycle on the member screens.
 \app\Admin::$memberExtension = new \app\PlatformMemberAdmin();
 

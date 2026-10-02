@@ -19,8 +19,13 @@ class AgentTaskTest extends TestCase {
     private string $app;
     private const DB = 'agenttask-test';
     private ?string $prevDb = null;
+    private ?string $prevPlatformOnly = null;
 
     protected function setUp(): void {
+        // These tests are an APP building itself (a scratch one). The suite runs inside the
+        // control plane, whose own agents refuse every builder verb (PlatformAgentsTest).
+        $this->prevPlatformOnly = AgentTask::$platformOnly;
+        AgentTask::$platformOnly = null;
         // The app's agents (AgentTask::runsOn reads the default one): none here, so a run goes
         // on the app's Claude account — the stand-in login below.
         $this->prevDb = Bean::currentDatabaseKey();
@@ -54,6 +59,7 @@ class AgentTaskTest extends TestCase {
     }
 
     protected function tearDown(): void {
+        AgentTask::$platformOnly = $this->prevPlatformOnly;
         $this->as(null, null);
         if ($this->prevDb !== null && Bean::hasDatabase($this->prevDb)) Bean::selectDatabase($this->prevDb);
         Paths::useRoot(null);

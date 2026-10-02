@@ -230,11 +230,12 @@ $fmt = function (string $iso): string {
                          . ' At $' . $__h($v['hourly_rate']) . '/hour: <strong>$' . number_format($v['dollars']) . '</strong>.</div>'
                          . (!empty($v['tiknix']) ? '<table class="table table-sm mt-2 mb-1"><thead><tr><th></th><th class="text-end">Time</th><th class="text-end">Cost</th></tr></thead><tbody>'
                              . '<tr><td>A developer</td><td class="text-end">' . $__h($__devTime) . '</td><td class="text-end">$' . number_format($v['dollars']) . '</td></tr>'
-                             . '<tr><td>tiknix <small class="text-body-secondary">(' . (int) $v['tiknix']['tasks'] . ' task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ', spread over ' . $__h($__span((int) $v['tiknix']['minutes'])) . ')</small></td><td class="text-end">' . $__h($__span($__tkMin)) . '</td><td class="text-end">$' . number_format($__paid) . ' <small class="text-body-secondary">' . $__h($__paidNote) . '</small></td></tr>'
+                             . '<tr><td>tiknix, building <small class="text-body-secondary">(' . (int) $v['tiknix']['tasks'] . ' task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ')</small></td><td class="text-end">' . $__h($__span($__tkMin)) . '</td><td class="text-end">$' . number_format($__paid) . ' <small class="text-body-secondary">' . $__h($__paidNote) . '</small></td></tr>'
+                             . '<tr class="text-body-secondary"><td colspan="3"><small>…spread over ' . $__h($__span((int) $v['tiknix']['minutes'])) . ' of calendar</small></td></tr>'
                              . '<tr class="fw-semibold table-success"><td>Difference</td><td class="text-end">' . $__h($__lessTime) . ' less</td><td class="text-end">$' . number_format($__saved) . ' saved</td></tr></tbody></table>' : '')
                          . '<div class="small text-body-secondary mt-2">Its own code, not the platform\'s; counted ' . $__h(substr((string) $v['computed_at'], 0, 10)) . '.</div>';
                 ?>
-                  <button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 proj-value" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true" data-bs-placement="left"
+                  <button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 proj-value" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true" data-bs-placement="left" data-bs-custom-class="proj-value-pop"
                           data-bs-title="What it would have cost to build: about $<?= number_format($v['dollars']) ?>" data-bs-content="<?= $__h($__pop) ?>" aria-label="What this project would have cost as a custom build">
                     ≈ $<?= number_format($v['dollars']) ?>
                   </button>
@@ -552,5 +553,8 @@ $fmt = function (string $iso): string {
     });
   }
 })();
-document.querySelectorAll('.proj-value').forEach(el => new bootstrap.Popover(el));
+// Bootstrap is loaded at the end of the page, after this script: wake the popovers once it is there.
+document.head.insertAdjacentHTML('beforeend', '<style>.proj-value-pop{max-width:460px}.proj-value-pop td,.proj-value-pop th{white-space:nowrap}.proj-value-pop td:first-child{white-space:normal}</style>');
+// sanitize: false — the sanitizer strips the breakdown's <table>; the content is built server-side from numbers and escaped labels.
+window.addEventListener('load', () => document.querySelectorAll('.proj-value').forEach(el => new bootstrap.Popover(el, { sanitize: false })));
 </script>

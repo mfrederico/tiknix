@@ -212,6 +212,14 @@ $fmt = function (string $iso): string {
                   $__span = function (int $m): string { if ($m < 60) return $m . ' min'; $h = intdiv($m, 60); if ($h < 48) return $h . ' h' . ($m % 60 ? ' ' . ($m % 60) . ' min' : ''); return intdiv($h, 24) . ' days' . ($h % 24 ? ' ' . ($h % 24) . ' h' : ''); };
                   // A developer's time in working weeks (40 h), beside what tiknix spent building and the calendar it took.
                   $__weeks = $v['hours'] >= 80 ? number_format($v['hours'] / 40, 1) . ' working weeks' : ($v['hours'] >= 16 ? number_format($v['hours'] / 8, 1) . ' working days' : number_format($v['hours'], 0) . ' hours');
+                  // What it has cost here: the project's months at the project price, or nothing inside the free allowance.
+                  $__months = max(1, (int) ceil((time() - strtotime((string) $p['created'])) / (30 * 86400)));
+                  $__paid = !empty($p['free']) ? 0 : $__months * (int) \app\ProjectQuota::PRICE_PER_PROJECT;
+                  $__paidNote = !empty($p['free']) ? 'free' : $__months . ' month' . ($__months === 1 ? '' : 's') . ' at $' . number_format(\app\ProjectQuota::PRICE_PER_PROJECT);
+                  $__devMin = (int) round($v['hours'] * 60); $__tkMin = (int) ($v['tiknix']['work_minutes'] ?? 0);
+                  $__saved = max(0, $v['dollars'] - $__paid);
+                  $__devTime = number_format($v['hours'], 0) . ' h' . ($v['hours'] >= 16 ? ' (' . $__weeks . ')' : '');
+                  $__lessTime = number_format(max(0, ($__devMin - $__tkMin) / 60), 0) . ' h';
                   $__rows = '';
                   foreach ($v['areas'] as $ar) {
                     $w = (float) ($ar['weight'] ?? 1);
@@ -220,17 +228,18 @@ $fmt = function (string $iso): string {
                   $__pop = '<table class="table table-sm mb-2"><tbody>' . $__rows . '<tr class="fw-semibold"><td>Lines of engineering</td><td class="text-end">' . number_format($v['lines']) . '</td></tr></tbody></table>'
                          . '<div class="small">At ' . $__h($v['lines_per_hour']) . ' finished lines an hour: <strong>' . number_format($v['hours'], 0) . ' hours</strong> of a developer\'s time, ' . $__h($__weeks) . '.'
                          . ' At $' . $__h($v['hourly_rate']) . '/hour: <strong>$' . number_format($v['dollars']) . '</strong>.</div>'
-                         . (!empty($v['tiknix']) ? '<table class="table table-sm mt-2 mb-1"><tbody><tr><td>A developer</td><td class="text-end"><strong>' . number_format($v['hours'], 0) . ' h</strong></td></tr>'
-                             . '<tr><td>tiknix, building (' . (int) $v['tiknix']['tasks'] . ' task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ')</td><td class="text-end"><strong>' . $__h($__span((int) ($v['tiknix']['work_minutes'] ?? 0))) . '</strong></td></tr>'
-                             . '<tr class="text-body-secondary"><td>…spread over</td><td class="text-end">' . $__h($__span((int) $v['tiknix']['minutes'])) . '</td></tr></tbody></table>' : '')
+                         . (!empty($v['tiknix']) ? '<table class="table table-sm mt-2 mb-1"><thead><tr><th></th><th class="text-end">Time</th><th class="text-end">Cost</th></tr></thead><tbody>'
+                             . '<tr><td>A developer</td><td class="text-end">' . $__h($__devTime) . '</td><td class="text-end">$' . number_format($v['dollars']) . '</td></tr>'
+                             . '<tr><td>tiknix <small class="text-body-secondary">(' . (int) $v['tiknix']['tasks'] . ' task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ', spread over ' . $__h($__span((int) $v['tiknix']['minutes'])) . ')</small></td><td class="text-end">' . $__h($__span($__tkMin)) . '</td><td class="text-end">$' . number_format($__paid) . ' <small class="text-body-secondary">' . $__h($__paidNote) . '</small></td></tr>'
+                             . '<tr class="fw-semibold table-success"><td>Difference</td><td class="text-end">' . $__h($__lessTime) . ' less</td><td class="text-end">$' . number_format($__saved) . ' saved</td></tr></tbody></table>' : '')
                          . '<div class="small text-body-secondary mt-2">Its own code, not the platform\'s; counted ' . $__h(substr((string) $v['computed_at'], 0, 10)) . '.</div>';
                 ?>
                   <button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 proj-value" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true" data-bs-placement="left"
-                          data-bs-title="As a custom build, about $<?= number_format($v['dollars']) ?>" data-bs-content="<?= $__h($__pop) ?>" aria-label="What this project would have cost as a custom build">
+                          data-bs-title="What it would have cost to build: about $<?= number_format($v['dollars']) ?>" data-bs-content="<?= $__h($__pop) ?>" aria-label="What this project would have cost as a custom build">
                     ≈ $<?= number_format($v['dollars']) ?>
                   </button>
                   <?php if (!empty($v['tiknix'])): ?>
-                    <span class="small text-body-secondary text-end" style="line-height:1.2"><?= number_format($v['hours'], 0) ?> h of a developer's time<br>tiknix built it in <?= htmlspecialchars($__span((int) ($v['tiknix']['work_minutes'] ?? 0))) ?></span>
+                    <span class="small text-body-secondary text-end" style="line-height:1.25">a developer: <?= number_format($v['hours'], 0) ?> h · tiknix: <?= htmlspecialchars($__span($__tkMin)) ?><br><strong class="text-success-emphasis">$<?= number_format($__saved) ?> saved</strong></span>
                   <?php endif; ?>
                 <?php endif; ?>
                 <?php if (!empty($p['free'])): ?>

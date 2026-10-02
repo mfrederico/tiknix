@@ -2,7 +2,7 @@
 /**
  * About — /about, "Who we are": the company behind tiknix and the person who builds it.
  *
- * PRIMARY site only, like Stories and Neosaas: instances replace Index with their own home
+ * PRIMARY site only, like Stories and Newsaas: instances replace Index with their own home
  * page, so a top-level marketing page gets its own controller. Public via the about::* row
  * in 02_AuthControl.
  */

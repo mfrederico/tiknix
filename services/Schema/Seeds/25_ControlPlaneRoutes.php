@@ -8,7 +8,7 @@
  */
 echo '  authcontrol: pricing::* => ' . \app\PermissionCache::seedRule('pricing', '*', 101, 'Public marketing pricing page (flagship-gated in-controller)') . "\n";
 echo '  authcontrol: stories::* => ' . \app\PermissionCache::seedRule('stories', '*', 101, 'Public founder stories page (flagship-gated in-controller)') . "\n";
-echo '  authcontrol: neosaas::* => ' . \app\PermissionCache::seedRule('neosaas', '*', 101, 'Public NeoSaaS manifesto page (flagship-gated in-controller)') . "\n";
+echo '  authcontrol: neosaas::* => ' . \app\PermissionCache::seedRule('neosaas', '*', 101, 'Old manifesto URL, redirects to /newsaas (seed 35)') . "\n";
 echo '  authcontrol: about::* => ' . \app\PermissionCache::seedRule('about', '*', 101, 'Public Who-we-are page (flagship-gated in-controller)') . "\n";
 echo '  authcontrol: sidecar::* => ' . \app\PermissionCache::seedRule('sidecar', '*', 100, 'Sidecar plugin launcher (per-plugin feature-gated)') . "\n";
 // The model and support doors were seeded by the runtime's seed 02 into every app, where no

@@ -564,7 +564,7 @@ $hasShowcase = !empty($showcase);
       <div class="card qa"><h3>Do I need to write code?</h3><p>No. Describe it in plain language; developers can drop into the code anytime.</p></div>
       <div class="card qa"><h3>Can my team work on a project together?</h3><p>Yes &mdash; every paid project includes your whole team at <strong>no per-seat cost</strong>. (The free project is solo.)</p></div>
       <div class="card qa"><h3>Is the code mine?</h3><p>Every line. Publish to your GitHub, host it anywhere, keep it if you leave.</p></div>
-      <div class="card qa"><h3>Why build it instead of buying SaaS?</h3><p>You stop renting: build it once, own it, change it on your terms. We call it <a href="/neosaas">NeoSaaS</a>.</p></div>
+      <div class="card qa"><h3>Why build it instead of buying SaaS?</h3><p>You stop renting: build it once, own it, change it on your terms. We call it <a href="/newsaas">NewSaaS</a>.</p></div>
       <div class="card qa"><h3>Can I build a Shopify app?</h3><p>Yes &mdash; embedded apps, storefront tools, ops dashboards. The store's keys stay locked to that project.</p></div>
       <div class="card qa"><h3>How isolated are projects?</h3><p>Each project runs in its own container with its own data. No project can read another's.</p></div>
       <div class="card qa"><h3>What's the stack?</h3><p><span class="code">PHP (FlightPHP)</span> + <span class="code">SQLite</span> &mdash; conventional and readable, easy to maintain after handoff.</p></div>

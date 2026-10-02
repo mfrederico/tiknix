@@ -22,7 +22,7 @@ projects at $49 undercut the pool.
 
 The thing an agency would actually pay more for is a clean hand-off at the end of an
 engagement: **transfer the project to the client's own tiknix account**, so the client keeps
-running it, and the bill moves to them. That is NeoSaaS made literal — the client owns it,
+running it, and the bill moves to them. That is NewSaaS made literal — the client owns it,
 invoice included.
 
 Sketch:

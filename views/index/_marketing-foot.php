@@ -8,7 +8,7 @@
     </a>
     <div class="foot-links">
       <a href="/about">Who we are</a>
-      <a href="/neosaas">NeoSaaS</a>
+      <a href="/newsaas">NewSaaS</a>
       <a href="/stories">Stories</a>
       <a href="/pricing">Pricing</a>
       <a href="/index/security">Security</a>

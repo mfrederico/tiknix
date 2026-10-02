@@ -153,4 +153,36 @@ $__name = (string) ($instance->displayName ?: $instance->slug);
 })();
 </script>
 <?php endif; ?>
+
+  <?php /* QA Testing (QA-TESTING-PLAN.md): the door when the member has it, the upgrade when it
+           is on offer, "coming soon" until then. $qa = {state: enabled|upsell|soon, url}. */ ?>
+  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em">Before it goes live</h2>
+  <div class="card shadow-sm mb-2 <?= $qa['state'] === 'upsell' ? 'border-primary' : '' ?>" id="qa-card">
+    <div class="card-body">
+      <div class="d-flex align-items-start gap-3">
+        <div class="rounded-circle bg-primary-subtle d-flex align-items-center justify-content-center flex-shrink-0" style="width:44px;height:44px">
+          <i class="bi bi-clipboard2-check fs-5 text-primary"></i>
+        </div>
+        <div class="flex-grow-1">
+          <div class="fw-semibold d-flex align-items-center gap-2 flex-wrap">
+            QA Testing
+            <?php if ($qa['state'] === 'soon'): ?>
+              <span class="badge bg-body-secondary text-body-secondary border">Coming soon</span>
+            <?php elseif ($qa['state'] === 'upsell'): ?>
+              <span class="badge bg-primary-subtle text-primary-emphasis border">Premium</span>
+            <?php endif; ?>
+          </div>
+          <div class="text-body-secondary small mt-1">
+            Describe what should stay true about <?= htmlspecialchars($__name) ?> — a member only sees their own invoices, the booking form refuses a past date —
+            and have it checked from outside the app: its pages, its API, its MCP server. A light per test, receipts for each run, and findings you can hand to the Builder.
+          </div>
+          <?php if ($qa['state'] === 'enabled'): ?>
+            <a href="<?= htmlspecialchars($qa['url']) ?>" class="btn btn-primary btn-sm mt-3"><i class="bi bi-clipboard2-check me-1"></i>Open QA Testing</a>
+          <?php elseif ($qa['state'] === 'upsell'): ?>
+            <a href="<?= htmlspecialchars($qa['url']) ?>" class="btn btn-primary btn-sm mt-3"><i class="bi bi-stars me-1"></i>Ask us to switch it on</a>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>

@@ -39,7 +39,22 @@ class Deploy extends BaseControls\Control {
             'inContainer' => \Model_Instance::tenantRow($inst),
             'canManage'   => $inst->ownedBy((int) $this->member->id),
             'drivers'     => $drivers,
+            'qa'          => $this->qaOffer(),
         ]);
+    }
+
+    /**
+     * QA Testing on this page: the door when the member has it, the upgrade when it is on
+     * offer and they do not, "coming soon" until it is ([qa] available in conf/config.ini —
+     * a setting that must be there: the page does not guess which of the two to promise).
+     *
+     * @return array{state:string,url:string} state: enabled | upsell | soon
+     */
+    private function qaOffer(): array {
+        $on = Flight::get('qa.available');
+        if ($on === null) throw new \RuntimeException('conf/config.ini has no [qa] available setting (true = offered as an upgrade, false = coming soon).');
+        if (Feature::isEnabled('qa', (int) $this->member->id, (int) $this->member->level)) return ['state' => 'enabled', 'url' => '/sidecar/app/qa'];
+        return filter_var($on, FILTER_VALIDATE_BOOLEAN) ? ['state' => 'upsell', 'url' => '/contact?category=feature'] : ['state' => 'soon', 'url' => ''];
     }
 
     /** The selected (or ?id=) project, when the member may see it; $owner = and owns it. */

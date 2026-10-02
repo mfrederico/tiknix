@@ -229,6 +229,42 @@ class TenantBuilder {
         return $out;
     }
 
+    /** The first runtime release whose clitool can describe its app (--architecture). */
+    public const ARCHITECTURE_SINCE = 'v2.0.0-alpha.91';
+
+    /**
+     * The app as the Architecture Explorer draws it, asked of the app itself (the runtime's
+     * `clitool --architecture…`, mcptools/Architecture): its code and its database are in the
+     * container and nowhere on core.
+     *
+     *   'hash'   {hash}   a fingerprint that changes when the model would — what a cached model is kept under
+     *   'model'  the model: permissions by controller, tables, the call/render graph
+     *   'rows'   a page of $table's rows from $offset, credential columns withheld
+     *
+     * Throws when the container does not answer with it — and says so when the reason is an
+     * app on a runtime too old to have the command, with the fix. Never an empty model: that
+     * would read as "this app has no code".
+     */
+    public static function architecture(object $inst, string $what = 'model', string $table = '', int $offset = 0): array {
+        $arg = match ($what) {
+            'hash'  => '--architecture=hash',
+            'model' => '--architecture',
+            'rows'  => '--architecture-rows=' . escapeshellarg($table) . ' --offset=' . max(0, $offset),
+            default => throw new \InvalidArgumentException("architecture(): 'hash', 'model' or 'rows', not '{$what}'"),
+        };
+        [$code, $out] = TenantHost::ssh($inst, 'app', 'cd /srv/app && php -d error_reporting=0 scripts/clitool.php ' . $arg, null, 120);
+        $d = json_decode((string) $out, true);
+        if ($code === 0 && is_array($d)) return $d;
+
+        $said = mb_substr(trim((string) $out), 0, 300);
+        // An older runtime's clitool does not know the option: it prints its usage, not JSON.
+        $why = !str_contains((string) $out, 'error:') && stripos((string) $out, 'architecture') === false
+            ? "its runtime is older than " . self::ARCHITECTURE_SINCE . ", the first that can describe its app — update it (in the app: php scripts/clitool.php --update)"
+            : "it answered (exit {$code}): {$said}";
+        error_log("ERROR TenantBuilder::architecture({$what}): {$inst->slug}: {$why}" . ($said !== '' ? " — output: {$said}" : ''));
+        throw new \RuntimeException("{$inst->slug} could not describe itself: {$why}");
+    }
+
     /**
      * The planner's result (tenant.php --plan --out) into the workspace, where the planner's
      * script and plan-ingest look: <member>-<time>-<rand>.plan.json, or plan-complete.md when

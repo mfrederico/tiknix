@@ -1,6 +1,6 @@
 # QA Testing — plan
 
-Status: phases 0–2 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
+Status: phases 0–3 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
 existing system (sidecar kit, the post-plan audit, the builder's job model, feature flags).
 
 ## What it is
@@ -256,4 +256,19 @@ project's owner.
   sidecar's `QaBrowser` sends a test over SSH and gets the result and screenshots back;
   nothing of a test stays on the host. `[qa] node`/`browsers` are gone with the local browser.
   Phase 3's authoring agent will drive this same host's browser through Playwright MCP.
+- **Phase 3 (2026-10-02):** concept → draft tests. The owner types what should be true and
+  picks who to look at the app as; a drafting job is queued (`qaauthor`, the same queue as
+  runs). Core runs Tiknix's own `qa` agent for it through `lib/PlatformAgent.php` — claude with
+  NO built-in tools (`--bare --tools ""`), only the MCP server the job names, no settings or
+  memory from the host, a scratch HOME, a spending cap, the answer checked against a JSON
+  schema — because the agent reads pages written by project owners. Its one MCP server is the
+  QA host's browser (Playwright MCP over SSH stdio, no port opened), started from the sign-in
+  state the runner left there, so the model never sees a credential. It gets the concept, the
+  address, the app's page inventory and the titles of existing tests; it answers with one to
+  three tests in the form's vocabulary, each durable or one-off with why. Each is replayed once
+  (`QaRunner::trial`) and saved as a draft carrying what the replay showed; a failed attempt
+  gets one correction round. `[qa] author_max_usd` (1.50 a round) and `author_daily` (20 a
+  project) bound the spending; the cost of each job is on its queue row. "Use the plan's
+  acceptance checks" pulls PLAN.md's acceptance section into the box. First real jobs: about
+  20 seconds and 3–4 cents each.
 

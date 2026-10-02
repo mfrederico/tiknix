@@ -14,6 +14,7 @@ say() { echo "== $*"; }
 
 NODE_MAJOR=22
 PLAYWRIGHT=1.62.0
+MCP=0.0.83          # the version the builder's audit pins (lib/AuditRunner.php)
 
 say "the app user answers the control plane's key"
 install -d -m 0700 -o app -g app /home/app/.ssh
@@ -41,6 +42,17 @@ if [ "$(cat /srv/qa/.playwright 2>/dev/null)" != "${PLAYWRIGHT}" ]; then
   echo "${PLAYWRIGHT}" > /srv/qa/.playwright
 fi
 echo "playwright $(cat /srv/qa/.playwright), browsers: $(ls /srv/qa/browsers | tr '\n' ' ')"
+
+say "Playwright MCP ${MCP} — the browser as tools, for the authoring agent"
+install -d -o app -g app /srv/qa/mcp
+if [ "$(cat /srv/qa/.mcp 2>/dev/null)" != "${MCP}" ]; then
+  cd /srv/qa/mcp
+  sudo -u app env HOME=/home/app npm init -y >/dev/null 2>&1 || true
+  sudo -u app env HOME=/home/app npm install --no-audit --no-fund "@playwright/mcp@${MCP}" >/dev/null
+  sudo -u app env HOME=/home/app PLAYWRIGHT_BROWSERS_PATH=/srv/qa/browsers npx playwright install chromium >/dev/null
+  echo "${MCP}" > /srv/qa/.mcp
+fi
+echo "playwright mcp $(cat /srv/qa/.mcp)"
 
 say "no way out to a private address"
 apt-get install -y -qq iptables >/dev/null

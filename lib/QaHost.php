@@ -91,6 +91,27 @@ class QaHost {
         return ['ok' => true, 'state' => $s, 'output' => $out];
     }
 
+    /**
+     * The QA host's browser as an MCP server for a PlatformAgent job: Playwright MCP started
+     * on the host over SSH, speaking on the connection itself — no port is opened anywhere.
+     * $job names the scratch folder on the host (/srv/qa/jobs/<job>); with $signedIn the browser
+     * starts with the sign-in state the sidecar left there (state.json), so no model is ever
+     * given a credential.
+     *
+     * @return array{command:string,args:string[]}
+     */
+    public static function browserMcp(string $job, bool $signedIn): array {
+        $s = self::state();
+        if (!$s || (string) $s['provisioned_at'] === '') throw new \RuntimeException('the QA browser host is not set up (php scripts/qa-host.php --up)');
+        if (!preg_match('/^[0-9a-f]{16}$/', $job)) throw new \RuntimeException('not a QA job id');
+        $dir = '/srv/qa/jobs/' . $job;
+        $remote = 'cd /srv/qa/mcp && PLAYWRIGHT_BROWSERS_PATH=/srv/qa/browsers exec node node_modules/@playwright/mcp/cli.js'
+                . ' --headless --isolated --browser chromium --image-responses omit --codegen none --viewport-size 1280x800'
+                . ' --output-dir ' . $dir . '/out' . ($signedIn ? ' --storage-state ' . $dir . '/state.json' : '');
+        return ['command' => 'ssh', 'args' => ['-i', TenantHost::KEY, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'StrictHostKeyChecking=accept-new',
+            '-o', 'UserKnownHostsFile=' . TenantHost::KNOWN, '-o', 'LogLevel=ERROR', 'app@' . $s['ip'], $remote]];
+    }
+
     public static function destroy(): array {
         $s = self::state();
         if (!$s) return ['ok' => false, 'error' => 'there is no QA host'];

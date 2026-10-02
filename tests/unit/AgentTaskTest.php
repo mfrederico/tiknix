@@ -89,6 +89,12 @@ class AgentTaskTest extends TestCase {
         $this->assertSame('task t1: Add a line to the README', $this->git('log -1 --format=%s task/t1'));
         $this->assertSame('Pat Member <pat@example.com>', $this->git('log -1 --format="%an <%ae>" task/t1'), "the task's commit is the member's");
         $this->assertStringContainsString('already has a worktree', AgentTask::start($this->app, 't1', 'again')['error']);
+        // Claude's first-run questions are answered for every run, not only the terminal: a run that
+        // started first would otherwise write back a copy without them (catcafe, 2026-10-02).
+        $cfg = json_decode((string) file_get_contents("{$this->app}/.aibuilder/home/.claude.json"), true);
+        $this->assertTrue($cfg['hasCompletedOnboarding']);
+        $this->assertTrue($cfg['projects'][$this->app]['hasTrustDialogAccepted'], 'the app folder is trusted');
+        $this->assertTrue($cfg['projects']["{$this->app}/.aibuilder/wt/t1"]['hasTrustDialogAccepted'], "the run's own worktree is trusted");
 
         $m = AgentTask::merge($this->app, 't1');
         $this->assertTrue($m['ok'], json_encode($m));

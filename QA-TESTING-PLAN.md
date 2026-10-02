@@ -1,6 +1,6 @@
 # QA Testing — plan
 
-Status: PLAN, nothing built. Written 2026-10-02 from the owner's brief and a read of the
+Status: phase 0 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
 existing system (sidecar kit, the post-plan audit, the builder's job model, feature flags).
 
 ## What it is
@@ -202,15 +202,20 @@ project's owner.
 5. **Code Review pane.**
 6. **MCP tests, MCP tools, API keys, metering page, scheduled runs** (nightly / after a build).
 
-## Decisions needed before building
+## Decisions (owner, 2026-10-02)
 
-1. **Who pays for the model?** Recommended: Tiknix's own credential, priced into the premium
-   feature and metered per run — it is what keeps the verifier independent of the app's own
-   agent. Alternative: the member's own model connection.
-2. **Stored test logins.** Recommended: allow them (sealed, test accounts only), with
-   throwaway accounts as the default for Tiknix apps. Alternative: session tokens only.
-3. **Team members.** Recommended: view and run, never edit. Alternative: owner only for everything.
-4. **The post-plan audit.** Recommended: leave it as the Builder's own check for now; once
-   phase 3 exists, a finished plan's acceptance checks become QA tests instead.
-5. **Mutating tests on a live app.** Recommended: off unless switched on per test. A staging
-   copy per project is the real answer and is out of scope here.
+1. **Tiknix pays for the model.** An admin creates a Tiknix AI agent for QA on core's AI agents
+   page, with its API key; the sidecar's `[qa] agent` names it (`qa`). Never the project's agent.
+2. **Stored test logins are allowed** (sealed, test accounts only); throwaway accounts are the
+   default for Tiknix apps.
+3. **Team members view and run, never edit.**
+4. **The post-plan audit stays** as the Builder's own check; from phase 3 a finished plan's
+   acceptance checks become QA tests.
+5. **Mutating tests are off unless switched on per test.**
+
+## Built
+
+- **Phase 0 (2026-10-02):** the `qa.tiknix` sidecar (SSO door, per-project `qa.db`, test
+  documents, `/qa/api/{status,tests,test,testsave,testretire}`, the list with a light per
+  test), the `qa` flag, the nav entry between Builder and Deploy, and the QA Testing card on
+  the Deploy page (`[qa] available = false` → "Coming soon").

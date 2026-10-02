@@ -8,7 +8,7 @@
  *
  * base64url(JSON) "." hex(HMAC-SHA256(base64url, key)), single-use (nonce) and short-lived (exp).
  * Each verifier refuses the other kind. The one implementation: core's nav (Projects::open) and
- * the builder (workbench2's terminal page) both sign here.
+ * the builder (workbench.tiknix's terminal page) both sign here.
  */
 namespace app;
 

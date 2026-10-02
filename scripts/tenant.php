@@ -22,6 +22,7 @@
  *                                                         conf/hosts/<HOST>.ini + database, routing
  *   php scripts/tenant.php --domain-remove=SLUG --domain=HOST  stop serving it (its data stays in the app)
  *   php scripts/tenant.php --handoff-finish=TOKEN  a Get-started hand-off's PLAN.md into its new project, then Phase 1
+ *   php scripts/tenant.php --handoff-pending       (cron, every minute) Phase 1 for hand-offs whose app now has an agent
  *   php scripts/tenant.php --domains=SLUG
  *   php scripts/tenant.php --renew-certs                  renew custom domains' certificates due within
  *                                                         30 days (this machine's crontab, daily)
@@ -47,7 +48,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -134,6 +135,11 @@ if (isset($o['workspace'])) {
 }
 // The rest of a Get-started hand-off, once the new project's container is up (ProvisionService
 // runs it right after --up): PLAN.md committed into the app, then Phase 1 (lib/PlanHandoff.php).
+// Every minute (cron): hand-offs waiting for their app's agent start Phase 1 once it is signed in.
+if (isset($o['handoff-pending'])) {
+    foreach (\app\PlanHandoff::resumeWaiting() as $t => $what) echo date('c'), " handoff {$t}…: {$what}\n";
+    exit(0);
+}
 if (isset($o['handoff-finish'])) {
     $r = \app\PlanHandoff::finish((string) $o['handoff-finish']);
     echo json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), "\n";

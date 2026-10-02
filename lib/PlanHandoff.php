@@ -228,6 +228,22 @@ class PlanHandoff {
         return ['ok' => true] + self::state($h);
     }
 
+    /**
+     * Every hand-off waiting for its app's agent: start Phase 1 for those whose app has one signed
+     * in now (tenant.php --handoff-pending, every minute) — so connecting the agent is all the
+     * member does; nobody has to come back and press Start Phase 1.
+     *
+     * @return array<string,string> token prefix => what happened
+     */
+    public static function resumeWaiting(): array {
+        $out = [];
+        foreach (Bean::find('planhandoff', "status = 'claimed' AND progress = 'waiting-agent' AND decompose = 1") as $h) {
+            $r = self::startPhaseOne($h);
+            $out[substr((string) $h->token, 0, 8)] = (string) ($r['progress'] ?? '') . (empty($r['ok']) ? ' — ' . ($r['error'] ?? '') : '');
+        }
+        return $out;
+    }
+
     private static function fail(\RedBeanPHP\OODBBean $h, string $why): array {
         Flight::get('log')?->error('handoff: ' . $why, ['token' => substr((string) $h->token, 0, 8) . '…', 'instance' => (int) $h->instanceRef]);
         error_log('ERROR handoff ' . substr((string) $h->token, 0, 8) . '…: ' . $why);

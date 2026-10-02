@@ -246,4 +246,14 @@ project's owner.
   project's site only. A test that types into or changes the page needs the per-test mark.
   `[qa] node` and `[qa] browsers` in the sidecar's config name the Node.js binary and the
   browsers folder — cron and the web server have a bare PATH.
+- **The QA browser host (2026-10-02, owner's decision):** the browser left the control plane's
+  host. Web tests run in ONE dedicated container (`lib/QaHost.php`, `scripts/qa-host.php`,
+  `tenant/qa.sh`) — a linked clone of the tenant template like a project's, 3 GB / 8 GB, no app
+  in it — whose firewall refuses every connection out to a private address, so a page under
+  test cannot reach another project's container, the control plane or the gateway; it reaches
+  projects at their public address, as a visitor does. Not the project's own container: that
+  would put the checker inside what it checks, and a browser in a 1 GB app container. The
+  sidecar's `QaBrowser` sends a test over SSH and gets the result and screenshots back;
+  nothing of a test stays on the host. `[qa] node`/`browsers` are gone with the local browser.
+  Phase 3's authoring agent will drive this same host's browser through Playwright MCP.
 

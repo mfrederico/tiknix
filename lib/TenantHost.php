@@ -115,6 +115,25 @@ class TenantHost {
 
     public static function create(object $inst): array {
         if ((int) $inst->ctVmid > 0) return ['ok' => false, 'error' => "{$inst->slug} already has container {$inst->ctVmid} ({$inst->ctIp})"];
+        $host = substr(preg_replace('/[^a-z0-9-]/', '-', strtolower((string) $inst->slug)), 0, 60);
+        return self::cloneContainer($host, 'tiknix app ' . $inst->slug, [], function (int $vmid, string $ip) use ($inst) {
+            $inst->ctVmid = $vmid; $inst->ctIp = $ip; $inst->ctKind = 'tenant';
+            Bean::store($inst);
+        });
+    }
+
+    /**
+     * A container of the platform's own kind: a linked clone of the newest tenant template, on
+     * the tenant network at 10.10.10.<vmid>, started, sshd answering (root, core's tenant key).
+     * An app's container (create) and the platform's own machines (QaHost) are made this way.
+     *
+     * $onCloned(vmid, ip) runs as soon as the clone exists — before it is configured or started —
+     * so whoever asked can write the container down even if a later step fails.
+     * $settings override ctParams (memory, cores…).
+     *
+     * @return array{ok:bool,vmid?:int,ip?:string,step?:string,error?:string}
+     */
+    public static function cloneContainer(string $hostname, string $description, array $settings, callable $onCloned): array {
         $pve = ProxmoxService::fromConfig();
         if (!$pve) return ['ok' => false, 'error' => 'conf/proxmox.ini is not configured'];
         $node = $pve->node();
@@ -124,13 +143,11 @@ class TenantHost {
         if (!$vmid['ok']) return $vmid;
         $vmid = $vmid['vmid'];
         $ip = self::SUBNET . $vmid;
-        $host = substr(preg_replace('/[^a-z0-9-]/', '-', strtolower((string) $inst->slug)), 0, 60);
-        $c = $pve->cloneCt($node, $tpl['vmid'], $vmid, ['hostname' => $host, 'full' => 0,
-            'description' => 'tiknix app ' . $inst->slug . ' (linked clone of ' . $tpl['name'] . ')']);
+        $c = $pve->cloneCt($node, $tpl['vmid'], $vmid, ['hostname' => $hostname, 'full' => 0,
+            'description' => $description . ' (linked clone of ' . $tpl['name'] . ')']);
         if (!$c['ok']) return ['ok' => false, 'error' => "clone of {$tpl['name']} to {$vmid} failed: {$c['exit']}" . ($c['log'] !== '' ? "\n{$c['log']}" : '')];
-        $inst->ctVmid = $vmid; $inst->ctIp = $ip; $inst->ctKind = 'tenant';
-        Bean::store($inst);
-        $cfg = $pve->setCtConfig($node, $vmid, self::ctParams($host, $ip) + ['onboot' => 1]);
+        $onCloned($vmid, $ip);
+        $cfg = $pve->setCtConfig($node, $vmid, $settings + self::ctParams($hostname, $ip) + ['onboot' => 1]);
         if (($cfg['error'] ?? '') !== '') return ['ok' => false, 'error' => "configuring {$vmid} failed: {$cfg['error']}"];
         $s = $pve->startCt($node, $vmid);
         if (!$s['ok']) return ['ok' => false, 'error' => "start {$vmid} failed: {$s['exit']}" . ($s['log'] !== '' ? "\n{$s['log']}" : '')];
@@ -138,6 +155,20 @@ class TenantHost {
         $w = self::waitForSsh($ip, 120);
         if (!$w['ok']) return $w;
         return ['ok' => true, 'vmid' => $vmid, 'ip' => $ip, 'step' => "container {$vmid} at {$ip}: linked clone of {$tpl['name']}, sshd answering after {$w['seconds']}s"];
+    }
+
+    /** Stop and delete a container the platform made (never a protected one), and forget its host key. */
+    public static function destroyContainer(int $vmid, string $ip): array {
+        if ($vmid <= 0) return ['ok' => false, 'error' => 'no container'];
+        if (in_array($vmid, self::PROTECTED, true)) return ['ok' => false, 'error' => "refusing to touch protected container {$vmid}"];
+        $pve = ProxmoxService::fromConfig();
+        if (!$pve) return ['ok' => false, 'error' => 'conf/proxmox.ini is not configured'];
+        $node = $pve->node();
+        $pve->stopCt($node, $vmid);
+        $d = $pve->destroyCt($node, $vmid);
+        if (!$d['ok']) return ['ok' => false, 'error' => "destroy {$vmid} failed: {$d['exit']}"];
+        self::forgetHostKey($ip);
+        return ['ok' => true, 'step' => "container {$vmid} destroyed"];
     }
 
     /** Settings every tenant container carries (a new one, a template build, a clone). */

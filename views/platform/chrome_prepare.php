@@ -2,8 +2,10 @@
 /**
  * Control-plane chrome, slot 'prepare' (app\Chrome, wired in lib/controlplane.php).
  * Runs in the runtime header's scope before the sidebar is drawn: resolves the member's
- * selected project, hides project-bound tools until one is chosen, adds Projects and Teams
- * to the top of Main, and decides the project bar.
+ * selected project, hides project-bound tools until one is chosen, adds Projects, Teams and
+ * Invitations to the top of the menu (Chrome::$menuHeading), works out the member's role on
+ * the project and their plugins for the project panel (chrome_navtop.php), and decides the
+ * project bar.
  */
 
 // Every sidecar plugin operates ON a project — the AI Builder edits one, the Pipeline
@@ -39,7 +41,23 @@ if ($__loggedIn) {
     if (!$__isAdmin && !isset($__have['/helpdesk'])) {
         $__lead[] = ['url' => '/helpdesk', 'label' => 'Support', 'icon' => 'life-preserver'];
     }
-    $__sections = ['Main' => array_merge($__lead, $__sections['Main'] ?? [])] + $__sections;
+    // Registration is closed, so an invitation is the only way anyone new gets an account —
+    // a real permission, granted per member (see app\Invite). It invites to TIKNIX, so it
+    // sits with the account's pages, not with the project's.
+    if (\app\Feature::allows('invites', $__mid, $__level) && !isset($__have['/invites'])) {
+        $__lead[] = ['url' => '/invites', 'label' => 'Invitations', 'icon' => 'envelope-plus'];
+    }
+    $__sections = [$__mainSec => array_merge($__lead, $__sections[$__mainSec] ?? [])] + $__sections;
+
+    // The member's role on the selected project and the plugins they are offered — read by the
+    // project panel (chrome_navtop.php). A plugin about Tiknix itself rather than the selected
+    // project ([sidecar.<name>] scope = platform — Insights) goes in this menu instead.
+    $__projLevel = $__hasProject ? \app\AppAccess::level($__mid, $__proj) : null;
+    $__plugins   = \app\ProjectNav::plugins($__mid, $__level, $__projLevel);
+    foreach ($__plugins as $__p) {
+        if ($__p['scope'] !== 'platform' || isset($__have[$__p['href']])) continue;
+        $__sections[$__mainSec][] = ['url' => $__p['href'], 'label' => $__p['label'], 'icon' => preg_replace('/^bi-/', '', $__p['icon'])];
+    }
 
     // WHICH PROJECT AM I IN — the band under the top bar, decided here because its presence
     // sets --ui-projectbar-height before .ui-main opens (the sidecar iframe subtracts it).

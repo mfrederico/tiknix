@@ -85,7 +85,7 @@
 // Admin — quotas, free-project grants, plan tiers, billing tenant/lifecycle on the member screens.
 \app\Admin::$memberExtension = new \app\PlatformMemberAdmin();
 
-// The page shell — projects, the project bar, Workspace/Build navigation, Teams and Billing.
+// The page shell — projects, the project bar, the sidebar's project panel, Teams and Billing.
 // The platform's pages beside the app (Chrome::$links), its shell, and its own parts of the
 // dashboard and footer — what the runtime used to decide with is_core_install().
 \app\Chrome::$links = [
@@ -95,9 +95,14 @@
     'agentsetup' => '/agentsetup',
     'fleet'      => '/fleet',
 ];
-\app\Chrome::$omit = ['/connections', '/integrations'];   // the hub's own nav offers them (chrome_nav)
+\app\Chrome::$omit = ['/connections', '/integrations'];   // the project panel offers them (chrome_navtop)
+// The sidebar shows two things' pages: the selected project's (the panel) and Tiknix's own. The
+// menu and the admin group say they are Tiknix's, or "Data" and "AI agents" read as the project's.
+\app\Chrome::$menuHeading = 'Tiknix';
+\app\Chrome::$adminHeading = 'Tiknix admin';
 \app\Chrome::$copyright = 'ClickSimple LLC';
 \app\Chrome::$mark = true;
 \app\Member::$builderPrefs = true;
-foreach (['prepare', 'nav', 'bar', 'account', 'footer', 'dashboard'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
+\app\Chrome::add('navTop', 'platform/chrome_navtop');
+foreach (['prepare', 'bar', 'account', 'footer', 'dashboard'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
 unset($__slot);

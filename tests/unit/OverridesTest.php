@@ -114,8 +114,8 @@ class OverridesTest extends TestCase {
 
     /** The page shell's extension points: the control plane fills them; a slot name that does not exist is refused. */
     public function testChromeSlots(): void {
-        foreach (['prepare', 'nav', 'bar', 'account'] as $slot) {
-            $this->assertSame(["platform/chrome_{$slot}"], \app\Chrome::$parts[$slot] ?? null, "lib/controlplane.php fills '{$slot}'");
+        foreach (['prepare', 'navTop', 'bar', 'account'] as $slot) {
+            $this->assertSame(['platform/chrome_' . strtolower($slot)], \app\Chrome::$parts[$slot] ?? null, "lib/controlplane.php fills '{$slot}'");
             foreach (\app\Chrome::files($slot) as $f) $this->assertStringStartsWith(\app\Paths::root() . '/views/', (string) realpath($f));
         }
         $this->expectException(\InvalidArgumentException::class);

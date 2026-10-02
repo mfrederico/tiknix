@@ -1,6 +1,6 @@
 # QA Testing — plan
 
-Status: phases 0 and 1 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
+Status: phases 0–2 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
 existing system (sidecar kit, the post-plan audit, the builder's job model, feature flags).
 
 ## What it is
@@ -230,4 +230,20 @@ project's owner.
   description (GETs without path values). A request that can change data needs the per-test
   mark. Operations as built: `teststate`, `credentials`, `credential`, `credentialremove`,
   `openapi` beside the planned ones. Web and MCP tests can be described and stay drafts.
+- **Phase 2 (2026-10-02):** web tests. Steps (goto, click, fill, select, check, press, wait,
+  screenshot) with targets by label / role / text / placeholder / test id / CSS, and page
+  expectations (text, no_text, url, title, visible, hidden, no_console_errors), written by
+  hand in the form until phase 3 records them. Replayed by `runner/replay.mjs` (Playwright,
+  Chromium with its sandbox on, a fresh browser per test, 120 s cap). The browser is fenced:
+  the page stays on the project's site, and nothing it loads may come from a private,
+  loopback or link-local address (`runner/fence.mjs`) — the page under test is the owner's
+  code running in a browser on the platform's host. Screenshots: one at the end state, one
+  where a step stopped, one per screenshot step (8 per test), kept in the project's workspace
+  for its newest 20 runs and served by `/qa/api/shot` behind the session. Sign-ins: `account`
+  (a throwaway account at root/admin/member, made through the app's own clitool for the run
+  and deleted after; written down first so one a dead runner left is removed by the next run)
+  and `login` (a stored test account, sealed); a token/key/cookie persona is sent to the
+  project's site only. A test that types into or changes the page needs the per-test mark.
+  `[qa] node` and `[qa] browsers` in the sidecar's config name the Node.js binary and the
+  browsers folder — cron and the web server have a bare PATH.
 

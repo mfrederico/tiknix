@@ -232,15 +232,23 @@ $fmt = function (string $iso): string {
                              . '<tr><td>tiknix, building <small class="text-body-secondary">(' . (int) $v['tiknix']['tasks'] . ' task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ')</small></td><td class="text-end">' . $__h($__span($__tkMin)) . '</td><td class="text-end">$' . number_format($__paid) . ' <small class="text-body-secondary">' . $__h($__paidNote) . '</small></td></tr>'
                              . '<tr class="text-body-secondary"><td colspan="3"><small>…spread over ' . $__h($__span((int) $v['tiknix']['minutes'])) . ' of calendar</small></td></tr>'
                              . '<tr class="fw-semibold table-success"><td>Difference</td><td class="text-end">' . $__h($__lessTime) . ' less</td><td class="text-end">$' . number_format($__saved) . ' saved</td></tr></tbody></table>' : '')
-                         . '<div class="small text-body-secondary mt-2">Its own code, not the platform\'s; counted ' . $__h(substr((string) $v['computed_at'], 0, 10)) . '.</div>';
+                         . '<div class="small text-body-secondary mt-2">Its own code, not the platform\'s; counted ' . $__h(substr((string) $v['computed_at'], 0, 10)) . '.</div>'
+                         . '<button type="button" class="btn btn-sm btn-outline-secondary mt-2 proj-copy">Copy as text</button>';
+                  // the same, as plain text for the clipboard
+                  $__txt = $p['name'] . ' — what it would have cost to build: about $' . number_format($v['dollars']) . "\n";
+                  foreach ($v['areas'] as $ar) { $w = (float) ($ar['weight'] ?? 1); $__txt .= '  ' . $ar['area'] . ': ' . number_format($ar['lines']) . ($w == 0 ? ' (data, not counted)' : ($w < 1 ? ' (counted at half)' : '')) . "\n"; }
+                  $__txt .= 'Lines of engineering: ' . number_format($v['lines']) . ' ÷ ' . $v['lines_per_hour'] . ' an hour = ' . number_format($v['hours'], 0) . ' h, at $' . $v['hourly_rate'] . "/h\n";
+                  if (!empty($v['tiknix'])) {
+                    $__txt .= 'A developer: ' . $__devTime . ', $' . number_format($v['dollars']) . "\n"
+                            . 'tiknix, building (' . (int) $v['tiknix']['tasks'] . ' tasks, spread over ' . $__span((int) $v['tiknix']['minutes']) . '): ' . $__span($__tkMin) . ', $' . number_format($__paid) . ' (' . $__paidNote . ")\n"
+                            . 'Difference: ' . $__lessTime . ' less, $' . number_format($__saved) . " saved\n";
+                  }
+                  $__txt .= 'Its own code, not the platform\'s; counted ' . substr((string) $v['computed_at'], 0, 10) . '.';
                 ?>
-                  <button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 proj-value" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true" data-bs-placement="auto" data-bs-custom-class="proj-value-pop"
+                  <button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 proj-value" data-bs-toggle="popover" data-bs-trigger="manual" data-bs-html="true" data-copy="<?= $__h($__txt) ?>" data-bs-placement="auto" data-bs-custom-class="proj-value-pop"
                           data-bs-title="What it would have cost to build: about $<?= number_format($v['dollars']) ?>" data-bs-content="<?= $__h($__pop) ?>" aria-label="What this project would have cost as a custom build">
                     ≈ $<?= number_format($v['dollars']) ?>
                   </button>
-                  <?php if (!empty($v['tiknix'])): ?>
-                    <span class="small text-body-secondary text-end" style="line-height:1.25">a developer: <?= number_format($v['hours'], 0) ?> h · tiknix: <?= htmlspecialchars($__span($__tkMin)) ?><br><strong class="text-success-emphasis">$<?= number_format($__saved) ?> saved</strong></span>
-                  <?php endif; ?>
                 <?php endif; ?>
                 <?php if (!empty($p['free'])): ?>
                   <span class="badge bg-success-subtle text-success" title="Inside your free allowance">Free</span>
@@ -553,7 +561,29 @@ $fmt = function (string $iso): string {
   }
 })();
 // Bootstrap is loaded at the end of the page, after this script: wake the popovers once it is there.
+// proj-value: start
 document.head.insertAdjacentHTML('beforeend', '<style>.proj-value-pop{max-width:460px}.proj-value-pop .popover-body{max-height:70vh;overflow:auto;font-size:.85rem}.proj-value-pop td,.proj-value-pop th{white-space:nowrap;padding:.15rem .3rem}.proj-value-pop td:first-child{white-space:normal}</style>');
-// sanitize: false — the sanitizer strips the breakdown's <table>; the content is built server-side from numbers and escaped labels.
-window.addEventListener('load', () => document.querySelectorAll('.proj-value').forEach(el => new bootstrap.Popover(el, { sanitize: false })));
+// The breakdown opens on hover and STAYS while the mouse is over it, so its text can be selected;
+// the button copies it as plain text. sanitize: false — the sanitizer strips the table, and the
+// content is built server-side from numbers and escaped labels. Bootstrap loads after this script.
+window.addEventListener('load', () => document.querySelectorAll('.proj-value').forEach(el => {
+  const pop = new bootstrap.Popover(el, { sanitize: false });
+  let timer = null, over = false;
+  const later = () => { clearTimeout(timer); timer = setTimeout(() => { if (!over) pop.hide(); }, 250); };
+  el.addEventListener('mouseenter', () => { clearTimeout(timer); pop.show(); });
+  el.addEventListener('focus', () => pop.show());
+  el.addEventListener('mouseleave', later);
+  el.addEventListener('blur', later);
+  el.addEventListener('shown.bs.popover', () => {
+    const tip = pop.tip; if (!tip) return;
+    tip.addEventListener('mouseenter', () => { over = true; clearTimeout(timer); });
+    tip.addEventListener('mouseleave', () => { over = false; later(); });
+    const btn = tip.querySelector('.proj-copy');
+    if (btn) btn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(el.dataset.copy); btn.textContent = 'Copied'; }
+      catch (e) { btn.textContent = 'Select the text and copy it'; }
+    });
+  });
+}));
+// proj-value: end
 </script>

@@ -103,9 +103,10 @@ class ProjectValue {
     }
 
     /**
-     * How long tiknix took: the Builder's merged tasks on the project's board, first started to
-     * last finished, and how many. Null when the board has none.
-     * @return array{tasks:int,first:string,last:string,minutes:int}|null
+     * How long tiknix took: the Builder's merged tasks on the project's board — the time spent
+     * building (each task's start to finish, added up) and the calendar they were spread over
+     * (first started to last finished). Null when the board has none.
+     * @return array{tasks:int,first:string,last:string,minutes:int,work_minutes:int}|null
      */
     private static function elapsed(object $inst): ?array {
         $db = \Model_Instance::dirOf($inst) . '/data/workbench.db';
@@ -114,13 +115,14 @@ class ProjectValue {
             $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
             $cols = array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(\PDO::FETCH_ASSOC), 'name');
             foreach (['status', 'started_at', 'completed_at'] as $c) if (!in_array($c, $cols, true)) return null;
-            $r = $pdo->query("SELECT COUNT(*) AS n, MIN(started_at) AS first, MAX(completed_at) AS last FROM workbenchtask WHERE status = 'merged' AND started_at != '' AND completed_at != ''")->fetch(\PDO::FETCH_ASSOC);
+            $r = $pdo->query("SELECT COUNT(*) AS n, MIN(started_at) AS first, MAX(completed_at) AS last, "
+                           . "SUM(MAX(0, (julianday(completed_at) - julianday(started_at)) * 1440)) AS work FROM workbenchtask WHERE status = 'merged' AND started_at != '' AND completed_at != ''")->fetch(\PDO::FETCH_ASSOC);
         } catch (\Throwable $e) {
             error_log("ERROR ProjectValue: {$inst->slug}'s board could not be read: " . $e->getMessage());
             return null;
         }
         if (!$r || (int) $r['n'] === 0) return null;
         $mins = (int) round((strtotime((string) $r['last']) - strtotime((string) $r['first'])) / 60);
-        return ['tasks' => (int) $r['n'], 'first' => (string) $r['first'], 'last' => (string) $r['last'], 'minutes' => max(0, $mins)];
+        return ['tasks' => (int) $r['n'], 'first' => (string) $r['first'], 'last' => (string) $r['last'], 'minutes' => max(0, $mins), 'work_minutes' => (int) round((float) $r['work'])];
     }
 }

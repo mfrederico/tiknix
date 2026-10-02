@@ -209,22 +209,29 @@ $fmt = function (string $iso): string {
                 <?php if (!empty($p['value']) && $p['value']['dollars'] > 0): $v = $p['value'];
                   // What this would have cost as a custom build — the breakdown on hover (lib/ProjectValue.php).
                   $__h = fn($x) => htmlspecialchars((string) $x, ENT_QUOTES);
-                  $__span = function (int $m): string { if ($m < 60) return $m . ' min'; $h = intdiv($m, 60); if ($h < 48) return $h . ' h ' . ($m % 60) . ' min'; return intdiv($h, 24) . ' days ' . ($h % 24) . ' h'; };
+                  $__span = function (int $m): string { if ($m < 60) return $m . ' min'; $h = intdiv($m, 60); if ($h < 48) return $h . ' h' . ($m % 60 ? ' ' . ($m % 60) . ' min' : ''); return intdiv($h, 24) . ' days' . ($h % 24 ? ' ' . ($h % 24) . ' h' : ''); };
+                  // A developer's time in working weeks (40 h), beside what tiknix spent building and the calendar it took.
+                  $__weeks = $v['hours'] >= 80 ? number_format($v['hours'] / 40, 1) . ' working weeks' : ($v['hours'] >= 16 ? number_format($v['hours'] / 8, 1) . ' working days' : number_format($v['hours'], 0) . ' hours');
                   $__rows = '';
                   foreach ($v['areas'] as $ar) {
                     $w = (float) ($ar['weight'] ?? 1);
                     $__rows .= '<tr' . ($w < 1 ? ' class="text-body-secondary"' : '') . '><td>' . $__h($ar['area']) . ($w == 0 ? ' <small>(data, not counted)</small>' : ($w < 1 ? ' <small>(counted at half)</small>' : '')) . '</td><td class="text-end">' . number_format($ar['lines']) . '</td></tr>';
                   }
                   $__pop = '<table class="table table-sm mb-2"><tbody>' . $__rows . '<tr class="fw-semibold"><td>Lines of engineering</td><td class="text-end">' . number_format($v['lines']) . '</td></tr></tbody></table>'
-                         . '<div class="small">At ' . $__h($v['lines_per_hour']) . ' finished lines an hour: <strong>' . number_format($v['hours'], 0) . ' hours</strong> of a developer\'s time.'
+                         . '<div class="small">At ' . $__h($v['lines_per_hour']) . ' finished lines an hour: <strong>' . number_format($v['hours'], 0) . ' hours</strong> of a developer\'s time, ' . $__h($__weeks) . '.'
                          . ' At $' . $__h($v['hourly_rate']) . '/hour: <strong>$' . number_format($v['dollars']) . '</strong>.</div>'
-                         . (!empty($v['tiknix']) ? '<div class="small mt-2">tiknix: ' . (int) $v['tiknix']['tasks'] . ' build task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ', first started to last finished in <strong>' . $__h($__span((int) $v['tiknix']['minutes'])) . '</strong>.</div>' : '')
+                         . (!empty($v['tiknix']) ? '<table class="table table-sm mt-2 mb-1"><tbody><tr><td>A developer</td><td class="text-end"><strong>' . number_format($v['hours'], 0) . ' h</strong></td></tr>'
+                             . '<tr><td>tiknix, building (' . (int) $v['tiknix']['tasks'] . ' task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ')</td><td class="text-end"><strong>' . $__h($__span((int) ($v['tiknix']['work_minutes'] ?? 0))) . '</strong></td></tr>'
+                             . '<tr class="text-body-secondary"><td>…spread over</td><td class="text-end">' . $__h($__span((int) $v['tiknix']['minutes'])) . '</td></tr></tbody></table>' : '')
                          . '<div class="small text-body-secondary mt-2">Its own code, not the platform\'s; counted ' . $__h(substr((string) $v['computed_at'], 0, 10)) . '.</div>';
                 ?>
                   <button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 proj-value" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-html="true" data-bs-placement="left"
                           data-bs-title="As a custom build, about $<?= number_format($v['dollars']) ?>" data-bs-content="<?= $__h($__pop) ?>" aria-label="What this project would have cost as a custom build">
                     ≈ $<?= number_format($v['dollars']) ?>
                   </button>
+                  <?php if (!empty($v['tiknix'])): ?>
+                    <span class="small text-body-secondary text-end" style="line-height:1.2"><?= number_format($v['hours'], 0) ?> h of a developer's time<br>tiknix built it in <?= htmlspecialchars($__span((int) ($v['tiknix']['work_minutes'] ?? 0))) ?></span>
+                  <?php endif; ?>
                 <?php endif; ?>
                 <?php if (!empty($p['free'])): ?>
                   <span class="badge bg-success-subtle text-success" title="Inside your free allowance">Free</span>

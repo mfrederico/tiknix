@@ -5,7 +5,8 @@
  *
  * Deterministic and explainable: the project's OWN code in its container (controllers, models,
  * libraries, services, views, its routes, scripts and front-end files — never the runtime,
- * vendored code or binary assets), non-blank lines, MINUS the lines every project starts with
+ * vendor/, a vendored path or a known library copied into a counted folder, or binary assets),
+ * non-blank lines, MINUS the lines every project starts with
  * (the empty-app template), so a fresh project is worth nothing yet. Tests count at half
  * weight (real work, not what a client pays for); database seeds are shown but not counted
  * (catalog data is not engineering — partsdna had 17,000 lines of it). Then two settings in
@@ -31,7 +32,13 @@ class ProjectValue {
                           'routes' => 'Routes', 'mcptools' => 'MCP tools', 'scripts' => 'Scripts', 'public' => 'Front-end files', 'tests' => 'Tests', 'database' => 'Database seeds'];
     /** How much of an area's lines count as engineering: tests half, data seeds none. */
     public const WEIGHT = ['tests' => 0.5, 'database' => 0.0];
+    /** Binary and generated files, by extension. */
     private const SKIP = '\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|eot|pdf|zip|gz|lock|min\.js|min\.css|map)$';
+    /**
+     * Somebody else's code inside a counted folder: a vendored path, or a well-known library
+     * copied in by its usual file name. vendor/ itself is never counted (it is not an area).
+     */
+    private const VENDORED = '(^|/)(vendor|vendors|node_modules|third[-_]?party|bower_components|dist)/|(^|/)(jquery|bootstrap|popper|chart|datatables|select2|tinymce|ckeditor|fontawesome|font-awesome|moment|lodash|underscore|axios|vue|react|angular|alpine|htmx|swiper|flatpickr|leaflet|dropzone|sortable|codemirror|monaco|quill|summernote|highlight|prism|three|d3|plotly|handsontable|ag-grid|fullcalendar)([.-][a-z0-9.-]*)?\.(js|css)$';
     public const TEMPLATE = '/var/www/html/default/tiknix-app';
 
     /** @return array{lines_per_hour:float,hourly_rate:float} the two assumptions, which must be set */
@@ -44,7 +51,7 @@ class ProjectValue {
     /** The shell that counts non-blank lines per area in a git working copy (runs here and in a container). */
     private static function countScript(): string {
         $areas = implode(' ', array_keys(self::AREAS));
-        return 'for d in ' . $areas . '; do if [ -d "$d" ]; then n=$(git ls-files -z -- "$d" | grep -z -v -E ' . escapeshellarg(self::SKIP) . ' | xargs -0 cat 2>/dev/null | grep -c -v "^[[:space:]]*$"); else n=0; fi; printf "%s %s\n" "$d" "$n"; done';
+        return 'for d in ' . $areas . '; do if [ -d "$d" ]; then n=$(git ls-files -z -- "$d" | grep -z -v -E ' . escapeshellarg(self::SKIP) . ' | grep -z -v -i -E ' . escapeshellarg(self::VENDORED) . ' | xargs -0 cat 2>/dev/null | grep -c -v "^[[:space:]]*$"); else n=0; fi; printf "%s %s\n" "$d" "$n"; done';
     }
 
     /** @return array<string,int> area => lines, from the script's output */

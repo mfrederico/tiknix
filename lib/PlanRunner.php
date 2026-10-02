@@ -393,7 +393,10 @@ truth: it is what already exists right now. You do NOT need to call `codebase_ma
 1. **MATCH the goal against the inventory above — this is the most important step.**
    For every capability the goal needs, classify it explicitly as ONE of:
    - **REUSE** `<existing controller/model/lib>` — it already does this; wire to it.
-   - **EXTEND** `<existing>` — add a method / column / route to something that exists.
+   - **EXTEND** `<existing>` — add a method / column / route to something of the APP's own.
+     A controller marked _(runtime)_ is the platform's and cannot be extended: its URLs
+     (e.g. `/admin/*`) are not the app's. A new page — even one for admins — is a controller
+     of the app's own (`/cafe/customers`, not `/admin/customers`), linked from where it is needed.
    - **ADOPT** `<concept>` — it is not in this codebase, but the shared catalog has a
      ready-made, tested concept that does it. The inventory's "Available to adopt" section
      lists the catalog; `concepts_search("<the capability, in plain words>")` searches it

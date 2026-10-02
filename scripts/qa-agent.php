@@ -9,6 +9,18 @@
  *       host's browser (lib/QaHost.php), the project's page inventory added to the prompt.
  *       Prints PlatformAgent's result as JSON.
  *
+ *   php scripts/qa-agent.php --ask < job.json
+ *       job: {agent, system, prompt, schema, timeout, max_usd}
+ *       The same agent with NO tools at all — it reads what it is given and answers (the
+ *       report on a run). Prints PlatformAgent's result as JSON.
+ *
+ *   php scripts/qa-agent.php --to-builder < plan.json
+ *       plan: {slug, member_id, title, summary, subtasks:[{title, description}]}
+ *       Files the findings an owner chose as ONE DRAFT PLAN on the project's Builder board
+ *       (PlanIngestor) — to be reviewed and built like any plan, never started from here.
+ *       Refused when the member does not own the project, or a draft plan already waits.
+ *       Prints {ok, plan_id, tasks}.
+ *
  *   php scripts/qa-agent.php --plan-checks=SLUG
  *       The "Acceptance" part of the project's PLAN.md, as JSON {ok, text} — what the plan
  *       itself says should be true, for the owner to turn into tests.
@@ -20,7 +32,7 @@ new \app\Bootstrap();
 
 use app\Bean;
 
-$o = getopt('', ['author', 'plan-checks:']);
+$o = getopt('', ['author', 'ask', 'to-builder', 'plan-checks:']);
 $say = function (array $r): void { echo json_encode($r, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), "\n"; exit(empty($r['ok']) ? 1 : 0); };
 $project = function (string $slug) use ($say): object {
     $inst = Bean::findOne('instance', 'slug = ?', [$slug]);
@@ -50,6 +62,41 @@ try {
         $say(['ok' => true, 'text' => mb_substr(implode("\n\n", $out), 0, 6000)]);
     }
 
+    if (isset($o['ask'])) {
+        $job = json_decode((string) stream_get_contents(STDIN), true);
+        if (!is_array($job)) $say(['ok' => false, 'error' => 'the job on stdin is not JSON']);
+        $job['mcp'] = [];
+        $r = \app\PlatformAgent::run($job);
+        unset($r['text']);
+        $say($r);
+    }
+
+    if (isset($o['to-builder'])) {
+        $plan = json_decode((string) stream_get_contents(STDIN), true);
+        if (!is_array($plan) || !\app\PlanIngestor::isValidPlan($plan)) $say(['ok' => false, 'error' => 'the plan on stdin needs a title and subtasks']);
+        $inst = $project((string) ($plan['slug'] ?? ''));
+        $memberId = (int) ($plan['member_id'] ?? 0);
+        if (!$inst->ownedBy($memberId)) $say(['ok' => false, 'error' => "only the project's owner sends findings to its Builder"]);
+        $subtasks = [];
+        foreach (array_values($plan['subtasks']) as $i => $st) {
+            if (!is_array($st) || trim((string) ($st['title'] ?? '')) === '') continue;
+            $subtasks[] = ['id' => 'q' . ($i + 1), 'title' => (string) $st['title'], 'description' => (string) ($st['description'] ?? ''), 'priority' => 2];
+        }
+        if (!$subtasks) $say(['ok' => false, 'error' => 'no findings to send']);
+        $app = (string) ($inst->app ?: \Model_Instance::DEFAULT_APP);
+        // The board is the project's OWN workbench.db (its workspace on this host); the registry
+        // work above is done, everything from here writes tasks.
+        $db = \Model_Instance::dirOf($inst) . '/data/workbench.db';
+        if (!is_file($db)) $say(['ok' => false, 'error' => "{$inst->slug} has no Builder board yet — open its Builder once"]);
+        Bean::addDatabase('tasks', 'sqlite:' . $db);
+        Bean::selectDatabase('tasks');
+        Bean::freeze(false);
+        $waiting = Bean::findOne('workbenchtask', "plan_status = 'draft' AND (parent_task_id IS NULL OR parent_task_id = 0)");
+        if ($waiting && $waiting->id) $say(['ok' => false, 'error' => "a plan is already waiting for review in the Builder (“{$waiting->title}”) — approve or discard it first"]);
+        $r = \app\PlanIngestor::ingest($inst, ['title' => (string) $plan['title'], 'summary' => (string) ($plan['summary'] ?? ''), 'subtasks' => $subtasks], $memberId, '', $app);
+        $say(['ok' => true, 'plan_id' => (int) $r['parent']['id'], 'tasks' => count($r['subtasks'])]);
+    }
+
     if (isset($o['author'])) {
         $job = json_decode((string) stream_get_contents(STDIN), true);
         if (!is_array($job)) $say(['ok' => false, 'error' => 'the job on stdin is not JSON']);
@@ -64,7 +111,7 @@ try {
         unset($r['text']);
         $say($r);
     }
-    fwrite(STDERR, "usage: --author < job.json | --plan-checks=SLUG\n"); exit(2);
+    fwrite(STDERR, "usage: --author < job.json | --ask < job.json | --to-builder < plan.json | --plan-checks=SLUG\n"); exit(2);
 } catch (\Throwable $e) {
     $say(['ok' => false, 'error' => $e->getMessage()]);
 }

@@ -1,6 +1,6 @@
 # QA Testing — plan
 
-Status: phases 0–3 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
+Status: phases 0–4 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
 existing system (sidecar kit, the post-plan audit, the builder's job model, feature flags).
 
 ## What it is
@@ -271,4 +271,24 @@ project's owner.
   project) bound the spending; the cost of each job is on its queue row. "Use the plan's
   acceptance checks" pulls PLAN.md's acceptance section into the box. First real jobs: about
   20 seconds and 3–4 cents each.
+- **Phase 4 (2026-10-02):** suites, reports, Send to Builder.
+  - **Suites** (owner's addition): a named, ordered set of tests run as a whole — `webapp`
+    always exists; `owasp` and `uptime` are one-click starters; the owner can add their own.
+    A suite's tests are its steps (the owner orders them); with stop-on-fail the rest are
+    recorded as *not run* (blue), never as failed. Its description is given to the drafting
+    agent, so a concept is drafted for the suite it is typed into. One run is one suite's.
+  - **Report**, on demand ("Explain this run", owner only — not after every red run: a
+    scheduled suite would spend on each one). The `qa` agent with NO tools reads the failed
+    tests, their steps and receipts: a summary, at most five findings about the APP (each tied
+    to a test, with evidence, one smallest-change recommendation and what to leave alone), and
+    upkeep for the TESTS (retire / update / merge). A finding not tied to a test of the run is
+    dropped. `[qa] report_max_usd` (0.50) and `report_daily` (30). First reports: under a cent,
+    and on contrived failing tests it correctly returned no findings and blamed the tests.
+  - **Send to Builder** (owner only): the ticked findings become ONE DRAFT PLAN on the
+    project's board (`scripts/qa-agent.php --to-builder` → PlanIngestor), each task carrying
+    the evidence, the fix, what to leave alone and how it was checked. Refused while another
+    draft plan waits for review. Not through the firehose.
+  - A one-off test that has passed says it can be retired — a hint, the click is the owner's.
+  - Still to come with phase 6: a schedule per suite, and one pipeline step in a project that
+    runs a suite by name and reads its result (needs the machine key for the QA API).
 

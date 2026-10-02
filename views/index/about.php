@@ -37,7 +37,7 @@ $jsonld = [
     <link rel="canonical" href="<?= $site ?>/about">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="tiknix">
-    <meta property="og:title" content="Who we are — tiknix">
+    <meta property="og:title" content="Who we are: Matt and Fabian — tiknix">
     <meta property="og:description" content="<?= htmlspecialchars($desc) ?>">
     <meta property="og:url" content="<?= $site ?>/about">
     <link rel="preconnect" href="https://fonts.googleapis.com">

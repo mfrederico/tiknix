@@ -15,7 +15,7 @@ class About extends BaseControls\Control {
 
     public function index($params = []) {
         $this->render('index/about', [
-            'title' => 'Who we are — tiknix',
+            'title' => 'Who we are: Matt and Fabian — tiknix',
         ], false);
     }
 }

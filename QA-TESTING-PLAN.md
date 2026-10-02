@@ -1,6 +1,6 @@
 # QA Testing — plan
 
-Status: phase 0 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
+Status: phases 0 and 1 built (see "Built" at the end). Written 2026-10-02 from the owner's brief and a read of the
 existing system (sidecar kit, the post-plan audit, the builder's job model, feature flags).
 
 ## What it is
@@ -219,3 +219,15 @@ project's owner.
   documents, `/qa/api/{status,tests,test,testsave,testretire}`, the list with a light per
   test), the `qa` flag, the nav entry between Builder and Deploy, and the QA Testing card on
   the Deploy page (`[qa] available = false` → "Coming soon").
+- **Phase 1 (2026-10-02):** API tests and the run machinery. A test is one request to the
+  project's own site plus expectations (status, json path, header, body, max_ms), replayed with
+  no model. Runs are queued (`qajob` in the sidecar's db — also the meter), started by
+  `scripts/qa-drain.php` (cron every minute, kicked on demand; one per project, two across),
+  executed by `scripts/qa-run.php`; the page polls `/qa/api/run` every two seconds. Receipts
+  keep the request and the answer with credentials replaced. Personas' sign-ins for API tests
+  (bearer / header / cookie) are sealed with the sidecar's key — brought forward from phase 2,
+  since an API test without one can only test signed-out behaviour. Drafts from an OpenAPI
+  description (GETs without path values). A request that can change data needs the per-test
+  mark. Operations as built: `teststate`, `credentials`, `credential`, `credentialremove`,
+  `openapi` beside the planned ones. Web and MCP tests can be described and stay drafts.
+

@@ -1283,6 +1283,13 @@ class Connections extends Control {
         if (!$this->validateCSRF()) return;
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found', 404); return; }
+        // A container app's key lives in its own conf/broker.ini, installed by core
+        // (BrokerService::ensureContainerConfig). Minting one here replaces the row that file
+        // matches and hands the key to nobody — the app is cut off from core.
+        if (\Model_Instance::tenantRow($inst)) {
+            $this->jsonError("{$inst->slug} runs in its own container; its broker key is installed there by core and is not handed out here.", 409);
+            return;
+        }
 
         // Advisory allowlist: the connectors this instance actually has connections
         // for, read from its own store.
@@ -1676,7 +1683,9 @@ class Connections extends Control {
            install's own store. There is no custody to arrange. */
         if (!$local) {
             try {
-                BrokerService::ensureInstanceConfig($iid, $mid, $this->instanceDir($inst->slug));
+                \Model_Instance::tenantRow($inst)
+                    ? BrokerService::ensureContainerConfig($inst, $mid)
+                    : BrokerService::ensureInstanceConfig($iid, $mid, $this->instanceDir($inst->slug));
             } catch (\Throwable $e) {
                 error_log('[connections] store wiring failed for instance ' . $iid . ': ' . $e->getMessage());
             }
@@ -1777,7 +1786,9 @@ class Connections extends Control {
         // Wire the instance so its app can reach this account immediately — no keys
         // for the user to handle. Best-effort: never fail the connect over this.
         try {
-            BrokerService::ensureInstanceConfig((int)$inst->id, (int)$this->member->id, $this->instanceDir($inst->slug));
+            \Model_Instance::tenantRow($inst)
+                ? BrokerService::ensureContainerConfig($inst, (int)$this->member->id)
+                : BrokerService::ensureInstanceConfig((int)$inst->id, (int)$this->member->id, $this->instanceDir($inst->slug));
         } catch (\Throwable $e) {
             error_log('[connections] store wiring failed for instance ' . (int)$inst->id . ': ' . $e->getMessage());
         }

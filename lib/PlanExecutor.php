@@ -645,7 +645,11 @@ commit and merge your work — you just make the code changes.
 - Write any summary, notes, or final message in **Markdown** (`##` sub-headers,
   `-` lists, `` `code` `` for files/beans/routes) — it renders in the task view,
   so keep it scannable header-first.
-- Do not run git, do not push, do not start servers. Just implement, then stop.
+- Do not run git, do not push, do not start servers of your own. Implement, CHECK YOUR
+  WORK in your sandbox when you have one (the "Your sandbox" section at the very end of this
+  brief says what you have — a running copy of the app at a local URL, on its own database —
+  or that there is none and why), then stop. If no such section follows, this app cannot give
+  you one: say in your summary what you could not check.
 - Config: you CANNOT change this project's runtime settings from here, in either
   direction. `conf/config.ini` is what the app loads and is gitignored, so an edit to it
   never merges; `conf/config.<slug>.ini` is what merges and is NOT what the app loads.
@@ -653,14 +657,13 @@ commit and merge your work — you just make the code changes.
   key to the tracked file shipped an endpoint reporting "unknown" for it. If your task
   needs a setting that does not exist yet, NAME IT IN YOUR SUMMARY for a person to add.
   (Core's config is outside your sandbox entirely; you could not reach it if you tried.)
-- Database / permission changes: do NOT write to the database directly and do NOT run
-  migration or seed scripts. The live SQLite DB is
-  discarded from your worktree, so direct writes will NOT persist. If this task needs
-  a DB or permission change (e.g. an authcontrol route entry to make a page public),
-  write an IDEMPOTENT numbered seed in services/Schema/Seeds/NN_Name.php (the CLAUDE.md
-  convention; permissions through PermissionCache::seedRule). The orchestrator runs the
-  schema builder (clitool --build) against the live instance after your work merges,
-  then rebuilds the permission cache — you do NOT run it. A legacy standalone script in
+- Database / permission changes: only a SEED merges. Your worktree's database is the
+  sandbox's own, thrown away with it, so anything written to it directly is lost. If this
+  task needs a DB or permission change (e.g. an authcontrol route entry to make a page
+  public), write an IDEMPOTENT numbered seed in services/Schema/Seeds/NN_Name.php (the
+  CLAUDE.md convention; permissions through PermissionCache::seedRule), and apply it in
+  YOUR SANDBOX to see it work (`php scripts/clitool.php --build`). The orchestrator runs
+  the same build against the live instance after your work merges. A legacy standalone script in
   database/seeds/<descriptive-name>.php is also applied (once, ledgered); if you write
   one, use the \\app\\Bean wrapper (Bean::findOne / dispense / store).
   The seed file lives TWO levels below the instance root, so bootstrap the app with

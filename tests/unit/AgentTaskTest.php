@@ -33,10 +33,19 @@ class AgentTaskTest extends TestCase {
         Bean::selectDatabase(self::DB);
         \RedBeanPHP\R::nuke();
         $this->app = sys_get_temp_dir() . '/tiknix-agenttask-' . getmypid() . '-' . bin2hex(random_bytes(3));
-        foreach (['conf', 'bin', 'scripts', '.aibuilder/state/claude'] as $d) mkdir("{$this->app}/{$d}", 0700, true);
+        foreach (['conf', 'bin', 'scripts', 'database', 'public', '.aibuilder/state/claude'] as $d) mkdir("{$this->app}/{$d}", 0700, true);
         file_put_contents("{$this->app}/composer.json", "{}\n");
         file_put_contents("{$this->app}/README.md", "an app\n");
-        file_put_contents("{$this->app}/.gitignore", ".aibuilder/\n/bin/claude\nvendor/\ncomposer.lock\n");
+        // As an app's .gitignore has it: config and data are the install's, never the repository's.
+        file_put_contents("{$this->app}/.gitignore", ".aibuilder/\n/bin/claude\nvendor/\ncomposer.lock\nconf/*.ini\ndatabase/*.db\n");
+        file_put_contents("{$this->app}/conf/config.ini", "[app]\nbaseurl = \"https://live.example.test\"\n[database]\ntype = \"sqlite\"\npath = \"database/app.db\"\n");
+        $db = new \PDO("sqlite:{$this->app}/database/app.db");
+        $db->exec('CREATE TABLE cat (id INTEGER PRIMARY KEY, name TEXT)');
+        $db->exec("INSERT INTO cat (name) VALUES ('Miso')");
+        $db = null;
+        // The app's one page says which database it is running on.
+        file_put_contents("{$this->app}/public/index.php", '<?php $ini = parse_ini_file(__DIR__ . "/../conf/config.ini", true); $d = new PDO("sqlite:" . __DIR__ . "/../" . $ini["database"]["path"]); echo "cats: " . implode(",", $d->query("SELECT name FROM cat")->fetchAll(PDO::FETCH_COLUMN)) . "\n";');
+        file_put_contents("{$this->app}/public/logo.txt", "a static file\n");
         file_put_contents("{$this->app}/scripts/clitool.php", "<?php echo \"seeds ran\\n\";\n");
         file_put_contents("{$this->app}/conf/aibuilder.ini", "[engine]\ndefault = claude\n[engine.claude]\nlabel = Claude Code\ntransport = cli-headless\ncommand = claude\ncli_flavor = claude\nheadless_ready = true\nworker_model = sonnet\nplanner_model = sonnet\nauditor_model = sonnet\nresolver_model = sonnet\n");
         // The stand-in agent: appends to README.md in the directory it is run in.
@@ -109,6 +118,84 @@ class AgentTaskTest extends TestCase {
         $this->assertSame('', $this->git('branch --list task/t1'), 'the task branch is gone');
         $this->assertSame('Pat Member <pat@example.com>', $this->git('log -1 --format="%an <%ae>"'), "the merge is the member's");
         $this->assertSame('Pat Member', $this->git('log -1 --format=%cn'));
+    }
+
+    /** A stand-in agent that uses its sandbox: reads its URL from the prompt, adds a cat, loads the page. */
+    private function agentThatChecksItsWork(): void {
+        file_put_contents("{$this->app}/bin/claude", <<<'SH'
+#!/bin/sh
+URL=$(echo "$@" | grep -o 'http://127.0.0.1:[0-9]*' | head -1)
+php -r '$d = new PDO("sqlite:database/app.db"); $d->exec("INSERT INTO cat (name) VALUES (\"Sandbox\")");'
+echo "url: $URL" >> README.md
+echo "page: $(curl -s -m 5 "$URL/")" >> README.md
+echo "static: $(curl -s -m 5 "$URL/logo.txt")" >> README.md
+echo "$@" | grep -c 'Never check your work against it' >> README.md
+echo done
+SH);
+        chmod("{$this->app}/bin/claude", 0755);
+    }
+
+    private function cats(string $dir): array {
+        return (new \PDO("sqlite:{$dir}/database/app.db"))->query('SELECT name FROM cat')->fetchAll(\PDO::FETCH_COLUMN);
+    }
+
+    public function testATaskRunsInASandboxOfItsOwnAndTheLiveAppIsUntouched(): void {
+        $this->agentThatChecksItsWork();
+        $r = AgentTask::start($this->app, 's1', 'Add a cat and check the page');
+        $this->assertTrue($r['ok'], json_encode($r));
+        $this->assertStringStartsWith("a copy of the app's data, taken when this task started; served at http://127.0.0.1:", $r['sandbox']);
+        $wt = "{$this->app}/.aibuilder/wt/s1";
+        $readme = (string) file_get_contents("{$wt}/README.md");
+        // The agent loaded ITS page, on ITS database: the cat it added is there with the app's own.
+        $this->assertStringContainsString("page: cats: Miso,Sandbox", $readme);
+        $this->assertStringContainsString("static: a static file", $readme, 'a file under public/ is served as a file');
+        $this->assertSame(['Miso'], $this->cats($this->app), 'the live database never saw the task');
+        $this->assertSame(['Miso', 'Sandbox'], $this->cats($wt));
+        // The prompt told it where the sandbox is and not to trust the live site.
+        $this->assertMatchesRegularExpression('#^url: http://127\.0\.0\.1:\d+$#m', $readme);
+        $this->assertStringContainsString("\n1\n", $readme);
+        // Neither the config nor the database is in the task's commit.
+        $files = $this->git('show --name-only --format= task/s1');
+        $this->assertSame('README.md', $files);
+        // The server is the task's: it stops when the agent does.
+        preg_match('#127\.0\.0\.1:(\d+)#', $r['sandbox'], $m);
+        $this->assertFalse(@fsockopen('127.0.0.1', (int) $m[1], $e1, $e2, 0.5), 'the sandbox server is still running');
+        // Merging brings the code, not the sandbox's data.
+        $this->assertTrue(AgentTask::merge($this->app, 's1')['ok']);
+        $this->assertSame(['Miso'], $this->cats($this->app));
+    }
+
+    public function testAFreshSandboxHasNoneOfTheAppsData(): void {
+        // The seeds (this app's stand-in clitool --build) make the empty database.
+        file_put_contents("{$this->app}/scripts/clitool.php", '<?php $d = new PDO("sqlite:database/app.db"); $d->exec("CREATE TABLE IF NOT EXISTS cat (id INTEGER PRIMARY KEY, name TEXT)"); echo "seeds ran\n";');
+        $this->git('-c user.email=t@e -c user.name=t commit -q -am seeds');
+        $this->agentThatChecksItsWork();
+        $r = AgentTask::start($this->app, 's2', 'check', 'claude', 1800, '', 'fresh');
+        $this->assertTrue($r['ok'], json_encode($r));
+        $this->assertStringStartsWith('an empty database, built from the seeds (no real data)', $r['sandbox']);
+        $this->assertSame(['Sandbox'], $this->cats("{$this->app}/.aibuilder/wt/s2"), 'only what the task itself added');
+        $this->assertStringContainsString("not 'copy'", AgentTask::start($this->app, 's3', 'x', 'claude', 1800, '', 'copy')['error']);
+    }
+
+    public function testNoSandboxIsSaidNotGuessedAround(): void {
+        // An app whose .gitignore does not keep its database out: a copy in the task would be committed.
+        file_put_contents("{$this->app}/.gitignore", ".aibuilder/\n/bin/claude\nvendor/\ncomposer.lock\nconf/*.ini\n");
+        $this->git('-c user.email=t@e -c user.name=t add -A');
+        $this->git('-c user.email=t@e -c user.name=t commit -q -m tracked-db');
+        file_put_contents("{$this->app}/bin/claude", "#!/bin/sh\necho \"\$@\" | grep -c 'There is NONE for this task' >> README.md\necho done\n");
+        $r = AgentTask::start($this->app, 'n1', 'do it');
+        $this->assertTrue($r['ok'], json_encode($r));
+        $this->assertStringStartsWith("none: this app's .gitignore does not ignore database/app.db", $r['sandbox']);
+        $this->assertFileDoesNotExist("{$this->app}/.aibuilder/wt/n1/conf/config.ini", 'nothing was put in the task');
+        $this->assertStringContainsString("\n1\n", (string) file_get_contents("{$this->app}/.aibuilder/wt/n1/README.md"), 'the agent was told there is none');
+
+        // A config that names its database by absolute path would hand the task the live one.
+        file_put_contents("{$this->app}/.gitignore", ".aibuilder/\n/bin/claude\nvendor/\ncomposer.lock\nconf/*.ini\ndatabase/*.db\n");
+        $this->git('-c user.email=t@e -c user.name=t rm -q --cached database/app.db');
+        $this->git('-c user.email=t@e -c user.name=t commit -q -am ignored-again');
+        file_put_contents("{$this->app}/conf/config.ini", "[database]\ntype = \"sqlite\"\npath = \"{$this->app}/database/app.db\"\n");
+        $r = AgentTask::start($this->app, 'n2', 'do it');
+        $this->assertStringContainsString('not a path inside the app', $r['sandbox']);
     }
 
     public function testNoMemberNoCommit(): void {

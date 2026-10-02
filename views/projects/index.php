@@ -211,8 +211,11 @@ $fmt = function (string $iso): string {
                   $__h = fn($x) => htmlspecialchars((string) $x, ENT_QUOTES);
                   $__span = function (int $m): string { if ($m < 60) return $m . ' min'; $h = intdiv($m, 60); if ($h < 48) return $h . ' h ' . ($m % 60) . ' min'; return intdiv($h, 24) . ' days ' . ($h % 24) . ' h'; };
                   $__rows = '';
-                  foreach ($v['areas'] as $ar) $__rows .= '<tr><td>' . $__h($ar['area']) . '</td><td class="text-end">' . number_format($ar['lines']) . '</td></tr>';
-                  $__pop = '<table class="table table-sm mb-2"><tbody>' . $__rows . '<tr class="fw-semibold"><td>Lines written for it</td><td class="text-end">' . number_format($v['lines']) . '</td></tr></tbody></table>'
+                  foreach ($v['areas'] as $ar) {
+                    $w = (float) ($ar['weight'] ?? 1);
+                    $__rows .= '<tr' . ($w < 1 ? ' class="text-body-secondary"' : '') . '><td>' . $__h($ar['area']) . ($w == 0 ? ' <small>(data, not counted)</small>' : ($w < 1 ? ' <small>(counted at half)</small>' : '')) . '</td><td class="text-end">' . number_format($ar['lines']) . '</td></tr>';
+                  }
+                  $__pop = '<table class="table table-sm mb-2"><tbody>' . $__rows . '<tr class="fw-semibold"><td>Lines of engineering</td><td class="text-end">' . number_format($v['lines']) . '</td></tr></tbody></table>'
                          . '<div class="small">At ' . $__h($v['lines_per_hour']) . ' finished lines an hour: <strong>' . number_format($v['hours'], 0) . ' hours</strong> of a developer\'s time.'
                          . ' At $' . $__h($v['hourly_rate']) . '/hour: <strong>$' . number_format($v['dollars']) . '</strong>.</div>'
                          . (!empty($v['tiknix']) ? '<div class="small mt-2">tiknix: ' . (int) $v['tiknix']['tasks'] . ' build task' . ((int) $v['tiknix']['tasks'] === 1 ? '' : 's') . ', first started to last finished in <strong>' . $__h($__span((int) $v['tiknix']['minutes'])) . '</strong>.</div>' : '')

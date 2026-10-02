@@ -4,13 +4,17 @@
  * that were written for it.
  *
  * Deterministic and explainable: the project's OWN code in its container (controllers, models,
- * libraries, services, views, tests, its routes, scripts, database seeds and front-end files —
- * never the runtime, vendored code or binary assets), non-blank lines, MINUS the lines every
- * project starts with (the empty-app template), so a fresh project is worth nothing yet. Then
- * two settings in conf/config.ini [value]:
+ * libraries, services, views, its routes, scripts and front-end files — never the runtime,
+ * vendored code or binary assets), non-blank lines, MINUS the lines every project starts with
+ * (the empty-app template), so a fresh project is worth nothing yet. Tests count at half
+ * weight (real work, not what a client pays for); database seeds are shown but not counted
+ * (catalog data is not engineering — partsdna had 17,000 lines of it). Then two settings in
+ * conf/config.ini [value]:
  *
- *   lines_per_hour   how many finished lines a competent web developer delivers in an hour,
- *                    testing and fixing included (12 ≈ 100 a day is a common working figure)
+ *   lines_per_hour   how many finished lines a web developer delivers in an hour. Calibrated
+ *                    on the owner's own quotes (2026-10-02): dealeryes ≈ 77,000 lines quoted
+ *                    at $85k, partsdna ≈ 28,000 at $50k — about $1.30 a line, 65 lines an
+ *                    hour at $85.
  *   hourly_rate      what that developer costs, in dollars
  *
  * Beside the estimate, how long tiknix took: from the first Builder task started to the last
@@ -24,7 +28,9 @@ class ProjectValue {
 
     /** The areas counted, in the order the breakdown shows them. */
     public const AREAS = ['controls' => 'Controllers', 'models' => 'Models', 'lib' => 'Libraries', 'services' => 'Services', 'views' => 'Views',
-                          'routes' => 'Routes', 'mcptools' => 'MCP tools', 'database' => 'Database seeds', 'scripts' => 'Scripts', 'public' => 'Front-end files', 'tests' => 'Tests'];
+                          'routes' => 'Routes', 'mcptools' => 'MCP tools', 'scripts' => 'Scripts', 'public' => 'Front-end files', 'tests' => 'Tests', 'database' => 'Database seeds'];
+    /** How much of an area's lines count as engineering: tests half, data seeds none. */
+    public const WEIGHT = ['tests' => 0.5, 'database' => 0.0];
     private const SKIP = '\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|eot|pdf|zip|gz|lock|min\.js|min\.css|map)$';
     public const TEMPLATE = '/var/www/html/default/tiknix-app';
 
@@ -67,12 +73,14 @@ class ProjectValue {
         [$code, $out] = TenantHost::ssh($inst, 'app', 'cd /srv/app && ' . self::countScript(), null, 120);
         if ($code !== 0) throw new \RuntimeException("{$inst->slug}'s code could not be counted: " . mb_substr(trim($out), 0, 200));
         $lines = self::parse($out);
-        $areas = []; $written = 0;
+        $areas = []; $written = 0.0;
         foreach (self::AREAS as $k => $label) {
             $n = max(0, $lines[$k] - ($baseline[$k] ?? 0));          // what this project added over the template
-            if ($n > 0) $areas[] = ['area' => $label, 'lines' => $n];
-            $written += $n;
+            $w = self::WEIGHT[$k] ?? 1.0;
+            if ($n > 0) $areas[] = ['area' => $label, 'lines' => $n, 'weight' => $w];
+            $written += $n * $w;
         }
+        $written = (int) round($written);
         $hours = round($written / $a['lines_per_hour'], 1);
         $summary = [
             'computed_at' => date('c'), 'lines' => $written, 'areas' => $areas,

@@ -224,6 +224,12 @@ try {
 
 R::close();
 
+// The project's value (what it would have cost as a custom build, lib/ProjectValue.php) is
+// recounted now that work has merged: one line count over SSH, so the Projects page shows the
+// new figure right away rather than after the nightly run. Detached and best-effort.
+exec('nohup php ' . escapeshellarg(__DIR__ . '/project-value.php') . ' --slug=' . escapeshellarg($slug)
+   . ' >> ' . escapeshellarg(__DIR__ . '/../log/project-value.log') . ' 2>&1 &');
+
 // Definition-of-Done audit — only for a plan that actually completed. Spawned
 // DETACHED (the auditor drives Playwright for several minutes on its own), so
 // this orchestrator process is free to exit. Opt-out via aibuilder.ini [audit].

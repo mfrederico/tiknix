@@ -132,21 +132,21 @@
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h6 class="mb-0"><i class="bi bi-tools me-1"></i> MCP Tools</h6>
-                            <a href="/mcptools/create" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg"></i> Create Tool</a>
+                            <a href="<?= htmlspecialchars($project['url']) ?>/mcptools/create" class="btn btn-sm btn-primary" title="Opens the tool editor in the app itself"><i class="bi bi-plus-lg"></i> Create Tool</a>
                         </div>
                         <div class="table-responsive">
                             <table class="table table-hover table-sm mb-0">
                                 <thead class="table-light">
-                                    <tr><th>Name</th><th>Description</th><th>File</th><th></th></tr>
+                                    <tr><th>Name</th><th>File</th><th>Changed</th><th></th></tr>
                                 </thead>
                                 <tbody>
                                     <?php foreach ($tools as $tool): ?>
                                     <tr>
                                         <td><code class="small">tiknix_<?= htmlspecialchars(($tool['name']) ?? '') ?></code></td>
-                                        <td class="small text-muted" style="max-width:300px;"><?= htmlspecialchars((substr($tool['description'], 0, 60)) ?? '') ?><?= strlen($tool['description']) > 60 ? '...' : '' ?></td>
                                         <td class="small"><code><?= htmlspecialchars(($tool['file']) ?? '') ?></code></td>
+                                        <td class="small text-muted"><?= date('M j, g:ia', $tool['modTime']) ?></td>
                                         <td class="text-end">
-                                            <a href="/mcptools/edit?name=<?= urlencode($tool['name']) ?>" class="btn btn-sm btn-outline-primary" aria-label="Edit tool" title="Edit tool"><i class="bi bi-pencil"></i></a>
+                                            <a href="<?= htmlspecialchars($project['url']) ?>/mcptools/edit?name=<?= urlencode($tool['name']) ?>" class="btn btn-sm btn-outline-primary" aria-label="Edit tool" title="Edit tool in the app"><i class="bi bi-pencil"></i></a>
                                         </td>
                                     </tr>
                                     <?php endforeach; ?>
@@ -159,7 +159,7 @@
                     <div class="card">
                         <div class="card-header"><h6 class="mb-0"><i class="bi bi-lightbulb me-1"></i> Quick Reference</h6></div>
                         <div class="card-body small">
-                            <p>Tools extend Claude's capabilities. Each tool needs:</p>
+                            <p>Tools extend Claude's capabilities. They are the app's own code (<code>mcptools/</code>), served by its MCP and edited in the app itself. Each tool needs:</p>
                             <ul class="mb-0">
                                 <li><code>$name</code> - identifier</li>
                                 <li><code>$description</code> - for Claude</li>

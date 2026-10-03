@@ -2,33 +2,30 @@
 /**
  * Hooks Controller
  *
- * Admin interface for managing Claude Code hooks.
- * - Edit hook PHP scripts in scripts/hooks/
- * - Configure hook settings in .claude/settings.json
+ * ROOT's editor for a project's Claude Code hooks:
+ * - the hook scripts in its scripts/hooks/
+ * - the hook configuration in its .claude/settings.json
+ *
+ * The project lives in its container: every read and write goes through app\TenantFiles,
+ * which commits each change there as the member making it. The app's git history is the
+ * backup (there are no .bak or .deleted copies any more).
  */
 
 namespace app;
 
 use \Flight as Flight;
-use \Exception as Exception;
 use app\BaseControls\Control;
 
 class Hooks extends Control {
 
-    private string $hooksDir;
-    private string $settingsFile;
-
     /** @var array|null the project whose hooks these are (app\ProjectTarget) */
     private ?array $project = null;
-
-    public function __construct() {
-        parent::__construct();
-    }
+    private ?TenantFiles $files = null;
 
     /**
-     * The selected project's hooks (core: the header's project; a project: itself) — the
-     * same rule as Agent Setup, whose Hooks tab links here. Never core's own tree by
-     * default. No selection on core → Projects.
+     * The selected project's hooks (the header's project) — the same rule as Agent Setup,
+     * whose Hooks tab links here. Never core's own tree. No selection → Projects; a project
+     * not in a container cannot be edited from here, and the page says so.
      */
     private function bind(): bool {
         $this->project = \app\ProjectTarget::forMember((int) $this->member->id);
@@ -37,11 +34,28 @@ class Hooks extends Control {
             Flight::redirect('/projects');
             return false;
         }
-        $dir = rtrim($this->project['dir'], '/');
-        $this->hooksDir     = $dir . '/scripts/hooks';
-        $this->settingsFile = $dir . '/.claude/settings.json';
+        $inst = Bean::load('instance', (int) $this->project['id']);
+        if (!$inst->id || !\Model_Instance::tenantRow($inst)) {
+            $this->flash('error', "{$this->project['name']} is not running in a container, so its hooks cannot be edited from here.");
+            Flight::redirect('/projects');
+            return false;
+        }
+        $this->files = new TenantFiles($inst);
         $this->viewData['project'] = $this->project;
         return true;
+    }
+
+    /** A POST with a valid CSRF token, or a redirect to $back. */
+    private function validatePost(string $back): bool {
+        if (Flight::request()->method !== 'POST') { Flight::redirect($back); return false; }
+        if (!SimpleCsrf::validate()) { $this->flash('error', 'CSRF validation failed'); Flight::redirect($back); return false; }
+        return true;
+    }
+
+    /** The container could not be reached or refused: say so and go back. */
+    private function failed(\RuntimeException $e, string $back): void {
+        $this->flash('error', $e->getMessage());
+        Flight::redirect($back);
     }
 
     /**
@@ -51,23 +65,13 @@ class Hooks extends Control {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
         if (!$this->bind()) return;
 
-        // Get hook files
-        $hookFiles = glob($this->hooksDir . '/*.php');
-        $files = [];
-        foreach ($hookFiles as $file) {
-            $files[] = [
-                'name' => basename($file, '.php'),
-                'file' => basename($file),
-                'path' => $file,
-                'modTime' => filemtime($file),
-                'size' => filesize($file)
-            ];
-        }
-        usort($files, fn($a, $b) => strcmp($a['name'], $b['name']));
-
-        // Get settings
-        $settings = $this->loadSettings();
-        $hooks = $settings['hooks'] ?? [];
+        try {
+            $files = [];
+            foreach ($this->files->list('scripts/hooks', '*.php') as $f) {
+                $files[] = ['name' => substr($f['file'], 0, -4), 'file' => $f['file'], 'modTime' => $f['mtime'], 'size' => $f['size']];
+            }
+            $hooks = $this->loadSettings()['hooks'] ?? [];
+        } catch (\RuntimeException $e) { $this->failed($e, '/projects'); return; }
 
         $this->viewData['title'] = 'Claude Hooks';
         $this->viewData['files'] = $files;
@@ -84,10 +88,8 @@ class Hooks extends Control {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
         if (!$this->bind()) return;
 
-        $template = $this->getHookTemplate();
-
         $this->viewData['title'] = 'Create Hook';
-        $this->viewData['code'] = $template;
+        $this->viewData['code'] = $this->getHookTemplate();
         $this->viewData['fileName'] = '';
         $this->viewData['isNew'] = true;
         $this->viewData['csrf'] = SimpleCsrf::getTokenArray();
@@ -102,24 +104,16 @@ class Hooks extends Control {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
         if (!$this->bind()) return;
 
-        $name = $this->getParam('name', '');
-        if (empty($name)) {
-            Flight::redirect('/hooks');
-            return;
-        }
+        $name = $this->sanitize($this->getParam('name', ''));
+        if (!$this->hookName($name)) { Flight::redirect('/hooks'); return; }
 
-        $filePath = $this->hooksDir . '/' . $name . '.php';
-        if (!file_exists($filePath)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Hook not found: ' . $name];
-            Flight::redirect('/hooks');
-            return;
-        }
-
-        $code = file_get_contents($filePath);
+        try { $code = $this->files->read("scripts/hooks/{$name}.php"); }
+        catch (\RuntimeException $e) { $this->failed($e, '/hooks'); return; }
+        if ($code === null) { $this->flash('error', 'Hook not found: ' . $name); Flight::redirect('/hooks'); return; }
 
         $this->viewData['title'] = 'Edit Hook: ' . $name;
         $this->viewData['code'] = $code;
-        $this->viewData['fileName'] = basename($filePath);
+        $this->viewData['fileName'] = $name . '.php';
         $this->viewData['hookName'] = $name;
         $this->viewData['isNew'] = false;
         $this->viewData['csrf'] = SimpleCsrf::getTokenArray();
@@ -133,72 +127,32 @@ class Hooks extends Control {
     public function store($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
         if (!$this->bind()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/hooks');
-            return;
-        }
-
-        if (!SimpleCsrf::validate()) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'CSRF validation failed'];
-            Flight::redirect('/hooks');
-            return;
-        }
+        if (!$this->validatePost('/hooks')) return;
 
         $code = $this->getParam('code', '');
         $fileName = $this->sanitize($this->getParam('file_name', ''));
 
-        if (empty($code)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Code is required'];
+        if (empty($code)) { $this->flash('error', 'Code is required'); Flight::redirect('/hooks/create'); return; }
+        if (!preg_match('/^[a-z][a-z0-9-]*\.php$/', $fileName)) {
+            $this->flash('error', 'File name must be lowercase with dashes ending in .php');
             Flight::redirect('/hooks/create');
             return;
         }
 
-        // Validate file name
-        if (empty($fileName) || !preg_match('/^[a-z][a-z0-9-]*\.php$/', $fileName)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'File name must be lowercase with dashes ending in .php'];
-            Flight::redirect('/hooks/create');
-            return;
-        }
-
-        // Check if file already exists
-        $filePath = $this->hooksDir . '/' . $fileName;
-        if (file_exists($filePath)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Hook file already exists: ' . $fileName];
-            Flight::redirect('/hooks/create');
-            return;
-        }
-
-        // Validate PHP code
         $validation = PhpValidator::validateAll($code, 'hook');
         if (!empty($validation['errors'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Validation errors: ' . implode(', ', array_column($validation['errors'], 'message'))];
+            $this->flash('error', 'Validation errors: ' . implode(', ', array_column($validation['errors'], 'message')));
             Flight::redirect('/hooks/create');
             return;
         }
 
-        // Save file
         try {
-            if (file_put_contents($filePath, $code) === false) {
-                throw new Exception('Failed to write file');
-            }
+            if ($this->files->exists("scripts/hooks/{$fileName}")) { $this->flash('error', 'Hook file already exists: ' . $fileName); Flight::redirect('/hooks/create'); return; }
+            $this->files->write("scripts/hooks/{$fileName}", $code, (int) $this->member->id, "Hooks: {$fileName} created", true);
+        } catch (\RuntimeException $e) { $this->failed($e, '/hooks/create'); return; }
 
-            // Make executable
-            chmod($filePath, 0755);
-
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Hook created: ' . $fileName];
-
-            if (!empty($validation['warnings'])) {
-                $_SESSION['flash'][] = ['type' => 'warning', 'message' => 'Security warnings: ' . implode(', ', array_column($validation['warnings'], 'message'))];
-            }
-
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-            Flight::redirect('/hooks/create');
-            return;
-        }
-
+        $this->flash('success', 'Hook created: ' . $fileName);
+        $this->warnings($validation);
         Flight::redirect('/hooks');
     }
 
@@ -208,71 +162,27 @@ class Hooks extends Control {
     public function update($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
         if (!$this->bind()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/hooks');
-            return;
-        }
-
-        if (!SimpleCsrf::validate()) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'CSRF validation failed'];
-            Flight::redirect('/hooks');
-            return;
-        }
+        if (!$this->validatePost('/hooks')) return;
 
         $code = $this->getParam('code', '');
         $name = $this->sanitize($this->getParam('name', ''));
 
-        if (empty($code) || empty($name)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Code and hook name are required'];
-            Flight::redirect('/hooks');
-            return;
-        }
+        if (empty($code) || !$this->hookName($name)) { $this->flash('error', 'Code and hook name are required'); Flight::redirect('/hooks'); return; }
 
-        $filePath = $this->hooksDir . '/' . $name . '.php';
-        if (!file_exists($filePath)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Hook not found: ' . $name];
-            Flight::redirect('/hooks');
-            return;
-        }
-
-        // Validate PHP code
         $validation = PhpValidator::validateAll($code, 'hook');
         if (!empty($validation['errors'])) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Validation errors: ' . implode(', ', array_column($validation['errors'], 'message'))];
+            $this->flash('error', 'Validation errors: ' . implode(', ', array_column($validation['errors'], 'message')));
             Flight::redirect('/hooks/edit?name=' . urlencode($name));
             return;
         }
 
-        // Create backup
-        $backupPath = $filePath . '.bak.' . date('Ymd_His');
-        copy($filePath, $backupPath);
-
-        // Save file
         try {
-            if (file_put_contents($filePath, $code) === false) {
-                throw new Exception('Failed to write file');
-            }
+            if (!$this->files->exists("scripts/hooks/{$name}.php")) { $this->flash('error', 'Hook not found: ' . $name); Flight::redirect('/hooks'); return; }
+            $this->files->write("scripts/hooks/{$name}.php", $code, (int) $this->member->id, "Hooks: {$name}.php updated", true);
+        } catch (\RuntimeException $e) { $this->failed($e, '/hooks/edit?name=' . urlencode($name)); return; }
 
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Hook updated: ' . $name];
-
-            if (!empty($validation['warnings'])) {
-                $_SESSION['flash'][] = ['type' => 'warning', 'message' => 'Security warnings: ' . implode(', ', array_column($validation['warnings'], 'message'))];
-            }
-
-            // Clean up old backups
-            $this->cleanupBackups($filePath);
-
-        } catch (Exception $e) {
-            if (file_exists($backupPath)) {
-                copy($backupPath, $filePath);
-            }
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-            Flight::redirect('/hooks/edit?name=' . urlencode($name));
-            return;
-        }
-
+        $this->flash('success', 'Hook updated: ' . $name);
+        $this->warnings($validation);
         Flight::redirect('/hooks');
     }
 
@@ -282,42 +192,17 @@ class Hooks extends Control {
     public function delete($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
         if (!$this->bind()) return;
-
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/hooks');
-            return;
-        }
-
-        if (!SimpleCsrf::validate()) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'CSRF validation failed'];
-            Flight::redirect('/hooks');
-            return;
-        }
+        if (!$this->validatePost('/hooks')) return;
 
         $name = $this->sanitize($this->getParam('name', ''));
-
-        if (empty($name)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Hook name is required'];
-            Flight::redirect('/hooks');
-            return;
-        }
-
-        $filePath = $this->hooksDir . '/' . $name . '.php';
-        if (!file_exists($filePath)) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Hook not found'];
-            Flight::redirect('/hooks');
-            return;
-        }
+        if (!$this->hookName($name)) { $this->flash('error', 'Hook name is required'); Flight::redirect('/hooks'); return; }
 
         try {
-            $backupPath = $filePath . '.deleted.' . date('Ymd_His');
-            rename($filePath, $backupPath);
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Hook deleted: ' . $name];
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
+            if (!$this->files->exists("scripts/hooks/{$name}.php")) { $this->flash('error', 'Hook not found'); Flight::redirect('/hooks'); return; }
+            $this->files->remove("scripts/hooks/{$name}.php", (int) $this->member->id, "Hooks: {$name}.php removed");
+        } catch (\RuntimeException $e) { $this->failed($e, '/hooks'); return; }
 
+        $this->flash('success', 'Hook deleted: ' . $name);
         Flight::redirect('/hooks');
     }
 
@@ -328,7 +213,8 @@ class Hooks extends Control {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
         if (!$this->bind()) return;
 
-        $settings = $this->loadSettings();
+        try { $settings = $this->loadSettings(); }
+        catch (\RuntimeException $e) { $this->failed($e, '/hooks'); return; }
         $hooksJson = json_encode($settings['hooks'] ?? new \stdClass(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
         $this->viewData['title'] = 'Hook Configuration';
@@ -344,73 +230,43 @@ class Hooks extends Control {
     public function saveConfig($params = []) {
         if (!$this->requireLevel(LEVELS['ROOT'])) return;
         if (!$this->bind()) return;
+        if (!$this->validatePost('/hooks/config')) return;
 
-        $request = Flight::request();
-        if ($request->method !== 'POST') {
-            Flight::redirect('/hooks/config');
-            return;
-        }
-
-        if (!SimpleCsrf::validate()) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'CSRF validation failed'];
-            Flight::redirect('/hooks/config');
-            return;
-        }
-
-        $hooksJson = $this->getParam('hooks_json', '{}');
-
-        // Validate JSON
-        $hooks = json_decode(($hooksJson) ?? '', true);
+        $hooks = json_decode(($this->getParam('hooks_json', '{}')) ?? '', true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid JSON: ' . json_last_error_msg()];
+            $this->flash('error', 'Invalid JSON: ' . json_last_error_msg());
             Flight::redirect('/hooks/config');
             return;
         }
-
-        // Load current settings
-        $settings = $this->loadSettings();
-
-        // Backup
-        $backupPath = $this->settingsFile . '.bak.' . date('Ymd_His');
-        if (file_exists($this->settingsFile)) {
-            copy($this->settingsFile, $backupPath);
-        }
-
-        // Update hooks section
-        $settings['hooks'] = $hooks;
 
         try {
-            $json = json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-            if (file_put_contents($this->settingsFile, $json . "\n") === false) {
-                throw new Exception('Failed to write settings file');
-            }
+            $settings = $this->loadSettings();
+            $settings['hooks'] = $hooks;
+            $this->files->write('.claude/settings.json', json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n", (int) $this->member->id, 'Hooks: configuration saved');
+        } catch (\RuntimeException $e) { $this->failed($e, '/hooks/config'); return; }
 
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Hook configuration saved'];
-
-            // Clean up old backups
-            $this->cleanupBackups($this->settingsFile);
-
-        } catch (Exception $e) {
-            if (file_exists($backupPath)) {
-                copy($backupPath, $this->settingsFile);
-            }
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
+        $this->flash('success', 'Hook configuration saved');
         Flight::redirect('/hooks/config');
+    }
+
+    /** A hook's name is its file name without .php — the only shape TenantFiles accepts. */
+    private function hookName(string $name): bool {
+        return (bool) preg_match('/^[a-z][a-z0-9-]*$/', $name);
+    }
+
+    private function warnings(array $validation): void {
+        if (!empty($validation['warnings'])) {
+            $this->flash('warning', 'Security warnings: ' . implode(', ', array_column($validation['warnings'], 'message')));
+        }
     }
 
     /**
      * Load .claude/settings.json
      */
     private function loadSettings(): array {
-        if (!file_exists($this->settingsFile)) {
-            return ['hooks' => []];
-        }
-
-        $content = file_get_contents($this->settingsFile);
-        $settings = json_decode(($content) ?? '', true);
-
+        $raw = $this->files->read('.claude/settings.json');
+        if ($raw === null) return ['hooks' => []];
+        $settings = json_decode($raw, true);
         return is_array($settings) ? $settings : ['hooks' => []];
     }
 
@@ -464,21 +320,5 @@ if (!$shouldAllow) {
 // Allow the operation
 exit(0);
 PHP;
-    }
-
-    /**
-     * Clean up old backup files
-     */
-    private function cleanupBackups(string $filePath): void {
-        $pattern = $filePath . '.bak.*';
-        $backups = glob($pattern);
-
-        if (count($backups) > 5) {
-            usort($backups, fn($a, $b) => filemtime($a) - filemtime($b));
-            $toDelete = array_slice($backups, 0, count($backups) - 5);
-            foreach ($toDelete as $backup) {
-                @unlink($backup);
-            }
-        }
     }
 }

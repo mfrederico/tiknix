@@ -2,27 +2,23 @@
 /**
  * Agent Setup Controller
  *
- * Central hub for managing Claude Code agent configuration:
- * - MCP Servers
- * - MCP Tools
- * - Claude Hooks
+ * Central hub for a project's Claude Code agent configuration:
+ * - MCP Servers  (the project's .mcp.json — added, changed and removed here)
+ * - MCP Tools    (the project's own mcptools/*Tool.php — listed here, edited in the app)
+ * - Claude Hooks (scripts/hooks/*.php and .claude/settings.json — edited at /hooks)
  *
- * Uses tabbed interface for unified management experience.
+ * The project lives in its container; every file here is read and written there through
+ * app\TenantFiles, which commits each change as the member making it. Nothing on this host
+ * holds a project's tree.
  */
 
 namespace app;
 
 use \Flight as Flight;
-use \Exception as Exception;
 use \app\Feature;
 use app\BaseControls\Control;
-use app\mcptools\ToolLoader;
 
 class Agentsetup extends Control {
-
-    private string $toolsDir;
-    private string $hooksDir;
-    private string $settingsFile;
 
     /**
      * May this member open Agent Setup and manage MCP servers?
@@ -32,9 +28,8 @@ class Agentsetup extends Control {
      * would create a half-granted state — able to mint a key, unable to see the servers
      * that key talks to.
      *
-     * It replaces the ADMIN tier ONLY. Everything that writes executable PHP into
-     * mcptools/ or scripts/hooks/ still requires ROOT, and must: scripts/hooks holds
-     * security-sandbox.php, the PreToolUse control that confines agents. A grant is
+     * It replaces the ADMIN tier ONLY. The hooks and tools tabs stay ROOT's: scripts/hooks
+     * holds security-sandbox.php, the PreToolUse control that confines agents. A grant is
      * permission to configure MCP, never a promotion to editing the thing that contains
      * the agents.
      */
@@ -48,16 +43,12 @@ class Agentsetup extends Control {
 
     /** @var array{id:int,slug:string,name:string,dir:string,url:string,here:bool}|null the project this page configures */
     private ?array $project = null;
-
-    public function __construct() {
-        parent::__construct();
-    }
+    private ?TenantFiles $files = null;
 
     /**
-     * Point this page at the project it configures: the one selected in the header on core,
-     * the install itself on a project (app\ProjectTarget) — never core's own tree by
-     * default. Every path below (.mcp.json, mcptools/, scripts/hooks/, .claude/settings.json)
-     * is inside that project. No selection on core → Projects.
+     * Point this page at the project it configures: the one selected in the header
+     * (app\ProjectTarget) — never core's own tree. No selection → Projects. A selected
+     * project that is not in a container cannot be configured from here, and the page says so.
      */
     private function bind(): bool {
         $this->project = \app\ProjectTarget::forMember((int) $this->member->id);
@@ -66,15 +57,14 @@ class Agentsetup extends Control {
             Flight::redirect('/projects');
             return false;
         }
-        $dir = rtrim($this->project['dir'], '/');
-        $this->toolsDir     = $dir . '/mcptools';
-        $this->hooksDir     = $dir . '/scripts/hooks';
-        $this->settingsFile = $dir . '/.claude/settings.json';
+        $inst = Bean::load('instance', (int) $this->project['id']);
+        if (!$inst->id || !\Model_Instance::tenantRow($inst)) {
+            $this->flash('error', "{$this->project['name']} is not running in a container, so its agent cannot be configured from here.");
+            Flight::redirect('/projects');
+            return false;
+        }
+        $this->files = new TenantFiles($inst);
         return true;
-    }
-
-    private function mcpJsonPath(): string {
-        return rtrim($this->project['dir'], '/') . '/.mcp.json';
     }
 
     /**
@@ -87,54 +77,36 @@ class Agentsetup extends Control {
         $activeTab = $this->getParam('tab', 'servers');
         $isRoot = ($this->viewData['member']['level'] ?? 100) <= 1;
 
-        // Load MCP Servers data
-        $servers = Mcp::getAvailableServers($this->project['url'], $this->project['dir']);
-        $systemServers = [];
-        $userServers = [];
-        foreach ($servers as $slug => $server) {
-            if ($server['source'] === 'system') {
-                $systemServers[$slug] = $server;
-            } else {
-                $userServers[$slug] = $server;
-            }
-        }
+        try {
+            $servers = Mcp::serversFrom($this->project['url'], $this->mcpConfig());
+            $systemServers = array_filter($servers, fn($s) => $s['source'] === 'system');
+            $userServers   = array_filter($servers, fn($s) => $s['source'] !== 'system');
 
-        // Load MCP Tools data (ROOT only)
-        $tools = [];
-        if ($isRoot) {
-            $toolLoader = new ToolLoader($this->toolsDir);
-            $definitions = $toolLoader->getDefinitions();
-            foreach ($definitions as $def) {
-                $name = $def['name'] ?? '';
-                $filePath = $this->findToolFile($name);
-                $tools[] = [
-                    'name' => $name,
-                    'description' => $def['description'] ?? '',
-                    'inputSchema' => $def['inputSchema'] ?? [],
-                    'file' => $filePath ? basename($filePath) : null,
-                    'modTime' => $filePath && file_exists($filePath) ? filemtime($filePath) : null
-                ];
+            // The project's own MCP tools (ROOT only): the files, named as the app's MCP serves
+            // them (CamelCaseTool.php → camel_case). They are edited in the app itself.
+            $tools = [];
+            if ($isRoot) {
+                foreach ($this->files->list('mcptools', '*Tool.php') as $f) {
+                    $tools[] = [
+                        'name'    => strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', substr($f['file'], 0, -8))),
+                        'file'    => $f['file'],
+                        'modTime' => $f['mtime'],
+                    ];
+                }
             }
-            usort($tools, fn($a, $b) => strcmp($a['name'], $b['name']));
-        }
 
-        // Load Hooks data (ROOT only)
-        $hookFiles = [];
-        $hookConfig = [];
-        if ($isRoot) {
-            $files = glob($this->hooksDir . '/*.php');
-            foreach ($files as $file) {
-                $hookFiles[] = [
-                    'name' => basename($file, '.php'),
-                    'file' => basename($file),
-                    'modTime' => filemtime($file),
-                    'size' => filesize($file)
-                ];
+            $hookFiles = [];
+            $hookConfig = [];
+            if ($isRoot) {
+                foreach ($this->files->list('scripts/hooks', '*.php') as $f) {
+                    $hookFiles[] = ['name' => substr($f['file'], 0, -4), 'file' => $f['file'], 'modTime' => $f['mtime'], 'size' => $f['size']];
+                }
+                $hookConfig = $this->loadSettings()['hooks'] ?? [];
             }
-            usort($hookFiles, fn($a, $b) => strcmp($a['name'], $b['name']));
-
-            $settings = $this->loadSettings();
-            $hookConfig = $settings['hooks'] ?? [];
+        } catch (\RuntimeException $e) {
+            $this->flash('error', $e->getMessage());
+            Flight::redirect('/projects');
+            return;
         }
 
         $this->viewData['title'] = 'Agent Setup';
@@ -159,61 +131,39 @@ class Agentsetup extends Control {
         Flight::redirect('/agentsetup?tab=' . $tab . ($edit !== null ? '&edit=' . urlencode($edit) : ''));
     }
 
-    /** Add or update an MCP server via Mcp:: and flash the outcome. $mode = 'add' | 'update'. */
+    /** The project's .mcp.json as an array — {"mcpServers": {}} when it has none yet. */
+    private function mcpConfig(): array {
+        $raw = $this->files->read('.mcp.json');
+        if ($raw === null) return ['mcpServers' => []];
+        $cfg = json_decode($raw, true);
+        if (!is_array($cfg)) throw new \RuntimeException("{$this->project['name']}'s .mcp.json is not valid JSON — fix it in the app before adding servers here.");
+        if (!isset($cfg['mcpServers']) || !is_array($cfg['mcpServers'])) $cfg['mcpServers'] = [];
+        return $cfg;
+    }
+
+    private function writeMcpConfig(array $cfg, string $why): void {
+        if ($cfg['mcpServers'] === []) $cfg['mcpServers'] = (object) [];   // {} — the CLI reads [] as no config at all
+        $this->files->write('.mcp.json', json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n", (int) $this->member->id, $why);
+    }
+
     /**
      * Add or update one server in the project's .mcp.json. The tiknix entry is the platform's
      * (regenerated with the project's own key) and is never written here. Provisioning's
      * regeneration merges, so servers added here survive it.
      */
     private function saveServer(string $mode, string $slug, array $config): void {
-        $path = $this->mcpJsonPath();
-        $cfg = Mcp::loadMcpConfig($path);
-        if (!isset($cfg['mcpServers']) || !is_array($cfg['mcpServers'])) $cfg['mcpServers'] = [];
-        $exists = isset($cfg['mcpServers'][$slug]);
-        if ($mode === 'add' && $exists) { $this->flashTo('servers', 'error', "A server named '{$slug}' already exists in {$this->project['name']}"); return; }
-        if ($mode === 'update' && !$exists) { $this->flashTo('servers', 'error', "No server named '{$slug}' in {$this->project['name']}"); return; }
-        $cfg['mcpServers'][$slug] = $config;
-        if (!Mcp::saveMcpConfig($path, $cfg)) { $this->flashTo('servers', 'error', "Could not write {$path}"); return; }
+        try {
+            $cfg = $this->mcpConfig();
+            $exists = isset($cfg['mcpServers'][$slug]);
+            if ($mode === 'add' && $exists) { $this->flashTo('servers', 'error', "A server named '{$slug}' already exists in {$this->project['name']}"); return; }
+            if ($mode === 'update' && !$exists) { $this->flashTo('servers', 'error', "No server named '{$slug}' in {$this->project['name']}"); return; }
+            $cfg['mcpServers'][$slug] = $config;
+            $this->writeMcpConfig($cfg, "Agent Setup: MCP server {$slug} " . ($mode === 'add' ? 'added' : 'updated'));
+        } catch (\RuntimeException $e) {
+            $this->flashTo('servers', 'error', $e->getMessage()); return;
+        }
         $this->logger->info('Agent Setup: MCP server ' . $mode, ['project' => $this->project['slug'], 'server' => $slug, 'member_id' => $this->member->id]);
         $this->flashTo('servers', 'success', 'Server ' . ($mode === 'add' ? 'added' : 'updated') . " in {$this->project['name']}: {$slug}");
-    }
-
-    /** Create a NEW managed PHP file (tool/hook): reject if it exists, validate, write. */
-    private function createManagedFile(string $tab, string $label, string $filePath, string $code, string $kind, bool $chmodExec = false): void {
-        if (file_exists($filePath)) { $this->flashTo($tab, 'error', 'File already exists'); return; }
-        $errors = PhpValidator::validateAll($code, $kind)['errors'] ?? [];
-        if (!empty($errors)) { $this->flashTo($tab, 'error', implode(', ', array_column($errors, 'message'))); return; }
-        try {
-            file_put_contents($filePath, $code);
-            if ($chmodExec) chmod($filePath, 0755);
-            $this->flashTo($tab, 'success', $label . ' created: ' . basename($filePath));
-        } catch (Exception $e) {
-            $this->flashTo($tab, 'error', 'Error: ' . $e->getMessage());
-        }
-    }
-
-    /** Update an EXISTING managed PHP file (tool/hook): require it, validate, back up, write. */
-    private function updateManagedFile(string $tab, string $label, ?string $filePath, string $editName, string $code, string $kind): void {
-        if (!$filePath || !file_exists($filePath)) { $this->flashTo($tab, 'error', $label . ' not found'); return; }
-        $errors = PhpValidator::validateAll($code, $kind)['errors'] ?? [];
-        if (!empty($errors)) { $this->flashTo($tab, 'error', implode(', ', array_column($errors, 'message')), $editName); return; }
-        try {
-            copy($filePath, $filePath . '.bak.' . date('Ymd_His'));
-            file_put_contents($filePath, $code);
-            $this->flashTo($tab, 'success', $label . ' updated');
-        } catch (Exception $e) {
-            $this->flashTo($tab, 'error', 'Error: ' . $e->getMessage());
-        }
-    }
-
-    /** Soft-delete a managed file (rename to .deleted.<ts>); the caller has already vetted it. */
-    private function softDeleteFile(string $tab, string $label, string $filePath): void {
-        try {
-            rename($filePath, $filePath . '.deleted.' . date('Ymd_His'));
-            $this->flashTo($tab, 'success', $label . ' deleted');
-        } catch (Exception $e) {
-            $this->flashTo($tab, 'error', 'Error: ' . $e->getMessage());
-        }
     }
 
     /** Store new MCP server */
@@ -250,129 +200,16 @@ class Agentsetup extends Control {
         $slug = $this->sanitize($this->getParam('slug', ''));
         if (in_array($slug, ['tiknix', 'playwright'])) { $this->flashTo('servers', 'error', 'Cannot delete system server'); return; }
 
-        $path = $this->mcpJsonPath();
-        $cfg = Mcp::loadMcpConfig($path);
-        if (!isset($cfg['mcpServers'][$slug])) { $this->flashTo('servers', 'error', "No server named '{$slug}' in {$this->project['name']}"); return; }
-        unset($cfg['mcpServers'][$slug]);
-        if (!Mcp::saveMcpConfig($path, $cfg)) { $this->flashTo('servers', 'error', "Could not write {$path}"); return; }
+        try {
+            $cfg = $this->mcpConfig();
+            if (!isset($cfg['mcpServers'][$slug])) { $this->flashTo('servers', 'error', "No server named '{$slug}' in {$this->project['name']}"); return; }
+            unset($cfg['mcpServers'][$slug]);
+            $this->writeMcpConfig($cfg, "Agent Setup: MCP server {$slug} removed");
+        } catch (\RuntimeException $e) {
+            $this->flashTo('servers', 'error', $e->getMessage()); return;
+        }
         $this->logger->info('Agent Setup: MCP server removed', ['project' => $this->project['slug'], 'server' => $slug, 'member_id' => $this->member->id]);
         $this->flashTo('servers', 'success', "Server removed from {$this->project['name']}: {$slug}");
-    }
-
-    // ==================== MCP TOOL ACTIONS ====================
-
-    /** Store new tool */
-    public function storeTool($params = []) {
-        if (!$this->requireLevel(LEVELS['ROOT'])) return;
-        if (!$this->bind()) return;
-        if (!$this->validatePost()) return;
-
-        $code     = $this->getParam('code', '');
-        $fileName = $this->sanitize($this->getParam('file_name', ''));
-        if (empty($code) || !preg_match('/^[A-Z][a-zA-Z0-9]*Tool\\.php$/', $fileName)) {
-            $this->flashTo('tools', 'error', 'Invalid file name (must be PascalCaseTool.php)'); return;
-        }
-
-        $this->createManagedFile('tools', 'Tool', $this->toolsDir . '/' . $fileName, $code, 'tool');
-    }
-
-    /** Update tool */
-    public function updateTool($params = []) {
-        if (!$this->requireLevel(LEVELS['ROOT'])) return;
-        if (!$this->bind()) return;
-        if (!$this->validatePost()) return;
-
-        $code = $this->getParam('code', '');
-        $name = $this->sanitize($this->getParam('name', ''));
-        $this->updateManagedFile('tools', 'Tool', $this->findToolFile($name), $name, $code, 'tool');
-    }
-
-    /** Delete tool */
-    public function deleteTool($params = []) {
-        if (!$this->requireLevel(LEVELS['ROOT'])) return;
-        if (!$this->bind()) return;
-        if (!$this->validatePost()) return;
-
-        $name     = $this->sanitize($this->getParam('name', ''));
-        $filePath = $this->findToolFile($name);
-        if (!$filePath || in_array(basename($filePath), ['BaseTool.php', 'ToolLoader.php'])) {
-            $this->flashTo('tools', 'error', 'Cannot delete'); return;
-        }
-
-        $this->softDeleteFile('tools', 'Tool', $filePath);
-    }
-
-    // ==================== HOOK ACTIONS ====================
-
-    /** Store new hook */
-    public function storeHook($params = []) {
-        if (!$this->requireLevel(LEVELS['ROOT'])) return;
-        if (!$this->bind()) return;
-        if (!$this->validatePost()) return;
-
-        $code     = $this->getParam('code', '');
-        $fileName = $this->sanitize($this->getParam('file_name', ''));
-        if (empty($code) || !preg_match('/^[a-z][a-z0-9-]*\\.php$/', $fileName)) {
-            $this->flashTo('hooks', 'error', 'Invalid file name'); return;
-        }
-
-        $this->createManagedFile('hooks', 'Hook', $this->hooksDir . '/' . $fileName, $code, 'hook', true);
-    }
-
-    /** Update hook */
-    public function updateHook($params = []) {
-        if (!$this->requireLevel(LEVELS['ROOT'])) return;
-        if (!$this->bind()) return;
-        if (!$this->validatePost()) return;
-
-        $code = $this->getParam('code', '');
-        $name = $this->sanitize($this->getParam('name', ''));
-        $this->updateManagedFile('hooks', 'Hook', $this->hooksDir . '/' . $name . '.php', $name, $code, 'hook');
-    }
-
-    /** Delete hook */
-    public function deleteHook($params = []) {
-        if (!$this->requireLevel(LEVELS['ROOT'])) return;
-        if (!$this->bind()) return;
-        if (!$this->validatePost()) return;
-
-        $name     = $this->sanitize($this->getParam('name', ''));
-        $filePath = $this->hooksDir . '/' . $name . '.php';
-        if (!file_exists($filePath)) { $this->flashTo('hooks', 'error', 'Hook not found'); return; }
-
-        $this->softDeleteFile('hooks', 'Hook', $filePath);
-    }
-
-    /**
-     * Save hook configuration
-     */
-    public function saveHookConfig($params = []) {
-        if (!$this->requireLevel(LEVELS['ROOT'])) return;
-        if (!$this->bind()) return;
-
-        if (!$this->validatePost()) return;
-
-        $hooksJson = $this->getParam('hooks_json', '{}');
-        $hooks = json_decode(($hooksJson) ?? '', true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Invalid JSON'];
-            Flight::redirect('/agentsetup?tab=hooks');
-            return;
-        }
-
-        $settings = $this->loadSettings();
-        $settings['hooks'] = $hooks;
-
-        try {
-            copy($this->settingsFile, $this->settingsFile . '.bak.' . date('Ymd_His'));
-            file_put_contents($this->settingsFile, json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-            $_SESSION['flash'][] = ['type' => 'success', 'message' => 'Hook configuration saved'];
-        } catch (Exception $e) {
-            $_SESSION['flash'][] = ['type' => 'error', 'message' => 'Error: ' . $e->getMessage()];
-        }
-
-        Flight::redirect('/agentsetup?tab=hooks');
     }
 
     // ==================== HELPERS ====================
@@ -409,23 +246,10 @@ class Agentsetup extends Control {
         return $config;
     }
 
-    private function findToolFile(string $name): ?string {
-        $parts = explode('_', $name);
-        $className = implode('', array_map('ucfirst', $parts)) . 'Tool.php';
-
-        $path = $this->toolsDir . '/' . $className;
-        if (file_exists($path)) return $path;
-
-        $path = $this->toolsDir . '/workbench/' . $className;
-        if (file_exists($path)) return $path;
-
-        return null;
-    }
-
     private function loadSettings(): array {
-        if (!file_exists($this->settingsFile)) return ['hooks' => []];
-        $content = file_get_contents($this->settingsFile);
-        $settings = json_decode(($content) ?? '', true);
+        $raw = $this->files->read('.claude/settings.json');
+        if ($raw === null) return ['hooks' => []];
+        $settings = json_decode($raw, true);
         return is_array($settings) ? $settings : ['hooks' => []];
     }
 

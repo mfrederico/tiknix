@@ -131,11 +131,13 @@ never from the live app (Fabian's tree has uncommitted edits that already block 
 - `linkedin_url` on the contact (a URL someone pastes; nothing fetches it).
 - `uses.beans` += `message`, `thread`. Settings page: cadence days.
 
-### esign 1.0.1
+### esign 1.0.2
 
-- `Signing::$mayEmail` — a guard an app wires (`fn(string $email): ?string` returning why not,
-  or null). `send()` refuses with an ERROR log + `send_failed` event when it answers. This is how
-  a suppression list reaches a plugin that may not depend on it.
+- Collect point `esign.send.guards` (hosted): another plugin registers a `when` reading
+  `ctx['email']` and `data: {"blocked_by": [...]}`; `send()` refuses with an ERROR log +
+  `send_failed` event when anything answers. (A closure an app wires in lib/app.php was the
+  first design; app.php loads before the concept autoloader, so a concept class cannot be
+  named there — the registry is the mechanism.)
 
 ### crm-outreach 1.0.0 (new; requires `crm`, `prospects`, `outreach`)
 
@@ -149,8 +151,19 @@ never from the live app (Fabian's tree has uncommitted edits that already block 
 - **Panel** on `crm.contact.panels`: the linked prospect (campaign, status, fit rationale, site
   findings), **Enrich** (dispatches `prospects-enrich` on the linked prospect; copies title /
   LinkedIn / website back on the next sync), and a **suppressed** badge from `Compliance`.
-- **Suppression** — `Bridge::mayEmail($email)` for `Signing::$mayEmail`; the README shows the
-  one line in `lib/app.php`.
-- MCP tool `crm_promote_prospect` (MEMBER).
+- **Suppression** — `Bridge::suppressed(ctx)` registered at `esign.send.guards` (PUBLIC, so a
+  pipeline's send is guarded too); nothing to wire.
+- MCP tool `crmoutreach_promote_prospect` (MEMBER).
 
 Not in scope: campaign/ICP discovery, sending, mailboxes (the engine's); a scraper of any kind.
+
+### Built 2026-10-03 (all on catpoobox, live)
+
+crm 1.1.1, esign 1.0.2, crmoutreach 1.0.3 — plus what building them found in the catalog:
+prospects/outreach/clients seeds padded rows with member #1 (only the origin app had one) and
+every pipeline used `{run.root}` + a root `bootstrap.php`, neither of which exists on a
+runtime-split app (`{root}`, `vendor/autoload.php`); the five connector manifests core had were
+never published; `concepthub::connectors` had a framework-invented ADMIN row sending installs to
+the login page. Known limit: with `version_store = apcu` (every container) a pipeline's writes
+reach the web after `query_cache_ttl` (60 s) — valkey per container, or a file version store,
+would close that.

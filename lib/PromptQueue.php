@@ -142,19 +142,24 @@ class PromptQueue {
             $slug = (string) (strstr($q['tag'], '.', true) ?: $q['tag']);
             $app  = ltrim((string) strstr($q['tag'], '.'), '.') ?: 'tiknix';
             $dir  = \Model_Instance::dirForSlug((string) $slug, (string) $app);
-            if (!is_file($dir . '/public/index.php')) {
+            $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ? AND app = ?', [$slug, $app]), null);
+            // A project in its own container has no app in its folder here (that folder is the
+            // builder's workspace): it is gone only when the registry no longer has it.
+            $gone = ($inst && $inst->id && \Model_Instance::tenantRow($inst)) ? false : !is_file($dir . '/public/index.php');
+            if ($gone) {
                 self::dequeue($id);
                 $out[] = "#$id project {$q['tag']} is gone — dequeued";
                 continue;
             }
 
-            $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ? AND app = ?', [$slug, $app]), null);
             // '' rather than 'claude': an empty engine should fall through to the
             // PROJECT's own .aibuilder/engine (app\AgentContext), not be overruled here.
             $engine = $inst && $inst->id ? (string) ($inst->engine ?? '') : '';
 
             $runner = new PlanRunner($slug, $dir, $q['member_id'],
                 (int) ($inst->memberLevel ?? 50), $engine);
+            // In the app's container, on its own agent — as the Builder's own rerun does.
+            if ($inst && $inst->id && \Model_Instance::tenantRow($inst)) $runner->useAgent('');
 
             // STILL busy: leave it queued and do NOT spend an attempt. Attempts are for
             // things that went wrong, not for the condition the queue exists to wait out.

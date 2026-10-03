@@ -169,8 +169,11 @@ try {
     $aibCfg     = @parse_ini_file(__DIR__ . '/../conf/aibuilder.ini', true) ?: [];
     $planTitle  = (string) $parent->title;
     $planMember = (int) $parent->memberId;
-    $instCfg    = @parse_ini_file($dir . '/conf/config.ini', true) ?: [];
-    $baseUrl    = (string) ($instCfg['app']['baseurl'] ?? '');
+    // A container app's address is its domain (as plan-audit.php reads it); a host clone's is in its config.
+    $instRow    = \app\CoreDb::with(fn() => Bean::findOne('instance', 'slug = ?', [$slug]), null);
+    $baseUrl    = $instRow && $instRow->id && \Model_Instance::tenantRow($instRow) && (string) $instRow->ctDomain !== ''
+                ? 'https://' . $instRow->ctDomain
+                : (string) ((@parse_ini_file($dir . '/conf/config.ini', true) ?: [])['app']['baseurl'] ?? '');
 
     // Which subtasks did not land, and the last thing each said. Read from the same
     // tasks db we have been driving, so the notification carries the detail instead of

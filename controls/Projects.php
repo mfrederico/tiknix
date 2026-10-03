@@ -322,7 +322,7 @@ class Projects extends BaseControls\Control {
      */
     private function card(object $inst, int $memberId): array {
         $dir  = $inst->dir();
-        $last = $this->lastCommit($dir);
+        $last = \Model_Instance::tenantRow($inst) ? $this->lastCommitInContainer($inst) : $this->lastCommit($dir);
         $owned = (int) $inst->memberId === $memberId;
 
         return [
@@ -355,6 +355,31 @@ class Projects extends BaseControls\Control {
             // What it would have cost as a custom build, from its lines of code (ProjectValue, cached nightly).
             'value'        => ProjectValue::read($inst),
         ];
+    }
+
+    /**
+     * The same for an app in its own container, over SSH — cached for ten minutes per project
+     * (the page lists every project, and each is a round trip). A container that does not
+     * answer shows nothing, and says so in the log.
+     */
+    private function lastCommitInContainer(object $inst): array {
+        $none = ['when' => '', 'who' => '', 'subject' => ''];
+        $cache = Paths::root() . '/cache/lastcommit-' . preg_replace('/[^a-z0-9-]/', '', (string) $inst->slug) . '.json';
+        if (is_file($cache) && filemtime($cache) > time() - 600) {
+            $j = json_decode((string) file_get_contents($cache), true);
+            if (is_array($j)) return $j + $none;
+        }
+        try { [$code, $out] = TenantHost::ssh($inst, 'app', 'git -C /srv/app log -1 --format=%aI%x1f%an%x1f%s 2>/dev/null', null, 15); }
+        catch (\Throwable $e) { $code = 255; $out = $e->getMessage(); }
+        if ($code !== 0 || trim($out) === '') {
+            $this->logger->error("Projects: {$inst->slug}'s container gave no last commit (exit {$code}): " . mb_substr(trim($out), 0, 160));
+            return $none;
+        }
+        $parts = explode("\x1f", trim($out));
+        $last = ['when' => $parts[0] ?? '', 'who' => $parts[1] ?? '', 'subject' => $parts[2] ?? ''];
+        if (!is_dir(dirname($cache))) @mkdir(dirname($cache), 0775, true);
+        @file_put_contents($cache, json_encode($last));
+        return $last;
     }
 
     /** Authorship from the instance's working copy — the AI Builder commits here. */

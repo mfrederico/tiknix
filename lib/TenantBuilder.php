@@ -20,7 +20,6 @@ namespace app;
 class TenantBuilder {
 
     /** What the workspace keeps from a host clone's .aibuilder/ (history, not machinery). */
-    private const HISTORY = ['*.log', '*.json', '*.md', '*.txt', 'engine', 'plans'];
 
     /** The instance row when $slug lives in its own container, else null (core's registry, from any process). */
     public static function bySlug(string $slug): ?object {
@@ -42,40 +41,6 @@ class TenantBuilder {
             ]]], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         }
         return $ws;
-    }
-
-    /**
-     * The host clone's builder history into the workspace, once: its task board (a consistent
-     * SQLite backup) and .aibuilder's logs, plans, audit results and seed lists. Its worktrees,
-     * agent state, sockets and runner scripts stay behind. A workspace that already has a task
-     * board is left alone — its own history is newer than the clone's.
-     */
-    public static function adoptHistory(object $inst): array {
-        $ws = self::workspace($inst);
-        $host = \Model_Instance::dirFrom((string) $inst->slug, (string) ($inst->app ?: \Model_Instance::DEFAULT_APP));
-        if (is_file("{$ws}/data/workbench.db")) return ['ok' => true, 'step' => "{$ws} already has its task board: nothing adopted"];
-        if (!is_dir($host)) return ['ok' => true, 'step' => "no host clone at {$host}: a fresh workspace"];
-        $steps = [];
-        if (is_file("{$host}/data/workbench.db")) {
-            $src = new \SQLite3("{$host}/data/workbench.db", SQLITE3_OPEN_READONLY);
-            $dst = new \SQLite3("{$ws}/data/workbench.db");
-            if (!$src->backup($dst)) return ['ok' => false, 'error' => "SQLite backup of {$host}/data/workbench.db failed: " . $src->lastErrorMsg()];
-            $src->close(); $dst->close();
-            $pdo = new \PDO("sqlite:{$ws}/data/workbench.db");
-            $has = (bool) $pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn();
-            $steps[] = $has ? 'task board: ' . (int) $pdo->query('SELECT COUNT(*) FROM workbenchtask')->fetchColumn() . ' task(s)' : 'task board: never used';
-        }
-        $copied = 0;
-        foreach (self::HISTORY as $pat) {
-            foreach (glob("{$host}/.aibuilder/{$pat}") ?: [] as $f) {
-                $to = "{$ws}/.aibuilder/" . basename($f);
-                exec('cp -a ' . escapeshellarg($f) . ' ' . escapeshellarg($to) . ' 2>&1', $o, $c);
-                if ($c !== 0) return ['ok' => false, 'error' => "could not copy {$f}: " . implode(' ', $o)];
-                $copied++;
-            }
-        }
-        $steps[] = "{$copied} history file(s) from .aibuilder/";
-        return ['ok' => true, 'step' => "adopted from {$host}: " . implode(', ', $steps)];
     }
 
     /**

@@ -19,8 +19,8 @@
  *   differently in WorkbenchAccess: the database file IS the boundary, and reaching the
  *   project is what grants access to its tasks.
  *
- * The task half is LIVE on core: mcptools/BaseTool (mayUseTask, visibleTasks) and
- * scripts/instance-oracle both use it. It is not legacy and not duplication — it is the
+ * The task half is LIVE on core: mcptools/BaseTool (mayUseTask, visibleTasks) uses it. It
+ * is not legacy and not duplication — it is the
  * CORE-SIDE answer, and BaseTool::mayUseTask() already explains why a project cannot use
  * it: task rows carry the CONTROL PLANE's member id, so asking this class about a task
  * read from a project's own workbench.db compares an id from one database against a member

@@ -40,9 +40,6 @@ class GitHttp {
     /** Where the runtime package repository lives on core's disk. */
     const RUNTIME_DIR = '/var/www/html/default/tiknix-runtime';
 
-    /** Where provisioned instances live, mirroring ProvisionService::instanceDir(). */
-    const INSTANCE_ROOT = '/var/www/html/default';
-
     /**
      * Resolve a URL slug to an instance repo on disk.
      * @return array{ok:bool, dir?:string, bean?:object, error?:string, code?:int}

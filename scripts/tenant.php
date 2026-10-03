@@ -15,8 +15,6 @@
  *   php scripts/tenant.php --discard=SLUG --id=ID         throw a task away
  *   php scripts/tenant.php --plan=SLUG --id=ID --member=N [--agent=NAME] < request   the builder's planner in the tenant
  *        (--task and --plan also take --out=FILE: the JSON result written there as well)
- *   php scripts/tenant.php --workspace=SLUG               the builder's records on core (_workspaces/<slug>),
- *                                                         adopting a host clone's history once
  *   php scripts/tenant.php --domain-add=SLUG --domain=HOST     another domain as its own site in the
  *                                                         container: DNS checked, TLS, the app's
  *                                                         conf/hosts/<HOST>.ini + database, routing
@@ -48,7 +46,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'workspace:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -126,12 +124,6 @@ if (isset($o['task']) || isset($o['plan']) || isset($o['audit']) || isset($o['me
     }
     echo $json;
     exit(!empty($r['ok']) ? 0 : 1);
-}
-if (isset($o['workspace'])) {
-    $i = inst($o['workspace']);
-    $r = \app\TenantBuilder::adoptHistory($i);
-    done($r, 'workspace ' . $i->slug . ' (' . \Model_Instance::dirOf($i) . ')');
-    exit(0);
 }
 // The rest of a Get-started hand-off, once the new project's container is up (ProvisionService
 // runs it right after --up): PLAN.md committed into the app, then Phase 1 (lib/PlanHandoff.php).

@@ -62,17 +62,6 @@ class Connections extends Control {
         return $inst;
     }
 
-    /**
-     * True (after answering 409) when the project runs in its own container: its connections
-     * live in the app, and the things this route does — GitHub publish, tokens read on this
-     * host — are the app's own, on its Connections page.
-     */
-    private function appOwnsThis($inst): bool {
-        if (!\Model_Instance::tenantRow($inst)) return false;
-        $this->jsonError(($inst->displayName ?: $inst->slug) . ' runs in its own container. This is done on its own Connections page (the project\'s section of the menu).', 409);
-        return true;
-    }
-
     // --- routes ---------------------------------------------------------------
 
     /** GET /connections/connect/<type>?id=<instance>&env= — start a connector's OAuth. */
@@ -308,125 +297,6 @@ class Connections extends Control {
         ]);
     }
 
-    /**
-     * POST /connections/instanceconnect — instance-driven OAuth connect (owner/admin).
-     * Asks core (via broker) for a signed handoff URL and redirects the browser to it;
-     * core runs the OAuth and returns to this instance's /connections.
-     */
-    public function instanceconnect($params = []): void {
-        if (!$this->requireLogin()) return;
-        if (!$this->instanceManageGuard(false)) return;
-        if (!$this->validateCSRF()) return;
-        $root = dirname(__DIR__);
-        $type = strtolower(trim((string)$this->getParam('type', '')));
-        $env  = $this->normalizeEnv($this->getParam('env', 'production'));
-        $shop = trim((string)$this->getParam('shop', ''));
-
-        /* A custom app belonging to THIS project is run here, not handed to core.
-           The handoff exists only because a project holds no provider app credentials —
-           conf/<connector>.ini is scrubbed empty at provision so a customer's project can
-           never hold tiknix's shared secret. Their OWN app is a different thing: it is
-           theirs, this install may hold it, and Shopify redirects straight back to this
-           domain. Running it locally removes the handoff's hardest part — a secret that
-           would otherwise have to survive a browser redirect between two hosts. */
-        $customApp = [
-            'client_id'     => trim((string)$this->getParam('app_key', '')),
-            'client_secret' => trim((string)$this->getParam('app_secret', '')),
-        ];
-        if ($customApp['client_id'] !== '' || $customApp['client_secret'] !== '') {
-            $this->localConnectorConnect($type, $env, $shop, $customApp,
-                trim((string)$this->getParam('app_scopes', '')));
-            return;
-        }
-
-        $returnUrl = app_url('/connections');
-        $r = \app\InstanceAutomations::connectIntent($root, $type, $env, $shop, $returnUrl);
-        if (!empty($r['error'])) { $this->flash('error', $r['error']); Flight::redirect('/connections'); return; }
-        Flight::redirect($r['url']);
-    }
-
-    /** POST /connections/instanceconnectkey — instance-driven api_key connect (owner/admin). JSON. */
-    public function instanceconnectkey($params = []): void {
-        if (!$this->requireLogin()) return;
-        if (!$this->instanceManageGuard(true)) return;
-        if (!$this->validateCSRF()) return;
-        $type = strtolower(trim((string)$this->getParam('type', '')));
-        $env  = $this->normalizeEnv($this->getParam('env', 'production'));
-        $key  = trim((string)$this->getParam('key', ''));
-        if ($type === '') { $this->jsonError('Connector is required.', 400); return; }
-
-        // Stored HERE, by this install, with this install's key. It used to POST the
-        // raw credential to core's /brokerinfo/connectkey so core could write it back
-        // into this very file -- a network round-trip, and the customer's secret over
-        // the wire, to reach a database on local disk.
-        $connector = \app\services\connectors\ConnectorRegistry::get($type);
-        if (!$connector) { $this->jsonError('Unknown connector: ' . $type, 400); return; }
-        $meta = $connector->meta();
-        if (($meta['auth_type'] ?? 'oauth') !== 'api_key') {
-            $this->jsonError(ucfirst($type) . ' does not connect with a pasted key.', 400); return;
-        }
-        // A key is required unless the connector says otherwise. The REST connector
-        // can point at a public API, where demanding a secret would be demanding
-        // something that does not exist.
-        if ($key === '' && ($meta['key_required'] ?? true)) {
-            $this->jsonError('A key is required for ' . ucfirst($type) . '.', 400); return;
-        }
-
-        try {
-            // The provider's own words on failure -- "Not Authenticated" and "token
-            // expired" want different things done about them.
-            $payload = $connector->validateApiKey($key, $this->declaredFields($connector));
-            $payload['auth_type'] = 'api_key';
-            $id = ConnectionStore::put($type, $env, $payload);
-        } catch (\Throwable $e) {
-            $this->jsonError($e->getMessage(), 400); return;
-        }
-        if ($id <= 0) { $this->jsonError('The connection could not be stored on this install.', 500); return; }
-
-        $this->jsonSuccess([
-            'id'          => $id,
-            'connector'   => $type,
-            'environment' => $env,
-            'account'     => (string) ($payload['external_name'] ?? $payload['external_eid'] ?? ''),
-        ], ucfirst($type) . ' connected.');
-    }
-
-    /** POST /connections/instancedisconnect — instance-driven disconnect (owner/admin). JSON. */
-    public function instancedisconnect($params = []): void {
-        if (!$this->requireLogin()) return;
-        if (!$this->instanceManageGuard(true)) return;
-        if (!$this->validateCSRF()) return;
-        $cid = (int)$this->getParam('cid', 0);
-        if ($cid <= 0) { $this->jsonError('connection id required.', 400); return; }
-
-        // Local, for the same reason as instanceconnectkey: the row is in this
-        // install's own file. The id needs no ownership check because a foreign id
-        // simply is not in this database.
-        $gone = ConnectionStore::withOwnDb(function () use ($cid) {
-            $conn = Bean::load('connections', $cid);
-            if (!$conn->id) return false;
-            Bean::trash($conn);
-            return true;
-        }, false);
-
-        if (!$gone) { $this->jsonError('No such connection on this install.', 404); return; }
-        $this->jsonSuccess([], 'Disconnected.');
-    }
-
-    /** Guard for the instance-side manage actions: instance context (not control plane) + ADMIN. */
-    private function instanceManageGuard(bool $json): bool {
-        // The control plane manages a project's connections through the owner-scoped flow.
-        if ($json) $this->jsonError('Manage connections from the control-plane Connections page.', 400);
-        else Flight::redirect('/connections');
-        return false;
-        if (!Flight::hasLevel(LEVELS['ADMIN'])) {
-            if ($json) $this->jsonError('Admins only.', 403);
-            else Flight::redirect('/integrations');
-            return false;
-        }
-        return true;
-    }
-
     // --- Human verification (Cloudflare Turnstile) ----------------------------
     //
     // A per-install SECURITY connection, not a per-project data connector: it gates
@@ -621,47 +491,6 @@ class Connections extends Control {
                 . '). Your GitHub token may lack admin:repo_hook — add it manually in GitHub: Settings → Webhooks → '
                 . $callback . ', content-type application/json, event: push.', 400);
         }
-    }
-
-    /**
-     * POST /connections/broker — mint/rotate this instance's broker key, revealed
-     * ONCE. Owner-only. The instance presents this as a Bearer token to the MCP
-     * gateway to reach its own connected stores; it decrypts nothing and can be
-     * rotated or revoked here at any time.
-     */
-    public function broker($params = []): void {
-        if (!$this->requireLogin()) return;
-        if (!$this->validateCSRF()) return;
-        $inst = $this->ownedInstance($this->getParam('id', 0));
-        if (!$inst) { $this->jsonError('Instance not found', 404); return; }
-        // A container app's key lives in its own conf/broker.ini, installed by core
-        // (BrokerService::ensureContainerConfig). Minting one here replaces the row that file
-        // matches and hands the key to nobody — the app is cut off from core.
-        if (\Model_Instance::tenantRow($inst)) {
-            $this->jsonError("{$inst->slug} runs in its own container; its broker key is installed there by core and is not handed out here.", 409);
-            return;
-        }
-
-        // Advisory allowlist: the connectors this instance actually has connections
-        // for, read from its own store.
-        $keys = InstanceConnections::withInstall((int)$inst->id, function () {
-            $k = [];
-            foreach (Bean::find('connections', 'enabled = 1') as $c) {
-                if ($c->connectorType) $k[(string)$c->connectorType] = true;
-            }
-            return $k;
-        }, []);
-
-        $res = BrokerService::mint((int)$inst->id, (int)$this->member->id, array_keys($keys));
-        // requestHost(), not `?? 'tiknix.com'`. This hands the caller a CREDENTIAL and the
-        // address to spend it at; inventing the address means handing someone a working key
-        // pointed at an install that is not theirs. The sibling builder above was already
-        // converted to refuse on a missing Host header — this one was missed.
-        $this->jsonSuccess([
-            'token'    => $res['token'],
-            'endpoint' => ($this->requestIsHttps() ? 'https' : 'http') . '://'
-                        . $this->requestHost() . '/mcp/message',
-        ], 'Broker key minted — copy it now; it is shown only once.');
     }
 
     /**
@@ -890,58 +719,6 @@ class Connections extends Control {
            . '<h3>Connection could not start</h3><p style="color:#5b6470">' . htmlspecialchars($msg) . '</p></body>';
     }
 
-    /**
-     * Start an OAuth dance THIS install owns, against the project's own provider app.
-     *
-     * No instance id and no push target: this install IS the project, so the token it
-     * receives belongs in its own connections store. The redirect_uri is built from the
-     * request host — this project's domain — so the merchant must have registered that
-     * callback in their custom app. That is not a workaround; it is the reason this can be
-     * local at all, and the reason the shared tiknix app cannot be (only core's callback
-     * is registered against that one).
-     */
-    private function localConnectorConnect(string $type, string $env, string $shop, array $customApp, string $wantScopes): void {
-        $connector = ConnectorRegistry::get($type);
-        if (!$connector) { $this->flash('error', 'Unsupported connector.'); Flight::redirect('/connections'); return; }
-
-        $ok = method_exists($connector, 'isConfiguredFor')
-            ? $connector->isConfiguredFor(['app' => $customApp])
-            : false;
-        if (!$ok) {
-            $this->flash('error', 'That custom app is incomplete — both an API key and an API secret are required.');
-            Flight::redirect('/connections'); return;
-        }
-
-        $state = OAuthStateService::issue([
-            'provider'    => $type,
-            'member_id'   => (int)$this->member->id,
-            'instance_id' => 0,        // no other install is involved
-            'environment' => $env,
-            'shop'        => $shop,
-            'local'       => true,     // this install runs the dance AND keeps the result
-        ]);
-        $_SESSION['oauth_state_hash'] = hash('sha256', $state);
-        unset($_SESSION['oauth_custom_app'], $_SESSION['oauth_scopes']);
-        $_SESSION['oauth_custom_app'] = ['for' => hash('sha256', $state)] + $customApp;
-        if ($wantScopes !== '') {
-            $_SESSION['oauth_scopes'] = ['for' => hash('sha256', $state), 'scopes' => $wantScopes];
-        }
-
-        try {
-            $url = $connector->authorizeUrl([
-                'state'        => $state,
-                'redirect_uri' => $this->connectorRedirectUri($type),
-                'shop'         => $shop,
-                'app'          => $customApp,
-                'scopes'       => $wantScopes,
-            ]);
-        } catch (\Throwable $e) {
-            $this->flash('error', $e->getMessage());
-            Flight::redirect('/connections'); return;
-        }
-        Flight::redirect($url);
-    }
-
     /** GET /connections/callback/<type> — registry connector OAuth redirect target. */
     private function connectorCallback(string $type): void {
         $connector = ConnectorRegistry::get($type);
@@ -966,27 +743,12 @@ class Connections extends Control {
         // Identity ALWAYS comes from the signed state. Handoff mode authenticates by
         // that state + the instance's broker-minted intent (no core login); the
         // control-plane mode additionally binds to the logged-in owner's session.
-        $local = !empty($claims['local']);
-
         if ($handoff) {
             $inst = Bean::load('instance', $iid);
             if (!$inst->id || (int)$inst->memberId !== $mid) {
                 $this->handoffError('You no longer own that instance.'); return;
             }
             $returnUrl = (string)($claims['return_url'] ?? '');
-        } elseif ($local) {
-            // This install IS the project, so there is no instance row to own and nothing
-            // to look up. The state was signed with THIS install's key, which is what
-            // makes it unforgeable here; the session hash above already proved the
-            // callback landed in the browser that started it. Identity is still the
-            // signed member, not the session's — the same rule as every other mode.
-            if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
-            if ($mid !== (int)$this->member->id) {
-                $this->flash('error', 'This authorization was started by a different account.');
-                Flight::redirect('/connections'); return;
-            }
-            $inst = null;
-            $returnUrl = '/connections';
         } else {
             if (!Flight::isLoggedIn()) { Flight::redirect('/auth/login'); return; }
             if ($mid !== (int)$this->member->id) {
@@ -1050,24 +812,18 @@ class Connections extends Control {
             error_log('[connections] ' . $type . ' callback failed: ' . $e->getMessage());
             if ($handoff) { $this->redirectBack($returnUrl, ['connect_error' => $type]); return; }
             $this->flash('error', ucfirst($type) . ' connection failed: ' . $e->getMessage());
-            Flight::redirect($local ? '/connections' : '/connections?id=' . $iid); return;
+            Flight::redirect('/connections?id=' . $iid); return;
         }
         /* Wire the instance so its app can reach this store immediately — no keys for the
-           user to handle. Best-effort: never fail the connect over this.
-
-           Skipped when the project ran its own dance: the broker exists to let a project
-           reach a store whose token core is holding, and here the token is already in this
-           install's own store. There is no custody to arrange. */
-        if (!$local) {
-            try {
-                BrokerService::ensureContainerConfig($inst, $mid);
-            } catch (\Throwable $e) {
-                error_log('[connections] store wiring failed for instance ' . $iid . ': ' . $e->getMessage());
-            }
+           user to handle. Best-effort: never fail the connect over this. */
+        try {
+            BrokerService::ensureContainerConfig($inst, $mid);
+        } catch (\Throwable $e) {
+            error_log('[connections] store wiring failed for instance ' . $iid . ': ' . $e->getMessage());
         }
         if ($handoff) { $this->redirectBack($returnUrl, ['connected' => $type]); return; }
         $this->flash('success', ucfirst($type) . ' store connected.');
-        Flight::redirect($local ? '/connections' : '/connections?id=' . $iid);
+        Flight::redirect('/connections?id=' . $iid);
     }
 
     /** Redirect to a handoff return_url with a status query param (or core as a fallback). */
@@ -1112,15 +868,6 @@ class Connections extends Control {
     private function upsertConnection(string $type, array $claims, array $payload, string $authType = 'oauth'): int {
         $payload['auth_type'] = $authType;
         $env = $this->normalizeEnv($claims['environment'] ?? 'production');
-
-        /* A project that ran its own dance keeps the result. There is nothing to push:
-           this install already owns the connections store the token belongs in, and
-           ConnectorPush would try to deliver it to this very host over HTTP using a
-           broker key issued for talking to core. Storing directly is not a shortcut —
-           it is the only correct destination. */
-        if (!empty($claims['local'])) {
-            return \app\ConnectionStore::put($type, $env, $payload);
-        }
 
         return \app\ConnectorPush::push((int) $claims['instance_id'], $type, $env, $payload);
     }
@@ -1172,48 +919,23 @@ class Connections extends Control {
         ], ucfirst($type) . ' connected');
     }
 
-    /**
-     * Which instance's store, and which row in it, a hub action is aimed at.
-     *
-     * Ownership used to be `$conn->memberId === $this->member->id`, a column that no
-     * longer exists: a per-instance store records no owner, because everything in the
-     * file belongs to that instance already. The check that replaces it is STRONGER --
-     * ownedInstance() proves this member owns the instance, and only then do we open
-     * its file. A cid belonging to somebody else is not in that database to find.
-     *
-     * @return array{0:int,1:int}|null [instanceId, connectionId], or null having sent the error
-     */
-    private function hubTarget(bool $remoteOk = false): ?array {
+    /** Which project (the member's own) and which of its connections a hub action is aimed at, or null having sent the error. */
+    private function hubTarget(): ?array {
         $inst = $this->ownedInstance($this->getParam('id', 0));
         if (!$inst) { $this->jsonError('Instance not found.', 404); return null; }
-        if (!$remoteOk && $this->appOwnsThis($inst)) return null;
         $cid = (int)$this->getParam('cid', 0);
         if ($cid <= 0) { $this->jsonError('Connection not found', 404); return null; }
         return [(int)$inst->id, $cid];
     }
 
-    /** POST /connections/disconnect — remove a stored connection. */
+    /** POST /connections/disconnect — remove a connection, through the app's own door. */
     public function disconnect($params = []): void {
         if (!$this->requireLogin()) return;
         if (!$this->validateCSRF()) return;
-        if (($t = $this->hubTarget(true)) === null) return;
+        if (($t = $this->hubTarget()) === null) return;
         [$iid, $cid] = $t;
-
-        if (\Model_Instance::tenantRow(Bean::load('instance', $iid))) {
-            try { \app\ConnectorPush::ask($iid, '/connectorapi/disconnect', ['id' => $cid]); }
-            catch (\RuntimeException $e) { $this->jsonError($e->getMessage(), 502); return; }
-            $this->jsonSuccess([], 'Disconnected');
-            return;
-        }
-
-        $gone = InstanceConnections::withInstall($iid, function () use ($cid) {
-            $conn = Bean::load('connections', $cid);
-            if (!$conn->id) return false;
-            Bean::trash($conn);
-            return true;
-        }, false);
-
-        if (!$gone) { $this->jsonError('Connection not found', 404); return; }
+        try { \app\ConnectorPush::ask($iid, '/connectorapi/disconnect', ['id' => $cid]); }
+        catch (\RuntimeException $e) { $this->jsonError($e->getMessage(), 502); return; }
         $this->jsonSuccess([], 'Disconnected');
     }
 
@@ -1234,92 +956,6 @@ class Connections extends Control {
         // mismatch on a live webhook, nowhere near the button that caused it.
         $this->jsonError('Set the webhook secret from the instance\'s own Connections page: '
             . 'it is encrypted with that install\'s key, which the control plane does not hold.', 409);
-    }
-
-    /**
-     * POST /connections/publishfeed — publish (or unpublish) a PUBLIC social showcase
-     * at /social/<slug> for a Social-category connection the member owns. Does a
-     * best-effort immediate fetch; scripts/sync-social-feeds.php keeps it fresh + mirrors
-     * media locally.
-     */
-    public function publishfeed($params = []): void {
-        if (!$this->requireLogin()) return;
-        if (!$this->validateCSRF()) return;
-        if (($t = $this->hubTarget()) === null) return;
-        [$iid, $cid] = $t;
-
-        // The connection lives in the instance's file; socialpage lives HERE, because
-        // /social/<slug> is served by core. So the credential-shaped work happens
-        // inside withInstall and only plain values come back out.
-        // The bean comes back out and the token with it. Reading a bean outside its
-        // database is fine -- it is store() that writes to whatever is selected, which
-        // is why nothing here saves it. The token must be decrypted inside, while the
-        // instance's key is the one in scope.
-        $src = InstanceConnections::withInstall($iid, function () use ($cid) {
-            $conn = Bean::load('connections', $cid);
-            if (!$conn->id) return null;
-            return ['conn' => $conn, 'token' => ConnectionStore::ownToken($conn)];
-        }, null);
-
-        if ($src === null) { $this->jsonError('Connection not found', 404); return; }
-        $conn = $src['conn'];
-
-        $connector = ConnectorRegistry::get((string)$conn->connectorType);
-        if (!$connector || (string)($connector->meta()['category'] ?? '') !== 'Social') {
-            $this->jsonError('This connection is not a social feed.', 409); return;
-        }
-        $meta = json_decode((string)($conn->metadataJson ?: '{}'), true) ?: [];
-
-        $slug = strtolower(trim((string)$this->getParam('slug', '')));
-        if ($slug === '') $slug = strtolower((string)($meta['username'] ?? ''));
-        $slug = preg_replace('/[^a-z0-9_.-]/', '', (string)$slug);
-        if ($slug === '' || !preg_match('/^[a-z0-9][a-z0-9_.-]{0,49}$/', $slug)) {
-            $this->jsonError('Choose a valid page name (letters, numbers, . _ -).', 400); return;
-        }
-        // The slug must be free, unless it already belongs to this member.
-        $taken = Bean::findOne('socialpage', 'slug = ? AND member_id != ?', [$slug, (int)$this->member->id]);
-        if ($taken && $taken->id) { $this->jsonError('That page name is taken — pick another.', 409); return; }
-
-        // instance_ref is what makes connection_ref findable again: a connection id is
-        // only unique WITHIN one instance's file now, so the pair identifies it and a
-        // bare id does not. Both are _ref, not _id -- the bean type is plural
-        // ('connections'), so connection_id would have RedBean chasing a bean type
-        // 'connection' that does not exist, and the instance is hard-deleted on
-        // teardown, which a real FK would forbid.
-        $page = Bean::findOne('socialpage', 'member_id = ? AND instance_ref = ? AND connection_ref = ?',
-            [(int)$this->member->id, $iid, $cid]);
-        if (!$page || !$page->id) { $page = Bean::dispense('socialpage'); $page->createdAt = date('Y-m-d H:i:s'); $page->feedJson = '[]'; }
-        $page->memberId      = (int)$this->member->id;
-        $page->instanceRef   = $iid;
-        $page->connectionRef = $cid;
-        $page->slug         = $slug;
-        $page->title        = trim((string)$this->getParam('title', '')) ?: ('@' . ltrim((string)($meta['username'] ?? $conn->externalName), '@'));
-        $page->handle       = (string)($meta['username'] ?? ltrim((string)$conn->externalName, '@'));
-        $page->externalUrl  = (string)$conn->externalUrl;
-        $page->maxItems     = max(1, min(60, (int)$this->getParam('max_items', 30)));
-        $page->published    = filter_var($this->getParam('published', '1'), FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
-        $page->updatedAt    = date('Y-m-d H:i:s');
-        Bean::store($page);
-
-        // Best-effort immediate fetch so the page isn't empty (cron mirrors media later).
-        $count = 0;
-        try {
-            $token = $src['token'];
-            if ($token === '') throw new \Exception('the stored token could not be decrypted on that instance');
-            $feed  = $connector->fetchFeed($conn, $token, ['limit' => (int)$page->maxItems]);
-            $page->feedJson = json_encode(array_values($feed['items'] ?? []), JSON_UNESCAPED_SLASHES);
-            $page->syncedAt = date('Y-m-d H:i:s');
-            Bean::store($page);
-            $count = count($feed['items'] ?? []);
-            if (function_exists('sodium_memzero')) sodium_memzero($token);
-        } catch (\Throwable $e) { /* leave empty; the cron / a reconnect will fill it */ }
-
-        $base = app_url();
-        $this->jsonSuccess([
-            'published' => (bool)$page->published,
-            'url'       => $base . '/social/' . $slug,
-            'items'     => $count,
-        ], $page->published ? 'Showcase published' : 'Showcase updated');
     }
 
 }

@@ -139,36 +139,6 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
         return preg_match('/^ERROR /m', (string) file_get_contents($log)) ? 'failed' : 'pending';
     }
 
-    public static function isProvisionedInstance(string $dir): bool {
-        // An alias is not the instance. start.tiknix → start-201e11.tiknix (a symlink so
-        // start.tiknix.com serves the project) made every sweep over *.tiknix visit the
-        // same project twice, the second time under the slug "start": the stale-task
-        // reaper then looked for tiknix-start-plan13-orchestrator, found nothing, and
-        // marked a plan that was building "stalled" four seconds after it started.
-        if (is_link(rtrim($dir, '/'))) return false;
-        $real = realpath($dir);
-        if ($real === false || !is_dir($real . '/.git')) return false;
-        if ($real === realpath(self::ROOT . '/tiknix')) return false;      // the control plane
-
-        $run = static function (string $cmd) use ($real): string {
-            $out = @shell_exec('cd ' . escapeshellarg($real) . ' && ' . $cmd . ' 2>/dev/null');
-            return trim((string) $out);
-        };
-
-        // A provisioned instance is a clone of the control plane's repository. Since C1
-        // (lib/InstanceRepo.php) its `origin` is its own bare origin under _origins/ and the
-        // control plane is its `core` remote; before that the control plane WAS origin.
-        // Either shape is the instance; a tree cloned from somewhere else is not.
-        // realpath('') is the CURRENT DIRECTORY, not false — a missing remote must never
-        // resolve to wherever this process happens to run (core, when the suite runs there).
-        $path = static fn(string $p): string|false => $p === '' ? false : realpath($p);
-        $core = realpath(self::ROOT . '/tiknix');
-        $origin = $path($run('git remote get-url origin'));
-        $coreRemote = $path($run('git remote get-url core'));
-        if ($origin !== $core && $coreRemote !== $core) return false;
-        return strpos($run('git rev-parse --abbrev-ref HEAD'), 'instance/') === 0;
-    }
-
     /**
      * The instance's own workbench database — where its plans and tasks live.
      *
@@ -178,22 +148,6 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
      */
     public function workbenchDb(): string {
         return $this->dir() . '/data/workbench.db';
-    }
-
-    /**
-     * True when the instance is actually provisioned on disk.
-     *
-     * NOT called exists(). OODBBean has its own public exists($property), so a model method
-     * of that name is SHADOWED — $instance->exists() reaches RedBean's, which requires an
-     * argument and fatals without one. It had no callers, so nobody found out. Unlike a
-     * method that merely shares a name with a COLUMN, this one is unreachable through the
-     * bean at all.
-     *
-     * Answers for THIS machine only: with a hosted database the row is global while the
-     * directory is local, so a false here can mean "provisioned elsewhere".
-     */
-    public function isProvisioned(): bool {
-        return is_file($this->dir() . '/public/index.php');
     }
 
     /** Public URL of the instance subdomain. */

@@ -63,7 +63,7 @@ $isConnected = function (array $card): bool {
   <?php else: ?>
     <div class="alert alert-light border py-2 small mb-4">
       <i class="bi bi-box-arrow-up-right me-1"></i>
-      This project keeps its connections in its own app. Connect and disconnect here; webhook secrets, GitHub and social feeds are on
+      This project keeps its connections in its own app. Connect and disconnect here; webhook secrets and keys are on
       <a href="/projects/open?to=<?= rawurlencode('/connections') ?>" target="_blank" rel="noopener" class="text-decoration-underline">its own Connections page</a>.
     </div>
   <?php endif; ?>

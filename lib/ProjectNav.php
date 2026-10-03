@@ -107,12 +107,17 @@ class ProjectNav {
      */
     public static function plugins(int $memberId, int $level, ?int $projectLevel): array {
         $out = [];
+        // Deploy is core's own page (controls/Deploy.php: a project's domains and exports), not a
+        // sidecar — the publisher sidecar is gone — but it is gated and grouped like one, by the
+        // 'publisher' feature (the Feature catalog's label for it is Deploy).
+        if (Feature::isEnabled('publisher', $memberId, $level)) {
+            $out[] = ['name' => 'publisher', 'label' => 'Deploy', 'icon' => 'bi-rocket-takeoff', 'href' => '/deploy',
+                      'scope' => 'project', 'premium' => false, 'state' => 'enabled'];
+        }
         foreach (Registry::launchable() as $name => $p) {
             $premium = self::premium($name);
             $entry = [
-                'name' => $name, 'label' => $p['label'], 'icon' => $p['icon'],
-                // Deploy is core's page (controls/Deploy.php): a project's domains and exports.
-                'href' => $name === 'publisher' ? '/deploy' : '/sidecar/app/' . $name,
+                'name' => $name, 'label' => $p['label'], 'icon' => $p['icon'], 'href' => '/sidecar/app/' . $name,
                 'scope' => self::scope($name), 'premium' => $premium, 'state' => 'enabled',
             ];
             if ($premium) {

@@ -100,11 +100,9 @@ class PromptBuilder {
      * already drifting — related_files appeared in the feature prompt and nowhere
      * else, so a bugfix task carrying a design mockup never mentioned it.
      *
-     * Attachments are named with their real path inside the instance, because the
-     * agent runs there and can open them. That is the whole reason monday files are
-     * pulled into the instance rather than kept beside the sidecar: a path the
-     * agent cannot reach is worse than no path, since it reads as an instruction to
-     * look at something and then fails.
+     * Attachments are named with their real path inside the project, because the
+     * agent runs there and can open them: a path the agent cannot reach is worse than
+     * no path, since it reads as an instruction to look at something and then fails.
      */
     private static function references(array $task): string {
         $out = '';

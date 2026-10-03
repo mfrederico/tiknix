@@ -22,7 +22,6 @@ echo '  authcontrol: concepthub::search => ' . \app\PermissionCache::seedRule('c
 echo '  authcontrol: concepthub::get => ' . \app\PermissionCache::seedRule('concepthub', 'get', 101, 'Concept catalog detail (broker key)') . "\n";
 echo '  authcontrol: concepthub::bundle => ' . \app\PermissionCache::seedRule('concepthub', 'bundle', 101, 'Concept catalog download (broker key)') . "\n";
 echo '  authcontrol: concepthub::install => ' . \app\PermissionCache::seedRule('concepthub', 'install', 101, 'Queue a concept install into the calling instance (broker key; POST)') . "\n";
-echo '  authcontrol: social::* => ' . \app\PermissionCache::seedRule('social', '*', 101, 'Public social showcase front controller') . "\n";
 echo '  authcontrol: billing::usage => ' . \app\PermissionCache::seedRule('billing', 'usage', 101, 'Billing service usage pull (Bearer callback_key)') . "\n";
 echo '  authcontrol: billing::index => ' . \app\PermissionCache::seedRule('billing', 'index', 100, 'Billing page — projects counted, plan, invoices') . "\n";
 

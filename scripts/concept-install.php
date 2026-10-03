@@ -13,8 +13,13 @@
  * COMMITTED base, so files copied into the working tree are invisible to every agent that
  * runs afterwards. An install has to end as a commit.
  *
+ * The project's code is in its container; --dir is its WORKSPACE here (where its task board
+ * and plan files live, never its tree). What it already has — concepts, connector manifests —
+ * is listed from the container, so nothing is reinstalled and nothing is guessed from a
+ * folder on this host.
+ *
  * Usage:
- *   php scripts/concept-install.php --concept=<name> --slug=<slug> --dir=<instanceDir> \
+ *   php scripts/concept-install.php --concept=<name> --slug=<slug> --dir=<workspaceDir> \
  *       --member=<id> [--autobuild=1] [--app=tiknix] [--db=<sqlite path>]
  *
  * --autobuild=1 approves and starts the build at once. Off by default, like every plan.
@@ -38,14 +43,16 @@ if ($concept === '' || $slug === '' || $dir === '' || $member <= 0) {
     fwrite(STDERR, "usage: --concept=<name> --slug=<slug> --dir=<instanceDir> --member=<id> [--autobuild=1]\n");
     exit(2);
 }
-if (!is_dir($dir . '/.git') && !is_file($dir . '/.git')) {
-    fwrite(STDERR, "[concept-install] {$dir} is not a git repository, so there is no base branch to install onto.\n");
+\RedBeanPHP\R::setup('sqlite:' . dirname(__DIR__) . '/database/tiknix.db');   // the registry: which container
+$inst = \app\Bean::findOne('instance', 'slug = ? AND app = ?', [$slug, (string) ($o['app'] ?? 'tiknix')]);
+if (!$inst || !$inst->id || !\Model_Instance::tenantRow($inst)) {
+    fwrite(STDERR, "[concept-install] '{$slug}' is not a project in a container, so there is nowhere to install into.\n");
     exit(1);
 }
 
 try {
-    $plan = ConceptCatalog::forInstall()->installPlan($concept, $dir);
-} catch (ConceptException $e) {
+    $plan = ConceptCatalog::forInstall()->installPlan($concept, (new \app\TenantFiles($inst))->inventory());
+} catch (ConceptException | \RuntimeException $e) {
     fwrite(STDERR, '[concept-install] ' . $e->getMessage() . "\n");
     exit(1);
 }

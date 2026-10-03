@@ -11,7 +11,7 @@
  * IN-APP FIRST. The notice is written as an `emailthread` + `notify` row, which is what
  * the bell in the shell already counts and what Communications already renders. That
  * needs no mail configuration at all, so it works on every install the moment a build
- * ends. Email is an EXTRA, sent only when core's conf/mailgun.ini is actually set up.
+ * ends. Email is an EXTRA, sent only when a Mailgun connection is bound to core's mail role (Mailer::isConfigured).
  *
  * CORE'S DATABASE, EXPLICITLY. Task data lives in the instance's own workbench.db, but a
  * notification belongs to a MEMBER, and members, threads and the bell all live in core.
@@ -184,7 +184,7 @@ class PlanNotifier {
 
             $sent = 'notify: thread #' . (int) $thread->id . ' for member ' . $memberId;
 
-            // Email is the EXTRA. No mailgun.ini is a normal, silent state — the in-app
+            // Email is the EXTRA. No mail connection is a normal, silent state — the in-app
             // notice above has already done the job.
             self::ensureLogger();
             if (class_exists('\\app\\Mailer') && Mailer::isConfigured()) {
@@ -202,7 +202,7 @@ class PlanNotifier {
                     }
                 }
             } else {
-                $sent .= ', no email (conf/mailgun.ini not configured)';
+                $sent .= ', no email (no Mailgun connection bound to mail)';
             }
 
             return $sent;
@@ -321,7 +321,7 @@ class PlanNotifier {
                     }
                 }
             } else {
-                $sent .= ', no email (conf/mailgun.ini not configured)';
+                $sent .= ', no email (no Mailgun connection bound to mail)';
             }
 
             return $sent;

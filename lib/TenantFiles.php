@@ -62,6 +62,22 @@ final class TenantFiles {
     }
 
     /**
+     * What the project already has of the catalog's kind — ConceptCatalog::inventory() for a
+     * project whose tree is in its container: its concepts (concepts/<name>/) and its connector
+     * manifests (connectors/<key>.json).
+     * @return array{concepts:string[],connectors:string[]}
+     */
+    public function inventory(): array {
+        [$code, $out] = $this->ssh('ls -1 concepts 2>/dev/null | grep -v "^\\." ; echo ---; ls -1 connectors 2>/dev/null | grep "\\.json$"; true');
+        if ($code !== 0) throw $this->refused('list its plugins', $out);
+        [$c, $k] = array_pad(explode("---\n", $out, 2), 2, '');
+        return [
+            'concepts'   => array_values(array_filter(array_map('trim', explode("\n", $c)), fn($n) => preg_match('/^[a-z][a-z0-9]*$/', $n))),
+            'connectors' => array_values(array_filter(array_map(fn($n) => substr(trim($n), 0, -5), array_filter(explode("\n", $k))), fn($n) => $n !== '')),
+        ];
+    }
+
+    /**
      * Write (create or replace) the file and commit it as the member. A file the app's own
      * .gitignore excludes (.mcp.json carries the project's key) is written and left
      * uncommitted — that is the app's rule, not a failure.

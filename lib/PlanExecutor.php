@@ -311,6 +311,43 @@ class PlanExecutor {
         return $this->launchTenantTask($t);
     }
 
+    /**
+     * A plugin install — the one task kind with no agent — runs to its end right here, in
+     * seconds: the app's own `--concept-install` for each concept the task adopts (the catalog
+     * resolved the order; the app fetches the bundle from the catalog with its broker key),
+     * then `--concept-enable` (verify, seeds, switch on, agent guidance), then ONE commit on
+     * the app's branch as the member. No worktree and no merge: there is nothing an agent
+     * could have got wrong, and the files are the catalog's. The task ends merged or failed.
+     */
+    private function installInTenant($t): void {
+        $names = json_decode((string) ($t->adopts ?? ''), true) ?: [];
+        if (!$names) { $this->fail($t, 'the install task names no plugin (adopts is empty)'); return; }
+        try { $env = TenantHost::gitEnv($this->author()); }
+        catch (\RuntimeException $e) { $this->fail($t, $e->getMessage()); return; }
+        $steps = [];
+        foreach ($names as $n) {
+            if (!preg_match('/^[a-z][a-z0-9]*$/D', (string) $n)) { $this->fail($t, "'{$n}' is not a plugin name"); return; }
+            $steps[] = 'php scripts/clitool.php --concept-install=' . escapeshellarg($n);
+            $steps[] = 'php scripts/clitool.php --concept-enable=' . escapeshellarg($n);
+        }
+        $msg = 'Install plugin' . (count($names) > 1 ? 's' : '') . ': ' . implode(', ', $names);
+        $steps[] = 'git add -A concepts concepts.lock connectors CLAUDE.md';
+        $steps[] = $env . 'git commit -q -m ' . escapeshellarg($msg);
+        $steps[] = 'git rev-parse --short HEAD';
+        try {
+            [$code, $out] = TenantHost::ssh($this->tenant, 'app', 'cd /srv/app && set -e && ' . implode(' && ', $steps) . ' 2>&1', null, 600);
+        } catch (\RuntimeException $e) { $code = 255; $out = $e->getMessage(); }
+        $out = trim((string) $out);
+        if ($code !== 0) {
+            $this->logEvent($t, 'error', "Install output:\n" . mb_substr($out, -1500));
+            $this->fail($t, "the install failed in {$this->slug}'s container (exit {$code}): " . mb_substr(strrchr("\n" . $out, "\n") ?: $out, 1, 300));
+            return;
+        }
+        $this->logEvent($t, 'info', "Installed in {$this->slug}'s container:\n" . mb_substr($out, -1500));
+        $lines = explode("\n", $out);
+        $this->finish($t, 'merged', 'installed and switched on in the app as ' . end($lines));
+    }
+
     /** Agent finished: commit its changes, merge back, unlock dependents. */
     private function reapTask($t): void {
         $this->reapTenantTask($t);
@@ -327,10 +364,7 @@ class PlanExecutor {
      * is the signal — the same contract as a local task, so runOnce() reaps it the same way.
      */
     private function launchTenantTask($t): bool {
-        if ((string) $t->taskType === 'install') {
-            $this->fail($t, "a plugin install is not built into a container yet — install it in the app: php scripts/tenant.php --clitool={$this->slug} -- --concept-install=NAME, then --concept-enable=NAME");
-            return false;
-        }
+        if ((string) $t->taskType === 'install') { $this->installInTenant($t); return false; }   // finished, not launched
         $id = $this->tenantTaskId($t);
         try {
             $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int) $t->id, $this->slug);

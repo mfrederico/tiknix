@@ -6,7 +6,7 @@
  *
  * Vars: $instance, $cards (array), $environments (array), $categoryOrder (array)
  *   card: key, label, blurb, category, icon, color, auth_type, connect_kind
- *         ('github'|'api_key'|'shopify'|'oauth'), configured, features[],
+ *         ('api_key'|'shopify'|'oauth'), configured, features[],
  *         manage_url|null, connections[] (id, environment, name, eid, url, enabled, revoked, lastError)
  */
 $iid = (int)$instance->id;
@@ -36,10 +36,6 @@ $isConnected = function (array $card): bool {
     return false;
 };
 
-// Pipelines that a GitHub push would fire (trigger.github) — surfaced on the GitHub
-// deploy card so setting up the webhook has a visible payoff, and badged in the list.
-$ghPipes = [];
-foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
 ?>
 <div class="container py-4" style="max-width:960px">
 
@@ -64,7 +60,7 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
       Could not ask this project what it is connected to, so the cards below show no connections — that is not the same as none.
       <code><?= htmlspecialchars($listError) ?></code>
     </div>
-  <?php elseif (!empty($inContainer)): ?>
+  <?php else: ?>
     <div class="alert alert-light border py-2 small mb-4">
       <i class="bi bi-box-arrow-up-right me-1"></i>
       This project keeps its connections in its own app. Connect and disconnect here; webhook secrets, GitHub and social feeds are on
@@ -93,53 +89,10 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
   include __DIR__ . '/_models.php';
   ?>
 
-  <?php if (!empty($inContainer)): ?>
-    <div class="alert alert-light border py-2 small mt-3 mb-0">
-      <i class="bi bi-rocket-takeoff me-1"></i>Its domains and exports to your own servers are on
-      <a href="/deploy" class="text-decoration-underline">Deploy</a>.
-    </div>
-  <?php elseif (!empty($publishDrivers)): ?>
-    <!--
-      Hosting. First on the hub because it answers the question everything else assumes:
-      where does this instance actually run. Previously this lived on the GitHub
-      connector's page, which meant binding a domain required connecting a repo first.
-    -->
-    <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em">Hosting</h2>
-    <div class="card shadow-sm mb-2" id="lxc-card">
-      <div class="card-body">
-        <div class="d-flex align-items-start gap-3">
-          <div class="rounded-circle bg-primary-subtle d-flex align-items-center justify-content-center flex-shrink-0" style="width:44px;height:44px">
-            <i class="bi bi-box fs-5 text-primary"></i>
-          </div>
-          <div class="flex-grow-1">
-            <div class="fw-semibold"><?= htmlspecialchars($publishDrivers[0]['label']) ?></div>
-            <div class="text-body-secondary small mt-1"><?= htmlspecialchars($publishDrivers[0]['blurb']) ?></div>
-
-            <?php if (empty($publishDrivers[0]['available'])): ?>
-              <div class="alert alert-warning py-2 px-3 small mt-2 mb-0"><?= htmlspecialchars($publishDrivers[0]['reason']) ?></div>
-            <?php else: ?>
-              <div id="lxc-state" class="small text-body-secondary mt-2 mb-2">Loading…</div>
-              <div class="d-flex flex-wrap gap-2 align-items-center">
-                <input id="lxc-domain" class="form-control form-control-sm" style="max-width:16rem"
-                       placeholder="app.example.com" autocomplete="off" spellcheck="false">
-                <button id="lxc-deploy" class="btn btn-primary btn-sm" type="button">
-                  <i class="bi bi-rocket-takeoff me-1"></i>Deploy
-                </button>
-                <button id="lxc-refresh" class="btn btn-outline-secondary btn-sm" type="button" hidden>
-                  <i class="bi bi-arrow-clockwise me-1"></i>Re-apply settings
-                </button>
-              </div>
-              <div class="form-text mt-1">
-                Point a <strong>CNAME</strong> at this control plane first, then deploy —
-                the certificate is issued for the domain you enter.
-              </div>
-              <div id="lxc-msg" class="form-text mt-1"></div>
-            <?php endif; ?>
-          </div>
-        </div>
-      </div>
-    </div>
-  <?php endif; ?>
+  <div class="alert alert-light border py-2 small mt-3 mb-0">
+    <i class="bi bi-rocket-takeoff me-1"></i>Its domains and exports to your own servers are on
+    <a href="/deploy" class="text-decoration-underline">Deploy</a>.
+  </div>
 
   <?php if (!empty($connectorErrors)): ?>
     <div class="alert alert-warning mt-3">
@@ -207,81 +160,13 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
                         </div>
                         <button class="btn btn-sm btn-outline-danger py-0 px-1" data-disconnect="<?= (int)$cn['id'] ?>" title="Disconnect"><i class="bi bi-x-lg"></i></button>
                       </div>
-                      <?php if (($card['category'] ?? '') === 'Payments' && empty($cn['revoked']) && empty($inContainer)): ?>
-                        <form data-whsec class="d-flex align-items-center gap-1 mt-1" style="max-width:480px">
-                          <?= csrf_field() ?>
-                          <input type="hidden" name="cid" value="<?= (int)$cn['id'] ?>">
-                          <input type="password" name="secret" class="form-control form-control-sm" placeholder="<?= !empty($cn['webhookSet']) ? 'Webhook secret set ✓ — paste to replace' : 'Webhook signing secret (whsec_…)' ?>" autocomplete="off">
-                          <button class="btn btn-sm btn-outline-secondary text-nowrap" type="submit">Save</button>
-                          <?php if (!empty($cn['webhookSet'])): ?><button class="btn btn-sm btn-outline-danger" type="button" data-whsec-clear="<?= (int)$cn['id'] ?>" title="Remove secret"><i class="bi bi-x-lg"></i></button><?php endif; ?>
-                        </form>
-                        <?php
-                          $whHost = (string)($_SERVER['HTTP_HOST'] ?? 'tiknix.com');
-                          // Public webhook endpoints must be https for the provider to call them;
-                          // only a local host stays http.
-                          $whScheme = preg_match('/^(localhost|127\.0\.0\.1)(:|$)/', $whHost) ? 'http' : 'https';
-                          $whUrl  = $whScheme . '://' . $whHost . '/shop/webhook/' . rawurlencode((string)$card['key']);
-                        ?>
-                        <div class="form-text ms-1">
-                          <?php if (!empty($cn['webhookSet']) && !empty($cn['webhookHint'])): ?>
-                            <span class="text-success-emphasis">Set ✓ ending <code>…<?= htmlspecialchars($cn['webhookHint']) ?></code>.</span>
-                          <?php endif; ?>
-                          Verifies incoming <?= $env === 'production' ? 'live' : 'test' ?> webhooks for this connection.
-                        </div>
-                        <div class="form-text ms-1 d-flex align-items-center gap-1">
-                          <span class="text-nowrap">Endpoint:</span>
-                          <code class="text-body-secondary text-truncate" style="max-width:340px"><?= htmlspecialchars($whUrl) ?></code>
-                          <button class="btn btn-sm btn-link p-0 text-decoration-none" type="button" data-copy="<?= htmlspecialchars($whUrl) ?>" title="Copy endpoint URL"><i class="bi bi-clipboard"></i></button>
-                        </div>
-                      <?php endif; ?>
-
-                      <?php if (($card['category'] ?? '') === 'Social' && empty($cn['revoked']) && empty($inContainer)): ?>
-                        <form data-social-publish class="d-flex align-items-center gap-1 mt-1 flex-wrap" style="max-width:520px">
-                          <?= csrf_field() ?>
-                          <input type="hidden" name="cid" value="<?= (int)$cn['id'] ?>">
-                          <span class="input-group-text py-1 px-2 small">/social/</span>
-                          <input type="text" name="slug" class="form-control form-control-sm" style="max-width:170px" placeholder="page-name" autocomplete="off">
-                          <button class="btn btn-sm btn-outline-primary text-nowrap" type="submit"><i class="bi bi-globe2 me-1"></i>Publish showcase</button>
-                          <a class="small text-nowrap" data-social-url target="_blank" rel="noopener" style="display:none"></a>
-                        </form>
-                        <div class="form-text ms-1">Publish this account's reels &amp; photos to a public page.</div>
-                      <?php endif; ?>
-
-                      <?php // --- GitHub push→deploy webhook --- ?>
-                      <?php if (($card['key'] ?? '') === 'github' && empty($cn['revoked']) && empty($inContainer)): ?>
-                        <div class="mt-2 pt-2 border-top" style="max-width:520px">
-                          <div class="d-flex align-items-center gap-2 flex-wrap">
-                            <button class="btn btn-sm btn-outline-<?= !empty($cn['webhookSet']) ? 'secondary' : 'dark' ?>" data-github-webhook>
-                              <i class="bi bi-<?= !empty($cn['webhookSet']) ? 'arrow-repeat' : 'broadcast-pin' ?> me-1"></i><?= !empty($cn['webhookSet']) ? 'Re-provision deploy webhook' : 'Set up deploy webhook' ?>
-                            </button>
-                            <?php if (!empty($cn['webhookSet'])): ?>
-                              <span class="badge bg-success-subtle text-success-emphasis border">Active<?php if (!empty($cn['webhookHint'])): ?> · ending <code>…<?= htmlspecialchars($cn['webhookHint']) ?></code><?php endif; ?></span>
-                            <?php endif; ?>
-                          </div>
-                          <div class="form-text ms-1">
-                            <?php if (empty($ghPipes)): ?>
-                              A push to this repo will call <code>/webhook/github</code> — but no pipeline listens for it yet. Add a <code>trigger.github</code> to a pipeline in the editor to deploy on push.
-                            <?php else: ?>
-                              A push fires <?= count($ghPipes) ?> pipeline<?= count($ghPipes) === 1 ? '' : 's' ?>:
-                              <?php $ghSlugs = array_map(fn($gp) => '<code>' . htmlspecialchars($gp['slug']) . '</code>', $ghPipes); ?>
-                              <?= implode(', ', $ghSlugs) ?>.
-                              Needs a GitHub token with <code>admin:repo_hook</code>.
-                            <?php endif; ?>
-                          </div>
-                        </div>
-                      <?php endif; ?>
                     </li>
                   <?php endforeach; ?>
                 </ul>
               <?php endif; ?>
 
               <?php // --- connect action, per connect_kind --- ?>
-              <?php if ($card['connect_kind'] === 'github'): ?>
-                <a href="<?= htmlspecialchars($card['manage_url']) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-<?= htmlspecialchars($card['color']) ?> mt-3">
-                  <i class="bi bi-<?= $connected ? 'gear' : 'box-arrow-up-right' ?> me-1"></i><?= $connected ? 'Manage' : 'Set up' ?>
-                </a>
-
-              <?php elseif (!$card['configured']): ?>
+              <?php if (!$card['configured']): ?>
                 <div class="form-text mt-2">Not available on this server yet.</div>
 
               <?php elseif ($card['connect_kind'] === 'api_key'): ?>
@@ -407,85 +292,8 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
 <script>
 (function(){
   const csrf = <?= json_encode(csrf_token()) ?>;
-  // Which instance's store these actions act on. Declared HERE, at the top of the
-  // IIFE, because the per-connection handlers below need it too — it used to live
-  // inside the hosting-card `if`, so disconnect/webhooksecret/publishfeed threw
-  // ReferenceError and died before their fetch, which looks exactly like a button
-  // that does nothing: no request, no server log, no error on screen.
+  // Which project these actions act on — shared by every handler below.
   const iid = <?= (int) ($instance->id ?? 0) ?>;
-
-  // ---- Hosting card -------------------------------------------------------
-  const lxcCard = document.getElementById('lxc-card');
-  if (lxcCard && document.getElementById('lxc-state')) {
-    const state = document.getElementById('lxc-state'),
-          dep   = document.getElementById('lxc-deploy'),
-          ref   = document.getElementById('lxc-refresh'),
-          dom   = document.getElementById('lxc-domain'),
-          msg   = document.getElementById('lxc-msg');
-
-    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
-      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const say = (t, c) => { msg.className = 'form-text mt-1 ' + (c || 'text-body-secondary'); msg.textContent = t; };
-    const post = (url, data) => fetch(url, {
-      method: 'POST',
-      headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-      body: new URLSearchParams(Object.assign({csrf_token: csrf}, data)).toString()
-    }).then(r => r.json());
-
-    function render(s) {
-      if (!s.configured) { state.textContent = 'Hosting is not configured on this control plane.'; dep.disabled = true; return; }
-      if (!s.deployed)   { state.textContent = 'Not deployed yet.'; ref.hidden = true;
-                           dep.innerHTML = '<i class="bi bi-rocket-takeoff me-1"></i>Deploy'; return; }
-      const up = s.status === 'running';
-      // Surface the things you only think to check once they have gone wrong.
-      state.innerHTML =
-        '<span class="badge bg-' + (up ? 'success' : 'secondary') + '-subtle text-' + (up ? 'success' : 'secondary') + ' me-2">'
-        + (up ? 'running' : esc(s.status || 'stopped')) + '</span><code>' + esc(s.domain) + '</code> '
-        + '<span class="text-body-secondary">container ' + s.vmid + ' · ' + esc(s.ip) + ' · '
-        + s.memMb + ' MB RAM · ' + s.diskMb + ' MB disk'
-        + (s.certExpires ? ' · cert to ' + esc(s.certExpires) : ' · <span class="text-warning">no certificate</span>')
-        + '</span>';
-      if (s.domain && !dom.value) dom.value = s.domain;
-      ref.hidden = false;
-      dep.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Redeploy';
-    }
-
-    const load = () => post('/connections/lxcstatus', {id: iid})
-      .then(j => { if (j.success) render(j.data); else state.textContent = j.message || 'Unavailable.'; })
-      .catch(() => { state.textContent = 'Could not read hosting state.'; });
-    load();
-
-    dep.addEventListener('click', async function(){
-      const redeploy = dep.textContent.indexOf('Redeploy') !== -1;
-      let recreate = false;
-      if (redeploy) {
-        // Recreate purges the data volumes, so it is opt-in and spelled out; the second
-        // button is the safe path, and closing the dialog does nothing at all. The server
-        // refuses a recreate anyway once the tenant is past first-run setup.
-        const choice = await tkConfirm('Rebuild the container from scratch?\n\nRebuild DESTROYS its database and uploads.\nRe-apply keeps data: it re-applies settings and restarts.', {title: 'Redeploy', okText: 'Rebuild (destroys data)', cancelText: 'Re-apply & restart', danger: true});
-        if (choice === null) return;
-        if (choice === false) { ref.click(); return; }
-        recreate = true;
-      }
-      dep.disabled = true;
-      say('Deploying… first boot clones the code and installs dependencies, so this takes a minute.');
-      post('/connections/lxcdeploy', {id: iid, domain: dom.value.trim().toLowerCase(), recreate: recreate ? 1 : 0})
-        .then(j => { dep.disabled = false;
-          if (j.success) { render(j.data); say((j.message || 'Deployed.') + ' ' + ((j.data.steps || []).join(' · ')), 'text-success'); }
-          else say(j.message || 'Deploy failed.', 'text-danger'); })
-        .catch(() => { dep.disabled = false; say('Network error.', 'text-danger'); });
-    });
-
-    ref.addEventListener('click', function(){
-      ref.disabled = true;
-      say('Re-applying settings and restarting… data is preserved.');
-      post('/connections/lxcrefresh', {id: iid})
-        .then(j => { ref.disabled = false;
-          say(j.success ? (j.message || 'Re-applied.') : (j.message || 'Failed.'), j.success ? 'text-success' : 'text-danger');
-          if (j.success) setTimeout(load, 8000); })
-        .catch(() => { ref.disabled = false; say('Network error.', 'text-danger'); });
-    });
-  }
 
   document.querySelectorAll('form[data-connectkey]').forEach(function(form){
     form.addEventListener('submit', function(ev){
@@ -513,76 +321,6 @@ foreach ($pipelines as $p) { if (!empty($p['github'])) $ghPipes[] = $p; }
         if (j && j.success) { location.reload(); }
         else { tkAlert((j && j.message) || 'Could not disconnect', {type: 'error'}); }
       }).catch(function(){ tkAlert('Could not disconnect', {type: 'error'}); });
-    });
-  });
-  document.querySelectorAll('form[data-whsec]').forEach(function(form){
-    form.addEventListener('submit', function(ev){
-      ev.preventDefault();
-      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
-      const fdW = new FormData(form); fdW.append('id', iid);
-      fetch('/connections/webhooksecret', {
-        method: 'POST',
-        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-        body: new URLSearchParams(fdW).toString()
-      }).then(r=>r.json()).then(function(j){
-        if (j && j.success) { location.reload(); }
-        else { tkAlert((j && j.message) || 'Could not save', {type: 'error'}); if (btn) btn.disabled = false; }
-      }).catch(function(){ tkAlert('Could not save', {type: 'error'}); if (btn) btn.disabled = false; });
-    });
-  });
-  document.querySelectorAll('form[data-social-publish]').forEach(function(form){
-    form.addEventListener('submit', function(ev){
-      ev.preventDefault();
-      const btn = form.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
-      const fdP = new FormData(form); fdP.append('id', iid);
-      fetch('/connections/publishfeed', {
-        method: 'POST',
-        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-        body: new URLSearchParams(fdP).toString()
-      }).then(r=>r.json()).then(function(j){
-        if (btn) btn.disabled = false;
-        if (j && j.success) {
-          var a = form.querySelector('[data-social-url]');
-          if (a && j.data && j.data.url) { a.href = j.data.url; a.textContent = j.data.url; a.style.display = ''; }
-          showToast('success', (j.message || 'Published') + (j.data && typeof j.data.items === 'number' ? ' — ' + j.data.items + ' item(s).' : ''));
-        } else { tkAlert((j && j.message) || 'Could not publish', {type: 'error'}); }
-      }).catch(function(){ if (btn) btn.disabled = false; tkAlert('Could not publish', {type: 'error'}); });
-    });
-  });
-  document.querySelectorAll('[data-github-webhook]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var iid = <?= (int)($instance->id ?? 0) ?>;
-      var orig = btn.innerHTML;
-      btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Provisioning…';
-      fetch('/connections/githubwebhook', {
-        method: 'POST',
-        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-        body: new URLSearchParams({csrf_token: csrf, id: iid}).toString()
-      }).then(r=>r.json()).then(function(j){
-        if (j && j.success) { location.reload(); }
-        else { tkAlert((j && j.message) || 'Could not set up the webhook', {type: 'error'}); btn.disabled = false; btn.innerHTML = orig; }
-      }).catch(function(){ tkAlert('Could not set up the webhook', {type: 'error'}); btn.disabled = false; btn.innerHTML = orig; });
-    });
-  });
-  document.querySelectorAll('[data-copy]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var txt = btn.getAttribute('data-copy') || '';
-      var done = function(){ var i = btn.querySelector('i'); if (i){ i.className = 'bi bi-check-lg'; setTimeout(function(){ i.className = 'bi bi-clipboard'; }, 1200); } };
-      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done).catch(function(){ tkPrompt('Copy endpoint URL:', {value: txt, title: 'Copy'}); }); }
-      else { tkPrompt('Copy endpoint URL:', {value: txt, title: 'Copy'}); }
-    });
-  });
-  document.querySelectorAll('[data-whsec-clear]').forEach(function(btn){
-    btn.addEventListener('click', async function(){
-      if (!await tkConfirm('Remove this webhook secret?', {okText: 'Remove', danger: true})) return;
-      fetch('/connections/webhooksecret', {
-        method: 'POST',
-        headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
-        body: new URLSearchParams({csrf_token: csrf, id: iid, cid: btn.getAttribute('data-whsec-clear'), clear: '1'}).toString()
-      }).then(r=>r.json()).then(function(j){
-        if (j && j.success) { location.reload(); }
-        else { tkAlert((j && j.message) || 'Could not clear', {type: 'error'}); }
-      }).catch(function(){ tkAlert('Could not clear', {type: 'error'}); });
     });
   });
 })();

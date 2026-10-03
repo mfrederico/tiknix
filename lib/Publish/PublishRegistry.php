@@ -1,15 +1,18 @@
 <?php
 /**
- * PublishRegistry — the available publish targets, and how a connection row resolves
- * to the driver that runs it.
+ * PublishRegistry — the export targets a project's code can be copied to, and the driver
+ * that runs each.
  *
- * A publish connection stores its driver key in metadata_json.driver. Everything else
- * about the target (domain, host, path, sizing) is config in the same blob, so adding a
- * driver never needs a schema change.
+ * A project runs in its own container and what you build IS the live site (merge is
+ * publish), so there is no "hosting" target to pick any more: the drivers left are copies
+ * of the container's HEAD to a server of the customer's own — rsync over SSH, or an SSH
+ * command — run from the control plane with a key it keeps (Publish\SshTargetDriver). They
+ * are offered on the Deploy page (controls/Deploy.php) and through the publish door
+ * (controls/Publish.php) for a pipeline in the project.
  *
- * Publish targets are NOT accounts: there is no external identity and usually no OAuth
- * token, so a connection row here carries an empty access_token and lives entirely in
- * its metadata. That is why they are their own category rather than another OAuth card.
+ * Gone with the host folders: 'tiknix-hosted' (the container is where every project runs
+ * now, provisioned by TenantHost) and 'github-pr' (a PAT read on this host; publishing to a
+ * repo is a pipeline in the project).
  */
 namespace app\Publish;
 
@@ -17,81 +20,32 @@ class PublishRegistry {
 
     /** driver key => class. Order is the order shown in the UI. */
     private const DRIVERS = [
-        'tiknix-hosted' => TiknixHostedDriver::class,
-        'github-pr'     => GithubPrDriver::class,
-        'rsync'         => RsyncDriver::class,
-        'ssh'           => SshDriver::class,
+        'rsync' => RsyncDriver::class,
+        'ssh'   => SshDriver::class,
     ];
 
     /**
-     * Drivers that are usable on THIS control plane. A driver whose backing service is
-     * not configured is listed but marked unavailable, so the UI can explain why rather
-     * than silently omitting an option the operator expects to see.
-     *
-     * @return array<int,array{key:string,label:string,blurb:string,capabilities:array,available:bool,reason:string}>
+     * @return array<int,array{key:string,label:string,blurb:string,capabilities:array,fields:array,available:bool,reason:string}>
      */
     public static function all(): array {
         $out = [];
         foreach (self::DRIVERS as $key => $class) {
-            [$available, $reason] = self::availability($key);
             $out[] = [
                 'key'          => $class::key(),
                 'label'        => $class::label(),
                 'blurb'        => $class::blurb(),
                 'capabilities' => $class::capabilities(),
                 'fields'       => $class::fields(),
-                'available'    => $available,
-                'reason'       => $reason,
+                'available'    => true,
+                'reason'       => '',
             ];
         }
         return $out;
-    }
-
-    /**
-     * Hosting targets only — the ones that answer "where does this instance run", and so
-     * the only ones the Connections hub's Hosting section should offer. A repository
-     * target (github-pr) belongs to the Publisher, not to the hosting card; listing it
-     * here would read as "your project runs on a pull request".
-     *
-     * @return array<int,array<string,mixed>>
-     */
-    public static function hosting(): array {
-        return array_values(array_filter(self::all(), fn($d) => empty($d['capabilities']['code'])));
-    }
-
-    /**
-     * Repository targets — the ones that answer "how does a change reach my code".
-     *
-     * The two kinds are ORTHOGONAL, not alternatives: a project can perfectly well open a
-     * pull request on its repo AND run in a container, because those answer different
-     * questions. Anything presenting targets as one-of-N is conflating them.
-     *
-     * @return array<int,array<string,mixed>>
-     */
-    public static function repository(): array {
-        return array_values(array_filter(self::all(), fn($d) => !empty($d['capabilities']['code'])));
     }
 
     /** @return PublishDriver|null */
     public static function driver(string $key): ?PublishDriver {
         $class = self::DRIVERS[$key] ?? null;
         return $class ? new $class() : null;
-    }
-
-    /** Resolve the driver for a connection row, or null if it names an unknown one. */
-    public static function forConnection(object $conn): ?PublishDriver {
-        $meta = json_decode((string) ($conn->metadataJson ?: '{}'), true) ?: [];
-        return self::driver((string) ($meta['driver'] ?? ''));
-    }
-
-    /** @return array{0:bool,1:string} */
-    private static function availability(string $key): array {
-        if ($key === 'tiknix-hosted') {
-            $cfg = \app\ProxmoxService::config();
-            return ($cfg['host'] !== '' && $cfg['tokenid'] !== '' && $cfg['secret'] !== '')
-                ? [true, '']
-                : [false, 'No hypervisor credentials on this control plane (conf/proxmox.ini).'];
-        }
-        return [true, ''];
     }
 }

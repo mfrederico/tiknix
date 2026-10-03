@@ -42,7 +42,7 @@ class SshDriver extends SshTargetDriver {
         if (!$conn) return ['ok' => false, 'error' => 'Could not generate an SSH key for this target.'];
 
         try {
-            $res = SshKey::withKeyFile((string) $conn->accessToken, function (string $keyFile) use ($c, $command, $inst) {
+            $res = SshKey::withKeyFile((string) $conn->privateKey, function (string $keyFile) use ($c, $command, $inst) {
                 $cmd = 'ssh ' . self::sshOpts($keyFile, $inst, (int) $c['port'])
                      . ' ' . escapeshellarg($c['user'] . '@' . $c['host'])
                      . ' ' . escapeshellarg($command);

@@ -12,7 +12,6 @@
  *            (Publish\RsyncDriver, SshDriver). The SSH key is made and kept here, sealed —
  *            the app never holds it; the code shipped is the container's HEAD.
  *
- * A project still living as a host clone deploys through the Publisher, as before.
  * Anyone on a project sees its page; only its owner changes or runs anything.
  */
 
@@ -31,12 +30,16 @@ class Deploy extends BaseControls\Control {
         if (!$this->requireLogin()) return;
         $inst = $this->project(false);
         if (!$inst) { $this->flash('info', 'Pick a project to deploy.'); Flight::redirect('/projects'); return; }
+        if (!\Model_Instance::tenantRow($inst)) {
+            $this->flash('error', ($inst->displayName ?: $inst->slug) . ' is not running in a container, so it has nowhere to deploy from.');
+            Flight::redirect('/projects');
+            return;
+        }
         $drivers = [];
         foreach (self::EXPORT_DRIVERS as $k => $cls) $drivers[$k] = ['label' => $cls::label(), 'blurb' => $cls::blurb(), 'fields' => $cls::fields()];
         $this->render('deploy/index', [
             'title'       => 'Deploy',
             'instance'    => $inst,
-            'inContainer' => \Model_Instance::tenantRow($inst),
             'canManage'   => $inst->ownedBy((int) $this->member->id),
             'drivers'     => $drivers,
             // QA Testing here: the door when the member has it, the upgrade when it is on offer
@@ -59,7 +62,7 @@ class Deploy extends BaseControls\Control {
     private function containerProject(bool $owner) {
         $inst = $this->project($owner);
         if (!$inst) { Flight::jsonError($owner ? "Only the project's owner can do that." : 'No project selected.', 403); return null; }
-        if (!\Model_Instance::tenantRow($inst)) { Flight::jsonError("{$inst->slug} does not live in its own container yet; it deploys through the Publisher.", 409); return null; }
+        if (!\Model_Instance::tenantRow($inst)) { Flight::jsonError("{$inst->slug} is not running in a container, so it has nowhere to deploy from.", 409); return null; }
         return $inst;
     }
 

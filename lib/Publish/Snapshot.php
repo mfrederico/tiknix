@@ -13,9 +13,8 @@
  * ignorable. What follows is belt-and-braces for the things we must never ship even if
  * .gitignore is edited or missing.
  *
- * Callers take it from here: GitHubPublisher writes a tree from the index and commits it;
- * RsyncDriver lists the paths and feeds them to rsync --files-from. Same index, same
- * contents, whichever way the bytes travel.
+ * Callers take it from here: RsyncDriver lists the paths and feeds them to rsync
+ * --files-from; TenantBuilder's export is read the same way.
  */
 namespace app\Publish;
 

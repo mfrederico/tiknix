@@ -1,33 +1,19 @@
 <?php
 /**
- * PublishDriver — where an instance actually runs.
+ * PublishDriver — an export target: a copy of the project's code on a server of the
+ * customer's own, run from the control plane.
  *
- * "Publish" is its own connector category, not a property of the GitHub connection.
- * A publish connection answers one question — where does this instance run — and owns
- * everything that follows from it: the target's config, its domain binding, its
- * certificate, and how a change reaches it.
- *
- * Drivers differ enormously in what they control. Tiknix Hosted owns the whole stack
- * (container, proxy, TLS); an rsync target owns nothing but a directory on someone
- * else's server. So the interface is deliberately small, and everything optional is
+ * A project runs in its own container, and what you build IS the live site, so a driver
+ * here never stands hosting up; it ships the container's HEAD somewhere else (rsync over
+ * SSH, an SSH command). The interface is deliberately small, and everything optional is
  * reported through capabilities() rather than assumed:
  *
- *   deploy()   stand the target up, or update its shape
- *   status()   what is there right now (for the card)
- *   refresh()  re-apply settings to a live target without destroying data
+ *   deploy()   ship the code to the target
+ *   status()   what is there right now (for the card: key ready, last run, last error)
+ *   refresh()  ship again
+ *   verify()   the handshake — reach the server, prove who we land as, nothing written
  *
- * There are two kinds of target, and capabilities()['code'] is what tells them apart:
- *
- *   HOSTING targets (code => false) answer "where does this instance run". They never
- *   ship a commit — code reaches them by their own mechanism (the container's puller,
- *   a webhook) — so deploy() creates or reshapes the target, nothing more.
- *
- *   REPOSITORY targets (code => true) answer "how does a change reach my code". For
- *   them shipping the commit IS the deploy: GithubPrDriver pushes a snapshot and opens
- *   a pull request, and there is nothing else for it to stand up.
- *
- * A caller that shows hosting UI (domain, TLS, container state) must filter on that
- * flag — PublishRegistry::hosting() does it — rather than assume every driver hosts.
+ * capabilities()['code'] is true for every driver left: shipping the commit IS the deploy.
  */
 namespace app\Publish;
 

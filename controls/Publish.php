@@ -2,11 +2,11 @@
 /**
  * Publish — the ONE door through which a publish target actually runs.
  *
- * Publishing is authored in the publisher.tiknix sidecar and executed by a pipeline in
- * the project, but the work itself has to happen on the CONTROL PLANE: the GitHub PAT and
- * the hypervisor credentials live here, encrypted, and neither an instance nor a sidecar
- * may hold them. So instead of copying credentials outward, the instance asks core to
- * publish it, and core runs the driver.
+ * An export (a copy of the project's code to a server of the customer's own) is run by a
+ * pipeline in the project, but the work itself has to happen on the CONTROL PLANE: the SSH
+ * deploy key lives here, sealed (Publish\SshTargetDriver), and the app never holds it. So
+ * instead of copying the credential outward, the app asks core to publish it, and core
+ * runs the driver. The Deploy page (controls/Deploy.php) runs the same drivers by hand.
  *
  * AUTHENTICATION is the instance's own broker key (`brk_`, conf/broker.ini) — the same
  * credential and the same boundary lib/Pipeline/Steps/ConnectionStep already uses for

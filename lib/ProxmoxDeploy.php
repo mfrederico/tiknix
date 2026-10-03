@@ -1,8 +1,8 @@
 <?php
 /**
  * ProxmoxDeploy — stand a tenant instance up as its own OCI-backed LXC on the Proxmox
- * node, fronted by capricorn. The counterpart to HostedDeploy (which lands code in
- * /hosted on THIS host); this one gives a tenant a whole container.
+ * node, fronted by capricorn. Gives a tenant a whole container (the pre-TenantHost shape;
+ * TenantHost clones the template instead and uses the proxy/MQTT helpers here).
  *
  * SHAPE, AND WHY IT IS THIS SHAPE (all measured — see scripts/proxmox-probe.php):
  *
@@ -414,11 +414,33 @@ class ProxmoxDeploy {
      * (last label), and determine_proxy reads /var/www/html/.proxy.<sname> — so
      * test1.tiknix.com is served from .proxy.test1.tiknix.
      */
-    /** Aliases as passed in opts, cleaned and capped by the driver that owns the rule. */
+    /** Extra hostnames one container may answer for (the primary plus these); each costs a certificate. */
+    public const MAX_ALIASES = 4;
+
+    /** Aliases as passed in opts, cleaned and capped. */
     private static function aliasList(array $opts): array {
-        return \app\Publish\TiknixHostedDriver::normalizeAliases(
-            $opts['aliases'] ?? [], (string) ($opts['domain'] ?? '')
-        );
+        return self::normalizeAliases($opts['aliases'] ?? [], (string) ($opts['domain'] ?? ''));
+    }
+
+    /**
+     * Clean a submitted alias list: lowercase, de-duplicated, never the primary, capped.
+     * Capped HERE as well as in any form, because a form is not the only way in; an
+     * unbounded list would fail slowly against Let's Encrypt's rate limits rather than
+     * being refused.
+     */
+    public static function normalizeAliases($raw, string $primary = ''): array {
+        if (is_string($raw)) $raw = preg_split('/[\s,]+/', $raw) ?: [];
+        if (!is_array($raw)) return [];
+        $primary = strtolower(trim($primary));
+        $out = [];
+        foreach ($raw as $h) {
+            $h = strtolower(trim((string) $h));
+            if ($h === '' || $h === $primary) continue;
+            if (!preg_match('/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/', $h)) continue;
+            $out[$h] = true;                       // key = dedupe
+            if (count($out) >= self::MAX_ALIASES) break;
+        }
+        return array_keys($out);
     }
 
     /** Aliases currently recorded on the instance. */

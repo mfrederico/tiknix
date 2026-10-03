@@ -5,21 +5,20 @@
  * WHY THIS IS A DRIVER AND NOT JUST A PIPELINE STEP. The recipe genuinely is one shell
  * command; a `shell` step running `rsync -az ... user@host:/path` would work today, and
  * an operator who wants to use their own key and their own agent should just do that.
- * What forces a driver is the KEY. A pipeline runs inside the instance, where the jailed
- * agent and the customer's own application code can read the filesystem — so a private
- * key placed there is a key we have handed to everything running in that instance. Here
- * the key is generated on the control plane, stored encrypted, and materialised into a
- * mode-0600 file for the length of exactly one command. The instance presents only its
- * broker key and never sees the credential. That is the same boundary GithubPrDriver
- * holds for a PAT, for the same reason.
+ * What forces a driver is the KEY. A pipeline runs inside the project's container, where
+ * its agent and the customer's own application code can read the filesystem — so a private
+ * key placed there is a key we have handed to everything running in that app. Here the key
+ * is generated on the control plane, kept sealed in core's database (deploykey), and
+ * materialised into a mode-0600 file for the length of exactly one command. The app never
+ * sees the credential; what is shipped is the container's HEAD (TenantBuilder::exportTree).
  *
  * The keypair is created on first use and its PUBLIC half is reported by status(), so the
  * first publish to a new host fails with something actionable — "add this to
- * authorized_keys" — rather than a bare permission denied. One keypair per instance per
+ * authorized_keys" — rather than a bare permission denied. One keypair per project per
  * driver: revoking one customer's access must never affect another's.
  *
- * Host, user and path are NOT secrets, so they live in the publish pipeline in the
- * project's repo where they are reviewable. Only the key lives here.
+ * Host, user and path are NOT secrets: they are the Deploy page's target (deploytarget),
+ * reviewable by anyone on the project. Only the key lives here.
  */
 namespace app\Publish;
 
@@ -69,16 +68,15 @@ abstract class SshTargetDriver implements PublishDriver {
         $conn = self::keyConnection($inst, static::key(), false);
         $host = trim((string) ($config['host'] ?? ''));
         $user = trim((string) ($config['user'] ?? ''));
-        $meta = $conn ? (json_decode((string) ($conn->metadataJson ?: '{}'), true) ?: []) : [];
 
         return [
             'configured'  => $host !== '' && $user !== '',
             'target'      => $host !== '' ? ($user !== '' ? $user . '@' . $host : $host) : '',
             // The customer needs this to authorise us. It is a PUBLIC key; showing it is
             // the entire point of generating a keypair instead of asking for a password.
-            'publicKey'   => (string) ($meta['public_key'] ?? ''),
-            'fingerprint' => (string) ($meta['fingerprint'] ?? ''),
-            'keyReady'    => $conn && (string) ($meta['public_key'] ?? '') !== '',
+            'publicKey'   => $conn ? (string) $conn->publicKey : '',
+            'fingerprint' => $conn ? (string) $conn->fingerprint : '',
+            'keyReady'    => $conn && (string) $conn->publicKey !== '',
             'lastUsed'    => $conn ? ($conn->lastUsedAt ?: null) : null,
             'lastError'   => $conn ? ($conn->lastError ?: null) : null,
         ];
@@ -117,7 +115,7 @@ abstract class SshTargetDriver implements PublishDriver {
         }
 
         try {
-            $res = SshKey::withKeyFile((string) $conn->accessToken, function (string $keyFile) use ($c, $probe, $inst) {
+            $res = SshKey::withKeyFile((string) $conn->privateKey, function (string $keyFile) use ($c, $probe, $inst) {
                 return self::run('ssh ' . self::sshOpts($keyFile, $inst, (int) $c['port'])
                     . ' ' . escapeshellarg($c['user'] . '@' . $c['host'])
                     . ' ' . escapeshellarg($probe));
@@ -148,70 +146,39 @@ abstract class SshTargetDriver implements PublishDriver {
     // ---- shared helpers ------------------------------------------------------
 
     /**
-     * The connection row holding this instance's sealed key for this driver, creating the
-     * keypair on first use.
+     * This project's deploy key for this driver — a `deploykey` row in CORE's database,
+     * minted on first use. The key is core's: core runs the export, so core keeps the sealed
+     * private half (SshKey::seal) and the app never holds it. One key per project per driver,
+     * whichever targets of that driver the project has, and whoever runs the export.
      *
-     * Scoped by instance and driver only — NOT by member — because the caller is the
-     * instance itself via its broker key, not a logged-in person.
+     * instance_ref, not instance_id: a project is hard-deleted, and a foreign key would make
+     * that delete fail forever (CLAUDE.md). The row is removed with the project's targets.
      */
     protected static function keyConnection(object $inst, string $driverKey, bool $create = true) {
-        // Scoping (and enabled/revoked) via ConnectionStore -- see its docblock.
-        $conn = \app\InstanceConnections::forInstall((int) $inst->id, $driverKey);
-        if ($conn) return $conn;
+        $row = Bean::findOne('deploykey', 'instance_ref = ? AND driver = ?', [(int) $inst->id, $driverKey]);
+        if ($row) return $row;
         if (!$create) return null;
 
         $kp = SshKey::generate('tiknix-publish:' . $inst->slug . ':' . $driverKey);
         if (empty($kp['ok'])) return null;
 
-        // Into the INSTANCE's store, not core's. This dispensed against whatever
-        // database was selected -- core's -- while the read above came from the
-        // instance, so the key was written where the reader never looked and a fresh
-        // keypair was minted on EVERY publish. The customer's authorized_keys entry
-        // stopped matching the moment it was added.
-        //
-        // SshKey::seal is deliberately kept: these are core-minted deploy keys and
-        // core has to be able to use them. What changes is only WHERE the row lives.
-        \app\InstanceConnections::withInstall((int) $inst->id, function () use ($inst, $driverKey, $kp) {
-            $conn = Bean::dispense('connections');
-            $conn->connectorType = $driverKey;
-            $conn->environment   = 'production';
-            $conn->enabled       = 1;
-            $conn->authType      = \app\ConnectionStore::AUTH_SEALED;
-            $conn->accessToken   = SshKey::seal((string) $kp['private']);
-            $conn->metadataJson  = json_encode([
-                'driver'      => $driverKey,
-                'public_key'  => (string) $kp['public'],
-                'fingerprint' => (string) $kp['fingerprint'],
-            ]);
-            $conn->createdAt = date('Y-m-d H:i:s');
-            return (int) Bean::store($conn);
-        }, 0, true);
-
-        // Re-read through the same door every other caller uses, so a failed write
-        // surfaces here as "no connection" rather than as a bean that looks stored.
-        return \app\InstanceConnections::forInstall((int) $inst->id, $driverKey);
+        $row = Bean::dispense('deploykey');
+        $row->instanceRef = (int) $inst->id;
+        $row->driver      = $driverKey;
+        $row->privateKey  = SshKey::seal((string) $kp['private']);
+        $row->publicKey   = (string) $kp['public'];
+        $row->fingerprint = (string) $kp['fingerprint'];
+        $row->createdAt   = date('Y-m-d H:i:s');
+        Bean::store($row);
+        return $row;
     }
 
-    /**
-     * Record the outcome so the card and the next status() agree with what happened.
-     *
-     * The bean came from forInstall() and is READ-ONLY: RedBean stores to the database
-     * selected at store() time, so saving it here wrote core's table. Re-open the
-     * instance's store and update it there.
-     */
+    /** Record the outcome so the card and the next status() agree with what happened. */
     protected static function record($conn, object $inst, bool $ok, ?string $error): void {
-        if (!$conn) return;
-        $id = (int) $conn->id;
-        if ($id <= 0) return;
-
-        \app\InstanceConnections::withInstall((int) $inst->id, function () use ($id, $ok, $error) {
-            $row = Bean::load('connections', $id);
-            if (!$row->id) return false;
-            $row->lastUsedAt = date('Y-m-d H:i:s');
-            $row->lastError  = $ok ? null : $error;
-            Bean::store($row);
-            return true;
-        }, false, true);
+        if (!$conn || !$conn->id) return;
+        $conn->lastUsedAt = date('Y-m-d H:i:s');
+        $conn->lastError  = $ok ? null : $error;
+        Bean::store($conn);
     }
 
     /**
@@ -267,12 +234,6 @@ abstract class SshTargetDriver implements PublishDriver {
             return ['ok' => false, 'error' => 'The remote path must be absolute and contain no "..".'];
         }
         return ['ok' => true, 'path' => rtrim($path, '/')];
-    }
-
-    /** The instance's working directory on this control plane. */
-    protected static function instanceDir(object $inst): string {
-        // Was a hard-coded '.tiknix'; the row carries the namespace.
-        return $inst->dir();
     }
 
     /** Run a command with a wall-clock cap; returns [ok, output]. */

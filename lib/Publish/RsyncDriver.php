@@ -37,22 +37,16 @@ class RsyncDriver extends SshTargetDriver {
         $p = self::remotePath($config);
         if (empty($p['ok'])) return ['ok' => false, 'error' => (string) $p['error']];
 
-        // A project in its own container ships what the container runs (its HEAD — merge is
-        // publish), exported to a temp dir on core for the length of this call; a host
-        // clone ships its working directory here.
+        // The project ships what its container runs (its HEAD — merge is publish), exported to
+        // a temp dir on core for the length of this call.
         $tenant = \app\TenantBuilder::bySlug((string) $inst->slug);
-        $export = '';
-        if ($tenant) {
-            try { $dir = $export = \app\TenantBuilder::exportTree($tenant); }
-            catch (\Throwable $e) { return ['ok' => false, 'error' => 'Could not take the code from the project\'s container: ' . $e->getMessage()]; }
-        } else {
-            $dir = self::instanceDir($inst);
-            if (!is_dir($dir)) return ['ok' => false, 'error' => 'This project has no working directory on the control plane.'];
-        }
+        if (!$tenant) return ['ok' => false, 'error' => "{$inst->slug} is not in a container, so there is no code to export."];
+        try { $dir = \app\TenantBuilder::exportTree($tenant); }
+        catch (\Throwable $e) { return ['ok' => false, 'error' => 'Could not take the code from the project\'s container: ' . $e->getMessage()]; }
         try {
             return $this->ship($inst, $config, $c, $p, $dir);
         } finally {
-            if ($export !== '') \app\TenantBuilder::removeExport($export);
+            \app\TenantBuilder::removeExport($dir);
         }
     }
 
@@ -70,7 +64,7 @@ class RsyncDriver extends SshTargetDriver {
         file_put_contents($listFile, implode("\0", $files));
 
         try {
-            $res = SshKey::withKeyFile((string) $conn->accessToken, function (string $keyFile) use ($c, $p, $dir, $listFile, $inst) {
+            $res = SshKey::withKeyFile((string) $conn->privateKey, function (string $keyFile) use ($c, $p, $dir, $listFile, $inst) {
                 $rsh = 'ssh ' . self::sshOpts($keyFile, $inst, (int) $c['port']);
                 $cmd = 'rsync -rlptz --safe-links'
                      . ' --files-from=' . escapeshellarg($listFile) . ' --from0'

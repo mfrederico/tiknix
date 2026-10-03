@@ -1,7 +1,7 @@
 <?php
 /**
  * Deploy (controls/Deploy.php): where the selected project goes live.
- * Vars: $instance, $inContainer, $canManage, $drivers (key => label, blurb, fields)
+ * Vars: $instance, $canManage, $drivers (key => label, blurb, fields)
  */
 $__iid = (int) $instance->id;
 $__name = (string) ($instance->displayName ?: $instance->slug);
@@ -15,13 +15,6 @@ $__name = (string) ($instance->displayName ?: $instance->slug);
     </div>
   </div>
 
-<?php if (!$inContainer): ?>
-  <div class="alert alert-light border">
-    <i class="bi bi-info-circle me-1"></i>
-    <?= htmlspecialchars($__name) ?> still runs as a copy on the platform, not in its own container, so it deploys through the
-    <a href="/sidecar/app/publisher" class="text-decoration-underline">Publisher</a>. Domains and exports move here when it moves into its own container.
-  </div>
-<?php else: ?>
   <div class="alert alert-light border py-2 small mb-4">
     <i class="bi bi-lightning-charge me-1"></i>
     This project runs in its own container: what you build <em>is</em> the live site — a merged change is live on every domain below at once.
@@ -152,7 +145,6 @@ $__name = (string) ($instance->displayName ?: $instance->slug);
   load();
 })();
 </script>
-<?php endif; ?>
 
   <?php /* QA Testing (QA-TESTING-PLAN.md): the door when the member has it, the upgrade when it
            is on offer, "coming soon" until then. $qa = {state: enabled|upsell|soon, url}. */ ?>

@@ -1,11 +1,16 @@
 {
     "key": "serpapi",
+    "version": "1.0.0",
     "label": "SerpAPI",
     "blurb": "Search engine results (Google and others) via SerpAPI — for lead discovery and SERP-driven pipelines.",
     "category": "Data",
     "icon": "search",
     "color": "info",
-    "features": ["Google Search", "Local + regional targeting", "Structured results"],
+    "features": [
+        "Google Search",
+        "Local + regional targeting",
+        "Structured results"
+    ],
     "base_url": "https://serpapi.com",
     "test_path": "/account.json",
     "account_url": "https://serpapi.com/manage-api-key",
@@ -22,7 +27,13 @@
             "path": "/search.json",
             "label": "Search",
             "description": "Run a search and get back structured engine results.",
-            "params": ["engine", "q", "num", "location", "gl"]
+            "params": [
+                "engine",
+                "q",
+                "num",
+                "location",
+                "gl"
+            ]
         }
     ]
 }

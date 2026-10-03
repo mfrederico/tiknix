@@ -1,11 +1,16 @@
 {
     "key": "hubspot",
+    "version": "1.0.0",
     "label": "HubSpot",
     "blurb": "Pull contacts, companies and deals from your HubSpot CRM with a private app token.",
     "category": "CRM",
     "icon": "people",
     "color": "warning",
-    "features": ["Contacts", "Companies", "Deals"],
+    "features": [
+        "Contacts",
+        "Companies",
+        "Deals"
+    ],
     "base_url": "https://api.hubapi.com",
     "test_path": "/crm/v3/objects/contacts?limit=1",
     "account_url": "https://app.hubspot.com",

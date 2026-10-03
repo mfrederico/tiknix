@@ -1,8 +1,9 @@
 {
     "key": "github_oauth",
+    "version": "1.0.0",
     "config_key": "github",
     "label": "GitHub (OAuth)",
-    "blurb": "Sign in with GitHub instead of pasting a token \u2014 repositories, issues and user data, with the scopes you approve.",
+    "blurb": "Sign in with GitHub instead of pasting a token — repositories, issues and user data, with the scopes you approve.",
     "category": "Developer",
     "icon": "github",
     "color": "dark",

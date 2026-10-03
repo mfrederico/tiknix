@@ -1,11 +1,16 @@
 {
     "key": "github_api",
+    "version": "1.0.0",
     "label": "GitHub REST API",
     "blurb": "Read repositories, issues and users through GitHub's REST API with a personal access token.",
     "category": "Developer",
     "icon": "github",
     "color": "dark",
-    "features": ["Repos", "Issues", "Search"],
+    "features": [
+        "Repos",
+        "Issues",
+        "Search"
+    ],
     "base_url": "https://api.github.com",
     "test_path": "/rate_limit",
     "auth": {

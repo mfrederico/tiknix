@@ -30,9 +30,11 @@ if ! command -v php$PHPV >/dev/null 2>&1; then
 fi
 apt-get install -yq --no-install-recommends \
   php$PHPV-fpm php$PHPV-cli php$PHPV-sqlite3 php$PHPV-mbstring php$PHPV-intl php$PHPV-zip \
-  php$PHPV-gd php$PHPV-imagick php$PHPV-curl php$PHPV-xml php$PHPV-apcu php$PHPV-mysql \
-  nginx git unzip curl ca-certificates openssh-server tmux >/dev/null
+  php$PHPV-gd php$PHPV-imagick php$PHPV-curl php$PHPV-xml php$PHPV-apcu php$PHPV-mysql php$PHPV-redis \
+  nginx git unzip curl ca-certificates openssh-server tmux valkey-server >/dev/null
 # tmux: the app's /claude page runs `claude setup-token` in a tmux session (AgentLogin)
+# valkey + php-redis: the query cache's version store ([cache] version_store = valkey), shared by
+# php-fpm, cron and pipelines — with apcu a pipeline's write reached the web only after the TTL
 if ! command -v composer >/dev/null 2>&1; then
   # getcomposer.org's installer, checked against its published signature
   EXPECTED="$(curl -fsSL https://composer.github.io/installer.sig)"
@@ -58,6 +60,26 @@ if [ ! -x /home/app/.local/bin/claude ]; then
   sudo -iu app bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >/dev/null
 fi
 sudo -iu app /home/app/.local/bin/claude --version | head -1
+
+say "valkey (the query cache's version store: ~4 MB, loopback only, nothing persisted)"
+cat > /etc/valkey/valkey.conf <<'EOF2'
+bind 127.0.0.1 -::1
+port 6379
+protected-mode yes
+daemonize no
+supervised systemd
+dir /var/lib/valkey
+save ""
+appendonly no
+maxmemory 16mb
+maxmemory-policy allkeys-lru
+loglevel notice
+logfile /var/log/valkey/valkey-server.log
+databases 1
+EOF2
+systemctl enable valkey-server >/dev/null 2>&1
+systemctl restart valkey-server
+valkey-cli ping | grep -q PONG || { echo "provision: valkey did not answer PONG" >&2; exit 5; }
 
 say "php-fpm pool (as app) and nginx (/srv/app/public)"
 cat > /etc/php/$PHPV/fpm/pool.d/app.conf <<EOF

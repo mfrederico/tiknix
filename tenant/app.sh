@@ -76,6 +76,7 @@ if [ ! -f conf/config.ini ]; then
     -e "s#^app_key = .*#app_key = \"$APP_KEY\"#" \
     -e "s#^environment = .*#environment = \"production\"#" \
     -e "s#^debug = .*#debug = false#" \
+    -e "s#^version_store = .*#version_store = \"valkey\"#" \
     conf/config.ini
 fi
 # A new app starts on the NEWEST runtime release, not the one the template's lock happens to

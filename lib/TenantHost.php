@@ -229,6 +229,27 @@ class TenantHost {
      *   check    exits 0 when it is already there (then nothing is done)
      *   install  runs as root, idempotent; its last line is reported
      */
+    /**
+     * What EVERY container has, over the base template, applied by system() before the plugins'
+     * recipes — the way a base addition reaches containers made before it. Same shape as
+     * SYSTEM_RECIPES.
+     */
+    public const BASE_RECIPES = [
+        // The query cache's version store, shared by php-fpm, cron and pipelines (tenant/base.sh
+        // has the same). With apcu each process family kept its own counters, so a pipeline's
+        // write reached the web only after query_cache_ttl. Loopback only, 16 MB cap, no
+        // persistence (a counter that restarts from zero only invalidates, never serves stale).
+        'valkey' => [
+            'check'   => 'command -v valkey-server >/dev/null && php -m | grep -qi "^redis$" && grep -q "^version_store = \"valkey\"" /srv/app/conf/config.ini && valkey-cli ping 2>/dev/null | grep -q PONG',
+            'install' => 'export DEBIAN_FRONTEND=noninteractive; PHPV=$(php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;"); '
+                       . 'apt-get update -qq >/dev/null && apt-get install -y -qq valkey-server php${PHPV}-redis >/dev/null; '
+                       . 'printf "bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\ndaemonize no\nsupervised systemd\ndir /var/lib/valkey\nsave \"\"\nappendonly no\nmaxmemory 16mb\nmaxmemory-policy allkeys-lru\nloglevel notice\nlogfile /var/log/valkey/valkey-server.log\ndatabases 1\n" > /etc/valkey/valkey.conf; '
+                       . 'systemctl enable valkey-server >/dev/null 2>&1; systemctl restart valkey-server; valkey-cli ping | grep -q PONG || { echo "valkey did not answer PONG"; exit 1; }; '
+                       . 'sed -i \'s/^version_store = .*/version_store = "valkey"/\' /srv/app/conf/config.ini; grep -q "^version_store = \"valkey\"" /srv/app/conf/config.ini || { echo "conf/config.ini has no version_store line to set"; exit 1; }; '
+                       . 'systemctl restart "php*-fpm"; echo "installed: $(valkey-server --version | cut -d" " -f1-2), php-redis, version_store = valkey"',
+        ],
+    ];
+
     public const SYSTEM_RECIPES = [
         // Headless Chrome for the pdf plugin. Google's .deb from Google's apt repository: Ubuntu's
         // own chromium is a snap, which does not run in these containers.
@@ -280,8 +301,15 @@ class TenantHost {
             [$plugin, $need] = array_pad(explode(' ', $line, 2), 2, '');
             $needs[$need][] = $plugin;
         }
-        if (!$needs) return ['ok' => true, 'steps' => ['nothing its installed plugins need beyond the base']];
         $steps = [];
+        // The base first: what every container has, whether or not a plugin asks for anything.
+        foreach (self::BASE_RECIPES as $need => $recipe) {
+            [$c, $o] = self::ssh($inst, 'root', 'set -e; if ' . $recipe['check'] . '; then echo "already installed"; exit 0; fi; ' . $recipe['install'], null, 900);
+            $last = trim((string) strrchr("\n" . trim((string) $o), "\n"));
+            if ($c !== 0) return ['ok' => false, 'steps' => $steps, 'error' => "installing {$need} (base) in {$inst->slug} failed: " . trim((string) $o)];
+            $steps[] = "{$need}: {$last} (base)";
+        }
+        if (!$needs) { $steps[] = 'nothing its installed plugins need beyond the base'; return ['ok' => true, 'steps' => $steps]; }
         foreach ($needs as $need => $plugins) {
             $for = ' (for ' . implode(', ', $plugins) . ')';
             $recipe = self::SYSTEM_RECIPES[$need] ?? null;

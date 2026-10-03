@@ -313,37 +313,67 @@ class PlanExecutor {
 
     /**
      * A plugin install — the one task kind with no agent — runs to its end right here, in
-     * seconds: the app's own `--concept-install` for each concept the task adopts (the catalog
-     * resolved the order; the app fetches the bundle from the catalog with its broker key),
-     * then `--concept-enable` (verify, seeds, switch on, agent guidance), then ONE commit on
-     * the app's branch as the member. No worktree and no merge: there is nothing an agent
-     * could have got wrong, and the files are the catalog's. The task ends merged or failed.
+     * seconds to minutes: the app's own `--concept-install` for each concept the task adopts
+     * (the catalog resolved the order; the app fetches the bundle from the catalog with its
+     * broker key), then the system software the installed plugins ask for (TenantHost::system —
+     * the pdf plugin's Chrome, the mqtt plugin's broker; what `tenant.php --system` does), then
+     * `--concept-enable` (verify, seeds, switch on, agent guidance), then ONE commit on the app's
+     * branch as the member. No worktree and no merge: there is nothing an agent could have got
+     * wrong, and the files are the catalog's. The task ends merged or failed — and a failure
+     * leaves the app's tree as it was (concepts/, concepts.lock, connectors/, CLAUDE.md restored).
      */
     private function installInTenant($t): void {
         $names = json_decode((string) ($t->adopts ?? ''), true) ?: [];
         if (!$names) { $this->fail($t, 'the install task names no plugin (adopts is empty)'); return; }
-        try { $env = TenantHost::gitEnv($this->author()); }
-        catch (\RuntimeException $e) { $this->fail($t, $e->getMessage()); return; }
-        $steps = [];
         foreach ($names as $n) {
             if (!preg_match('/^[a-z][a-z0-9]*$/D', (string) $n)) { $this->fail($t, "'{$n}' is not a plugin name"); return; }
-            $steps[] = 'php scripts/clitool.php --concept-install=' . escapeshellarg($n);
-            $steps[] = 'php scripts/clitool.php --concept-enable=' . escapeshellarg($n);
         }
-        $msg = 'Install plugin' . (count($names) > 1 ? 's' : '') . ': ' . implode(', ', $names);
-        $steps[] = 'git add -A concepts concepts.lock connectors CLAUDE.md';
-        $steps[] = $env . 'git commit -q -m ' . escapeshellarg($msg);
-        $steps[] = 'git rev-parse --short HEAD';
-        try {
-            [$code, $out] = TenantHost::ssh($this->tenant, 'app', 'cd /srv/app && set -e && ' . implode(' && ', $steps) . ' 2>&1', null, 600);
-        } catch (\RuntimeException $e) { $code = 255; $out = $e->getMessage(); }
-        $out = trim((string) $out);
+        try { $env = TenantHost::gitEnv($this->author()); }
+        catch (\RuntimeException $e) { $this->fail($t, $e->getMessage()); return; }
+
+        // Every step in the container restores the tree on failure: a half-installed plugin would
+        // otherwise block the app's next update (a dirty tree refuses --update).
+        $restore = 'git checkout -q -- concepts.lock CLAUDE.md 2>/dev/null; git clean -qfd concepts connectors 2>/dev/null';
+        $run = function (array $steps, int $timeout) use ($restore): array {
+            try {
+                [$code, $out] = TenantHost::ssh($this->tenant, 'app', "cd /srv/app && ( " . implode(' && ', $steps) . " ) 2>&1 || { rc=\$?; {$restore}; exit \$rc; }", null, $timeout);
+            } catch (\RuntimeException $e) { $code = 255; $out = $e->getMessage(); }
+            return [$code, trim((string) $out)];
+        };
+        $last = fn(string $out): string => mb_substr(strrchr("\n" . $out, "\n") ?: $out, 1, 300);
+
+        // 1. the files, from the catalog
+        [$code, $out] = $run(array_map(fn($n) => 'php scripts/clitool.php --concept-install=' . escapeshellarg($n), $names), 600);
         if ($code !== 0) {
             $this->logEvent($t, 'error', "Install output:\n" . mb_substr($out, -1500));
-            $this->fail($t, "the install failed in {$this->slug}'s container (exit {$code}): " . mb_substr(strrchr("\n" . $out, "\n") ?: $out, 1, 300));
+            $this->fail($t, "the install failed in {$this->slug}'s container (exit {$code}): " . $last($out));
             return;
         }
         $this->logEvent($t, 'info', "Installed in {$this->slug}'s container:\n" . mb_substr($out, -1500));
+
+        // 2. the system software the plugins ask for (requires.system), by core, as root
+        try { $sys = TenantHost::system($this->tenant); }
+        catch (\RuntimeException $e) { $sys = ['ok' => false, 'error' => $e->getMessage(), 'steps' => []]; }
+        if (!empty($sys['steps'])) $this->logEvent($t, 'info', "System software:\n- " . implode("\n- ", $sys['steps']));
+        if (!$sys['ok']) {
+            try { TenantHost::ssh($this->tenant, 'app', 'cd /srv/app && ' . $restore, null, 60); } catch (\RuntimeException $e) {}
+            $this->fail($t, "the system software the plugin needs could not be installed in {$this->slug}'s container: " . ($sys['error'] ?? 'unknown'));
+            return;
+        }
+
+        // 3. switch on, and one commit
+        $msg = 'Install plugin' . (count($names) > 1 ? 's' : '') . ': ' . implode(', ', $names);
+        $steps = array_map(fn($n) => 'php scripts/clitool.php --concept-enable=' . escapeshellarg($n), $names);
+        $steps[] = 'git add -A concepts concepts.lock connectors CLAUDE.md';
+        $steps[] = $env . 'git commit -q -m ' . escapeshellarg($msg);
+        $steps[] = 'git rev-parse --short HEAD';
+        [$code, $out] = $run($steps, 600);
+        if ($code !== 0) {
+            $this->logEvent($t, 'error', "Enable output:\n" . mb_substr($out, -1500));
+            $this->fail($t, "the plugin could not be switched on in {$this->slug}'s container (exit {$code}): " . $last($out));
+            return;
+        }
+        $this->logEvent($t, 'info', "Enabled in {$this->slug}'s container:\n" . mb_substr($out, -1500));
         $lines = explode("\n", $out);
         $this->finish($t, 'merged', 'installed and switched on in the app as ' . end($lines));
     }

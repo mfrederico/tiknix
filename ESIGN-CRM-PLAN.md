@@ -100,3 +100,57 @@ touches, lead import is idempotent, the gate.
    contacts, prove the pipeline board and an MCP tool call.
 3. Roll both into the catalog's README index; note them in agent guidance via their
    `guidelines.md` (generated into CLAUDE.md on enable).
+
+## Phase 3 — crm 1.1 + crm-outreach: what Lead Machine taught the CRM
+
+Owner 2026-10-03: "write up the crm 1.1 plan and build it". Lead Machine (`lead-machine-1639fe`)
+is the origin of the catalog's `clients` / `prospects` / `outreach` concepts; it has since grown
+a follow-up schedule, a daily refresh and a reply→thread record. The CRM is the relationship
+book those hand into; the outbound engine stays where it is. Harvest from the CATALOG concepts,
+never from the live app (Fabian's tree has uncommitted edits that already block its updates).
+
+### crm 1.1.0 (in `crm`)
+
+- **Accounts** — `crmaccount` (name, domain, website, industry, size, profile, notes, owner).
+  A contact belongs to one (`crmaccount_id`, SET NULL). Zero-friction grouping: saving a contact
+  with a company name and no account finds-or-creates the account by name (case-insensitive,
+  among accounts the member may see). Pages: `/crm/accounts`, `/crm/account/<id>` (its
+  contacts, a profile the agent can read), create/edit. Visibility: the owner, anyone who may
+  see a contact in it, ADMIN.
+- **Next-action cadence** — `crmcontact.next_touch_at`. Setting `concept.crm.cadence_days`
+  (JSON: cold 7, warm 3, hot 2, closing 1, customer 30). A touch sets the next date from its
+  stage's cadence unless the form names one ("follow up on"); a stage move recomputes from the
+  last touch. The overview's first card is **Due** (next_touch_at ≤ now), the stale list stays.
+- **Touches from mail** — `ContactBook::importMail($c)`: every `message` to or from the
+  contact's email (Communications: outreach sends, replies polled in) becomes a touch once
+  (`crmtouch.message_ref`, unique): outbound = `email / no_answer`, inbound = `email /
+  connected`, summary = subject, dated when it was sent. Run on the contact page (idempotent)
+  and by the `crm_contact` tool.
+- **Slots hosted** — `crm.contact.panels` and `crm.overview.panels` (form: false), so another
+  plugin can put a panel on a contact and on the overview without the CRM knowing it.
+- `linkedin_url` on the contact (a URL someone pastes; nothing fetches it).
+- `uses.beans` += `message`, `thread`. Settings page: cadence days.
+
+### esign 1.0.1
+
+- `Signing::$mayEmail` — a guard an app wires (`fn(string $email): ?string` returning why not,
+  or null). `send()` refuses with an ERROR log + `send_failed` event when it answers. This is how
+  a suppression list reaches a plugin that may not depend on it.
+
+### crm-outreach 1.0.0 (new; requires `crm`, `prospects`, `outreach`)
+
+- **Bridge** — `Bridge::promote($prospect)`: a prospect at `replied` → warm, `meeting_requested`
+  → hot, `qualified` → closing becomes (or updates, by email / `prospect_ref`) a CRM contact:
+  account from company name + domain + website, title, LinkedIn URL, source
+  `prospect:<campaign>`, then `importMail`. `disqualified` / `bounced` / `unsubscribed` on a
+  linked contact write a timeline note, nothing more. `Bridge::sync()` promotes every unlinked
+  prospect in those statuses; pipeline `crm-outreach-sync` runs it hourly; the panel has a
+  button for one.
+- **Panel** on `crm.contact.panels`: the linked prospect (campaign, status, fit rationale, site
+  findings), **Enrich** (dispatches `prospects-enrich` on the linked prospect; copies title /
+  LinkedIn / website back on the next sync), and a **suppressed** badge from `Compliance`.
+- **Suppression** — `Bridge::mayEmail($email)` for `Signing::$mayEmail`; the README shows the
+  one line in `lib/app.php`.
+- MCP tool `crm_promote_prospect` (MEMBER).
+
+Not in scope: campaign/ICP discovery, sending, mailboxes (the engine's); a scraper of any kind.

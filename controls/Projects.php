@@ -347,6 +347,9 @@ class Projects extends BaseControls\Control {
             // Hosting: a container is the strongest signal of "published"; fall back to
             // nothing rather than inventing a date we cannot substantiate.
             'hostedDomain' => (string) ($inst->ctDomain ?: ''),
+            // What the app last said about itself (Projectreport): when, and the headline numbers.
+            'reportedAt'   => (string) ($inst->lastReportedAt ?? ''),
+            'report'       => $inst->reportJson ? (json_decode((string) $inst->reportJson, true) ?: null) : null,
             'published'    => $inst->ctVmid ? 'container ' . (int) $inst->ctVmid : '',
             'lastUpdate'   => $last['when'],
             'lastBy'       => $last['who'],

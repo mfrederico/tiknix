@@ -280,6 +280,15 @@ $fmt = function (string $iso): string {
                     <?php endif; ?>
                   </dd>
                 </div>
+                <?php if ($p['reportedAt'] !== '' && is_array($p['report'])): $rp = $p['report']; $age = time() - strtotime($p['reportedAt']); ?>
+                <div class="d-flex justify-content-between border-top py-1">
+                  <dt class="fw-normal text-body-secondary">Reported</dt>
+                  <dd class="mb-0 text-end" title="<?= htmlspecialchars($p['reportedAt']) ?> — disk <?= htmlspecialchars((string) ($rp['disk_mb'] ?? '?')) ?> MB, memory <?= htmlspecialchars((string) ($rp['mem_mb'] ?? '?')) ?> MB, <?= htmlspecialchars((string) ($rp['requests_h'] ?? '?')) ?> requests in the last hour">
+                    <span class="<?= $age > 5400 ? 'text-warning' : '' ?>"><?= $age < 90 ? 'just now' : ($age < 5400 ? round($age / 60) . ' min ago' : ($age < 172800 ? round($age / 3600) . ' h ago' : round($age / 86400) . ' d ago')) ?></span>
+                    <span class="text-body-secondary">· <?= htmlspecialchars((string) ($rp['disk_mb'] ?? '?')) ?> MB disk · <?= htmlspecialchars((string) ($rp['mem_mb'] ?? '?')) ?> MB RAM<?= !empty($rp['agent_ready']) ? '' : ' · <span class="text-danger">no agent</span>' ?></span>
+                  </dd>
+                </div>
+                <?php endif; ?>
                 <?php if (($p['setup'] ?? '') !== '' && $p['setup'] !== 'active'): ?>
                 <div class="d-flex justify-content-between border-top py-1">
                   <dt class="fw-normal text-body-secondary">Container</dt>

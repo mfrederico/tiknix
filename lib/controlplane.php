@@ -101,6 +101,7 @@
     'help'       => '/help',
     'agentsetup' => '/agentsetup',
     'fleet'      => '/fleet',
+    'reports'    => '/projectreport',   // what every hosted app reports about itself
 ];
 \app\Chrome::$omit = ['/connections', '/integrations'];   // the project panel offers them (chrome_navtop)
 // The sidebar shows two things' pages: the selected project's (the panel) and Tiknix's own. The

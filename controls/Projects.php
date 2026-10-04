@@ -298,7 +298,8 @@ class Projects extends BaseControls\Control {
             return;
         }
         try {
-            $token = AppToken::launch($inst, (string) $this->member->email, $to, AppAccess::level($memberId, $inst));
+            $token = AppToken::launch($inst, (string) $this->member->email, $to, AppAccess::level($memberId, $inst),
+                \app\Feature::allows('mcp', $memberId, (int) $this->member->level) ? ['mcp'] : []);
         } catch (\RuntimeException $e) {
             $this->logger->error('Project open: cannot sign the hand-off', ['slug' => $inst->slug, 'err' => $e->getMessage()]);
             $this->flash('error', $e->getMessage());

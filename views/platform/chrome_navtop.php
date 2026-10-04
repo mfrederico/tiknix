@@ -64,7 +64,7 @@ $__pLink   = function (array $__p) use ($__active): void { ?>
            goes through /projects/open, which signs you in there at your role on the project and
            lands on the page: only the pages that role can open are offered. A new tab: it is
            another site. */
-        $__appPages = $__inCt ? \app\ProjectNav::appPages($__projLevel) : [];
+        $__appPages = $__inCt ? \app\ProjectNav::appPages($__projLevel, \app\Feature::allows('mcp', $__mid, $__level)) : [];
         if ($__appPages): ?>
         <div class="ui-nav-heading" title="Pages of <?= htmlspecialchars($__pName) ?> itself, opened signed in, in a new tab">Open the app <i class="bi bi-box-arrow-up-right"></i></div>
         <?php foreach ($__appPages as [$__pPath, $__pIcon, $__pLabel]): ?>

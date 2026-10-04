@@ -37,11 +37,12 @@ final class AppToken {
      * $level: what Tiknix vouches for (AppAccess::level) — the app creates a MISSING account at it,
      * never changes an existing one; null = no account is created.
      */
-    public static function launch(object $inst, string $email, string $to, ?int $level = null, int $ttl = 60): string {
+    public static function launch(object $inst, string $email, string $to, ?int $level = null, array $grants = [], int $ttl = 60): string {
         if ($level !== null && !in_array($level, [1, 50, 100], true)) throw new \InvalidArgumentException("not a level an app account can be made at: {$level}");
         if ($to === '' || $to[0] !== '/' || str_starts_with($to, '//')) throw new \InvalidArgumentException("not a path on the app: {$to}");
         return self::sign($inst, [
             'aud' => 'launch', 'sub' => (string) $inst->slug, 'email' => strtolower(trim($email)), 'to' => $to, 'level' => $level,
+            'grants' => array_values($grants),   // Tiknix's feature grants for this person (runtime LaunchToken::GRANTS): the app sets and clears them
             'nonce' => bin2hex(random_bytes(16)), 'exp' => time() + $ttl,
         ]);
     }

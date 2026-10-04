@@ -59,9 +59,13 @@ class ProjectNav {
      *
      * @return array<int, array{0:string,1:string,2:string,3:int}>
      */
-    public static function appPages(?int $projectLevel): array {
+    public static function appPages(?int $projectLevel, bool $mcpGrant = false): array {
         if ($projectLevel === null) return [];
-        return array_values(array_filter(self::APP_PAGES, fn($p) => $projectLevel <= $p[3]));
+        $pages = array_values(array_filter(self::APP_PAGES, fn($p) => $projectLevel <= $p[3]));
+        // A team member holding the MCP Access grant gets the part of the agents page the grant
+        // covers (the app is told of the grant when it signs them in).
+        if ($mcpGrant && $projectLevel > 50) $pages[] = ['/agents?tab=mcp', 'hdd-network', 'MCP & skills', 100];
+        return $pages;
     }
 
     /** project | platform — [sidecar.<name>] scope. Anything else is a typo, said loudly. */

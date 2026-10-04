@@ -26,6 +26,12 @@ class ProjectNavTest extends TestCase {
         $this->assertSame($all, $paths(50), 'a team owner/admin');
         $this->assertSame(['/dashboard'], $paths(100), 'a team member is signed in at MEMBER: the admin pages would 403');
         $this->assertSame([], $paths(null), 'no role on the project: no page of its app');
+        // The MCP Access grant adds the part of the agents page it covers — for a team member only
+        // (an admin has the whole page), and never for someone with no role.
+        $withGrant = fn(?int $level) => array_column(ProjectNav::appPages($level, true), 0);
+        $this->assertSame(['/dashboard', '/agents?tab=mcp'], $withGrant(100));
+        $this->assertSame($all, $withGrant(50));
+        $this->assertSame([], $withGrant(null));
         $this->assertNotContains('/connections', $all, 'Connections is one link: Tiknix asks the app');
     }
 

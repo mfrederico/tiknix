@@ -220,6 +220,18 @@ class ConceptsTest extends ConceptsTestCase {
 
     /* ---- verify / enable / disable ---- */
 
+    public function testRequiresLibAcceptsATraitNotOnlyAClass(): void {
+        // storefront requires SiteScoped, which is a TRAIT: class_exists() alone refused the
+        // plugin on an install that has it (found by an agent enabling it, 2026-10-04).
+        $this->assertTrue(trait_exists('app\\SiteScoped'), 'the runtime ships SiteScoped as a trait');
+        $n = $this->uniq('trt');
+        $this->concept($n, ['requires' => ['lib' => ['SiteScoped', 'Bean', 'NoSuchCoreThing']]]);
+        $problems = implode("\n", $this->concepts()->verify($n));
+        $this->assertStringNotContainsString('SiteScoped', $problems);
+        $this->assertStringNotContainsString('app\\Bean', $problems);
+        $this->assertStringContainsString('NoSuchCoreThing', $problems, 'a name that is nothing at all is still refused');
+    }
+
     public function testVerifyNamesEveryProblemAtOnce(): void {
         $n = $this->uniq('ver');
         $this->rootManifest(['slots' => ['catalog.edit.fields' => ['form' => true]]]);

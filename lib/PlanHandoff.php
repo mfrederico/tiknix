@@ -141,7 +141,7 @@ class PlanHandoff {
         . '"Phases" section; build exactly that phase: the data model it names (section 4), the pages and routes it names '
         . '(section 5) and the acceptance checks for the phase (section 10), on the primitives section 6 says it is built '
         . 'from. Nothing from a later phase, nothing the plan does not ask for. Every route gets its authcontrol row by seed '
-        . '(PermissionCache::seedRule), every public form is protected (Turnstile + honeypot, per CLAUDE.md), every task '
+        . '(PermissionCache::seedRule), every public form is protected (Turnstile + honeypot, per AGENTS.md), every task '
         . 'ships its tests. Decompose into tasks a single agent can finish and prove in one sitting, in dependency order, '
         . 'naming what each reuses from the codebase.';
 

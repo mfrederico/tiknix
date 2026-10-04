@@ -14,7 +14,7 @@
  *            not this review's finding.
  *   and for the whole app, the runtime files it replaces without a record (Overrides).
  *
- * Deleted files, vendored code, lock files, minified assets and the generated CLAUDE.md are
+ * Deleted files, vendored code, lock files, minified assets and the generated AGENTS.md/CLAUDE.md are
  * left out. Sizes are bounded and what was cut is said, never silently dropped.
  */
 
@@ -26,7 +26,7 @@ class QaDiff {
     public const MAX_FILES     = 40;
     public const MAX_PATCH     = 12000;     // characters of one file's patch
     public const MAX_TOTAL     = 600000;    // bytes of diff read from the container
-    private const EXCLUDE = ['vendor', 'node_modules', 'public/rt', '*.lock', '*.min.js', '*.min.css', 'CLAUDE.md', '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.ico', '*.woff', '*.woff2', '*.pdf', '*.zip'];
+    private const EXCLUDE = ['vendor', 'node_modules', 'public/rt', '*.lock', '*.min.js', '*.min.css', 'CLAUDE.md', 'AGENTS.md', '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.ico', '*.woff', '*.woff2', '*.pdf', '*.zip'];
 
     /**
      * @return array{ok:bool,error?:string,head?:string,base?:string,first?:bool,commits?:array,files?:array,skipped?:array,overrides?:array}

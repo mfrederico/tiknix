@@ -84,8 +84,8 @@ class InstanceUpdateTest extends TestCase {
                 return [0, ['Upgrading tiknix/runtime']];
             }
             if (str_contains($cmd, '--agent-sync')) {   // the new release's guidance differs
-                file_put_contents($dir . '/CLAUDE.md', 'guidance ' . count($this->ran) . "\n");
-                return [0, ['# CLAUDE.md: regenerated (0 enabled concept(s))']];
+                file_put_contents($dir . '/AGENTS.md', 'guidance ' . count($this->ran) . "\n");
+                return [0, ['# AGENTS.md: regenerated (0 enabled concept(s))']];
             }
             return [0, ['ok']];
         }, fn(string $url) => str_contains($url, "/site/status?probe=") ? 204 : 200);   // the app answers its identity probe
@@ -146,8 +146,8 @@ class InstanceUpdateTest extends TestCase {
         $this->assertSame('v2.0.0-alpha.10', InstanceUpdate::pinned($this->app));
         $this->assertSame('', $this->git($this->app, 'status --porcelain -- composer.lock'), 'the new lock is committed');
         $this->assertStringContainsString('runtime v2.0.0-alpha.10 (was v2.0.0-alpha.1)', $this->git($this->app, 'log -2 --format=%s'));
-        $this->assertSame('', $this->git($this->app, 'status --porcelain -- CLAUDE.md'), 'the regenerated guidance is committed');
-        $this->assertSame('CLAUDE.md regenerated for the runtime update', $this->git($this->app, 'log -1 --format=%s -- CLAUDE.md'));
+        $this->assertSame('', $this->git($this->app, 'status --porcelain -- AGENTS.md CLAUDE.md'), 'the regenerated guidance is committed');
+        $this->assertSame('Agent guidance (AGENTS.md) regenerated for the runtime update', $this->git($this->app, 'log -1 --format=%s -- AGENTS.md'));
         $this->assertStringContainsString('agent guidance: ok', implode("\n", $r['lines']));
 
         // the checkpoint: a local tag holding the database as it was, and NOT on the origin

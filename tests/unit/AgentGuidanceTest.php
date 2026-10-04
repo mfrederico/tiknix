@@ -1,6 +1,6 @@
 <?php
 /**
- * CLAUDE.md is generated (COMPONENTS_PLAN.md, "Concept guidance"): core's agent/guidelines/
+ * AGENTS.md is generated (COMPONENTS_PLAN.md, "Concept guidance"): core's agent/guidelines/
  * sections plus each enabled concept's guidelines.md, in one managed block, under whatever
  * preamble the install keeps above it.
  */
@@ -28,7 +28,9 @@ class AgentGuidanceTest extends ConceptsTestCase {
         foreach ($sections as $f => $body) $this->put("{$this->root}/rt/agent/guidelines/{$f}", $body);
     }
 
-    private function claude(): string { return (string) file_get_contents("{$this->root}/CLAUDE.md"); }
+    /** The generated file (AGENTS.md); CLAUDE.md is the pointer Claude Code follows. */
+    private function claude(): string { return (string) file_get_contents("{$this->root}/AGENTS.md"); }
+    private function pointer(): ?string { $f = "{$this->root}/CLAUDE.md"; return is_file($f) ? (string) file_get_contents($f) : null; }
 
     private function concept_(string $name, ?string $guidelines = '', string $version = '1.2.3'): array {
         $dir = $this->concept($name);
@@ -49,8 +51,9 @@ class AgentGuidanceTest extends ConceptsTestCase {
         foreach (\app\Concepts::instance($core)->enabled() as $name => $m) $enabled[$name] = ['version' => $m->version, 'dir' => $m->dir];
         $c = G::compose($core, $enabled);
         $this->assertFalse($c['migrated'], 'core carries the markers');
-        $this->assertSame(file_get_contents("{$core}/CLAUDE.md"), $c['text'],
-            'CLAUDE.md was edited by hand. Edit agent/guidelines/ and run: php scripts/clitool.php --agent-sync');
+        $this->assertSame(file_get_contents("{$core}/AGENTS.md"), $c['text'],
+            'AGENTS.md was edited by hand. Edit agent/guidelines/ and run: php scripts/clitool.php --agent-sync');
+        $this->assertSame(G::POINTER_TEXT, file_get_contents("{$core}/CLAUDE.md"), 'CLAUDE.md is the pointer that imports AGENTS.md');
     }
 
     /* ---- composing ---- */
@@ -159,7 +162,8 @@ class AgentGuidanceTest extends ConceptsTestCase {
             $this->assertStringContainsString(G::START, $e->getMessage());
             $this->assertStringContainsString(G::END, $e->getMessage());
         }
-        $this->assertSame("# Something else entirely\n\nhand-written\n", $this->claude(), 'untouched');
+        $this->assertSame("# Something else entirely\n\nhand-written\n", $this->pointer(), 'untouched');
+        $this->assertFileDoesNotExist("{$this->root}/AGENTS.md", 'nothing generated beside a file that was refused');
     }
 
     public function testAStartMarkerWithoutAnEndIsRefused(): void {
@@ -243,6 +247,28 @@ class AgentGuidanceTest extends ConceptsTestCase {
         $this->put("{$this->root}/.claude/skills/cal-deep/SKILL.md", "theirs\n");
         $this->expectExceptionMessage('exists and was not installed by sync');
         G::syncSkills($this->root, $this->skilled('cal'));
+    }
+
+    public function testAManagedClaudeMdMovesToAgentsMdAndBecomesThePointer(): void {
+        $this->core();
+        $pre = "# My app\n\nkeep me\n\n";
+        $this->put("{$this->root}/CLAUDE.md", $pre . G::START . "\nstale\n" . G::END . "\n");
+        $r = G::sync($this->root, []);
+        $this->assertTrue($r['migrated']);
+        $this->assertStringStartsWith($pre . G::START, $this->claude(), 'the preamble moved with the block');
+        $this->assertSame(G::POINTER_TEXT, $this->pointer(), 'CLAUDE.md now imports AGENTS.md');
+        $this->assertStringContainsString('@AGENTS.md', (string) $this->pointer());
+        $again = G::sync($this->root, []);
+        $this->assertFalse($again['changed'], 'idempotent once migrated');
+    }
+
+    public function testSomeonesOwnClaudeMdBesideAgentsMdIsLeftAloneAndSaidSo(): void {
+        $this->core();
+        $this->put("{$this->root}/AGENTS.md", G::START . "\nstale\n" . G::END . "\n");
+        $this->put("{$this->root}/CLAUDE.md", "# Hand-written, mine\n");
+        $r = G::sync($this->root, []);
+        $this->assertSame("# Hand-written, mine\n", $this->pointer());
+        $this->assertNotEmpty(array_filter($r['notes'], fn($n) => str_contains($n, 'CLAUDE.md is not the generated pointer')));
     }
 
     public function testNoFileAtAllBecomesJustTheBlock(): void {

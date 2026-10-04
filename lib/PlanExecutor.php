@@ -320,7 +320,7 @@ class PlanExecutor {
      * `--concept-enable` (verify, seeds, switch on, agent guidance), then ONE commit on the app's
      * branch as the member. No worktree and no merge: there is nothing an agent could have got
      * wrong, and the files are the catalog's. The task ends merged or failed — and a failure
-     * leaves the app's tree as it was (concepts/, concepts.lock, connectors/, CLAUDE.md restored).
+     * leaves the app's tree as it was (concepts/, concepts.lock, connectors/, AGENTS.md + CLAUDE.md restored).
      */
     private function installInTenant($t): void {
         $names = json_decode((string) ($t->adopts ?? ''), true) ?: [];
@@ -333,7 +333,7 @@ class PlanExecutor {
 
         // Every step in the container restores the tree on failure: a half-installed plugin would
         // otherwise block the app's next update (a dirty tree refuses --update).
-        $restore = 'git checkout -q -- concepts.lock CLAUDE.md 2>/dev/null; git clean -qfd concepts connectors 2>/dev/null';
+        $restore = 'git checkout -q -- concepts.lock AGENTS.md CLAUDE.md 2>/dev/null; git clean -qfd concepts connectors 2>/dev/null';
         $run = function (array $steps, int $timeout) use ($restore): array {
             try {
                 [$code, $out] = TenantHost::ssh($this->tenant, 'app', "cd /srv/app && ( " . implode(' && ', $steps) . " ) 2>&1 || { rc=\$?; {$restore}; exit \$rc; }", null, $timeout);
@@ -364,7 +364,7 @@ class PlanExecutor {
         // 3. switch on, and one commit
         $msg = 'Install plugin' . (count($names) > 1 ? 's' : '') . ': ' . implode(', ', $names);
         $steps = array_map(fn($n) => 'php scripts/clitool.php --concept-enable=' . escapeshellarg($n), $names);
-        $steps[] = 'git add -A concepts concepts.lock connectors CLAUDE.md';
+        $steps[] = 'git add -A concepts concepts.lock connectors AGENTS.md CLAUDE.md';
         $steps[] = $env . 'git commit -q -m ' . escapeshellarg($msg);
         $steps[] = 'git rev-parse --short HEAD';
         [$code, $out] = $run($steps, 600);
@@ -701,7 +701,7 @@ commit and merge your work — you just make the code changes.
 {$reuse}
 ## Rules
 - Follow the existing codebase conventions (FlightPHP controllers, RedBeanPHP via
-  the Bean wrapper, the project's CLAUDE.md standards). Use the tiknix MCP
+  the Bean wrapper, the project's AGENTS.md standards). Use the tiknix MCP
   (reuse_digest / codebase_map / whatprovides / describe) to check conventions
   before writing. If a "Reuse these" section is present above, build ON those
   primitives — extend them, do not create parallel duplicates.
@@ -725,7 +725,7 @@ commit and merge your work — you just make the code changes.
   sandbox's own, thrown away with it, so anything written to it directly is lost. If this
   task needs a DB or permission change (e.g. an authcontrol route entry to make a page
   public), write an IDEMPOTENT numbered seed in services/Schema/Seeds/NN_Name.php (the
-  CLAUDE.md convention; permissions through PermissionCache::seedRule), and apply it in
+  AGENTS.md convention; permissions through PermissionCache::seedRule), and apply it in
   YOUR SANDBOX to see it work (`php scripts/clitool.php --build`). The orchestrator runs
   the same build against the live instance after your work merges. A legacy standalone script in
   database/seeds/<descriptive-name>.php is also applied (once, ledgered); if you write
@@ -740,7 +740,7 @@ commit and merge your work — you just make the code changes.
   a placeholder ('unknown', 'default', 0, ''), do NOT substitute the nearest working
   alternative, and do NOT catch an exception just to keep going. A fallback turns a broken
   thing into a plausible answer, and a plausible answer gets believed instead of fixed.
-  This is rule 6 in CLAUDE.md — read its "No Fallbacks" section before writing one.
+  This is rule 6 in AGENTS.md — read its "No Fallbacks" section before writing one.
   Concretely: an endpoint whose config key is absent must SAY SO, not answer `status: ok`
   with `"version": "unknown"`. That exact thing shipped from a build like this one, and the
   generated code's own comment described the fallback as deliberate.

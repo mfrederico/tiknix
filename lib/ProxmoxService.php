@@ -64,6 +64,38 @@ class ProxmoxService {
         ];
     }
 
+    /**
+     * The node's tenant layout — conf/proxmox.ini [tenant]: what a container is made from (the
+     * stock OS template, storage, size), where it sits (bridge, subnet, gateway, DNS) and core's
+     * key into it. Every key is required: a missing one throws naming it and the file, because
+     * a default that fits this node is wrong on the next.
+     *
+     * @return array{os_template:string,storage:string,rootfs_gb:int,memory_mb:int,swap_mb:int,cores:int,bridge:string,subnet:string,gateway:string,dns:string,key:string,known_hosts:string}
+     */
+    public static function tenant(): array {
+        $file = dirname(__DIR__) . '/conf/proxmox.ini';
+        $ini  = @parse_ini_file($file, true) ?: [];
+        $t    = $ini['tenant'] ?? null;
+        if (!is_array($t)) throw new \RuntimeException("{$file} has no [tenant] section — the node's container layout (see conf/proxmox.example.ini).");
+        $out = [];
+        foreach (['os_template', 'storage', 'bridge', 'subnet', 'gateway', 'dns', 'key', 'known_hosts'] as $k) {
+            $v = trim((string) ($t[$k] ?? ''));
+            if ($v === '') throw new \RuntimeException("{$file}: [tenant] {$k} is not set.");
+            $out[$k] = $v;
+        }
+        foreach (['rootfs_gb', 'memory_mb', 'swap_mb', 'cores'] as $k) {
+            if (!isset($t[$k]) || !is_numeric($t[$k]) || (int) $t[$k] <= 0) throw new \RuntimeException("{$file}: [tenant] {$k} must be a positive number.");
+            $out[$k] = (int) $t[$k];
+        }
+        if (!preg_match('/^\d{1,3}\.\d{1,3}\.\d{1,3}\.$/', $out['subnet'])) throw new \RuntimeException("{$file}: [tenant] subnet must be a /24 prefix ending in a dot, e.g. \"10.10.10.\".");
+        return $out;
+    }
+
+    /** Is $ip an address on the tenant subnet? The one test every SSH into a container makes. */
+    public static function isTenantIp(string $ip): bool {
+        return (bool) preg_match('/^' . preg_quote(self::tenant()['subnet'], '/') . '\d{1,3}$/', $ip);
+    }
+
     public static function fromConfig(): ?self {
         $cfg = self::config();
         if ($cfg['host'] === '' || $cfg['tokenid'] === '' || $cfg['secret'] === '') return null;

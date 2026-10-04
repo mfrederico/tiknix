@@ -26,22 +26,17 @@ namespace app;
 
 class TenantHost {
 
-    /** Proxmox's stock OS template the tenant template is built from (node's `local` storage). */
-    const OS_TEMPLATE = 'local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst';
     /** Name prefix of tenant templates; the newest (by its timestamp suffix) is the one cloned. */
     const TEMPLATE_PREFIX = 'tiknix-base-';
-    const ROOTFS     = 'local-lvm';
-    const ROOTFS_GB  = 4;
-    const MEMORY_MB  = 1024;
-    const SWAP_MB    = 512;
-    const CORES      = 2;
-    const BRIDGE     = 'vmbr1';
-    const SUBNET     = '10.10.10.';
-    const GATEWAY    = '10.10.10.1';
-    const DNS        = '8.8.8.8';
+    /**
+     * The node's layout (OS template, storage, sizes, bridge, subnet, gateway, DNS, core's tenant
+     * key) is conf/proxmox.ini [tenant] — ProxmoxService::tenant(): capricorn's facts, kept beside
+     * the API credentials, never constants here.
+     */
+    private static function node(): array { return ProxmoxService::tenant(); }
     /** Core's tenant key: its public half is authorised in every tenant (root at create, app by provision.sh). */
-    const KEY        = '/home/ubuntu/.ssh/tiknix_tenant_ed25519';
-    const KNOWN      = '/home/ubuntu/.ssh/known_hosts_tenants';
+    public static function key(): string { return self::node()['key']; }
+    public static function knownHosts(): string { return self::node()['known_hosts']; }
     const BASE_SH    = __DIR__ . '/../tenant/base.sh';
     const SEAL_SH    = __DIR__ . '/../tenant/seal.sh';
     const APP_SH     = __DIR__ . '/../tenant/app.sh';
@@ -76,18 +71,18 @@ class TenantHost {
     public static function buildTemplate(): array {
         $pve = ProxmoxService::fromConfig();
         if (!$pve) return ['ok' => false, 'error' => 'conf/proxmox.ini is not configured'];
-        $pub = @file_get_contents(self::KEY . '.pub');
-        if ($pub === false || trim($pub) === '') return ['ok' => false, 'error' => 'core has no tenant key at ' . self::KEY . '.pub'];
+        $pub = @file_get_contents(self::key() . '.pub');
+        if ($pub === false || trim($pub) === '') return ['ok' => false, 'error' => 'core has no tenant key at ' . self::key() . '.pub'];
         $node = $pve->node();
         $vmid = self::freeVmid($pve);
         if (!$vmid['ok']) return $vmid;
         $vmid = $vmid['vmid'];
-        $ip = self::SUBNET . $vmid;
+        $ip = self::node()['subnet'] . $vmid;
         $name = self::TEMPLATE_PREFIX . date('YmdHi');
         $steps = [];
-        $r = $pve->createCt($node, $vmid, self::OS_TEMPLATE, self::ctParams($name, $ip) + [
+        $r = $pve->createCt($node, $vmid, self::node()['os_template'], self::ctParams($name, $ip) + [
             'description' => 'tiknix tenant template (TenantHost::buildTemplate)',
-            'rootfs' => self::ROOTFS . ':' . self::ROOTFS_GB,
+            'rootfs' => self::node()['storage'] . ':' . self::node()['rootfs_gb'],
             'ssh-public-keys' => trim($pub),
             'onboot' => 0,
         ]);
@@ -142,7 +137,7 @@ class TenantHost {
         $vmid = self::freeVmid($pve);
         if (!$vmid['ok']) return $vmid;
         $vmid = $vmid['vmid'];
-        $ip = self::SUBNET . $vmid;
+        $ip = self::node()['subnet'] . $vmid;
         $c = $pve->cloneCt($node, $tpl['vmid'], $vmid, ['hostname' => $hostname, 'full' => 0,
             'description' => $description . ' (linked clone of ' . $tpl['name'] . ')']);
         if (!$c['ok']) return ['ok' => false, 'error' => "clone of {$tpl['name']} to {$vmid} failed: {$c['exit']}" . ($c['log'] !== '' ? "\n{$c['log']}" : '')];
@@ -173,13 +168,14 @@ class TenantHost {
 
     /** Settings every tenant container carries (a new one, a template build, a clone). */
     private static function ctParams(string $hostname, string $ip): array {
+        $n = self::node();
         return [
             'hostname'   => $hostname,
-            'memory'     => self::MEMORY_MB,
-            'swap'       => self::SWAP_MB,
-            'cores'      => self::CORES,
-            'net0'       => 'name=eth0,bridge=' . self::BRIDGE . ',ip=' . $ip . '/24,gw=' . self::GATEWAY,
-            'nameserver' => self::DNS,
+            'memory'     => $n['memory_mb'],
+            'swap'       => $n['swap_mb'],
+            'cores'      => $n['cores'],
+            'net0'       => 'name=eth0,bridge=' . $n['bridge'] . ',ip=' . $ip . '/24,gw=' . $n['gateway'],
+            'nameserver' => $n['dns'],
             'features'   => 'nesting=1',
         ];
     }
@@ -193,7 +189,7 @@ class TenantHost {
 
     /** A reused address is a new machine with new host keys: forget the old one's. */
     private static function forgetHostKey(string $ip): void {
-        if (is_file(self::KNOWN)) exec('ssh-keygen -q -R ' . escapeshellarg($ip) . ' -f ' . escapeshellarg(self::KNOWN) . ' 2>/dev/null');
+        if (is_file(self::knownHosts())) exec('ssh-keygen -q -R ' . escapeshellarg($ip) . ' -f ' . escapeshellarg(self::knownHosts()) . ' 2>/dev/null');
     }
 
     public static function waitForSsh(string $ip, int $timeout): array {
@@ -565,7 +561,7 @@ class TenantHost {
             'CORE_HOST'      => $core,
             'CORE_IP'        => $coreIp,
             'DEPLOY_TOKEN'   => GitHttp::deployToken($inst),
-            'BUILDER_PUBKEY' => trim((string) file_get_contents(self::KEY . '.pub')),
+            'BUILDER_PUBKEY' => trim((string) file_get_contents(self::key() . '.pub')),
             'APP_BASEURL'    => 'https://' . $domain,
             'APP_NAME'       => (string) ($inst->displayName ?: $inst->slug),
             'APP_KEY'        => bin2hex(random_bytes(32)),
@@ -615,10 +611,10 @@ class TenantHost {
     public static function ssh(object $inst, string $user, string $command, ?string $stdin = null, int $timeout = 600, ?string $stdinFile = null, ?string $stdoutFile = null): array {
         if (!in_array($user, ['app', 'root'], true)) throw new \InvalidArgumentException("tenant user must be app or root, not {$user}");
         $ip = (string) $inst->ctIp;
-        if (!preg_match('/^10\.10\.10\.\d{1,3}$/', $ip)) throw new \RuntimeException("{$inst->slug} has no tenant address ({$ip})");
-        $cmd = ['timeout', (string) $timeout, 'ssh', '-i', self::KEY,
+        if (!ProxmoxService::isTenantIp($ip)) throw new \RuntimeException("{$inst->slug} has no tenant address ({$ip})");
+        $cmd = ['timeout', (string) $timeout, 'ssh', '-i', self::key(),
             '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'StrictHostKeyChecking=accept-new',
-            '-o', 'UserKnownHostsFile=' . self::KNOWN, '-o', 'LogLevel=ERROR',
+            '-o', 'UserKnownHostsFile=' . self::knownHosts(), '-o', 'LogLevel=ERROR',
             "{$user}@{$ip}", $command];
         // ssh forwards LANG/LC_* (SendEnv); core's locale may not exist in the tenant. C.UTF-8 does.
         $env = array_merge(getenv(), ['LANG' => 'C.UTF-8', 'LC_ALL' => 'C.UTF-8']);
@@ -701,10 +697,10 @@ class TenantHost {
      */
     public static function tunnelCommand(object $inst, int $port): string {
         $ip = (string) $inst->ctIp;
-        if (!preg_match('/^10\.10\.10\.\d{1,3}$/', $ip)) throw new \RuntimeException("{$inst->slug} has no tenant address ({$ip})");
+        if (!ProxmoxService::isTenantIp($ip)) throw new \RuntimeException("{$inst->slug} has no tenant address ({$ip})");
         if ($port < 1024 || $port > 65535) throw new \InvalidArgumentException("not a port: {$port}");
-        return implode(' ', array_map('escapeshellarg', ['ssh', '-i', self::KEY, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
-            '-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=' . self::KNOWN, '-o', 'LogLevel=ERROR',
+        return implode(' ', array_map('escapeshellarg', ['ssh', '-i', self::key(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
+            '-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=' . self::knownHosts(), '-o', 'LogLevel=ERROR',
             '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=30', '-N', '-R', "127.0.0.1:{$port}:127.0.0.1:{$port}", "app@{$ip}"]));
     }
 

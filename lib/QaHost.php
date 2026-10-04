@@ -32,7 +32,7 @@ class QaHost {
         $f = self::stateFile();
         if (!is_file($f)) return null;
         $j = json_decode((string) file_get_contents($f), true);
-        if (!is_array($j) || (int) ($j['vmid'] ?? 0) <= 0 || !preg_match('/^10\.10\.10\.\d{1,3}$/', (string) ($j['ip'] ?? ''))) {
+        if (!is_array($j) || (int) ($j['vmid'] ?? 0) <= 0 || !ProxmoxService::isTenantIp((string) ($j['ip'] ?? ''))) {
             throw new \RuntimeException("{$f} is not a QA host record ({vmid, ip, …}) — fix or remove it");
         }
         return $j;
@@ -108,8 +108,8 @@ class QaHost {
         $remote = 'cd /srv/qa/mcp && PLAYWRIGHT_BROWSERS_PATH=/srv/qa/browsers exec node node_modules/@playwright/mcp/cli.js'
                 . ' --headless --isolated --browser chromium --image-responses omit --codegen none --viewport-size 1280x800'
                 . ' --output-dir ' . $dir . '/out' . ($signedIn ? ' --storage-state ' . $dir . '/state.json' : '');
-        return ['command' => 'ssh', 'args' => ['-i', TenantHost::KEY, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'StrictHostKeyChecking=accept-new',
-            '-o', 'UserKnownHostsFile=' . TenantHost::KNOWN, '-o', 'LogLevel=ERROR', 'app@' . $s['ip'], $remote]];
+        return ['command' => 'ssh', 'args' => ['-i', TenantHost::key(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'StrictHostKeyChecking=accept-new',
+            '-o', 'UserKnownHostsFile=' . TenantHost::knownHosts(), '-o', 'LogLevel=ERROR', 'app@' . $s['ip'], $remote]];
     }
 
     public static function destroy(): array {

@@ -455,10 +455,13 @@ truth: it is what already exists right now. You do NOT need to call `codebase_ma
    task to a different registered engine, and say why in the description.
 
 5. **Account for data & permissions as seeds — never write the live DB directly.**
-   A new route needs an `authcontrol` entry; new/seed data needs an idempotent
-   `database/seeds/*.php` script (Bean wrapper: findOne/dispense/store). RedBean
-   auto-creates a model's table on first store, so there is no CREATE TABLE — but the
-   permission row and any starter data MUST be shipped as a seed task. Reuse an
+   A new route needs an `authcontrol` entry; new/seed data needs an idempotent, numbered
+   seed in `services/Schema/Seeds/NN_Name.php` (NN from 50 up; Bean wrapper:
+   findOne/dispense/store; permissions through `PermissionCache::seedRule`). That folder
+   is the ONLY one applied — `clitool --build` runs it at every merge and update. Never
+   name a file under `database/seeds/`: nothing runs it, so its rows never reach the
+   live app. RedBean auto-creates a model's table on first store — but the permission
+   row and any starter data MUST be shipped in the seed, in the task that needs them. Reuse an
    existing `<controller>::* = <level>` permission pattern from the inventory.
 
 6. **Honour the owner's two answers, when the goal ends with them.**

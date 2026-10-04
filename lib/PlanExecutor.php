@@ -283,11 +283,10 @@ class PlanExecutor {
     }
 
     /**
-     * Post-build: apply the DB seed scripts the plan introduced (database/seeds/*.php)
-     * against the LIVE instance, then rebuild the permission cache. Plan branches never
-     * carry the binary DB (reapTask discards it), so DB / permission changes are
-     * expressed as committed, idempotent seed scripts and applied here — once, ledgered
-     * so a resumed orchestrator never double-applies. Returns human-readable log lines.
+     * Post-build. Nothing is applied here: DB / permission changes ship as seeds in the app's
+     * services/Schema/Seeds/, and every merge runs them in the container (AgentTask::merge →
+     * --build). There is no second seed folder and no ledger — a task that writes one under
+     * database/seeds/ is failed (straySeeds). Returns human-readable log lines.
      */
     public function finalize(): array {
         // Every merge already ran the app's seeds in its container (AgentTask::merge → --build).
@@ -469,6 +468,14 @@ class PlanExecutor {
             return;
         }
         if (!empty($r['diffstat'])) $this->logEvent($t, 'info', "Changed ({$r['commit']}):\n" . $r['diffstat']);
+        // A seed outside services/Schema/Seeds/ is never applied: merging it would publish pages
+        // whose permission rows and tables do not exist on the live app (holistica: five of them).
+        if (($stray = self::straySeeds((string) ($r['diffstat'] ?? ''))) !== []) {
+            TenantHost::discardTask($this->tenant, $id);
+            $this->finish($t, 'failed', 'the task wrote ' . implode(', ', $stray) . ' — nothing applies a seed there, so it would never reach the live app. '
+                . 'Write it as services/Schema/Seeds/NN_Name.php (NN from 50 up; no autoloader or Bootstrap lines — the build includes it inside the app).');
+            return;
+        }
         // Merging IS publishing: the app's branch in its container, then its seeds.
         try {
             $m = TenantHost::mergeTask($this->tenant, $id, $this->author());
@@ -590,6 +597,12 @@ class PlanExecutor {
             }
         }
         return array_keys($roots);
+    }
+
+    /** Seed scripts a task wrote where nothing applies them (database/seeds/), from its diffstat. @return string[] */
+    public static function straySeeds(string $diffstat): array {
+        preg_match_all('#^\s*(database/seeds/\S+\.php)\s*\|\s*\d+ \++#m', $diffstat, $m);   // lines with additions; a pure removal is a move away
+        return array_values(array_unique($m[1]));
     }
 
     private static function shorten(string $s): string {
@@ -747,14 +760,13 @@ commit and merge your work — you just make the code changes.
   public), write an IDEMPOTENT numbered seed in services/Schema/Seeds/NN_Name.php (the
   AGENTS.md convention; permissions through PermissionCache::seedRule), and apply it in
   YOUR SANDBOX to see it work (`php scripts/clitool.php --build`). The orchestrator runs
-  the same build against the live instance after your work merges. A legacy standalone script in
-  database/seeds/<descriptive-name>.php is also applied (once, ledgered); if you write
-  one, use the \\app\\Bean wrapper (Bean::findOne / dispense / store).
-  The seed file lives TWO levels below the instance root, so bootstrap the app with
-  EXACTLY this (do not add a chdir, the CWD is already the instance root):
-      require_once __DIR__ . '/../../vendor/autoload.php';
-      \$app = new \\app\\Bootstrap();
-  A wrong relative depth (e.g. '/../bootstrap.php') will fatal — the seed is two dirs deep.
+  the same build against the live instance when your work merges, and on every update.
+  services/Schema/Seeds/ is the ONLY folder that is applied: a seed anywhere else —
+  database/seeds/ above all, even if this task's description names it — never reaches the
+  live app, and the task is failed for it. Number yours from 50 up (the platform's own
+  seeds use the lower numbers and run in the same sequence). The build INCLUDES the file
+  inside the running app: use \\app\\Bean and \\app\\PermissionCache directly, and do not
+  require the autoloader or create a Bootstrap in it.
 - **NO FALLBACKS. Fail loudly.** If something you need is missing — a config key, a
   credential, a dependency, a column — raise, or log an ERROR that NAMES it. Do NOT return
   a placeholder ('unknown', 'default', 0, ''), do NOT substitute the nearest working

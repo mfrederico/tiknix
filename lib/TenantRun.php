@@ -81,6 +81,65 @@ final class TenantRun {
     }
 
     /**
+     * What the agents are DOING right now, readable: the tail of each run's live transcript.
+     *
+     * A task's agent runs headless (its output arrives when it ends), but it writes its session
+     * as it goes — <home>/.claude/projects/<worktree path, non-alphanumerics as dashes>/<id>.jsonl.
+     * This reads the newest transcript per run id IN the container (one ssh for all of them; the
+     * reader is a few lines of PHP sent on stdin, so no app needs a newer runtime for it) and
+     * returns, per id, the last $lines events as text: what the agent said, each tool it called
+     * with the telling part of its input, and any tool error. File contents and tool output are
+     * not included — this is a progress view, not a dump.
+     *
+     * @param string[] $ids run ids (plan-1-task-2, board-7)
+     * @return array<string,array{lines:string[],at:string,found:bool}>
+     */
+    public static function activity(object $inst, array $ids, int $lines = 40): array {
+        $ids = array_values(array_filter($ids, fn($i) => preg_match('/^[a-z0-9][a-z0-9-]{0,80}$/', (string) $i)));
+        if (!$ids) return [];
+        [$c, $o] = TenantHost::ssh($inst, 'app', 'php /dev/stdin ' . max(1, min(200, $lines)) . ' ' . implode(' ', array_map('escapeshellarg', $ids)), self::ACTIVITY_READER, 30);
+        $d = json_decode((string) $o, true);
+        if ($c !== 0 || !is_array($d)) throw new \RuntimeException("cannot read the agents' activity in {$inst->slug}'s container: " . mb_substr(trim((string) $o), 0, 200));
+        return $d;
+    }
+
+    /** Runs in the container (PHP on stdin): args = <lines> <run id>… → JSON {id: {lines, at, found}}. */
+    private const ACTIVITY_READER = <<<'PHP'
+<?php
+$n = (int) $argv[1]; $out = [];
+foreach (array_slice($argv, 2) as $id) {
+    $dir = '/srv/app/.aibuilder/home/.claude/projects/' . preg_replace('/[^A-Za-z0-9]/', '-', "/srv/app/.aibuilder/wt/{$id}");
+    $files = glob($dir . '/*.jsonl') ?: [];
+    usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
+    if (!$files) { $out[$id] = ['lines' => [], 'at' => '', 'found' => false]; continue; }
+    $f = $files[0]; $size = filesize($f); $h = fopen($f, 'r');
+    if ($size > 3000000) { fseek($h, $size - 3000000); fgets($h); }   // the tail; drop the partial first line
+    $lines = [];
+    $short = fn($s, $m = 180) => mb_strlen($s = trim(preg_replace('/\s+/', ' ', (string) $s))) > $m ? mb_substr($s, 0, $m) . '…' : $s;
+    while (($l = fgets($h)) !== false) {
+        $j = json_decode($l, true); if (!is_array($j)) continue;
+        $t = isset($j['timestamp']) ? date('H:i:s', strtotime($j['timestamp'])) : '';
+        $content = $j['message']['content'] ?? null; if (!is_array($content)) continue;
+        foreach ($content as $c) {
+            if (!is_array($c)) continue;
+            if (($j['type'] ?? '') === 'assistant' && ($c['type'] ?? '') === 'text' && trim((string) $c['text']) !== '') $lines[] = "[{$t}] " . $short($c['text'], 400);
+            elseif (($c['type'] ?? '') === 'tool_use') {
+                $in = (array) ($c['input'] ?? []); $what = '';
+                foreach (['description', 'command', 'file_path', 'path', 'pattern', 'query', 'url', 'prompt', 'skill'] as $k) if (!empty($in[$k]) && is_scalar($in[$k])) { $what = $short($in[$k]); break; }
+                $lines[] = "[{$t}]   → " . ($c['name'] ?? 'tool') . ($what !== '' ? ': ' . $what : '');
+            } elseif (($c['type'] ?? '') === 'tool_result' && !empty($c['is_error'])) {
+                $r = $c['content'] ?? ''; if (is_array($r)) $r = implode(' ', array_map(fn($x) => is_array($x) ? (string) ($x['text'] ?? '') : (string) $x, $r));
+                $lines[] = "[{$t}]   ✗ " . $short($r, 240);
+            }
+        }
+    }
+    fclose($h);
+    $out[$id] = ['lines' => array_slice($lines, -$n), 'at' => date('c', filemtime($f)), 'found' => true];
+}
+echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+PHP;
+
+    /**
      * End the session AND every process under it. Absent is fine; unreachable throws.
      *
      * Killing the tmux session alone hangs up only the pane's process group — and the agent is not

@@ -112,6 +112,13 @@ class PlanHandoff {
                 'progress' => (string) ($h->progress ?? ''), 'note' => (string) ($h->progressNote ?? '')];
         if ((int) $h->instanceRef > 0) {
             $inst = Bean::load('instance', (int) $h->instanceRef);
+            // Claimed into a project that has since been deleted: not "claimed" (there is no project
+            // to name) and not "offered" (the claim happened). The wizard's expiry purges on this.
+            if (!$inst->id && (string) $h->status === 'claimed') {
+                $out['status'] = 'gone';
+                $out['note'] = 'the project this plan was claimed into has been deleted';
+                return $out;
+            }
             if ($inst->id) {
                 $out['project_slug'] = (string) $inst->slug;
                 $out['project_url']  = 'https://' . $inst->slug . '.' . ($inst->app ?: 'tiknix') . '.com';

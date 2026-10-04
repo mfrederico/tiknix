@@ -3,7 +3,7 @@
  * /handoff/claim/<token> — a signed-in member decides whether the plan the Get-started
  * wizard produced becomes a project of theirs.
  *
- * Expects: $state ('offered' | 'claimed' | 'unknown'), $handoff (bean or null), $brief (array),
+ * Expects: $state ('offered' | 'claimed' | 'gone' | 'unknown'), $handoff (bean or null), $brief (array),
  *          $engines (unused since projects build on their app's own agents), $refusal (array|null from ProjectQuota), $project (PlanHandoff::state)
  */
 $h = $handoff;
@@ -16,6 +16,12 @@ $h = $handoff;
     <a class="btn btn-primary" href="https://start.tiknix.com/start">Open the Get-started wizard</a>
   </div></div>
 
+<?php elseif ($state === 'gone'): ?>
+  <div class="card"><div class="card-body">
+    <h1 class="h4">This plan's project was deleted</h1>
+    <p class="mb-3">It became a project on <?= htmlspecialchars((string) $h->claimedAt) ?>, and that project has since been deleted by its owner. The plan cannot be claimed again; start a new one from <a href="https://start.tiknix.com/start">Get started</a>.</p>
+    <a class="btn btn-outline-secondary" href="/projects">Your projects</a>
+  </div></div>
 <?php elseif ($state === 'claimed'): ?>
   <?php $mine = (int) $h->memberRef === (int) ($member->id ?? 0); ?>
   <div class="card"><div class="card-body">

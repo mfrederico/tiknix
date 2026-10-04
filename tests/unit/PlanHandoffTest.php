@@ -118,6 +118,17 @@ class PlanHandoffTest extends ConceptsTestCase {
         $this->assertSame('shop-portal-ab12cd', PlanHandoff::state($h)['project_slug']);
     }
 
+    public function testAClaimIntoADeletedProjectIsGone(): void {
+        $h = PlanHandoff::offer(7, $this->package());
+        $inst = Bean::dispense('instance'); $inst->slug = 'shop-portal-ef56ab'; $inst->app = 'tiknix'; $inst->status = 'active'; Bean::store($inst);
+        $h->status = 'claimed'; $h->instanceRef = (int) $inst->id; $h->memberRef = 3; Bean::store($h);
+        Bean::trash($inst);   // the owner deleted the project
+        $st = PlanHandoff::state($h);
+        $this->assertSame('gone', $st['status'], "neither 'claimed' (no project to name) nor 'offered' (the claim happened)");
+        $this->assertSame('', $st['project_slug']);
+        $this->assertStringContainsString('deleted', $st['note']);
+    }
+
     public function testSlugBaseAndAfterLoginTarget(): void {
         $this->assertSame('my-shop-portal', PlanHandoff::slugBase('  My Shop Portal! '));
         $this->assertSame('shop-2024', PlanHandoff::slugBase('2024 Shop 2024'));

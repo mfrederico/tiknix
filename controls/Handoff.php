@@ -58,14 +58,15 @@ class Handoff extends Control {
         }
         $memberId = (int) $this->member->id;
         $refusal  = (string) $h->status === 'offered' ? ProjectQuota::refusalFor($memberId, 1) : null;
+        $project  = PlanHandoff::state($h);
         $this->render('handoff/claim', [
             'title'    => 'Start a project from this plan',
-            'state'    => (string) $h->status,           // offered | claimed
+            'state'    => (string) $project['status'],   // offered | claimed | gone (claimed, project since deleted)
             'handoff'  => $h,
             'brief'    => json_decode((string) $h->briefJson, true) ?: [],
             'engines'  => EngineRegistry::menu(),
             'refusal'  => $refusal,
-            'project'  => PlanHandoff::state($h),
+            'project'  => $project,
         ]);
     }
 

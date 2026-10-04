@@ -186,6 +186,28 @@ class InstanceUpdateTest extends TestCase {
         $this->assertStringContainsString('smoke: FAILED', implode("\n", $r['lines']));
     }
 
+    public function testARedirectTheAppDeclaresIntendedPassesSmoke(): void {
+        // start.tiknix sends guests to tiknix.com on purpose and says so in X-Redirect-Reason; the
+        // identity probe proved it is the app answering, so that is the app working.
+        $this->published = ['v2.0.0-alpha.1', 'v2.0.0-alpha.2'];
+        $reason = 'intended: guests are sent to tiknix.com';
+        $u = new InstanceUpdate(function (string $dir, string $cmd): array {
+            if (str_contains($cmd, ' show tiknix/runtime --all')) return [0, [json_encode(['versions' => $this->published])]];
+            if (preg_match("/ update tiknix\\/runtime --with='tiknix\\/runtime:([^']+)'/", $cmd, $m)) { $this->lock('v' . $m[1], false, $dir); return [0, []]; }
+            return [0, ['ok']];
+        }, function (string $url) use (&$reason): array { if (str_contains($url, '/site/status?probe=')) return [204, null]; return [302, $reason]; });
+        $r = $u->run($this->app);
+        $this->assertSame('updated', $r['status'], implode("\n", $r['lines']));
+        $this->assertStringContainsString("redirects by the app's own design", implode("\n", $r['lines']));
+
+        // The same redirect WITHOUT the app's word for it is what it always was: not answering.
+        $this->published[] = 'v2.0.0-alpha.3';
+        $reason = null;
+        $r = $u->run($this->app);
+        $this->assertSame('failed', $r['status']);
+        $this->assertStringContainsString('smoke: FAILED', implode("\n", $r['lines']));
+    }
+
     public function testAComposerFailurePutsEverythingBackAndPinsNothing(): void {
         $u = $this->updater();
         $this->published = ['v2.0.0-alpha.1', 'v2.0.0-alpha.2'];

@@ -43,6 +43,23 @@ class PlanRunner {
 
     private string $agent = '';
 
+    /**
+     * How deep the planning goes, after the first decomposition:
+     *   off      one pass — the plan as first written
+     *   flagged  (default) the planner marks tasks that span several capabilities `complex`;
+     *            only when it marked any are they split by a second pass and the whole plan's
+     *            dependencies and priorities re-checked by a third. A simple plan costs one pass.
+     *   always   the second and third pass run on every plan.
+     */
+    public const DEEPEN_MODES = ['off', 'flagged', 'always'];
+    private string $deepen = 'flagged';
+
+    public function deepen(string $mode): self {
+        if (!in_array($mode, self::DEEPEN_MODES, true)) throw new \InvalidArgumentException("planning depth must be one of " . implode(', ', self::DEEPEN_MODES) . ", not '{$mode}'");
+        $this->deepen = $mode;
+        return $this;
+    }
+
     public function __construct(string $slug, string $instanceDir, int $memberId, int $memberLevel = 50, string $engine = 'claude') {
         $this->slug        = $slug;
         $this->instanceDir = rtrim($instanceDir, '/');
@@ -283,7 +300,17 @@ class PlanRunner {
                                                      ['member' => $this->memberId] + ($this->agent !== '' ? ['agent' => $this->agent] : []))
                       . ' > /dev/null; php -r ' . escapeshellarg('require ' . var_export($mainProjectRoot . '/vendor/autoload.php', true)
                       . '; exit(\\app\\TenantBuilder::unpackPlan(' . var_export($out, true) . ', ' . var_export($ws . '/.aibuilder', true)
-                      . ', ' . var_export($this->slug, true) . ', ' . (int) $this->memberId . ', ' . var_export($this->agent, true) . '));') . '; }';
+                      . ', ' . var_export($this->slug, true) . ', ' . (int) $this->memberId . ', ' . var_export($this->agent, true)
+                      . ', ' . ($this->deepen !== 'off' ? 'true' : 'false') . '));') . '; }';
+            // The first plan is a DRAFT while deeper passes may follow (*.plan.draft.json — the
+            // ingest and the browser poll match *.plan.json only, so nobody builds a plan that
+            // is about to be refined). plan-deepen.php runs the passes and writes the final file.
+            if ($this->deepen !== 'off') {
+                $runBlock .= '; php ' . escapeshellarg($mainProjectRoot . '/scripts/plan-deepen.php')
+                           . ' --slug=' . escapeshellarg($this->slug) . ' --dir=' . escapeshellarg($ws) . ' --member=' . (int) $this->memberId
+                           . ' --level=' . (int) $this->memberLevel . ' --engine=' . escapeshellarg($this->engine)
+                           . ' --agent=' . escapeshellarg($this->agent) . ' --mode=' . escapeshellarg($this->deepen);
+            }
         }
 
         $logArg     = escapeshellarg($log);
@@ -478,10 +505,184 @@ call the **`submit_plan`** MCP tool exactly once with:
   - `reuses` — array of existing primitives this task builds on, as `kind/name`
     strings (e.g. `["controller/Lead","model/member","lib/Mailer"]`). Empty ONLY for
     genuinely new ground — and if it's empty, the description must say why.
+  - `complex` — `true` when this task is really SEVERAL: it spans more than one capability
+    (a page AND a map provider AND a connection AND a pipeline to fill it), or you could not
+    name its files and steps without first investigating. It is then planned more deeply
+    before anything is built. Judge by breadth, not by length; most tasks are `false`.
+  - `complex_reason` — when `complex`, one sentence naming the separate capabilities.
 
 Do not ask the operator questions — make reasonable assumptions and note them in
 the relevant task descriptions. After `submit_plan` returns, reply `PLAN_WRITTEN`
 and stop.
+MD;
+    }
+
+    /* ---- deeper planning: passes 2 (deepen) and 3 (order), run by scripts/plan-deepen.php ---- */
+
+    /** The newest draft the first pass left (TenantBuilder::unpackPlan with $draft), or null. */
+    public function draftFile(): ?string {
+        $files = glob($this->abDir() . '/' . (int) $this->memberId . '-*.plan.draft.json') ?: [];
+        usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
+        return $files[0] ?? null;
+    }
+
+    /** The subtask ids a plan marks `complex`. */
+    public static function flagged(array $plan): array {
+        $out = [];
+        foreach ((array) ($plan['subtasks'] ?? []) as $st) if (!empty($st['complex'])) $out[] = (string) ($st['id'] ?? '?');
+        return $out;
+    }
+
+    /**
+     * Refine the draft and publish the final plan (*.plan.json). Returns what was done, which
+     * is also written into the plan as `planning` — the board shows it.
+     *
+     * A pass that fails does not lose the plan: the last good version is published, with the
+     * failure recorded in `planning.error` and logged at ERROR. An undeepened plan that says
+     * so is honest; a plan withheld because an improvement pass failed is not better.
+     *
+     * @return array{mode:string,passes:int,flagged:string[],split:int,before:int,after:int,error:string}
+     */
+    public function refine(): array {
+        $draft = $this->draftFile();
+        if ($draft === null) throw new \RuntimeException('no draft plan to refine in ' . $this->abDir());
+        $plan = json_decode((string) file_get_contents($draft), true);
+        if (!PlanIngestor::isValidPlan($plan)) throw new \RuntimeException("{$draft} is not a valid plan");
+        $goal = is_file($this->goalFile()) ? (string) file_get_contents($this->goalFile()) : (string) ($plan['title'] ?? '');
+        $flagged = self::flagged($plan);
+        $did = ['mode' => $this->deepen, 'passes' => 1, 'flagged' => $flagged, 'split' => 0, 'before' => count($plan['subtasks']), 'after' => count($plan['subtasks']), 'error' => ''];
+
+        if ($this->deepen === 'always' || ($this->deepen === 'flagged' && $flagged)) {
+            foreach (['deepen', 'order'] as $pass) {
+                echo "[planner] pass " . ($did['passes'] + 1) . " ({$pass}) — " . ($pass === 'deepen'
+                    ? ($this->deepen === 'always' ? 'every task re-examined' : count($flagged) . ' task(s) marked complex: ' . implode(', ', $flagged))
+                    : 'dependencies and priorities re-checked') . "\n";
+                try {
+                    $next = $this->runPass($this->buildRefineRequest($goal, $plan, $pass, $flagged));
+                } catch (\RuntimeException $e) {
+                    $did['error'] = "the {$pass} pass failed: " . $e->getMessage();
+                    echo '[planner] ERROR ' . $did['error'] . " — publishing the plan as it stood before this pass\n";
+                    \Flight::get('log')?->error('PlanRunner: ' . $did['error'], ['slug' => $this->slug]);
+                    break;
+                }
+                // keep what the container does not know: whose plan this is
+                foreach (['instance', 'agent'] as $k) if (isset($plan[$k])) $next[$k] = $plan[$k];
+                $plan = $next;
+                $did['passes']++;
+                echo '[planner] pass ' . $did['passes'] . ' done: ' . count($plan['subtasks']) . " task(s)\n";
+            }
+        } else {
+            echo "[planner] no task marked complex — one pass is the plan\n";
+        }
+        $did['after'] = count($plan['subtasks']);
+        $did['split'] = max(0, $did['after'] - $did['before']);
+        $did['still_complex'] = self::flagged($plan);
+        $plan['planning'] = $did;
+
+        $final = preg_replace('/\.plan\.draft\.json$/', '.plan.json', $draft);
+        if (file_put_contents($final . '.tmp', json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false || !rename($final . '.tmp', $final)) {
+            throw new \RuntimeException("could not write {$final}");
+        }
+        @unlink($draft);
+        echo '[planner] plan final after ' . $did['passes'] . ' pass(es): ' . $did['before'] . ' → ' . $did['after'] . " task(s)\n";
+        return $did;
+    }
+
+    /** Test seam: callable(string $request): array — stands in for the container planner. */
+    public $passRunner = null;
+    /** Test seam: the codebase inventory, instead of asking the container for it. */
+    public ?string $digest = null;
+
+    /** One more planner run in the container on $request; the plan it submits. Throws with the reason. */
+    private function runPass(string $request): array {
+        if ($this->passRunner !== null) return ($this->passRunner)($request);
+        $req = $this->abDir() . '/plan-refine-request.md';
+        $out = $this->abDir() . '/tenant-plan-refine.json';
+        if (file_put_contents($req, $request) === false) throw new \RuntimeException("could not write {$req}");
+        @unlink($out);
+        $cmd = TenantBuilder::tenantCommand($this->tenant, 'plan', $this->tenantPlanId(), $req, $out,
+                                            ['member' => $this->memberId] + ($this->agent !== '' ? ['agent' => $this->agent] : []));
+        exec($cmd . ' > /dev/null 2>&1', $o, $code);
+        $r = TenantBuilder::result($out);
+        if ($r === null) throw new \RuntimeException("the container planner left no result (exit {$code})");
+        if (($r['status'] ?? '') !== 'planned') throw new \RuntimeException('no plan came back: ' . ($r['status'] ?? '?') . ' — ' . mb_substr((string) ($r['error'] ?? ''), 0, 300));
+        $plan = json_decode((string) $r['plan'], true);
+        if (!PlanIngestor::isValidPlan($plan)) throw new \RuntimeException('what came back is not a valid plan');
+        return $plan;
+    }
+
+    /** The brief for pass 2 (deepen) or 3 (order): the goal, the inventory, the plan so far, and that pass's one job. */
+    private function buildRefineRequest(string $goal, array $plan, string $pass, array $flagged): string {
+        $digest = $this->codebaseDigest();
+        $json = json_encode(['title' => $plan['title'] ?? '', 'summary' => $plan['summary'] ?? '', 'subtasks' => $plan['subtasks']], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $which = $this->deepen === 'always' ? 'EVERY task' : 'the tasks marked `"complex": true` (' . implode(', ', $flagged) . ')';
+        $job = $pass === 'deepen' ? <<<MD
+## This pass: DEEPEN
+
+Look again, harder, at {$which}. For each one:
+
+1. **Investigate before you split.** Use `describe`, `whatprovides`, `concepts_search` and
+   `concepts_get` to learn what it really takes: which connection or provider it needs, whether
+   a catalog concept already does part of it, whether data must be gathered by a pipeline.
+2. **Split it into tasks that are each ONE capability** a single agent can build and commit:
+   e.g. "the directory page", "the map provider connection", "geocoding pipeline", "the map
+   on the page". Give each a full Markdown description, its `files`, `reuses`, `adopts`.
+3. **Ids:** a task you split is REPLACED by its parts, named from it (`t4` → `t4a`, `t4b`, …).
+   Every task you do not split keeps its `id`, title and description exactly.
+4. **Rewire the graph:** the parts inherit the original's `depends_on` (the first ones) and
+   chain among themselves where they share files or need each other's output; every task that
+   depended on the original now depends on the part(s) that produce what it needs.
+5. Set `complex` to `false` on everything you split. Leave it `true` — with `complex_reason`
+   — ONLY on a part that still cannot be built by one agent; say what is unknown.
+
+Do not add scope the goal does not ask for, and do not merge tasks.
+MD : <<<MD
+## This pass: ORDER
+
+The tasks are now the right size. Check the plan as a whole and correct it:
+
+1. **Dependencies.** Every id in a `depends_on` exists; there is no cycle; tasks that touch
+   the same files are chained; a task that needs another's table, route, connection or seed
+   depends on it. Remove a dependency that is not real — it only makes the build slower.
+2. **Priority.** Foundations first (data, permissions, connections), then what is built on
+   them, then pages that tie it together, then checks. `priority` 1 is first.
+3. **Coverage.** Every check under the goal's "How we will know it worked" is quoted in the
+   task that satisfies it; every route a task adds states its authcontrol level.
+4. **Nothing lost.** Every task from the plan below is still there, with its `id`, unless
+   you are correcting a real error — say so in the summary.
+
+Do not split, merge or add tasks in this pass, and do not rewrite descriptions that are right.
+MD;
+        return <<<MD
+# AI Builder — Plan refinement
+
+You are the **planning agent** for a tiknix instance. A plan has already been written for the
+goal below. You do NOT write code or edit files. Your job in this pass is narrow — see "This
+pass" — and you finish by calling **`submit_plan`** once with the COMPLETE plan (every task,
+changed or not), in the same shape it has now.
+
+## Goal
+
+{$goal}
+
+## What already exists in THIS codebase
+
+{$digest}
+
+## The plan so far
+
+```json
+{$json}
+```
+
+{$job}
+
+## Deliverable
+
+Call `submit_plan` exactly once with `title`, `summary` (say in one sentence what this pass
+changed) and the full `subtasks` array — each with `id`, `title`, `priority`, `description`,
+`files`, `depends_on`, `reuses`, `adopts`, `complex`, `complex_reason`. Then reply
+`PLAN_WRITTEN` and stop. Do not ask the operator questions.
 MD;
     }
 
@@ -492,6 +693,7 @@ MD;
      * root. Never throws — a digest failure must not block planning.
      */
     private function codebaseDigest(): string {
+        if ($this->digest !== null) return $this->digest;
         return TenantBuilder::digest($this->tenant);
     }
 }

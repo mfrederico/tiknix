@@ -260,7 +260,7 @@ class TenantBuilder {
      * the agent found the goal already built. Returns the process exit code (0 = something
      * was delivered).
      */
-    public static function unpackPlan(string $outFile, string $abDir, string $slug, int $memberId, string $agent = ''): int {
+    public static function unpackPlan(string $outFile, string $abDir, string $slug, int $memberId, string $agent = '', bool $draft = false): int {
         $r = self::result($outFile);
         if ($r === null) { echo "[planner] the container planner left no result ({$outFile})\n"; return 1; }
         if (!empty($r['credential'])) echo "[planner] ran in {$slug}'s container on {$r['credential']}\n";
@@ -278,7 +278,9 @@ class TenantBuilder {
         if (!is_array($plan)) { echo "[planner] the plan is not JSON\n"; return 1; }
         $plan['instance'] = $slug;   // submit_plan stamped the container's throwaway worktree
         $plan['agent']    = $agent;  // the agent it was planned on; its tasks run on it too (PlanIngestor)
-        $file = "{$abDir}/{$memberId}-" . date('Ymd-His') . '-' . substr(bin2hex(random_bytes(4)), 0, 6) . '.plan.json';
+        // $draft: deeper planning passes follow (PlanRunner::refine) — not *.plan.json yet, so
+        // neither the ingest nor the browser poll takes a plan that is about to be refined.
+        $file = "{$abDir}/{$memberId}-" . date('Ymd-His') . '-' . substr(bin2hex(random_bytes(4)), 0, 6) . ($draft ? '.plan.draft.json' : '.plan.json');
         if (file_put_contents($file, json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)) === false) { echo "[planner] could not write {$file}\n"; return 1; }
         echo '[planner] plan received from the container: "' . ($plan['title'] ?? '?') . '" (' . count($plan['subtasks'] ?? []) . " task(s))\n";
         return 0;

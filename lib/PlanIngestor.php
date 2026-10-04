@@ -104,6 +104,8 @@ class PlanIngestor
         // missing column, RedBean suppressed the error the way fluid mode does, and the
         // board showed "No Tasks Found" next to a counter reading ten.
         $parent->updatedAt      = $now;
+        // How deep the planning went (PlanRunner::refine): mode, passes, what was split, any error.
+        $parent->planning       = isset($plan['planning']) && is_array($plan['planning']) ? json_encode($plan['planning'], JSON_UNESCAPED_SLASHES) : '';
         Bean::store($parent);
 
         // Pass 1: create every subtask, remembering the planner's stable ref.
@@ -130,6 +132,10 @@ class PlanIngestor
             $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
             $t->reuses       = json_encode(is_array($st['reuses'] ?? null) ? array_values($st['reuses']) : []);
             $t->adopts       = json_encode(self::adopts($st['adopts'] ?? null, (string) $st['title']));
+            // Still marked complex after planning (the depth was "off", or a deeper pass could
+            // not make it one agent's work): the board says so before anyone runs it.
+            $t->needsPlanning = !empty($st['complex']) ? 1 : 0;
+            $t->planningNote  = !empty($st['complex']) ? mb_substr((string) ($st['complex_reason'] ?? ''), 0, 500) : '';
             $t->planRef      = $ref;
             $t->memberId     = $memberId;
             $t->createdAt    = $now;

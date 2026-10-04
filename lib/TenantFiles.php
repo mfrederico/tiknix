@@ -23,6 +23,8 @@ final class TenantFiles {
         '~^mcptools/[A-Z][A-Za-z0-9]*Tool\.php$~',
         '~^mcptools/workbench/[A-Z][A-Za-z0-9]*Tool\.php$~',
         '~^scripts/hooks/[a-z][a-z0-9-]*\.php$~',
+        // a skill the project's owner added (ProjectSkills): one SKILL.md per skill directory
+        '~^\.claude/skills/[a-z][a-z0-9-]{1,62}/SKILL\.md$~',
     ];
 
     public function __construct(private object $inst) {

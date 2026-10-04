@@ -1,16 +1,16 @@
 <?php
 /**
- * 41_McpSetup.php — /agentsetup became /mcpsetup ("MCP services"). The levels the old routes
- * had: the page and its connectivity test are MEMBER at the gate and decided by the `mcp`
- * feature grant in the controller; adding, changing and removing a server are ADMIN. (A
- * granted MEMBER can therefore open the page and test, but not change servers — as before
- * the rename. Whether the grant should cover the writes too is the owner's decision.)
- * Seeded before the first request, which would invent rows. The old page's write rows go
- * (and /agentsetup itself with seed 42).
+ * 41_McpSetup.php — /agentsetup became /mcpsetup ("MCP services"). Every route is MEMBER at
+ * the gate and decided in the controller by the `mcp` feature grant (Mcpsetup::mayConfigure),
+ * which stands in for the ADMIN tier — the owner's decision, 2026-10-04: a member granted MCP
+ * manages their project's servers, including removing and restoring its own. Seeded before
+ * the first request, which would invent ADMIN rows. (Seed 43 moves rows an earlier version of
+ * this seed wrote at ADMIN.)
  */
 echo '  authcontrol: mcpsetup::index => ' . \app\PermissionCache::seedRule('mcpsetup', 'index', 100, 'MCP services: gated by the mcp feature grant, not by level') . "\n";
-foreach (['storeServer', 'updateServer', 'deleteServer', 'removeTiknix', 'restoreTiknix', 'test'] as $m) {
-    echo "  authcontrol: mcpsetup::{$m} => " . \app\PermissionCache::seedRule('mcpsetup', $m, $m === 'test' ? 100 : 50, 'MCP services: ' . $m) . "\n";
+foreach (['storeServer', 'updateServer', 'deleteServer', 'removeTiknix', 'restoreTiknix', 'test',
+          'skill', 'skillSave', 'skillDelete', 'plugins', 'pluginInstall', 'pluginRemove', 'marketplaceAdd', 'marketplaceRemove'] as $m) {
+    echo "  authcontrol: mcpsetup::{$m} => " . \app\PermissionCache::seedRule('mcpsetup', $m, 100, 'MCP services: ' . $m . ' (the mcp grant decides, in the controller)') . "\n";
 }
 $n = \RedBeanPHP\R::exec("DELETE FROM authcontrol WHERE control = 'agentsetup' AND lower(method) != 'index'");
 echo "  authcontrol: {$n} old agentsetup write row(s) removed\n";

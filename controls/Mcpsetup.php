@@ -116,6 +116,9 @@ class Mcpsetup extends Control {
         $this->viewData['systemServers'] = $systemServers;
         // Is the app's own MCP server given to its agents? (runtime AgentMcp: a marker file in the app.)
         $this->viewData['tiknixOff'] = $this->tiknixOff();
+        // The project's skills (its .claude/skills/); plugins load on demand — the listing is large.
+        try { $this->viewData['skills'] = (new ProjectSkills($this->inst()))->skills(); $this->viewData['skillsError'] = ''; }
+        catch (\RuntimeException $e) { $this->viewData['skills'] = []; $this->viewData['skillsError'] = $e->getMessage(); }
         $this->viewData['tiknixBreaks'] = self::TIKNIX_BREAKS;
         $this->viewData['userServers'] = $userServers;
         $this->viewData['tools'] = $tools;
@@ -291,6 +294,94 @@ class Mcpsetup extends Control {
         try { $this->setTiknix(true); } catch (\RuntimeException $e) { $this->flashTo('servers', 'error', $e->getMessage()); return; }
         $this->logger->info('MCP services: the app\'s own MCP server restored', ['project' => $this->project['slug'], 'member_id' => (int) $this->member->id]);
         $this->flashTo('servers', 'success', "The tiknix server is restored for {$this->project['name']}'s agents.");
+    }
+
+    // ==================== SKILLS & PLUGINS (app\ProjectSkills) ====================
+
+    /** The gate + project for a JSON route of this section; null = already answered. */
+    private function skillsJson(bool $post = true): ?ProjectSkills {
+        if (!$this->mayConfigure()) { Flight::jsonError('MCP is not enabled for your account.', 403); return null; }
+        $this->project = \app\ProjectTarget::forMember((int) $this->member->id);
+        if ($this->project === null) { Flight::jsonError('Choose a project first.', 409); return null; }
+        if ($post && !$this->validateCSRF()) return null;
+        try { return new ProjectSkills($this->inst()); }
+        catch (\Throwable $e) { Flight::jsonError($e->getMessage(), 409); return null; }
+    }
+
+    /** Run one change, answer JSON: the CLI's or the library's own words either way. */
+    private function skillsDo(callable $fn, string $what, array $ctx = []): void {
+        try {
+            $msg = (string) $fn();
+            $this->logger->info("MCP services: {$what}", $ctx + ['project' => $this->project['slug'], 'member_id' => (int) $this->member->id]);
+            Flight::jsonSuccess(['message' => $msg], $msg !== '' ? $msg : 'Done.');
+        } catch (\InvalidArgumentException $e) {
+            Flight::jsonError($e->getMessage(), 400);
+        } catch (\RuntimeException $e) {
+            $this->logger->error("ERROR MCP services: {$what} failed: " . $e->getMessage(), $ctx + ['project' => $this->project['slug']]);
+            Flight::jsonError($e->getMessage(), 502);
+        }
+    }
+
+    /** GET /mcpsetup/skill?name= — one skill's text, to edit. */
+    public function skill($params = []) {
+        if (!($ps = $this->skillsJson(false))) return;
+        try { $t = $ps->skillText((string) $this->getParam('name', '')); }
+        catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); return; }
+        if ($t === null) { Flight::jsonError('No such skill.', 404); return; }
+        $desc = preg_match('/^---\s*\n(.*?)\n---\s*\n?/s', $t, $m) && preg_match('/^description:\s*(.+)$/m', $m[1], $d) ? (json_decode(trim($d[1])) ?? trim($d[1], " \t\"'")) : '';
+        Flight::jsonSuccess(['description' => (string) $desc, 'body' => ltrim((string) preg_replace('/^---\s*\n.*?\n---\s*\n?/s', '', $t))]);
+    }
+
+    /** POST /mcpsetup/skillSave — name, description, body. Committed to the project as this member. */
+    public function skillSave($params = []) {
+        if (!($ps = $this->skillsJson())) return;
+        $name = strtolower(trim((string) $this->getParam('name', '')));
+        $this->skillsDo(function () use ($ps, $name) {
+            $ps->saveSkill($name, (string) $this->getParam('description', ''), (string) $this->getParam('body', ''), (int) $this->member->id);
+            return "Skill '{$name}' saved to {$this->project['name']}.";
+        }, 'skill saved', ['skill' => $name]);
+    }
+
+    /** POST /mcpsetup/skillDelete */
+    public function skillDelete($params = []) {
+        if (!($ps = $this->skillsJson())) return;
+        $name = (string) $this->getParam('name', '');
+        $this->skillsDo(function () use ($ps, $name) { $ps->removeSkill($name, (int) $this->member->id); return "Skill '{$name}' removed."; }, 'skill removed', ['skill' => $name]);
+    }
+
+    /** GET /mcpsetup/plugins — installed, available (every configured marketplace) and the marketplaces. */
+    public function plugins($params = []) {
+        if (!($ps = $this->skillsJson(false))) return;
+        try { Flight::jsonSuccess($ps->plugins()); }
+        catch (\RuntimeException $e) { $this->logger->error('ERROR MCP services: plugin listing failed: ' . $e->getMessage(), ['project' => $this->project['slug']]); Flight::jsonError($e->getMessage(), 502); }
+    }
+
+    /** POST /mcpsetup/pluginInstall — id = plugin@marketplace */
+    public function pluginInstall($params = []) {
+        if (!($ps = $this->skillsJson())) return;
+        $id = trim((string) $this->getParam('id', ''));
+        $this->skillsDo(fn() => $ps->installPlugin($id), 'plugin installed', ['plugin' => $id]);
+    }
+
+    /** POST /mcpsetup/pluginRemove */
+    public function pluginRemove($params = []) {
+        if (!($ps = $this->skillsJson())) return;
+        $id = trim((string) $this->getParam('id', ''));
+        $this->skillsDo(fn() => $ps->removePlugin($id), 'plugin removed', ['plugin' => $id]);
+    }
+
+    /** POST /mcpsetup/marketplaceAdd — source = owner/repo or https URL */
+    public function marketplaceAdd($params = []) {
+        if (!($ps = $this->skillsJson())) return;
+        $src = trim((string) $this->getParam('source', ''));
+        $this->skillsDo(fn() => $ps->addMarketplace($src), 'marketplace added', ['source' => $src]);
+    }
+
+    /** POST /mcpsetup/marketplaceRemove */
+    public function marketplaceRemove($params = []) {
+        if (!($ps = $this->skillsJson())) return;
+        $name = trim((string) $this->getParam('name', ''));
+        $this->skillsDo(fn() => $ps->removeMarketplace($name), 'marketplace removed', ['marketplace' => $name]);
     }
 
     // ==================== HELPERS ====================

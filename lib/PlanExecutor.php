@@ -161,6 +161,12 @@ class PlanExecutor {
 
     /** Subtasks of this plan, priority-ordered. */
     public function subtasks(): array {
+        // RedBean keeps SELECT results in this process and drops them only when THIS process
+        // writes. The orchestrator lives for hours and other processes change these rows (Retry
+        // on the board, a stop, an edit): while it had nothing to write itself it kept reading
+        // its own old answer, and a task reset to pending stayed "failed" to it forever. Every
+        // read of the plan's tasks is therefore a real one.
+        \RedBeanPHP\R::getWriter()->flushCache();
         return Bean::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, id ASC', [$this->planId]);
     }
 

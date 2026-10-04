@@ -12,7 +12,7 @@
 
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-        <h2><i class="bi bi-robot me-2"></i>Agent Setup</h2>
+        <h2><i class="bi bi-robot me-2"></i>MCP services</h2>
         <?php if (!empty($project)): ?>
           <div class="text-muted small">
             Configuring <strong><?= htmlspecialchars($project['name']) ?></strong>
@@ -52,6 +52,17 @@
         <div class="tab-pane fade <?= $activeTab === 'servers' ? 'show active' : '' ?>" id="servers" role="tabpanel">
             <div class="row">
                 <div class="col-lg-8">
+                    <!-- Connectivity: asked in the project's container, where its agents run (Mcpsetup::test) -->
+                    <div class="card mb-4" id="mcpTestCard">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0"><i class="bi bi-activity me-1"></i> Can this project's agents reach their MCP servers?</h6>
+                            <button class="btn btn-sm btn-outline-primary" id="mcpTestBtn" type="button"><i class="bi bi-play me-1"></i>Test now</button>
+                        </div>
+                        <div class="card-body small" id="mcpTestOut">
+                            <span class="text-muted">Runs inside the project's container: the app's own server (what every build task is given) and each server in its <code>.mcp.json</code> are asked to <code>initialize</code> and list their tools. Keys and headers stay in the container.</span>
+                        </div>
+                    </div>
+
                     <!-- System Servers -->
                     <?php if (!empty($systemServers)): ?>
                     <div class="card mb-4">
@@ -245,7 +256,7 @@
 <div class="modal fade" id="addServerModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/agentsetup/storeServer">
+            <form method="POST" action="/mcpsetup/storeServer">
                 <?php foreach ($csrf as $name => $value): ?>
                     <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                 <?php endforeach; ?>
@@ -300,7 +311,7 @@
 <div class="modal fade" id="editServerModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/agentsetup/updateServer">
+            <form method="POST" action="/mcpsetup/updateServer">
                 <?php foreach ($csrf as $name => $value): ?>
                     <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                 <?php endforeach; ?>
@@ -360,7 +371,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form method="POST" action="/agentsetup/deleteServer" class="d-inline">
+                <form method="POST" action="/mcpsetup/deleteServer" class="d-inline">
                     <?php foreach ($csrf as $name => $value): ?>
                         <input type="hidden" name="<?= $name ?>" value="<?= $value ?>">
                     <?php endforeach; ?>
@@ -404,4 +415,30 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
         history.replaceState(null, '', '?tab=' + tabId);
     });
 });
+</script>
+
+<script>
+(function () {
+    var btn = document.getElementById('mcpTestBtn'), out = document.getElementById('mcpTestOut'); if (!btn) return;
+    var esc = function (t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; };
+    btn.addEventListener('click', async function () {
+        btn.disabled = true; out.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Asking each server from inside the container…</span>';
+        try {
+            var fd = new FormData(); fd.append('_csrf_token', <?= json_encode(csrf_token()) ?>);
+            var r = await fetch('/mcpsetup/test', {method: 'POST', body: fd, headers: {'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': <?= json_encode(csrf_token()) ?>}});
+            var d = await r.json();
+            if (!d.success) { out.innerHTML = '<span class="text-danger">' + esc(d.message || 'The test could not run.') + '</span>'; btn.disabled = false; return; }
+            var rows = Object.entries(d.data.servers).map(function (e) {
+                var n = e[0], s = e[1];
+                return '<tr><td><code>' + esc(n) + '</code></td><td><span class="badge bg-secondary">' + esc(String(s.type).toUpperCase()) + '</span></td><td>'
+                     + (s.ok ? '<span class="text-success"><i class="bi bi-check-circle-fill"></i> reachable — ' + esc(s.tools) + ' tool(s)</span>'
+                             : '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ' + esc(s.error) + '</span>')
+                     + '</td><td class="text-end text-muted">' + esc(s.ms) + ' ms</td></tr>';
+            }).join('');
+            out.innerHTML = '<table class="table table-sm mb-1"><thead><tr><th>Server</th><th>Type</th><th>From ' + esc(d.data.project) + "'s container</th><th></th></tr></thead><tbody>" + rows + '</tbody></table>'
+                          + '<div class="text-muted">Tested ' + new Date().toLocaleTimeString() + '.</div>';
+        } catch (e) { out.innerHTML = '<span class="text-danger">' + esc(e.message) + '</span>'; }
+        btn.disabled = false;
+    });
+})();
 </script>

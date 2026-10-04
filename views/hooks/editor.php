@@ -5,7 +5,7 @@ $isEdit = !$isNew;
     <div class="row">
         <div class="col-lg-9">
             <div class="mb-3">
-                <a href="/agentsetup?tab=hooks" class="text-decoration-none">
+                <a href="/mcpsetup?tab=hooks" class="text-decoration-none">
                     <i class="bi bi-arrow-left"></i> Back to Hooks
                 </a>
             </div>
@@ -83,7 +83,7 @@ $isEdit = !$isNew;
                             <button type="submit" class="btn btn-primary" id="saveBtn">
                                 <i class="bi bi-check-lg"></i> <?= $isEdit ? 'Save Changes' : 'Create Hook' ?>
                             </button>
-                            <a href="/agentsetup?tab=hooks" class="btn btn-outline-secondary">Cancel</a>
+                            <a href="/mcpsetup?tab=hooks" class="btn btn-outline-secondary">Cancel</a>
                         </div>
                     </form>
                 </div>

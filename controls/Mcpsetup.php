@@ -1,6 +1,6 @@
 <?php
 /**
- * Agent Setup Controller
+ * MCP services (was MCP services, at /mcpsetup — that URL redirects here)
  *
  * Central hub for a project's Claude Code agent configuration:
  * - MCP Servers  (the project's .mcp.json — added, changed and removed here)
@@ -18,10 +18,10 @@ use \Flight as Flight;
 use \app\Feature;
 use app\BaseControls\Control;
 
-class Agentsetup extends Control {
+class Mcpsetup extends Control {
 
     /**
-     * May this member open Agent Setup and manage MCP servers?
+     * May this member open MCP services and manage MCP servers?
      *
      * The same `mcp` grant that governs API keys and the tool list, deliberately not a
      * flag of its own: this hub IS the MCP server/tool registry, so a separate switch
@@ -38,7 +38,7 @@ class Agentsetup extends Control {
     }
 
     private function denyConfigure(): never {
-        $this->forbid('Ungranted member attempted to reach Agent Setup', ['feature' => 'mcp']);
+        $this->forbid('Ungranted member attempted to reach MCP services', ['feature' => 'mcp']);
     }
 
     /** @var array{id:int,slug:string,name:string,dir:string,url:string,here:bool}|null the project this page configures */
@@ -53,7 +53,7 @@ class Agentsetup extends Control {
     private function bind(): bool {
         $this->project = \app\ProjectTarget::forMember((int) $this->member->id);
         if ($this->project === null) {
-            $this->flash('info', 'Choose a project first — Agent Setup configures the selected project.');
+            $this->flash('info', 'Choose a project first — MCP services configures the selected project.');
             Flight::redirect('/projects');
             return false;
         }
@@ -109,7 +109,7 @@ class Agentsetup extends Control {
             return;
         }
 
-        $this->viewData['title'] = 'Agent Setup';
+        $this->viewData['title'] = 'MCP services';
         $this->viewData['project'] = $this->project;
         $this->viewData['activeTab'] = $activeTab;
         $this->viewData['isRoot'] = $isRoot;
@@ -120,7 +120,7 @@ class Agentsetup extends Control {
         $this->viewData['hookConfig'] = $hookConfig;
         $this->viewData['csrf'] = SimpleCsrf::getTokenArray();
 
-        $this->render('agentsetup/index', $this->viewData);
+        $this->render('mcpsetup/index', $this->viewData);
     }
 
     // ==================== MCP SERVER ACTIONS ====================
@@ -128,7 +128,7 @@ class Agentsetup extends Control {
     /** Flash a message and redirect back to an agent-setup tab (optionally its edit view). */
     private function flashTo(string $tab, string $type, string $message, ?string $edit = null): void {
         $_SESSION['flash'][] = ['type' => $type, 'message' => $message];
-        Flight::redirect('/agentsetup?tab=' . $tab . ($edit !== null ? '&edit=' . urlencode($edit) : ''));
+        Flight::redirect('/mcpsetup?tab=' . $tab . ($edit !== null ? '&edit=' . urlencode($edit) : ''));
     }
 
     /** The project's .mcp.json as an array — {"mcpServers": {}} when it has none yet. */
@@ -158,11 +158,11 @@ class Agentsetup extends Control {
             if ($mode === 'add' && $exists) { $this->flashTo('servers', 'error', "A server named '{$slug}' already exists in {$this->project['name']}"); return; }
             if ($mode === 'update' && !$exists) { $this->flashTo('servers', 'error', "No server named '{$slug}' in {$this->project['name']}"); return; }
             $cfg['mcpServers'][$slug] = $config;
-            $this->writeMcpConfig($cfg, "Agent Setup: MCP server {$slug} " . ($mode === 'add' ? 'added' : 'updated'));
+            $this->writeMcpConfig($cfg, "MCP services: MCP server {$slug} " . ($mode === 'add' ? 'added' : 'updated'));
         } catch (\RuntimeException $e) {
             $this->flashTo('servers', 'error', $e->getMessage()); return;
         }
-        $this->logger->info('Agent Setup: MCP server ' . $mode, ['project' => $this->project['slug'], 'server' => $slug, 'member_id' => $this->member->id]);
+        $this->logger->info('MCP services: MCP server ' . $mode, ['project' => $this->project['slug'], 'server' => $slug, 'member_id' => $this->member->id]);
         $this->flashTo('servers', 'success', 'Server ' . ($mode === 'add' ? 'added' : 'updated') . " in {$this->project['name']}: {$slug}");
     }
 
@@ -204,24 +204,48 @@ class Agentsetup extends Control {
             $cfg = $this->mcpConfig();
             if (!isset($cfg['mcpServers'][$slug])) { $this->flashTo('servers', 'error', "No server named '{$slug}' in {$this->project['name']}"); return; }
             unset($cfg['mcpServers'][$slug]);
-            $this->writeMcpConfig($cfg, "Agent Setup: MCP server {$slug} removed");
+            $this->writeMcpConfig($cfg, "MCP services: MCP server {$slug} removed");
         } catch (\RuntimeException $e) {
             $this->flashTo('servers', 'error', $e->getMessage()); return;
         }
-        $this->logger->info('Agent Setup: MCP server removed', ['project' => $this->project['slug'], 'server' => $slug, 'member_id' => $this->member->id]);
+        $this->logger->info('MCP services: MCP server removed', ['project' => $this->project['slug'], 'server' => $slug, 'member_id' => $this->member->id]);
         $this->flashTo('servers', 'success', "Server removed from {$this->project['name']}: {$slug}");
+    }
+
+    /**
+     * POST /mcpsetup/test — can the project's agents reach their MCP servers? Asked IN the
+     * project's container, where they run (app\McpProbe): the app's own server every build
+     * task is given, and each server in its .mcp.json. JSON: {servers: {name: {ok, type,
+     * tools, ms, error}}}. No key or header comes back — only the outcome.
+     */
+    public function test($params = []) {
+        if (!$this->mayConfigure()) { Flight::jsonError('MCP is not enabled for your account.', 403); return; }
+        $project = \app\ProjectTarget::forMember((int) $this->member->id);
+        if ($project === null) { Flight::jsonError('Choose a project first.', 409); return; }
+        if (!$this->validateCSRF()) return;
+        $inst = Bean::load('instance', (int) $project['id']);
+        if (!$inst->id || trim((string) $inst->ctIp) === '') { Flight::jsonError($project['name'] . ' is not running in its own container.', 409); return; }
+        try {
+            $servers = McpProbe::run($inst);
+        } catch (\RuntimeException $e) {
+            $this->logger->error('ERROR Mcpsetup::test: ' . $e->getMessage(), ['project' => $project['slug']]);
+            Flight::jsonError($e->getMessage(), 502); return;
+        }
+        $bad = array_keys(array_filter($servers, fn($s) => empty($s['ok'])));
+        $this->logger->info('MCP connectivity tested', ['project' => $project['slug'], 'servers' => count($servers), 'failing' => $bad, 'member_id' => (int) $this->member->id]);
+        Flight::jsonSuccess(['project' => $project['name'], 'servers' => $servers]);
     }
 
     // ==================== HELPERS ====================
 
     private function validatePost(): bool {
         if (Flight::request()->method !== 'POST') {
-            Flight::redirect('/agentsetup');
+            Flight::redirect('/mcpsetup');
             return false;
         }
         if (!SimpleCsrf::validate()) {
             $_SESSION['flash'][] = ['type' => 'error', 'message' => 'CSRF validation failed'];
-            Flight::redirect('/agentsetup');
+            Flight::redirect('/mcpsetup');
             return false;
         }
         return true;

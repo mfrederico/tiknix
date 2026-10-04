@@ -68,7 +68,7 @@ class Projectreport extends Control {
     /** GET /projectreport/show/<id> — one project's reports, newest first (ADMIN). */
     public function show($params = []) {
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;
-        $inst = Bean::load('instance', (int) ($params['id'] ?? $this->getParam('id', 0)));
+        $inst = Bean::load('instance', (int) ($params['operation']->name ?? $this->getParam('id', 0)));   // /projectreport/show/<id>
         if (!$inst->id) { Flight::notFound(); return; }
         $reports = Bean::find('projectreport', 'instance_ref = ? ORDER BY received_at DESC LIMIT 200', [(int) $inst->id]);
         $this->render('projectreport/show', ['title' => 'Reports — ' . ($inst->displayName ?: $inst->slug), 'inst' => $inst, 'reports' => array_values($reports)]);

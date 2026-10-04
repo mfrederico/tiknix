@@ -2,6 +2,19 @@
 <div class="container-fluid py-4">
   <h1 class="h3 mb-1"><?= htmlspecialchars($inst->displayName ?: $inst->slug) ?> — reports</h1>
   <p class="text-body-secondary"><a href="/projectreport">All projects</a> · <?= count($reports) ?> report(s), newest first (90 days are kept).</p>
+  <?php if (!empty($domains)): ?>
+  <div class="card mb-3"><div class="card-header d-flex justify-content-between"><strong>Domains &amp; TLS</strong><a href="/deploy?id=<?= (int) $inst->id ?>">Edit domains</a></div>
+    <table class="table table-sm mb-0"><thead><tr><th>Domain</th><th>Certificate</th><th class="text-end">Days left</th><th>Checked</th></tr></thead><tbody>
+    <?php foreach ($domains['domains'] as $d): ?>
+      <tr class="<?= $d['state'] === 'failing' ? 'table-danger' : ($d['state'] === 'expiring' ? 'table-warning' : '') ?>">
+        <td><a href="https://<?= htmlspecialchars($d['domain']) ?>" target="_blank" rel="noopener"><?= htmlspecialchars($d['domain']) ?></a></td>
+        <td><?= $d['state'] === 'unchecked' ? '<span class="text-body-secondary">not checked yet</span>' : ($d['state'] === 'failing' ? '<span class="text-danger">' . htmlspecialchars($d['error']) . '</span>' : 'ok, expires ' . htmlspecialchars((string) ($d['expires_at'] ?? ''))) ?></td>
+        <td class="text-end"><?= $d['days_left'] === null ? '—' : (int) $d['days_left'] ?></td>
+        <td class="small text-body-secondary"><?= htmlspecialchars((string) $d['checked_at']) ?></td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody></table></div>
+  <?php endif; ?>
   <div class="table-responsive">
   <table class="table table-sm align-middle">
     <thead><tr><th>Received</th><th>Why</th><th>Runtime</th><th>Agent</th><th class="text-end">Disk MB</th><th class="text-end">DB MB</th><th class="text-end">Files</th><th class="text-end">Mem MB</th><th class="text-end">Peak</th><th class="text-end">CPU %</th><th class="text-end">Load</th><th class="text-end">Req/h</th><th class="text-end">Err/h</th><th></th></tr></thead>

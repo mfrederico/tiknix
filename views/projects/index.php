@@ -285,7 +285,20 @@ $fmt = function (string $iso): string {
                   <dt class="fw-normal text-body-secondary">Reported</dt>
                   <dd class="mb-0 text-end" title="<?= htmlspecialchars($p['reportedAt']) ?> — disk <?= htmlspecialchars((string) ($rp['disk_mb'] ?? '?')) ?> MB, memory <?= htmlspecialchars((string) ($rp['mem_mb'] ?? '?')) ?> MB, <?= htmlspecialchars((string) ($rp['requests_h'] ?? '?')) ?> requests in the last hour">
                     <span class="<?= $age > 5400 ? 'text-warning' : '' ?>"><?= $age < 90 ? 'just now' : ($age < 5400 ? round($age / 60) . ' min ago' : ($age < 172800 ? round($age / 3600) . ' h ago' : round($age / 86400) . ' d ago')) ?></span>
-                    <span class="text-body-secondary">· <?= htmlspecialchars((string) ($rp['disk_mb'] ?? '?')) ?> MB disk · <?= htmlspecialchars((string) ($rp['mem_mb'] ?? '?')) ?> MB RAM<?= !empty($rp['agent_ready']) ? '' : ' · <span class="text-danger">no agent</span>' ?></span>
+                    <span class="text-body-secondary">· <?= htmlspecialchars((string) ($rp['disk_mb'] ?? '?')) ?> MB disk · <?= htmlspecialchars((string) ($rp['mem_mb'] ?? '?')) ?> MB RAM</span>
+                  </dd>
+                </div>
+                <div class="d-flex justify-content-between border-top py-1">
+                  <dt class="fw-normal text-body-secondary">Agent</dt>
+                  <dd class="mb-0 text-end"><a href="/projects/open?id=<?= (int) $p['id'] ?>&amp;to=<?= rawurlencode('/agents') ?>" title="open this project's AI agents page" class="<?= !empty($rp['agent_ready']) ? '' : 'text-danger' ?>"><?= !empty($rp['agent_ready']) ? htmlspecialchars(implode(', ', (array) ($rp['providers'] ?: ['ready']))) : 'none — connect one' ?> <i class="bi bi-box-arrow-up-right small"></i></a></dd>
+                </div>
+                <?php endif; ?>
+                <?php if (!empty($p['domains'])): $dc = $p['domains']; ?>
+                <div class="d-flex justify-content-between border-top py-1">
+                  <dt class="fw-normal text-body-secondary">Domains</dt>
+                  <dd class="mb-0 text-end" title="<?= htmlspecialchars(implode("\n", array_map(fn($d) => $d['domain'] . ': ' . $d['state'] . ($d['days_left'] !== null ? ' (' . $d['days_left'] . ' d)' : ''), $dc['domains']))) ?>">
+                    <a href="/deploy?id=<?= (int) $p['id'] ?>"><?= (int) $dc['count'] ?></a>
+                    <span class="<?= ['ok' => 'text-success', 'expiring' => 'text-warning', 'failing' => 'text-danger', 'unchecked' => 'text-body-secondary'][$dc['state']] ?>">· TLS <?= $dc['state'] === 'ok' ? 'ok' : $dc['state'] ?><?= $dc['days_left'] !== null ? ', ' . (int) $dc['days_left'] . ' d' : '' ?></span>
                   </dd>
                 </div>
                 <?php endif; ?>

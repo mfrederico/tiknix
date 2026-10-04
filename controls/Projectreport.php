@@ -63,7 +63,7 @@ class Projectreport extends Control {
     public function index($params = []) {
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;
         $rows = [];
-        $sum = ['projects' => 0, 'reporting' => 0, 'stale' => 0, 'silent' => 0, 'no_agent' => 0, 'errors_h' => 0, 'requests_h' => 0, 'disk_mb' => 0.0, 'disk_agent_mb' => 0.0, 'mem_mb' => 0.0, 'dirty' => 0];
+        $sum = ['projects' => 0, 'reporting' => 0, 'stale' => 0, 'silent' => 0, 'no_agent' => 0, 'errors_h' => 0, 'requests_h' => 0, 'disk_mb' => 0.0, 'disk_agent_mb' => 0.0, 'mem_mb' => 0.0, 'dirty' => 0, 'domains' => 0, 'tls_bad' => 0];
         foreach (Bean::find('instance', "(ct_kind = 'tenant' OR is_default = 1) AND (status IS NULL OR status != 'deleted') ORDER BY is_default DESC, slug") as $inst) {
             $h = $inst->reportJson ? json_decode((string) $inst->reportJson, true) : null;
             $h = is_array($h) ? $h : null;
@@ -72,9 +72,11 @@ class Projectreport extends Control {
             foreach (array_reverse(Bean::getAll('SELECT received_at, mem_mb, cpu_pct, requests_hour, errors_hour, disk_mb FROM projectreport WHERE instance_ref = ? ORDER BY id DESC LIMIT ?', [(int) $inst->id, self::SPARK_POINTS])) as $r) {
                 foreach ($series as $k => $_) $series[$k][] = $r[$k] === null ? null : (float) $r[$k];
             }
-            $rows[] = ['inst' => $inst, 'at' => (string) ($inst->lastReportedAt ?? ''), 'h' => $h, 'age' => $age, 'series' => $series];
+            $rows[] = ['inst' => $inst, 'at' => (string) ($inst->lastReportedAt ?? ''), 'h' => $h, 'age' => $age, 'series' => $series,
+                       'domains' => $inst->isDefault ? null : DomainCerts::summary($inst)];
             if ($inst->isDefault) continue;   // the control plane is shown, not counted among the projects
             $sum['projects']++;
+            $dc = end($rows)['domains']; $sum['domains'] += $dc['count']; if (in_array($dc['state'], ['failing', 'expiring'], true)) $sum['tls_bad']++;
             if ($age === null) $sum['silent']++; elseif ($age > self::FRESH_SECONDS) $sum['stale']++; else $sum['reporting']++;
             if ($h) {
                 if (empty($h['agent_ready'])) $sum['no_agent']++;
@@ -92,7 +94,8 @@ class Projectreport extends Control {
         $inst = Bean::load('instance', (int) ($params['operation']->name ?? $this->getParam('id', 0)));   // /projectreport/show/<id>
         if (!$inst->id) { Flight::notFound(); return; }
         $reports = Bean::find('projectreport', 'instance_ref = ? ORDER BY received_at DESC LIMIT 200', [(int) $inst->id]);
-        $this->render('projectreport/show', ['title' => 'Reports — ' . ($inst->displayName ?: $inst->slug), 'inst' => $inst, 'reports' => array_values($reports)]);
+        $this->render('projectreport/show', ['title' => 'Reports — ' . ($inst->displayName ?: $inst->slug), 'inst' => $inst, 'reports' => array_values($reports),
+            'domains' => $inst->isDefault ? null : DomainCerts::summary($inst)]);
     }
 
     /**

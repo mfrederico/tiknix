@@ -38,6 +38,7 @@ $spark = function (array $pts, string $color = 'currentColor', int $w = 96, int 
     <?php $tile('Errors / h', (string) $sum['errors_h'], $sum['errors_h'] ? 'border-danger' : '', 'ERROR lines in the apps\' own logs in their last reported hour, summed'); ?>
     <?php $tile('Requests / h', (string) $sum['requests_h'], '', 'PHP requests in the last reported hour, summed'); ?>
     <?php $tile('Disk', $gb($sum['disk_mb']) . ' <span class="fs-6 fw-normal text-body-secondary">' . $gb($sum['disk_agent_mb']) . ' agent</span>', '', 'all app trees; the agent part (binary + task state) is not the projects\' own'); ?>
+    <?php $tile('Domains / TLS', $sum['domains'] . ' <span class="fs-6 fw-normal ' . ($sum['tls_bad'] ? 'text-danger' : 'text-body-secondary') . '">' . ($sum['tls_bad'] ? $sum['tls_bad'] . ' need attention' : 'all ok') . '</span>', $sum['tls_bad'] ? 'border-danger' : '', 'domains served, and how many have a certificate failing or within ' . \app\DomainCerts::WARN_DAYS . ' days of expiry (probed hourly)'); ?>
   </div>
 
   <?php /* ---- a card per project ---- */ ?>
@@ -60,8 +61,9 @@ $spark = function (array $pts, string $color = 'currentColor', int $w = 96, int 
         <?php else: ?>
         <div class="card-body py-2">
           <div class="d-flex flex-wrap gap-2 mb-2 small">
-            <?php if (!empty($h['agent_ready'])): ?><span class="badge text-bg-success">agent: <?= htmlspecialchars(implode(', ', $h['providers'] ?: ['ready'])) ?></span>
-            <?php else: ?><span class="badge text-bg-danger" title="<?= htmlspecialchars($h['agent_problem'] ?? '') ?>">no agent</span><?php endif; ?>
+            <?php $agentsUrl = '/projects/open?id=' . (int) $inst->id . '&to=' . rawurlencode('/agents'); ?>
+            <?php if (!empty($h['agent_ready'])): ?><a class="badge text-bg-success text-decoration-none" href="<?= htmlspecialchars($agentsUrl) ?>" title="open this project's AI agents page">agent: <?= htmlspecialchars(implode(', ', $h['providers'] ?: ['ready'])) ?> <i class="bi bi-box-arrow-up-right"></i></a>
+            <?php else: ?><a class="badge text-bg-danger text-decoration-none" href="<?= htmlspecialchars($agentsUrl) ?>" title="<?= htmlspecialchars($h['agent_problem'] ?? '') ?> — open this project's AI agents page">no agent <i class="bi bi-box-arrow-up-right"></i></a><?php endif; ?>
             <span class="badge text-bg-light text-dark border"><?= htmlspecialchars($h['runtime'] ?: 'runtime ?') ?></span>
             <?php if (!empty($h['uncommitted'])): ?><span class="badge text-bg-warning" title="uncommitted edits in the live tree: its updates refuse until they are committed or discarded"><?= (int) $h['uncommitted'] ?> uncommitted</span><?php endif; ?>
             <?php if (!empty($h['errors_h'])): ?><span class="badge text-bg-danger"><?= (int) $h['errors_h'] ?> errors/h</span><?php endif; ?>
@@ -75,6 +77,11 @@ $spark = function (array $pts, string $color = 'currentColor', int $w = 96, int 
             <tr><td class="text-body-secondary">Errors / h</td><td class="text-end <?= !empty($h['errors_h']) ? 'text-danger fw-semibold' : '' ?>"><?= $n($h['errors_h']) ?></td><td class="text-end"><?= $spark($s['errors_hour'], '#dc3545') ?></td></tr>
             <tr><td class="text-body-secondary">Disk</td><td class="text-end" title="code <?= htmlspecialchars((string) ($h['disk_code_mb'] ?? '?')) ?> MB · agent <?= htmlspecialchars((string) ($h['disk_agent_mb'] ?? '?')) ?> MB · uploads <?= htmlspecialchars((string) ($h['disk_uploads_mb'] ?? '?')) ?> MB · db <?= htmlspecialchars((string) ($h['db_mb'] ?? '?')) ?> MB · <?= (int) ($h['files'] ?? 0) ?> files"><?= $n($h['disk_mb'], ' MB') ?><span class="text-body-secondary"> (<?= htmlspecialchars((string) ($h['disk_agent_mb'] ?? '?')) ?> agent)</span></td><td class="text-end"><?= $spark($s['disk_mb'], '#fd7e14') ?></td></tr>
             <tr><td class="text-body-secondary">Members</td><td class="text-end"><?= $n($h['members']) ?></td><td class="text-end text-body-secondary small"><?= (int) ($h['pipelines'] ?? 0) ?> pipelines</td></tr>
+            <?php if (!empty($r['domains'])): $dc = $r['domains']; $dcls = ['ok' => 'text-success', 'expiring' => 'text-warning fw-semibold', 'failing' => 'text-danger fw-semibold', 'unchecked' => 'text-body-secondary'][$dc['state']]; ?>
+            <tr><td class="text-body-secondary">Domains</td>
+              <td class="text-end"><a href="/deploy?id=<?= (int) $inst->id ?>" title="<?= htmlspecialchars(implode("\n", array_map(fn($d) => $d['domain'] . ': ' . $d['state'] . ($d['days_left'] !== null ? ' (' . $d['days_left'] . ' d)' : '') . ($d['error'] !== '' ? ' — ' . $d['error'] : ''), $dc['domains']))) ?>"><?= (int) $dc['count'] ?> <i class="bi bi-box-arrow-up-right small"></i></a></td>
+              <td class="text-end small <?= $dcls ?>"><i class="bi bi-shield-<?= $dc['state'] === 'ok' ? 'check' : ($dc['state'] === 'unchecked' ? 'slash' : 'exclamation') ?>"></i> TLS <?= $dc['state'] === 'ok' ? 'ok' : $dc['state'] ?><?= $dc['days_left'] !== null ? ', ' . (int) $dc['days_left'] . ' d' : '' ?></td></tr>
+            <?php endif; ?>
           </table>
         </div>
         <?php endif; ?>

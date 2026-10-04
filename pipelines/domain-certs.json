@@ -1,0 +1,9 @@
+{
+  "slug": "domain-certs",
+  "name": "Domain certificates",
+  "description": "Every hour: a TLS handshake against our own edge for every domain every project serves (its hosted name and its own domains), recording the certificate that comes back — expiry, subject, issuer — or the failure in the handshake's own words, one row per domain (domaincert). The project reports dashboard, the project card and the Builder's board read it; a certificate within 14 days of expiry or a name the served certificate does not cover shows as a warning. scripts/domain-certs.php, lib/DomainCerts.php.",
+  "trigger": { "cron": "41 * * * *" },
+  "steps": [
+    { "name": "probe", "type": "shell", "config": { "cwd": "{root}", "command": "php scripts/domain-certs.php", "timeout": 600 }, "on_success": "exit", "on_fail": "exit" }
+  ]
+}

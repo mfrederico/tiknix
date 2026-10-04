@@ -283,6 +283,10 @@ class Projects extends BaseControls\Control {
     public function open($params = []): void {
         if (!$this->requireLogin()) return;
         $memberId = (int) $this->member->id;
+        // ?id= names the project (a card on the reports dashboard, the Builder's board): it is
+        // selected first, with the same access check a Change-project click gets.
+        $id = (int) $this->getParam('id', 0);
+        if ($id > 0 && !ProjectContext::set($memberId, $id)) { $this->flash('error', 'That project is not available to you.'); Flight::redirect('/projects'); return; }
         $inst = ProjectContext::current($memberId);
         if (!$inst) { $this->flash('error', 'Choose a project first.'); Flight::redirect('/projects'); return; }
         $to = (string) $this->getParam('to', '/dashboard');
@@ -349,6 +353,7 @@ class Projects extends BaseControls\Control {
             'hostedDomain' => (string) ($inst->ctDomain ?: ''),
             // What the app last said about itself (Projectreport): when, and the headline numbers.
             'reportedAt'   => (string) ($inst->lastReportedAt ?? ''),
+            'domains'      => $inst->ctDomain ? DomainCerts::summary($inst) : null,
             'report'       => $inst->reportJson ? (json_decode((string) $inst->reportJson, true) ?: null) : null,
             'published'    => $inst->ctVmid ? 'container ' . (int) $inst->ctVmid : '',
             'lastUpdate'   => $last['when'],

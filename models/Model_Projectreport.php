@@ -67,6 +67,8 @@ class Model_Projectreport extends \RedBeanPHP\SimpleModel {
             'providers'       => array_values(array_unique($providers)),
             'default_agent'   => (string) ($rd['default_agent'] ?? ''),
             'agent_names'     => $names,
+            // false only when the app said so; an app on an older runtime says nothing, which is not "off"
+            'tiknix_mcp'      => array_key_exists('tiknix_mcp', $rd) ? (bool) $rd['tiknix_mcp'] : null,
             'concepts'        => array_values((array) ($rd['concepts'] ?? [])),
             'pipelines'       => $rd['pipelines'] ?? null,
             'cron_last_tick'  => $rd['cron_last_tick'] ?? null,

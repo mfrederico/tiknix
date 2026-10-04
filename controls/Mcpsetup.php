@@ -114,6 +114,9 @@ class Mcpsetup extends Control {
         $this->viewData['activeTab'] = $activeTab;
         $this->viewData['isRoot'] = $isRoot;
         $this->viewData['systemServers'] = $systemServers;
+        // Is the app's own MCP server given to its agents? (runtime AgentMcp: a marker file in the app.)
+        $this->viewData['tiknixOff'] = $this->tiknixOff();
+        $this->viewData['tiknixBreaks'] = self::TIKNIX_BREAKS;
         $this->viewData['userServers'] = $userServers;
         $this->viewData['tools'] = $tools;
         $this->viewData['hookFiles'] = $hookFiles;
@@ -234,6 +237,60 @@ class Mcpsetup extends Control {
         $bad = array_keys(array_filter($servers, fn($s) => empty($s['ok'])));
         $this->logger->info('MCP connectivity tested', ['project' => $project['slug'], 'servers' => count($servers), 'failing' => $bad, 'member_id' => (int) $this->member->id]);
         Flight::jsonSuccess(['project' => $project['name'], 'servers' => $servers]);
+    }
+
+    // ==================== THE APP'S OWN SERVER (danger zone) ====================
+    //
+    // Every agent of a project is given the app's own MCP server (runtime AgentMcp) unless the
+    // project switches it off: a marker file, .aibuilder/mcp-tiknix.off, in the app. Switching
+    // it off is the owner's right — and breaks planning — so it takes a typed confirmation and
+    // is undone with one click.
+
+    /** What stops working without it — the runtime's AgentMcp::whatBreaks(), said here before the app is asked. */
+    public const TIKNIX_BREAKS = "Plans cannot be made (the planner hands its plan back through this server), and build agents lose the project's own tools: the codebase map, the logs, the schema, and every tool in mcptools/.";
+    private const TIKNIX_OFF_FILE = '.aibuilder/mcp-tiknix.off';
+    public const TIKNIX_CONFIRM = 'remove tiknix';
+
+    private function inst(): object {
+        $inst = Bean::load('instance', (int) $this->project['id']);
+        if (!$inst->id || trim((string) $inst->ctIp) === '') throw new \RuntimeException($this->project['name'] . ' is not running in its own container.');
+        return $inst;
+    }
+
+    private function tiknixOff(): bool {
+        [$c, $o] = TenantHost::ssh($this->inst(), 'app', 'test -f /srv/app/' . self::TIKNIX_OFF_FILE . ' && echo off || echo on', null, 30);
+        if ($c !== 0) throw new \RuntimeException("could not ask {$this->project['name']}'s container about its MCP server: " . trim((string) $o));
+        return trim((string) $o) === 'off';
+    }
+
+    /** on|off, then the app reports at once so the Builder's banner follows. */
+    private function setTiknix(bool $on): void {
+        $who = 'member ' . (int) $this->member->id . ' at ' . date('c');
+        $cmd = $on ? 'rm -f /srv/app/' . self::TIKNIX_OFF_FILE
+                   : 'mkdir -p /srv/app/.aibuilder && printf %s ' . escapeshellarg($who) . ' > /srv/app/' . self::TIKNIX_OFF_FILE;
+        [$c, $o] = TenantHost::ssh($this->inst(), 'app', $cmd . ' && cd /srv/app && php scripts/clitool.php --status-report --send --why=' . escapeshellarg('own MCP server switched ' . ($on ? 'on' : 'off')) . ' 2>&1 | tail -1', null, 90);
+        if ($c !== 0) throw new \RuntimeException('the container refused: ' . trim((string) $o));
+    }
+
+    /** POST /mcpsetup/removeTiknix — switch the app's own MCP server off (typed confirmation). */
+    public function removeTiknix($params = []) {
+        if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
+        if (!$this->bind()) return;
+        if (!$this->validatePost()) return;
+        if (trim((string) $this->getParam('confirm', '')) !== self::TIKNIX_CONFIRM) { $this->flashTo('servers', 'error', 'Type "' . self::TIKNIX_CONFIRM . '" exactly to remove the tiknix server.'); return; }
+        try { $this->setTiknix(false); } catch (\RuntimeException $e) { $this->flashTo('servers', 'error', $e->getMessage()); return; }
+        $this->logger->warning('MCP services: the app\'s own MCP server switched OFF', ['project' => $this->project['slug'], 'member_id' => (int) $this->member->id]);
+        $this->flashTo('servers', 'warning', "The tiknix server is removed from {$this->project['name']}'s agents. Plans cannot be made until it is restored.");
+    }
+
+    /** POST /mcpsetup/restoreTiknix — one click back. */
+    public function restoreTiknix($params = []) {
+        if (!$this->mayConfigure()) { $this->denyConfigure(); return; }
+        if (!$this->bind()) return;
+        if (!$this->validatePost()) return;
+        try { $this->setTiknix(true); } catch (\RuntimeException $e) { $this->flashTo('servers', 'error', $e->getMessage()); return; }
+        $this->logger->info('MCP services: the app\'s own MCP server restored', ['project' => $this->project['slug'], 'member_id' => (int) $this->member->id]);
+        $this->flashTo('servers', 'success', "The tiknix server is restored for {$this->project['name']}'s agents.");
     }
 
     // ==================== HELPERS ====================

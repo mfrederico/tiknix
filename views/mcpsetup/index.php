@@ -27,7 +27,7 @@
         <li class="nav-item" role="presentation">
             <button class="nav-link <?= $activeTab === 'servers' ? 'active' : '' ?>" data-bs-toggle="tab" data-bs-target="#servers" type="button">
                 <i class="bi bi-hdd-network me-1"></i> MCP Servers
-                <span class="badge bg-secondary ms-1"><?= count($systemServers) + count($userServers) ?></span>
+                <span class="badge bg-secondary ms-1"><?= (empty($tiknixOff) ? 1 : 0) + count($userServers) ?></span>
             </button>
         </li>
         <?php if ($isRoot): ?>
@@ -52,6 +52,10 @@
         <div class="tab-pane fade <?= $activeTab === 'servers' ? 'show active' : '' ?>" id="servers" role="tabpanel">
             <div class="row">
                 <div class="col-lg-8">
+                    <div class="alert alert-light border small mb-4">
+                        <strong>What MCP servers are.</strong> An MCP server is an outside service an agent can call as a tool &mdash; search a knowledge base, read a ticket, drive a browser. The servers listed here are given to <em>every</em> agent of this project: build tasks, plans, the terminal and pipeline agent steps. Each one's tools are described to the agent at the start of every session, so add only what your agents will use.
+                    </div>
+
                     <!-- Connectivity: asked in the project's container, where its agents run (Mcpsetup::test) -->
                     <div class="card mb-4" id="mcpTestCard">
                         <div class="card-header d-flex justify-content-between align-items-center">
@@ -63,28 +67,38 @@
                         </div>
                     </div>
 
-                    <!-- System Servers -->
-                    <?php if (!empty($systemServers)): ?>
-                    <div class="card mb-4">
-                        <div class="card-header"><h6 class="mb-0"><i class="bi bi-shield-check me-1"></i> System Servers</h6></div>
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
-                                <thead class="table-light">
-                                    <tr><th>Name</th><th>Type</th><th>Description</th></tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($systemServers as $slug => $server): ?>
-                                    <tr>
-                                        <td><code><?= htmlspecialchars(($slug) ?? '') ?></code> <span class="badge bg-secondary">Required</span></td>
-                                        <td><span class="badge bg-<?= ($server['config']['type'] ?? 'stdio') === 'http' ? 'info' : 'success' ?>"><?= strtoupper($server['config']['type'] ?? 'stdio') ?></span></td>
-                                        <td class="text-muted small"><?= htmlspecialchars(($server['description']) ?? '') ?></td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
+                    <!-- The app's own server: its own card, its danger zone, its one-click restore -->
+                    <?php if (!empty($tiknixOff)): ?>
+                    <div class="alert alert-danger border-danger border-2 d-flex flex-wrap align-items-center gap-3 mb-4" id="tiknixOffBanner">
+                        <i class="bi bi-exclamation-octagon-fill fs-4"></i>
+                        <div class="me-auto"><strong>The tiknix server is removed from this project's agents.</strong><br><span class="small"><?= htmlspecialchars($tiknixBreaks) ?></span></div>
+                        <form method="POST" action="/mcpsetup/restoreTiknix"><?= csrf_field() ?><button class="btn btn-danger"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore the tiknix server</button></form>
                     </div>
                     <?php endif; ?>
+                    <div class="card mb-4 <?= !empty($tiknixOff) ? 'border-danger' : '' ?>" id="tiknixCard">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0"><i class="bi bi-shield-check me-1"></i> <code>tiknix</code> &mdash; this project's own server</h6>
+                            <?php if (!empty($tiknixOff)): ?><span class="badge bg-danger">removed</span><?php else: ?><span class="badge bg-success">given to every agent</span><?php endif; ?>
+                        </div>
+                        <div class="card-body small">
+                            <p class="mb-2">The project serves its own tools to its agents: the codebase map, logs, the database schema, the plan and task tools, and every tool in its <code>mcptools/</code>. Every build task, plan and terminal session is given it automatically &mdash; there is nothing to configure.</p>
+                            <?php if (empty($tiknixOff)): ?>
+                            <details>
+                                <summary class="text-danger">Danger zone: remove it from this project's agents</summary>
+                                <div class="border border-danger rounded p-3 mt-2">
+                                    <p class="mb-2"><strong>What stops working:</strong> <?= htmlspecialchars($tiknixBreaks) ?></p>
+                                    <p class="mb-2">It is your project and you may do this &mdash; for example to give agents only servers of your own. It is undone with one click, here.</p>
+                                    <form method="POST" action="/mcpsetup/removeTiknix" class="d-flex flex-wrap gap-2 align-items-center">
+                                        <?= csrf_field() ?>
+                                        <label for="tiknixConfirm" class="mb-0">Type <code><?= htmlspecialchars(\app\Mcpsetup::TIKNIX_CONFIRM) ?></code> to confirm:</label>
+                                        <input type="text" class="form-control form-control-sm" id="tiknixConfirm" name="confirm" autocomplete="off" style="max-width:12rem" required>
+                                        <button class="btn btn-sm btn-outline-danger">Remove the tiknix server</button>
+                                    </form>
+                                </div>
+                            </details>
+                            <?php endif; ?>
+                        </div>
+                    </div>
 
                     <!-- Custom Servers -->
                     <div class="card">
@@ -126,7 +140,7 @@
                     <div class="card">
                         <div class="card-header"><h6 class="mb-0"><i class="bi bi-info-circle me-1"></i> About MCP Servers</h6></div>
                         <div class="card-body small">
-                            <p>MCP (Model Context Protocol) servers extend Claude's capabilities.</p>
+                            <p>MCP (Model Context Protocol) servers give an agent more tools.</p>
                             <p><strong>STDIO:</strong> Local process communicating via stdin/stdout</p>
                             <p class="mb-0"><strong>HTTP:</strong> Remote server via HTTP requests</p>
                         </div>
@@ -138,6 +152,9 @@
         <?php if ($isRoot): ?>
         <!-- MCP Tools Tab -->
         <div class="tab-pane fade <?= $activeTab === 'tools' ? 'show active' : '' ?>" id="tools" role="tabpanel">
+            <div class="alert alert-light border small mb-4">
+                <strong>What MCP tools are.</strong> These are this project's <em>own</em> tools: PHP files in its <code>mcptools/</code> folder that the <code>tiknix</code> server offers to its agents (and to anyone holding one of its API keys). A tool is how you give an agent a safe, named action on your data &mdash; &ldquo;list today's bookings&rdquo;, &ldquo;refund an order&rdquo; &mdash; instead of letting it write queries. They are code, so they are written in the app and committed like the rest of it; this tab lists what the project has.
+            </div>
             <div class="row">
                 <div class="col-lg-9">
                     <div class="card">
@@ -185,6 +202,9 @@
 
         <!-- Hooks Tab -->
         <div class="tab-pane fade <?= $activeTab === 'hooks' ? 'show active' : '' ?>" id="hooks" role="tabpanel">
+            <div class="alert alert-light border small mb-4">
+                <strong>What hooks are.</strong> A hook is a script that runs automatically at a moment in an agent's work &mdash; before it edits a file, after it runs a command, when it finishes. Hooks are the project's guard rails: the ones here check an edit against the project's rules before it is written (and refuse it when it breaks one), and keep agents inside the project. A hook that exits with an error stops the action and tells the agent why. They run on the server with the agent's access, so only a ROOT administrator can change them.
+            </div>
             <div class="row">
                 <div class="col-lg-6">
                     <div class="card mb-4">

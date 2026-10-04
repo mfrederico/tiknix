@@ -9,7 +9,7 @@
  * (and /agentsetup itself with seed 42).
  */
 echo '  authcontrol: mcpsetup::index => ' . \app\PermissionCache::seedRule('mcpsetup', 'index', 100, 'MCP services: gated by the mcp feature grant, not by level') . "\n";
-foreach (['storeServer', 'updateServer', 'deleteServer', 'test'] as $m) {
+foreach (['storeServer', 'updateServer', 'deleteServer', 'removeTiknix', 'restoreTiknix', 'test'] as $m) {
     echo "  authcontrol: mcpsetup::{$m} => " . \app\PermissionCache::seedRule('mcpsetup', $m, $m === 'test' ? 100 : 50, 'MCP services: ' . $m) . "\n";
 }
 $n = \RedBeanPHP\R::exec("DELETE FROM authcontrol WHERE control = 'agentsetup' AND lower(method) != 'index'");

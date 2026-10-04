@@ -97,7 +97,8 @@ $run = function (string $name, string $type, callable $f) use (&$out) {
 
 // the app's own server, as a build task's agent is given it
 $own = 'vendor/tiknix/runtime/mcptools/mcp-fastmcp.php';
-$run('tiknix (this app)', 'stdio', fn() => is_file($own) ? $stdio('exec php ' . escapeshellarg($own), [], getcwd()) : [false, null, "{$own} is not in this app"]);
+if (is_file('.aibuilder/mcp-tiknix.off')) $out['tiknix (this app)'] = ['ok' => false, 'type' => 'stdio', 'tools' => null, 'ms' => 0, 'error' => 'removed from this project\'s agents — plans cannot be made; restore it above'];
+else $run('tiknix (this app)', 'stdio', fn() => is_file($own) ? $stdio('exec php ' . escapeshellarg($own), [], getcwd()) : [false, null, "{$own} is not in this app"]);
 
 // the project's .mcp.json
 $cfg = is_file('.mcp.json') ? json_decode((string) file_get_contents('.mcp.json'), true) : [];

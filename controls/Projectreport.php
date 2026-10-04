@@ -53,16 +53,37 @@ class Projectreport extends Control {
         Flight::jsonSuccess(['id' => (int) $row->id, 'received_at' => $row->receivedAt]);
     }
 
-    /** GET /projectreport — every hosted project's latest report (ADMIN). */
+    /** How many reports a card's sparklines show (hourly → two days). */
+    public const SPARK_POINTS = 48;
+
+    /**
+     * GET /projectreport — the fleet dashboard (ADMIN): every hosted project's latest report, a
+     * summary across them, and each one's last two days as sparklines.
+     */
     public function index($params = []) {
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;
         $rows = [];
+        $sum = ['projects' => 0, 'reporting' => 0, 'stale' => 0, 'silent' => 0, 'no_agent' => 0, 'errors_h' => 0, 'requests_h' => 0, 'disk_mb' => 0.0, 'disk_agent_mb' => 0.0, 'mem_mb' => 0.0, 'dirty' => 0];
         foreach (Bean::find('instance', "(ct_kind = 'tenant' OR is_default = 1) AND (status IS NULL OR status != 'deleted') ORDER BY is_default DESC, slug") as $inst) {
             $h = $inst->reportJson ? json_decode((string) $inst->reportJson, true) : null;
-            $rows[] = ['inst' => $inst, 'at' => (string) ($inst->lastReportedAt ?? ''), 'h' => is_array($h) ? $h : null,
-                       'age' => $inst->lastReportedAt ? time() - strtotime((string) $inst->lastReportedAt) : null];
+            $h = is_array($h) ? $h : null;
+            $age = $inst->lastReportedAt ? time() - strtotime((string) $inst->lastReportedAt) : null;
+            $series = ['mem_mb' => [], 'cpu_pct' => [], 'requests_hour' => [], 'errors_hour' => [], 'disk_mb' => []];
+            foreach (array_reverse(Bean::getAll('SELECT received_at, mem_mb, cpu_pct, requests_hour, errors_hour, disk_mb FROM projectreport WHERE instance_ref = ? ORDER BY id DESC LIMIT ?', [(int) $inst->id, self::SPARK_POINTS])) as $r) {
+                foreach ($series as $k => $_) $series[$k][] = $r[$k] === null ? null : (float) $r[$k];
+            }
+            $rows[] = ['inst' => $inst, 'at' => (string) ($inst->lastReportedAt ?? ''), 'h' => $h, 'age' => $age, 'series' => $series];
+            if ($inst->isDefault) continue;   // the control plane is shown, not counted among the projects
+            $sum['projects']++;
+            if ($age === null) $sum['silent']++; elseif ($age > self::FRESH_SECONDS) $sum['stale']++; else $sum['reporting']++;
+            if ($h) {
+                if (empty($h['agent_ready'])) $sum['no_agent']++;
+                $sum['errors_h'] += (int) ($h['errors_h'] ?? 0); $sum['requests_h'] += (int) ($h['requests_h'] ?? 0);
+                $sum['disk_mb'] += (float) ($h['disk_mb'] ?? 0); $sum['disk_agent_mb'] += (float) ($h['disk_agent_mb'] ?? 0); $sum['mem_mb'] += (float) ($h['mem_mb'] ?? 0);
+                if (!empty($h['uncommitted'])) $sum['dirty']++;
+            }
         }
-        $this->render('projectreport/index', ['title' => 'Project reports', 'rows' => $rows, 'fresh' => self::FRESH_SECONDS]);
+        $this->render('projectreport/index', ['title' => 'Project reports', 'rows' => $rows, 'fresh' => self::FRESH_SECONDS, 'sum' => $sum]);
     }
 
     /** GET /projectreport/show/<id> — one project's reports, newest first (ADMIN). */

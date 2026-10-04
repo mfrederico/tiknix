@@ -151,7 +151,54 @@ class PlanExecutor {
         }
         if ($ticks < 1) $ticks = self::TASK_BUDGET_TICKS;
 
+        // Waves count how wide the work can run; they say nothing of how DEEP it must. Tasks
+        // that depend on one another run one after the other whatever the concurrency, and
+        // each may use its whole time limit: four tasks in a chain at 60 minutes each need up
+        // to four hours, where two waves of measured cost budgeted under two (holistica plan 1).
+        // The budget is never less than the longest such chain.
+        $remaining = [];
+        foreach ($this->subtasks() as $t) {
+            if (!in_array((string) $t->status, ['pending', 'running'], true)) continue;
+            $remaining[(int) $t->id] = ['deps' => array_map('intval', (array) (json_decode((string) $t->dependsOn, true) ?: [])), 'seconds' => $this->taskSeconds($t)];
+        }
+        $ticks = max($ticks, self::chainTicks($remaining));
+
         return min($ticks, self::MAX_BUDGET_TICKS);
+    }
+
+    /**
+     * How long one task may run: its own limit, or its agent's Task time limit when that is
+     * longer (the app applies the longer of the two — AgentTask::start; it reports each agent's
+     * in its status report).
+     */
+    private function taskSeconds($t): int {
+        $limit = self::timeLimit($t);
+        $rj = json_decode((string) ($this->tenant->reportJson ?? ''), true);
+        if (!is_array($rj)) return $limit;
+        $name = trim((string) ($t->agent ?? '')) ?: (string) ($rj['default_agent'] ?? '');
+        foreach ((array) ($rj['task_minutes'] ?? []) as $agent => $minutes) if ((string) $agent === $name) return max($limit, 60 * (int) $minutes);
+        return $limit;
+    }
+
+    /**
+     * Ticks (10 s each) for the longest dependency chain among the tasks still to run, each at its
+     * full time limit plus a minute to merge. Dependencies on tasks no longer in the set are done.
+     *
+     * @param array<int,array{deps:int[],seconds:int}> $tasks
+     */
+    public static function chainTicks(array $tasks): int {
+        $memo = [];
+        $cost = function (int $id, array $seen) use (&$cost, &$memo, $tasks): int {
+            if (isset($memo[$id])) return $memo[$id];
+            if (isset($seen[$id])) return 0;   // a cycle cannot run at all; it is not this function's to report
+            $seen[$id] = true;
+            $before = 0;
+            foreach ($tasks[$id]['deps'] as $d) if (isset($tasks[$d])) $before = max($before, $cost($d, $seen));
+            return $memo[$id] = $before + (int) ceil(($tasks[$id]['seconds'] + 60) / 10);
+        };
+        $longest = 0;
+        foreach (array_keys($tasks) as $id) $longest = max($longest, $cost($id, []));
+        return $longest;
     }
 
     // ---- public API --------------------------------------------------------

@@ -35,7 +35,11 @@ class TenantApp {
         $inst->status = 'active';
         $inst->engine = 'claude';
         $inst->createdAt = date('Y-m-d H:i:s');
-        $inst->ctVmid = 0; $inst->ctIp = ''; $inst->ctDomain = '';
+        // A project lives in its own container from the start: the row says so now, and vmid /
+        // address / domain fill in as the container is cloned and published (TenantHost::create).
+        // Before this was set with the clone, every page that asks "is this a tenant row?" read
+        // a brand-new project as a host clone and looked for a folder that never existed (500).
+        $inst->ctKind = 'tenant'; $inst->ctVmid = 0; $inst->ctIp = ''; $inst->ctDomain = '';
         Bean::store($inst);
         GitHttp::deployToken($inst);
 

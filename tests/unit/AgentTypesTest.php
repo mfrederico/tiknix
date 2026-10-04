@@ -130,6 +130,28 @@ PHP);
         $this->assertSame(['Rerank', 'Speech', 'Image, audio & video', 'Safety'], array_keys(\app\Agents::COMING_SOON));
     }
 
+    /* ---- a model the build program has no catalog entry for ---- */
+
+    public function testTheCatalogNoticeIsNotTheReasonATaskFailed(): void {
+        $notice = '"glm-5.3" isn\'t described by this version\'s model catalog; update Claude Code, or map it with behavesAs on a modelPicker row.' . "\n" . '[claude-code:unrecognized_model] {"model":"glm-5.3","query_source":"sdk"}';
+        $only = \app\AgentTask::withoutCatalogNotice($notice);
+        $this->assertStringStartsWith('(Not an error:', $only, 'a run that printed nothing else has no output — only the note');
+        $this->assertStringNotContainsString('behavesAs', $only);
+        $this->assertSame("API Error: 401 bad key\n" . $only, \app\AgentTask::withoutCatalogNotice($notice . "\nAPI Error: 401 bad key"), 'what the agent said comes first');
+        $this->assertSame('Done.', \app\AgentTask::withoutCatalogNotice("Done.\n"), 'no notice, nothing added');
+    }
+
+    public function testABuildAgentOnAnotherProviderTellsTheProgramItsContextWindow(): void {
+        $a = $this->agent(['name' => 'zai', 'endpoint' => 'https://api.z.ai/api/anthropic', 'model' => 'glm-5.3', 'context_tokens' => '400000'], 'k-1');
+        [$env, $err] = $a->box()->cliEnv($this->root, 'claude');
+        $this->assertSame(['', '400000'], [$err, $env['CLAUDE_CODE_MAX_CONTEXT_TOKENS'] ?? null]);
+        $b = $this->agent(['name' => 'plain', 'endpoint' => 'https://api.z.ai/api/anthropic', 'model' => 'glm-5.3'], 'k-1');
+        $this->assertArrayNotHasKey('CLAUDE_CODE_MAX_CONTEXT_TOKENS', $b->box()->cliEnv($this->root, 'claude')[0], 'unset: the program keeps its own assumption');
+        $this->assertSame(0, (int) $this->agent(['name' => 'chat', 'kind' => 'openai', 'endpoint' => 'https://x.example/v1', 'model' => 'm', 'context_tokens' => '400000'])->contextTokens, 'only a build agent has one');
+        $this->assertNotEmpty(preg_grep('/context window/', \Model_Agent::problems(['name' => 'x1', 'kind' => 'cli', 'timeout' => 60, 'context_tokens' => '12'])));
+        $this->assertSame([], \Model_Agent::problems(['name' => 'x1', 'kind' => 'cli', 'timeout' => 60, 'context_tokens' => '']));
+    }
+
     /* ---- a prompt goes to an agent that takes prompts ---- */
 
     public function testAnAgentStepRefusesADecisionOrEmbeddingsAgentAndBlankNeverPicksOne(): void {

@@ -88,7 +88,7 @@ class AgentTaskTest extends TestCase {
         unlink("{$this->app}/.aibuilder/state/claude/.credentials.json");
         $r = AgentTask::start($this->app, 't1', 'do it');
         $this->assertSame('refused', $r['status']);
-        $this->assertStringContainsString('no claude credential', $r['error'], "the app's own chain, never anyone else's");
+        $this->assertStringContainsString('no model credential', $r['error'], "the app's own chain, never anyone else's");
         $this->assertDirectoryDoesNotExist("{$this->app}/.aibuilder/wt/t1", 'refused before a worktree existed');
         $this->assertSame('main', $this->git('branch --show-current'));
     }

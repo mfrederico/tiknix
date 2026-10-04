@@ -114,6 +114,30 @@ class TenantBuilder {
     }
 
     /**
+     * Why this project cannot build right now, or '' when it can. THE gate for every Builder
+     * surface (board, terminal, prompts): a task typed into a project with no agent is a task
+     * that cannot run, so nothing is offered until an agent is set up on the app's AI agents
+     * page. It can build when the app's Claude account is usable, or when any of its agents
+     * does builder work (kind cli) and reports no problem of its own.
+     *
+     * Reads from agents() — one ssh into the container. A container that does not answer is
+     * a problem in its own words, not "no agent".
+     */
+    public static function agentProblem(object $inst): string {
+        try {
+            $ag = self::agents($inst);
+        } catch (\RuntimeException $e) {
+            return $e->getMessage();
+        }
+        $claude = (string) ($ag['claude']['problem'] ?? '');
+        if ($claude === '') return '';
+        foreach ((array) ($ag['agents'] ?? []) as $a) {
+            if (!empty($a['builder']) && empty($a['problems'])) return '';
+        }
+        return $claude;
+    }
+
+    /**
      * The audit's answer (tenant.php --audit --out) into the workspace: the manifest where
      * plan-audit.php reads it, and the screenshots — which the control plane's browser saved
      * HERE (its --output-dir is the workspace) — copied into the app, where the report links them

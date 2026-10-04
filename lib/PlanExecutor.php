@@ -392,6 +392,20 @@ class PlanExecutor {
     /* ---- a project in its own container (TenantBuilder, RUNTIME-SPLIT-MAP.md step 5) ---------- */
 
     /** AgentTask's id for a subtask: [a-z0-9-], unique per plan and task. */
+    /** A task's time limit: 30 minutes, or what a retry after running out of time raised it to. */
+    public const TIME_LIMIT = 1800;
+    public const TIME_LIMIT_MAX = 3600;
+
+    public static function timeLimit($t): int {
+        $l = (int) ($t->timeLimit ?? 0);
+        return $l > 0 ? min(self::TIME_LIMIT_MAX, max(self::TIME_LIMIT, $l)) : self::TIME_LIMIT;
+    }
+
+    /** Did this failure note say the agent hit its time limit? (Both wordings: an app on an older runtime says "exited 124".) */
+    public static function ranOutOfTime(string $note): bool {
+        return str_contains($note, 'ran out of time') || (bool) preg_match('/\bexited 124\b/', $note);
+    }
+
     private function tenantTaskId($t): string { return 'plan-' . $this->planId . '-task-' . (int) $t->id; }
 
     /**
@@ -408,7 +422,7 @@ class PlanExecutor {
             $agent = PlanIngestor::agentName($t->agent ?? '');
             // In a tmux session IN the container (TenantRun): it outlives anything on core.
             TenantRun::start($this->tenant, $session, $id,
-                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=1800', $this->buildTaskBrief($t), $this->author());
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t), $this->buildTaskBrief($t), $this->author());
             $this->logEvent($t, 'info', "Build agent started in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
         } catch (\Throwable $e) {
             $this->fail($t, 'could not start the task in the container: ' . $e->getMessage());

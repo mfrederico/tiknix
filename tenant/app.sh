@@ -92,6 +92,13 @@ else
   grep -cE ": ok$" /tmp/tiknix-build.log | sed 's/^/seeds ok: /'
 fi
 sudo -u app php scripts/clitool.php --agent-sync | tail -1
+# The sync may rewrite the guidance (a newer runtime than the template was cut with). Committed
+# here: an uncommitted AGENTS.md or CLAUDE.md in a brand-new app makes its first --update refuse.
+if [ -n "$(sudo -u app git -C "$APP_DIR" status --porcelain -- AGENTS.md CLAUDE.md)" ]; then
+  sudo -u app git -C "$APP_DIR" add -- AGENTS.md CLAUDE.md
+  sudo -u app git -C "$APP_DIR" -c user.email=core@tiknix.local -c user.name=tiknix commit -q -m "Agent guidance generated for this app" -- AGENTS.md CLAUDE.md
+  echo "agent guidance committed"
+fi
 
 say "the app's system packages (its system-packages file)"
 # Programs the app runs that the template does not carry (discotuba's tracker runs ffmpeg).

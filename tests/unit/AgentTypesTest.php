@@ -152,6 +152,16 @@ PHP);
         $this->assertSame([], \Model_Agent::problems(['name' => 'x1', 'kind' => 'cli', 'timeout' => 60, 'context_tokens' => '']));
     }
 
+    public function testABuildAgentCarriesItsOwnTaskTimeLimit(): void {
+        $this->agent(['name' => 'zai', 'endpoint' => 'https://api.z.ai/api/anthropic', 'model' => 'glm-5.3', 'task_minutes' => '90', 'is_default' => true], 'k-1');
+        $this->agent(['name' => 'quick', 'endpoint' => 'https://api.z.ai/api/anthropic', 'model' => 'glm-5.3'], 'k-1');
+        $this->assertSame(5400, \app\AgentTask::runsOn($this->root, '', 'claude', 'worker')['task_seconds'], 'the builder, when no agent is named');
+        $this->assertSame(0, \app\AgentTask::runsOn($this->root, 'quick', 'claude', 'worker')['task_seconds'], 'none set: the limit asked for stands');
+        $this->assertSame(0, (int) $this->agent(['name' => 'chat', 'kind' => 'openai', 'endpoint' => 'https://x.example/v1', 'model' => 'm', 'task_minutes' => '90'])->taskMinutes, 'only a build agent builds');
+        $this->assertNotEmpty(preg_grep('/task time limit/', \Model_Agent::problems(['name' => 'x1', 'kind' => 'cli', 'timeout' => 60, 'task_minutes' => '900'])));
+        $this->assertSame([], \Model_Agent::problems(['name' => 'x1', 'kind' => 'cli', 'timeout' => 60, 'task_minutes' => '']));
+    }
+
     /* ---- a prompt goes to an agent that takes prompts ---- */
 
     public function testAnAgentStepRefusesADecisionOrEmbeddingsAgentAndBlankNeverPicksOne(): void {

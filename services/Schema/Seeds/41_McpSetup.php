@@ -5,8 +5,8 @@
  * feature grant in the controller; adding, changing and removing a server are ADMIN. (A
  * granted MEMBER can therefore open the page and test, but not change servers — as before
  * the rename. Whether the grant should cover the writes too is the owner's decision.)
- * Seeded before the first request, which would invent rows. The old page's write rows go;
- * /agentsetup itself stays as a redirect at MEMBER.
+ * Seeded before the first request, which would invent rows. The old page's write rows go
+ * (and /agentsetup itself with seed 42).
  */
 echo '  authcontrol: mcpsetup::index => ' . \app\PermissionCache::seedRule('mcpsetup', 'index', 100, 'MCP services: gated by the mcp feature grant, not by level') . "\n";
 foreach (['storeServer', 'updateServer', 'deleteServer', 'test'] as $m) {

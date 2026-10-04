@@ -123,20 +123,65 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
     }
 
     /**
-     * The isolation state to show: 'active' when the pool is live (and the column is
-     * corrected to say so), else whatever was recorded ('pending' | 'failed' | '').
+     * A setup whose log has not moved for this long is stalled: the whole of a normal setup
+     * is about two minutes, and the longest single step (a TenantHost::system recipe) is
+     * capped at fifteen.
      */
+    public const SETUP_STALL_SECONDS = 600;
+
     /**
      * A project's container setup, for its card: 'active' once its container is published,
-     * 'failed' when the setup log (its workspace's .aibuilder/provision.log, written by the
-     * background `tenant.php --up` ProvisionService::create starts) records an ERROR, 'pending'
-     * while that log exists without either, '' when there is no record of a setup at all.
+     * 'failed' when the setup stopped — see setupReport() — 'pending' while it is still going,
+     * '' when there is no record of a setup at all.
      */
     public static function setupStateFor($inst): string {
-        if ((int) $inst->ctVmid > 0 && trim((string) $inst->ctDomain) !== '') return 'active';
-        $log = self::workspaceFrom((string) $inst->slug) . '/.aibuilder/provision.log';
-        if (!is_file($log)) return '';
-        return preg_match('/^ERROR /m', (string) file_get_contents($log)) ? 'failed' : 'pending';
+        return self::setupReport($inst)['state'];
+    }
+
+    /**
+     * A project's container setup, in full. The background `tenant.php --up` that
+     * ProvisionService::create starts writes its workspace's .aibuilder/provision.log and its
+     * pid to .aibuilder/provision.pid (its process group, too).
+     *
+     *   state    'active'  — container + domain on the row
+     *            'failed'  — the log records an ERROR, or nothing has been written to it for
+     *                        SETUP_STALL_SECONDS: a setup that died or hung cannot say so itself,
+     *                        and "no progress for twelve minutes" is a failure to the person
+     *                        waiting, whatever the process is doing
+     *            'pending' — the log exists, is moving, and has no ERROR
+     *            ''        — no log: nothing recorded a setup
+     *   error    the ERROR line, or the stall described (last step + how long ago); '' otherwise
+     *   last     the log's last line
+     *   idle     seconds since the log last moved (0 without a log)
+     *   pid      the setup's pid from provision.pid, 0 without one
+     *   running  whether that pid is alive right now (false without one)
+     *
+     * @return array{state:string,error:string,last:string,idle:int,pid:int,running:bool}
+     */
+    public static function setupReport($inst): array {
+        $r = ['state' => '', 'error' => '', 'last' => '', 'idle' => 0, 'pid' => 0, 'running' => false];
+        if ((int) $inst->ctVmid > 0 && trim((string) $inst->ctDomain) !== '') { $r['state'] = 'active'; return $r; }
+        $ab  = self::workspaceFrom((string) $inst->slug) . '/.aibuilder';
+        $log = $ab . '/provision.log';
+        if (!is_file($log)) return $r;
+        $lines = array_values(array_filter(array_map('trim', file($log))));
+        $r['last'] = $lines ? (string) end($lines) : '';
+        $r['idle'] = max(0, time() - (int) filemtime($log));
+        if (is_file($ab . '/provision.pid')) {
+            $r['pid'] = (int) trim((string) file_get_contents($ab . '/provision.pid'));
+            $r['running'] = $r['pid'] > 0 && posix_kill($r['pid'], 0);
+        }
+        foreach ($lines as $l) if (str_starts_with($l, 'ERROR ')) $r['error'] = substr($l, 6);
+        if ($r['error'] !== '') { $r['state'] = 'failed'; return $r; }
+        if ($r['idle'] >= self::SETUP_STALL_SECONDS) {
+            $r['state'] = 'failed';
+            $r['error'] = 'no progress for ' . (int) floor($r['idle'] / 60) . ' minutes'
+                        . ($r['last'] !== '' ? ' — last step: ' . $r['last'] : '')
+                        . ($r['running'] ? ' (the setup process is still there, hung)' : ' (the setup process is gone)');
+            return $r;
+        }
+        $r['state'] = 'pending';
+        return $r;
     }
 
     /**

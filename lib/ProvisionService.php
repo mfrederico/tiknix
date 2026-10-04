@@ -128,7 +128,13 @@ class ProvisionService {
     /**
      * `tenant.php --up` for a new project, detached: its container created, provisioned and
      * published at <slug>.<app>.com. Its progress — and any ERROR — is in its workspace's
-     * .aibuilder/provision.log, which the project card reads (Model_Instance::setupStateFor).
+     * .aibuilder/provision.log, which the project card reads (Model_Instance::setupReport).
+     *
+     * The run is its own session (setsid), and its pid — which is then also its process-group
+     * id — is .aibuilder/provision.pid: a setup that stops making progress without saying so
+     * (the box rebooted, an ssh hung) is the one thing the log cannot record, so
+     * scripts/provision-sweep.php reads the pid to tell dead from hung, and ends the whole
+     * group before it removes what the setup left behind.
      *
      * @param string[] $then tenant.php arguments to run once the container is up — only if it
      *                       came up (&&): the Get-started hand-off's --handoff-finish=<token>
@@ -138,6 +144,7 @@ class ProvisionService {
         $ab = \Model_Instance::workspaceFrom($slug) . '/.aibuilder';
         if (!is_dir($ab) && !@mkdir($ab, 0775, true)) throw new \RuntimeException("could not create {$ab}");
         $log = $ab . '/provision.log';
+        $pid = $ab . '/provision.pid';
         $domain = $slug . '.' . $this->appNamespace() . '.com';
         $cmd = 'cd ' . escapeshellarg(dirname(__DIR__)) . ' && echo "[setup] $(date) ' . $slug . ' -> ' . $domain . '"'
              . ' && env -u TIKNIX_WORKBENCH_DB php scripts/tenant.php --up=' . escapeshellarg($slug) . ' --domain=' . escapeshellarg($domain);
@@ -147,7 +154,8 @@ class ProvisionService {
             }
             $cmd .= ' && echo "[then] $(date) ' . implode(' ', $then) . '" && env -u TIKNIX_WORKBENCH_DB php scripts/tenant.php ' . implode(' ', array_map('escapeshellarg', $then));
         }
-        exec('nohup bash -lc ' . escapeshellarg('(' . $cmd . ') >> ' . escapeshellarg($log) . ' 2>&1') . ' > /dev/null 2>&1 &', $o, $c);
+        $script = 'echo $$ > ' . escapeshellarg($pid) . '; (' . $cmd . ') >> ' . escapeshellarg($log) . ' 2>&1';
+        exec('setsid nohup bash -lc ' . escapeshellarg($script) . ' > /dev/null 2>&1 &', $o, $c);
         if ($c !== 0) throw new \RuntimeException("could not start tenant.php --up for {$slug}");
     }
 
@@ -348,7 +356,17 @@ class ProvisionService {
         $stamp = date('Ymd-His');
         $steps = [];
 
+        // A container whose setup stopped before app.sh put the app in it (the provision sweep's
+        // case) has nothing to archive — distinct from an archive that FAILS, which refuses below.
+        // The template already holds an empty /srv/app; the app is there once app.sh has cloned it.
+        $hasApp = false;
         if ((int) $inst->ctVmid > 0) {
+            [$tc, $to] = TenantHost::ssh($inst, 'root', 'test -d /srv/app/.git && echo yes || echo no', null, 60);
+            if ($tc !== 0) return ['ok' => false, 'error' => "could not look inside {$slug}'s container (nothing removed): " . trim($to)];
+            $hasApp = trim($to) === 'yes';
+            if (!$hasApp) $steps[] = 'the container had no app in it yet (setup never reached app.sh) — nothing to archive';
+        }
+        if ($hasApp) {
             $appTgz = "{$archiveDir}/{$slug}-{$stamp}-app.tgz";
             [$c, $err] = TenantHost::ssh($inst, 'root', 'tar czf - -C /srv --exclude=app/vendor --exclude=app/node_modules --exclude=app/bin/claude app', null, 1800, null, $appTgz);
             exec('gzip -t ' . escapeshellarg($appTgz) . ' 2>&1', $gz, $gzc);

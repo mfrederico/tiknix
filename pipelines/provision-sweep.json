@@ -1,0 +1,18 @@
+{
+  "slug": "provision-sweep",
+  "name": "Provision sweep",
+  "description": "Every ten minutes: a project whose container setup never finished — a tenant row with no domain, more than an hour old, whose setup log has stopped moving — is removed through the one delete there is (archived, container/origin/workspace/proxy/row gone), its hung setup process ended first, and its owner sent a Note saying where it stopped. Core only: it reads the instance table. scripts/provision-sweep.php has the reasoning.",
+  "trigger": { "cron": "*/10 * * * *" },
+  "steps": [
+    {
+      "name": "sweep",
+      "type": "shell",
+      "config": {
+        "cwd": "{root}",
+        "command": "php scripts/provision-sweep.php --apply"
+      },
+      "on_success": "exit",
+      "on_fail": "exit"
+    }
+  ]
+}

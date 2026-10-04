@@ -89,11 +89,11 @@ class OverridesTest extends TestCase {
         // checkout while core develops it through a path repository).
         $this->assertSame(realpath(dirname(__DIR__, 2) . '/vendor/tiknix/runtime'), \app\Paths::runtime());
         $fromRuntime = fn(string $c) => str_starts_with((string) realpath((new \ReflectionClass($c))->getFileName()), \app\Paths::runtime() . '/');
-        foreach (['app\\Bean', 'app\\Sites', 'app\\Communications', 'app\\Chrome', 'app\\Settings', 'app\\mcptools\\ToolLoader', 'app\\services\\connectors\\ConnectorRegistry', 'app\\Paths', 'Model_Lead'] as $c) {
+        foreach (['app\\Bean', 'app\\Sites', 'app\\Communications', 'app\\Chrome', 'app\\Settings', 'app\\mcptools\\ToolLoader', 'app\\services\\connectors\\ConnectorRegistry', 'app\\Paths', 'app\\Hooks', 'app\\AgentKit', 'Model_Lead'] as $c) {
             $this->assertTrue(class_exists($c), "{$c} autoloads");
             $this->assertTrue($fromRuntime($c), "{$c} comes from the runtime");
         }
-        foreach (['app\\PlanExecutor', 'app\\Help', 'app\\Docs', 'app\\Hooks', 'app\\Teams'] as $c) {
+        foreach (['app\\PlanExecutor', 'app\\Help', 'app\\Docs', 'app\\Teams'] as $c) {
             $this->assertFalse($fromRuntime($c), "{$c} is the control plane's");
         }
         // Core overrides exactly the role-shaped controllers (RUNTIME-SPLIT-MAP.md step 2): its

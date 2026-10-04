@@ -26,7 +26,6 @@ echo '  authcontrol: permissions::* (removed controller) => ' . count($__gone) .
 // controllers demand ROOT in every method, and the table said 100 / 50. Tighten the rows to
 // what the code enforces (never widens anything), so the table is the truth a reader and the
 // role sweep can trust.
-echo '  authcontrol: hooks::* => ' . \app\PermissionCache::seedRule('hooks', '*', 1, 'Hooks editor: writes PHP that runs on the server (root)') . "\n";
 $__tight = 0;
 foreach (\app\Bean::find('authcontrol', 'control IN (?, ?) AND level > 1', ['mcptools', 'hooks']) as $__row) {
     $__row->level = 1;

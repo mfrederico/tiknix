@@ -38,11 +38,6 @@ $__pLink   = function (array $__p) use ($__active): void { ?>
 
         <div class="ui-nav-heading">Build</div>
         <?php if ($__pBuild) $__pLink($__pBuild[0]); ?>
-        <?php /* MCP services is MCP configuration for the selected project, so it follows the mcp
-                 GRANT: a granted member is not an admin. Admins have it without a switch. */ ?>
-        <?php if (\app\Feature::allows('mcp', $__mid, $__level)): ?>
-        <a class="ui-nav-link<?= $__active('/mcpsetup') ?>" href="/mcpsetup"><i class="bi bi-sliders"></i> MCP services</a>
-        <?php endif; ?>
         <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
         <?php /* A project in its own container has Integrations as a page of its app (below);
                  one that is not (core itself) has it here. */ ?>

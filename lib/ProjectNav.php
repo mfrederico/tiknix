@@ -7,7 +7,7 @@
  * Three things decide a link, and they are different questions:
  *
  *   the member's TIKNIX grants    a sidecar plugin is behind a feature flag (app\Feature), per
- *                                 member; Agent Setup follows the 'mcp' grant.
+ *                                 member.
  *   the member's ROLE ON THE      AppAccess::level — the owner (1), a team owner/admin of a team
  *   PROJECT                       the project is shared with (50), a team member (100). It is the
  *                                 level Tiknix vouches for inside the project's own app, so it
@@ -38,7 +38,7 @@ class ProjectNav {
      */
     public const APP_PAGES = [
         ['/dashboard',    'speedometer2', 'Dashboard',    100],
-        ['/agents',       'robot',        'AI agents',    50],
+        ['/agents',       'robot',        'Agents & MCP', 50],   // models, MCP servers, skills & plugins: one page of the app
         ['/pipelines',    'diagram-2',    'Data',         50],
         ['/integrations', 'diagram-3',    'Integrations', 50],
         ['/settings',     'gear',         'Settings',     50],

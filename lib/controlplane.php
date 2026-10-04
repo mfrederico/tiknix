@@ -99,7 +99,6 @@
     'projects'   => '/projects',
     'docs'       => 'https://docs.tiknix.com',
     'help'       => '/help',
-    'agentsetup' => '/mcpsetup',   // key kept (runtime views link by it); the page is MCP services
     'fleet'      => '/fleet',
     'reports'    => '/projectreport',   // what every hosted app reports about itself
 ];

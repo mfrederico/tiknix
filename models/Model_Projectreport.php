@@ -51,7 +51,11 @@ class Model_Projectreport extends \RedBeanPHP\SimpleModel {
         $parts = (array) ($rs['disk']['parts'] ?? []);
         $dbs = (array) ($rs['disk']['databases'] ?? []);
         $providers = [];
-        foreach ((array) ($rd['providers'] ?? []) as $p) if (!empty($p['ready'])) $providers[] = (string) ($p['preset'] ?: $p['name']);
+        $names = [];   // handle => what people call it (an agent with no human name is absent)
+        foreach ((array) ($rd['providers'] ?? []) as $p) {
+            if (!empty($p['ready'])) $providers[] = (string) ($p['preset'] ?: $p['name']);
+            if (trim((string) ($p['display_name'] ?? '')) !== '') $names[(string) $p['name']] = (string) $p['display_name'];
+        }
         if (!empty($rd['anthropic'])) $providers[] = 'anthropic';
         return [
             'at'              => (string) ($rep['at'] ?? ''),
@@ -62,6 +66,7 @@ class Model_Projectreport extends \RedBeanPHP\SimpleModel {
             'agent_problem'   => (string) ($rd['agent_problem'] ?? ''),
             'providers'       => array_values(array_unique($providers)),
             'default_agent'   => (string) ($rd['default_agent'] ?? ''),
+            'agent_names'     => $names,
             'concepts'        => array_values((array) ($rd['concepts'] ?? [])),
             'pipelines'       => $rd['pipelines'] ?? null,
             'cron_last_tick'  => $rd['cron_last_tick'] ?? null,

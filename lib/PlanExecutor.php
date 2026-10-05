@@ -467,9 +467,11 @@ class PlanExecutor {
             // The app's agent the plan runs on (the builder's picker); '' = the app's default.
             $agent = PlanIngestor::agentName($t->agent ?? '');
             // In a tmux session IN the container (TenantRun): it outlives anything on core.
+            $resume = !empty($t->resumable);   // an attempt that ran out of time left its work behind
             TenantRun::start($this->tenant, $session, $id,
-                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t), $this->buildTaskBrief($t), $this->author());
-            $this->logEvent($t, 'info', "Build agent started in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : ''), $this->buildTaskBrief($t), $this->author());
+            $this->logEvent($t, 'info', ($resume ? 'Build agent RESUMED (continuing the earlier attempt\'s work)' : 'Build agent started') . " in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
+            if ($resume) { $t->resumable = 0; Bean::store($t); }
         } catch (\Throwable $e) {
             $this->fail($t, 'could not start the task in the container: ' . $e->getMessage());
             return false;
@@ -502,6 +504,13 @@ class PlanExecutor {
         }
         $tail = trim((string) ($r['output'] ?? ''));
         if ($tail !== '') $this->logEvent($t, 'info', 'Agent output (tail): ' . mb_substr($tail, -1500));
+        // What this run cost, added to the task's total (app\RunStats) and said on its log.
+        if (is_array($r['stats'] ?? null)) {
+            $total = RunStats::add(json_decode((string) ($t->statsJson ?? ''), true) ?: [], $r['stats']);
+            $t->statsJson = json_encode($total);
+            Bean::store($t);
+            $this->logEvent($t, 'info', 'This run: ' . RunStats::line(RunStats::add([], $r['stats'])) . ((int) $total['attempts'] > 1 ? "\nTask so far: " . RunStats::line($total) : ''));
+        }
         if (!empty($r['credential'])) $this->logEvent($t, 'info', 'Ran on ' . $r['credential']);
         // What the app noticed about the work (an unlinked page): on the task, where a person reads it.
         foreach ((array) ($r['notes'] ?? []) as $note) $this->logEvent($t, 'warning', 'Unlinked page — ' . (string) $note);
@@ -512,8 +521,18 @@ class PlanExecutor {
             return;
         }
         if ($status !== 'changed') {
+            $why = (string) ($r['error'] ?? '') !== '' ? (string) $r['error'] : "the container task ended '{$status}'";
+            // Ran out of time WITH work done: the worktree is kept and the retry continues in it
+            // (AgentTask resume). Thrown away, holistica's task #5 cost 30 minutes and then 27 more
+            // for the same work. Any other failure leaves nothing worth keeping.
+            if (!empty($r['resumable'])) {
+                $t->resumable = 1;
+                $this->finish($t, 'failed', $why . ' Its work so far is kept (' . ($r['commit'] ?? '?') . '): Retry continues from there instead of starting over.');
+                return;
+            }
             TenantHost::discardTask($this->tenant, $id);
-            $this->finish($t, 'failed', (string) ($r['error'] ?? '') !== '' ? (string) $r['error'] : "the container task ended '{$status}'");
+            $t->resumable = 0;
+            $this->finish($t, 'failed', $why);
             return;
         }
         if (!empty($r['diffstat'])) $this->logEvent($t, 'info', "Changed ({$r['commit']}):\n" . $r['diffstat']);

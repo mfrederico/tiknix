@@ -120,6 +120,48 @@ class AgentTaskTest extends TestCase {
         $this->assertSame('Pat Member', $this->git('log -1 --format=%cn'));
     }
 
+    /**
+     * A task that runs out of time keeps what it did, and the retry continues in it: the agent is
+     * told it is resuming, both attempts' work merges, and nothing is built twice.
+     */
+    public function testATimedOutTaskIsResumedNotRestarted(): void {
+        // attempt 1: writes half, then is stopped by the time limit (timeout's exit code)
+        file_put_contents("{$this->app}/bin/claude", "#!/bin/sh\necho 'part one' >> README.md\nexit 124\n");
+        $r = AgentTask::start($this->app, 't7', 'Write two parts');
+        $this->assertSame(['agent-failed', true, false], [$r['status'], $r['resumable'], $r['resumed']], json_encode($r));
+        $this->assertStringContainsString('ran out of time', $r['error']);
+        $this->assertNotSame('', $r['commit'], 'what it had done is committed on the task branch');
+        $this->assertDirectoryExists("{$this->app}/.aibuilder/wt/t7", 'the worktree is kept for the resume');
+        $this->assertStringContainsString('already has a worktree', AgentTask::start($this->app, 't7', 'Write two parts')['error'], 'without --resume it is still refused');
+
+        // attempt 2, resuming: the agent is told, sees part one, adds part two
+        file_put_contents("{$this->app}/bin/claude", "#!/bin/sh\necho \"\$@\" | grep -q 'You are RESUMING this task' && grep -q 'part one' README.md && echo 'part two' >> README.md\necho done\n");
+        $r = AgentTask::start($this->app, 't7', 'Write two parts', 'claude', 1800, '', 'live', true);
+        $this->assertSame(['changed', true, true], [$r['status'], $r['ok'], $r['resumed']], json_encode($r));
+        $this->assertTrue(AgentTask::merge($this->app, 't7')['ok']);
+        $readme = (string) file_get_contents("{$this->app}/README.md");
+        $this->assertStringContainsString("part one\npart two\n", $readme);
+        $this->assertSame(1, substr_count($readme, 'part one'), 'the first attempt is not repeated');
+    }
+
+    /** The earlier attempt had in fact finished: a resume that adds nothing still has work to merge. */
+    public function testAResumeThatAddsNothingStillMergesTheEarlierWork(): void {
+        file_put_contents("{$this->app}/bin/claude", "#!/bin/sh\necho 'all of it' >> README.md\nexit 124\n");
+        AgentTask::start($this->app, 't8', 'Write it');
+        file_put_contents("{$this->app}/bin/claude", "#!/bin/sh\necho 'checked: nothing missing'\n");
+        $r = AgentTask::start($this->app, 't8', 'Write it', 'claude', 1800, '', 'live', true);
+        $this->assertSame('changed', $r['status'], 'the branch holds the earlier commit: ' . json_encode($r));
+        $this->assertStringContainsString('README.md', $r['diffstat']);
+        $this->assertTrue(AgentTask::merge($this->app, 't8')['ok']);
+        $this->assertStringContainsString('all of it', (string) file_get_contents("{$this->app}/README.md"));
+    }
+
+    /** Resume asked for a task that left nothing behind is simply a fresh start. */
+    public function testResumeWithNothingToResumeStartsFresh(): void {
+        $r = AgentTask::start($this->app, 't9', 'Add a line', 'claude', 1800, '', 'live', true);
+        $this->assertSame(['changed', false], [$r['status'], $r['resumed']]);
+    }
+
     /** A stand-in agent that uses its sandbox: reads its URL from the prompt, adds a cat, loads the page. */
     private function agentThatChecksItsWork(): void {
         file_put_contents("{$this->app}/bin/claude", <<<'SH'

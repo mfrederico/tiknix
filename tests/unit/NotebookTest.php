@@ -88,6 +88,7 @@ class NotebookTest extends TestCase {
         $b = Notebook::brief($this->root);
         $this->assertStringContainsString('### Decisions', $b);
         $this->assertStringContainsString('Prices are stored in cents.', $b);
+        $this->assertSame(1, substr_count($b, 'What was decided and why'), 'what a document is for is said once, in its heading');
         $this->assertStringContainsString('THE NEWEST LESSON', $b, 'when a document outgrows the budget the newest entries are the ones kept');
         $this->assertStringContainsString('older entries are in agent/notebook/lessons.md', $b);
         $this->assertLessThan(Notebook::BRIEF_BUDGET + 2500, mb_strlen($b));

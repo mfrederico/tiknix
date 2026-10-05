@@ -711,6 +711,22 @@ class TenantHost {
     }
     public static function discardTask(object $inst, string $id): array { return self::taskCall($inst, '--agent-discard=' . escapeshellarg($id), null, 120); }
 
+    /** The project's notebook (the app's app\Notebook): {ok, docs:{decisions,map,lessons}, titles}. */
+    public static function notebook(object $inst): array { return self::taskCall($inst, '--notebook', null, 60); }
+
+    /** Add a finished task's entries to the notebook — committed in the app as $author. {ok, added, skipped} */
+    public static function notebookAdd(object $inst, array $entries, string $source, array $author): array {
+        if ($author === []) return ['ok' => false, 'error' => 'adding to the notebook needs the member whose task it was as the commit\'s author'];
+        return self::taskCall($inst, '--notebook-add --source=' . escapeshellarg($source), json_encode(array_values($entries)), 60, self::gitEnv($author));
+    }
+
+    /** Save a person's edit of one notebook document — committed in the app as $author. */
+    public static function notebookSet(object $inst, string $doc, string $text, array $author): array {
+        if (!preg_match('/^[a-z]{2,20}$/', $doc)) return ['ok' => false, 'error' => "'{$doc}' is not a notebook document"];
+        if ($author === []) return ['ok' => false, 'error' => 'saving the notebook needs you as the commit\'s author'];
+        return self::taskCall($inst, '--notebook-set=' . escapeshellarg($doc), $text, 60, self::gitEnv($author));
+    }
+
     /** --agent=NAME for one of the app's agents (its AI agents page); '' = the app's default. */
     public static function agentArg(string $agent): string {
         if ($agent === '') return '';

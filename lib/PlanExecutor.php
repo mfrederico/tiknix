@@ -531,7 +531,11 @@ class PlanExecutor {
         } catch (\RuntimeException $e) {
             $m = ['ok' => false, 'error' => $e->getMessage()];
         }
-        if (!empty($m['ok'])) { $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?')); return; }
+        if (!empty($m['ok'])) {
+            $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?'));
+            $this->addToNotebook($t, (string) ($r['output'] ?? ''));
+            return;
+        }
         $err = (string) ($m['error'] ?? 'the merge failed');
         $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err);
     }
@@ -759,6 +763,21 @@ class PlanExecutor {
     }
 
     // ---- agent invocation --------------------------------------------------
+
+    /**
+     * What a merged task proposed for the project's notebook (its `## Notebook` section —
+     * app\Notebook::parse) is added in the app, by this one writer, as the member whose task it
+     * was. A notebook that cannot be written is logged on the task; the task itself is merged.
+     */
+    private function addToNotebook($t, string $output): void {
+        $entries = \app\Notebook::parse($output);
+        if (!$entries) return;
+        try { $r = TenantHost::notebookAdd($this->tenant, $entries, 'task #' . (int) $t->id, $this->author()); }
+        catch (\RuntimeException $e) { $r = ['ok' => false, 'error' => $e->getMessage()]; }
+        if (empty($r['ok'])) { $this->logEvent($t, 'warning', 'Notebook: ' . count($entries) . ' entr' . (count($entries) === 1 ? 'y' : 'ies') . ' not added — ' . (string) ($r['error'] ?? 'the app did not answer')); return; }
+        $lines = array_map(fn($e) => "- {$e['kind']}: {$e['text']}", $entries);
+        $this->logEvent($t, 'info', 'Notebook: ' . (int) ($r['added'] ?? 0) . ' added' . (!empty($r['skipped']) ? ', ' . (int) $r['skipped'] . ' already there' : '') . ":\n" . implode("\n", $lines));
+    }
 
     /**
      * What the tasks this one depends on built: their title, the files they changed and the

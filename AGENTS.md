@@ -185,6 +185,23 @@ in the place its users will look — and `full_validation` on a controller repor
 - Never edit the runtime's layout to add a link, and never add a method to a runtime controller
   to hang a page off it (see File Structure).
 
+## Project notebook
+
+This project keeps a notebook in `agent/notebook/` — `decisions.md`, `map.md`, `lessons.md`: what
+earlier runs and the owner wrote down so the next run does not rediscover it. A build task's and
+a planner's brief ends with it; from a terminal, read those files before you start.
+
+- **Consult it first.** A decision recorded there is not yours to re-make without a reason; a
+  lesson there is a mistake you do not need to repeat. Where it disagrees with the code, the code
+  is right — say so in a `lesson`.
+- **Never edit the files in a build task.** Tasks run side by side and would collide; your edits
+  to that folder are discarded. Propose entries in your final message instead, in a section headed
+  exactly `## Notebook`, before `## Handoff`: at most six lines, each `- decision: …`, `- map: …`
+  or `- lesson: …`, one sentence each. They are added after your task merges.
+- **Write only what could not be seen from the code** and would cost the next agent time: a choice
+  and its reason, where something non-obvious lives, a mistake and its fix. Not what you built,
+  not what the code plainly shows, nothing you are unsure of. Nothing to add is a fine answer.
+
 ## File Structure — the runtime and the app
 
 A tiknix app is a Composer project that requires the **runtime**, `tiknix/runtime`, installed at

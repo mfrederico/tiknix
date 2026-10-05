@@ -30,4 +30,18 @@ class PlanBudgetChainTest extends TestCase {
     public function testACycleDoesNotHang(): void {
         $this->assertGreaterThan(0, PlanExecutor::chainTicks([1 => ['deps' => [2], 'seconds' => 60], 2 => ['deps' => [1], 'seconds' => 60]]));
     }
+
+    /* ---- tasks at once, per agent ---- */
+
+    public function testAnAgentRunsOnlyAsManyTasksAsItSaidAndAnotherAgentIsNotHeldByIt(): void {
+        $report = ['default_agent' => 'zai', 'parallel' => ['zai' => 1, 'wide' => 3]];
+        $this->assertSame(1, PlanExecutor::capOf($report, 'zai'));
+        $this->assertSame(0, PlanExecutor::capOf($report, 'anthropic'), 'an agent that set none has no cap of its own');
+        $this->assertSame(0, PlanExecutor::capOf(null, 'zai'), 'an app that has not reported');
+        $this->assertFalse(PlanExecutor::agentHasRoom(1, PlanExecutor::capOf($report, 'zai')), 'zai is busy with its one task');
+        $this->assertTrue(PlanExecutor::agentHasRoom(0, PlanExecutor::capOf($report, 'zai')));
+        $this->assertTrue(PlanExecutor::agentHasRoom(2, PlanExecutor::capOf($report, 'anthropic')), 'a task on the second agent starts beside it');
+        $this->assertTrue(PlanExecutor::agentHasRoom(2, PlanExecutor::capOf($report, 'wide')));
+        $this->assertFalse(PlanExecutor::agentHasRoom(3, PlanExecutor::capOf($report, 'wide')));
+    }
 }

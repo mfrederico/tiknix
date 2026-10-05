@@ -162,6 +162,14 @@ PHP);
         $this->assertSame([], \Model_Agent::problems(['name' => 'x1', 'kind' => 'cli', 'timeout' => 60, 'task_minutes' => '']));
     }
 
+    public function testABuildAgentSaysHowManyTasksItRunsAtOnce(): void {
+        $this->assertSame(1, (int) $this->agent(['name' => 'zai', 'endpoint' => 'https://api.z.ai/api/anthropic', 'model' => 'glm-5.3', 'parallel' => '1'], 'k-1')->parallel);
+        $this->assertSame(0, (int) $this->agent(['name' => 'chat', 'kind' => 'openai', 'endpoint' => 'https://x.example/v1', 'model' => 'm', 'parallel' => '2'])->parallel, 'only a build agent builds');
+        $this->assertSame(1, (int) \Model_Agent::PRESETS['zai']['parallel'], 'z.ai serves GLM-5.3 one request at a time');
+        $this->assertNotEmpty(preg_grep('/tasks at once/', \Model_Agent::problems(['name' => 'x1', 'kind' => 'cli', 'timeout' => 60, 'parallel' => '99'])));
+        $this->assertSame([], \Model_Agent::problems(['name' => 'x1', 'kind' => 'cli', 'timeout' => 60, 'parallel' => '']));
+    }
+
     /* ---- a prompt goes to an agent that takes prompts ---- */
 
     public function testAnAgentStepRefusesADecisionOrEmbeddingsAgentAndBlankNeverPicksOne(): void {

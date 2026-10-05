@@ -132,9 +132,13 @@ class PlanExecutor {
             if (!in_array((string) $t->status, ['pending', 'running'], true)) continue;
             $eng = (string) ($t->engine ?: EngineRegistry::defaultEngine());
             $mdl = (string) ($t->model ?? '');
-            $key = $eng . ':' . $mdl;
+            // ...and per agent: an agent that runs one task at a time (its "Tasks at once") works
+            // through its share in rounds of one, whatever the model allows.
+            $own = $this->agentCap($this->agentOf($t));
+            $key = $eng . ':' . $mdl . '|' . $this->agentOf($t);
             if (!isset($groups[$key])) {
                 $cap = EngineRegistry::maxConcurrency($eng, $mdl);
+                if ($own > 0) $cap = $cap > 0 ? min($cap, $own) : $own;
                 // No declared provider limit: our own cap is the only one that applies.
                 $groups[$key] = ['n' => 0, 'cap' => max(1, min(self::MAX_CONCURRENT, $cap > 0 ? $cap : self::MAX_CONCURRENT))];
             }
@@ -145,7 +149,7 @@ class PlanExecutor {
         // engine and a slow one is budgeted for what each actually takes.
         $ticks = 0;
         foreach ($groups as $key => $g) {
-            [$eng, $mdl] = array_pad(explode(':', $key, 2), 2, '');
+            [$eng, $mdl] = array_pad(explode(':', explode('|', $key, 2)[0], 2), 2, '');
             $waves  = (int) ceil($g['n'] / $g['cap']);
             $ticks += $waves * $this->taskBudgetTicks($eng, $mdl);
         }
@@ -164,6 +168,37 @@ class PlanExecutor {
         $ticks = max($ticks, self::chainTicks($remaining));
 
         return min($ticks, self::MAX_BUDGET_TICKS);
+    }
+
+    /** The app's agent a task runs on: the one set on it, else the app's builder (as the app last reported it). */
+    private function agentOf($t): string {
+        $name = trim((string) ($t->agent ?? ''));
+        if ($name !== '') return $name;
+        $rj = json_decode((string) ($this->tenant->reportJson ?? ''), true);
+        return is_array($rj) ? (string) ($rj['default_agent'] ?? '') : '';
+    }
+
+    /**
+     * How many tasks may run on one of the app's agents at once — the agent's own "Tasks at once",
+     * from the app's status report. 0 = it set none (MAX_CONCURRENT is then the only bound).
+     */
+    private function agentCap(string $agent): int {
+        return self::capOf(json_decode((string) ($this->tenant->reportJson ?? ''), true), $agent);
+    }
+
+    /** The cap `$agent` set for itself in an app's report headline (Model_Projectreport::headline's `parallel`); 0 = none. */
+    public static function capOf($report, string $agent): int {
+        if (!is_array($report) || $agent === '') return 0;
+        foreach ((array) ($report['parallel'] ?? []) as $name => $n) if ((string) $name === $agent) return max(0, (int) $n);
+        return 0;
+    }
+
+    /**
+     * May one more task start on an agent that already runs `$running`? The rule the launch loop
+     * applies per agent: no cap of its own = yes (the plan-wide cap decides).
+     */
+    public static function agentHasRoom(int $running, int $cap): bool {
+        return $cap <= 0 || $running < $cap;
     }
 
     /**
@@ -242,14 +277,21 @@ class PlanExecutor {
          * spending wall-clock and quota to accomplish nothing. Launching fewer is faster.
          *
          * Counted per engine rather than globally, since a plan may mix engines and one
-         * saturated provider must not block a task bound for another. */
+         * saturated provider must not block a task bound for another.
+         *
+         * And per AGENT (its "Tasks at once" on the app's AI agents page): the app's agents
+         * are separate accounts on separate providers, so a task set to a second Build agent
+         * runs beside one that is waiting its turn on the first. */
         $fresh   = $this->subtasks();
         $running = $this->countByStatus($fresh, 'running');
         $perEngine = [];
+        $perAgent  = [];
         foreach ($fresh as $t) {
             if ($t->status !== 'running') continue;
             $e = (string) ($t->engine ?: EngineRegistry::defaultEngine()) . ':' . (string) ($t->model ?? '');
             $perEngine[$e] = ($perEngine[$e] ?? 0) + 1;
+            $a = $this->agentOf($t);
+            $perAgent[$a] = ($perAgent[$a] ?? 0) + 1;
         }
 
         $slots = self::MAX_CONCURRENT - $running;
@@ -270,9 +312,14 @@ class PlanExecutor {
                     continue;
                 }
 
+                $ag    = $this->agentOf($t);
+                $agCap = $this->agentCap($ag);
+                if (!self::agentHasRoom($perAgent[$ag] ?? 0, $agCap)) continue;   // that agent is busy; another agent's task may still start
+
                 if ($this->launchTask($t)) {
                     $slots--;
                     $perEngine[$key] = ($perEngine[$key] ?? 0) + 1;
+                    $perAgent[$ag]   = ($perAgent[$ag] ?? 0) + 1;
                 }
             }
         }

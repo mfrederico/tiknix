@@ -43,4 +43,19 @@ class AgentMcpTest extends TestCase {
         $this->expectExceptionMessage('not valid JSON');
         AgentMcp::config($this->root, $this->root);
     }
+
+    /**
+     * The app's own server must outlive a quiet client. Its stdin is a socket, PHP times a socket
+     * read out after default_socket_timeout (60 s), and the read loop took that for the end of
+     * input: the server left a minute into any pause (measured 2026-10-05 — exit at 60 s before,
+     * alive at 70 s after). A slow test would prove it again; this guards the line that fixes it.
+     */
+    public function testTheStdioServerDoesNotTimeOutItsOwnStdin(): void {
+        $src = (string) file_get_contents(\app\Paths::runtime() . '/mcptools/mcp-fastmcp.php');
+        $run = strpos($src, '$mcp->run(');
+        $this->assertNotFalse($run);
+        $before = substr($src, 0, $run);
+        $this->assertStringContainsString("ini_set('default_socket_timeout', '-1')", $before);
+        $this->assertMatchesRegularExpression('/stream_set_timeout\(STDIN,\s*[^)]+\)/', $before, 'set on STDIN itself: the stream is already open when the ini changes');
+    }
 }

@@ -53,8 +53,23 @@ if (!filter_var($aib['audit']['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN)) {
     alog('audit disabled via config — skipping'); exit(0);
 }
 
-// TASKS come from whatever bootstrap selected — the instance's own workbench.db when
-// the orchestrator exported TIKNIX_WORKBENCH_DB, which it always does.
+// TASKS come from THIS project's own workbench.db, named by --dir — the same file the
+// orchestrator opens. It used to be "whatever bootstrap selected": the project's db when the
+// caller had exported TIKNIX_WORKBENCH_DB, and core's own database when it had not. Core still
+// holds an old workbenchtask table, so an audit started without that variable did not fail —
+// it reported holistica's finished build under the title of core's task #1 ("Make a weird
+// hello-Buddy and Damon Page"), mailed that, and posted its result on core's task. Which
+// project is being audited is an argument, never the environment.
+$tasksDb = $dir . '/data/workbench.db';
+if (!is_file($tasksDb)) { fwrite(STDERR, "no tasks db at {$tasksDb} — this audit is for {$slug}, and its plan lives there\n"); exit(1); }
+$envDb = (string) getenv('TIKNIX_WORKBENCH_DB');
+if ($envDb !== '' && realpath($envDb) !== realpath($tasksDb)) {
+    fwrite(STDERR, "TIKNIX_WORKBENCH_DB names {$envDb}, but this audit is for {$slug} whose tasks are in {$tasksDb} — refusing to audit one project against another's plan\n");
+    exit(1);
+}
+if (!Bean::hasDatabase('ws')) Bean::addDatabase('ws', 'sqlite:' . $tasksDb);
+Bean::selectDatabase('ws');
+Bean::freeze(false);
 $plan = Bean::load('workbenchtask', $planId);
 if (!$plan->id) { fwrite(STDERR, "no plan #$planId\n"); exit(1); }
 
@@ -64,7 +79,7 @@ if (!$plan->id) { fwrite(STDERR, "no plan #$planId\n"); exit(1); }
 // on "no instance <slug>" before it started. Same two-database discipline as plan-ingest.
 // The bean keeps its values in memory, so reading $inst->app / ->memberId below still
 // works after we switch back; only a lazy relation would need the connection again.
-$taskDbKey = (getenv('TIKNIX_WORKBENCH_DB') && Bean::hasDatabase('ws')) ? 'ws' : 'default';
+$taskDbKey = 'ws';   // the project's own tasks db, selected above from --dir
 if (!Bean::hasDatabase('coreReg')) Bean::addDatabase('coreReg', 'sqlite:' . dirname(__DIR__) . '/database/tiknix.db');
 Bean::selectDatabase('coreReg');
 $inst = Bean::findOne('instance', 'slug = ?', [$slug]);

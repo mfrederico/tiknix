@@ -65,7 +65,13 @@ $spark = function (array $pts, string $color = 'currentColor', int $w = 96, int 
             <?php if (!empty($h['agent_ready'])): ?><a class="badge text-bg-success text-decoration-none" href="<?= htmlspecialchars($agentsUrl) ?>" title="open this project's AI agents page">agent: <?= htmlspecialchars(implode(', ', $h['providers'] ?: ['ready'])) ?> <i class="bi bi-box-arrow-up-right"></i></a>
             <?php else: ?><a class="badge text-bg-danger text-decoration-none" href="<?= htmlspecialchars($agentsUrl) ?>" title="<?= htmlspecialchars($h['agent_problem'] ?? '') ?> — open this project's AI agents page">no agent <i class="bi bi-box-arrow-up-right"></i></a><?php endif; ?>
             <span class="badge text-bg-light text-dark border"><?= htmlspecialchars($h['runtime'] ?: 'runtime ?') ?></span>
-            <?php if (!empty($h['uncommitted'])): ?><span class="badge text-bg-warning" title="uncommitted edits in the live tree: its updates refuse until they are committed or discarded"><?= (int) $h['uncommitted'] ?> uncommitted</span><?php endif; ?>
+            <?php /* Which files, when the app says (runtime alpha.138+). The generated guidance alone is not
+                     a blocker — an update commits it itself — and is said as what it is. */
+                  $__uf = (array) ($h['uncommitted_files'] ?? []);
+                  $__onlyGuidance = $__uf && !array_diff($__uf, ['AGENTS.md', 'CLAUDE.md']); ?>
+            <?php if (!empty($h['uncommitted']) && $__onlyGuidance): ?><span class="badge text-bg-info" title="<?= htmlspecialchars(implode(', ', $__uf)) ?> — the generated agent guidance is uncommitted. Its next update commits it; nothing is blocked.">guidance uncommitted</span>
+            <?php elseif (!empty($h['uncommitted'])): ?><span class="badge text-bg-warning" title="<?= htmlspecialchars(($__uf ? implode(', ', $__uf) . ' — ' : '') . 'uncommitted edits in the live tree: its updates refuse until they are committed or discarded') ?>"><?= (int) $h['uncommitted'] ?> uncommitted</span><?php endif; ?>
+            <?php if (($h['guidance'] ?? '') === 'missing'): ?><span class="badge text-bg-danger" title="This app has no AGENTS.md: its agents start with no guidance. Run clitool --agent-sync in it.">no guidance file</span><?php endif; ?>
             <?php if (!empty($h['errors_h'])): ?><span class="badge text-bg-danger"><?= (int) $h['errors_h'] ?> errors/h</span><?php endif; ?>
             <?php if (isset($h['cron_last_tick']) && $h['cron_last_tick'] === null && isset($h['cron_last_fire'])): ?><span class="badge text-bg-warning" title="the minute heartbeat has not reached this app">no cron tick</span><?php endif; ?>
             <?php foreach ((array) ($h['concepts'] ?? []) as $c): ?><span class="badge text-bg-secondary"><?= htmlspecialchars($c) ?></span><?php endforeach; ?>

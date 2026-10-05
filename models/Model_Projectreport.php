@@ -66,6 +66,8 @@ class Model_Projectreport extends \RedBeanPHP\SimpleModel {
             'runtime'         => (string) ($app['runtime'] ?? ''),
             'commit'          => (string) ($app['commit'] ?? ''),
             'uncommitted'     => (int) ($app['uncommitted'] ?? 0),
+            'uncommitted_files' => array_values(array_map('strval', (array) ($app['uncommitted_files'] ?? []))),
+            'guidance'        => (string) ($app['guidance'] ?? ''),   // the generated AGENTS.md: ok | uncommitted | missing | '' (an older runtime does not say)
             'agent_ready'     => (bool) ($rd['agent_ready'] ?? false),
             'agent_problem'   => (string) ($rd['agent_problem'] ?? ''),
             'providers'       => array_values(array_unique($providers)),

@@ -185,7 +185,9 @@
         .stats3{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:16px; }
 
         @media (max-width: 520px){
-            .nav-links{ gap:14px; font-size:14px; }
+            /* a phone has room for the logo and two actions; Pricing and Contact are in the footer */
+            .nav-links .hide-xs{ display:none; }
+            .nav-links{ gap:16px; font-size:14px; }
             .nav-cta{ padding:8px 12px; }
             .logo-word{ font-size:20px; }
         }

@@ -14,9 +14,6 @@
 $logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
 $desc  = 'NewSaaS is first-party software with SaaS upkeep: built to fit one business exactly, owned by that business like first-party data is, hosted and maintained like SaaS, and never rented. Here is the argument, with a suit in it.';
 $faqs  = [
-    ['What is NewSaaS?', 'Software built to fit one business exactly, owned by that business, and run wherever it chooses. It keeps what people like about SaaS, which is that someone hosts it, patches it and keeps it current, and drops what they hate: renting forever, paying per seat, and bending the company around a vendor\'s roadmap.'],
-    ['What does "first-party software" have to do with it?', 'Everything. Marketers already split data into third-party, which you borrow, and first-party, which you own. Software splits the same way. Third-party SaaS is a product built for thousands of companies that you rent. First-party software is built for yours and belongs to you. NewSaaS is first-party software with SaaS upkeep.'],
-    ['How is it different from ordinary SaaS?', 'You rent SaaS and adjust your process to match it. Here the software is cut for your process, the code sits in your repository, and you can leave with it any time. Hosting and maintenance still happen, they just don\'t come bundled with a lease.'],
     ['How is it different from custom development?', 'Custom development usually means a long project, a big invoice, and then silence. This means the software is built fast, kept running by someone, priced per project rather than per seat, and changed the same week your business changes. tiknix is one way to get there; a small shop like ClickSimple is another.'],
     ['Isn\'t this just "build versus buy"?', 'Partly. Build-versus-buy assumes building is slow and expensive, which was true. AI planners and builders changed the cost, so the question now is whether you own what you use. The answer here is yes, always.'],
     ['Do I have to host it myself?', 'No. Someone hosts it, the way SaaS is hosted. The difference is that you can take it with you. On tiknix each project runs in its own isolated environment and can be published to your GitHub or your client\'s domain whenever you like.'],
@@ -172,12 +169,8 @@ $jsonld = [
         .fit-cap{ font:600 12px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--tape); margin-bottom:22px; }
         .word{ font-size:clamp(52px,11vw,120px) !important; letter-spacing:-0.03em; margin-top:10px !important; }
         .word em{ font-style:italic; color:var(--accent2); }
-        .defn{ border:1px solid var(--line2); border-radius:16px; padding:clamp(22px,4vw,32px); background:rgba(59,118,240,0.06); max-width:820px; margin:36px auto 0; }
-        .defn .eyebrow{ margin-bottom:12px; }
-        .defn p{ font-size:clamp(17px,1.7vw,21px); line-height:1.55; color:var(--text); }
-        .defn ul{ margin-top:18px; padding-left:0; list-style:none; display:grid; gap:10px; }
-        .defn li{ font-size:15px; color:var(--soft); padding-left:26px; position:relative; line-height:1.5; }
-        .defn li::before{ content:'✓'; color:var(--good); position:absolute; left:0; font-weight:700; }
+        .ns-lede{ font-size:clamp(18px,2vw,23px); line-height:1.5; color:var(--soft); text-align:center; max-width:720px; margin:0 auto; text-wrap:balance; }
+        .ns-lede strong{ color:var(--text); }
         .two{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr)); gap:22px; margin-top:36px; }
         .two .card{ padding:clamp(22px,4vw,28px); }
         .two h3{ font-family:var(--sans); font-size:17px; font-weight:700; }
@@ -186,20 +179,12 @@ $jsonld = [
         .two .bad li::before{ content:'–'; color:#ef6f6f; position:absolute; left:0; }
         .two .good li::before{ content:'+'; color:var(--good); position:absolute; left:0; }
 
-        /* ---------- in practice, quote, faq ---------- */
-        .ns-prose{ max-width:720px; margin:0 auto; }
-        .ns-prose p{ font-size:clamp(16px,1.5vw,18px); line-height:1.7; color:var(--soft); margin-top:18px; }
-        .ns-prose p strong{ color:var(--text); }
-        .ns-prose h2{ font-size:clamp(26px,3vw,36px); margin-top:8px; }
-        .flow{ display:flex; flex-wrap:wrap; gap:8px 6px; align-items:center; margin-top:22px; font:600 13px/1 var(--mono); color:var(--soft); }
-        .flow span{ padding:9px 12px; border:1px solid var(--line2); border-radius:9px; }
-        .flow span:not(:last-child)::after{ content:'→'; margin-left:12px; margin-right:-22px; color:var(--dim); position:relative; left:12px; }
-        .flow span:not(:last-child){ margin-right:20px; }
-        .motion .flow.in span{ animation:flow 5s linear infinite; animation-delay:calc(var(--i) * 1s); }
-        @keyframes flow{ 0%, 24%, 100%{ border-color:var(--line2); color:var(--soft); background:transparent; } 4%, 18%{ border-color:var(--accent2); color:#fff; background:rgba(59,118,240,0.22); } }
+        /* ---------- quote, faq ---------- */
         .ns-quote{ font-family:var(--serif); font-style:italic; font-size:clamp(26px,4.4vw,48px); line-height:1.22; color:var(--text);
                     text-align:center; max-width:900px; margin:0 auto; text-wrap:balance; padding:4vh 0; }
         .ns-quote small{ display:block; margin-top:22px; font-family:var(--sans); font-style:normal; font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent2); font-weight:600; }
+        .ns-go{ text-align:center; padding:8px 0 4vh; }
+        .ns-go .btn{ font-size:18px; padding:17px 34px; }
         .ns-quote .q span{ transition:opacity .35s ease; }
         .motion .ns-quote .q span{ opacity:.16; } .motion .ns-quote .q span.lit{ opacity:1; }
         .faq-list{ max-width:820px; margin:0 auto; display:grid; gap:12px; }
@@ -439,26 +424,10 @@ $jsonld = [
       <div class="eyebrow" data-rv>The word for the alternative</div>
       <h2 class="word" data-rv style="--d:.1s">New<em>SaaS</em></h2>
     </div>
-    <div class="defn" data-rv>
-      <div class="eyebrow">Definition</div>
-      <p>
-        <strong>NewSaaS</strong> is software built to fit one business exactly, owned by that business, and run wherever
-        it chooses. It keeps the part of SaaS people like, which is that someone hosts it, patches it and keeps it
-        current. It drops the part they hate: renting forever, paying per seat, and bending the company around a
-        vendor&rsquo;s roadmap.
-      </p>
-      <p style="margin-top:14px; font-size:clamp(15px,1.4vw,17px); color:var(--soft);">
-        The short way to say it: <strong style="color:var(--text);">first-party software</strong>. Marketers already know the
-        difference between third-party data they borrow and first-party data they own. Software splits the same way.
-        Third-party SaaS is rented. First-party software is yours. NewSaaS is first-party software with SaaS upkeep.
-      </p>
-      <ul>
-        <li data-rv style="--d:.05s">Cut to your process, measured on you rather than on a thousand other customers.</li>
-        <li data-rv style="--d:.15s">Owned outright. The code lives in your repository, and you can leave with it.</li>
-        <li data-rv style="--d:.25s">Hosted and maintained like SaaS, priced like a project instead of a lease.</li>
-        <li data-rv style="--d:.35s">Changed the week your business changes, not the quarter the vendor gets to it.</li>
-      </ul>
-    </div>
+    <p class="ns-lede" data-rv style="--d:.2s">
+      Software built to fit one business exactly, owned by that business, and run wherever it chooses.
+      The short way to say it: <strong>first-party software, with SaaS upkeep.</strong>
+    </p>
 
     <div class="two">
       <div class="card" data-rv>
@@ -486,39 +455,15 @@ $jsonld = [
     </div>
   </section>
 
-  <!-- IN PRACTICE -->
-  <section class="band">
-    <div class="ns-prose">
-      <div class="eyebrow" data-rv>In practice</div>
-      <h2 data-rv style="--d:.08s">This is what tiknix is for.</h2>
-      <div class="flow" data-rv style="--d:.16s">
-        <span style="--i:0">Describe</span><span style="--i:1">Plan</span><span style="--i:2">Build</span><span style="--i:3">Review</span><span style="--i:4">Publish</span>
-      </div>
-      <p data-rv>
-        Building used to be the slow, expensive option, which is why everyone bought the suit off the ad. AI
-        planners and builders changed the cost. On tiknix you describe what the business needs, a planner and a
-        set of builders produce a real full-stack app with its own database, logins and admin, and a reviewer
-        checks their work. It runs in its own isolated environment, connects to the Stripe, Shopify or QuickBooks
-        account it belongs to, and publishes to your GitHub or your client&rsquo;s domain whenever you say.
-      </p>
-      <p data-rv>
-        You bring your own model, Claude Code or any API key, so nobody meters your builds. The first project is
-        free. After that it is $49 a month per project. That is the whole deal in one pricing line: <strong>you were never renting.</strong>
-        It is first-party software from the first commit.
-      </p>
-      <p data-rv>
-        Need someone to cut it for you rather than build it yourself? <a href="https://clicksimple.com/">ClickSimple</a>,
-        the company behind tiknix, does that for businesses with a process worth keeping.
-      </p>
-    </div>
-  </section>
-
   <!-- THE TL;DR -->
   <section class="band">
     <p class="ns-quote">
       <span class="q">You probably never needed the suit. You probably needed the Jack Black version: shorts and a flannel shirt.</span>
       <small data-rv>Keep it light. Build it with love, attention and intention.</small>
     </p>
+    <div class="ns-go" data-rv style="--d:.15s">
+      <a class="btn btn-primary" href="https://start.tiknix.com/start">Let&rsquo;s do this</a>
+    </div>
   </section>
 
   <!-- FAQ -->
@@ -531,17 +476,6 @@ $jsonld = [
       <?php foreach ($faqs as $i => $f): ?>
       <details class="card" data-rv<?= $i === 0 ? ' open' : '' ?>><summary><?= htmlspecialchars($f[0]) ?></summary><p><?= htmlspecialchars($f[1]) ?></p></details>
       <?php endforeach; ?>
-    </div>
-  </section>
-
-  <!-- FINAL -->
-  <section class="final">
-    <div class="eyebrow" data-rv>Start with your own measurements</div>
-    <h2 data-rv style="margin-top:14px; --d:.08s;">Build the thing that fits.</h2>
-    <p data-rv style="--d:.16s">Your first project is free. No card, no lease, and the code is yours from the first commit.</p>
-    <div data-rv style="display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin-top:30px; --d:.24s;">
-      <a class="btn btn-primary" href="https://start.tiknix.com/start">Start your first project — free</a>
-      <a class="btn btn-ghost" href="/#how">See how it works</a>
     </div>
   </section>
 

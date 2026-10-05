@@ -11,6 +11,7 @@
       <a href="/newsaas">NewSaaS</a>
       <a href="/stories">Stories</a>
       <a href="/pricing">Pricing</a>
+      <a href="/contact">Contact</a>
       <a href="/index/security">Security</a>
       <a href="/privacy">Privacy</a>
       <a href="/terms">Terms</a>

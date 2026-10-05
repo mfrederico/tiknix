@@ -28,22 +28,26 @@ class Index extends BaseControls\Control {
         // First-run setup takes precedence over the landing page.
         if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
 
-        // Rendered without the Tiknix header/footer layout so visitors see a clean,
-        // standalone page. The PRIMARY tiknix.com site shows the marketing landing
-        // (ICP: freelance devs & small agencies). Provisioned instances are clones of
-        // this app, so a non-flagship host still shows the plain "coming soon" lead
-        // page — no confusion about which is the real Tiknix, and no marketing pitch
-        // on someone else's project.
-        if (self::isFlagship()) {
-            $showcase = $this->showcaseItems();
-            $this->render('index/landing', [
-                'title'    => 'tiknix — build a real app for every client',
-                'showcase' => $showcase,
-                'stories'  => \Model_Showcase::stories($showcase),
-            ], false);
-            return;
-        }
-        $this->renderComingSoon();
+        // The front door is the NewSaaS story (owner's call, 2026-10-02): a visitor meets the
+        // argument first. Temporary (302) on purpose — a permanent redirect of "/" is cached
+        // by browsers for good, and the home page is the one URL that must stay movable.
+        // The marketing landing it replaced is still there, at /index/landing.
+        Flight::redirect('/newsaas', 302);
+    }
+
+    /**
+     * The marketing landing (ICP: freelance devs & small agencies). It was the home page
+     * until the NewSaaS story took that slot; the nav's "How it works" and "Integrations"
+     * anchors point here. Rendered without the app layout, as a standalone page.
+     */
+    public function landing() {
+        if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
+        $showcase = $this->showcaseItems();
+        $this->render('index/landing', [
+            'title'    => 'tiknix — build a real app for every client',
+            'showcase' => $showcase,
+            'stories'  => \Model_Showcase::stories($showcase),
+        ], false);
     }
 
     /**
@@ -144,7 +148,7 @@ class Index extends BaseControls\Control {
         // Basic validation
         if ($firstName === '' || $lastName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $this->flash('error', 'Please enter your name and a valid email address.');
-            Flight::redirect('/');
+            Flight::redirect('/index/comingsoon');
             return;
         }
 
@@ -174,12 +178,12 @@ class Index extends BaseControls\Control {
         } catch (\Throwable $e) {
             Flight::get('log')->error('Lead capture error: ' . $e->getMessage());
             $this->flash('error', 'Sorry, something went wrong. Please try again.');
-            Flight::redirect('/');
+            Flight::redirect('/index/comingsoon');
             return;
         }
 
         // Back to the landing page in its "thank you" state
-        Flight::redirect('/?subscribed=1');
+        Flight::redirect('/index/comingsoon?subscribed=1');
     }
     
     /**

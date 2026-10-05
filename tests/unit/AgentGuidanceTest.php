@@ -220,6 +220,25 @@ class AgentGuidanceTest extends ConceptsTestCase {
         return $c;
     }
 
+    /** The platform's own skills are installed as tiknix-<name>, beside a plugin's, and managed the same way. */
+    public function testThePlatformsSkillsAreInstalledAndTheShippedOnesAreWellFormed(): void {
+        $src = "{$this->root}/platform-skills";
+        $this->put("{$src}/crud-page/SKILL.md", "---\nname: tiknix-crud-page\ndescription: d\n---\n# crud\n");
+        $this->put("{$src}/not-a-skill/README.md", "no SKILL.md here\n");
+        $r = G::syncSkills($this->root, $this->skilled('cal'), $src);
+        sort($r['installed']);
+        $this->assertSame(['cal-deep', 'tiknix-crud-page'], $r['installed']);
+        $this->assertSame(['cal-deep', 'tiknix-crud-page'], json_decode(file_get_contents("{$this->root}/.claude/skills/" . G::SKILLS_LEDGER), true));
+        $this->assertSame(['tiknix-crud-page'], G::syncSkills($this->root, [], $src)['kept'], 'the plugin went; the platform skill stays');
+        // The skills the runtime ships: each a folder with a SKILL.md whose name is tiknix-<folder> and that says when to use it.
+        $shipped = glob(\app\Paths::runtime() . '/agent/skills/*', GLOB_ONLYDIR);
+        $this->assertNotEmpty($shipped);
+        foreach ($shipped as $dir) {
+            $md = (string) @file_get_contents("{$dir}/SKILL.md");
+            $this->assertMatchesRegularExpression('/\A---\nname: tiknix-' . preg_quote(basename($dir), '/') . '\ndescription: "Use when [^\n]{40,}"\n---\n/', $md, basename($dir));
+        }
+    }
+
     public function testSkillsAreInstalledLedgeredAndRemovedWithTheirConcept(): void {
         $cal = $this->skilled('cal');
         $r = G::syncSkills($this->root, $cal);

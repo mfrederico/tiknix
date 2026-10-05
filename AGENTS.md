@@ -241,6 +241,19 @@ page) is written by hand — on the design system's classes (`ui-panel`, `ui-sta
 `ui-eyebrow`; `views/components/design-system.php`) and Bootstrap 5.3, still opening with
 `Ui::page()` and using `Ui::notice()` / `Ui::emptyState()` for those parts.
 
+**Which pages, before any view.** Call `ui_pattern` with the bean (or, for a table not built yet,
+its planned `columns`). From the record's shape it answers: the pattern (a list and a form, a
+page per record, an agenda by day, a conversation, one settings form, a list on its parent's
+page), each page and what it is for, the few columns that tell rows apart, what the form asks up
+front and what folds away, what is never asked — and `Ui` code to start from. Build that, in the
+users' words; if you know they need something else, build it and say why.
+
+**The check.** `full_validation` on a view (or on `views`) reports what a page does by hand that
+`Ui` decides — a hand-written table or form, more than one primary button, `confirm()`, its own
+flash output, a hard-coded colour, no heading. They are warnings: fix them in views you write or
+touch. A page that is rightly hand-made says so on one line, `// ui: hand-made — an agenda grouped
+by day`, which quiets the table/card/form rules (not the others).
+
 **Data first, design second.** When your task is the model, the rules and the routes, build the
 pages from `Ui` as above and stop: they are correct and usable, and that is the task. Shaping how a
 feature feels — the order of things, the wording, what is folded away, a hand-made page — is its

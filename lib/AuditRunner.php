@@ -210,7 +210,7 @@ edit code.
 `{$base}`
 
 Use the **Playwright MCP tools** (`browser_navigate`, `browser_click`, `browser_type`,
-`browser_snapshot`, `browser_take_screenshot`). Navigate only to `{$base}/...` URLs.
+`browser_snapshot`, `browser_take_screenshot`, `browser_resize`). Navigate only to `{$base}/...` URLs.
 
 ## Test accounts (already created for you)
 
@@ -235,6 +235,27 @@ the whole audit for that.
    that does nothing, or a permission that is wrong for the level (e.g. a MEMBER seeing an
    admin-only action). Capture a screenshot of the failure.
 5. Log out (`{$base}/auth/logout`) before switching levels.
+
+## Then look at each changed page as the person it is for
+
+Working is not the same as usable. After the procedure above, as the level a page is FOR (a
+member's page as the member), open each changed page that a person uses at a desktop width
+(`browser_resize` to 1280×800) and at a phone width (390×844), take a screenshot of each, and
+judge what you SEE against these — one line per page in the manifest's `design` list:
+
+- Is it obvious within a few seconds what the page is and what the ONE main thing to do is?
+- Is there more than one loud (filled, coloured) button competing for attention?
+- Does the list show only what tells one row from another, in words a person would say —
+  no column names, raw statuses (`is_active`, `pending_review`) or machine dates?
+- Does the form ask only what is needed now, in the order a person thinks of it, every field labelled?
+- On the phone: does anything run off the side, need sideways scrolling, or become too small to tap?
+- When there is nothing yet, does the page say what belongs there and how to add the first one?
+- Does anything look unlike the rest of the app (its own colours, a different kind of table or button)?
+
+These are observations, NOT failures: a page that works but reads badly goes in `design` with
+`"verdict": "needs work"` and what you saw; it never goes in `failures` and never makes `passed` false.
+Be specific ("three filled buttons in the header: New, Import, Export") — never "could be cleaner".
+Resize back to 1280×800 when done.
 
 ## Screenshot output convention (IMPORTANT)
 
@@ -268,12 +289,18 @@ When done, write EXACTLY this JSON shape to `.aibuilder/audit.json`:
     { "label": "Member sees admin-only Delete", "level": "member", "task_ref": "t2",
       "url": "{$base}/leads", "message": "MEMBER should not see Delete control",
       "screens": ["public/uploads/audit/{$planId}/member-leads-bad.png"] }
+  ],
+  "design": [
+    { "page": "/leads", "level": "admin", "verdict": "needs work", "task_ref": "t2",
+      "notes": ["three filled buttons in the header: New, Import, Export", "on a phone the table scrolls sideways"],
+      "screens": ["public/uploads/audit/{$planId}/admin-leads-phone.png"] },
+    { "page": "/leads/edit", "level": "admin", "verdict": "ok", "notes": [], "screens": [] }
   ]
 }
 ```
 
 Rules for the manifest:
-- `passed` = `true` only if there are **zero** entries in `failures`.
+- `passed` = `true` only if there are **zero** entries in `failures`. Entries in `design` never change it.
 - `screens` paths are RELATIVE to the instance root (start with `public/uploads/...`).
 - `task_ref` — when a check/failure corresponds to one of the bracketed `[t#]` refs in the
   change list above, set `task_ref` to that ref so the result posts onto that subtask. Omit

@@ -503,6 +503,11 @@ both does the second badly. Split them:
   do what, and the one thing they do most. Its `files` are views and the menu only. Its `verify`
   checks are things a person sees ("on a phone, `/health` shows each item's name and date without
   scrolling sideways"; "the form asks three things, with the rest under More options").
+- Before describing a feature's pages, call **`ui_pattern`** for each kind of record it adds
+  (`ui_pattern(bean: "booking", columns: [...])` for a table not built yet). It answers from the
+  record's shape: a list and a form, a page per record, an agenda by day, a conversation, a list
+  on its parent's page. Put the pattern and its pages in the data task's description, so its
+  agent builds those pages and not "a table of every column".
 - A plan with no pages (a pipeline, an API, a fix) has no design task. Never add one as polish.
 
 ## Deliverable

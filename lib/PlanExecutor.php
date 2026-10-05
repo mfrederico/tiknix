@@ -917,6 +917,10 @@ pages described in `\app\Ui`. Your job is how those pages read to the person usi
 can judge that from code: open each page in your sandbox in a browser, at a phone width (390) and
 a desktop width (1280), signed in as the person it is for, and look.
 
+Start with two lists: `full_validation` on `views` names what each page does by hand that `\\app\\Ui`
+decides (a hand-written table, a second loud button, the browser's confirm()), and `ui_pattern`
+on each kind of record says what pages its shape calls for. They are where to look, not the job.
+
 For each page, answer first: who comes here, to do what, and what is the ONE thing they do most?
 Then make the page say that:
 

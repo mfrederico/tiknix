@@ -178,7 +178,29 @@ class AuditReporter {
                 ? '_⚠️ Max audit cycles reached — no more auto-fixes will be spawned. These need manual review._'
                 : '_Failures were sent to the firehose — fixes will be triaged and re-audited._';
         }
+        foreach (self::designLines($m, $web) as $line) $out[] = $line;
         return implode("\n", $out);
+    }
+
+    /**
+     * What the audit SAW on each page it looked at as its user (the manifest's `design` list):
+     * observations, not failures — said on the plan so a person can ask for a design task, and
+     * never part of pass/fail. Pages judged fine are counted, not listed.
+     *
+     * @return string[] markdown lines ('' when the audit made no design pass)
+     */
+    public static function designLines(array $m, callable $web): array {
+        $design = array_values(array_filter((array) ($m['design'] ?? []), 'is_array'));
+        if (!$design) return [];
+        $work = array_values(array_filter($design, fn($d) => strtolower((string) ($d['verdict'] ?? '')) !== 'ok' && array_filter((array) ($d['notes'] ?? []))));
+        $out = ['', '### How the pages read'];
+        if (!$work) { $out[] = '_Looked at ' . count($design) . ' page' . (count($design) === 1 ? '' : 's') . ' at desktop and phone width as the people they are for: nothing to note._'; return $out; }
+        $out[] = '_Looked at ' . count($design) . ' page' . (count($design) === 1 ? '' : 's') . ' as the people they are for. These work, and would be easier to use — a `Design:` task can take them:_';
+        foreach ($work as $d) {
+            $out[] = '- **`' . self::s($d['page'] ?? '') . '`**' . (!empty($d['level']) ? ' (' . self::s($d['level']) . ')' : '') . ' — ' . implode('; ', array_map(fn($n) => self::s($n), array_slice(array_filter((array) $d['notes']), 0, 4)));
+            foreach (array_slice((array) ($d['screens'] ?? []), 0, 2) as $sc) $out[] = '![screenshot](' . $web($sc) . ')';
+        }
+        return $out;
     }
 
     // --- persistence ----------------------------------------------------------

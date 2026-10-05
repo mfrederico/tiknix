@@ -271,34 +271,8 @@ class ProvisionService {
             return ['ok' => false, 'error' => "{$slug} is not running in its own container — nothing here knows how to delete it.", 'code' => 409];
         }
 
-        // Clean core's task records for this instance (stale copies + sessions + /projects clones).
-        $tasks = Bean::find('workbenchtask', 'instance_id = ?', [$instanceId]);
-        if ($tasks) {
-            $killed = 0; $wiped = 0;
-            foreach ($tasks as $t) {
-                $sessions = [(string) $t->agentSession, (string) $t->tmuxSession];
-                // Both names: this instance is being torn down, so an orchestrator
-                // still running under the pre-rename name must die with it.
-                if (empty($t->parentTaskId)) {
-                    $sessions[] = PlanOrchestrator::sessionName((int) $t->id, $slug);
-                    $sessions[] = TmuxManager::legacyPlanSessionName((int) $t->id);
-                }
-                foreach (array_unique(array_filter($sessions)) as $s) {
-                    if (TmuxManager::exists($s)) { TmuxManager::kill($s); $killed++; }
-                }
-                $ws = (string) $t->projectPath;
-                if ($ws !== '' && strpos($ws, '/projects/') !== false && is_dir($ws)) { @exec('rm -rf ' . escapeshellarg($ws) . ' 2>&1'); $wiped++; }
-                foreach (['tasklog', 'taskcomment', 'tasksnapshot'] as $child) {
-                    $rows = Bean::find($child, 'task_id = ?', [(int) $t->id]);
-                    if ($rows) Bean::trashAll($rows);
-                }
-            }
-            Bean::trashAll($tasks);
-            $steps[] = 'deleted ' . count($tasks) . ' workbench task(s)'
-                     . ($killed ? ", stopped {$killed} session(s)" : '')
-                     . ($wiped ? ", removed {$wiped} workspace(s)" : '');
-        }
-
+        // The project's tasks lived in ITS workbench.db, which went with its workspace above. Core
+        // keeps no task records (its old workbenchtask table is dropped — seed 44).
         Bean::trash($inst);
         $steps[] = 'removed instance record';
 

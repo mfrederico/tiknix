@@ -413,6 +413,14 @@ class Firehose extends Control {
             // Mark the plan building (mirrors Workbench::planbuild) + tag it as
             // detected-error so the workbench can highlight it.
             $parent = Bean::load('workbenchtask', $planId);
+            // Core keeps no tasks. The plan above was ingested into the PROJECT's board; marking
+            // it here used to write a second, unrelated row into core's own table (now dropped).
+            // Until this launcher opens the project's board for these stamps it does not launch:
+            // the caller files the plain triage task instead.
+            if (!$parent->id) {
+                $this->logger->error("ERROR Firehose: fix plan #{$planId} for {$inst->slug} is on the project's board, and this launcher still stamps core's (gone) task table — not launched; lib controls/Firehose.php launchViaOrchestrator must select the project's workbench.db");
+                return 0;
+            }
             $parent->planStatus      = 'building';
             $parent->status          = 'running';
             $parent->source          = 'detected_error';

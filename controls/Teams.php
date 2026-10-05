@@ -40,7 +40,6 @@ class Teams extends Control {
         // Enrich with member counts
         foreach ($teams as &$team) {
             $team['member_count'] = Bean::count('teammember', 'team_id = ?', [$team['id']]);
-            $team['task_count'] = Bean::count('workbenchtask', 'team_id = ?', [$team['id']]);
         }
 
         $this->viewData['teams'] = $teams;
@@ -894,13 +893,6 @@ class Teams extends Control {
             // Delete all invitations
             $invitations = $team->ownTeaminvitationList;
             Bean::trashAll($invitations);
-
-            // Orphan team tasks (set team_id to null, keep with original creator)
-            $tasks = Bean::find('workbenchtask', 'team_id = ?', [$teamId]);
-            foreach ($tasks as $task) {
-                $task->teamId = null;
-                Bean::store($task);
-            }
 
             // Delete team
             Bean::trash($team);

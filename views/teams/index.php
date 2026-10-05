@@ -61,7 +61,6 @@
                             <?php endif; ?>
                             <div class="d-flex gap-3 text-muted small">
                                 <span><i class="bi bi-people"></i> <?= $team['member_count'] ?> members</span>
-                                <span><i class="bi bi-list-task"></i> <?= $team['task_count'] ?> tasks</span>
                             </div>
                         </div>
                         <div class="card-footer bg-transparent">

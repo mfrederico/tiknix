@@ -490,6 +490,21 @@ Only decompose (below) when real, un-built work remains. A phase of make-work �
 re-listing, or "polish" nobody asked for — is worse than reporting the goal is done: the
 whole point of "continue to the next phase" is that it STOPS when the goal is realized.
 
+## Data first, design second
+
+Building what a feature DOES and shaping how it FEELS are different work, and a task that does
+both does the second badly. Split them:
+
+- A task that builds a feature's data — model, seed, rules, controller, routes — also gives it
+  working pages, described with `\\app\\Ui` (the project's AGENTS.md → Interface). Those pages are
+  correct and usable; the task is not asked to make them good.
+- Then ONE task per feature area (or one for the phase, when it is small) titled **`Design: …`**,
+  depending on the data tasks it shapes. Its description says, for each page: who comes here, to
+  do what, and the one thing they do most. Its `files` are views and the menu only. Its `verify`
+  checks are things a person sees ("on a phone, `/health` shows each item's name and date without
+  scrolling sideways"; "the form asks three things, with the rest under More options").
+- A plan with no pages (a pipeline, an API, a fix) has no design task. Never add one as polish.
+
 ## Deliverable
 
 When (and only when) you have MATCHED against the inventory and decided real work remains,

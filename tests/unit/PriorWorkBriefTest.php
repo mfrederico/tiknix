@@ -59,4 +59,17 @@ class PriorWorkBriefTest extends TestCase {
         $this->assertSame('', PlanExecutor::proveSection([]), 'a task planned without checks gets no section');
         $this->assertSame('', PlanExecutor::proveSection(null));
     }
+
+    /* ---- design is its own task ---- */
+
+    public function testADesignTaskIsToldToLookAndToLeaveTheDataAlone(): void {
+        $this->assertTrue(\app\PlanExecutor::isDesignTask('Design: the health pages'));
+        $this->assertTrue(\app\PlanExecutor::isDesignTask(' design : vault'));
+        $this->assertFalse(\app\PlanExecutor::isDesignTask('Redesign the vault tables'));
+        $brief = \app\PlanExecutor::designSection('Design: the health pages');
+        $this->assertStringContainsString('## This is a design task', $brief);
+        $this->assertStringContainsString('phone width (390)', $brief);
+        $this->assertStringContainsString('Do NOT change models, seeds, permissions', $brief);
+        $this->assertSame('', \app\PlanExecutor::designSection('Health items: model, seed and pages'));
+    }
 }

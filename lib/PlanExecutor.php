@@ -897,6 +897,45 @@ class PlanExecutor {
             . "A check you could not run (no sandbox, a mail that cannot be sent from it) is `1. ?` with the reason — never a ✓ you did not see. A ✗ is not something to report and stop at: fix it, and run the check again.\n";
     }
 
+    /** Is this a design task — one that shapes pages the earlier tasks made work? The planner titles it "Design: …". */
+    public static function isDesignTask(string $title): bool {
+        return (bool) preg_match('/^\s*design\s*:/i', $title);
+    }
+
+    /**
+     * What a design task is told on top of its description: its job is how the pages read and
+     * feel, judged by LOOKING at them, and it leaves the data alone. '' for every other task.
+     */
+    public static function designSection(string $title): string {
+        if (!self::isDesignTask($title)) return '';
+        return <<<MD
+
+## This is a design task
+
+The feature already works — the tasks before yours built the data, the rules and the routes, with
+pages described in `\app\Ui`. Your job is how those pages read to the person using them. Nobody
+can judge that from code: open each page in your sandbox in a browser, at a phone width (390) and
+a desktop width (1280), signed in as the person it is for, and look.
+
+For each page, answer first: who comes here, to do what, and what is the ONE thing they do most?
+Then make the page say that:
+
+- the most-used thing is the primary action, named as a verb with its object; everything else is quieter
+- what tells records apart is in the list; what does not is on the record's own page
+- a form asks only what it needs now — fold the rest under `more`, group long ones with `section`,
+  pre-fill what can be guessed, and put the fields in the order a person thinks of them
+- every label, heading and message is in the user's words, not the schema's; statuses read as words
+- an empty page says what belongs there and offers the way to start
+- nothing on the page is there "in case": remove what the person does not need to decide here
+
+Change views, `\app\Ui` specs, wording and menu entries. Do NOT change models, seeds, permissions
+or what a controller decides — if the data is wrong for the page, say so under `## Handoff` instead.
+A page that is not a list, a form or a record may be hand-made on the design system's classes.
+In your final message, list each page you looked at and what you changed about it, in a sentence.
+
+MD;
+    }
+
     /** The brief's section for priorWork() — '' when the task depends on nothing finished. Bounded: it is context, not the task. */
     public static function priorWorkSection(array $prior): string {
         if (!$prior) return '';
@@ -925,6 +964,7 @@ class PlanExecutor {
         $reuse = $this->reuseBrief($t);
         $prior = self::priorWorkSection($this->priorWork($t));
         $prove = self::proveSection(json_decode((string) ($t->acceptanceCriteria ?? ''), true));
+        $prove = self::designSection($title) . $prove;
         return <<<MD
 # Build task: {$title}
 

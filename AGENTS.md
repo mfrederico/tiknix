@@ -185,6 +185,69 @@ in the place its users will look — and `full_validation` on a controller repor
 - Never edit the runtime's layout to add a link, and never add a method to a runtime controller
   to hang a page off it (see File Structure).
 
+## Interface — say what is on the page, not how it looks
+
+A page of the app's own is described as data with `\app\Ui` (runtime `lib/Ui.php`): the view names
+the title, the one thing to do here, the rows, the fields — and `Ui` decides spacing, hierarchy,
+where actions sit, how a list reads on a phone, how a delete is confirmed. Do not hand-write
+`<div class="container">`, cards, tables, `alert`s or form markup for these; do not print flash
+messages (the layout already shows them); do not use `confirm()`.
+
+```php
+<?= \app\Ui::page(['title' => 'Customers', 'lead' => 'Everyone who has ordered.',
+                   'back' => ['label' => 'Cafe', 'url' => '/cafe'],
+                   'primary' => ['label' => 'Add a customer', 'url' => '/cafe/customer', 'icon' => 'plus-lg'],
+                   'more' => [['label' => 'Export', 'url' => '/cafe/export']]]) ?>
+<?= \app\Ui::table(['rows' => $rows, 'count' => 'customer',
+    'columns' => [['label' => 'Customer', 'value' => 'name', 'sub' => 'email', 'url' => fn($r) => '/cafe/customer?id=' . $r->id],
+                  ['label' => 'Status', 'value' => 'status', 'as' => 'badge', 'tones' => ['active' => 'success']],
+                  ['label' => 'Spent', 'value' => fn($r) => $r->total(), 'as' => 'money'],
+                  ['label' => 'Since', 'value' => 'created_at', 'as' => 'date', 'quiet' => true]],
+    'actions' => fn($r) => [['label' => 'Edit', 'url' => '/cafe/customer?id=' . $r->id, 'icon' => 'pencil'],
+                            ['label' => 'Delete', 'post' => '/cafe/delete', 'fields' => ['id' => $r->id],
+                             'confirm' => "Delete {$r->name}? Their orders stay.", 'danger' => true]],
+    'empty' => ['title' => 'No customers yet', 'text' => 'They appear here after their first order.',
+                'action' => ['label' => 'Add a customer', 'url' => '/cafe/customer']]]) ?>
+<?= \app\Ui::form(['action' => '/cafe/customer', 'submit' => 'Save customer', 'cancel' => '/cafe/customers',
+    'values' => $form, 'problems' => $problems, 'hidden' => ['id' => $id],
+    'fields' => [['name' => 'name', 'label' => 'Name', 'required' => true],
+                 ['name' => 'email', 'label' => 'Email', 'type' => 'email', 'required' => true, 'help' => 'Receipts go here.'],
+                 ['name' => 'tier', 'label' => 'Tier', 'type' => 'radio', 'options' => ['std' => 'Standard', 'gold' => 'Gold']],
+                 ['name' => 'notes', 'label' => 'Notes', 'type' => 'textarea', 'more' => true]]]) ?>
+<?= \app\Ui::detail(['title' => 'Contact', 'items' => ['Email' => $c->email, 'Joined' => $joined]]) ?>
+<?= \app\Ui::notice(['tone' => 'warning', 'title' => 'No page yet.', 'text' => '…', 'action' => [...]]) ?>
+```
+
+The options of each are in the docblocks of `lib/Ui.php` (`describe("Ui")`). A spec it refuses
+throws with the fix in the message — read it; do not work around it with hand-written markup.
+
+What it holds you to, and why — each is about what a person must read and decide:
+
+- **One primary action per page**, named as a verb with its object ("Add a customer", never
+  "Submit" or "New"). Other actions go in `more`.
+- **A list shows what tells rows apart** — at most 7 columns. The first column names the row and
+  links to it; a second fact about it goes in `sub`; the rest belongs on the row's own page.
+  Mark the columns a phone can drop `quiet`.
+- **Every list has an `empty`**: what belongs here and the way to add the first one.
+- **A form asks only what it needs now.** Rarely-needed fields are `'more' => true` (folded away);
+  a long form is grouped with `section`. Two to four choices are a `radio`, not a `select`.
+  `problems` keyed by field name show at the field. Pre-fill what you can guess (`values`).
+- **Words are the user's, not the schema's**: "Who sees it", not "Audience"; "Stop showing it at",
+  not "expires_at". Status values get `labels`.
+- **Something destructive is a `post` with `confirm`** that says what will be lost.
+
+A page that is not a list, a form or a record (a calendar, a chat, a dashboard, a public landing
+page) is written by hand — on the design system's classes (`ui-panel`, `ui-stat`, `ui-chip`,
+`ui-eyebrow`; `views/components/design-system.php`) and Bootstrap 5.3, still opening with
+`Ui::page()` and using `Ui::notice()` / `Ui::emptyState()` for those parts.
+
+**Data first, design second.** When your task is the model, the rules and the routes, build the
+pages from `Ui` as above and stop: they are correct and usable, and that is the task. Shaping how a
+feature feels — the order of things, the wording, what is folded away, a hand-made page — is its
+own task (the planner gives it its own, after the data works), done by looking at the pages in a
+browser at phone and desktop width. A design task changes views and menu entries, not models,
+seeds or what a controller decides.
+
 ## Project notebook
 
 This project keeps a notebook in `agent/notebook/` — `decisions.md`, `map.md`, `lessons.md`: what

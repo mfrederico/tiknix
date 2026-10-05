@@ -151,6 +151,9 @@ foreach (Bean::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, 
     $files = json_decode((string)($s->relatedFiles ?? ''), true);
     $line  = "[{$ref}] " . trim((string)$s->title);
     if (is_array($files) && $files) $line .= ' — files: ' . implode(', ', array_slice($files, 0, 5));
+    // The checks the plan promised for this task (its `verify`): the audit repeats them.
+    $checks = json_decode((string) ($s->acceptanceCriteria ?? ''), true);
+    if (is_array($checks) && $checks) $line .= "\n    must hold: " . implode("\n    must hold: ", array_map('strval', $checks));
     $checklist[] = $line;
 }
 

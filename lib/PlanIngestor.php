@@ -130,6 +130,8 @@ class PlanIngestor
             $t->engine       = self::engineFor($st, (string) $inst->engine);
             $t->agent        = (string) $parent->agent;
             $t->relatedFiles = json_encode(is_array($st['files'] ?? null) ? array_values($st['files']) : []);
+            // How to prove the task works (the planner's `verify`): its agent runs these, the audit repeats them.
+            $t->acceptanceCriteria = json_encode(self::verify($st['verify'] ?? null));
             $t->reuses       = json_encode(is_array($st['reuses'] ?? null) ? array_values($st['reuses']) : []);
             $t->adopts       = json_encode(self::adopts($st['adopts'] ?? null, (string) $st['title']));
             // Still marked complex after planning (the depth was "off", or a deeper pass could
@@ -171,6 +173,23 @@ class PlanIngestor
             'checkpoint' => $checkpointTag,
             'subtasks'   => $subs,
         ];
+    }
+
+    /**
+     * A task's checks as stored: non-empty strings, at most six, each trimmed and bounded. A
+     * planner that gave none gives none — the brief then says the task came without them.
+     *
+     * @return string[]
+     */
+    public static function verify($raw): array {
+        if (!is_array($raw)) return [];
+        $out = [];
+        foreach ($raw as $v) {
+            if (!is_string($v) || trim($v) === '') continue;
+            $out[] = mb_substr(trim(preg_replace('/\s+/', ' ', $v)), 0, 400);
+            if (count($out) >= 6) break;
+        }
+        return $out;
     }
 
     /** An agent name as the app spells them (Model_Agent::NAME_RE), or '' — anything else is refused. */

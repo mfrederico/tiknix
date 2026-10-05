@@ -508,6 +508,11 @@ call the **`submit_plan`** MCP tool exactly once with:
   - `reuses` — array of existing primitives this task builds on, as `kind/name`
     strings (e.g. `["controller/Lead","model/member","lib/Mailer"]`). Empty ONLY for
     genuinely new ground — and if it's empty, the description must say why.
+  - `verify` — 1–4 checks that PROVE the task works, which its agent runs in its sandbox before
+    finishing and the audit repeats: a page, who opens it and what they must see ("as a member,
+    `/health` lists the item just added"), a refusal that must happen ("a guest opening `/vault`
+    is sent to sign in"), or a command and its result. Observable and specific — never "it
+    works". A task you cannot write a check for is not specified well enough yet.
   - `complex` — `true` when this task is really SEVERAL: it spans more than one capability
     (a page AND a map provider AND a connection AND a pipeline to fill it), or you could not
     name its files and steps without first investigating. It is then planned more deeply
@@ -684,7 +689,7 @@ changed or not), in the same shape it has now.
 
 Call `submit_plan` exactly once with `title`, `summary` (say in one sentence what this pass
 changed) and the full `subtasks` array — each with `id`, `title`, `priority`, `description`,
-`files`, `depends_on`, `reuses`, `adopts`, `complex`, `complex_reason`. Then reply
+`files`, `depends_on`, `reuses`, `adopts`, `verify`, `complex`, `complex_reason`. Then reply
 `PLAN_WRITTEN` and stop. Do not ask the operator questions.
 MD;
     }

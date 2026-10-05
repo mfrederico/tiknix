@@ -39,4 +39,24 @@ class PriorWorkBriefTest extends TestCase {
         $src = file_get_contents(dirname(__DIR__, 2) . '/lib/PlanExecutor.php');
         $this->assertStringContainsString('section headed exactly `## Handoff`', $src, 'the brief asks for what priorWork reads');
     }
+
+    /* ---- the checks a task must pass (the planner's `verify`) ---- */
+
+    public function testATasksChecksAreStoredCleanAndBounded(): void {
+        $this->assertSame(['As a member, /health lists the item just added.', 'A guest opening /vault is sent to sign in.'],
+            \app\PlanIngestor::verify(["  As a member,   /health lists the item just added. ", '', 7, 'A guest opening /vault is sent to sign in.']));
+        $this->assertSame([], \app\PlanIngestor::verify(null));
+        $this->assertSame([], \app\PlanIngestor::verify('it works'), 'a sentence is not a list of checks');
+        $this->assertCount(6, \app\PlanIngestor::verify(array_fill(0, 20, 'a check that is distinct enough')));
+    }
+
+    public function testTheBriefAsksForEachCheckToBeRunAndAnswered(): void {
+        $md = PlanExecutor::proveSection(['As a member, /health lists the item just added.', 'A guest opening /vault is sent to sign in.']);
+        $this->assertStringContainsString("## Prove it works", $md);
+        $this->assertStringContainsString("1. As a member, /health lists the item just added.\n2. A guest opening /vault is sent to sign in.", $md);
+        $this->assertStringContainsString('`## Verified`', $md);
+        $this->assertStringContainsString('never a ✓ you did not see', $md);
+        $this->assertSame('', PlanExecutor::proveSection([]), 'a task planned without checks gets no section');
+        $this->assertSame('', PlanExecutor::proveSection(null));
+    }
 }

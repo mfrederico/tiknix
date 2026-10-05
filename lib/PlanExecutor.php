@@ -837,6 +837,19 @@ class PlanExecutor {
         return $at !== false ? trim(substr($out, $at + strlen('## Handoff'))) : $out;
     }
 
+    /**
+     * The brief's "prove it works" section: the checks the planner wrote for this task, which its
+     * agent runs in its sandbox and answers one by one. '' for a task planned before checks existed.
+     */
+    public static function proveSection($checks): string {
+        $checks = is_array($checks) ? array_values(array_filter($checks, fn($c) => is_string($c) && trim($c) !== '')) : [];
+        if (!$checks) return '';
+        $md = "\n## Prove it works\n\nThis task is done when each of these is TRUE — run them in your sandbox, do not reason about them:\n\n";
+        foreach ($checks as $i => $c) $md .= ($i + 1) . '. ' . trim($c) . "\n";
+        return $md . "\nIn your final message, under a heading `## Verified`, answer each by number: `1. ✓` and what you saw, or `1. ✗` and what happened instead. "
+            . "A check you could not run (no sandbox, a mail that cannot be sent from it) is `1. ?` with the reason — never a ✓ you did not see. A ✗ is not something to report and stop at: fix it, and run the check again.\n";
+    }
+
     /** The brief's section for priorWork() — '' when the task depends on nothing finished. Bounded: it is context, not the task. */
     public static function priorWorkSection(array $prior): string {
         if (!$prior) return '';
@@ -864,6 +877,7 @@ class PlanExecutor {
         $desc  = (string)$t->description;
         $reuse = $this->reuseBrief($t);
         $prior = self::priorWorkSection($this->priorWork($t));
+        $prove = self::proveSection(json_decode((string) ($t->acceptanceCriteria ?? ''), true));
         return <<<MD
 # Build task: {$title}
 
@@ -878,7 +892,7 @@ commit and merge your work — you just make the code changes.
 ## Likely files
 
 {$files}
-{$reuse}{$prior}
+{$reuse}{$prior}{$prove}
 ## Rules
 - Follow the existing codebase conventions (FlightPHP controllers, RedBeanPHP via
   the Bean wrapper, the project's AGENTS.md standards). Use the tiknix MCP

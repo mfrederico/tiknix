@@ -503,6 +503,8 @@ class PlanExecutor {
         $tail = trim((string) ($r['output'] ?? ''));
         if ($tail !== '') $this->logEvent($t, 'info', 'Agent output (tail): ' . mb_substr($tail, -1500));
         if (!empty($r['credential'])) $this->logEvent($t, 'info', 'Ran on ' . $r['credential']);
+        // What the app noticed about the work (an unlinked page): on the task, where a person reads it.
+        foreach ((array) ($r['notes'] ?? []) as $note) $this->logEvent($t, 'warning', 'Unlinked page — ' . (string) $note);
         $status = (string) ($r['status'] ?? '');
         if ($status === 'no-change') {
             TenantHost::discardTask($this->tenant, $id);
@@ -758,12 +760,72 @@ class PlanExecutor {
 
     // ---- agent invocation --------------------------------------------------
 
+    /**
+     * What the tasks this one depends on built: their title, the files they changed and the
+     * summary their agent wrote — read from each task's own log. A task used to start knowing
+     * only its own description, and spent its first minutes rediscovering what the task before
+     * it had just made.
+     *
+     * @return array<int,array{id:int,title:string,files:string[],summary:string}>
+     */
+    private function priorWork($t): array {
+        $out = [];
+        foreach (array_map('intval', (array) (json_decode((string) $t->dependsOn, true) ?: [])) as $id) {
+            $dep = Bean::load('workbenchtask', $id);
+            if (!$dep->id || !in_array((string) $dep->status, ['merged', 'completed', 'resolved'], true)) continue;
+            $files = []; $summary = '';
+            foreach (Bean::find('tasklog', 'task_id = ? ORDER BY id DESC', [$id]) as $log) {
+                $m = (string) $log->message;
+                if (!$files && str_starts_with($m, 'Changed (')) {
+                    preg_match_all('/^\s*(\S+)\s+\|/m', $m, $mm);
+                    $files = $mm[1];
+                }
+                if ($summary === '' && str_starts_with($m, 'Agent output (tail): ')) $summary = self::handoffOf(substr($m, 21));
+                if ($files && $summary !== '') break;
+            }
+            $out[] = ['id' => $id, 'title' => (string) $dep->title, 'files' => $files, 'summary' => $summary];
+        }
+        return $out;
+    }
+
+    /**
+     * What a finished task's output says to the NEXT agent: its "## Handoff" section when it wrote
+     * one (the brief asks for it, last), else the end of its message. The note about Claude Code's
+     * model catalog is not part of what the agent said.
+     */
+    public static function handoffOf(string $output): string {
+        $out = trim((string) preg_replace('/^\(Not an error: Claude Code has no catalog entry.*$/m', '', $output));
+        $at = strripos($out, '## Handoff');
+        return $at !== false ? trim(substr($out, $at + strlen('## Handoff'))) : $out;
+    }
+
+    /** The brief's section for priorWork() — '' when the task depends on nothing finished. Bounded: it is context, not the task. */
+    public static function priorWorkSection(array $prior): string {
+        if (!$prior) return '';
+        $md = "\n## Already built — the tasks this one depends on\n\n"
+            . "These are merged and in your working directory. Build ON them: read the files named here first, and do not rebuild or duplicate what they made.\n";
+        $budget = 6000;
+        foreach ($prior as $p) {
+            $block = "\n### #{$p['id']} " . trim($p['title']) . "\n";
+            if ($p['files']) $block .= 'Files: ' . implode(', ', array_map(fn($f) => "`{$f}`", array_slice($p['files'], 0, 25))) . (count($p['files']) > 25 ? ', …' : '') . "\n";
+            if ($p['summary'] !== '') {
+                // The END of its summary is where an agent says what it made and how to use it.
+                $s = mb_strlen($p['summary']) > 1200 ? '…' . mb_substr($p['summary'], -1200) : $p['summary'];
+                $block .= "\nWhat its agent left for you:\n\n> " . str_replace("\n", "\n> ", trim($s)) . "\n";
+            }
+            if (mb_strlen($block) > $budget) { $md .= "\n(" . (count($prior)) . " tasks in all — the rest are in the code; see `git log`.)\n"; break; }
+            $md .= $block; $budget -= mb_strlen($block);
+        }
+        return $md;
+    }
+
     private function buildTaskBrief($t): string {
         $files = json_decode(((string)$t->relatedFiles) ?? '', true);
         $files = is_array($files) ? implode("\n", array_map(fn($f) => "- $f", $files)) : '';
         $title = (string)$t->title;
         $desc  = (string)$t->description;
         $reuse = $this->reuseBrief($t);
+        $prior = self::priorWorkSection($this->priorWork($t));
         return <<<MD
 # Build task: {$title}
 
@@ -778,7 +840,7 @@ commit and merge your work — you just make the code changes.
 ## Likely files
 
 {$files}
-{$reuse}
+{$reuse}{$prior}
 ## Rules
 - Follow the existing codebase conventions (FlightPHP controllers, RedBeanPHP via
   the Bean wrapper, the project's AGENTS.md standards). Use the tiknix MCP
@@ -786,9 +848,18 @@ commit and merge your work — you just make the code changes.
   before writing. If a "Reuse these" section is present above, build ON those
   primitives — extend them, do not create parallel duplicates.
 - Stay within the scope of THIS task. Do not edit files owned by other tasks.
+- A page you add must be REACHABLE by clicking: add it to the app's menu or link it from the
+  page it belongs to (AGENTS.md, "Navigation"). Run `full_validation` on each controller you
+  write — it reports a page that nothing links to. A page deliberately left unlinked (a
+  webhook, an API) says so in its controller: `// nav: none — <why>`.
 - Write any summary, notes, or final message in **Markdown** (`##` sub-headers,
   `-` lists, `` `code` `` for files/beans/routes) — it renders in the task view,
   so keep it scannable header-first.
+- END your final message with a section headed exactly `## Handoff`, 3–8 lines, written for
+  the NEXT agent, who starts knowing nothing of this session: what now exists (the classes,
+  routes, tables and views you added, by name), how to use it (the call to make, the page to
+  link to), and any trap you hit that they would hit too. It is handed to every task that
+  depends on this one, so it must be the LAST thing you write, and it must be true.
 - Do not run git, do not push, do not start servers of your own. Implement, CHECK YOUR
   WORK in your sandbox when you have one (the "Your sandbox" section at the very end of this
   brief says what you have — a running copy of the app at a local URL, on its own database —

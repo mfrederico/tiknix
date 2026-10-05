@@ -162,6 +162,29 @@ Controllers extend `BaseControls\Control` and live in `controls/` — one per fe
 The MCP endpoint `mcp::message` is PUBLIC (101) on purpose: it authenticates itself, and only discovery
 (`initialize`, `tools/list`, `ping`) works without an API key. `tools/call` without a key is a bug.
 
+## Navigation — a page nobody can reach is not done
+
+A feature is finished when a person can get to it by clicking. Every page you add needs a link,
+in the place its users will look — and `full_validation` on a controller reports one that has none.
+
+- **The sidebar** is the app's menu, and it is data, not markup. `lib/app.php` registers one part:
+  `\app\Chrome::add('prepare', 'app/nav');` and `views/app/nav.php` adds to `$__sections` — an
+  ordered map of heading => items, each `['url' => '/cafe/customers', 'label' => 'Customers',
+  'icon' => 'people']` (Bootstrap Icons names). `$__loggedIn` and `$__isAdmin` say who is
+  looking: show a member's pages to members and an admin's to admins. If the app has no
+  `views/app/nav.php` yet, create it and register it; if it has one, ADD to it — one part owns
+  the menu. Do not name a section `Admin`: the shell draws its own.
+- **A list page links to its own create / edit / delete**, and a detail page links back to its
+  list. Those inner links are not what makes the feature reachable: something outside the
+  feature's own views must link to its list page.
+- **A page that belongs under another** (a customer's orders) is linked from that page, not the
+  sidebar. **A public page** is linked from the home page, the footer (`Chrome::add('footer', …)`)
+  or the top bar (`'actions'`).
+- **Deliberately unlinked** — a webhook, an API, a page reached only from an email — say so in
+  the controller, on one line: `// nav: none — reached from the unsubscribe link in emails`.
+- Never edit the runtime's layout to add a link, and never add a method to a runtime controller
+  to hang a page off it (see File Structure).
+
 ## File Structure — the runtime and the app
 
 A tiknix app is a Composer project that requires the **runtime**, `tiknix/runtime`, installed at

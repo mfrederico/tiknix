@@ -127,6 +127,23 @@ class InstanceUpdateTest extends TestCase {
         $this->assertStringContainsString('does not list tiknix/runtime', implode(' ', $u->run($this->app)['lines']));
     }
 
+    /**
+     * The usual case: the app already has an AGENTS.md, and the release changes the guidance. git
+     * reports that as " M AGENTS.md" — a status that starts with a space — and the update left it
+     * uncommitted, so the app refused the update after (every app, 2026-10-05).
+     */
+    public function testGuidanceThatAlreadyExistedIsCommittedWhenTheReleaseChangesIt(): void {
+        file_put_contents($this->app . '/AGENTS.md', "the guidance as it was\n");
+        $this->git($this->app, 'add AGENTS.md'); $this->git($this->app, 'commit -q -m "guidance, before"');
+        $this->git($this->app, 'push -q origin HEAD');
+        $this->published = ['v2.0.0-alpha.1', 'v2.0.0-alpha.2'];
+        $r = $this->updater()->run($this->app);
+        $this->assertSame('updated', $r['status'], implode("\n", $r['lines']));
+        $this->assertSame('', $this->git($this->app, 'status --porcelain -- AGENTS.md CLAUDE.md'), 'a MODIFIED guidance file is committed too');
+        $this->assertSame('Agent guidance (AGENTS.md) regenerated for the runtime update', $this->git($this->app, 'log -1 --format=%s -- AGENTS.md'));
+        $this->assertStringContainsString('committed', implode("\n", $r['lines']));
+    }
+
     public function testUpdateMovesTheRuntimeKeepsTheCheckpointLocalAndPins(): void {
         $u = $this->updater();
         // a build on the origin, not yet in the app

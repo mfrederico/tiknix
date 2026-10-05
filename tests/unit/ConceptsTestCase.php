@@ -107,9 +107,17 @@ abstract class ConceptsTestCase extends TestCase {
     protected function rm(string $path): void {
         if (is_link($path) || is_file($path)) { unlink($path); return; }
         if (!is_dir($path)) return;
-        foreach (scandir($path) as $e) {
-            if ($e !== '.' && $e !== '..') $this->rm("{$path}/{$e}");
+        // A pipeline run a test started in the background can still be writing its run folder
+        // when the test ends: the folder is emptied, the run adds a file, and rmdir fails with
+        // "Directory not empty" — an error in whichever test happened to be tearing down. Empty it
+        // again for as long as that lasts (a few tries); a folder that never empties is still a failure.
+        for ($try = 0; ; $try++) {
+            foreach (scandir($path) as $e) {
+                if ($e !== '.' && $e !== '..') $this->rm("{$path}/{$e}");
+            }
+            if (@rmdir($path) || !is_dir($path)) return;
+            if ($try >= 20) { rmdir($path); return; }   // says why, as before
+            usleep(100000);
         }
-        rmdir($path);
     }
 }

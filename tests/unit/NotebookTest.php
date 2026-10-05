@@ -94,4 +94,42 @@ class NotebookTest extends TestCase {
         $this->assertLessThan(Notebook::BRIEF_BUDGET + 2500, mb_strlen($b));
         $this->assertStringNotContainsString('### Map', $b, 'a document with nothing in it is not listed');
     }
+
+    /* ---- the notebook tool: a terminal session reads and adds; a build task is told how instead ---- */
+
+    private function tool(string $root): \app\mcptools\NotebookTool {
+        return new class($root) extends \app\mcptools\NotebookTool {
+            public function __construct(private string $r) {}
+            protected function installRoot(): string { return $this->r; }
+        };
+    }
+
+    public function testTheToolReadsAndATerminalAdds(): void {
+        $t = $this->tool($this->root);
+        $this->assertStringContainsString('Nothing recorded yet', $t->execute([]));
+        $said = $t->execute(['add' => [['kind' => 'lesson', 'text' => 'The reports page needs the mcp grant, not admin.'], ['kind' => 'map', 'text' => 'Reports live in controls/Reports.php and views/reports.']]]);
+        $this->assertStringContainsString('2 added', $said);
+        $read = $t->execute([]);
+        $this->assertStringContainsString('The reports page needs the mcp grant', $read);
+        $this->assertStringContainsString('_(a terminal session, ', $read);
+        $this->assertSame('Dana', $this->git('log -1 --format=%an'));
+        foreach ([[['kind' => 'todo', 'text' => 'a perfectly long enough sentence']], [['kind' => 'map', 'text' => 'short']]] as $bad) {
+            try { $t->execute(['add' => $bad]); $this->fail('accepted ' . json_encode($bad)); } catch (\Exception $e) { $this->addToAssertionCount(1); }
+        }
+    }
+
+    public function testABuildTaskIsRefusedAndToldHow(): void {
+        $wt = $this->root . '/.aibuilder/wt/plan-1-task-2'; mkdir($wt, 0700, true);
+        $said = $this->tool($wt)->execute(['add' => [['kind' => 'lesson', 'text' => 'Something a task learned along the way.']]]);
+        $this->assertStringContainsString('Not added', $said);
+        $this->assertStringContainsString('`## Notebook`', $said);
+        $this->assertDirectoryDoesNotExist($wt . '/agent/notebook');
+    }
+
+    public function testTheRepositorysOwnIdentityAuthorsATerminalsEntry(): void {
+        putenv('GIT_AUTHOR_NAME'); putenv('GIT_AUTHOR_EMAIL'); putenv('GIT_COMMITTER_NAME'); putenv('GIT_COMMITTER_EMAIL');
+        $this->git('config user.name "Terminal Tess"'); $this->git('config user.email tess@example.test');
+        $this->assertSame(1, Notebook::add($this->root, [['doc' => 'map', 'text' => 'Added with the repository identity set.']], 'a terminal session')['added']);
+        $this->assertSame('Terminal Tess', $this->git('log -1 --format=%an'));
+    }
 }

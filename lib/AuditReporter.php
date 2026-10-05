@@ -88,6 +88,24 @@ class AuditReporter {
             }
         }
 
+        // 3b) What the audit found goes into the project's notebook as lessons: a defect that got
+        //     past the tasks' own checks is exactly what the next plan's agents should know to
+        //     look for. Bounded (three), and each says it came from an audit, so the owner can
+        //     judge and delete it on the Builder's Notebook tab.
+        if (!$passed && $failures) {
+            try {
+                $entries = [];
+                foreach (array_slice($failures, 0, 3) as $f) {
+                    $what = trim((string) ($f['label'] ?? '')) . (trim((string) ($f['message'] ?? '')) !== '' ? ' — ' . trim((string) $f['message']) : '');
+                    if (mb_strlen($what) >= 12) $entries[] = ['doc' => 'lessons', 'text' => 'An audit found, after the tasks called it done: ' . mb_substr(preg_replace('/\s+/', ' ', $what), 0, 320) . ' Check for this before finishing work near it.'];
+                }
+                if ($entries && \Model_Instance::tenantRow($inst)) {
+                    $nb = TenantHost::notebookAdd($inst, $entries, 'audit of plan #' . (int) $plan->id, TenantHost::author((int) ($plan->memberId ?: $inst->memberId)));
+                    if (empty($nb['ok'])) error_log('ERROR AuditReporter: could not add the audit\'s findings to the notebook: ' . (string) ($nb['error'] ?? 'no answer'));
+                }
+            } catch (\Throwable $e) { error_log('ERROR AuditReporter: could not add the audit\'s findings to the notebook: ' . $e->getMessage()); }
+        }
+
         // 4) Email owner + shared-team members.
         $emailed = self::emailReport($m, $plan, $inst, $passed, $checks, $failures, $levels, $web, $fs, $capped);
 

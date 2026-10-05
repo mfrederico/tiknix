@@ -189,7 +189,7 @@ in the place its users will look — and `full_validation` on a controller repor
 
 This project keeps a notebook in `agent/notebook/` — `decisions.md`, `map.md`, `lessons.md`: what
 earlier runs and the owner wrote down so the next run does not rediscover it. A build task's and
-a planner's brief ends with it; from a terminal, read those files before you start.
+a planner's brief ends with it; from a terminal, call the `notebook` tool before you start (and pass it `add` to record something).
 
 - **Consult it first.** A decision recorded there is not yours to re-make without a reason; a
   lesson there is a mistake you do not need to repeat. Where it disagrees with the code, the code

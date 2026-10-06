@@ -295,6 +295,9 @@ class PlanExecutor {
         }
 
         $slots = self::MAX_CONCURRENT - $running;
+        // A task split itself and this plan waits for a person: what is running finishes, nothing new starts.
+        $held = $this->heldForSplit();
+        if ($held) $slots = 0;
         if ($slots > 0) {
             foreach ($fresh as $t) {
                 if ($slots <= 0) break;
@@ -335,7 +338,11 @@ class PlanExecutor {
         $stalled  = (!$done && $counts['running'] === 0 && $counts['pending'] > 0
                      && !$this->anyLaunchable($fresh, $byId));
 
-        return ['done' => $done || $stalled, 'stalled' => $stalled, 'counts' => $counts, 'total' => $total,
+        if ($held && !$done) {
+            // Not stalled: stopped on purpose. Done for this run once nothing is running.
+            return ['done' => $counts['running'] === 0, 'stalled' => false, 'held' => true, 'counts' => $counts, 'total' => $total, 'blocked' => []];
+        }
+        return ['done' => $done || $stalled, 'stalled' => $stalled, 'held' => false, 'counts' => $counts, 'total' => $total,
                 // WHY it stalled, not just that it did. Computed here because this is
                 // the only place that knows both the dependency graph and the rule
                 // for what satisfies a dependency.
@@ -565,6 +572,7 @@ class PlanExecutor {
         if ($status === 'no-change') {
             TenantHost::discardTask($this->tenant, $id);
             $this->finish($t, 'resolved', "nothing to change — the task's goal was already satisfied, or the agent made no edits");
+            $this->applySplit($t, $r['split'] ?? null);   // it may have changed nothing because it split itself first
             return;
         }
         if ($status !== 'changed') {
@@ -600,10 +608,129 @@ class PlanExecutor {
         if (!empty($m['ok'])) {
             $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?'));
             $this->addToNotebook($t, (string) ($r['output'] ?? ''));
+            $this->applySplit($t, $r['split'] ?? null);
             return;
         }
         $err = (string) ($m['error'] ?? 'the merge failed');
         $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err);
+    }
+
+    // ---- a task that splits itself ----------------------------------------------------------
+
+    /** A task split from a task split from a task is as deep as it goes: past that, the plan itself is wrong. */
+    public const MAX_SPLIT_DEPTH = 2;
+    /** How many tasks of one plan may split themselves before a person has to look. */
+    public const MAX_SPLITS_PER_PLAN = 4;
+
+    /**
+     * A split a task handed in (its submit_plan), checked and put in order — pure, so the rules
+     * are something a test can pin. Each piece: ref, title, description, files, verify, priority,
+     * deps (refs of OTHER pieces). `leaves` are the pieces nothing else in the split waits on:
+     * what the original task's dependents now wait for.
+     *
+     * @return array{problems:string[],pieces:array<int,array<string,mixed>>,leaves:string[]}
+     */
+    public static function splitPieces($split): array {
+        $out = ['problems' => [], 'pieces' => [], 'leaves' => []];
+        $subs = is_array($split) ? array_values(array_filter((array) ($split['subtasks'] ?? []), 'is_array')) : [];
+        if (count($subs) < 2 || count($subs) > 6) { $out['problems'][] = 'a split is 2 to 6 pieces, not ' . count($subs); return $out; }
+        $refs = [];
+        foreach ($subs as $i => $st) {
+            $ref = trim((string) ($st['id'] ?? '')) ?: 's' . ($i + 1);
+            $title = trim((string) ($st['title'] ?? ''));
+            if ($title === '') { $out['problems'][] = "piece '{$ref}' has no title"; continue; }
+            if (isset($refs[$ref])) { $out['problems'][] = "two pieces are both called '{$ref}'"; continue; }
+            $refs[$ref] = true;
+            $out['pieces'][] = ['ref' => $ref, 'title' => mb_substr($title, 0, 200), 'description' => (string) ($st['description'] ?? ''),
+                'files' => is_array($st['files'] ?? null) ? array_values($st['files']) : [], 'verify' => PlanIngestor::verify($st['verify'] ?? null),
+                'priority' => max(1, min(4, (int) ($st['priority'] ?? 3))), 'deps' => array_values(array_map('strval', (array) ($st['depends_on'] ?? [])))];
+        }
+        if ($out['problems']) return $out;
+        $waitedOn = [];
+        foreach ($out['pieces'] as $k => $p) {
+            // A piece may wait on other pieces only; a ref to anything else is dropped (the pieces
+            // all start after the task that split, which has everything it depended on).
+            $out['pieces'][$k]['deps'] = array_values(array_unique(array_filter($p['deps'], fn($d) => isset($refs[$d]) && $d !== $p['ref'])));
+            foreach ($out['pieces'][$k]['deps'] as $d) $waitedOn[$d] = true;
+        }
+        foreach ($out['pieces'] as $p) if (!isset($waitedOn[$p['ref']])) $out['leaves'][] = $p['ref'];
+        if (!$out['leaves']) $out['problems'][] = 'the pieces wait on each other in a circle, so none can be last';
+        return $out;
+    }
+
+    /**
+     * The task found it was really several and handed in the pieces: they take its place in ITS
+     * plan. Each piece starts after the task (so it is handed what the task left), runs on the
+     * task's agent, and is one level deeper; whatever waited on the task now also waits on the
+     * last pieces. The plan's own setting decides what happens next: built straight through, it
+     * goes on; approved by a person, it stops after what is running so the person can read the
+     * pieces and press Build (holdForSplit). A split that breaks a limit is refused and said on
+     * the task — the task stays merged, and nothing is added.
+     *
+     * @return int[] the new tasks' ids ([] when there was no split, or it was refused)
+     */
+    private function applySplit($t, $split): array {
+        if ($split === null) return [];
+        $depth = (int) ($t->splitDepth ?? 0);
+        $plan  = $this->plan();
+        // The first split in a project makes the column; before that there is nothing to count.
+        $already = array_key_exists('split_of', Bean::inspect('workbenchtask'))
+            ? (int) Bean::getCell('SELECT COUNT(DISTINCT split_of) FROM workbenchtask WHERE parent_task_id = ? AND split_of > 0', [$this->planId]) : 0;
+        $why = '';
+        if ($depth >= self::MAX_SPLIT_DEPTH) $why = 'it is already ' . $depth . ' splits deep — past that the plan itself needs rethinking';
+        elseif ($already >= self::MAX_SPLITS_PER_PLAN) $why = $already . ' tasks of this plan have already split themselves — a person should look at the plan';
+        $sp = self::splitPieces($split);
+        if ($why === '' && $sp['problems']) $why = implode('; ', $sp['problems']);
+        if ($why !== '') {
+            $this->logEvent($t, 'warning', 'The task asked to be split into smaller tasks, and it was NOT split: ' . $why . '. Re-plan what is left from the Builder.');
+            return [];
+        }
+
+        $now = date('Y-m-d H:i:s'); $ids = [];
+        foreach ($sp['pieces'] as $p) {
+            $n = Bean::dispense('workbenchtask');
+            foreach (['taskType', 'parentTaskId', 'instanceId', 'instanceTag', 'engine', 'model', 'agent', 'memberId', 'authcontrolLevel', 'baseBranch', 'dbSource'] as $f) $n->{$f} = $t->{$f};
+            $n->title = $p['title']; $n->description = $p['description']; $n->priority = $p['priority']; $n->status = 'pending';
+            $n->relatedFiles = json_encode($p['files']); $n->acceptanceCriteria = json_encode($p['verify']);
+            $n->reuses = '[]'; $n->adopts = '[]'; $n->planRef = 'split-' . (int) $t->id . '-' . $p['ref'];
+            $n->splitOf = (int) $t->id; $n->splitDepth = $depth + 1;
+            $n->createdAt = $now; $n->updatedAt = $now;
+            Bean::store($n);
+            $ids[$p['ref']] = (int) $n->id;
+        }
+        foreach ($sp['pieces'] as $p) {
+            $n = Bean::load('workbenchtask', $ids[$p['ref']]);
+            // After the task that split (already merged: satisfied at once, and its Handoff is handed on) and the pieces it names.
+            $n->dependsOn = json_encode(array_values(array_unique(array_merge([(int) $t->id], array_map(fn($d) => $ids[$d], $p['deps'])))));
+            Bean::store($n);
+        }
+        // Whatever waited on the task was waiting for its WORK — which the last pieces now finish.
+        $leaves = array_map(fn($r) => $ids[$r], $sp['leaves']);
+        foreach ($this->subtasks() as $other) {
+            if (in_array((int) $other->id, $ids, true) || !in_array((string) $other->status, ['pending', 'failed', 'conflict'], true)) continue;
+            $deps = $this->deps($other);
+            if (!in_array((int) $t->id, $deps, true)) continue;
+            $other->dependsOn = json_encode(array_values(array_unique(array_merge($deps, $leaves))));
+            Bean::store($other);
+        }
+        $list = implode(', ', array_map(fn($p) => '#' . $ids[$p['ref']] . ' ' . $p['title'], $sp['pieces']));
+        $this->logEvent($t, 'info', 'Split itself into ' . count($ids) . " smaller tasks, which take its place in this plan: {$list}");
+        if (empty($plan->autoBuild)) {
+            $plan->splitHold = 1; $plan->updatedAt = $now;
+            Bean::store($plan);
+            $this->logEvent($plan, 'warning', "Task #{$t->id} split itself into " . count($ids) . " tasks ({$list}). The build stops after what is running so you can read them — press Build to go on.");
+        }
+        return array_values($ids);
+    }
+
+    /** Is the plan waiting for a person because a task split itself (a plan that is not built straight through)? */
+    public function heldForSplit(): bool { return !empty($this->plan()->splitHold); }
+
+    /** The person pressed Build: the split has been seen. */
+    public function clearSplitHold(): void {
+        $plan = $this->plan();
+        if (empty($plan->splitHold)) return;
+        $plan->splitHold = 0; Bean::store($plan);
     }
 
     /**
@@ -998,6 +1125,14 @@ commit and merge your work — you just make the code changes.
 - Write any summary, notes, or final message in **Markdown** (`##` sub-headers,
   `-` lists, `` `code` `` for files/beans/routes) — it renders in the task view,
   so keep it scannable header-first.
+- If this task turns out to be SEVERAL — separate pieces of work you cannot finish well in one
+  go (not merely long) — do not rush it and do not half-build it: SPLIT it. Call `submit_plan`
+  with 2 to 6 pieces as `subtasks` (each with an `id`, a `title`, a `description` a fresh agent
+  could build from, `files`, `depends_on` among the pieces, and `verify` checks), then stop.
+  The pieces take this task's place in the plan and are built after you; whatever you leave
+  committed is merged first and they build on it — so leave the code working (finish or undo
+  anything half-made) and say in your Handoff what you did complete. Split early, when you see
+  it, not after spending the task's time. Most tasks do not need this.
 - END your final message with a section headed exactly `## Handoff`, 3–8 lines, written for
   the NEXT agent, who starts knowing nothing of this session: what now exists (the classes,
   routes, tables and views you added, by name), how to use it (the call to make, the page to

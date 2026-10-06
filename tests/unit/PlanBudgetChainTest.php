@@ -44,4 +44,33 @@ class PlanBudgetChainTest extends TestCase {
         $this->assertTrue(PlanExecutor::agentHasRoom(2, PlanExecutor::capOf($report, 'wide')));
         $this->assertFalse(PlanExecutor::agentHasRoom(3, PlanExecutor::capOf($report, 'wide')));
     }
+
+    /* ---- a task that splits itself ---- */
+
+    public function testASplitIsCheckedAndItsLastPiecesFound(): void {
+        $sp = PlanExecutor::splitPieces(['title' => 'x', 'subtasks' => [
+            ['id' => 'a', 'title' => 'Model and seed', 'description' => 'd', 'files' => ['models/Model_X.php'], 'verify' => ['the table exists']],
+            ['id' => 'b', 'title' => 'List page', 'depends_on' => ['a', 't9-from-the-plan']],
+            ['id' => 'c', 'title' => 'Design: the list', 'depends_on' => ['b', 'c'], 'priority' => 9]]]);
+        $this->assertSame([], $sp['problems']);
+        $this->assertSame(['a', 'b', 'c'], array_column($sp['pieces'], 'ref'));
+        $this->assertSame([[], ['a'], ['b']], array_column($sp['pieces'], 'deps'), 'a piece waits on other pieces only, never on itself');
+        $this->assertSame(['c'], $sp['leaves'], 'what waited on the task now waits on the last piece');
+        $this->assertSame(4, $sp['pieces'][2]['priority']);
+        $this->assertSame(['the table exists'], $sp['pieces'][0]['verify']);
+
+        $side = PlanExecutor::splitPieces(['subtasks' => [['id' => 'a', 'title' => 'A'], ['id' => 'b', 'title' => 'B']]]);
+        $this->assertSame(['a', 'b'], $side['leaves'], 'two pieces side by side are both last');
+    }
+
+    public function testASplitThatIsNotOneIsRefusedWithTheReason(): void {
+        $p = fn($split) => implode(' | ', PlanExecutor::splitPieces($split)['problems']);
+        $this->assertStringContainsString('2 to 6 pieces, not 1', $p(['subtasks' => [['id' => 'a', 'title' => 'only']]]));
+        $this->assertStringContainsString('2 to 6 pieces, not 7', $p(['subtasks' => array_map(fn($i) => ['id' => "p{$i}", 'title' => "P{$i}"], range(1, 7))]));
+        $this->assertStringContainsString('2 to 6 pieces, not 0', $p(null));
+        $this->assertStringContainsString("no title", $p(['subtasks' => [['id' => 'a', 'title' => ''], ['id' => 'b', 'title' => 'B']]]));
+        $this->assertStringContainsString("both called 'a'", $p(['subtasks' => [['id' => 'a', 'title' => 'A'], ['id' => 'a', 'title' => 'B']]]));
+        $this->assertStringContainsString('in a circle', $p(['subtasks' => [['id' => 'a', 'title' => 'A', 'depends_on' => ['b']], ['id' => 'b', 'title' => 'B', 'depends_on' => ['a']]]]));
+        $this->assertSame(2, PlanExecutor::MAX_SPLIT_DEPTH);
+    }
 }

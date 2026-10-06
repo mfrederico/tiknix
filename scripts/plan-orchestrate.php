@@ -60,6 +60,8 @@ echo "[orchestrator] plan #$planId ($slug) starting " . date('c') . "\n";
 // No model argument: PlanExecutor resolves each task's model from that task's own
 // engine. A single --model could only be right when every task ran on one provider.
 $ex = new PlanExecutor($planId, $slug, $dir, $level);
+// Build was pressed (or the plan builds straight through): a split that was waiting to be read has been.
+$ex->clearSplitHold();
 
 // The rollback point, before the first task — once per plan (PlanExecutor::checkpointBeforeRun).
 // No checkpoint, no run: the plan goes back to 'approved' with the reason on it.
@@ -83,12 +85,32 @@ $maxTicks = $ex->timeBudgetTicks();
 echo "[orchestrator] time budget: {$maxTicks} ticks (~" . round($maxTicks * 10 / 3600, 1) . "h)\n";
 $res = ['done' => false, 'stalled' => false, 'counts' => [], 'total' => 0];
 $ranOut = true;                  // set false the moment the loop breaks on a real outcome
+$known = null;
 for ($i = 0; $i < $maxTicks; $i++) {
     $res = $ex->runOnce();
     $c = $res['counts'];
-    echo "[orchestrator] tick $i: " . json_encode($c) . ($res['stalled'] ? " STALLED" : "") . "\n";
+    echo "[orchestrator] tick $i: " . json_encode($c) . ($res['stalled'] ? " STALLED" : "") . (!empty($res['held']) ? " HELD (a task split itself)" : "") . "\n";
+    // A task split itself: the plan has more tasks than the budget was worked out for.
+    if ($known !== null && (int) $res['total'] > $known) {
+        $maxTicks = max($maxTicks, $i + 1 + $ex->timeBudgetTicks());
+        echo "[orchestrator] the plan grew to {$res['total']} tasks — time budget now {$maxTicks} ticks\n";
+    }
+    $known = (int) $res['total'];
     if ($res['done']) { $ranOut = false; break; }
     sleep(10);
+}
+
+// A task split itself in a plan a person approves step by step: stopped on purpose, with what
+// was running finished. Not a failure and not finished — it waits for Build, like a new plan.
+if (!$ranOut && !empty($res['held'])) {
+    $parent = Bean::load('workbenchtask', $planId);
+    $parent->planStatus      = 'approved';
+    $parent->status          = 'pending';
+    $parent->progressMessage = 'Waiting for you: a task split itself into smaller tasks. Read them on the board, then press Build to go on.';
+    $parent->updatedAt       = date('Y-m-d H:i:s');
+    Bean::store($parent);
+    echo "[orchestrator] plan #{$planId} held for its owner after a split " . date('c') . "\n";
+    exit(0);
 }
 
 /* FOUR outcomes, not three. The loop can also simply run out of ticks with agents still

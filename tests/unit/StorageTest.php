@@ -50,16 +50,20 @@ class StorageTest extends TestCase {
 
     public function testTheRuleIsAddedOnceAndABucketsOwnRulesAreKept(): void {
         $fresh = json_decode(Storage::policyWith('', 'media.example.com'), true);
-        $this->assertCount(1, $fresh['Statement']);
+        $this->assertCount(2, $fresh['Statement']);
         $this->assertSame('arn:aws:s3:::media.example.com/public/*', $fresh['Statement'][0]['Resource']);
         $this->assertSame('s3:GetObject', $fresh['Statement'][0]['Action']);
+        // …and a visitor with no credentials is refused everything else: only anonymous requests, so the app's key and its links still work.
+        $deny = $fresh['Statement'][1];
+        $this->assertSame(['Deny', 'arn:aws:s3:::media.example.com/public/*', 'Anonymous'], [$deny['Effect'], $deny['NotResource'], $deny['Condition']['StringEquals']['aws:PrincipalType']]);
+        $this->assertArrayNotHasKey('Resource', $deny);
 
         $existing = json_encode(['Version' => '2012-10-17', 'Statement' => [['Sid' => 'TheirOwn', 'Effect' => 'Deny', 'Principal' => '*', 'Action' => 's3:DeleteObject', 'Resource' => 'arn:aws:s3:::media.example.com/keep/*']]]);
         $once = Storage::policyWith($existing, 'media.example.com');
         $twice = json_decode(Storage::policyWith($once, 'media.example.com'), true);
-        $this->assertSame(['TheirOwn', Storage::POLICY_SID], array_column($twice['Statement'], 'Sid'), 'applied twice, still there once');
+        $this->assertSame(['TheirOwn', Storage::POLICY_SID, Storage::POLICY_SID_PRIVATE], array_column($twice['Statement'], 'Sid'), 'applied twice, still there once each');
         $single = json_decode(Storage::policyWith(json_encode(['Version' => '2012-10-17', 'Statement' => ['Sid' => 'Lone', 'Effect' => 'Allow', 'Principal' => '*', 'Action' => 's3:GetObject', 'Resource' => 'x']]), 'b'), true);
-        $this->assertSame(['Lone', Storage::POLICY_SID], array_column($single['Statement'], 'Sid'));
+        $this->assertSame(['Lone', Storage::POLICY_SID, Storage::POLICY_SID_PRIVATE], array_column($single['Statement'], 'Sid'));
     }
 
     public function testAPolicyThatCannotBeReadIsLeftAlone(): void {

@@ -223,7 +223,6 @@ $isConnected = function (array $card): bool {
                   <div class="col-5">
                     <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-key me-1"></i>Connect</button>
                   </div>
-                  <div class="col-12"><div class="form-text">Stripe Dashboard → Developers → API keys. A restricted key with write access to Checkout, Customers, Products, Prices and Subscriptions is recommended.</div></div>
                 </form>
 
               <?php else: // oauth / shopify ?>

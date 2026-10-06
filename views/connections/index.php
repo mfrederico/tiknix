@@ -196,6 +196,14 @@ $isConnected = function (array $card): bool {
                 </ul>
               <?php endif; ?>
 
+              <?php // A connected bucket's access template — what is public, what is private, and the policy to copy — is on the app's own Storage page.
+                    if ($card['key'] === 's3' && $connected): ?>
+                <div class="mt-2 small">
+                  <a class="btn btn-sm btn-outline-primary" href="/projects/open?to=<?= rawurlencode('/connections/storage') ?>" target="_blank" rel="noopener"><i class="bi bi-shield-lock me-1"></i>Storage access &amp; policy</a>
+                  <span class="text-body-secondary ms-1">set what is public and private, copy the bucket policy, and check it works</span>
+                </div>
+              <?php endif; ?>
+
               <?php // --- connect action, per connect_kind --- ?>
               <?php if (!$card['configured']): ?>
                 <div class="form-text mt-2">Not available on this server yet.</div>

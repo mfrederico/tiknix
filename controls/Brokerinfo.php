@@ -239,6 +239,28 @@ class Brokerinfo extends Control {
         Flight::json(['ok' => true, 'matches' => $matches]);
     }
 
+    /**
+     * POST /brokerinfo/plan {plan} — a plan worked out in the project's terminal, handed to the
+     * Builder (app\TerminalPlan): it arrives as a draft the project's owner approves there.
+     */
+    public function plan($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { Flight::jsonError('POST only.', 405); return; }
+        $inst = Bean::load('instance', $iid);
+        if (!$inst->id) { Flight::jsonError('That project is gone.', 404); return; }
+        $plan = $this->jsonBody()['plan'] ?? null;
+        try {
+            $r = TerminalPlan::receive($inst, is_array($plan) ? $plan : []);
+        } catch (\InvalidArgumentException $e) {
+            Flight::jsonError($e->getMessage(), 400); return;
+        } catch (\RuntimeException $e) {
+            Flight::jsonError($e->getMessage(), 409); return;
+        }
+        $this->logger->info('Plan received from a terminal', ['instance' => $inst->slug, 'plan' => $r['plan'], 'tasks' => $r['tasks']]);
+        Flight::json(['ok' => true] + $r + ['url' => rtrim((string) Flight::get('app.baseurl'), '/') . '/sidecar/app/workbench?to=' . rawurlencode('/workbench/view?id=' . $r['plan'])]);
+    }
+
     /** GET /brokerinfo/modelresult?job= — a call this instance started. */
     public function modelresult($params = []) {
         [$key, $iid] = $this->requireBroker();

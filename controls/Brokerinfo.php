@@ -258,7 +258,10 @@ class Brokerinfo extends Control {
             Flight::jsonError($e->getMessage(), 409); return;
         }
         $this->logger->info('Plan received from a terminal', ['instance' => $inst->slug, 'plan' => $r['plan'], 'tasks' => $r['tasks']]);
-        Flight::json(['ok' => true] + $r + ['url' => rtrim((string) Flight::get('app.baseurl'), '/') . '/sidecar/app/workbench?to=' . rawurlencode('/workbench/view?id=' . $r['plan'])]);
+        // The link is the Builder's board, not the plan's own page: a task id means this plan
+        // only while THIS project is the one selected there, and a link cannot select it — with
+        // another project selected, /workbench/view?id=N would open that project's task N.
+        Flight::json(['ok' => true] + $r + ['url' => rtrim((string) Flight::get('app.baseurl'), '/') . '/sidecar/app/workbench  (project: ' . ($inst->displayName ?: $inst->slug) . ')']);
     }
 
     /** GET /brokerinfo/modelresult?job= — a call this instance started. */

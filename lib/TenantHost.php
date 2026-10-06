@@ -717,7 +717,19 @@ class TenantHost {
     /** Add a finished task's entries to the notebook — committed in the app as $author. {ok, added, skipped} */
     public static function notebookAdd(object $inst, array $entries, string $source, array $author): array {
         if ($author === []) return ['ok' => false, 'error' => 'adding to the notebook needs the member whose task it was as the commit\'s author'];
-        return self::taskCall($inst, '--notebook-add --source=' . escapeshellarg($source), json_encode(array_values($entries)), 60, self::gitEnv($author));
+        $r = self::taskCall($inst, '--notebook-add --source=' . escapeshellarg($source), json_encode(array_values($entries)), 60, self::gitEnv($author));
+        // A lesson that is really about the PLATFORM is true in every project, and in this one's
+        // notebook it helps only this one: it is also offered to Tiknix's admins as a candidate
+        // for the knowledge base (app\KnowledgeBase — nothing is published without a person).
+        // On core's database whatever is selected here (a build runs on the project's own), and
+        // never what fails the notebook write: a candidate that could not be offered is logged.
+        if (!empty($r['ok'])) {
+            $miss = new \stdClass();
+            $n = CoreDb::with(fn() => KnowledgeBase::proposeLessons($entries, (string) $inst->slug, $source), $miss);
+            if ($n === $miss) error_log('ERROR TenantHost::notebookAdd: lessons could not be offered to the knowledge base: ' . CoreDb::lastError());
+            elseif ($n > 0) $r['kb_candidates'] = $n;
+        }
+        return $r;
     }
 
     /** Save a person's edit of one notebook document — committed in the app as $author. */

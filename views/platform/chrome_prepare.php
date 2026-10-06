@@ -47,6 +47,11 @@ if ($__loggedIn) {
     if (\app\Feature::allows('invites', $__mid, $__level) && !isset($__have['/invites'])) {
         $__lead[] = ['url' => '/invites', 'label' => 'Invitations', 'icon' => 'envelope-plus'];
     }
+    // What is known about how the platform behaves (app\KnowledgeBase): written and approved by
+    // Tiknix's admins, read by every project's agent before it asks its user about support.
+    if ($__isAdmin && !isset($__have['/knowledge'])) {
+        $__lead[] = ['url' => '/knowledge', 'label' => 'Knowledge base', 'icon' => 'journal-bookmark'];
+    }
     $__sections = [$__mainSec => array_merge($__lead, $__sections[$__mainSec] ?? [])] + $__sections;
 
     // The member's role on the selected project and the plugins they are offered — read by the

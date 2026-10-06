@@ -34,6 +34,7 @@ class SendToTiknixSupportTool extends BaseTool {
             'message'     => ['type' => 'string', 'description' => 'What was attempted, what happened (exact errors), what was checked, what you suspect'],
             'category'    => ['type' => 'string', 'enum' => ['problem', 'general', 'billing', 'feature'], 'description' => 'Default problem'],
             'project'     => ['type' => 'string', 'description' => 'On tiknix.com only: the project slug it is about (on a project, it is always that project)'],
+            'not_answered_by_knowledge_base' => ['type' => 'boolean', 'description' => 'true once you have read what the knowledge base returned for this problem (this tool shows it on the first call) and it does not answer it'],
         ],
         'required' => ['user_agreed', 'subject', 'message'],
     ];
@@ -49,6 +50,16 @@ class SendToTiknixSupportTool extends BaseTool {
 
         // tiknix.com: the caller's own account.
         $this->requireAuth();
+        // A problem that is already answered does not become a ticket (the runtime's version asks
+        // core over the broker key; here the knowledge base is local — app\KnowledgeBase).
+        if (($args['not_answered_by_knowledge_base'] ?? false) !== true && $category === 'problem') {
+            $known = \app\KnowledgeBase::ask($subject . "\n" . $message, 3);
+            if ($known) {
+                return "# send_to_tiknix_support NOT SENT — this may already be answered\n\n"
+                     . "Tiknix's knowledge base has " . (count($known) === 1 ? 'an entry that matches' : 'entries that match') . " this. Read below. If one answers it, do what it says and tell the user — no ticket is needed.\n"
+                     . "If none does, call again with `not_answered_by_knowledge_base: true` (the user has already agreed).\n\n" . \app\mcptools\AskTiknixTool::render($known);
+            }
+        }
         $project = null;
         $slug = trim((string) ($args['project'] ?? ''));
         if ($slug !== '') {

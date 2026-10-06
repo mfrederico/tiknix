@@ -222,6 +222,23 @@ class Brokerinfo extends Control {
                       'url' => rtrim((string) Flight::get('app.baseurl'), '/') . ($r['thread'] ? '/communications/thread/' . $r['thread'] : '/contact')]);
     }
 
+    /**
+     * POST /brokerinfo/kb {question} — a project's agent asks what is known about the platform
+     * (app\KnowledgeBase) before it asks its user about escalating to support. Answers only what
+     * a person published; `matches` is empty when nothing answers the question — which is an
+     * answer too, never an error.
+     */
+    public function kb($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { Flight::jsonError('POST only.', 405); return; }
+        $q = trim((string) ($this->jsonBody()['question'] ?? ''));
+        if (mb_strlen($q) < 8) { Flight::jsonError('Ask a question: what you saw, with the exact error if there was one.', 400); return; }
+        $matches = KnowledgeBase::ask(mb_substr($q, 0, 2000), 3);
+        $this->logger->info('Knowledge base asked', ['instance' => $iid, 'matches' => array_column($matches, 'id'), 'question' => mb_substr($q, 0, 160)]);
+        Flight::json(['ok' => true, 'matches' => $matches]);
+    }
+
     /** GET /brokerinfo/modelresult?job= — a call this instance started. */
     public function modelresult($params = []) {
         [$key, $iid] = $this->requireBroker();

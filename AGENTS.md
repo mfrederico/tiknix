@@ -93,10 +93,16 @@ echo \app\PermissionCache::seedRule('cafe', '*', 100, 'Cafe pages (members)');  
 Print what it returns — `kept` means a rule a person set won. A wildcard also clears the
 auto-generated `cafe::<method>` rows that would shadow it.
 
-## When the Platform Is at Fault — Offer to Escalate, Then Ask
+## When the Platform Is at Fault — Look It Up, Then Offer to Escalate
 
 If the cause looks like the **Tiknix platform** (the builder, pipelines runtime, hosting, connectors,
-billing) rather than this app's own code, ASK the user: **"Should I escalate this to Tiknix support?"**
+billing, git or updates in a hosted app) rather than this app's own code, **first call
+`ask_tiknix(question)`** with what you saw and the exact error. It answers in seconds from what
+Tiknix's people have already written down: if an entry describes what you see, do what it says
+and tell the user — that is the whole fix, and nobody is asked to wait. "By design" is a common
+answer; do not escalate something an entry says is intended.
+
+Only when nothing known fits, ASK the user: **"Should I escalate this to Tiknix support?"**
 Only on a yes, call `send_to_tiknix_support(user_agreed: true, subject, message)`, written for a support
 engineer: what was attempted, what happened (exact errors, URLs, times), what you checked, what you
 suspect. The answer reaches the user in Communications and by email. 5 per hour at most.

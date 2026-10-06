@@ -46,6 +46,13 @@ php scripts/resetcache.php                           # reload the permission cac
 
 Concise, descriptive messages; no emojis; no Claude Code footer or co-author lines.
 
+**A commit on `main` is the whole delivery — there is nothing to push.** In an app Tiknix hosts,
+this checkout IS the running app, and every build task starts as a worktree of its `main` at
+HEAD: what you commit here is what the site serves and what the next task builds on. The one
+remote, `seed`, is where the app was first cloned from and is read-only (a push answers 403);
+that is by design, not a fault to work around or to escalate. So: commit, check `git status` is
+clean, and say the change is in. Push only where `git remote -v` shows a remote other than `seed`.
+
 ## Codebase Introspection (MCP)
 
 The app's `tiknix` MCP server answers questions about this codebase — prefer it over scanning the tree.

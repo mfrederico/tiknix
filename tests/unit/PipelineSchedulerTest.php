@@ -53,14 +53,26 @@ class PipelineSchedulerTest extends ConceptsTestCase {
         $this->assertSame('queued', (string) $run->status);
         $this->assertSame('cron', (string) $run->source);
 
-        // The same minute again: claimed already, nothing fires twice.
+        // The same minute again, its run finished: claimed already, nothing fires twice.
+        $finish = function (string $slug): void { foreach (Bean::find('piperun', "slug = ? AND status IN ('queued','running')", [$slug]) as $x) { $x->status = 'completed'; Bean::store($x); } };
+        $finish('every');
         $r2 = Scheduler::tick($this->root, $noon + 20);
         $this->assertSame([], $r2['fired']);
         $this->assertContains(['slug' => 'every', 'why' => 'already fired this minute'], $r2['skipped']);
         $this->assertSame(1, (int) Bean::count('piperun', 'slug = ?', ['every']));
 
-        // The next minute fires again; six o'clock fires the daily one too.
+        // The next minute fires again…
         $this->assertSame(['every'], array_column(Scheduler::tick($this->root, $noon + 60)['fired'], 'slug'));
+        // …but never on top of itself: while that run is unfinished, the minute after does not start another.
+        $r3 = Scheduler::tick($this->root, $noon + 120);
+        $this->assertSame([], $r3['fired']);
+        $this->assertStringContainsString('has not finished', implode(' | ', array_column(array_filter($r3['skipped'], fn($x) => $x['slug'] === 'every'), 'why')));
+        $this->assertSame(2, (int) Bean::count('piperun', 'slug = ?', ['every']));
+        // A run unfinished for hours has lost its worker: it does not stop the schedule for good.
+        $stuck = Bean::findOne('piperun', "slug = ? AND status = 'queued'", ['every']);
+        $stuck->createdAt = date('Y-m-d H:i:s', $noon + 180 - Scheduler::RUN_PRESUMED_DEAD - 60); Bean::store($stuck);
+        $this->assertSame(['every'], array_column(Scheduler::tick($this->root, $noon + 180)['fired'], 'slug'));
+        $finish('every');
         $six = mktime(6, 0, 0, 9, 23, 2026);
         $this->assertEqualsCanonicalizing(['every', 'at-six'], array_column(Scheduler::tick($this->root, $six)['fired'], 'slug'));
         $this->assertFileExists("{$this->root}/cache/pipecron-at-six.last");

@@ -375,6 +375,43 @@ Mailer::sendWelcome($email, $username);
 
 A site's `conf/sites/<slug>.ini` `[mail] from_email` overrides the from-address.
 
+## Uploaded Files (Storage)
+
+What people upload — photos, audio, video, documents — goes to the app's S3 bucket through
+`\app\Storage` (Connections → S3 storage; the `storage` role), never to `public/uploads/` or
+anywhere on the app's own disk once a bucket is connected: the disk is small and is rebuilt.
+No bucket is a legitimate state — `Storage::isConnected()` is false; say so on the page that
+needs it, and never fall back to local disk quietly.
+
+Say WHO may see a file; the key records it, and the link follows from it:
+
+```php
+// a profile photo, a published image: anyone with the link, for as long as it exists
+$key = Storage::putFile('avatars/' . Storage::name($_FILES['photo']['name']), $_FILES['photo']['tmp_name'], Storage::PUBLIC_, $mime);
+// a member's own document: opened only through the app
+$key = Storage::putFile('records/' . $memberId . '/' . Storage::name($name), $tmp, Storage::PRIVATE_, $mime);
+
+$record->photoKey = $key;                  // store the KEY (TEXT), never a URL — links are built when shown
+<img src="<?= htmlspecialchars(Storage::url($key)) ?>">
+Storage::shareUrl($key, 3);                // a link for someone outside the app, good for 3 days (1–7)
+$key = Storage::setAccess($key, Storage::PUBLIC_);   // publish (or take back): returns the NEW key — save it
+Storage::delete($key);                     // when the record goes, its file goes
+```
+
+- **Public** files live under `public/` and open by their plain link. **Private** files live
+  under `private/` and open only through `Storage::url($key)`, a link that works for 15 minutes:
+  check that this person may see the file (it is theirs, it was shared with them, they are a
+  member) BEFORE calling it — whoever holds the link can open the file until it runs out.
+- Decide the access from what the file IS, not from convenience: anything about one person
+  (a health record, an invoice, a message attachment) is private.
+- `Storage::name()` makes a safe, unguessable file name; never use the uploader's name as the key.
+- Check the type and size of an upload before storing it; pass the real content type.
+- A large file (video) uploads from the browser straight to the bucket:
+  `Storage::uploadUrl($path, $access, $contentType)` gives the page a URL to `PUT` the file to
+  and the key to send back to the app when it is done.
+- A failure throws with the store's own reason. Let it reach the log and tell the person their
+  file was not saved — do not catch it into an empty value.
+
 ## Plugins and Agent Guidance
 
 ### Plugins (concepts)

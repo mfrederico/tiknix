@@ -195,6 +195,7 @@ $isConnected = function (array $card): bool {
                         </select>
                       <?php else: ?>
                         <input type="<?= htmlspecialchars($f['type'] ?? 'text') ?>" name="<?= htmlspecialchars($f['name']) ?>"
+                               <?= !empty($f['derive']) ? 'data-derive="' . htmlspecialchars(json_encode($f['derive'], JSON_UNESCAPED_SLASHES)) . '"' : '' ?>
                                class="form-control form-control-sm"
                                placeholder="<?= htmlspecialchars($f['placeholder'] ?? '') ?>"
                                value="<?= htmlspecialchars((string)($f['default'] ?? '')) ?>"
@@ -325,3 +326,5 @@ $isConnected = function (array $card): bool {
   });
 })();
 </script>
+<?php // A field that follows from others (a connector's `derive`: an S3 endpoint from provider + region). ?>
+<script src="/rt/js/connect-fields.js?v=<?= @filemtime(\app\Paths::runtime() . '/public/js/connect-fields.js') ?: 1 ?>"></script>

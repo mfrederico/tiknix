@@ -117,4 +117,37 @@ class UiTest extends TestCase {
         $this->assertStringContainsString('Create &lt;one&gt;.', $n);
         $this->refused(fn() => Ui::notice(['tone' => 'purple', 'text' => 'x']), '/not one of/');
     }
+
+    public function testAnAgendaGroupsByDaySoonestFirstAndSaysTodayInWords(): void {
+        $today = date('Y-m-d'); $tomorrow = date('Y-m-d', strtotime('+1 day')); $later = date('Y-m-d', strtotime('+9 days'));
+        $items = [['id' => 3, 'at' => "{$later} 14:00:00", 'end' => "{$later} 14:45:00", 'who' => 'Later <one>', 'st' => 'confirmed', 'note' => ''],
+                  ['id' => 2, 'at' => "{$today} 16:30:00", 'end' => "{$today} 17:00:00", 'who' => 'Second today', 'st' => 'pending', 'note' => 'bring notes'],
+                  ['id' => 1, 'at' => "{$today} 09:00:00", 'end' => "{$today} 09:45:00", 'who' => 'First today', 'st' => 'pending', 'note' => ''],
+                  ['id' => 4, 'at' => "{$tomorrow} 10:00:00", 'end' => "{$tomorrow} 10:30:00", 'who' => 'Tomorrow one', 'st' => '', 'note' => '']];
+        $spec = ['items' => $items, 'at' => 'at', 'until' => 'end', 'title' => 'who', 'sub' => 'note', 'empty' => self::EMPTY,
+                 'badge' => ['value' => 'st', 'tones' => ['confirmed' => 'success', 'pending' => 'warning'], 'labels' => ['pending' => 'Waiting for confirmation']],
+                 'actions' => fn($r) => [['label' => 'Confirm', 'post' => '/a/confirm', 'fields' => ['id' => $r['id']]],
+                                         ['label' => 'Cancel', 'post' => '/a/cancel', 'fields' => ['id' => $r['id']], 'confirm' => 'Cancel it?', 'danger' => true]]];
+        $h = Ui::agenda($spec);
+        $this->assertSame(3, substr_count($h, 'class="ui-day"'), 'three days');
+        $this->assertLessThan(strpos($h, 'Second today'), strpos($h, 'First today'), 'within a day, by time');
+        $this->assertLessThan(strpos($h, 'Tomorrow one'), strpos($h, 'Second today'));
+        $this->assertLessThan(strpos($h, 'Later &lt;one&gt;'), strpos($h, 'Tomorrow one'));
+        $this->assertStringContainsString('<strong>Today</strong>', $h);
+        $this->assertStringContainsString('<strong>Tomorrow</strong>', $h);
+        $this->assertStringContainsString('9:00 am</time><span class="ui-until"> – 9:45 am</span>', $h);
+        $this->assertStringContainsString('ui-badge-warning">Waiting for confirmation<', $h);
+        $this->assertStringContainsString('bring notes', $h);
+        $this->assertSame(4, substr_count($h, '>Confirm</span>'), 'one action shown per item');
+        $this->assertSame(4, substr_count($h, 'data-ui-confirm="Cancel it?"'), 'the dangerous one is in each item\'s menu, and asks');
+
+        $desc = Ui::agenda(['order' => 'desc', 'heading' => 'Earlier'] + $spec);
+        $this->assertLessThan(strpos($desc, 'First today'), strpos($desc, 'Later &lt;one&gt;'), 'latest first');
+        $this->assertStringContainsString('<h2 class="ui-agenda-heading">Earlier</h2>', $desc);
+
+        $empty = Ui::agenda(['items' => []] + $spec);
+        $this->assertStringContainsString('No customers yet', $empty);
+        $this->refused(fn() => Ui::agenda(['items' => [['at' => 'whenever', 'who' => 'x']], 'at' => 'at', 'title' => 'who', 'empty' => self::EMPTY]), '/not a date and time/');
+        $this->refused(fn() => Ui::agenda(['items' => [], 'at' => 'at', 'title' => 'who']), "/needs 'empty'/");
+    }
 }

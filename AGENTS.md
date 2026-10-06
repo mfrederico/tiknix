@@ -227,6 +227,11 @@ messages (the layout already shows them); do not use `confirm()`.
                  ['name' => 'email', 'label' => 'Email', 'type' => 'email', 'required' => true, 'help' => 'Receipts go here.'],
                  ['name' => 'tier', 'label' => 'Tier', 'type' => 'radio', 'options' => ['std' => 'Standard', 'gold' => 'Gold']],
                  ['name' => 'notes', 'label' => 'Notes', 'type' => 'textarea', 'more' => true]]]) ?>
+<?= \app\Ui::agenda(['items' => $bookings, 'at' => 'startsAt', 'until' => 'endsAt',   // things that happen at a time
+    'title' => fn($b) => $b->className(), 'sub' => 'room',
+    'badge' => ['value' => 'status', 'tones' => ['confirmed' => 'success', 'pending' => 'warning'], 'labels' => ['pending' => 'Waiting for confirmation']],
+    'actions' => fn($b) => [['label' => 'Add to calendar', 'url' => '/class/ics/' . $b->id, 'icon' => 'calendar-plus']],
+    'empty' => ['title' => 'Nothing booked yet', 'action' => ['label' => 'Book a class', 'url' => '/class']]]) ?>
 <?= \app\Ui::detail(['title' => 'Contact', 'items' => ['Email' => $c->email, 'Joined' => $joined]]) ?>
 <?= \app\Ui::notice(['tone' => 'warning', 'title' => 'No page yet.', 'text' => '…', 'action' => [...]]) ?>
 ```
@@ -241,6 +246,9 @@ What it holds you to, and why — each is about what a person must read and deci
 - **A list shows what tells rows apart** — at most 7 columns. The first column names the row and
   links to it; a second fact about it goes in `sub`; the rest belongs on the row's own page.
   Mark the columns a phone can drop `quiet`.
+- **Things that happen at a time are an agenda, not a table**: `Ui::agenda()` groups them by day
+  (Today, Tomorrow, then dates), soonest first; what has already happened is a second agenda with
+  `'order' => 'desc'` and a `heading`. A date column in a table makes the reader do the grouping.
 - **Every list has an `empty`**: what belongs here and the way to add the first one.
 - **A form asks only what it needs now.** Rarely-needed fields are `'more' => true` (folded away);
   a long form is grouped with `section`. Two to four choices are a `radio`, not a `select`.

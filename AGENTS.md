@@ -398,6 +398,8 @@ $key = Storage::setAccess($key, Storage::PUBLIC_);   // publish (or take back): 
 Storage::delete($key);                     // when the record goes, its file goes
 ```
 
+- The key you get back is `public/<this site's address>/<your path>` (or `private/…`): each site of
+  an app files under its own address, so two domains can share a bucket. Never build a key by hand.
 - **Public** files live under `public/` and open by their plain link. **Private** files live
   under `private/` and open only through `Storage::url($key)`, a link that works for 15 minutes:
   check that this person may see the file (it is theirs, it was shared with them, they are a

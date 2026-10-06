@@ -10,16 +10,29 @@ use PHPUnit\Framework\TestCase;
 use app\Storage;
 
 class StorageTest extends TestCase {
-    public function testTheKeyCarriesTheAccessAndCannotClimbOutOfItsFolder(): void {
-        $this->assertSame('public/avatars/a.jpg', Storage::key('/avatars/a.jpg', Storage::PUBLIC_));
-        $this->assertSame('private/records/7/x.pdf', Storage::key('records\\7\\x.pdf', Storage::PRIVATE_));
-        $this->assertSame(Storage::PRIVATE_, Storage::accessOf('private/records/7/x.pdf'));
+    protected function setUp(): void { \Flight::set('app.baseurl', 'https://App.Example.test'); \app\Host::useHost(null); }
+    protected function tearDown(): void { \app\Host::useHost(null); }
+
+    public function testTheKeyCarriesTheAccessAndTheSiteAndCannotClimbOutOfItsFolder(): void {
+        $this->assertSame('public/app.example.test/avatars/a.jpg', Storage::key('/avatars/a.jpg', Storage::PUBLIC_));
+        $this->assertSame('private/app.example.test/records/7/x.pdf', Storage::key('records\\7\\x.pdf', Storage::PRIVATE_));
+        $this->assertSame(Storage::PRIVATE_, Storage::accessOf('private/app.example.test/records/7/x.pdf'));
         foreach (['', '../secrets', 'a/../../b', './x', "a\0b"] as $bad) {
             try { Storage::key($bad, Storage::PUBLIC_); $this->fail('accepted ' . json_encode($bad)); }
             catch (\InvalidArgumentException $e) { $this->assertStringContainsString('not a file path', $e->getMessage()); }
         }
         $this->expectException(\InvalidArgumentException::class);
         Storage::key('a.jpg', 'members');
+    }
+
+    public function testEachSiteOfAnAppFilesUnderItsOwnAddress(): void {
+        $this->assertSame('app.example.test', Storage::siteFolder(), "the main site: the app's own address");
+        \app\Host::useHost('second.example.org');
+        $this->assertSame('public/second.example.org/photos/7/a.jpg', Storage::key('photos/7/a.jpg', Storage::PUBLIC_), 'another domain of the same app shares the bucket, not the folder');
+        \app\Host::useHost(null);
+        \Flight::set('app.baseurl', '');
+        $this->expectExceptionMessage('no address to file its uploads under');
+        Storage::siteFolder();
     }
 
     public function testAKeyThisAppDidNotMakeIsRefused(): void {

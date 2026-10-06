@@ -47,6 +47,37 @@ $isConnected = function (array $card): bool {
     </div>
   </div>
 
+  <?php
+  /* WHAT IS CONNECTED, first: the page is a long catalogue of everything that could be
+     connected, and the answer to "what is this project wired to?" was scattered through it as
+     green borders. One list at the top; each row jumps to its card below, where it is managed. */
+  $__live = [];
+  foreach ($cards as $__card) {
+      foreach ($__card['connections'] as $__cn) {
+          if (empty($__cn['enabled']) || !empty($__cn['revoked'])) continue;
+          $__live[] = ['key' => (string) $__card['key'], 'label' => (string) $__card['label'], 'category' => (string) ($__card['category'] ?? ''),
+                       'account' => (string) ($__cn['name'] ?? $__cn['eid'] ?? ''), 'env' => (string) $__cn['environment'],
+                       'state' => !empty($__cn['lastError']) ? 'attention' : 'ok'];
+      }
+  }
+  if (empty($listError)) {
+      echo \app\Ui::table(['rows' => $__live, 'title' => 'Connected', 'count' => 'connection',
+          'columns' => [
+              ['label' => 'Connection', 'value' => 'label', 'sub' => 'account', 'url' => fn($r) => '#conn-' . $r['key']],
+              ['label' => 'Kind', 'value' => 'category', 'quiet' => true],
+              ['label' => 'For', 'value' => 'env', 'labels' => ['production' => 'Live site', 'development' => 'Development']],
+              ['label' => 'State', 'value' => 'state', 'as' => 'badge', 'tones' => ['ok' => 'success', 'attention' => 'warning'], 'labels' => ['ok' => 'Connected', 'attention' => 'Needs attention']],
+          ],
+          'actions' => fn($r) => [['label' => 'Manage', 'url' => '#conn-' . $r['key'], 'icon' => 'arrow-down']],
+          'empty' => ['icon' => 'plug', 'title' => 'Nothing is connected yet', 'text' => 'Pick what this project needs from the list below.']]);
+  }
+  ?>
+  <style>
+    /* A card jumped to from the list: clear of the sticky bars, and marked for a moment. */
+    [id^="conn-"]{scroll-margin-top:calc(var(--ui-topbar-height,62px) + var(--ui-projectbar-height,0px) + 1rem);}
+    [id^="conn-"]:target>.card{box-shadow:0 0 0 3px var(--bs-primary);transition:box-shadow .2s;}
+  </style>
+
   <div class="alert alert-light border py-2 small mb-4">
     <i class="bi bi-shield-check me-1"></i>
     External accounts this instance connects to — GitHub, Stripe, stores &amp; more.
@@ -107,7 +138,7 @@ $isConnected = function (array $card): bool {
     <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em"><?= htmlspecialchars($cat) ?></h2>
     <div class="row g-3">
       <?php foreach ($byCat[$cat] as $card): $meta = $card; $connected = $isConnected($card); ?>
-        <div class="col-md-6">
+        <div class="col-md-6" id="conn-<?= htmlspecialchars($card['key']) ?>">
           <div class="card h-100 <?= $connected ? 'border-success border-opacity-50' : ($card['configured'] ? '' : 'opacity-75') ?>">
             <div class="card-body">
               <div class="d-flex align-items-start gap-3">

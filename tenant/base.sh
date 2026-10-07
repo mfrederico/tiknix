@@ -95,6 +95,9 @@ pm.process_idle_timeout = 30s
 php_admin_value[error_log] = /srv/app/log/php-error.log
 EOF
 rm -f /etc/php/$PHPV/fpm/pool.d/www.conf
+# uploads as large as nginx lets in below (PHP's defaults are 2 MB a file, 8 MB a request);
+# lib/TenantHost.php BASE_RECIPES 'php-uploads' has the same for containers made before this
+printf '; Tiknix: as large as nginx lets in (client_max_body_size 25m)\nupload_max_filesize = 25M\npost_max_size = 25M\n' > /etc/php/$PHPV/fpm/conf.d/90-tiknix-uploads.ini
 # The packaged unit sets PrivateDevices=yes: no /dev/ptmx, so tmux started from a request
 # (the /claude sign-in terminal, AgentLogin) dies with "server exited unexpectedly". The
 # container is the isolation boundary here — one app per container.

@@ -244,6 +244,15 @@ class TenantHost {
                        . 'sed -i \'s/^version_store = .*/version_store = "valkey"/\' /srv/app/conf/config.ini; grep -q "^version_store = \"valkey\"" /srv/app/conf/config.ini || { echo "conf/config.ini has no version_store line to set"; exit 1; }; '
                        . 'systemctl restart "php*-fpm"; echo "installed: $(valkey-server --version | cut -d" " -f1-2), php-redis, version_store = valkey"',
         ],
+        // Uploads as large as the container's nginx lets in (client_max_body_size 25m, tenant/base.sh
+        // has the same). PHP's own defaults are 2 MB a file and 8 MB a request: an app that said
+        // "12 MB at most" refused a 5 MB photo, with a message blaming its size.
+        'php-uploads' => [
+            'check'   => 'PHPV=$(php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;"); grep -qx "upload_max_filesize = 25M" /etc/php/${PHPV}/fpm/conf.d/90-tiknix-uploads.ini 2>/dev/null',
+            'install' => 'PHPV=$(php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;"); '
+                       . 'printf "; Tiknix: as large as nginx lets in (client_max_body_size 25m)\nupload_max_filesize = 25M\npost_max_size = 25M\n" > /etc/php/${PHPV}/fpm/conf.d/90-tiknix-uploads.ini; '
+                       . 'systemctl restart "php*-fpm"; echo "installed: uploads up to 25M (php-fpm)"',
+        ],
     ];
 
     public const SYSTEM_RECIPES = [

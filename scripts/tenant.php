@@ -28,6 +28,9 @@
  *   php scripts/tenant.php --system=SLUG|all               system software its enabled plugins ask for (requires.system → TenantHost::SYSTEM_RECIPES: google-chrome, mosquitto)
  *   php scripts/tenant.php --terminal=SLUG|all             the app's builder terminal (runtime bin/terminal-bridge.php):
  *                                                         its key, its crontab line, the bridge started
+ *   php scripts/tenant.php --browser=SLUG                  lend the app's agents a browser that runs HERE (lib/TenantBrowser.php:
+ *                                                         a tmux session browser-SLUG; lend again after a reboot)
+ *   php scripts/tenant.php --browser-stop=SLUG             take it back
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving
  *
  * Lending Tiknix's own connections (lib/TenantShare.php):
@@ -46,7 +49,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'browser:', 'browser-stop:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -160,6 +163,15 @@ if (isset($o['system'])) {
         if (!$r['ok']) { $failed++; fwrite(STDERR, "ERROR system for {$slug}: {$r['error']}\n"); }
     }
     exit($failed ? 1 : 0);
+}
+if (isset($o['browser']) || isset($o['browser-stop'])) {
+    // Lend ONE app a browser for its agents (lib/TenantBrowser.php), or take it back.
+    $lend = isset($o['browser']);
+    $i = inst((string) ($lend ? $o['browser'] : $o['browser-stop']));
+    $r = $lend ? \app\TenantBrowser::lend($i) : \app\TenantBrowser::takeBack($i);
+    foreach ($r['steps'] ?? [] as $st) echo "  {$st}\n";
+    if (!$r['ok']) { fwrite(STDERR, "ERROR browser for {$i->slug}: {$r['error']}\n"); exit(1); }
+    exit(0);
 }
 if (isset($o['terminal'])) {
     // One app, or every app in a container: the same steps each (TenantHost::terminal).

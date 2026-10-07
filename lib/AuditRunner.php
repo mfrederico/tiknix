@@ -131,7 +131,7 @@ class AuditRunner {
         $u = parse_url($this->baseUrl);
         $origin = ($u['scheme'] ?? 'https') . '://' . ($u['host'] ?? '');
         $browser = escapeshellarg($npx) . ' -y @playwright/mcp@0.0.83 --headless --isolated --browser chromium --host 127.0.0.1 --port ' . $port
-                 . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}") . ' --allowed-origins ' . escapeshellarg($origin)
+                 . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}") . ' --allowed-origins ' . escapeshellarg(implode(';', array_merge([$origin], TenantBrowser::PAGE_ASSETS)))
                  . ' --output-dir ' . escapeshellarg($shotsDir);
         $out = $ws . '/.aibuilder/audit-result.json';
         $audit = TenantBuilder::tenantCommand($tenant, 'audit', $this->tenantAuditId(), $this->requestFile(), $out,

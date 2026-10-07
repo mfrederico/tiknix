@@ -242,16 +242,20 @@ class TenantHost {
                        . 'printf "bind 127.0.0.1 -::1\nport 6379\nprotected-mode yes\ndaemonize no\nsupervised systemd\ndir /var/lib/valkey\nsave \"\"\nappendonly no\nmaxmemory 16mb\nmaxmemory-policy allkeys-lru\nloglevel notice\nlogfile /var/log/valkey/valkey-server.log\ndatabases 1\n" > /etc/valkey/valkey.conf; '
                        . 'systemctl enable valkey-server >/dev/null 2>&1; systemctl restart valkey-server; valkey-cli ping | grep -q PONG || { echo "valkey did not answer PONG"; exit 1; }; '
                        . 'sed -i \'s/^version_store = .*/version_store = "valkey"/\' /srv/app/conf/config.ini; grep -q "^version_store = \"valkey\"" /srv/app/conf/config.ini || { echo "conf/config.ini has no version_store line to set"; exit 1; }; '
-                       . 'systemctl restart "php*-fpm"; echo "installed: $(valkey-server --version | cut -d" " -f1-2), php-redis, version_store = valkey"',
+                       . 'systemctl restart "php*-fpm.service"; echo "installed: $(valkey-server --version | cut -d" " -f1-2), php-redis, version_store = valkey"',
         ],
         // Uploads as large as the container's nginx lets in (client_max_body_size 25m, tenant/base.sh
         // has the same). PHP's own defaults are 2 MB a file and 8 MB a request: an app that said
         // "12 MB at most" refused a 5 MB photo, with a message blaming its size.
         'php-uploads' => [
-            'check'   => 'PHPV=$(php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;"); grep -qx "upload_max_filesize = 25M" /etc/php/${PHPV}/fpm/conf.d/90-tiknix-uploads.ini 2>/dev/null',
+            // Written is not applied: php-fpm reads it only when it starts, so the check is that the
+            // running php-fpm started AFTER the file was written (the first version of this recipe
+            // restarted "php*-fpm", a pattern that matches no unit, and reported success).
+            'check'   => 'PHPV=$(php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;"); F=/etc/php/${PHPV}/fpm/conf.d/90-tiknix-uploads.ini; '
+                       . 'grep -qx "upload_max_filesize = 25M" $F 2>/dev/null && [ "$(stat -c %Y $F)" -le "$(date -d "$(systemctl show php${PHPV}-fpm -p ActiveEnterTimestamp --value)" +%s)" ]',
             'install' => 'PHPV=$(php -r "echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;"); '
                        . 'printf "; Tiknix: as large as nginx lets in (client_max_body_size 25m)\nupload_max_filesize = 25M\npost_max_size = 25M\n" > /etc/php/${PHPV}/fpm/conf.d/90-tiknix-uploads.ini; '
-                       . 'systemctl restart "php*-fpm"; echo "installed: uploads up to 25M (php-fpm)"',
+                       . 'systemctl restart php${PHPV}-fpm; systemctl is-active -q php${PHPV}-fpm || { echo "php${PHPV}-fpm did not come back"; exit 1; }; echo "installed: uploads up to 25M (php${PHPV}-fpm restarted)"',
         ],
     ];
 

@@ -109,6 +109,22 @@ class ConnectionsResolveTest extends ConceptsTestCase {
         $this->assertSame($mail, (int) ConnectionBindings::for($this->concept, 'mail')->id, 'mail inherits the install-wide binding in Denver');
     }
 
+    public function testDisconnectingAndReconnectingDoesNotLeaveTheRolePointingAtARowThatIsGone(): void {
+        // The install's one Stripe bound itself; it is disconnected (the row is deleted) and connected again (a new row).
+        $first = $this->stripe('acct_a', 'Serenity main');
+        $this->assertSame($first, (int) ConnectionBindings::for($this->concept, 'payments')->id, 'the one candidate bound itself');
+        ConnectionStore::withOwnDb(function () use ($first) { Bean::trash(Bean::load('connections', $first)); return true; }, null);
+        $again = $this->stripe('acct_a2', 'Serenity main again');
+        $this->assertSame($again, (int) ConnectionBindings::for($this->concept, 'payments')->id, 'the reconnected one binds itself: nobody chose the old row');
+
+        // A binding a PERSON made to a row that is gone is theirs to rebind — never a quiet swap.
+        $mine = $this->stripe('acct_b', 'Serenity backup');
+        ConnectionBindings::bind($this->concept, 'payments', $mine, 'member:1');
+        ConnectionStore::withOwnDb(function () use ($mine) { Bean::trash(Bean::load('connections', $mine)); return true; }, null);
+        try { ConnectionBindings::for($this->concept, 'payments'); $this->fail('swapped a chosen binding for another connection'); }
+        catch (UnboundRoleException $e) { $this->assertStringContainsString("(#{$mine}), which is no longer usable", $e->getMessage()); }
+    }
+
     public function testADeadBindingIsNamedNotSkipped(): void {
         $a = $this->stripe('acct_a', 'Serenity main');
         $b = $this->stripe('acct_b', 'Serenity backup');

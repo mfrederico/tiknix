@@ -414,6 +414,40 @@ Storage::delete($key);                     // when the record goes, its file goe
 - A failure throws with the store's own reason. Let it reach the log and tell the person their
   file was not saved — do not catch it into an empty value.
 
+## Uploaded Videos (Video)
+
+A video someone uploads goes to the app's video library through `\app\Video` (Connections → Bunny
+Stream; the `video` role) — not to `\app\Storage`, and never to the app's disk. A phone's recording
+does not play in every browser and is far too big to send as it came; the service converts it, keeps
+a size for each screen, makes the thumbnail and plays it. Photos, audio and documents stay in Storage.
+No library is a legitimate state — `Video::isConnected()` is false; say so on the page that needs it.
+
+```php
+// 1. a controller, answering the page as JSON when a member has picked a file
+$up = Video::start($title);                 // ['id' => …, 'endpoint' => …, 'headers' => [ … ]]
+$post->videoEid = $up['id'];                // store the ID (TEXT, `_eid`) — it is all the app keeps
+// 2. the BROWSER sends the file to $up['endpoint'] with $up['headers'], using the tus protocol
+//    (tus-js-client: new tus.Upload(file, {endpoint, headers, metadata: {filetype: file.type, title}}))
+// 3. showing it
+$v = Video::info($post->videoEid);          // state: waiting | processing | ready | failed; progress 0–100; seconds; thumbnail
+if ($v['state'] === 'ready') echo Video::embed($post->videoEid, ['ratio' => '16 / 9']);   // already escaped HTML
+Video::delete($post->videoEid);             // when the record goes, its video goes
+```
+
+- The file never passes through the app: do not post a video to a controller, and do not raise PHP's
+  upload limits for one.
+- A video is not ready the moment it is uploaded. Show `Video::STATE_LABELS[$v['state']]` and its
+  progress until it is `ready`, and say plainly when it `failed`; do not show a player that cannot play.
+- **Who may watch is the app's decision, made BEFORE `Video::embed()` / `Video::embedUrl()`**: the
+  player address they return is signed and works for an hour, and whoever holds it can watch until
+  then. Build it when the page is shown — never store it. `Video::isProtected()` is false when the
+  connection has no token authentication key: then every video plays for anyone who has its address,
+  so say so to an admin rather than promising members a private video.
+- Check the type and size in the browser before starting (a person should not wait through a
+  2 GB upload to be told no), and give `Video::start()` a title a person would recognise.
+- A refusal throws with the service's own reason. Let it reach the log and tell the person their
+  video was not saved — do not catch it into an empty value.
+
 ## Plugins and Agent Guidance
 
 ### Plugins (concepts)

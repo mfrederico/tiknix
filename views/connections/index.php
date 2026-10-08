@@ -209,7 +209,7 @@ $isConnected = function (array $card): bool {
                 <div class="form-text mt-2">Not available on this server yet.</div>
 
               <?php elseif ($card['connect_kind'] === 'api_key'): ?>
-                <form data-connectkey action="/connections/connectkey" method="post" class="row g-2 align-items-end mt-3">
+                <form data-connectkey action="/connections/connectkey" method="post" class="row g-2 align-items-end mt-3" autocomplete="off">
                   <?= csrf_field() ?>
                   <input type="hidden" name="id" value="<?= $iid ?>">
                   <input type="hidden" name="type" value="<?= htmlspecialchars($card['key']) ?>">
@@ -233,7 +233,7 @@ $isConnected = function (array $card): bool {
                           <?php endforeach; ?>
                         </select>
                       <?php else: ?>
-                        <input type="<?= htmlspecialchars($f['type'] ?? 'text') ?>" name="<?= htmlspecialchars($f['name']) ?>"
+                        <input type="<?= htmlspecialchars($f['type'] ?? 'text') ?>" autocomplete="<?= ($f['type'] ?? 'text') === 'password' ? 'new-password' : 'off' ?>" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" name="<?= htmlspecialchars($f['name']) ?>"
                                <?= !empty($f['derive']) ? 'data-derive="' . htmlspecialchars(json_encode($f['derive'], JSON_UNESCAPED_SLASHES)) . '"' : '' ?>
                                class="form-control form-control-sm"
                                placeholder="<?= htmlspecialchars($f['placeholder'] ?? '') ?>"
@@ -247,7 +247,7 @@ $isConnected = function (array $card): bool {
                   <?php endforeach; ?>
                   <div class="col-12">
                     <label class="form-label small mb-1"><?= $connected ? 'Connect another' : 'Connect' ?> — <?= htmlspecialchars($keyLbl) ?></label>
-                    <input type="password" name="key" class="form-control form-control-sm" placeholder="<?= htmlspecialchars($keyPh) ?>" autocomplete="off" <?= $keyReq ? 'required' : '' ?>>
+                    <input type="password" name="key" class="form-control form-control-sm" placeholder="<?= htmlspecialchars($keyPh) ?>" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" <?= $keyReq ? 'required' : '' ?>>
                     <?php if (!empty($cm['key_hint'])): ?>
                       <div class="form-text small"><?= htmlspecialchars($cm['key_hint']) ?></div>
                     <?php endif; ?>

@@ -28,6 +28,10 @@
  *   php scripts/tenant.php --system=SLUG|all               system software its enabled plugins ask for (requires.system → TenantHost::SYSTEM_RECIPES: google-chrome, mosquitto)
  *   php scripts/tenant.php --terminal=SLUG|all             the app's builder terminal (runtime bin/terminal-bridge.php):
  *                                                         its key, its crontab line, the bridge started
+ *   php scripts/tenant.php --fixspace=SLUG                 give a full container its disk back, when its owner asks (journal, apt,
+ *                                                         superseded agent programs) and say what is left that is the app's own
+ *   php scripts/tenant.php --space=SLUG                    the same report, clearing nothing
+ *   (scripts/tkx: `tkx holistica fixspace` — a project by a few letters of its name)
  *   php scripts/tenant.php --browser=SLUG                  lend the app's agents a browser that runs HERE (lib/TenantBrowser.php:
  *                                                         a tmux session browser-SLUG; lend again after a reboot)
  *   php scripts/tenant.php --browser-stop=SLUG             take it back
@@ -49,7 +53,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'browser:', 'browser-stop:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'fixspace:', 'space:', 'resolve:', 'browser:', 'browser-stop:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -163,6 +167,39 @@ if (isset($o['system'])) {
         if (!$r['ok']) { $failed++; fwrite(STDERR, "ERROR system for {$slug}: {$r['error']}\n"); }
     }
     exit($failed ? 1 : 0);
+}
+if (isset($o['resolve'])) {
+    // The one project a few typed letters mean (tkx): its exact slug, else the only one whose slug or name contains them.
+    $q = strtolower(trim((string) $o['resolve']));
+    $all = array_values(\app\Bean::find('instance', "status = 'active' AND ct_ip IS NOT NULL AND ct_ip <> '' ORDER BY slug"));
+    $hit = array_values(array_filter($all, fn($i) => strtolower((string) $i->slug) === $q));
+    if (!$hit) $hit = array_values(array_filter($all, fn($i) => $q !== '' && (str_contains(strtolower((string) $i->slug), $q) || str_contains(strtolower((string) $i->displayName), $q))));
+    if (count($hit) === 1) { echo $hit[0]->slug, "\n"; exit(0); }
+    fwrite(STDERR, $hit ? "'{$q}' could be: " . implode(', ', array_map(fn($i) => (string) $i->slug, $hit)) . " — type more of it\n"
+                        : "no project matches '{$q}'. Projects: " . implode(', ', array_map(fn($i) => (string) $i->slug, $all)) . "\n");
+    exit(2);
+}
+if (isset($o['fixspace']) || isset($o['space'])) {
+    // Give a full container its disk back (TenantHost::fixSpace), or only measure it (--space).
+    $fix = isset($o['fixspace']);
+    $i = inst((string) ($fix ? $o['fixspace'] : $o['space']));
+    $r = TenantHost::fixSpace($i, !$fix);
+    if (!$r['ok']) { fwrite(STDERR, "ERROR {$r['error']}\n"); exit(1); }
+    $gb = fn(int $mb) => $mb >= 1024 ? round($mb / 1024, 1) . ' GB' : $mb . ' MB';
+    $pct = fn(int $free) => $r['size_mb'] > 0 ? (int) round(100 - $free * 100 / $r['size_mb']) : 0;
+    echo "{$i->slug} — a {$gb($r['size_mb'])} disk\n";
+    if ($fix) {
+        echo "  before: {$gb($r['before_mb'])} free ({$pct($r['before_mb'])}% used)\n";
+        foreach ($r['steps'] as $st) echo '  cleared ' . $st['what'] . ': ' . ($st['freed_mb'] > 0 ? $gb($st['freed_mb']) : 'nothing to clear') . ($st['note'] !== '' ? " ({$st['note']})" : '') . "\n";
+        echo "  after:  {$gb($r['after_mb'])} free ({$pct($r['after_mb'])}% used) — " . $gb(max(0, $r['after_mb'] - $r['before_mb'])) . " given back\n";
+    } else {
+        echo "  {$gb($r['before_mb'])} free ({$pct($r['before_mb'])}% used); nothing was cleared (--fixspace clears)\n";
+    }
+    if ($r['left']) {
+        echo "  still large, and the app's own — not touched:\n";
+        foreach ($r['left'] as $l) echo "    {$gb($l['mb'])}  {$l['what']}" . ($l['note'] !== '' ? " ({$l['note']})" : '') . "\n";
+    }
+    exit(0);
 }
 if (isset($o['browser']) || isset($o['browser-stop'])) {
     // Lend ONE app a browser for its agents (lib/TenantBrowser.php), or take it back.

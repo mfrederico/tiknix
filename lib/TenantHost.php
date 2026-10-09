@@ -257,29 +257,13 @@ class TenantHost {
                        . 'printf "; Tiknix: as large as nginx lets in (client_max_body_size 25m)\nupload_max_filesize = 25M\npost_max_size = 25M\n" > /etc/php/${PHPV}/fpm/conf.d/90-tiknix-uploads.ini; '
                        . 'systemctl restart php${PHPV}-fpm; systemctl is-active -q php${PHPV}-fpm || { echo "php${PHPV}-fpm did not come back"; exit 1; }; echo "installed: uploads up to 25M (php${PHPV}-fpm restarted)"',
         ],
-        // A container's disk is 4 GB and three things filled it with nothing of the app's (Lead Machine
-        // reached 100% on 2026-10-09: no agent update, no temp file, no write could land).
-        // 1. The system journal grows without limit (150–400 MB each): capped at 50 MB.
+        // The system journal grows without limit (150–400 MB a container) and is nothing of the app's:
+        // capped at 50 MB. Everything else that fills a 4 GB disk is left to fill it — a full disk is
+        // a project being used — and is cleared when its owner asks (fixSpace(), `tkx <project> fixspace`).
         'journal-cap' => [
             'check'   => 'grep -qx "SystemMaxUse=50M" /etc/systemd/journald.conf.d/90-tiknix.conf 2>/dev/null',
             'install' => 'mkdir -p /etc/systemd/journald.conf.d && printf "[Journal]\nSystemMaxUse=50M\n" > /etc/systemd/journald.conf.d/90-tiknix.conf; '
                        . 'systemctl restart systemd-journald; journalctl --rotate >/dev/null 2>&1; journalctl --vacuum-size=50M >/dev/null 2>&1; echo "installed: journal capped at 50M ($(journalctl --disk-usage 2>/dev/null | grep -o "[0-9.]*[KMG]" | head -1) now)"',
-        ],
-        // 2. Superseded copies of the agent program: the agent updates itself into its own home and keeps
-        //    every version (230–250 MB each). Only the one its launcher points at is kept. Nothing is
-        //    removed unless that one is known and is a real program (an update cut short by a full disk
-        //    leaves an empty file, which must never be mistaken for it).
-        'agent-copies' => [
-            'check'   => 'd=/srv/app/.aibuilder/home/.local/share/claude/versions; [ ! -d "$d" ] || [ "$(ls "$d" | wc -l)" -le 1 ]',
-            'install' => 'd=/srv/app/.aibuilder/home/.local/share/claude/versions; keep=$(basename "$(readlink -f /srv/app/.aibuilder/home/.local/bin/claude)"); '
-                       . '[ -n "$keep" ] && [ -f "$d/$keep" ] && [ "$(stat -c %s "$d/$keep")" -gt 100000000 ] || { echo "cannot tell which agent program is in use (launcher points at: $keep)"; exit 1; }; '
-                       . 'n=$(find "$d" -maxdepth 1 -type f ! -name "$keep" | wc -l); find "$d" -maxdepth 1 -type f ! -name "$keep" -delete; echo "installed: $n superseded agent program(s) removed, $keep kept"',
-        ],
-        // 3. apt's downloaded packages and package lists (300–560 MB), fetched again whenever apt next
-        //    runs. LAST, so what the recipes above downloaded is cleared too.
-        'apt-tidy' => [
-            'check'   => '[ "$(du -sm /var/cache/apt/archives /var/lib/apt/lists 2>/dev/null | awk \'{s+=$1} END {print s+0}\')" -lt 40 ]',
-            'install' => 'apt-get clean; find /var/lib/apt/lists -type f -delete; echo "installed: apt cache and lists cleared"',
         ],
     ];
 
@@ -754,6 +738,57 @@ class TenantHost {
         if ($c !== 0) throw new \RuntimeException("could not ask {$inst->slug} whether task {$id} has unmerged work: " . trim((string) $o));
         $commit = trim((string) $o);
         return preg_match('/^[0-9a-f]{7,40}$/', $commit) ? $commit : '';
+    }
+
+    /**
+     * Give a full container its disk back, when its owner asks — never on a schedule: a disk that
+     * fills is a project in use, and the asking is worth hearing. Removes only what is not the
+     * app's: the system journal down to 50 MB, apt's downloaded packages and lists (fetched again
+     * when apt next runs), and superseded copies of the agent program (it updates itself into its
+     * own home and keeps every version, 230–250 MB each; the one its launcher points at stays, and
+     * nothing is removed unless that one is known and is a real program). Then says what is LEFT
+     * that is large and is the app's own — checkpoints, pipeline runs, the database — which only
+     * its owner can decide about.
+     * @return array{ok:bool,before_mb:int,after_mb:int,size_mb:int,steps:array<int,array{what:string,freed_mb:int,note:string}>,left:array<int,array{what:string,mb:int,note:string}>,error?:string}
+     */
+    public static function fixSpace(object $inst, bool $reportOnly = false): array {
+        $script = <<<'SH'
+free() { df -m / | tail -1 | awk '{print $4}'; }
+echo "disk|$(df -m / | tail -1 | awk '{print $2}')|$(free)"
+if [ "$REPORT_ONLY" != "1" ]; then
+  b=$(free); journalctl --rotate >/dev/null 2>&1; journalctl --vacuum-size=50M >/dev/null 2>&1; echo "step|the system journal, down to 50 MB|$(( $(free) - b ))|"
+  b=$(free); apt-get clean >/dev/null 2>&1; find /var/lib/apt/lists -type f -delete 2>/dev/null; echo "step|downloaded packages and package lists|$(( $(free) - b ))|fetched again when a package is next installed"
+  d=/srv/app/.aibuilder/home/.local/share/claude/versions
+  if [ -d "$d" ]; then
+    keep=$(basename "$(readlink -f /srv/app/.aibuilder/home/.local/bin/claude 2>/dev/null)")
+    if [ -n "$keep" ] && [ -f "$d/$keep" ] && [ "$(stat -c %s "$d/$keep")" -gt 100000000 ]; then
+      b=$(free); n=$(find "$d" -maxdepth 1 -type f ! -name "$keep" | wc -l); find "$d" -maxdepth 1 -type f ! -name "$keep" -delete
+      echo "step|superseded copies of the agent program ($n found)|$(( $(free) - b ))|$keep, the one in use, is kept"
+    else
+      echo "step|superseded copies of the agent program|0|NOT touched: cannot tell which one is in use (its launcher points at '$keep')"
+    fi
+  fi
+  echo "after|$(free)"
+fi
+mb() { du -sm "$1" 2>/dev/null | cut -f1; }
+c=/srv/app/.aibuilder/backups; [ -d "$c" ] && [ "$(mb $c)" -ge 20 ] && echo "left|$(ls "$c" | wc -l) database checkpoint(s) taken before builds|$(mb $c)|the newest is $(ls "$c" | tail -1 | sed 's/checkpoint-//')"
+r=/srv/app/data/pipe-runs; [ -d "$r" ] && [ "$(mb $r)" -ge 20 ] && echo "left|pipeline run history|$(mb $r)|$(find "$r" -type f | wc -l) files, $(find "$r" -type f -mtime +14 | wc -l) older than two weeks"
+for f in /srv/app/database/*.db /srv/app/hosts/*/database/*.db; do [ -f "$f" ] && [ "$(mb "$f")" -ge 50 ] && echo "left|the database ${f#/srv/app/}|$(mb "$f")|"; done
+for x in /srv/app/data/* /srv/app/public/uploads /srv/app/log /srv/app/.aibuilder/wt; do [ -e "$x" ] && [ "$x" != "$r" ] && [ "$(mb "$x")" -ge 50 ] && echo "left|${x#/srv/app/}|$(mb "$x")|"; done
+exit 0
+SH;
+        [$c, $o] = self::ssh($inst, 'root', 'REPORT_ONLY=' . ($reportOnly ? '1' : '0') . ' bash -s', $script, 300);
+        $out = ['ok' => $c === 0, 'before_mb' => 0, 'after_mb' => 0, 'size_mb' => 0, 'steps' => [], 'left' => []];
+        foreach (explode("\n", (string) $o) as $line) {
+            $f = explode('|', trim($line));
+            if ($f[0] === 'disk' && count($f) >= 3) { $out['size_mb'] = (int) $f[1]; $out['before_mb'] = $out['after_mb'] = (int) $f[2]; }
+            elseif ($f[0] === 'after' && count($f) >= 2) $out['after_mb'] = (int) $f[1];
+            elseif ($f[0] === 'step' && count($f) >= 3) $out['steps'][] = ['what' => $f[1], 'freed_mb' => max(0, (int) $f[2]), 'note' => (string) ($f[3] ?? '')];
+            elseif ($f[0] === 'left' && count($f) >= 3) $out['left'][] = ['what' => $f[1], 'mb' => (int) $f[2], 'note' => (string) ($f[3] ?? '')];
+        }
+        if ($c !== 0 || $out['size_mb'] === 0) { $out['ok'] = false; $out['error'] = "could not " . ($reportOnly ? 'measure' : 'clear') . " {$inst->slug}'s disk: " . trim((string) $o); }
+        usort($out['left'], fn($a, $b) => $b['mb'] <=> $a['mb']);
+        return $out;
     }
 
     /** Merge task/<id> into the app — the merge commit is $author's (the member approving it). */

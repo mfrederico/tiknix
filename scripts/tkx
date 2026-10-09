@@ -1,0 +1,31 @@
+#!/bin/bash
+# tkx — the operator's shorthand for one project: a few letters of its name, then what to do.
+#
+#   tkx holistica fixspace     give its container its disk back (asked for, never scheduled)
+#   tkx holistica space        how full it is and what is large, clearing nothing
+#   tkx holistica status       its container, address and domain
+#   tkx holistica ssh CMD…     run a command in its container (as app; add --root before CMD for root)
+#   tkx holistica update       take the newest runtime release
+#   tkx list                   every project
+#
+# The project is its exact slug, or the only one whose slug or name contains what was typed.
+set -euo pipefail
+CORE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+T="php $CORE/scripts/tenant.php"
+usage() { sed -n '2,11p' "$(readlink -f "$0")" | sed 's/^# \{0,1\}//'; exit 2; }
+[ $# -ge 1 ] || usage
+if [ "$1" = "list" ]; then
+  cd "$CORE" && php scripts/clitool.php --sql="SELECT slug, display_name, ct_domain FROM instance WHERE status='active' AND ct_ip IS NOT NULL AND ct_ip <> '' ORDER BY slug" < /dev/null | sed '1d;$d'
+  exit 0
+fi
+[ $# -ge 2 ] || usage
+slug="$($T --resolve="$1" < /dev/null)" || exit $?
+verb="$2"; shift 2
+case "$verb" in
+  fixspace|fixpsace) exec $T --fixspace="$slug" < /dev/null ;;
+  space)             exec $T --space="$slug" < /dev/null ;;
+  status)            exec $T --status="$slug" < /dev/null ;;
+  update)            exec $T --clitool="$slug" -- --update < /dev/null ;;
+  ssh)               if [ "${1:-}" = "--root" ]; then shift; exec $T --ssh="$slug" --root -- "$@" < /dev/null; else exec $T --ssh="$slug" -- "$@" < /dev/null; fi ;;
+  *) echo "tkx: '$verb' is not something tkx does" >&2; usage ;;
+esac

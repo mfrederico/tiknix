@@ -257,6 +257,30 @@ class TenantHost {
                        . 'printf "; Tiknix: as large as nginx lets in (client_max_body_size 25m)\nupload_max_filesize = 25M\npost_max_size = 25M\n" > /etc/php/${PHPV}/fpm/conf.d/90-tiknix-uploads.ini; '
                        . 'systemctl restart php${PHPV}-fpm; systemctl is-active -q php${PHPV}-fpm || { echo "php${PHPV}-fpm did not come back"; exit 1; }; echo "installed: uploads up to 25M (php${PHPV}-fpm restarted)"',
         ],
+        // A container's disk is 4 GB and three things filled it with nothing of the app's (Lead Machine
+        // reached 100% on 2026-10-09: no agent update, no temp file, no write could land).
+        // 1. The system journal grows without limit (150–400 MB each): capped at 50 MB.
+        'journal-cap' => [
+            'check'   => 'grep -qx "SystemMaxUse=50M" /etc/systemd/journald.conf.d/90-tiknix.conf 2>/dev/null',
+            'install' => 'mkdir -p /etc/systemd/journald.conf.d && printf "[Journal]\nSystemMaxUse=50M\n" > /etc/systemd/journald.conf.d/90-tiknix.conf; '
+                       . 'systemctl restart systemd-journald; journalctl --rotate >/dev/null 2>&1; journalctl --vacuum-size=50M >/dev/null 2>&1; echo "installed: journal capped at 50M ($(journalctl --disk-usage 2>/dev/null | grep -o "[0-9.]*[KMG]" | head -1) now)"',
+        ],
+        // 2. Superseded copies of the agent program: the agent updates itself into its own home and keeps
+        //    every version (230–250 MB each). Only the one its launcher points at is kept. Nothing is
+        //    removed unless that one is known and is a real program (an update cut short by a full disk
+        //    leaves an empty file, which must never be mistaken for it).
+        'agent-copies' => [
+            'check'   => 'd=/srv/app/.aibuilder/home/.local/share/claude/versions; [ ! -d "$d" ] || [ "$(ls "$d" | wc -l)" -le 1 ]',
+            'install' => 'd=/srv/app/.aibuilder/home/.local/share/claude/versions; keep=$(basename "$(readlink -f /srv/app/.aibuilder/home/.local/bin/claude)"); '
+                       . '[ -n "$keep" ] && [ -f "$d/$keep" ] && [ "$(stat -c %s "$d/$keep")" -gt 100000000 ] || { echo "cannot tell which agent program is in use (launcher points at: $keep)"; exit 1; }; '
+                       . 'n=$(find "$d" -maxdepth 1 -type f ! -name "$keep" | wc -l); find "$d" -maxdepth 1 -type f ! -name "$keep" -delete; echo "installed: $n superseded agent program(s) removed, $keep kept"',
+        ],
+        // 3. apt's downloaded packages and package lists (300–560 MB), fetched again whenever apt next
+        //    runs. LAST, so what the recipes above downloaded is cleared too.
+        'apt-tidy' => [
+            'check'   => '[ "$(du -sm /var/cache/apt/archives /var/lib/apt/lists 2>/dev/null | awk \'{s+=$1} END {print s+0}\')" -lt 40 ]',
+            'install' => 'apt-get clean; find /var/lib/apt/lists -type f -delete; echo "installed: apt cache and lists cleared"',
+        ],
     ];
 
     public const SYSTEM_RECIPES = [

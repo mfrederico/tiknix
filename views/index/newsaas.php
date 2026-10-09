@@ -94,7 +94,8 @@ $jsonld = [
         .beat{ max-width:560px; padding:12px 0; }
         .beat h2{ font-size:clamp(28px,3.4vw,42px); margin-top:10px; text-wrap:balance; }
         .beat h2.long{ font-size:clamp(21px,2.3vw,29px); line-height:1.3; }   /* a whole sentence, not a title */
-        .beat p{ font-size:clamp(16.5px,1.5vw,19px); line-height:1.65; color:var(--soft); margin-top:14px; }
+        /* the story is set in the headings' face (Playfair), a step under the sentence that opens it */
+        .beat p{ font-family:var(--serif); font-weight:500; font-size:clamp(18.5px,1.75vw,23px); line-height:1.45; letter-spacing:-0.005em; color:var(--text); margin-top:14px; }
         .beat p strong{ color:var(--text); }
         .beat .n{ font-family:var(--serif); font-size:15px; letter-spacing:.14em; color:var(--tape); }
         .beat h3{ font-size:clamp(24px,2.8vw,34px); margin-top:8px; }

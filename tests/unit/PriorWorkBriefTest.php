@@ -72,4 +72,17 @@ class PriorWorkBriefTest extends TestCase {
         $this->assertStringContainsString('Do NOT change models, seeds, permissions', $brief);
         $this->assertSame('', \app\PlanExecutor::designSection('Health items: model, seed and pages'));
     }
+
+    public function testATaskMarkedAsSeveralIsToldToFindOutFirstThenSplit(): void {
+        $this->assertSame('', \app\PlanExecutor::severalSection(false, 'anything'), 'an unmarked task is told nothing extra');
+        $md = \app\PlanExecutor::severalSection(true, "Needs investigation of how to observe a stored message.\nAnd a deferred send.");
+        $this->assertStringContainsString('## The planner marked this as more than one task', $md);
+        $this->assertStringContainsString("> Needs investigation of how to observe a stored message.\n> And a deferred send.", $md, 'the planner\'s reason, quoted');
+        $this->assertStringContainsString('Find out first', $md);
+        $this->assertStringContainsString('`submit_plan`', $md);
+        $this->assertLessThan(strpos($md, 'Then split it'), strpos($md, 'Find out first'), 'investigate, then split');
+        $this->assertStringContainsString('one small piece of work after all, build it', $md, 'the way out when it is not several');
+        $this->assertStringContainsString('more than one task', \app\PlanExecutor::severalSection(true, ''), 'works with no reason given');
+        $this->assertSame('', \app\PlanExecutor::severalSection(true, 'x', \app\PlanExecutor::MAX_SPLIT_DEPTH), 'a piece as deep as splits go cannot split again, so it is not told to');
+    }
 }

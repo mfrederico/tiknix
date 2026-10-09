@@ -1104,6 +1104,39 @@ MD;
         return $md;
     }
 
+    /**
+     * What a task the planner marked as really being SEVERAL is told on top of its description:
+     * find out first, then split it into pieces (the split a build task can already make of itself)
+     * unless it turns out to be small. Until this, the mark was only a warning on the board — a plan
+     * sent in from a terminal never gets the planner's second pass that splits such tasks, and one
+     * agent was then sent at all of it. '' for a task that is not marked, and for one that is already
+     * a piece as deep as splits go (it cannot split again, so it is not told to).
+     */
+    public static function severalSection(bool $marked, string $why, int $depth = 0): string {
+        if (!$marked || $depth >= self::MAX_SPLIT_DEPTH) return '';
+        $why = trim($why);
+        $quoted = $why !== '' ? "\n> " . str_replace("\n", "\n> ", $why) . "\n" : '';
+        return <<<MD
+
+## The planner marked this as more than one task
+{$quoted}
+One agent sent at all of it tends to half-build it, so do this in two steps:
+
+1. **Find out first.** Read the code this touches and answer what is still open (the note above
+   says what). Use the tiknix MCP (`describe`, `whatprovides`, `reuse_digest`) and the files
+   below. Build nothing yet beyond what you need in order to find out.
+2. **Then split it** — the usual outcome for a task marked this way. Call `submit_plan` with 2 to
+   6 pieces as `subtasks` (the Rules below say what each piece needs) and stop. Put what you found
+   out INTO the pieces' descriptions: the agents that build them start knowing nothing, and must
+   not have to investigate again. Leave the code working, and say in your `## Handoff` what you
+   learned and why the pieces are cut where they are.
+
+If finding out shows it is one small piece of work after all, build it — and say in your
+`## Handoff` why it did not need splitting.
+
+MD;
+    }
+
     private function buildTaskBrief($t): string {
         $files = json_decode(((string)$t->relatedFiles) ?? '', true);
         $files = is_array($files) ? implode("\n", array_map(fn($f) => "- $f", $files)) : '';
@@ -1113,6 +1146,7 @@ MD;
         $prior = self::priorWorkSection($this->priorWork($t));
         $prove = self::proveSection(json_decode((string) ($t->acceptanceCriteria ?? ''), true));
         $prove = self::designSection($title) . $prove;
+        $several = self::severalSection(!empty($t->needsPlanning), (string) ($t->planningNote ?? ''), (int) ($t->splitDepth ?? 0));
         return <<<MD
 # Build task: {$title}
 
@@ -1123,7 +1157,7 @@ commit and merge your work — you just make the code changes.
 ## What to build
 
 {$desc}
-
+{$several}
 ## Likely files
 
 {$files}

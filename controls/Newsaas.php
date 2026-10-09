@@ -19,7 +19,7 @@ class Newsaas extends BaseControls\Control {
 
     public function index($params = []) {
         $this->render('index/newsaas', [
-            'title' => 'NewSaaS — software that fits you, that you own — tiknix',
+            'title' => 'Stop software overfitting — NewSaaS, software that fits you — tiknix',
         ], false);
     }
 }

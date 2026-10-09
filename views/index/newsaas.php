@@ -12,7 +12,7 @@
  * asked for reduced motion) is what pins the scenes and hides things until they scroll in.
  */
 $logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
-$desc  = 'NewSaaS is first-party software with SaaS upkeep: built to fit one business exactly, owned by that business like first-party data is, hosted and maintained like SaaS, and never rented. Here is the argument, with a suit in it.';
+$desc  = 'Stop software overfitting. NewSaaS is first-party software with SaaS upkeep: built to fit one business exactly, owned by that business like first-party data is, hosted and maintained like SaaS, and never rented. The argument, told as an analogy with a suit in it.';
 $faqs  = [
     ['How is it different from custom development?', 'Custom development usually means a long project, a big invoice, and then silence. This means the software is built fast, kept running by someone, priced per project rather than per seat, and changed the same week your business changes. tiknix is one way to get there; a small shop like ClickSimple is another.'],
     ['Isn\'t this just "build versus buy"?', 'Partly. Build-versus-buy assumes building is slow and expensive, which was true. AI planners and builders changed the cost, so the question now is whether you own what you use. The answer here is yes, always.'],
@@ -29,7 +29,7 @@ $jsonld = [
         ['@type' => 'Organization', '@id' => $site . '/#org', 'name' => 'tiknix', 'url' => $site . '/', 'logo' => $site . '/rt/img/tiknix.svg', 'parentOrganization' => ['@type' => 'Organization', 'name' => 'ClickSimple', 'url' => 'https://clicksimple.com/'], 'sameAs' => ['https://clicksimple.com/', 'https://github.com/mfrederico']],
         ['@type' => 'Person', '@id' => 'https://clicksimple.com/#matt', 'name' => 'Matthew Frederico', 'url' => 'https://clicksimple.com/about.php', 'sameAs' => ['https://github.com/mfrederico', 'https://linkedin.com/in/mattfred']],
         ['@type' => 'DefinedTerm', '@id' => $site . '/newsaas#term', 'name' => 'NewSaaS', 'url' => $site . '/newsaas', 'description' => 'First-party software with SaaS upkeep: built to fit one business exactly, owned by that business, and run wherever it chooses, with the hosting and maintenance of SaaS and none of the renting.', 'inDefinedTermSet' => ['@type' => 'DefinedTermSet', 'name' => 'tiknix glossary', 'url' => $site . '/newsaas']],
-        ['@type' => 'Article', '@id' => $site . '/newsaas#article', 'headline' => 'NewSaaS: you can\'t grow into a suit that wasn\'t cut for you', 'description' => $desc, 'url' => $site . '/newsaas', 'mainEntityOfPage' => $site . '/newsaas', 'author' => ['@id' => 'https://clicksimple.com/#matt'], 'publisher' => ['@id' => $site . '/#org'], 'datePublished' => '2026-09-25', 'dateModified' => date('Y-m-d'), 'about' => ['@id' => $site . '/newsaas#term']],
+        ['@type' => 'Article', '@id' => $site . '/newsaas#article', 'headline' => 'Stop software overfitting: you can\'t grow into a suit that wasn\'t cut for you', 'description' => $desc, 'url' => $site . '/newsaas', 'mainEntityOfPage' => $site . '/newsaas', 'author' => ['@id' => 'https://clicksimple.com/#matt'], 'publisher' => ['@id' => $site . '/#org'], 'datePublished' => '2026-09-25', 'dateModified' => date('Y-m-d'), 'about' => ['@id' => $site . '/newsaas#term']],
         ['@type' => 'FAQPage', '@id' => $site . '/newsaas#faq', 'mainEntity' => $faqNodes],
         ['@type' => 'BreadcrumbList', 'itemListElement' => [['@type' => 'ListItem', 'position' => 1, 'name' => 'tiknix', 'item' => $site . '/'], ['@type' => 'ListItem', 'position' => 2, 'name' => 'NewSaaS', 'item' => $site . '/newsaas']]],
     ],
@@ -45,7 +45,7 @@ $jsonld = [
     <link rel="canonical" href="<?= $site ?>/newsaas">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="tiknix">
-    <meta property="og:title" content="NewSaaS — software that fits you, that you own">
+    <meta property="og:title" content="Stop software overfitting — NewSaaS, software that fits you, that you own">
     <meta property="og:description" content="<?= htmlspecialchars($desc) ?>">
     <meta property="og:url" content="<?= $site ?>/newsaas">
     <meta name="twitter:card" content="summary">

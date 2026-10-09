@@ -747,7 +747,8 @@ class PlanExecutor {
     public function clearSplitHold(): void {
         $plan = $this->plan();
         if (empty($plan->splitHold)) return;
-        $plan->splitHold = 0; Bean::store($plan);
+        // …and the plan stops saying it is waiting (the orchestrator wrote that when it held).
+        $plan->splitHold = 0; $plan->progressMessage = ''; Bean::store($plan);
     }
 
     /**

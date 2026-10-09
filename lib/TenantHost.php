@@ -717,6 +717,21 @@ class TenantHost {
             '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=30', '-N', '-R', "127.0.0.1:{$port}:127.0.0.1:{$port}", "app@{$ip}"]));
     }
 
+    /**
+     * The commit of work a task already built in the container and never merged ('' = none): its
+     * worktree is still there and its branch is ahead of the app. A merge is refused for reasons
+     * that have nothing to do with the work (the app had uncommitted changes at that moment), and
+     * the work then waits here.
+     */
+    public static function builtWork(object $inst, string $id): string {
+        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,40}$/', $id)) throw new \InvalidArgumentException("'{$id}' is not a task id");
+        $cmd = 'cd /srv/app && [ -d .aibuilder/wt/' . $id . ' ] && [ "$(git rev-list --count HEAD..task/' . $id . ' 2>/dev/null)" -gt 0 ] 2>/dev/null && git rev-parse --short task/' . $id . ' || true';
+        [$c, $o] = self::ssh($inst, 'app', $cmd, null, 60);
+        if ($c !== 0) throw new \RuntimeException("could not ask {$inst->slug} whether task {$id} has unmerged work: " . trim((string) $o));
+        $commit = trim((string) $o);
+        return preg_match('/^[0-9a-f]{7,40}$/', $commit) ? $commit : '';
+    }
+
     /** Merge task/<id> into the app — the merge commit is $author's (the member approving it). */
     public static function mergeTask(object $inst, string $id, array $author): array {
         if ($author === []) return ['ok' => false, 'status' => 'failed', 'error' => "merging task/{$id} needs the member doing it as the commit's author"];

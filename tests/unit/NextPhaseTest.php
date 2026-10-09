@@ -26,4 +26,14 @@ class NextPhaseTest extends TestCase {
         $this->assertNull(\app\PlanPhases::next([$this->ph(1, 'done'), $this->ph(2, 'done')]));
         $this->assertNull(\app\PlanPhases::next([]));
     }
+
+    public function testAStalledPlanThatWasRePlannedIsNotOfferedItsRePlanIs(): void {
+        // #157 stalled and was re-planned as #164, which stalled too: the re-plan is what continues the work.
+        $phases = [
+            ['id' => 157, 'plan_status' => 'stalled', 'superseded' => false, 'replaced_by' => 164],
+            ['id' => 164, 'plan_status' => 'stalled', 'superseded' => false, 'replaced_by' => 0],
+            ['id' => 171, 'plan_status' => 'draft',   'superseded' => false, 'replaced_by' => 0],
+        ];
+        $this->assertSame(164, \app\PlanPhases::next($phases)['id'] ?? null);
+    }
 }

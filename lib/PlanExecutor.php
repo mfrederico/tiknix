@@ -516,6 +516,23 @@ class PlanExecutor {
     private function launchTenantTask($t): bool {
         if ((string) $t->taskType === 'install') { $this->installInTenant($t); return false; }   // finished, not launched
         $id = $this->tenantTaskId($t);
+        // Its work is ALREADY built and was only refused at the merge (the app had uncommitted
+        // changes at that moment): merge that, do not build it again. Starting a second agent was
+        // refused anyway ("already has a worktree"), so Retry could never get such a task moving.
+        // (A task that ran out of time is not this: its kept worktree is resumed, below.)
+        if (empty($t->resumable)) {
+            try { $built = TenantHost::builtWork($this->tenant, $id); }
+            catch (\Throwable $e) { $this->fail($t, 'could not check the container for this task\'s earlier work: ' . $e->getMessage()); return false; }
+            if ($built !== '') {
+                $this->logEvent($t, 'info', "An earlier attempt already built this ({$built}) and was stopped only at the merge — merging that work instead of building it again.");
+                try { $m = TenantHost::mergeTask($this->tenant, $id, $this->author()); }
+                catch (\RuntimeException $e) { $m = ['ok' => false, 'error' => $e->getMessage()]; }
+                if (!empty($m['ok'])) { $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?') . ' (work built by an earlier attempt)'); return false; }
+                $err = (string) ($m['error'] ?? 'the merge failed');
+                $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err . ' — its built work is kept; Retry merges it.');
+                return false;
+            }
+        }
         try {
             $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int) $t->id, $this->slug);
             // The app's agent the plan runs on (the builder's picker); '' = the app's default.

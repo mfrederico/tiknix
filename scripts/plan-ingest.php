@@ -162,6 +162,17 @@ try {
         $old = Bean::load('workbenchtask', $replanOf);
         if ($old->id) { $old->replanRequestedAt = null; Bean::store($old); }   // consumed
         echo "[ingest] linked as a re-plan of #{$replanOf}\n";
+        // The old plan's failed tasks may hold work that was built and never merged. The re-plan
+        // plans that work again, so the old copies go: left behind, they are a second version of
+        // the same change waiting to be merged by a Retry on the old plan.
+        $tenant = \app\TenantBuilder::bySlug((string) $slug);
+        if ($tenant) {
+            foreach (Bean::find('workbenchtask', "parent_task_id = ? AND status IN ('failed', 'conflict')", [$replanOf]) as $ot) {
+                $oid = 'plan-' . $replanOf . '-task-' . (int) $ot->id;
+                try { \app\TenantHost::discardTask($tenant, $oid); echo "[ingest] discarded the old plan's unmerged work for task #{$ot->id}\n"; }
+                catch (\Throwable $e) { fwrite(STDERR, "[ingest] ERROR could not discard {$oid} in the container: " . $e->getMessage() . "\n"); }
+            }
+        }
     }
 } catch (\Throwable $e) {
     @rename($claim, $planFile);   // release for retry (e.g. the browser fallback)

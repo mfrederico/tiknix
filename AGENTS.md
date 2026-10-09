@@ -414,6 +414,20 @@ Storage::delete($key);                     // when the record goes, its file goe
 - A failure throws with the store's own reason. Let it reach the log and tell the person their
   file was not saved — do not catch it into an empty value.
 
+### A member's own photo (MemberPhoto)
+
+The account pages (`/member/edit`, `/member/profile`) and the shell's avatar chip show a member's
+photo through `\app\MemberPhoto`. With a bucket connected a member uploads one on `/member/edit`
+and nothing needs building. An app that keeps its own photos (a profile table, its own rules) says
+so ONCE in `lib/app.php` — never by copying a platform view:
+
+```php
+\app\MemberPhoto::provide(fn(int $memberId): string => \app\Avatar::urlFor($memberId), '/social/me');
+// $url(memberId) → the photo's address or ''; the second argument is the app's page for changing it
+```
+
+In the app's own pages, `MemberPhoto::chip($member, $initials, 48)` draws the round photo-or-initials.
+
 ## Uploaded Videos (Video)
 
 A video someone uploads goes to the app's video library through `\app\Video` (Connections → Bunny

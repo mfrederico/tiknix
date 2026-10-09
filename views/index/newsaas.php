@@ -348,7 +348,7 @@ $jsonld = [
       <div class="beat">
         <p>
           He goes shopping, passes an ad on an endcap, and there&rsquo;s Dwayne Johnson looking magnificent in a
-          charcoal two-piece. <em>I must have that suit.</em>
+          charcoal two-piece. <em>I must have that suit, for it will make me just as big and powerful as him!</em>
         </p>
       </div>
       <div class="beat">

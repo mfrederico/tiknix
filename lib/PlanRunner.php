@@ -441,6 +441,16 @@ truth: it is what already exists right now. You do NOT need to call `codebase_ma
 
 2. **Decompose into the smallest sensible tasks.** Each task is one focused unit
    of work a single agent can complete and commit on its own.
+   - A task is a whole agent run — it costs the same whether it writes one line or a feature.
+     So three things are NEVER tasks of their own, and `submit_plan` refuses a plan that has one:
+     a task that only seeds a **permission row** (it goes in the task that adds the route: its
+     seed file in that task's `files`, who is let in and who is turned away in its `verify`);
+     a task that only **adds a menu link** (it goes in the task that builds the page — chain
+     tasks that touch the same menu file with `depends_on`); and a task that only **verifies**
+     ("Verify end to end"): put each check in the `verify` of the task it proves — that agent
+     runs it, a page check runs after every task, and the audit repeats the checks on the
+     merged app. A task that WRITES tests or a script the project keeps is real work: title it
+     for what it writes.
 
 3. **Express dependencies as a graph.** Every task gets a stable `id` (e.g. "t1").
    List prerequisite ids in `depends_on`.

@@ -584,7 +584,7 @@ class PlanExecutor {
         }
         if (!empty($r['credential'])) $this->logEvent($t, 'info', 'Ran on ' . $r['credential']);
         // What the app noticed about the work (an unlinked page): on the task, where a person reads it.
-        foreach ((array) ($r['notes'] ?? []) as $note) $this->logEvent($t, 'warning', 'Unlinked page — ' . (string) $note);
+        foreach ((array) ($r['notes'] ?? []) as $note) $this->logEvent($t, 'warning', (string) $note);   // each note says what kind it is (AgentTask)
         $status = (string) ($r['status'] ?? '');
         if ($status === 'no-change') {
             TenantHost::discardTask($this->tenant, $id);

@@ -82,6 +82,12 @@ A new route needs an `authcontrol` row and starter data needs a seeder: an idemp
 `services/Schema/Seeds/NN_Name.php` (`php scripts/clitool.php --build` runs them). RedBean creates a
 table on first store — there is no `CREATE TABLE`.
 
+A seed that must make a table before anyone stores a row stores one sample row and lets the build
+remove it: `$b = $_dispensePadding('ticket'); $b->code = str_repeat('x', 40); … Bean::store($b); $_defer($b);`
+— the model's own rules do not run on it, and every column gets its type from a full value (a NULL
+or a short first value types the column wrong). `$_tableCheck('ticket')` says whether it exists.
+Number a seed above the one that makes the table it changes, and give it a number no other seed has.
+
 **Set permission rows with `PermissionCache::seedRule()`**, and seed BEFORE fetching the route: the first
 request to an unseeded route creates an ADMIN-only row, which a hand-written "never widen" seed would
 then leave in place forever.
@@ -167,7 +173,8 @@ Controllers extend `BaseControls\Control` and live in `controls/` — one per fe
 
 - Views: `$this->render('cafe/customers', ['rows' => $rows])` → `views/cafe/customers.php`
 - Input: `$this->getParam('name')`, `$this->sanitize($v)`
-- POST: `$this->validateCSRF()` first; forms carry `<?= csrf_field() ?>`, AJAX sends `csrf_token()` as `X-CSRF-TOKEN`
+- POST: `$this->validateCSRF()` first (a wrong token ends the request there); forms carry `<?= csrf_field() ?>`, AJAX sends `csrf_token()` as `X-CSRF-TOKEN`
+- A message after a redirect: `$this->flash('success' | 'error', $text)` — the layout shows nothing else (plain text, no links)
 - JSON: `Flight::jsonSuccess($data, 'msg')`, `Flight::jsonError('msg', 400)`; redirect: `Flight::redirect('/path')`
 - Levels: `LEVELS['ROOT']=1`, `ADMIN=50`, `MEMBER=100`, `PUBLIC=101` — lower is more privileged;
   `Flight::hasLevel(LEVELS['ADMIN'])`
@@ -344,6 +351,8 @@ Find the app root with `\app\Paths::root()`, the runtime with `\app\Paths::runti
 - any edit under `vendor/tiknix/runtime/`
 - a new app file at a path the runtime already has, unless `overrides.lock` records it (use `--override`)
 - raw `R::` calls that `Bean::` wraps, and `R::dispense` names with underscores or capitals
+- a new `lib/X.php` when `controls/X.php` exists (or the reverse): both are `app\X`, and only one loads
+- `$_SESSION['flash_error']` and its kin, which no page shows — use `$this->flash()`
 
 It **warns** on `exec` used for CRUD and on hand-set foreign keys. It reads code only — comments and
 strings that mention `R::store` are not flagged.

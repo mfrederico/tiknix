@@ -22,6 +22,10 @@ class AgentTaskTest extends TestCase {
     private ?string $prevPlatformOnly = null;
 
     protected function setUp(): void {
+        // The stand-in app has no runtime to boot, so nobody is signed in; the page check still
+        // runs, as a visitor, against the stand-in's one page.
+        \app\AgentTask::$signIn = fn(string $wt, string $url, string $base, string $sessions) =>
+            file_put_contents("{$wt}/.aibuilder/sandbox.json", json_encode(['url' => $url, 'base' => $base, 'people' => []]));
         // These tests are an APP building itself (a scratch one). The suite runs inside the
         // control plane, whose own agents refuse every builder verb (PlatformAgentsTest).
         $this->prevPlatformOnly = AgentTask::$platformOnly;
@@ -69,6 +73,7 @@ class AgentTaskTest extends TestCase {
 
     protected function tearDown(): void {
         AgentTask::$platformOnly = $this->prevPlatformOnly;
+        AgentTask::$signIn = null;
         $this->as(null, null);
         if ($this->prevDb !== null && Bean::hasDatabase($this->prevDb)) Bean::selectDatabase($this->prevDb);
         Paths::useRoot(null);

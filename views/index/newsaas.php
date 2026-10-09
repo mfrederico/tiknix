@@ -345,12 +345,14 @@ $jsonld = [
         <p>A man realizes that other people are wearing suits, and it makes them look trustworthy and noble, so he wants a new suit.</p>
       </div>
       <div class="beat">
+        <h2>The ad</h2>
         <p>
           He goes shopping, passes an ad on an endcap, and there&rsquo;s Dwayne Johnson looking magnificent in a
           charcoal two-piece. <em>I must have that suit. It will make me just as big and powerful as he is!</em>
         </p>
       </div>
       <div class="beat">
+        <h2>The purchase</h2>
         <p>
           So he buys it. The exact suit, the exact cut, in the exact size that fits the shape of Dwayne Johnson,
           fully expecting to look just as good.
@@ -364,6 +366,7 @@ $jsonld = [
         </p>
       </div>
       <div class="beat">
+        <h2>The fix</h2>
         <p>
           It&rsquo;s a silly picture, and everyone can see the fix: you get a suit cut for your own shape. We&rsquo;re all
           different, after all.

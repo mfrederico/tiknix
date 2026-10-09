@@ -448,6 +448,30 @@ Video::delete($post->videoEid);             // when the record goes, its video g
 - A refusal throws with the service's own reason. Let it reach the log and tell the person their
   video was not saved — do not catch it into an empty value.
 
+## Text Messages (Sms)
+
+A text to someone's phone goes through `\app\Sms` (Connections → Quo; the `sms` role), from the
+business's own number. No number connected is a legitimate state — `Sms::isConnected()` is false;
+offer the other way (email) or say texting is off, and never pretend a text was sent.
+
+```php
+$to = Sms::e164($profile->phone, '1');      // what a person typed → +15551234567 ('1' = US/Canada, '91' = India)
+$sent = Sms::send($to, "Your Inresonance code is 482913. It works for 10 minutes.");   // ['id', 'status' => 'queued', 'to']
+```
+
+- **What a text is for:** a code to sign in, a link back into an account, a notice the person asked
+  for. Not marketing — that needs recorded consent and is not built here.
+- **Each text costs money**, per 160 characters — or per 70 when it has any emoji or accent
+  (`Sms::parts($text)` says how many it is). Keep it to one part, name the app, never put a password in one.
+- **A code or link sent by text is a key to the account.** Store only its hash, make it single-use
+  and short-lived (minutes for a code), limit tries and how often one can be asked for, and answer
+  the same whether or not the number belongs to anyone.
+- A link in a text is fetched by the phone's preview before the person taps it: a link that signs
+  someone in must land on a page with a button, and the BUTTON (a POST) does the signing in.
+- `'queued'` means the service took it, not that the phone has it. A refusal throws `SmsException`
+  with the service's own reason (the number is not registered with the carriers, out of credit, the
+  day's limit) — log it and tell the person the text could not be sent.
+
 ## Plugins and Agent Guidance
 
 ### Plugins (concepts)

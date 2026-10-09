@@ -85,6 +85,9 @@ class Model_Projectreport extends \RedBeanPHP\SimpleModel {
             'cron_last_tick'  => $rd['cron_last_tick'] ?? null,
             'members'         => isset($rd['members']) ? (int) $rd['members'] : null,
             'disk_mb'         => $mb($rs['disk']['app_bytes'] ?? null),
+            // The container's whole disk as the app sees it: what it was granted, and what is left of it.
+            'disk_total_mb'   => $mb($rs['disk']['container']['bytes'] ?? null),
+            'disk_free_mb'    => $mb($rs['disk']['container']['free'] ?? null),
             'disk_code_mb'    => $mb(($parts['code'] ?? 0) + ($parts['vendor'] ?? 0)),
             'disk_agent_mb'   => $mb(($parts['.aibuilder'] ?? 0) + ($parts['bin'] ?? 0)),
             'disk_uploads_mb' => $mb($parts['public/uploads'] ?? 0),
@@ -94,6 +97,7 @@ class Model_Projectreport extends \RedBeanPHP\SimpleModel {
             'mem_total_mb'    => $mb($rs['memory']['total'] ?? null),
             'mem_peak_mb'     => $mb($rs['memory']['peak'] ?? null),
             'cpu_pct'         => isset($rs['cpu']['pct_of_core']) ? (float) $rs['cpu']['pct_of_core'] : null,
+            'cpu_cores'       => isset($rs['cpu']['cores']) ? (int) $rs['cpu']['cores'] : null,
             'load1'           => isset($rs['cpu']['load1']) ? (float) $rs['cpu']['load1'] : null,
             'requests_h'      => $rs['last_hour']['requests'] ?? null,
             'errors_h'        => $rs['last_hour']['errors'] ?? null,

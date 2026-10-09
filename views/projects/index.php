@@ -285,8 +285,40 @@ $fmt = function (string $iso): string {
                   <dt class="fw-normal text-body-secondary">Reported</dt>
                   <dd class="mb-0 text-end" title="<?= htmlspecialchars($p['reportedAt']) ?> — disk <?= htmlspecialchars((string) ($rp['disk_mb'] ?? '?')) ?> MB, memory <?= htmlspecialchars((string) ($rp['mem_mb'] ?? '?')) ?> MB, <?= htmlspecialchars((string) ($rp['requests_h'] ?? '?')) ?> requests in the last hour">
                     <span class="<?= $age > 5400 ? 'text-warning' : '' ?>"><?= $age < 90 ? 'just now' : ($age < 5400 ? round($age / 60) . ' min ago' : ($age < 172800 ? round($age / 3600) . ' h ago' : round($age / 86400) . ' d ago')) ?></span>
-                    <span class="text-body-secondary">· <?= htmlspecialchars((string) ($rp['disk_mb'] ?? '?')) ?> MB disk · <?= htmlspecialchars((string) ($rp['mem_mb'] ?? '?')) ?> MB RAM</span>
                   </dd>
+                </div>
+                <?php
+                // What the project was GRANTED and how much of it is used: disk, memory, CPU. From the app's last
+                // report; "Check now" reads the container itself (/projects/usage) and redraws the same three bars.
+                // The bar goes from green through amber to red as it fills (the script below uses the same steps).
+                if (!isset($__meter)) {
+                    $__size = fn(float $mb) => $mb >= 1024 ? rtrim(rtrim(number_format($mb / 1024, 1), '0'), '.') . ' GB' : round($mb) . ' MB';
+                    $__meter = function (string $key, string $label, ?float $used, ?float $total, string $unit = 'size', string $unknown = '') use ($__size): string {
+                        $known = $used !== null && $total !== null && $total > 0;
+                        $pct = $known ? max(0, min(100, (int) round($used * 100 / $total))) : 0;
+                        $tone = $pct >= 85 ? 'danger' : ($pct >= 60 ? 'warning' : 'success');
+                        $text = !$known ? ($unknown !== '' ? $unknown : 'not reported yet')
+                              : ($unit === 'cpu' ? $pct . '% of ' . (int) $total . ' core' . ((int) $total === 1 ? '' : 's')
+                                                 : $__size($used) . ' of ' . $__size($total) . ' · ' . $__size(max(0, $total - $used)) . ' left');
+                        return '<div class="d-flex align-items-center gap-2 py-1" data-meter="' . $key . '">'
+                             . '<span class="text-body-secondary" style="width:4.25rem">' . $label . '</span>'
+                             . '<div class="progress flex-grow-1" style="height:6px" role="progressbar" aria-label="' . $label . ' used" aria-valuenow="' . $pct . '" aria-valuemin="0" aria-valuemax="100">'
+                             . '<div class="progress-bar bg-' . $tone . '" style="width:' . $pct . '%"></div></div>'
+                             . '<span class="text-nowrap' . ($known && $pct >= 85 ? ' text-danger fw-semibold' : '') . '" data-meter-text>' . htmlspecialchars($text) . '</span></div>';
+                    };
+                }
+                $__dt = isset($rp['disk_total_mb']) ? (float) $rp['disk_total_mb'] : null;
+                $__df = isset($rp['disk_free_mb']) ? (float) $rp['disk_free_mb'] : null;
+                $__cores = isset($rp['cpu_cores']) ? (float) $rp['cpu_cores'] : null;
+                ?>
+                <div class="border-top py-1" data-usage="<?= (int) $p['id'] ?>">
+                  <?= $__meter('disk', 'Disk', $__dt !== null && $__df !== null ? $__dt - $__df : null, $__dt, 'size', isset($rp['disk_mb']) ? $__size((float) $rp['disk_mb']) . ' used by the app' : '') ?>
+                  <?= $__meter('mem', 'Memory', isset($rp['mem_mb']) ? (float) $rp['mem_mb'] : null, isset($rp['mem_total_mb']) ? (float) $rp['mem_total_mb'] : null) ?>
+                  <?= $__meter('cpu', 'CPU', isset($rp['cpu_pct'], $__cores) ? (float) $rp['cpu_pct'] / 100 : null, $__cores, 'cpu') ?>
+                  <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-body-secondary" data-usage-when>from its last report</span>
+                    <?php if ($p['hostedDomain'] !== ''): ?><button type="button" class="btn btn-link btn-sm p-0" data-usage-check>Check now</button><?php endif; ?>
+                  </div>
                 </div>
                 <div class="d-flex justify-content-between border-top py-1">
                   <dt class="fw-normal text-body-secondary">Agent</dt>
@@ -416,6 +448,40 @@ $fmt = function (string $iso): string {
 <script>
 (function () {
   const csrf = <?= json_encode(csrf_token()) ?>;
+
+  // "Check now" on a card: read the project's container itself and redraw its three bars.
+  // Same steps as the server draws: green, amber from 60% used, red from 85%.
+  (function () {
+    const size = mb => mb >= 1024 ? (Math.round(mb / 102.4) / 10) + ' GB' : Math.round(mb) + ' MB';
+    function draw(box, key, used, total, text) {
+      const row = box.querySelector('[data-meter="' + key + '"]'); if (!row) return;
+      const pct = Math.max(0, Math.min(100, Math.round(used * 100 / total)));
+      const bar = row.querySelector('.progress-bar'), label = row.querySelector('[data-meter-text]');
+      bar.style.width = pct + '%';
+      bar.className = 'progress-bar bg-' + (pct >= 85 ? 'danger' : (pct >= 60 ? 'warning' : 'success'));
+      row.querySelector('.progress').setAttribute('aria-valuenow', pct);
+      label.textContent = text(pct);
+      label.className = 'text-nowrap' + (pct >= 85 ? ' text-danger fw-semibold' : '');
+    }
+    document.querySelectorAll('[data-usage-check]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const box = btn.closest('[data-usage]'), when = box.querySelector('[data-usage-when]');
+        btn.disabled = true; when.textContent = 'asking its container…';
+        fetch('/projects/usage?id=' + encodeURIComponent(box.dataset.usage), {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+          .then(r => r.json())
+          .then(function (j) {
+            if (!j || !j.success) { when.textContent = (j && j.message) || 'Its container could not be asked just now.'; return; }
+            const u = j.data;
+            draw(box, 'disk', u.disk_used_mb, u.disk_total_mb, () => size(u.disk_used_mb) + ' of ' + size(u.disk_total_mb) + ' · ' + size(u.disk_free_mb) + ' left');
+            draw(box, 'mem', u.mem_used_mb, u.mem_total_mb, () => size(u.mem_used_mb) + ' of ' + size(u.mem_total_mb) + ' · ' + size(u.mem_free_mb) + ' left');
+            draw(box, 'cpu', u.load1, u.cores, pct => pct + '% of ' + u.cores + ' core' + (u.cores === 1 ? '' : 's'));
+            when.textContent = 'live, read just now';
+          })
+          .catch(function () { when.textContent = 'Its container could not be asked just now.'; })
+          .finally(function () { btn.disabled = false; });
+      });
+    });
+  })();
   // Picking a project leads INTO the work, not back to the dashboard. Falls back to the
   // dashboard for a member without the build sidecar — see Projects::index.
   const workUrl = <?= json_encode($workUrl ?? '/dashboard') ?>;

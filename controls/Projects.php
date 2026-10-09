@@ -75,6 +75,28 @@ class Projects extends BaseControls\Control {
     }
 
     /** A sidecar's launch URL, or '' when this member cannot open it. */
+    /**
+     * GET /projects/usage?id= — one project's disk and memory right now, read in its container
+     * (TenantHost::usage), for the card's "check now". JSON. A project the member cannot open is
+     * "not found", like every other project route.
+     */
+    public function usage($params = []): void {
+        if (!$this->requireLogin()) return;
+        $id = (int) $this->getParam('id', 0);
+        $inst = null;
+        foreach (ProjectContext::accessible((int) $this->member->id) as $i) if ((int) $i->id === $id) { $inst = $i; break; }
+        if (!$inst) { $this->jsonError('That project is not available to you.', 404); return; }
+        if (empty($inst->ctIp)) { $this->jsonError('This project has no container to ask.', 409); return; }
+        $u = TenantHost::usage($inst);
+        if (!$u['ok']) {
+            $this->logger->error('Projects: could not read a container\'s usage', ['slug' => (string) $inst->slug, 'error' => $u['error']]);
+            $this->jsonError('Its container could not be asked just now.', 502);
+            return;
+        }
+        unset($u['ok']);
+        $this->jsonSuccess($u, 'Read from the container just now.');
+    }
+
     private function pluginUrl(string $name): string {
         if (!class_exists('\\app\\Sidecar\\Registry')) return '';
         if (!isset(\app\Sidecar\Registry::launchable()[$name])) return '';

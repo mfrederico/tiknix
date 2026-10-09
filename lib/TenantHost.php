@@ -741,6 +741,32 @@ class TenantHost {
     }
 
     /**
+     * A container's disk and memory RIGHT NOW, read in it: what it was granted, what is used, what
+     * is left. The hourly status report says the same an hour late; this is for someone looking.
+     * @return array{ok:bool,at?:string,disk_total_mb?:int,disk_used_mb?:int,disk_free_mb?:int,mem_total_mb?:int,mem_used_mb?:int,mem_free_mb?:int,swap_used_mb?:int,cores?:int,load1?:float,error?:string}
+     */
+    public static function usage(object $inst): array {
+        $cmd = 'df -m / | tail -1 | awk \'{print "disk " $2 " " $3 " " $4}\'; '
+             . 'awk \'/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/ {print "mem " $1 " " int($2/1024)}\' /proc/meminfo; '
+             . 'echo "cores $(nproc)"; echo "load $(cut -d" " -f1 /proc/loadavg)"';
+        try { [$c, $o] = self::ssh($inst, 'app', $cmd, null, 20); }
+        catch (\Throwable $e) { return ['ok' => false, 'error' => $e->getMessage()]; }
+        if ($c !== 0) return ['ok' => false, 'error' => "{$inst->slug}'s container did not answer: " . trim((string) $o)];
+        $u = ['ok' => true, 'at' => gmdate('c')]; $mem = [];
+        foreach (explode("\n", (string) $o) as $l) {
+            $f = preg_split('/\s+/', trim($l));
+            if ($f[0] === 'disk' && count($f) >= 4) { $u['disk_total_mb'] = (int) $f[1]; $u['disk_used_mb'] = (int) $f[2]; $u['disk_free_mb'] = (int) $f[3]; }
+            elseif ($f[0] === 'mem' && count($f) >= 3) $mem[rtrim($f[1], ':')] = (int) $f[2];
+            elseif ($f[0] === 'cores' && count($f) >= 2) $u['cores'] = (int) $f[1];
+            elseif ($f[0] === 'load' && count($f) >= 2) $u['load1'] = (float) $f[1];
+        }
+        if (!isset($u['disk_total_mb'], $mem['MemTotal'], $mem['MemAvailable'])) return ['ok' => false, 'error' => "{$inst->slug}'s container answered, but not with its disk and memory: " . trim((string) $o)];
+        $u['mem_total_mb'] = $mem['MemTotal']; $u['mem_free_mb'] = $mem['MemAvailable']; $u['mem_used_mb'] = $mem['MemTotal'] - $mem['MemAvailable'];
+        $u['swap_used_mb'] = max(0, ($mem['SwapTotal'] ?? 0) - ($mem['SwapFree'] ?? 0));
+        return $u;
+    }
+
+    /**
      * Give a full container its disk back, when its owner asks — never on a schedule: a disk that
      * fills is a project in use, and the asking is worth hearing. Removes only what is not the
      * app's: the system journal down to 50 MB, apt's downloaded packages and lists (fetched again

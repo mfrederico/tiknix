@@ -665,7 +665,7 @@ class TenantHost {
      * stdin. Returns the tenant's JSON answer, or a refusal naming what failed on the way.
      */
     public static function task(object $inst, string $id, string $prompt, array $author, int $timeout = 1800, string $agent = ''): array {
-        return self::runAndWait($inst, $id, '--agent-task=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $prompt, $timeout, $author);
+        return self::runAndWait($inst, $id, '--agent-task=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout . TenantBrowser::sandboxArg($inst), $prompt, $timeout, $author);
     }
 
     /** The builder's planner in the tenant (clitool --agent-plan): the plan's JSON in 'plan'. */

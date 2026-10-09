@@ -2,27 +2,50 @@
 namespace app;
 
 /**
- * A browser lent to ONE app's agents. No browser lives in a container (an audit borrows one for
- * its own run, lib/AuditRunner.php); an app whose terminal sessions and build tasks need to LOOK
- * at its pages is lent one here: a Playwright MCP server on this machine, reached from inside the
- * container at 127.0.0.1:<port> over an SSH tunnel this machine holds open, and named `playwright`
- * in the app's .mcp.json so every agent of the app is given it (the runtime's AgentMcp).
+ * A browser lent to ONE app's agents. No browser lives in an app's container, and none runs on
+ * this machine for an app: an app whose terminal sessions and build tasks need to LOOK at its
+ * pages is lent one on the QA browser host (lib/QaHost.php — the one machine made to show pages
+ * that owners wrote: its own container, an ordinary user, a firewall). A Playwright MCP server
+ * runs there on 127.0.0.1:<port>, and this machine carries it to the app: one SSH connection to
+ * the QA host that starts it and brings its port here, one to the app's container that takes the
+ * port in. Inside the container it is 127.0.0.1:<port>, named `playwright` in the app's .mcp.json
+ * so every agent of the app is given it (the runtime's AgentMcp). Nothing listens on a network:
+ * no other app can reach this app's browser.
  *
- * The browser is told the app's own addresses (--allowed-origins). That keeps an agent on its own
- * site; Playwright says itself that it is not a security boundary — the browser runs on THIS
- * machine, so lend one only to a project whose owner you trust with that.
+ * The browser is told the app's own addresses (--allowed-origins): its sites, and its build
+ * tasks' sandboxes — served on the container's own address while a browser is lent (sandboxArg),
+ * which the QA host's firewall lets through on SANDBOX_PORTS and port 80 only (tenant/qa.sh).
  *
  * It is a tmux session (browser-<slug>) that nothing restarts: after this machine reboots, lend
- * it again. Not started for every app — each lent browser is a Chromium here when it is in use.
+ * it again. Not started for every app — each is a Chromium on the QA host while it is in use
+ * (it closes itself after IDLE_MS without a call, and the next call opens it again).
  */
 class TenantBrowser {
-    private const PACKAGE = '@playwright/mcp@0.0.83';   // the audit's (lib/AuditRunner.php)
     /**
      * Where an app's pages load their styles, fonts and scripts from (the runtime's layout and the
      * design system). A browser held to the app's own addresses alone renders every page UNSTYLED —
      * which an audit's design pass then reports as the page's fault.
      */
     public const PAGE_ASSETS = ['https://cdn.jsdelivr.net', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://code.jquery.com'];
+
+    /** A build task's sandbox ports (the runtime's AgentTask::SANDBOX_PORTS; tenant/qa.sh lets them through). */
+    public const SANDBOX_PORTS = [41000, 41999];
+    private const IDLE_MS = 300000;
+
+    /** Is a browser lent to this app right now? */
+    public static function lent(object $inst): bool {
+        exec('tmux has-session -t ' . escapeshellarg('=' . self::session($inst)) . ' 2>/dev/null', $x, $code);
+        return $code === 0;
+    }
+
+    /**
+     * What a build task's command gains while a browser is lent: its sandbox served on the
+     * container's own address, where that browser can open it. '' when none is lent — the
+     * sandbox then stays on 127.0.0.1, as it does for every other app.
+     */
+    public static function sandboxArg(object $inst): string {
+        return self::lent($inst) ? ' --sandbox-at=' . escapeshellarg((string) $inst->ctIp) : '';
+    }
 
     public static function session(object $inst): string { return 'browser-' . $inst->slug; }
     /** One fixed port per app, the same here and in its container. */
@@ -40,7 +63,11 @@ class TenantBrowser {
         }
         $hosts = array_values(array_unique(array_filter($hosts, fn($h) => (bool) preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $h))));
         if (!$hosts) throw new \RuntimeException("{$inst->slug} has no address to browse");
-        return array_map(fn($h) => 'https://' . $h, $hosts);
+        $origins = array_map(fn($h) => 'https://' . $h, $hosts);
+        // …and its build tasks' sandboxes, one origin per port they may take.
+        if (!ProxmoxService::isTenantIp((string) $inst->ctIp)) throw new \RuntimeException("{$inst->slug} has no tenant address");
+        for ($p = self::SANDBOX_PORTS[0]; $p <= self::SANDBOX_PORTS[1]; $p++) $origins[] = "http://{$inst->ctIp}:{$p}";
+        return $origins;
     }
 
     /**
@@ -49,8 +76,8 @@ class TenantBrowser {
      */
     public static function lend(object $inst): array {
         if (!\Model_Instance::tenantRow($inst)) return ['ok' => false, 'error' => "{$inst->slug} does not live in its own container"];
-        $npx = trim((string) shell_exec('bash -lc ' . escapeshellarg('command -v npx') . ' 2>/dev/null'));
-        if ($npx === '') return ['ok' => false, 'error' => "npx is not on this machine's PATH — the lent browser (Playwright MCP) needs Node here"];
+        $qa = QaHost::state();
+        if (!$qa || (string) $qa['provisioned_at'] === '') return ['ok' => false, 'error' => 'the QA browser host is not set up (php scripts/qa-host.php --up) — a lent browser runs there'];
         $ws = TenantBuilder::workspace($inst);
         $port = self::port($inst);
         $session = self::session($inst);
@@ -64,20 +91,29 @@ class TenantBrowser {
             $sock = @fsockopen('127.0.0.1', $port, $e, $es, 0.3);
             if ($sock) { fclose($sock); return ['ok' => false, 'error' => "port {$port} on this machine is already in use and not by {$session}"]; }
             $log = "{$ws}/.aibuilder/browser.log";
-            $shots = "{$ws}/.aibuilder/browser-out";
-            if (!is_dir($shots) && !@mkdir($shots, 0775, true)) return ['ok' => false, 'error' => "could not create {$shots}"];
-            $browser = 'nice -n 10 ' . escapeshellarg($npx) . ' -y ' . self::PACKAGE . ' --headless --isolated --browser chromium --host 127.0.0.1 --port ' . $port
-                     . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}") . ' --allowed-origins ' . escapeshellarg(implode(';', array_merge($origins, self::PAGE_ASSETS)))
-                     . ' --output-dir ' . escapeshellarg($shots);
+            // On the QA host, as its ordinary user. The origins are a long list (a thousand sandbox
+            // ports), so they travel in a config file written there, not on the command line.
+            $dir = '/srv/qa/lent/' . $inst->slug;
+            $config = json_encode(['network' => ['allowedOrigins' => array_merge($origins, self::PAGE_ASSETS)]], JSON_UNESCAPED_SLASHES);
+            [$c, $o] = TenantHost::ssh((object) ['slug' => QaHost::HOSTNAME, 'ctIp' => $qa['ip']], 'app',
+                'mkdir -p ' . escapeshellarg("{$dir}/out") . ' && cat > ' . escapeshellarg("{$dir}/config.json"), $config, 30);
+            if ($c !== 0) return ['ok' => false, 'error' => 'could not prepare the QA host for this browser: ' . trim((string) $o)];
+            $remote = 'cd /srv/qa/mcp && PLAYWRIGHT_BROWSERS_PATH=/srv/qa/browsers exec node node_modules/@playwright/mcp/cli.js'
+                    . ' --headless --isolated --browser chromium --host 127.0.0.1 --port ' . $port . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}")
+                    . ' --config ' . escapeshellarg("{$dir}/config.json") . ' --idle-timeout ' . self::IDLE_MS . ' --output-dir ' . escapeshellarg("{$dir}/out");
+            // -tt: the browser there ends when this connection does (no terminal, and it would outlive it).
+            $browser = implode(' ', array_map('escapeshellarg', ['ssh', '-tt', '-i', TenantHost::key(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
+                '-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=' . TenantHost::knownHosts(), '-o', 'LogLevel=ERROR',
+                '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=30', '-L', "127.0.0.1:{$port}:127.0.0.1:{$port}", 'app@' . $qa['ip'], $remote]));
             $tunnel = TenantHost::tunnelCommand($inst, $port);
-            $path = escapeshellarg(dirname($npx));
+            $path = escapeshellarg('/usr/bin');
             $qlog = escapeshellarg($log);
             $script = <<<BASH
 #!/bin/bash
 # Tiknix: the browser lent to {$inst->slug} (lib/TenantBrowser.php). Ends when the browser does.
 export PATH={$path}:\$PATH
-echo "[browser] {$inst->slug} on 127.0.0.1:{$port} \$(date)" > {$qlog}
-{$browser} >> {$qlog} 2>&1 &
+echo "[browser] {$inst->slug}: on the QA host, carried here on 127.0.0.1:{$port} \$(date)" > {$qlog}
+{$browser} < /dev/null >> {$qlog} 2>&1 &
 BROWSER=\$!
 trap 'kill \$BROWSER 2>/dev/null' EXIT
 for i in \$(seq 1 90); do curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp && break; sleep 1; done
@@ -94,7 +130,7 @@ BASH;
             if (file_put_contents($file, $script) === false || !chmod($file, 0755)) return ['ok' => false, 'error' => "could not write {$file}"];
             exec('tmux new-session -d -s ' . escapeshellarg($session) . ' ' . escapeshellarg($file) . ' 2>&1', $out, $code);
             if ($code !== 0) return ['ok' => false, 'error' => "tmux could not start {$session}: " . implode(' ', $out)];
-            $steps[] = "started: tmux session {$session}, browser on 127.0.0.1:{$port} for " . implode(', ', $origins);
+            $steps[] = "started: tmux session {$session}, a browser on the QA host for " . implode(', ', array_filter($origins, fn($o) => str_starts_with($o, 'https://'))) . " and this app's task sandboxes ({$inst->ctIp}:" . self::SANDBOX_PORTS[0] . '-' . self::SANDBOX_PORTS[1] . ')';
         }
 
         // Reachable from inside the container? (the tunnel is up once the browser answers)

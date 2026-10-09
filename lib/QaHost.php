@@ -71,7 +71,9 @@ class QaHost {
     public static function provision(): array {
         $s = self::state();
         if (!$s) return ['ok' => false, 'error' => 'there is no QA host yet (--create)'];
-        [$code, $out] = TenantHost::ssh(self::probe($s), 'root', 'bash -s', (string) file_get_contents(self::SCRIPT), 1800);
+        [$code, $out] = TenantHost::ssh(self::probe($s), 'root',
+            'bash -s -- ' . escapeshellarg(ProxmoxService::tenant()['subnet']) . ' ' . escapeshellarg(ProxmoxService::tenant()['gateway']),
+            (string) file_get_contents(self::SCRIPT), 1800);
         if ($code !== 0) return ['ok' => false, 'error' => "qa.sh exited {$code}", 'output' => $out];
         $s['provisioned_at'] = date('c');
         self::write($s);

@@ -3,13 +3,18 @@
 #
 # What runs here is a headless browser showing pages written by project owners. So:
 #   - it runs as `app`, an ordinary user (the browser keeps its own sandbox too)
-#   - the container may not open a connection to any private address: not another project's
-#     container, not the control plane, not the gateway. It reaches projects the way a visitor
-#     does — at their public address — and answers the control plane's SSH. That is a firewall
-#     rule, not a promise of the test runner.
+#   - the container may not open a connection to a private address — not the control plane, not
+#     the gateway, not a project's SSH or terminal — with ONE exception: in the projects' own
+#     network it may ask for what is there to be tested, a project's web port (80) and a build
+#     task's sandbox (ports 41000-41999; the owner's decision, 2026-10-09: what an app serves is
+#     public anyway, and a sandbox holds a copy, not the customers' data). It answers the
+#     control plane's SSH. That is a firewall rule, not a promise of the test runner.
 # Idempotent: run it again to bring a host up to date.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+TENANT_PREFIX="${1:?usage: qa.sh <projects-network-prefix e.g. 10.10.10.> <gateway>}"
+GATEWAY="${2:?usage: qa.sh <projects-network-prefix> <gateway>}"
+SANDBOX_PORTS=41000:41999      # lib/TenantBrowser.php SANDBOX_PORTS — a build task's server
 say() { echo "== $*"; }
 
 NODE_MAJOR=22
@@ -54,11 +59,13 @@ if [ "$(cat /srv/qa/.mcp 2>/dev/null)" != "${MCP}" ]; then
 fi
 echo "playwright mcp $(cat /srv/qa/.mcp)"
 
-say "no way out to a private address"
+say "no way out to a private address, but a project's web port and a task's sandbox"
 apt-get install -y -qq iptables >/dev/null
 iptables -F OUTPUT
 iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -d "${GATEWAY}" -j REJECT
+iptables -A OUTPUT -d "${TENANT_PREFIX}0/24" -p tcp -m multiport --dports "80,${SANDBOX_PORTS}" -j ACCEPT
 for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10; do
   iptables -A OUTPUT -d "$net" -j REJECT
 done

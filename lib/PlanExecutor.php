@@ -540,7 +540,7 @@ class PlanExecutor {
             // In a tmux session IN the container (TenantRun): it outlives anything on core.
             $resume = !empty($t->resumable);   // an attempt that ran out of time left its work behind
             TenantRun::start($this->tenant, $session, $id,
-                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : ''), $this->buildTaskBrief($t), $this->author());
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : '') . TenantBrowser::sandboxArg($this->tenant), $this->buildTaskBrief($t), $this->author());
             $this->logEvent($t, 'info', ($resume ? 'Build agent RESUMED (continuing the earlier attempt\'s work)' : 'Build agent started') . " in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
             if ($resume) { $t->resumable = 0; Bean::store($t); }
         } catch (\Throwable $e) {

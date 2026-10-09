@@ -93,6 +93,7 @@ $jsonld = [
         .dots{ display:none; }
         .beat{ max-width:560px; padding:12px 0; }
         .beat h2{ font-size:clamp(28px,3.4vw,42px); margin-top:10px; text-wrap:balance; }
+        .beat h2.long{ font-size:clamp(21px,2.3vw,29px); line-height:1.3; }   /* a whole sentence, not a title */
         .beat p{ font-size:clamp(16.5px,1.5vw,19px); line-height:1.65; color:var(--soft); margin-top:14px; }
         .beat p strong{ color:var(--text); }
         .beat .n{ font-family:var(--serif); font-size:15px; letter-spacing:.14em; color:var(--tape); }
@@ -341,7 +342,7 @@ $jsonld = [
     <div class="beats">
       <div class="beat">
         <div class="eyebrow">The suit</div>
-        <h2>A man wants a new suit.</h2>
+        <h2 class="long">A man realizes that other people are wearing suits, and it makes them look trustworthy and noble, so he wants a new suit.</h2>
       </div>
       <div class="beat">
         <p>

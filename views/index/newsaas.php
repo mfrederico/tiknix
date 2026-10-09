@@ -71,7 +71,8 @@ $jsonld = [
         /* ---------- hero ---------- */
         .ns-hero{ text-align:center; padding:48px 0 56px; }
         .ns-hero h1{ font-size:clamp(36px,5vw,62px); margin:16px auto 0; max-width:900px; text-wrap:balance; }
-        .ns-hero h1 em{ font-style:italic; color:var(--accent2); }
+        .ns-hero h1 em, .ns-hero h2.second em{ font-style:italic; color:var(--accent2); }
+        .ns-hero h2.second{ font-size:clamp(22px,2.9vw,36px); font-weight:600; line-height:1.2; margin:14px auto 0; max-width:760px; text-wrap:balance; }
         .ns-hero .w{ display:inline-block; }
         .ns-hero .sub{ font-size:clamp(16px,1.6vw,19px); color:var(--soft); line-height:1.6; max-width:680px; margin:22px auto 0; }
         .tape{ position:relative; left:50%; width:100vw; margin:38px 0 0 -50vw; height:30px; overflow:hidden; transform:rotate(-1.5deg);
@@ -204,7 +205,7 @@ $jsonld = [
         .motion .ns-hero .w{ opacity:0; transform:translateY(.55em) rotate(4deg); animation:wordin .75s var(--ease) forwards; animation-delay:calc(var(--i) * 75ms + .1s); }
         @keyframes wordin{ to{ opacity:1; transform:none; } }
         .motion .ns-hero .eyebrow, .motion .ns-hero .sub, .motion .ns-hero .tape, .motion .cue{ opacity:0; animation:fadeup .8s var(--ease) forwards; }
-        .motion .ns-hero .sub{ animation-delay:1.1s; } .motion .ns-hero .tape{ animation-name:tapein; animation-delay:1.35s; } .motion .cue{ animation-delay:1.9s; }
+        .motion .ns-hero .sub{ animation-delay:1.5s; } .motion .ns-hero .tape{ animation-name:tapein; animation-delay:1.75s; } .motion .cue{ animation-delay:2.3s; }
         @keyframes fadeup{ from{ opacity:0; transform:translateY(14px); } to{ opacity:1; transform:none; } }
         @keyframes tapein{ from{ opacity:0; transform:rotate(-1.5deg) translateX(-30%); } to{ opacity:1; transform:rotate(-1.5deg); } }
         .motion .cue{ display:block; margin-top:34px; font:600 12px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--dim); }
@@ -250,16 +251,21 @@ $jsonld = [
 
   <!-- HERO -->
   <section class="ns-hero">
-    <div class="eyebrow">NewSaaS · a definition, with a suit in it</div>
+    <div class="eyebrow">NewSaaS · an analogy, with a suit in it</div>
     <h1>
-      <span class="w" style="--i:0">You</span> <span class="w" style="--i:1">can&rsquo;t</span> <span class="w" style="--i:2">grow</span>
-      <span class="w" style="--i:3">into</span> <span class="w" style="--i:4">a</span> <span class="w" style="--i:5">suit</span>
-      <em><span class="w" style="--i:7">that</span> <span class="w" style="--i:8">wasn&rsquo;t</span> <span class="w" style="--i:9">cut</span>
-      <span class="w" style="--i:10">for</span> <span class="w" style="--i:11">you.</span></em>
+      <span class="w" style="--i:0">Stop</span> <span class="w" style="--i:1">software</span>
+      <em><span class="w" style="--i:2">overfitting!</span></em>
     </h1>
+    <h2 class="second">
+      <span class="w" style="--i:5">You</span> <span class="w" style="--i:6">can&rsquo;t</span> <span class="w" style="--i:7">grow</span>
+      <span class="w" style="--i:8">into</span> <span class="w" style="--i:9">a</span> <span class="w" style="--i:10">suit</span>
+      <em><span class="w" style="--i:11">that</span> <span class="w" style="--i:12">wasn&rsquo;t</span> <span class="w" style="--i:13">cut</span>
+      <span class="w" style="--i:14">for</span> <span class="w" style="--i:15">you.</span></em>
+    </h2>
     <p class="sub">
-      Most business software is bought the way a man once bought a suit off a magazine ad. Here&rsquo;s the
-      story, what it costs companies every year, and the word we use for the alternative.
+      The story below is an analogy. It&rsquo;s about a man who bought a suit off a magazine ad, and it&rsquo;s how
+      a lot of companies buy the SaaS software and systems they think they need. Then: what that costs them
+      every year, and the word we use for the alternative.
     </p>
     <div class="tape" aria-hidden="true"><i></i></div>
     <div class="cue" aria-hidden="true">Scroll. It&rsquo;s a short story.<b></b></div>

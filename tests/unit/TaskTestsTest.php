@@ -81,6 +81,19 @@ class TaskTestsTest extends TestCase {
         $this->assertSame([], TaskTests::notes($after, $after), 'it could not run before either, for the same reason: not this task\'s doing');
     }
 
+    public function testAResultIsKeptForTheCodeItRanOn(): void {
+        $tree = str_repeat('a', 40);
+        $this->assertNull(TaskTests::known($this->app, $tree));
+        $this->runner(['Cafe::red']); $r = TaskTests::run($this->app);
+        TaskTests::remember($this->app, $tree, $r);
+        $this->assertSame(['Cafe::red'], TaskTests::known($this->app, $tree)['failing']);
+        $this->assertNull(TaskTests::known($this->app, str_repeat('b', 40)), 'other code, no answer');
+        $this->runner([], [], 255, false, 'boom');
+        TaskTests::remember($this->app, str_repeat('c', 40), TaskTests::run($this->app));
+        $this->assertNull(TaskTests::known($this->app, str_repeat('c', 40)), 'a run that could not finish is not remembered: it is tried again');
+        $this->assertNull(TaskTests::known($this->app, '../../etc/passwd'));
+    }
+
     public function testNoBaselineSaysSo(): void {
         $this->runner([], [], 255, false, 'boom'); $before = TaskTests::run($this->app);
         $this->runner(['Cafe::red']); $after = TaskTests::run($this->app);

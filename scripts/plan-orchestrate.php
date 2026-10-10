@@ -65,6 +65,25 @@ $ex->clearSplitHold();
 
 // The rollback point, before the first task — once per plan (PlanExecutor::checkpointBeforeRun).
 // No checkpoint, no run: the plan goes back to 'approved' with the reason on it.
+// A browser for the build's tasks to look at their own pages with, lent from the QA host while
+// this plan builds (lib/TenantBrowser.php). None free, or it cannot be lent: the build goes on
+// without one, and says so. One this run lent is taken back when this run ends, however it ends.
+$__inst = \app\TenantBuilder::bySlug($slug);
+if ($__inst) {
+    $lent = \app\TenantBrowser::lendForBuild($__inst);
+    echo "[orchestrator] browser: {$lent['why']}\n";
+    if ($lent['lent']) {
+        register_shutdown_function(function () use ($__inst, $planId) {
+            // another plan of this app still building keeps it
+            exec("tmux list-sessions -F '#{session_name}' 2>/dev/null", $names);
+            $mine = \app\PlanOrchestrator::sessionName($planId, (string) $__inst->slug);
+            foreach ($names as $n) if ($n !== $mine && str_contains((string) $n, (string) $__inst->slug) && str_contains((string) $n, 'orchestrator')) return;
+            $r = \app\TenantBrowser::takeBack($__inst);
+            echo '[orchestrator] browser: ' . ($r['ok'] ? 'taken back' : 'ERROR not taken back: ' . ($r['error'] ?? '?')) . "\n";
+        });
+    }
+}
+
 $cp = $ex->checkpointBeforeRun();
 echo "[orchestrator] checkpoint: {$cp['message']}\n";
 if (!$cp['ok']) {

@@ -40,6 +40,18 @@ class SandboxCheckTest extends TestCase {
             'the home page and dashboard always; a changed controller\'s pages but not its POST handler; a changed view\'s page but not a partial');
     }
 
+    public function testATaskThatInstallsABrowserIsNamed(): void {
+        mkdir("{$this->root}/scripts"); mkdir("{$this->root}/agent/guidelines", 0700, true);
+        file_put_contents("{$this->root}/scripts/qa-setup.sh", "#!/bin/sh\npython3 -m venv .qa/venv\n.qa/venv/bin/pip install playwright\n.qa/venv/bin/playwright install chromium\n");
+        file_put_contents("{$this->root}/package.json", '{"devDependencies": {"@playwright/test": "^1.50.0"}}');
+        file_put_contents("{$this->root}/agent/guidelines/185-qa.md", "Never install Playwright here: `pip install playwright` is refused.\n");
+        file_put_contents("{$this->root}/lib/Report.php", "<?php // the playwright tools are lent; nothing to install\n");
+        $found = SandboxCheck::browserInstalls($this->root, ['scripts/qa-setup.sh', 'package.json', 'agent/guidelines/185-qa.md', 'lib/Report.php']);
+        $this->assertCount(2, $found, 'the script and the package list — not the guideline that says never, nor code that only names the tools');
+        $this->assertStringContainsString('scripts/qa-setup.sh installs a browser', $found[0]);
+        $this->assertStringContainsString('package.json adds @playwright/test', $found[1]);
+    }
+
     public function testTheCheckSaysSoWhenThereIsNoSandbox(): void {
         $this->expectExceptionMessageMatches('/no running sandbox/');
         SandboxCheck::run($this->root);

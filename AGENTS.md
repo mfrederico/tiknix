@@ -538,6 +538,10 @@ Code changes are commits.
   `LeadGate::forPublicForm($params, $ip, [...])` for anything a visitor posted, or
   `LeadGate::trusted('why')`. Never `Bean::dispense('lead')` in a controller.
 - Before calling a task done, request every route it added and check the status code
+- **No browser lives in an app.** Never install Playwright, Puppeteer, Chromium, Selenium or Node in the app or
+  its container, and never plan a task that does: the container is small, and a build is lent a browser from the
+  platform's QA host (the `playwright` tools, which open the task's sandbox). What a person sees is checked
+  there; kept browser suites run in QA Testing.
 
 ## See Also
 

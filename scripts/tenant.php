@@ -32,7 +32,7 @@
  *                                                         superseded agent programs) and say what is left that is the app's own
  *   php scripts/tenant.php --space=SLUG                    the same report, clearing nothing
  *   (scripts/tkx: `tkx holistica fixspace` — a project by a few letters of its name)
- *   php scripts/tenant.php --browser=SLUG                  lend the app's agents a browser that runs HERE (lib/TenantBrowser.php:
+ *   php scripts/tenant.php --browser=SLUG                  lend the app's agents a browser on the QA host and keep it lent (a build lends one itself while it runs; lib/TenantBrowser.php:
  *                                                         a tmux session browser-SLUG; lend again after a reboot)
  *   php scripts/tenant.php --browser-stop=SLUG             take it back
  *   php scripts/tenant.php --destroy=SLUG --yes           delete the container, stop serving

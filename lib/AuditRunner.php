@@ -114,8 +114,6 @@ class AuditRunner {
      */
     private function tenantRunnerScript(object $tenant): string {
         $ws = $this->instanceDir;
-        $npx = trim((string) shell_exec('bash -lc ' . escapeshellarg('command -v npx') . ' 2>/dev/null'));
-        if ($npx === '') throw new \RuntimeException("npx is not on this machine's PATH — the audit's browser (Playwright MCP) needs Node here");
         $port = 0;
         for ($i = 0; $i < 50 && $port === 0; $i++) {
             $p = random_int(28000, 28999);
@@ -130,9 +128,12 @@ class AuditRunner {
         if (!is_dir($shotsDir) && !@mkdir($shotsDir, 0775, true)) throw new \RuntimeException("could not create {$shotsDir}");
         $u = parse_url($this->baseUrl);
         $origin = ($u['scheme'] ?? 'https') . '://' . ($u['host'] ?? '');
-        $browser = escapeshellarg($npx) . ' -y @playwright/mcp@0.0.83 --headless --isolated --browser chromium --host 127.0.0.1 --port ' . $port
-                 . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}") . ' --allowed-origins ' . escapeshellarg(implode(';', array_merge([$origin], TenantBrowser::PAGE_ASSETS)))
-                 . ' --output-dir ' . escapeshellarg($shotsDir);
+        // The browser runs on the QA host (lib/TenantBrowser.php), like every browser the platform
+        // runs for an app — not on this machine. What it saves is fetched here when the audit ends.
+        $qaDir = '/srv/qa/audits/' . $this->slug . '-' . (int) $this->planId;
+        $browser = TenantBrowser::qaBrowserCommand($port, array_merge([$origin], TenantBrowser::PAGE_ASSETS), $qaDir);
+        $collect = 'php -r ' . escapeshellarg('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . '; new \app\Bootstrap(); '
+                 . 'try { \app\TenantBrowser::collect(' . var_export($qaDir, true) . ', ' . var_export($shotsDir, true) . '); } catch (\Throwable $e) { fwrite(STDERR, "[audit] ERROR " . $e->getMessage() . "\n"); exit(1); }');
         $out = $ws . '/.aibuilder/audit-result.json';
         $audit = TenantBuilder::tenantCommand($tenant, 'audit', $this->tenantAuditId(), $this->requestFile(), $out,
                                               ['browser-mcp' => "http://127.0.0.1:{$port}/mcp"]);
@@ -141,16 +142,14 @@ class AuditRunner {
                 . ', ' . var_export($this->slug, true) . ', ' . var_export($ws, true) . ', ' . (int) $this->planId . '));');
         $log = escapeshellarg($this->logFile());
         $blog = escapeshellarg($ws . '/.aibuilder/audit-browser.log');
-        $path = escapeshellarg(dirname($npx));
         $tunnel = TenantHost::tunnelCommand($tenant, $port);
         return <<<BASH
 #!/bin/bash
-# Tiknix audit — {$this->slug}, in its container; the browser runs here (lib/AuditRunner.php)
-export PATH={$path}:\$PATH
+# Tiknix audit — {$this->slug}, in its container; its browser runs on the QA host (lib/AuditRunner.php)
 # Names this tree for the reaper's process sweep (scripts/reap-stale-tasks.php): the browser and
 # the tunnel inherit it, so a tree that outlives its session can be identified and ended.
 export TIKNIX_SESSION_NAME="{$this->sessionName}"
-echo "[audit] instance {$this->slug} starting \$(date); browser on 127.0.0.1:{$port} for {$origin}" | tee {$log}
+echo "[audit] instance {$this->slug} starting \$(date); browser on the QA host, carried here on 127.0.0.1:{$port}, for {$origin}" | tee {$log}
 rm -f {$this->escaped($out)}
 {$browser} > {$blog} 2>&1 &
 BROWSER=\$!
@@ -162,7 +161,7 @@ curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp || { echo "[audit] ERROR 
 TUNNEL=\$!
 sleep 3
 kill -0 \$TUNNEL 2>/dev/null || { echo "[audit] ERROR the tunnel into the container did not open" | tee -a {$log}; exit 1; }
-{ {$audit} > /dev/null; {$unpack}; } 2>&1 | tee -a {$log}
+{ {$audit} > /dev/null; {$collect}; {$unpack}; } 2>&1 | tee -a {$log}
 echo "[audit] exit=\${PIPESTATUS[0]} \$(date)" | tee -a {$log}
 BASH;
     }

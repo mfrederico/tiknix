@@ -327,8 +327,13 @@ class PlanExecutor {
             }
         }
 
-        // 3) Roll up plan state.
+        // 3) Roll up plan state — from what is true NOW. A task whose earlier work was merged in
+        // step 2 (no agent started, nothing running) had still read 'pending' in the list taken
+        // at the top, so everything waiting on it looked blocked and the plan was called stalled
+        // in the same pass that unblocked it (inresonance plan #265, 2026-10-10).
         $fresh = $this->subtasks();
+        $byId  = [];
+        foreach ($fresh as $t) $byId[(int) $t->id] = $t;
         $counts = ['pending'=>0,'running'=>0,'merged'=>0,'resolved'=>0,'failed'=>0,'conflict'=>0];
         foreach ($fresh as $t) { $counts[$t->status] = ($counts[$t->status] ?? 0) + 1; }
         $total    = count($fresh);

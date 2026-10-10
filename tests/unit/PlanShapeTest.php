@@ -37,6 +37,18 @@ class PlanShapeTest extends TestCase {
         $this->assertSame([], $this->kinds(['id' => 't2', 'title' => 'Tests: cafe customers', 'files' => ['tests/unit/CafeTest.php']]));
     }
 
+    public function testTwoUnchainedTasksOnOneFileAreNamed(): void {
+        $a = ['id' => 't1', 'title' => 'The Messages tab', 'files' => ['views/chats/index.php', 'tests/qa/messages.md']];
+        $b = ['id' => 't2', 'title' => 'A drawer per conversation', 'files' => ['public/chat.js', 'tests/qa/messages.md']];
+        $c = ['id' => 't3', 'title' => 'The composer', 'files' => ['public/chat.js'], 'depends_on' => ['t2']];
+        $d = ['id' => 't4', 'title' => 'Design', 'files' => ['tests/qa/messages.md'], 'depends_on' => ['t1', 't3']];
+        $this->assertSame([['a' => 't1', 'b' => 't2', 'files' => ['tests/qa/messages.md']]], PlanShape::collisions([$a, $b, $c, $d]),
+            't3 waits for t2, and t4 for everyone (through t3 too); only t1 and t2 are side by side');
+        $this->assertStringContainsString('t1 and t2 both name `tests/qa/messages.md`', PlanShape::refusal([$a, $b, $c, $d]));
+        $b['depends_on'] = ['t1'];
+        $this->assertSame('', PlanShape::refusal([$a, $b, $c, $d]));
+    }
+
     public function testAOneTaskPlanIsItsTask(): void {
         $this->assertSame([], PlanShape::errands([['id' => 't1', 'title' => 'Seed PUBLIC permission for the /pets route', 'files' => ['services/Schema/Seeds/51_Pets.php']]]));
     }

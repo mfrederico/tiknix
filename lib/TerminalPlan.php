@@ -30,6 +30,9 @@ final class TerminalPlan {
         if (!$inst->id || $owner <= 0) throw new \RuntimeException("Project #{$inst->id} has no owner on Tiknix to hold a plan for.");
         if (!PlanIngestor::isValidPlan($plan)) throw new \InvalidArgumentException('Not a plan: it needs a title and at least one subtask, each with an id and a title.');
         unset($plan['instance'], $plan['member_id'], $plan['agent']);   // decided here, never by the sender
+        // The same shape a planner's plan is held to (app\PlanShape): no errand tasks, and no two
+        // unchained tasks on one file — that plan stops at its second merge.
+        if (($why = PlanShape::refusal((array) $plan['subtasks'])) !== '') throw new \InvalidArgumentException($why);
 
         $app = (string) ($inst->app ?: \Model_Instance::DEFAULT_APP);
         $db  = rtrim(\Model_Instance::dirForSlug((string) $inst->slug, $app), '/') . '/data/workbench.db';

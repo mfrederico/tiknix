@@ -22,7 +22,7 @@ use app\PlanIngestor;
 use app\PlanOrchestrator;
 use app\Bean;
 
-$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::', 'autobuild::', 'level::', 'prompt::']);
+$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::', 'replan-of::', 'autobuild::', 'level::', 'prompt::']);
 $slug   = (string)($o['slug'] ?? '');
 $dir    = rtrim((string)($o['dir'] ?? ''), '/');
 $member = (int)($o['member'] ?? 0);
@@ -112,12 +112,14 @@ if (!PlanIngestor::isValidPlan($plan)) {
 // If a plan was re-planned because it partly failed, link the new one to it. The chain
 // is what bounds automatic remediation to a single attempt (PlanRemediator), and it is
 // also the honest record: the failed plan stays on the board next to its replacement.
-$replanOf = 0;
-try {
-    $prev = Bean::findOne('workbenchtask',
-        'parent_task_id IS NULL AND replan_requested_at IS NOT NULL ORDER BY id DESC');
-    if ($prev && $prev->id) $replanOf = (int) $prev->id;
-} catch (\Throwable $e) { /* column absent until the first remediation */ }
+// WHICH plan is named by the run that asked (--replan-of, PlanRunner::asReplanOf) — never
+// guessed from "the latest plan with a re-plan pending": the next plan to arrive may be an
+// owner's unrelated request.
+$replanOf = max(0, (int) ($o['replan-of'] ?? 0));
+if ($replanOf > 0) {
+    $prev = Bean::findOne('workbenchtask', 'id = ? AND parent_task_id IS NULL', [$replanOf]);
+    if (!$prev || !$prev->id) { fwrite(STDERR, "[ingest] ERROR --replan-of={$replanOf} names no plan on this board; the plan is kept, unlinked\n"); $replanOf = 0; }
+}
 
 // The prompt this plan was decomposed FROM. .aibuilder/plan-goal.md holds the exact goal
 // the planner was given — the human's ask, or for a re-plan the ask PLUS the failure

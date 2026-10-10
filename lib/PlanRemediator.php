@@ -55,8 +55,10 @@ class PlanRemediator {
                            . ' and still has failures'];
         }
 
-        $goalFile = rtrim($dir, '/') . '/.aibuilder/plan-goal.md';
-        $goal = is_file($goalFile) ? trim((string) file_get_contents($goalFile)) : '';
+        // The goal THIS plan was decomposed from, kept on the plan. Not .aibuilder/plan-goal.md:
+        // that file is the last planner run's, which may be another request altogether — and a
+        // plan handed in from a terminal never had one.
+        $goal = trim((string) ($parent->planGoal ?? ''));
         if ($goal === '') {
             // Without the original ask, a "re-plan" would be a new plan invented from a
             // failure list — which is not the same thing and not what anyone asked for.
@@ -76,7 +78,7 @@ class PlanRemediator {
             // and a re-plan that quietly waits for a click is the one outcome that
             // looks identical to nothing happening. Bounded either way: the replanOf
             // chain still allows exactly one automatic attempt.
-            $runner->start(self::buildGoal($goal, $parent, $failures), [], !empty($parent->autoBuild));
+            $runner->asReplanOf((int) $parent->id)->start(self::buildGoal($goal, $parent, $failures), [], !empty($parent->autoBuild));
         } catch (\Throwable $e) {
             return ['action' => 'escalate', 'why' => 'could not start the planner: ' . $e->getMessage()];
         }

@@ -28,6 +28,17 @@ class PlanRunner {
     private string $sessionName;
     /** Original task ids to remove after the produced plan is ingested (Consolidate feature). */
     private array $supersedeIds = [];
+    /** The failed plan this run re-plans (PlanRemediator), 0 for anyone's own request. */
+    private int $replanOf = 0;
+
+    /**
+     * This run is the automatic second attempt at plan #$planId: the plan it produces is linked
+     * to that one. Said HERE, by whoever starts the run — the ingest used to link "whichever
+     * plan arrives next" to the latest plan with a re-plan pending, so an owner's unrelated
+     * request, planned while an earlier plan was stalled, was filed as that plan's re-plan and
+     * then shown as superseded when the earlier plan finished (inresonance #276, 2026-10-10).
+     */
+    public function asReplanOf(int $planId): self { $this->replanOf = max(0, $planId); return $this; }
     /**
      * Straight-through mode: approve the produced plan and start building it the moment
      * it is ingested, with no human click in between. OPT-IN per decompose — never
@@ -322,6 +333,7 @@ class PlanRunner {
         $supersedeArg = $this->supersedeIds
             ? ' --supersede=' . escapeshellarg(implode(',', $this->supersedeIds))
             : '';
+        if ($this->replanOf > 0) $supersedeArg .= ' --replan-of=' . (int) $this->replanOf;
         // Straight-through: tell the ingest step to approve and build immediately. The
         // member's level travels with it because the orchestrator stamps it onto the
         // endpoints the plan creates — the person who opted in is the authority for

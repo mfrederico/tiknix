@@ -173,7 +173,7 @@ Controllers extend `BaseControls\Control` and live in `controls/` — one per fe
 
 - Views: `$this->render('cafe/customers', ['rows' => $rows])` → `views/cafe/customers.php`
 - Input: `$this->getParam('name')`, `$this->sanitize($v)`
-- POST: `$this->validateCSRF()` first (a wrong token ends the request there); forms carry `<?= csrf_field() ?>`, AJAX sends `csrf_token()` as `X-CSRF-TOKEN`
+- POST: `$this->validateCSRF()` first (a wrong token ends the request there, and so does a GET: an action that changes something is a form submission, never a link); forms carry `<?= csrf_field() ?>`, AJAX sends `csrf_token()` as `X-CSRF-TOKEN`
 - A message after a redirect: `$this->flash('success' | 'error', $text)` — the layout shows nothing else (plain text, no links)
 - JSON: `Flight::jsonSuccess($data, 'msg')`, `Flight::jsonError('msg', 400)`; redirect: `Flight::redirect('/path')`
 - Levels: `LEVELS['ROOT']=1`, `ADMIN=50`, `MEMBER=100`, `PUBLIC=101` — lower is more privileged;

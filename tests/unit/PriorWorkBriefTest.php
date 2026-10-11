@@ -85,4 +85,14 @@ class PriorWorkBriefTest extends TestCase {
         $this->assertStringContainsString('more than one task', \app\PlanExecutor::severalSection(true, ''), 'works with no reason given');
         $this->assertSame('', \app\PlanExecutor::severalSection(true, 'x', \app\PlanExecutor::MAX_SPLIT_DEPTH), 'a piece as deep as splits go cannot split again, so it is not told to');
     }
+
+    public function testWhatThePersonAnsweredIsSaidFirstAndWinsOverTheDescription(): void {
+        $this->assertSame('', \app\PlanExecutor::saidSection([]), 'nobody said anything: nothing is added');
+        $md = \app\PlanExecutor::saidSection(['Use the round logo.', "No — the square one after all.\nAnd keep it small."], 'the task could not tell which logo was meant');
+        $this->assertStringContainsString('## The person answered — read this first', $md);
+        $this->assertStringContainsString('> the task could not tell which logo was meant', $md);
+        $this->assertStringContainsString("- No — the square one after all.\n  And keep it small.", $md);
+        $this->assertStringContainsString('The LAST one is their answer now', $md);
+        $this->assertLessThan(strpos($md, 'square one'), strpos($md, 'round logo'), 'oldest first');
+    }
 }

@@ -1253,6 +1253,34 @@ If finding out shows it is one small piece of work after all, build it — and s
 MD;
     }
 
+    /** What people wrote on this task (its conversation on the board and in Ask), oldest first — the last five. */
+    private function saidAbout($t): array {
+        try {
+            if (!in_array('taskcomment', Bean::inspect(), true)) return [];
+            $rows = Bean::find('taskcomment', '(is_from_claude IS NULL OR is_from_claude = 0) AND (is_internal IS NULL OR is_internal = 0) AND task_id = ? ORDER BY id DESC LIMIT 5', [(int) $t->id]);
+        } catch (\Throwable $e) {
+            error_log("ERROR PlanExecutor: could not read what was said on task #{$t->id}: " . $e->getMessage());
+            return [];
+        }
+        return array_reverse(array_values(array_filter(array_map(fn($c) => trim((string) $c->content), $rows), fn($c) => $c !== '')));
+    }
+
+    /**
+     * What the person answered when this task stopped, for its next attempt. A task that fails,
+     * or stops at a decision only a person can make, is answered from the board or from Ask; that
+     * answer is the most important line in the retry's brief, so it is said before the files.
+     * '' when nobody said anything.
+     */
+    public static function saidSection(array $said, string $stoppedOn = ''): string {
+        if (!$said) return '';
+        $stoppedOn = trim($stoppedOn);
+        $md = "\n## The person answered — read this first\n\n"
+            . ($stoppedOn !== '' ? "An earlier attempt at this task stopped on:\n\n> " . str_replace("\n", "\n> ", mb_substr($stoppedOn, 0, 600)) . "\n\n" : '')
+            . "What they said about this task, oldest first. The LAST one is their answer now; where it disagrees with the description above, it wins:\n\n";
+        foreach ($said as $line) $md .= '- ' . str_replace("\n", "\n  ", mb_substr($line, 0, 1500)) . "\n";
+        return $md . "\n";
+    }
+
     private function buildTaskBrief($t): string {
         $files = json_decode(((string)$t->relatedFiles) ?? '', true);
         $files = is_array($files) ? implode("\n", array_map(fn($f) => "- $f", $files)) : '';
@@ -1263,6 +1291,7 @@ MD;
         $prove = self::proveSection(json_decode((string) ($t->acceptanceCriteria ?? ''), true));
         $prove = self::designSection($title) . $prove;
         $several = self::severalSection(!empty($t->needsPlanning), (string) ($t->planningNote ?? ''), (int) ($t->splitDepth ?? 0));
+        $several .= self::saidSection($this->saidAbout($t), (string) ($t->lastFailReason ?: $t->errorMessage ?: ''));
         return <<<MD
 # Build task: {$title}
 

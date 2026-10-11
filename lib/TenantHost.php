@@ -822,6 +822,30 @@ SH;
         if ($author === []) return ['ok' => false, 'status' => 'failed', 'error' => "merging task/{$id} needs the member doing it as the commit's author"];
         return self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600, self::gitEnv($author));
     }
+    /** What may be attached to a request, and how large one file may be. */
+    public const ATTACH_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp', 'gif' => 'image/gif',
+                                 'pdf' => 'application/pdf', 'txt' => 'text/plain', 'md' => 'text/plain', 'csv' => 'text/plain'];
+    public const ATTACH_BYTES = 6291456;   // 6 MB
+
+    /**
+     * Put a file someone attached to a request where the app's agents can read it: the app's
+     * container, under .aibuilder/attachments/<folder>/ (never tracked, never served). Returns its
+     * path there. A reference for the agent — it copies into the app only what belongs in the app.
+     */
+    public static function attach(object $inst, string $folder, string $name, string $localFile): string {
+        if (!preg_match('/^[a-z0-9]{8,32}$/', $folder)) throw new \InvalidArgumentException("'{$folder}' is not an attachment folder");
+        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,60}\.([a-z0-9]{2,4})$/', $name, $m) || !isset(self::ATTACH_TYPES[$m[1]])) throw new \InvalidArgumentException("'{$name}' is not a file name that can be attached");
+        if (!is_file($localFile) || filesize($localFile) === 0) throw new \RuntimeException("the file to attach ({$name}) is empty or missing");
+        if (filesize($localFile) > self::ATTACH_BYTES) throw new \RuntimeException("{$name} is larger than " . (int) (self::ATTACH_BYTES / 1048576) . ' MB');
+        $dir  = '/srv/app/.aibuilder/attachments/' . $folder;
+        $path = $dir . '/' . $name;
+        [$c, $o] = self::ssh($inst, 'app', 'mkdir -p ' . escapeshellarg($dir) . ' && cat > ' . escapeshellarg($path) . ' && stat -c %s ' . escapeshellarg($path), null, 120, $localFile);
+        if ($c !== 0 || (int) trim((string) $o) !== filesize($localFile)) {
+            throw new \RuntimeException("{$name} did not reach {$inst->slug}'s container whole (exit {$c}): " . mb_substr(trim((string) $o), 0, 200));
+        }
+        return $path;
+    }
+
     public static function discardTask(object $inst, string $id): array { return self::taskCall($inst, '--agent-discard=' . escapeshellarg($id), null, 120); }
 
     /** The project's notebook (the app's app\Notebook): {ok, docs:{decisions,map,lessons}, titles}. */

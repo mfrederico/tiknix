@@ -561,6 +561,8 @@ class PlanExecutor {
         // Marked as more than one task: say what its agent is doing, so the board does not just read "running".
         if ($catchUp) {
             $t->progressMessage = 'Built. The app changed under it while it was building: its agent is bringing the two together, then it is merged.';
+        } elseif (!empty($t->needsPlanning) && (string) ($t->planningNote ?? '') === self::UNPLANNED) {
+            $t->progressMessage = 'Its agent is reading your app and sizing this up: it builds it if it is one piece of work, or splits it into steps if it is several.';
         } elseif (!empty($t->needsPlanning) && (int) ($t->splitDepth ?? 0) < self::MAX_SPLIT_DEPTH) {
             $t->progressMessage = 'Marked as more than one task: its agent is finding out first, then it splits it into pieces — or builds it as one if it turns out small.';
         }
@@ -1184,6 +1186,39 @@ MD;
     }
 
     /**
+     * The note on a task that no planner looked at: it is what a person typed, sent straight to a
+     * build agent (the Builder's Ask view, for a short request — PlanIngestor::direct). The task
+     * may split itself like one a planner marked, but it is told the opposite expectation.
+     */
+    public const UNPLANNED = 'unplanned';
+
+    /** What the agent of an unplanned task is told about its size. */
+    public static function unplannedSection(): string {
+        return <<<MD
+
+## Nobody planned this — it is what the person typed
+
+The description above is their request, word for word. No planner read the code first, so its
+size is yours to judge, after a look (the tiknix MCP: `reuse_digest`, `describe`, `whatprovides`):
+
+- **One piece of work** — what most short requests are: a change to a page, a field, a rule, a
+  fix, one new page on things that exist. Build it now, whole: its permission row, its menu
+  link, and a check of your own that it works. Do not split it to be safe.
+- **Really several** — new tables AND pages AND rules, or parts that could be built side by
+  side. Do not half-build it. Find out what the pieces need, call `submit_plan` with 2 to 6
+  pieces as `subtasks` (the Rules below say what each needs), put what you found INTO their
+  descriptions, and stop. They are built in this plan in your place.
+- **It can be read two ways that build different things** — build the smaller reading, and say
+  in your `## Handoff`, first line, what you took it to mean and what you left out. The person
+  reads that and asks again; that costs them less than a wrong large build.
+
+Write your `## Handoff` for the person who asked, in their words: what is different in their app
+now and where to look.
+
+MD;
+    }
+
+    /**
      * What a task the planner marked as really being SEVERAL is told on top of its description:
      * find out first, then split it into pieces (the split a build task can already make of itself)
      * unless it turns out to be small. Until this, the mark was only a warning on the board — a plan
@@ -1194,6 +1229,7 @@ MD;
     public static function severalSection(bool $marked, string $why, int $depth = 0): string {
         if (!$marked || $depth >= self::MAX_SPLIT_DEPTH) return '';
         $why = trim($why);
+        if ($why === self::UNPLANNED) return self::unplannedSection();
         $quoted = $why !== '' ? "\n> " . str_replace("\n", "\n> ", $why) . "\n" : '';
         return <<<MD
 

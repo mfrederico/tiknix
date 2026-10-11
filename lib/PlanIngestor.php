@@ -176,6 +176,31 @@ class PlanIngestor
     }
 
     /**
+     * A request built WITHOUT a planner: a plan of one task that is the request itself, approved
+     * and set to build straight through. Its agent judges its size and may split it into steps
+     * (PlanExecutor::UNPLANNED) — so a small request starts building at once and a large one sent
+     * this way still ends up planned. On the selected tasks database, like ingest().
+     *
+     * @return int the plan's id — approved, not yet started (the caller starts it: app\BuildQueue)
+     */
+    public static function direct($inst, string $title, string $request, int $memberId, string $app = 'tiknix'): int
+    {
+        $title = trim($title); $request = trim($request);
+        if ($title === '' || $request === '') throw new \InvalidArgumentException('A request needs words: it has no title or no text.');
+        $res = self::ingest($inst, ['title' => $title, 'summary' => $request, 'subtasks' => [[
+            'id' => 't1', 'title' => $title, 'description' => $request, 'files' => [],
+            'complex' => true, 'complex_reason' => PlanExecutor::UNPLANNED,
+        ]]], $memberId, '', $app);
+        $parent = Bean::load('workbenchtask', (int) $res['parent']['id']);
+        $parent->planGoal   = $request;
+        $parent->planStatus = 'approved';   // the person asked for it to be built: that was the approval
+        $parent->autoBuild  = 1;
+        $parent->source     = 'ask';
+        Bean::store($parent);
+        return (int) $parent->id;
+    }
+
+    /**
      * A task's checks as stored: non-empty strings, at most six, each trimmed and bounded. A
      * planner that gave none gives none — the brief then says the task came without them.
      *

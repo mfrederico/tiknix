@@ -824,7 +824,8 @@ SH;
     }
     /** What may be attached to a request, and how large one file may be. */
     public const ATTACH_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp', 'gif' => 'image/gif',
-                                 'pdf' => 'application/pdf', 'txt' => 'text/plain', 'md' => 'text/plain', 'csv' => 'text/plain'];
+                                 'pdf' => 'application/pdf', 'txt' => 'text/plain', 'md' => 'text/plain', 'csv' => 'text/plain',
+                                 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
     public const ATTACH_BYTES = 6291456;   // 6 MB
 
     /**

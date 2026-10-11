@@ -1186,9 +1186,10 @@ MD;
     }
 
     /**
-     * The note on a task that no planner looked at: it is what a person typed, sent straight to a
-     * build agent (the Builder's Ask view, for a short request — PlanIngestor::direct). The task
-     * may split itself like one a planner marked, but it is told the opposite expectation.
+     * The note on a task that no planner looked at: what a person typed, sent straight to a build
+     * agent. The Builder's Ask view did that for short requests for one afternoon (2026-10-11);
+     * every request is decomposed by the planner first now, and nothing writes this note any more.
+     * Kept so the tasks made that way are still briefed as what they are if they are retried.
      */
     public const UNPLANNED = 'unplanned';
 

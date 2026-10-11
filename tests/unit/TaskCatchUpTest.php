@@ -72,6 +72,23 @@ class TaskCatchUpTest extends TestCase {
         $this->assertStringContainsString('by the task and by the app', (string) file_get_contents("{$this->root}/page.php"));
     }
 
+    /** Work done by hand in the app and never committed no longer stops a merge: it is saved, and the task merged onto it. */
+    public function testUncommittedWorkInTheAppIsSavedAndTheTaskMergedOntoIt(): void {
+        $this->commit($this->wt, 'other.php', "other, by the task\n", 'the task');
+        file_put_contents("{$this->root}/page.php", "one\ntwo\nthree, typed in the terminal\n");
+        file_put_contents("{$this->root}/new.php", "made in the terminal\n");
+        file_put_contents("{$this->root}/.git/info/exclude", ".aibuilder/\n");   // as every app's .gitignore has it
+        $was = AgentTask::$platformOnly; AgentTask::$platformOnly = null;        // this install refuses to build; an app does not
+        try { AgentTask::merge($this->root, 't1'); }   // (its seed step has no app to run in here; the merge itself is what is looked at)
+        finally { AgentTask::$platformOnly = $was; }
+        $log = $this->git($this->root, 'log --format=%s -4');
+        $this->assertStringContainsString('Work in the app, saved before merging task t1: new.php, page.php', $log);
+        $this->assertStringContainsString('merge task t1', $log);
+        $this->assertSame('', $this->git($this->root, 'status --porcelain --untracked-files=no'));
+        $this->assertStringContainsString('by the task', (string) file_get_contents("{$this->root}/other.php"));
+        $this->assertStringContainsString('typed in the terminal', (string) file_get_contents("{$this->root}/page.php"));
+    }
+
     public function testAKeptCopyWithUncommittedChangesIsRefused(): void {
         file_put_contents("{$this->wt}/page.php", "edited and not committed\n");
         $c = AgentTask::catchUpWith($this->root, $this->wt, 't1');

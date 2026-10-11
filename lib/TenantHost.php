@@ -446,6 +446,36 @@ class TenantHost {
     }
 
     /**
+     * Save what is uncommitted in the app — work done in the Builder's terminal — as a commit by
+     * $author. Not a checkpoint: no tag and no copy of the data; it only makes the work part of
+     * the app's history, so the next task merges onto it and a restore point includes it.
+     * Nothing uncommitted is fine ('files' => 0). A merge left open by hand is not touched.
+     *
+     * @return array{ok:bool, files?:int, commit?:string, error?:string}
+     */
+    public static function saveWork(object $inst, array $author): array {
+        $git = self::gitAs($author);
+        if ($git === null) return ['ok' => false, 'error' => "saving {$inst->slug}'s work needs the member doing it (name and email) as its author"];
+        [$code, $out] = self::ssh($inst, 'app', self::saveScript($git, '/srv/app') . ' 2>&1', null, 120);
+        $out = (string) $out;
+        if ($code !== 0) return ['ok' => false, 'error' => "could not save the work in {$inst->slug}'s container (exit {$code}): " . mb_substr(trim($out), 0, 300)];
+        if (!preg_match('/^FILES=(\d+)/m', $out, $f)) return ['ok' => false, 'error' => "{$inst->slug}'s container did not say what it saved: " . mb_substr(trim($out), 0, 300)];
+        preg_match('/^COMMIT=(\S+)/m', $out, $c);
+        return ['ok' => true, 'files' => (int) $f[1], 'commit' => (string) ($c[1] ?? '')];
+    }
+
+    /** The shell that saves uncommitted work in $dir as one commit ($git = git with its author, gitAs()). Prints FILES=n and, when it committed, COMMIT=<short>. */
+    public static function saveScript(string $git, string $dir): string {
+        return 'set -e; cd ' . escapeshellarg($dir) . '; '
+            . 'if [ -f .git/MERGE_HEAD ]; then echo "a merge is open in the app; it was left alone" >&2; exit 4; fi; '
+            . 'git add -A; '
+            . 'if git diff --cached --quiet; then echo FILES=0; else '
+            . 'N=$(git diff --cached --name-only | wc -l); F=$(git diff --cached --name-only | head -3 | paste -sd, - | sed "s/,/, /g"); '
+            . 'if [ "$N" -gt 3 ]; then F="$F and $((N-3)) more"; fi; '
+            . $git . ' commit -q -m "Work in the terminal: $F"; echo FILES=$N; echo COMMIT=$(git rev-parse --short HEAD); fi';
+    }
+
+    /**
      * Roll the app in its container back to checkpoint $tag, by $author (the member doing it).
      *
      *   1. refuse while a build task is in progress (a worktree under .aibuilder/wt);

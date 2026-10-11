@@ -17,6 +17,25 @@
  * (or pointing src straight at the plugin) grants them.
  */
 ?>
+<script>
+  // The plugin is another origin and cannot read this shell's saved light/dark choice. Leave it
+  // where the plugin's server can: a cookie on the parent domain both share — set BEFORE the
+  // frame is made, so its first page is drawn in the right one — and tell the frame when the
+  // choice is switched while it is open.
+  (function () {
+    var origin = <?= json_encode($origin) ?>;
+    function theme() { return document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'dark' : 'light'; }
+    function share() {
+      var parent = location.hostname.split('.').slice(-2).join('.');
+      document.cookie = 'ui_theme=' + theme() + '; path=/; domain=.' + parent + '; max-age=31536000; samesite=lax' + (location.protocol === 'https:' ? '; secure' : '');
+      var f = document.querySelector('.sidecar-embed iframe');
+      if (f && f.contentWindow) { try { f.contentWindow.postMessage({tiknixTheme: theme()}, origin); } catch (e) {} }
+    }
+    share();
+    new MutationObserver(share).observe(document.documentElement, {attributes: true, attributeFilter: ['data-bs-theme']});
+    window.addEventListener('load', function () { var f = document.querySelector('.sidecar-embed iframe'); if (f) f.addEventListener('load', share); });
+  })();
+</script>
 <div class="sidecar-embed">
   <iframe src="/sidecar/launch/<?= htmlspecialchars($plugin) ?><?= ($to ?? '') !== '' ? '?to=' . htmlspecialchars(rawurlencode($to)) : '' ?>"
           title="<?= htmlspecialchars($label) ?>"

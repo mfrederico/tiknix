@@ -95,4 +95,15 @@ class PriorWorkBriefTest extends TestCase {
         $this->assertStringContainsString('The LAST one is their answer now', $md);
         $this->assertLessThan(strpos($md, 'square one'), strpos($md, 'round logo'), 'oldest first');
     }
+
+    public function testWhatWasAttachedToARequestReachesEveryTaskOfItsPlan(): void {
+        $goal = "Search emoji z-index issue\n\n## Attached files\n- `/srv/app/.aibuilder/attachments/ab12/shot-1.png` — a picture the person attached as “Shot.png”\n\nOpen each one first.\n\n## Who it is for\nMembers.";
+        $md = \app\PlanExecutor::attachedSection($goal);
+        $this->assertStringContainsString('What the person attached to the request this task comes from', $md);
+        $this->assertStringContainsString('`/srv/app/.aibuilder/attachments/ab12/shot-1.png`', $md);
+        $this->assertStringContainsString('Open each one first.', $md, 'with how to treat them');
+        $this->assertStringNotContainsString('Who it is for', $md, 'only that section of the goal');
+        $this->assertSame('', \app\PlanExecutor::attachedSection('Just words, nothing attached.'));
+        $this->assertSame('', \app\PlanExecutor::attachedSection("x\n\n## Attached files\n\n"), 'a heading with no file under it is nothing');
+    }
 }

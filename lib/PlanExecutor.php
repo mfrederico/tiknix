@@ -1281,6 +1281,27 @@ MD;
         return $md . "\n";
     }
 
+    /** The heading under which a request lists the files a person attached to it (the Builder's Ask view writes it). */
+    public const ATTACHED_HEAD = '## Attached files';
+
+    /**
+     * The files the person attached to the request this plan came from, for EVERY task of it.
+     * The planner saw them and wrote the tasks; a build agent gets only its own task, and a
+     * screenshot of what is wrong is worth more to it than the planner's sentence about it.
+     * Taken as written from the plan's goal (the list of paths and how to treat them); '' when
+     * the request carried none.
+     */
+    public static function attachedSection(string $goal): string {
+        $at = strpos($goal, self::ATTACHED_HEAD);
+        if ($at === false) return '';
+        $rest = substr($goal, $at + strlen(self::ATTACHED_HEAD));
+        if (preg_match('/\n##\s/', $rest, $m, PREG_OFFSET_CAPTURE)) $rest = substr($rest, 0, $m[0][1]);   // up to the next section of the goal
+        $rest = trim($rest);
+        if ($rest === '' || !str_contains($rest, '- `')) return '';
+        return "\n## What the person attached to the request this task comes from\n\n"
+             . "They belong to the whole request, of which this task is one part: open them, and use what bears on THIS task.\n\n" . $rest . "\n\n";
+    }
+
     private function buildTaskBrief($t): string {
         $files = json_decode(((string)$t->relatedFiles) ?? '', true);
         $files = is_array($files) ? implode("\n", array_map(fn($f) => "- $f", $files)) : '';
@@ -1292,6 +1313,7 @@ MD;
         $prove = self::designSection($title) . $prove;
         $several = self::severalSection(!empty($t->needsPlanning), (string) ($t->planningNote ?? ''), (int) ($t->splitDepth ?? 0));
         $several .= self::saidSection($this->saidAbout($t), (string) ($t->lastFailReason ?: $t->errorMessage ?: ''));
+        $several .= self::attachedSection((string) ($this->plan()->planGoal ?? ''));
         return <<<MD
 # Build task: {$title}
 

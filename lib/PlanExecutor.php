@@ -553,6 +553,10 @@ class PlanExecutor {
             return false;
         }
         $t->status         = 'running';
+        // Marked as more than one task: say what its agent is doing, so the board does not just read "running".
+        if (!empty($t->needsPlanning) && (int) ($t->splitDepth ?? 0) < self::MAX_SPLIT_DEPTH) {
+            $t->progressMessage = 'Marked as more than one task: its agent is finding out first, then it splits it into pieces — or builds it as one if it turns out small.';
+        }
         $t->worktreeBranch = 'task/' . $id;   // the container's branch
         $t->agentSession   = $session;
         $t->startedAt      = date('Y-m-d H:i:s');
@@ -593,8 +597,15 @@ class PlanExecutor {
         $status = (string) ($r['status'] ?? '');
         if ($status === 'no-change') {
             TenantHost::discardTask($this->tenant, $id);
-            $this->finish($t, 'resolved', "nothing to change — the task's goal was already satisfied, or the agent made no edits");
-            $this->applySplit($t, $r['split'] ?? null);   // it may have changed nothing because it split itself first
+            // It may have changed nothing because it split itself: then THAT is what happened to it, and
+            // "nothing to change" on a task whose four pieces sit below it told the owner the opposite.
+            $pieces = $this->applySplit($t, $r['split'] ?? null);
+            if ($pieces) {
+                $this->saySplitOutcome($t, 'split ' . count($pieces));
+                $this->finish($t, 'resolved', 'split into ' . count($pieces) . ' tasks that take its place in this plan: #' . implode(', #', $pieces));
+            } else {
+                $this->finish($t, 'resolved', "nothing to change — the task's goal was already satisfied, or the agent made no edits");
+            }
             return;
         }
         if ($status !== 'changed') {
@@ -630,11 +641,25 @@ class PlanExecutor {
         if (!empty($m['ok'])) {
             $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?'));
             $this->addToNotebook($t, (string) ($r['output'] ?? ''));
-            $this->applySplit($t, $r['split'] ?? null);
+            $pieces = $this->applySplit($t, $r['split'] ?? null);
+            if ($pieces) $this->saySplitOutcome($t, 'split ' . count($pieces));
+            elseif (!empty($t->needsPlanning)) {
+                // Marked as several, built as one: the agent's call, and it is told to say why. Said on the task.
+                $this->saySplitOutcome($t, 'one');
+                $this->logEvent($t, 'info', 'This was marked as more than one task. Its agent looked first and built it as ONE piece (its Handoff, in the output above, says why it did not need splitting).');
+            }
             return;
         }
         $err = (string) ($m['error'] ?? 'the merge failed');
         $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err);
+    }
+
+    /** What became of a task marked as more than one: 'split N' or 'one'. The board's tag reads it. */
+    private function saySplitOutcome($t, string $outcome): void {
+        $t = Bean::load('workbenchtask', (int) $t->id);
+        $t->splitOutcome = $outcome;
+        $t->progressMessage = '';
+        Bean::store($t);
     }
 
     // ---- a task that splits itself ----------------------------------------------------------

@@ -46,9 +46,15 @@
 <style>
   /* Edge-to-edge below the sticky topbar; :has() cancels the .ui-content padding where supported. */
   .ui-content:has(.sidecar-embed) { padding: 0 !important; }
-  .sidecar-embed { height: calc(100vh - var(--ui-topbar-height, 62px) - var(--ui-projectbar-height, 0px)); background: var(--bs-body-bg); }
+  /* 100dvh, not 100vh: on a phone 100vh is the height WITHOUT the browser's address bar, so with the
+     bar showing the bottom of the frame — where a plugin keeps its input — sat below the screen.
+     (The vh line stays for a browser that does not know dvh.) */
+  .sidecar-embed { height: calc(100vh - var(--ui-topbar-height, 62px) - var(--ui-projectbar-height, 0px)); height: calc(100dvh - var(--ui-topbar-height, 62px) - var(--ui-projectbar-height, 0px)); background: var(--bs-body-bg); }
   .sidecar-embed iframe { width: 100%; height: 100%; border: 0; display: block; }
-  @media (max-width: 991.98px) { .sidecar-embed { height: calc(100vh - var(--ui-topbar-height, 62px) - var(--ui-projectbar-height, 0px)); } }
+  /* The frame IS the page here and fills the screen: the shell's footer under it only made the
+     outer page scroll, and on a phone that scroll drags the plugin's own bottom bar off the screen. */
+  body:has(.sidecar-embed) footer { display: none !important; }
+  @media (max-width: 991.98px) { .sidecar-embed { height: calc(100vh - var(--ui-topbar-height, 62px) - var(--ui-projectbar-height, 0px)); height: calc(100dvh - var(--ui-topbar-height, 62px) - var(--ui-projectbar-height, 0px)); } }
 </style>
 
 <script>

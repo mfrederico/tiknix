@@ -60,6 +60,17 @@
   // the content width and therefore its height — so it reports again, and the frame
   // oscillates. It showed up as a scrollbar flashing on and off several times a second.
   // Ignoring small deltas breaks the cycle while still tracking real content changes.
+  // Where the person is inside the plugin, kept in THIS page's address (?to=…): the frame says
+  // its path each time it loads a page, and a refresh then opens that page again — not the
+  // plugin's landing, or whatever page the address happened to name when they arrived.
+  // Only a path on the plugin's own host is taken, the same rule Sidecar::landingPath applies.
+  window.addEventListener('message', function (e) {
+    if (!e || e.origin !== <?= json_encode($origin) ?> || !e.data || typeof e.data.tiknixPath !== 'string') return;
+    var to = e.data.tiknixPath;
+    if (!/^\/(?![\/\\])\S*$/.test(to) || to.length > 600) return;
+    try { history.replaceState(history.state, '', location.pathname + '?to=' + encodeURIComponent(to)); } catch (err) {}
+  });
+
   var lastH = 0;
   window.addEventListener('message', function (e) {
     if (!e || !e.data || typeof e.data.tiknixHeight !== 'number') return;

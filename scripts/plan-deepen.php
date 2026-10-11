@@ -16,11 +16,17 @@ if (php_sapi_name() !== 'cli') { die("cli only\n"); }
 require_once __DIR__ . '/../vendor/autoload.php';
 new \app\Bootstrap();
 
-$o = getopt('', ['slug:', 'dir:', 'member:', 'level::', 'engine::', 'agent::', 'mode::']);
+$o = getopt('', ['slug:', 'dir:', 'member:', 'level::', 'engine::', 'agent::', 'mode::', 'draft::', 'goal-file::']);
 foreach (['slug', 'dir', 'member'] as $k) if (empty($o[$k])) { fwrite(STDERR, "ERROR --{$k} is required\n"); exit(2); }
 try {
     $runner = new \app\PlanRunner((string) $o['slug'], (string) $o['dir'], (int) $o['member'], (int) ($o['level'] ?? 50), (string) ($o['engine'] ?? 'claude'));
     $runner->useAgent((string) ($o['agent'] ?? ''))->deepen((string) ($o['mode'] ?? 'flagged'));
+    // A plan handed in from a terminal (app\TerminalPlan): its own draft, and its own words as the goal.
+    if (!empty($o['draft'])) $runner->draft = (string) $o['draft'];
+    if (!empty($o['goal-file'])) {
+        if (!is_file((string) $o['goal-file'])) throw new \RuntimeException("--goal-file {$o['goal-file']} does not exist");
+        $runner->goalOverride = (string) file_get_contents((string) $o['goal-file']);
+    }
     if ($runner->draftFile() === null) { echo "[planner] no draft plan — nothing to deepen\n"; exit(0); }
     $runner->refine();
 } catch (\Throwable $e) {

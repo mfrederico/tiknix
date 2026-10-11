@@ -257,7 +257,7 @@ class Brokerinfo extends Control {
         } catch (\RuntimeException $e) {
             Flight::jsonError($e->getMessage(), 409); return;
         }
-        $this->logger->info('Plan received from a terminal', ['instance' => $inst->slug, 'plan' => $r['plan'], 'tasks' => $r['tasks']]);
+        $this->logger->info('Plan received from a terminal', ['instance' => $inst->slug, 'plan' => $r['plan'], 'tasks' => $r['tasks'], 'deepening' => $r['deepening'] ?? 0]);
         // The link is the Builder's board, not the plan's own page: a task id means this plan
         // only while THIS project is the one selected there, and a link cannot select it — with
         // another project selected, /workbench/view?id=N would open that project's task N.

@@ -569,12 +569,19 @@ MD;
 
     /* ---- deeper planning: passes 2 (deepen) and 3 (order), run by scripts/plan-deepen.php ---- */
 
+    /** One named draft to refine, instead of the newest in the workspace (a terminal plan names its own). */
+    public ?string $draft = null;
+
     /** The newest draft the first pass left (TenantBuilder::unpackPlan with $draft), or null. */
     public function draftFile(): ?string {
+        if ($this->draft !== null) return is_file($this->draft) ? $this->draft : null;
         $files = glob($this->abDir() . '/' . (int) $this->memberId . '-*.plan.draft.json') ?: [];
         usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
         return $files[0] ?? null;
     }
+
+    /** How many times the marked tasks are split before a person is asked (a piece can itself be marked). */
+    public const MAX_DEEPEN_ROUNDS = 2;
 
     /** The subtask ids a plan marks `complex`. */
     public static function flagged(array $plan): array {
@@ -598,32 +605,45 @@ MD;
         if ($draft === null) throw new \RuntimeException('no draft plan to refine in ' . $this->abDir());
         $plan = json_decode((string) file_get_contents($draft), true);
         if (!PlanIngestor::isValidPlan($plan)) throw new \RuntimeException("{$draft} is not a valid plan");
-        $goal = is_file($this->goalFile()) ? (string) file_get_contents($this->goalFile()) : (string) ($plan['title'] ?? '');
+        $goal = $this->goalOverride ?? (is_file($this->goalFile()) ? (string) file_get_contents($this->goalFile()) : (string) ($plan['title'] ?? ''));
         $flagged = self::flagged($plan);
         $did = ['mode' => $this->deepen, 'passes' => 1, 'flagged' => $flagged, 'split' => 0, 'before' => count($plan['subtasks']), 'after' => count($plan['subtasks']), 'error' => ''];
 
-        if ($this->deepen === 'always' || ($this->deepen === 'flagged' && $flagged)) {
-            foreach (['deepen', 'order'] as $pass) {
-                echo "[planner] pass " . ($did['passes'] + 1) . " ({$pass}) — " . ($pass === 'deepen'
-                    ? ($this->deepen === 'always' ? 'every task re-examined' : count($flagged) . ' task(s) marked complex: ' . implode(', ', $flagged))
-                    : 'dependencies and priorities re-checked') . "\n";
-                try {
-                    $next = $this->runPass($this->buildRefineRequest($goal, $plan, $pass, $flagged));
-                } catch (\RuntimeException $e) {
-                    $did['error'] = "the {$pass} pass failed: " . $e->getMessage();
-                    echo '[planner] ERROR ' . $did['error'] . " — publishing the plan as it stood before this pass\n";
-                    \Flight::get('log')?->error('PlanRunner: ' . $did['error'], ['slug' => $this->slug]);
-                    break;
-                }
-                // keep what the container does not know: whose plan this is
-                foreach (['instance', 'agent'] as $k) if (isset($plan[$k])) $next[$k] = $plan[$k];
-                $plan = $next;
-                $did['passes']++;
-                echo '[planner] pass ' . $did['passes'] . ' done: ' . count($plan['subtasks']) . " task(s)\n";
+        // Deepen, and deepen again while a pass leaves pieces that are themselves marked complex — a
+        // task that was really several can hide one that is really several too. Bounded: past
+        // MAX_DEEPEN_ROUNDS the plan needs a person, and what is still marked says so on the board
+        // (and still splits itself when built). Then ONE pass re-checks the order of the whole.
+        $now = $flagged; $rounds = 0; $failed = false;
+        $run = function (string $pass, array $marked) use (&$plan, &$did, $goal): bool {
+            echo "[planner] pass " . ($did['passes'] + 1) . " ({$pass}) — " . ($pass === 'deepen'
+                ? ($marked ? count($marked) . ' task(s) marked complex: ' . implode(', ', $marked) : 'every task re-examined')
+                : 'dependencies and priorities re-checked') . "\n";
+            try {
+                $next = $this->runPass($this->buildRefineRequest($goal, $plan, $pass, $marked));
+            } catch (\RuntimeException $e) {
+                $did['error'] = "the {$pass} pass failed: " . $e->getMessage();
+                echo '[planner] ERROR ' . $did['error'] . " — publishing the plan as it stood before this pass\n";
+                \Flight::get('log')?->error('PlanRunner: ' . $did['error'], ['slug' => $this->slug]);
+                return false;
             }
+            // keep what the container does not know: whose plan this is
+            foreach (['instance', 'agent', 'member_id', 'written_at'] as $k) if (isset($plan[$k])) $next[$k] = $plan[$k];
+            $plan = $next;
+            $did['passes']++;
+            echo '[planner] pass ' . $did['passes'] . ' done: ' . count($plan['subtasks']) . " task(s)\n";
+            return true;
+        };
+        if ($this->deepen === 'always' || ($this->deepen === 'flagged' && $flagged)) {
+            while ($rounds < self::MAX_DEEPEN_ROUNDS && ($now || ($this->deepen === 'always' && $rounds === 0))) {
+                if (!$run('deepen', $this->deepen === 'always' && $rounds === 0 ? [] : $now)) { $failed = true; break; }
+                $rounds++;
+                $now = self::flagged($plan);
+            }
+            if (!$failed && $rounds > 0) $run('order', []);
         } else {
             echo "[planner] no task marked complex — one pass is the plan\n";
         }
+        $did['rounds'] = $rounds;
         $did['after'] = count($plan['subtasks']);
         $did['split'] = max(0, $did['after'] - $did['before']);
         $did['still_complex'] = self::flagged($plan);
@@ -637,6 +657,13 @@ MD;
         echo '[planner] plan final after ' . $did['passes'] . ' pass(es): ' . $did['before'] . ' → ' . $did['after'] . " task(s)\n";
         return $did;
     }
+
+    /**
+     * The goal the deeper passes are told, when it is not the planner's own goal file: a plan
+     * handed in from a terminal was never decomposed from one (app\TerminalPlan), and the file
+     * in the workspace is whatever the LAST planner run was asked — another request altogether.
+     */
+    public ?string $goalOverride = null;
 
     /** Test seam: callable(string $request): array — stands in for the container planner. */
     public $passRunner = null;

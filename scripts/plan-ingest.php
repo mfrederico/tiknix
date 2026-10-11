@@ -22,7 +22,7 @@ use app\PlanIngestor;
 use app\PlanOrchestrator;
 use app\Bean;
 
-$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::', 'replan-of::', 'autobuild::', 'level::', 'prompt::']);
+$o = getopt('', ['slug:', 'dir:', 'member:', 'app::', 'db::', 'supersede::', 'replan-of::', 'file::', 'source::', 'autobuild::', 'level::', 'prompt::']);
 $slug   = (string)($o['slug'] ?? '');
 $dir    = rtrim((string)($o['dir'] ?? ''), '/');
 $member = (int)($o['member'] ?? 0);
@@ -69,7 +69,12 @@ if ($tasksDb === '') $tasksDb = $dir . '/data/workbench.db';
 $pending = PlanIngestor::pending($dir);
 if (!$pending) { echo "[ingest] no plan file — nothing to ingest\n"; exit(0); }
 $planFile = $pending[0];
-if (count($pending) > 1) {
+// A named plan (--file): the one this run was started for, whatever else is waiting.
+$wanted = trim((string) ($o['file'] ?? ''));
+if ($wanted !== '') {
+    if (!in_array($wanted, $pending, true)) { fwrite(STDERR, "[ingest] ERROR --file={$wanted} is not a plan waiting in {$dir}/.aibuilder\n"); exit(1); }
+    $planFile = $wanted;
+} elseif (count($pending) > 1) {
     echo '[ingest] ' . count($pending) . " plans waiting; taking the oldest, the rest follow on the next run\n";
 }
 
@@ -128,13 +133,17 @@ if ($replanOf > 0) {
 // time you go looking. Captured here, at the moment it still describes THIS plan.
 $goalText = '';
 $goalSrc  = $dir . '/.aibuilder/plan-goal.md';
-if (is_file($goalSrc)) $goalText = trim((string) @file_get_contents($goalSrc));
+// A plan from a terminal was not decomposed from a goal: the file there is some other plan's.
+$source = trim((string) ($o['source'] ?? ''));
+if ($source !== '' && !preg_match('/^[a-z_]{1,24}$/', $source)) { fwrite(STDERR, "[ingest] ERROR --source is a short word, not '{$source}'\n"); exit(2); }
+if ($source !== 'terminal' && is_file($goalSrc)) $goalText = trim((string) @file_get_contents($goalSrc));
 
 try {
     $res = PlanIngestor::ingest($inst, $plan, $member, '', $app);
     $planId = (int) $res['parent']['id'];
 
     $parentBean = Bean::load('workbenchtask', $planId);
+    if ($source !== '') { $parentBean->source = $source; Bean::store($parentBean); }   // where it came from, said on the plan
     if ($goalText !== '') {
         $parentBean->planGoal = $goalText;
         Bean::store($parentBean);

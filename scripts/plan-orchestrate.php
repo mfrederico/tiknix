@@ -60,6 +60,16 @@ echo "[orchestrator] plan #$planId ($slug) starting " . date('c') . "\n";
 // No model argument: PlanExecutor resolves each task's model from that task's own
 // engine. A single --model could only be right when every task ran on one provider.
 $ex = new PlanExecutor($planId, $slug, $dir, $level);
+// However this build ends — done, stalled, held, out of time — the project's queue moves on:
+// every plan waiting only for this one starts now (lib/BuildQueue.php).
+register_shutdown_function(function () use ($planId, $slug, $dir, $db) {
+    try {
+        foreach (\app\BuildQueue::advance($slug, $dir, $db, $planId) as $line) echo "[orchestrator] queue: {$line}\n";
+    } catch (\Throwable $e) {
+        echo '[orchestrator] queue: ERROR the queue could not be moved on: ' . $e->getMessage() . "\n";
+        error_log("ERROR plan-orchestrate: plan #{$planId} of {$slug} ended and the build queue could not be moved on: " . $e->getMessage());
+    }
+});
 // Build was pressed (or the plan builds straight through): a split that was waiting to be read has been.
 $ex->clearSplitHold();
 

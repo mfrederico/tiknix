@@ -534,6 +534,7 @@ class PlanExecutor {
                 catch (\RuntimeException $e) { $m = ['ok' => false, 'error' => $e->getMessage()]; }
                 if (!empty($m['ok'])) { $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?') . ' (work built by an earlier attempt)'); return false; }
                 $err = (string) ($m['error'] ?? 'the merge failed');
+                if ($this->catchUp($t, $err)) return false;   // pending again: the next tick starts its catch-up run
                 $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err . ' — its built work is kept; Retry merges it.');
                 return false;
             }
@@ -544,17 +545,23 @@ class PlanExecutor {
             $agent = PlanIngestor::agentName($t->agent ?? '');
             // In a tmux session IN the container (TenantRun): it outlives anything on core.
             $resume = !empty($t->resumable);   // an attempt that ran out of time left its work behind
+            // …or it is built, and the app changed under it (catchUp()). Sent WITH --resume: an app on a
+            // runtime from before --catch-up then resumes in the kept copy, where without it the run
+            // would be refused ("already has a worktree") and the built work discarded as a failure.
+            $catchUp = $resume && !empty($t->catchUp);
             TenantRun::start($this->tenant, $session, $id,
-                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : '') . TenantBrowser::sandboxArg($this->tenant), $this->buildTaskBrief($t), $this->author());
-            $this->logEvent($t, 'info', ($resume ? 'Build agent RESUMED (continuing the earlier attempt\'s work)' : 'Build agent started') . " in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
-            if ($resume) { $t->resumable = 0; Bean::store($t); }
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : '') . ($catchUp ? ' --catch-up' : '') . TenantBrowser::sandboxArg($this->tenant), $this->buildTaskBrief($t), $this->author());
+            $this->logEvent($t, 'info', ($catchUp ? 'Build agent sent back to bring this task up to date with the app' : ($resume ? 'Build agent RESUMED (continuing the earlier attempt\'s work)' : 'Build agent started')) . " in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
+            if ($resume) { $t->resumable = 0; $t->catchUp = 0; Bean::store($t); }
         } catch (\Throwable $e) {
             $this->fail($t, 'could not start the task in the container: ' . $e->getMessage());
             return false;
         }
         $t->status         = 'running';
         // Marked as more than one task: say what its agent is doing, so the board does not just read "running".
-        if (!empty($t->needsPlanning) && (int) ($t->splitDepth ?? 0) < self::MAX_SPLIT_DEPTH) {
+        if ($catchUp) {
+            $t->progressMessage = 'Built. The app changed under it while it was building: its agent is bringing the two together, then it is merged.';
+        } elseif (!empty($t->needsPlanning) && (int) ($t->splitDepth ?? 0) < self::MAX_SPLIT_DEPTH) {
             $t->progressMessage = 'Marked as more than one task: its agent is finding out first, then it splits it into pieces — or builds it as one if it turns out small.';
         }
         $t->worktreeBranch = 'task/' . $id;   // the container's branch
@@ -610,6 +617,12 @@ class PlanExecutor {
         }
         if ($status !== 'changed') {
             $why = (string) ($r['error'] ?? '') !== '' ? (string) $r['error'] : "the container task ended '{$status}'";
+            // Sent back to be brought up to date with the app, and it could not be: its built work
+            // is intact in its copy (AgentTask put it back) and is NOT thrown away. A person decides.
+            if (!empty($r['unresolved'])) {
+                $this->finish($t, 'conflict', $why . ' What its agent said is in the output above. Retry sends it back once more; or settle it by hand in the app (branch ' . 'task/' . $id . ').');
+                return;
+            }
             // Ran out of time WITH work done: the worktree is kept and the retry continues in it
             // (AgentTask resume). Thrown away, holistica's task #5 cost 30 minutes and then 27 more
             // for the same work. Any other failure leaves nothing worth keeping.
@@ -651,7 +664,41 @@ class PlanExecutor {
             return;
         }
         $err = (string) ($m['error'] ?? 'the merge failed');
+        if ($this->catchUp($t, $err)) return;
         $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err);
+    }
+
+    /** How often one task is sent back to be brought up to date with the app before a person is asked. */
+    public const MAX_CATCH_UPS = 2;
+
+    /** Is this merge error the app having changed under the task (and not uncommitted changes, or seeds)? */
+    public static function isConflict(string $err): bool { return str_contains($err, 'merge of task/'); }
+
+    /**
+     * A task's merge failed because the app changed under it — another task, or another plan,
+     * merged work on the same lines first. That used to stop the plan until a person untangled
+     * it. Now the task goes back to its own agent, in its kept copy, with the app's current code
+     * merged in and the files git stopped on named (AgentTask::catchUpWith): the agent that knows
+     * what the task was for brings the two together, the tests run, and it is merged again.
+     * Twice at most; after that — or when the agent says the two cannot both be kept — the task
+     * is left at "conflict" with its work intact, for a person. True when it was sent back.
+     */
+    private function catchUp($t, string $err): bool {
+        if (!self::isConflict($err)) return false;
+        $n = (int) ($t->catchUps ?? 0);
+        if ($n >= self::MAX_CATCH_UPS) {
+            $this->logEvent($t, 'error', 'Brought up to date with the app ' . $n . ' times and its merge still fails — left for a person, with its work kept.');
+            return false;
+        }
+        $t = Bean::load('workbenchtask', (int) $t->id);
+        $t->catchUps     = $n + 1;
+        $t->catchUp      = 1;
+        $t->resumable    = 1;
+        $t->status       = 'pending';   // the next tick starts it
+        $t->errorMessage = '';
+        Bean::store($t);
+        $this->logEvent($t, 'warning', 'The app changed under this task (' . mb_substr($err, 0, 300) . '). Its work is kept: its agent is sent back to bring the two together, then it is merged again (' . ($n + 1) . ' of ' . self::MAX_CATCH_UPS . ').');
+        return true;
     }
 
     /** What became of a task marked as more than one: 'split N' or 'one'. The board's tag reads it. */
@@ -931,6 +978,7 @@ class PlanExecutor {
 
         $t->status       = $status;
         $t->completedAt  = date('Y-m-d H:i:s');
+        $t->progressMessage = '';   // what its agent was doing; it has stopped doing it
         if ($note !== '') $t->errorMessage = mb_substr($note, 0, 1000);
         Bean::store($t);
 

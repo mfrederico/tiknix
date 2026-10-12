@@ -106,4 +106,21 @@ class PriorWorkBriefTest extends TestCase {
         $this->assertSame('', \app\PlanExecutor::attachedSection('Just words, nothing attached.'));
         $this->assertSame('', \app\PlanExecutor::attachedSection("x\n\n## Attached files\n\n"), 'a heading with no file under it is nothing');
     }
+
+    public function testPluginsAreInstalledRequirementsFirstAndNotWhatTheAppHas(): void {
+        $requires = fn(string $n) => ['crm' => ['esign'], 'esign' => ['pdf'], 'pdf' => []][$n];
+        $this->assertSame(['pdf', 'esign', 'crm'], \app\PlanExecutor::pluginOrder(['crm', 'esign', 'pdf'], [], $requires), 'whatever order the planner wrote them in');
+        $this->assertSame(['pdf', 'esign', 'crm'], \app\PlanExecutor::pluginOrder(['crm'], [], $requires), 'what it requires comes with it');
+        $this->assertSame(['esign', 'crm'], \app\PlanExecutor::pluginOrder(['crm'], ['pdf'], $requires), 'not what the app already has');
+        $this->assertSame([], \app\PlanExecutor::pluginOrder(['crm'], ['crm', 'esign', 'pdf'], $requires));
+        $this->expectException(\RuntimeException::class);
+        \app\PlanExecutor::pluginOrder(['a'], [], fn(string $n) => ['a' => ['b'], 'b' => ['a']][$n]);
+    }
+
+    public function testATaskThatChangedNothingAndSaysItsChecksFailedIsNotNothingToChange(): void {
+        $out = "Could not do it.\n\n## Verified\n1. ✗ `--concepts` lists nothing, because there is no catalog to install from.\n2. ? Not run: there is no CRM.\n3. ✓ The page still answers 200.\n\n## Handoff\n- ✗ this line is not a check";
+        $this->assertSame(['`--concepts` lists nothing, because there is no catalog to install from.'], \app\PlanExecutor::unmetChecks($out));
+        $this->assertSame([], \app\PlanExecutor::unmetChecks("## Verified\n1. ✓ works\n2. ? Not run: no browser"), 'a check nobody could run is said, not failed');
+        $this->assertSame([], \app\PlanExecutor::unmetChecks('Nothing needed changing.'), 'no report of checks: nothing is claimed');
+    }
 }

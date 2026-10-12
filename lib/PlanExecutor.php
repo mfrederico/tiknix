@@ -436,15 +436,28 @@ class PlanExecutor {
     private function installInTenant($t): void {
         $names = json_decode((string) ($t->adopts ?? ''), true) ?: [];
         if (!$names) { $this->fail($t, 'the install task names no plugin (adopts is empty)'); return; }
+        $r = $this->installPlugins($t, $names);
+        if (!$r['ok']) { $this->fail($t, $r['error']); return; }
+        $this->finish($t, 'merged', 'installed and switched on in the app as ' . $r['commit']);
+    }
+
+    /**
+     * Install and switch on plugins in the app, as one commit by the member — the steps an
+     * install task is, usable before a build task too (adoptFirst()). A failure leaves the app's
+     * tree as it was. Each step is said on the task.
+     * @return array{ok:bool, commit?:string, error?:string}
+     */
+    private function installPlugins($t, array $names): array {
         foreach ($names as $n) {
-            if (!preg_match('/^[a-z][a-z0-9]*$/D', (string) $n)) { $this->fail($t, "'{$n}' is not a plugin name"); return; }
+            if (!preg_match('/^[a-z][a-z0-9]*$/D', (string) $n)) return ['ok' => false, 'error' => "'{$n}' is not a plugin name"];
         }
         try { $env = TenantHost::gitEnv($this->author()); }
-        catch (\RuntimeException $e) { $this->fail($t, $e->getMessage()); return; }
+        catch (\RuntimeException $e) { return ['ok' => false, 'error' => $e->getMessage()]; }
 
         // Every step in the container restores the tree on failure: a half-installed plugin would
-        // otherwise block the app's next update (a dirty tree refuses --update).
-        $restore = 'git checkout -q -- concepts.lock AGENTS.md CLAUDE.md 2>/dev/null; git clean -qfd concepts connectors 2>/dev/null';
+        // otherwise block the app's next update (a dirty tree refuses --update). concepts.lock is
+        // cleaned too: on an app's FIRST plugin it is a new file, which a checkout does not remove.
+        $restore = 'git checkout -q -- concepts.lock AGENTS.md CLAUDE.md 2>/dev/null; git clean -qfd -- concepts connectors concepts.lock 2>/dev/null';
         $run = function (array $steps, int $timeout) use ($restore): array {
             try {
                 [$code, $out] = TenantHost::ssh($this->tenant, 'app', "cd /srv/app && ( " . implode(' && ', $steps) . " ) 2>&1 || { rc=\$?; {$restore}; exit \$rc; }", null, $timeout);
@@ -457,8 +470,7 @@ class PlanExecutor {
         [$code, $out] = $run(array_map(fn($n) => 'php scripts/clitool.php --concept-install=' . escapeshellarg($n), $names), 600);
         if ($code !== 0) {
             $this->logEvent($t, 'error', "Install output:\n" . mb_substr($out, -1500));
-            $this->fail($t, "the install failed in {$this->slug}'s container (exit {$code}): " . $last($out));
-            return;
+            return ['ok' => false, 'error' => "the install failed in {$this->slug}'s container (exit {$code}): " . $last($out)];
         }
         $this->logEvent($t, 'info', "Installed in {$this->slug}'s container:\n" . mb_substr($out, -1500));
 
@@ -468,8 +480,7 @@ class PlanExecutor {
         if (!empty($sys['steps'])) $this->logEvent($t, 'info', "System software:\n- " . implode("\n- ", $sys['steps']));
         if (!$sys['ok']) {
             try { TenantHost::ssh($this->tenant, 'app', 'cd /srv/app && ' . $restore, null, 60); } catch (\RuntimeException $e) {}
-            $this->fail($t, "the system software the plugin needs could not be installed in {$this->slug}'s container: " . ($sys['error'] ?? 'unknown'));
-            return;
+            return ['ok' => false, 'error' => "the system software the plugin needs could not be installed in {$this->slug}'s container: " . ($sys['error'] ?? 'unknown')];
         }
 
         // 3. switch on, and one commit
@@ -481,12 +492,56 @@ class PlanExecutor {
         [$code, $out] = $run($steps, 600);
         if ($code !== 0) {
             $this->logEvent($t, 'error', "Enable output:\n" . mb_substr($out, -1500));
-            $this->fail($t, "the plugin could not be switched on in {$this->slug}'s container (exit {$code}): " . $last($out));
-            return;
+            return ['ok' => false, 'error' => "the plugin could not be switched on in {$this->slug}'s container (exit {$code}): " . $last($out)];
         }
         $this->logEvent($t, 'info', "Enabled in {$this->slug}'s container:\n" . mb_substr($out, -1500));
         $lines = explode("\n", $out);
-        $this->finish($t, 'merged', 'installed and switched on in the app as ' . end($lines));
+        return ['ok' => true, 'commit' => (string) end($lines)];
+    }
+
+    /**
+     * The plugins a BUILD task adopts, installed in the app before its agent starts.
+     *
+     * The planner is told that what a task `adopts` is in its working copy when it begins, so the
+     * task is to wire the plugin in, not to fetch it. Nothing did that for a project in its own
+     * container: a task that adopted the CRM started in a copy with no CRM and no catalog, said
+     * so, changed nothing — and the plan read "done" (dryrun, 2026-10-12). So: what the task
+     * adopts and the app lacks is installed and switched on first (requirements first, resolved
+     * from the catalog), as its own commit; the task's copy is then made from an app that has it.
+     * '' = nothing to do or done; otherwise why it could not be, and the task does not start.
+     */
+    private function adoptFirst($t): string {
+        $names = array_values(array_filter(array_map('strval', json_decode((string) ($t->adopts ?? ''), true) ?: [])));
+        if (!$names) return '';
+        foreach ($names as $n) if (!preg_match('/^[a-z][a-z0-9]*$/D', $n)) return "'{$n}' is not a plugin name";
+        try {
+            [$code, $out] = TenantHost::ssh($this->tenant, 'app', 'cd /srv/app && ls -1 concepts 2>/dev/null; true', null, 30);
+        } catch (\RuntimeException $e) { return "could not ask {$this->slug} which plugins it has: " . $e->getMessage(); }
+        if ($code !== 0) return "could not ask {$this->slug} which plugins it has (exit {$code})";
+        $have = array_values(array_filter(array_map('trim', explode("\n", (string) $out))));
+        try { $order = self::pluginOrder($names, $have, fn(string $n) => (array) (ConceptCatalog::forInstall()->get($n)['requires']['concepts'] ?? [])); }
+        catch (\Throwable $e) { return 'the plugins this task adopts could not be resolved in the catalog: ' . $e->getMessage(); }
+        if (!$order) return '';
+        $this->logEvent($t, 'info', 'This task adopts ' . implode(', ', $names) . ': installing ' . implode(', ', $order) . ' in the app before its agent starts.');
+        $r = $this->installPlugins($t, $order);
+        return $r['ok'] ? '' : $r['error'];
+    }
+
+    /**
+     * What to install, requirements first: $names and everything they require ($requires gives
+     * one plugin's requirements), without what the app already has. A loop in the requirements throws.
+     * @return string[]
+     */
+    public static function pluginOrder(array $names, array $have, callable $requires): array {
+        $order = [];
+        $visit = function (string $n, array $trail) use (&$visit, &$order, $have, $requires) {
+            if (in_array($n, $trail, true)) throw new \RuntimeException('plugin requirements loop: ' . implode(' → ', [...$trail, $n]));
+            if (in_array($n, $order, true) || in_array($n, $have, true)) return;
+            foreach ($requires($n) as $req) $visit((string) $req, [...$trail, $n]);
+            $order[] = $n;
+        };
+        foreach ($names as $n) $visit((string) $n, []);
+        return $order;
     }
 
     /** Agent finished: commit its changes, merge back, unlock dependents. */
@@ -539,6 +594,8 @@ class PlanExecutor {
                 return false;
             }
         }
+        // What the task adopts is put in the app first (adoptFirst): its agent starts with the plugin there.
+        if (empty($t->resumable) && ($why = $this->adoptFirst($t)) !== '') { $this->fail($t, 'the plugin this task adopts could not be installed first: ' . $why); return false; }
         try {
             $session = TmuxManager::buildPlanTaskSessionName($this->planId, (int) $t->id, $this->slug);
             // The app's agent the plan runs on (the builder's picker); '' = the app's default.
@@ -612,6 +669,13 @@ class PlanExecutor {
             if ($pieces) {
                 $this->saySplitOutcome($t, 'split ' . count($pieces));
                 $this->finish($t, 'resolved', 'split into ' . count($pieces) . ' tasks that take its place in this plan: #' . implode(', #', $pieces));
+            } elseif (($unmet = self::unmetChecks((string) ($r['output'] ?? ''))) !== []) {
+                // It changed nothing and says its own checks do NOT hold: that is a task that could
+                // not do its work, not one whose work was already done. Calling it "nothing to
+                // change" let a plan read "done" with nothing built.
+                TenantHost::discardTask($this->tenant, $id);
+                $this->finish($t, 'failed', 'it changed nothing, and its own checks did not pass: ' . implode(' · ', array_slice($unmet, 0, 3))
+                    . (count($unmet) > 3 ? ' · and ' . (count($unmet) - 3) . ' more' : '') . '. What stopped it is in its output above.');
             } else {
                 $this->finish($t, 'resolved', "nothing to change — the task's goal was already satisfied, or the agent made no edits");
             }
@@ -701,6 +765,24 @@ class PlanExecutor {
         Bean::store($t);
         $this->logEvent($t, 'warning', 'The app changed under this task (' . mb_substr($err, 0, 300) . '). Its work is kept: its agent is sent back to bring the two together, then it is merged again (' . ($n + 1) . ' of ' . self::MAX_CATCH_UPS . ').');
         return true;
+    }
+
+    /**
+     * The checks a task's own report marks as failed (✗) in its "Verified" list — its agent answers
+     * each planned check with ✓, ✗ or ? (PlanExecutor::proveSection). '?' (could not be run) is not
+     * counted: a check nobody could run is said, not failed.
+     * @return string[] the failed lines, without their number and mark
+     */
+    public static function unmetChecks(string $output): array {
+        $at = stripos($output, '## Verified');
+        if ($at === false) return [];
+        $part = substr($output, $at + strlen('## Verified'));
+        if (preg_match('/\n##\s/', $part, $m, PREG_OFFSET_CAPTURE)) $part = substr($part, 0, $m[0][1]);
+        $out = [];
+        foreach (explode("\n", $part) as $line) {
+            if (preg_match('/^\s*(?:\d+[.)]|[-*])\s*(?:\*\*)?\s*✗\s*(?:\*\*)?\s*(.+)$/u', $line, $m)) $out[] = mb_substr(trim($m[1]), 0, 220);
+        }
+        return $out;
     }
 
     /** What became of a task marked as more than one: 'split N' or 'one'. The board's tag reads it. */

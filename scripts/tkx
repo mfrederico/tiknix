@@ -5,6 +5,7 @@
 #   tkx holistica space        how full it is and what is large, clearing nothing
 #   tkx holistica status       its container, address and domain
 #   tkx holistica ssh CMD…     run a command in its container (as app; add --root before CMD for root)
+#   tkx holistica shell        an interactive terminal in its container (as app; --root for root)
 #   tkx holistica update       take the newest runtime release
 #   tkx list                   every project
 #
@@ -27,5 +28,16 @@ case "$verb" in
   status)            exec $T --status="$slug" < /dev/null ;;
   update)            exec $T --clitool="$slug" -- --update < /dev/null ;;
   ssh)               if [ "${1:-}" = "--root" ]; then shift; exec $T --ssh="$slug" --root -- "$@" < /dev/null; else exec $T --ssh="$slug" -- "$@" < /dev/null; fi ;;
+  shell)
+    # A real terminal (ncdu, htop, a shell): plain ssh with core's tenant key, which every
+    # container authorises for app and root. The ssh verb above captures output and has no TTY.
+    user=app; [ "${1:-}" = "--root" ] && user=root
+    ini="$CORE/conf/proxmox.ini"
+    key="$(sed -n 's/^key[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$ini")"
+    known="$(sed -n 's/^known_hosts[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$ini")"
+    [ -n "$key" ] && [ -n "$known" ] || { echo "tkx: $ini has no [tenant] key / known_hosts" >&2; exit 1; }
+    ip="$($T --status="$slug" < /dev/null | sed -n 's/^slug .* ip \([0-9.]*\) .*/\1/p' | head -1)"
+    [ -n "$ip" ] || { echo "tkx: $slug has no container address" >&2; exit 1; }
+    exec env LANG=C.UTF-8 LC_ALL=C.UTF-8 ssh -t -i "$key" -o UserKnownHostsFile="$known" -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$user@$ip" ;;
   *) echo "tkx: '$verb' is not something tkx does" >&2; usage ;;
 esac

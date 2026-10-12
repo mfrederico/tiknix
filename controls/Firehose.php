@@ -316,8 +316,18 @@ class Firehose extends Control {
             'created_at'       => $now,
             'updated_at'       => $now,
         ];
+        // A board that has never held a found problem has no `source`, `detectederror_id` or
+        // `audit_cycle` column yet (RedBean adds a column when a bean first writes it; this is a
+        // plain insert). They used to be LEFT OUT of the insert when missing — so on a new
+        // project the task was not marked as a found problem (the Builder showed it as something
+        // the owner typed) and lost its audit cycle, which is what stops a fix-check-fix loop.
+        // The columns are added, typed from the values, and everything is written.
         $have = array_column($pdo->query("SELECT name FROM pragma_table_info('workbenchtask')")->fetchAll(\PDO::FETCH_ASSOC), 'name');
-        $use  = array_intersect_key($want, array_flip($have));
+        foreach (array_diff(array_keys($want), $have) as $col) {
+            if (!preg_match('/^[a-z_]{1,40}$/', $col)) throw new \RuntimeException("'{$col}' is not a column name");
+            $pdo->exec('ALTER TABLE workbenchtask ADD COLUMN ' . $col . ' ' . (is_int($want[$col]) ? 'INTEGER' : 'TEXT'));
+        }
+        $use = $want;
 
         $sql = 'INSERT INTO workbenchtask (' . implode(',', array_keys($use)) . ') VALUES ('
              . implode(',', array_fill(0, count($use), '?')) . ')';

@@ -216,6 +216,8 @@ class SignupFlow {
         $pending->note        = 'card confirmed: ' . trim(($card['card']['brand'] ?? '') . ' ****' . ($card['card']['last4'] ?? ''));
         Bean::store($pending);
 
+        self::welcome($memberId);
+
         Flight::get('log')->info('SignupFlow: account created after card confirmation', [
             'member' => $memberId, 'slug' => (string) $pending->billingTenantEid,
         ]);
@@ -507,5 +509,25 @@ class SignupFlow {
         if (!is_array($data)) return ['ok' => false, 'data' => [], 'error' => 'non-JSON reply from ' . $url];
 
         return ['ok' => true, 'data' => $data, 'error' => ''];
+    }
+
+    /**
+     * What EVERY new member of Tiknix gets, however they arrived — the sign-up form, the
+     * card-on-file sign-up, Google, an invitation: the Builder.
+     *
+     * Only invited members used to get it. Someone who signed up on their own could create a
+     * project and then had no Builder in their menu to build it with — nothing said why, and
+     * only an admin ticking a box could fix it (found 2026-10-12, making a demo account). The
+     * other capabilities stay off until an admin grants them.
+     *
+     * A grant that did not take is an ERROR in the log naming the member: they are let in
+     * regardless (nobody is turned away from signing up over this), and an admin can grant it.
+     */
+    public static function welcome(int $memberId): void {
+        if ($memberId <= 0) return;
+        \app\Feature::setEnabled('workbench', true, $memberId);
+        if (!\app\Feature::isEnabled('workbench', $memberId, 100)) {   // 100 = MEMBER (LEVELS is not defined in a script)
+            error_log("ERROR SignupFlow::welcome: member #{$memberId} signed up and could NOT be given the Builder (the 'workbench' capability) — grant it on Admin → Members");
+        }
     }
 }

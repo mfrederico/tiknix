@@ -80,7 +80,12 @@
 };
 
 // Google sign-in — a new member is a billing subject like any other: register their tenant.
-\app\plugins\GoogleAuth::$onNewMember = static fn(int $memberId) => \app\SignupFlow::ensureTenantFor($memberId);
+\app\plugins\GoogleAuth::$onNewMember = static function (int $memberId): void {
+    \app\SignupFlow::ensureTenantFor($memberId);
+    \app\SignupFlow::welcome($memberId);
+};
+// The sign-up form: a new member gets what every member of Tiknix gets (the Builder).
+\app\Auth::$onNewMember = static fn(int $memberId) => \app\SignupFlow::welcome($memberId);
 
 // Tiknix's own agents (the AI agents page here, ROOT only — seed 34) run Tiknix's own tooling:
 // QA Testing, and pipelines of this install. Their keys are the platform's money, so no builder

@@ -104,7 +104,7 @@ class Signup extends BaseControls\Control {
             // An invited member arrives able to BUILD. Being invited to a place where you
             // then have to ask for permission to do the thing you were invited for is a
             // poor welcome; the other capabilities stay off until an admin grants them.
-            \app\Feature::setEnabled('workbench', true, $id);
+            \app\SignupFlow::welcome($id);
 
             Flight::get('log')->info('Invitation accepted', [
                 'invite' => (int) $inv->id, 'member' => $id, 'invited_by' => (int) $inv->invitedBy,

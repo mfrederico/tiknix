@@ -89,6 +89,34 @@ class BuildQueue {
         return '#' . implode(', #', $ids) . (count($ids) === 1 ? ($n ? ' is still being built' : ' is waiting to be built') : ' are still being built');
     }
 
+    /**
+     * What was built in a project since $since (Y-m-d H:i:s) — for the planner of a request that
+     * waited for it (PlanRunner::builtBefore): each plan, its tasks, the files each named and
+     * the plugins it adopted. '' when nothing was. Read from the board without selecting it.
+     */
+    public static function builtSince(string $dir, string $since): string {
+        $db = rtrim($dir, '/') . '/data/workbench.db';
+        if (!is_file($db)) return '';
+        $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY]);
+        if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn()) return '';
+        $q = $pdo->prepare("SELECT t.id, t.title, t.status, t.related_files, t.adopts, t.error_message, p.id AS plan_id, p.title AS plan_title
+                            FROM workbenchtask t JOIN workbenchtask p ON p.id = t.parent_task_id
+                            WHERE t.status IN ('merged', 'resolved', 'completed')
+                              AND p.id IN (SELECT parent_task_id FROM workbenchtask WHERE completed_at >= ?)   -- the whole of a plan that was still building
+                            ORDER BY p.id, t.id");
+        $q->execute([$since]);
+        $out = []; $plan = 0;
+        foreach ($q->fetchAll(\PDO::FETCH_ASSOC) as $t) {
+            if ((int) $t['plan_id'] !== $plan) { $plan = (int) $t['plan_id']; $out[] = "### #{$plan} " . trim((string) $t['plan_title']); }
+            $files  = array_values(array_filter(array_map('strval', (array) (json_decode((string) $t['related_files'], true) ?: []))));
+            $adopts = array_values(array_filter(array_map('strval', (array) (json_decode((string) $t['adopts'], true) ?: []))));
+            $out[] = '- **' . trim((string) $t['title']) . '**' . (trim((string) $t['error_message']) !== '' ? ' — ' . trim((string) $t['error_message']) : '')
+                   . ($files ? "\n  - files: `" . implode('`, `', $files) . '`' : '')
+                   . ($adopts ? "\n  - plugins adopted: " . implode(', ', $adopts) : '');
+        }
+        return implode("\n", $out);
+    }
+
     /** The queue, next first. */
     public static function queued(): array {
         if (!in_array('queue_pos', array_keys(Bean::inspect('workbenchtask')), true)) return [];

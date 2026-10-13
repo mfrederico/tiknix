@@ -116,4 +116,26 @@ class BuildQueueTest extends ConceptsTestCase {
         $pdo = null;
         unlink($dir . '/data/workbench.db'); rmdir($dir . '/data'); rmdir($dir);
     }
+
+    /** What a waiting request's planner is told: every finished task of a plan that was still building, with its files and plugins. */
+    public function testBuiltSinceNamesTheFilesAndPluginsOfWhatWasBuilding(): void {
+        $dir = sys_get_temp_dir() . '/bq-built-' . bin2hex(random_bytes(4));
+        $this->assertSame('', BuildQueue::builtSince($dir, '2026-01-01 00:00:00'));
+        mkdir($dir . '/data', 0700, true);
+        $pdo = new \PDO('sqlite:' . $dir . '/data/workbench.db');
+        $pdo->exec('CREATE TABLE workbenchtask (id INTEGER PRIMARY KEY, parent_task_id INTEGER, title TEXT, status TEXT, related_files TEXT, adopts TEXT, error_message TEXT, completed_at TEXT)');
+        $pdo->exec("INSERT INTO workbenchtask VALUES (1, NULL, 'Old plan', 'completed', '', '', '', NULL), (2, 1, 'Old task', 'merged', '[\"views/old.php\"]', '[]', '', '2026-10-01 10:00:00'),
+            (3, NULL, 'Warehouse game', 'completed', '', '', '', NULL),
+            (4, 3, 'Editor', 'merged', '[\"views/warehouse/builder.php\"]', '[]', 'merged into the app as abc123', '2026-10-13 02:10:00'),
+            (5, 3, 'Leads', 'merged', '[\"controls/Game.php\"]', '[\"crm\"]', '', '2026-10-13 02:30:00'),
+            (6, 3, 'Not built', 'failed', '[\"x.php\"]', '[]', '', '2026-10-13 02:31:00')");
+        $md = BuildQueue::builtSince($dir, '2026-10-13 02:14:00');
+        $this->assertStringContainsString('### #3 Warehouse game', $md);
+        $this->assertStringContainsString('views/warehouse/builder.php', $md, 'a task of that plan finished before the request was made is still part of what it builds on');
+        $this->assertStringContainsString('plugins adopted: crm', $md);
+        $this->assertStringNotContainsString('views/old.php', $md, 'a plan finished long before is not what the request waited for');
+        $this->assertStringNotContainsString('Not built', $md);
+        $pdo = null;
+        unlink($dir . '/data/workbench.db'); rmdir($dir . '/data'); rmdir($dir);
+    }
 }

@@ -93,6 +93,31 @@ class PlanRunner {
      * picker; its AI agents page). '' = the app's default agent. The plan's tasks inherit it
      * (PlanIngestor). A host project has no app agents: naming one there is refused.
      */
+    /** What the planner is told besides the goal — see builtBefore(). */
+    private string $builtBefore = '';
+
+    /**
+     * What was built in this project just before this request (BuildQueue::builtSince): the
+     * request waited for it, so its plan starts from those files and plugins — it reads them
+     * before it decides anything, instead of planning as if they were not there.
+     */
+    public function builtBefore(string $markdown): self {
+        $this->builtBefore = trim($markdown);
+        return $this;
+    }
+
+    /**
+     * A planner still working in the app's own container, whoever's and whatever became of the
+     * session here that waited for it — its name, or ''. The session here is only the WAIT: it
+     * can end (it gave up, it was stopped, this host restarted) while the agent goes on in the
+     * container, and a second planner started then is refused there by the first one's working
+     * copy, with the first one's plan left where nothing collects it (2026-10-13).
+     */
+    public function containerPlanner(): string {
+        if (!$this->tenant) return '';
+        return (string) (TenantRun::list($this->tenant, 'tiknix-run-planner-')[0] ?? '');
+    }
+
     public function useAgent(string $agent): self {
         $agent = PlanIngestor::agentName($agent);
         $this->agent = $agent;
@@ -223,6 +248,10 @@ class PlanRunner {
                     'A planner is already running for %s (started by member %d) — try again when it finishes.',
                     $this->slug, $active['member_id']
                 ));
+            }
+
+            if (($inApp = $this->containerPlanner()) !== '') {
+                throw new \Exception("A planner is still working in {$this->slug}'s own container ({$inApp}) — try again when it finishes.");
             }
 
             /* A plan waiting to be reviewed is finished work, and this used to delete it.
@@ -366,7 +395,7 @@ export TIKNIX_WORKSPACE="{$ws}"
 {$wsExport}export CLAUDE_CODE_MAX_OUTPUT_TOKENS=250000
 
 echo "[planner] instance {$this->slug} starting \$(date)" | tee {$logArg}
-{$runBlock} 2>&1 | tee -a {$logArg}
+{ {$runBlock}; } 2>&1 | tee -a {$logArg}
 # Capture the PLANNER's exit immediately. PIPESTATUS holds only the most recent
 # pipeline, and several run below — reading it later reported the exit status of an
 # echo, which is always 0 and told us nothing about the planner.
@@ -407,6 +436,11 @@ BASH;
     private function buildPlanRequest(string $goal): string {
         $goal = trim($goal);
         $digest = $this->codebaseDigest();
+        $before = $this->builtBefore === '' ? '' : "\n## Built just before this request — read it first\n\n"
+            . "This request was made while the work below was still being built, and waited for it. It is in the app now. "
+            . "The request may be about it, or may touch the same pages: **open the files named below before you plan anything**, "
+            . "`describe` the controllers and models among them, and plan from what they really are — their real paths, names and "
+            . "what they already do. Do not plan a second version of something listed here; EXTEND it.\n\n{$this->builtBefore}\n";
         return <<<MD
 # AI Builder — Plan Decomposition
 
@@ -417,7 +451,7 @@ edit files — you produce a plan that other agents will build.
 ## Goal
 
 {$goal}
-
+{$before}
 ## What already exists in THIS codebase — REUSE it, do not reinvent
 
 The inventory below was auto-generated from the live instance. Treat it as ground

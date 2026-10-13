@@ -168,6 +168,13 @@ class PromptQueue {
             // And while an earlier request is still being built: this one is planned against
             // what that leaves in the app, not beside it.
             if (($busy = BuildQueue::busyWith($dir, (string) $slug)) !== '') { $out[] = "#$id still waiting on {$q['tag']}: {$busy}"; continue; }
+            // Nor while a planner is still at work in the app's container (the wait for it here
+            // can end before it does): cannot ask = still waiting, never "free".
+            try { $inApp = $runner->containerPlanner(); }
+            catch (\Throwable $e) { $out[] = "#$id still waiting on {$q['tag']}: its container could not be asked (" . $e->getMessage() . ')'; continue; }
+            if ($inApp !== '') { $out[] = "#$id still waiting on {$q['tag']}: {$inApp} is still planning there"; continue; }
+            // What it waited for is in the app now: its planner is told what that was.
+            $runner->builtBefore(BuildQueue::builtSince($dir, (string) $q['queued_at']));
 
             try {
                 $runner->start($q['body'], [], true, $id);

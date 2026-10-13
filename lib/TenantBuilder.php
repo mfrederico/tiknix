@@ -262,7 +262,9 @@ class TenantBuilder {
      */
     public static function unpackPlan(string $outFile, string $abDir, string $slug, int $memberId, string $agent = '', bool $draft = false): int {
         $r = self::result($outFile);
-        if ($r === null) { echo "[planner] the container planner left no result ({$outFile})\n"; return 1; }
+        // Said without the "[planner]" mark on purpose: plan-failed.php drops lines that carry it
+        // (they are this script's own narration) and shows the person what is left — the reason.
+        if ($r === null) { echo "The planner in {$slug}'s container left no answer: the wait for it ended before it finished ({$outFile} was not written).\n"; return 1; }
         if (!empty($r['credential'])) echo "[planner] ran in {$slug}'s container on {$r['credential']}\n";
         if (($r['status'] ?? '') === 'complete') {
             file_put_contents("{$abDir}/plan-complete.md", (string) ($r['complete'] ?? ''));
@@ -270,7 +272,7 @@ class TenantBuilder {
             return 0;
         }
         if (($r['status'] ?? '') !== 'planned') {
-            echo '[planner] no plan: ' . ($r['status'] ?? '?') . ' — ' . ($r['error'] ?? '') . "\n";
+            echo "No plan came back from {$slug}'s container (" . ($r['status'] ?? '?') . '): ' . ($r['error'] ?? '') . "\n";
             if (!empty($r['output'])) echo "[planner] agent output (tail):\n" . mb_substr((string) $r['output'], -2000) . "\n";
             return 1;
         }

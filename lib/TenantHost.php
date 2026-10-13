@@ -711,7 +711,16 @@ class TenantHost {
      */
     private static function runAndWait(object $inst, string $id, string $args, ?string $input, int $timeout, array $author): array {
         $session = 'tiknix-run-' . $id;
-        if (!TenantRun::alive($inst, $session)) TenantRun::start($inst, $session, $id, $args, $input, $author);
+        if (!TenantRun::alive($inst, $session)) {
+            // Whether it started is what the container says, not what the ssh that asked for it
+            // returned: an ssh that timed out after the session was made left an agent working
+            // there with nobody waiting for it, and the next planner refused by its working copy.
+            try { TenantRun::start($inst, $session, $id, $args, $input, $author); }
+            catch (\RuntimeException $e) {
+                if (!TenantRun::alive($inst, $session)) throw $e;
+                error_log("ERROR TenantHost::runAndWait {$id}: starting it reported a failure (" . $e->getMessage() . ") but {$session} is running in {$inst->slug}'s container; waiting for it");
+            }
+        }
         $deadline = time() + $timeout + 300;
         while (true) {
             sleep(5);

@@ -1,0 +1,140 @@
+{
+    "key": "cannonwms",
+    "version": "1.0.0",
+    "label": "CannonWMS",
+    "blurb": "Read a warehouse's orders, products, inventory, warehouses and shipments from CannonWMS. Read-only: nothing here writes to the warehouse.",
+    "category": "Data",
+    "icon": "box-seam",
+    "color": "primary",
+    "features": [
+        "Orders",
+        "Products",
+        "Inventory by SKU and location",
+        "Warehouses and their stats",
+        "Shipments and tracking"
+    ],
+    "multiple": true,
+    "base_url": "https://your-warehouse.cannonwms.com",
+    "ask_base_url": true,
+    "test_path": "/api/v1/warehouses",
+    "account_url": "https://cannonwms.com",
+    "auth": {
+        "style": "bearer",
+        "key_label": "API key",
+        "key_placeholder": "cwms_\u2026",
+        "key_hint": "CannonWMS \u2192 Settings \u2192 API keys. It starts with cwms_ and is sent as a Bearer token. The Base URL is your own warehouse's address, e.g. https://acme.cannonwms.com."
+    },
+    "endpoints": [
+        {
+            "method": "GET",
+            "path": "/api/v1/warehouses",
+            "label": "Warehouses",
+            "description": "The warehouses of this account \u2014 the connect probe."
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/warehouses/{code}",
+            "label": "One warehouse",
+            "description": "A warehouse by its code.",
+            "params": [
+                "code"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/warehouses/{code}/stats",
+            "label": "Warehouse stats",
+            "description": "Counts and totals for one warehouse.",
+            "params": [
+                "code"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/orders",
+            "label": "Orders",
+            "description": "List orders."
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/orders/{id}",
+            "label": "One order",
+            "description": "An order with its lines.",
+            "params": [
+                "id"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/products",
+            "label": "Products",
+            "description": "List products."
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/products/{sku}",
+            "label": "One product",
+            "description": "A product by SKU.",
+            "params": [
+                "sku"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/products/barcode/{barcode}",
+            "label": "Product by barcode",
+            "description": "The product a barcode belongs to.",
+            "params": [
+                "barcode"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/inventory",
+            "label": "Inventory",
+            "description": "List inventory."
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/inventory/{sku}",
+            "label": "Inventory of one SKU",
+            "description": "Where a SKU is and how many.",
+            "params": [
+                "sku"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/inventory/locations/{warehouse_id}",
+            "label": "Locations",
+            "description": "The storage locations of a warehouse.",
+            "params": [
+                "warehouse_id"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/shipments",
+            "label": "Shipments",
+            "description": "List shipments."
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/shipments/{id}",
+            "label": "One shipment",
+            "description": "A shipment by id.",
+            "params": [
+                "id"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/shipments/{id}/tracking",
+            "label": "Tracking",
+            "description": "Tracking events of a shipment.",
+            "params": [
+                "id"
+            ]
+        }
+    ]
+}

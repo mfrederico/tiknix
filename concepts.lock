@@ -1,0 +1,12 @@
+{
+    "version": 1,
+    "concepts": [],
+    "connectors": {
+        "cannonwms": {
+            "version": "1.0.0",
+            "source": "control-plane catalog",
+            "installed_at": "2026-10-13T03:00:41+00:00",
+            "hash": "sha256:74ae5ddbf1be95bf690106b4489e6577964f9c68349de7dd182858a8a771c3af"
+        }
+    }
+}

@@ -235,7 +235,7 @@ try {
         $why = '';
         try {
             $log = Bean::findOne('tasklog', 'task_id = ? ORDER BY id DESC', [(int) $ft->id]);
-            if ($log && $log->id) $why = (string) ($log->content ?? '');
+            if ($log && $log->id) $why = (string) ($log->message ?? '');   // tasklog's column is `message`; this read `content`, which no row has, so every failure's reason was empty
         } catch (\Throwable $e) { /* no logs for this task */ }
         $failures[] = ['title' => (string) $ft->title, 'why' => $why];
     }

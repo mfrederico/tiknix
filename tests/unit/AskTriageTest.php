@@ -90,4 +90,20 @@ class AskTriageTest extends TestCase {
         $this->assertStringNotContainsString('database_query', $member);
         $this->assertStringContainsString('You cannot read rows', $member);
     }
+
+    public function testAPageAddressInAnAnswerBecomesALinkToThatPageOfTheApp(): void {
+        $html = '<p>Change it at <code>/landing</code> (see <code>views/landing/index.php</code>, <code>/srv/app/x</code> and <code>/crm/contact</code>).</p>';
+        $out = AskTriage::linkPages($html, 'https://tiknix.com/projects/open?id=137&to=');
+        $this->assertStringContainsString('<a href="https://tiknix.com/projects/open?id=137&amp;to=%2Flanding"', $out);
+        $this->assertStringContainsString('><code>/landing</code></a>', $out, 'the short text stays');
+        $this->assertStringContainsString('to=%2Fcrm%2Fcontact"', $out);
+        $this->assertStringContainsString('<code>views/landing/index.php</code>', $out);
+        $this->assertStringNotContainsString('to=%2Fsrv', $out, 'a path on the machine is not a page');
+        $this->assertSame($html, AskTriage::linkPages($html, ''));
+    }
+
+    public function testOnlyWhatReadsLikeAQuestionIsAnsweredAhead(): void {
+        foreach (['What does the headline read now?', 'where are leads kept', 'Is it done?', 'how many enquiries are spam?'] as $q) $this->assertTrue(AskTriage::readsAsQuestion($q), $q);
+        foreach (['Can you add a login page?', 'Could we make the header darker?', 'Add a phone number under the headline', 'please change the footer?', 'the footer'] as $q) $this->assertFalse(AskTriage::readsAsQuestion($q), $q);
+    }
 }

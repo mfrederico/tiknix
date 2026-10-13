@@ -164,6 +164,17 @@ class AskTriage {
         }, '');
     }
 
+    /**
+     * Does it read like a question — enough to START answering it while the first reading
+     * decides? Only that: nothing is routed by this. A request phrased as one ("can you add…?")
+     * is left out, since its answer would be thrown away.
+     */
+    public static function readsAsQuestion(string $said): bool {
+        $s = strtolower(trim($said));
+        if (preg_match('/^(can|could|would|will|please)\b.{0,12}\b(you|we)\b/', $s) || preg_match('/^(please|add|make|build|create|change|fix|remove|put|move|update|set)\b/', $s)) return false;
+        return str_ends_with($s, '?') || (bool) preg_match('/^(what|where|why|how|when|who|which|is|are|does|do|did|has|have)\b/', $s);
+    }
+
     /** The agent's reply, read: ['verdict' => build|answer|unsure, 'text' => …, 'note' => 'kind: one line' or '']; throws when it did not say which. $needAnswer false = the first reading, which only says which. */
     public static function parse(string $reply, bool $needAnswer = true): array {
         $reply = trim($reply);
@@ -189,6 +200,9 @@ class AskTriage {
             $row = Bean::load('promptlog', $promptId);
             if (!$row->id) throw new \RuntimeException("no prompt #{$promptId}");
             $row->askState  = $state;
+            // Sent on to be built ("Build it" under an answer): the answer it had is kept, so that
+            // stopping the planner puts the conversation back as it was (restoreAnswer).
+            if ($state === 'build') { $row->askAt = date('Y-m-d H:i:s'); Bean::store($row); return null; }
             $row->askAnswer = $answer;
             $row->askNote   = $note;
             $row->askNotedAt = null;
@@ -221,6 +235,22 @@ class AskTriage {
     }
 
     /**
+     * The planner was stopped: a message that had been ANSWERED and then sent to be built ("Build
+     * it" under the answer) goes back to being that answer, instead of vanishing from the
+     * conversation. Only the newest such message of this member on this project, with no plan and
+     * not waiting. Returns its id, or 0.
+     */
+    public static function restoreAnswer(int $memberId, string $instanceTag): int {
+        return (int) CoreDb::with(function () use ($memberId, $instanceTag) {
+            $r = Bean::findOne('promptlog', "member_id = ? AND instance_tag = ? AND ask_state = 'build' AND (plan_uid IS NULL OR plan_uid = '') AND queued_at IS NULL ORDER BY id DESC", [$memberId, $instanceTag]);
+            if (!$r || !$r->id || trim((string) ($r->askAnswer ?? '')) === '') return 0;
+            $r->askState = 'answer';
+            Bean::store($r);
+            return (int) $r->id;
+        }, 0);
+    }
+
+    /**
      * The line worth keeping from an answer, as a notebook entry ({kind, doc, text}) — or null
      * when there is none, it is not this member's, or it is already in the notebook.
      */
@@ -231,6 +261,21 @@ class AskTriage {
             if (!preg_match('/^(decision|map|lesson): (.+)$/s', (string) ($r->askNote ?? ''), $m)) return null;
             return ['kind' => $m[1], 'doc' => \app\Notebook::KINDS[$m[1]], 'text' => $m[2], 'tag' => (string) $r->instanceTag];
         }, null);
+    }
+
+    /**
+     * An answer names pages by their address (`/landing`): each becomes a link that opens THAT
+     * page of the project's own app, signed in — the short text stays as written. $open is the
+     * link's start, to which the page's path is appended url-encoded (core's
+     * /projects/open?id=N&to=). Only an address standing alone in backticks: a path inside a
+     * file name (`views/landing/index.php`) or a sentence is left as it is.
+     */
+    public static function linkPages(string $html, string $open): string {
+        if ($open === '') return $html;
+        return (string) preg_replace_callback('#<code>(/[A-Za-z0-9][A-Za-z0-9/_-]*)</code>#', function ($m) use ($open) {
+            if (preg_match('#^/(srv|var|tmp|home|etc|usr)(/|$)#', $m[1])) return $m[0];   // a place on the machine, not a page
+            return '<a href="' . htmlspecialchars($open . rawurlencode($m[1]), ENT_QUOTES) . '" target="_blank" rel="noopener" title="Open this page of your app"><code>' . $m[1] . '</code></a>';
+        }, $html);
     }
 
     /** It is in the notebook now. */
@@ -270,13 +315,29 @@ class AskTriage {
             // First the quick reading, on the fast model: which is it? Only a question goes on to
             // be answered — by the builder's own model, which reads the app to do it.
             $got = ['verdict' => 'answer', 'text' => ''];
+            // What reads like a question starts being ANSWERED at once, beside the first reading —
+            // not after it: starting an agent in the container is most of what a short run costs,
+            // and the two starts in a row were six seconds of nothing. The first reading still
+            // decides: if it says "build" or "unsure" the answer under way is dropped.
+            $ahead = false;
             if ($mode === 'auto') {
-                $r = TenantHost::ask($tenant, 'ask-' . $promptId . '-c', self::classifyBrief($said, $before), 90, '', true);
-                if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
-                $got = self::parse((string) $r['text'], false);
+                if (self::readsAsQuestion($said)) {
+                    TenantHost::askStart($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before, $rows), self::TIMEOUT, '', $rows);
+                    $ahead = true;
+                }
+                try {
+                    $r = TenantHost::ask($tenant, 'ask-' . $promptId . '-c', self::classifyBrief($said, $before), 90, '', true);
+                    if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
+                    $got = self::parse((string) $r['text'], false);
+                } catch (\Throwable $e) {
+                    if ($ahead) TenantHost::askDrop($tenant, 'ask-' . $promptId);
+                    throw $e;
+                }
+                if ($ahead && $got['verdict'] !== 'answer') { TenantHost::askDrop($tenant, 'ask-' . $promptId); $ahead = false; }
             }
             if ($got['verdict'] === 'answer') {
-                $r = TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before, $rows), self::TIMEOUT, '', false, $rows);
+                $r = $ahead ? TenantHost::askWait($tenant, 'ask-' . $promptId, self::TIMEOUT)
+                            : TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before, $rows), self::TIMEOUT, '', false, $rows);
                 if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
                 $got = self::parse((string) $r['text']);
                 if ($got['verdict'] !== 'answer') throw new \RuntimeException('asked to answer, the agent did not');

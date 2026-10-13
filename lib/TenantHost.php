@@ -718,6 +718,42 @@ class TenantHost {
     }
 
     /**
+     * The same run as ask(), in two halves, for an answer started BEFORE it is known to be
+     * wanted (AskTriage reads what kind of message it is at the same time): askStart() starts it
+     * and returns at once, askWait() collects it, askDrop() ends it when the message turned out
+     * not to be a question. What the run left in the container is removed by the last two.
+     */
+    public static function askStart(object $inst, string $id, string $brief, int $timeout = 240, string $agent = '', bool $rows = false): void {
+        TenantRun::start($inst, 'tiknix-run-' . $id, $id, '--agent-ask=' . escapeshellarg($id) . ($rows ? ' --rows' : '') . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $brief, []);
+    }
+
+    public static function askWait(object $inst, string $id, int $timeout = 240): array {
+        $session = 'tiknix-run-' . $id;
+        $deadline = time() + $timeout + 60;
+        try {
+            while (true) {
+                sleep(1);
+                $done = TenantRun::result($inst, $id);
+                if ($done === null && !TenantRun::alive($inst, $session)) {
+                    $done = TenantRun::result($inst, $id);   // its exit file is written before the session ends
+                    if ($done === null) return ['ok' => false, 'status' => 'failed', 'error' => "{$session} ended in {$inst->slug}'s container without finishing"];
+                }
+                if ($done !== null) break;
+                if (time() > $deadline) return ['ok' => false, 'status' => 'failed', 'error' => "no answer from {$id} after {$timeout}s"];
+            }
+            if ($done['result'] === null) return ['ok' => false, 'status' => 'failed', 'error' => "{$id} exited {$done['exit']} in the container with no answer: " . mb_substr($done['log'], -800)];
+            return $done['result'];
+        } finally {
+            self::ssh($inst, 'app', 'rm -rf ' . escapeshellarg(TenantRun::DIR . '/' . $id), null, 20);
+        }
+    }
+
+    public static function askDrop(object $inst, string $id): void {
+        TenantRun::kill($inst, 'tiknix-run-' . $id);
+        self::ssh($inst, 'app', 'rm -rf ' . escapeshellarg(TenantRun::DIR . '/' . $id), null, 20);
+    }
+
+    /**
      * Run `clitool $args` in a tmux session IN the container (TenantRun, session tiknix-run-<id>)
      * and wait here for its JSON answer. The agent lives in the container: this waiter dying (a
      * core restart, a dropped SSH) does not stop it, and calling again with the same id while

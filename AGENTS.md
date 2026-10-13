@@ -509,7 +509,7 @@ The Builder tells this app about its own building, and a pipeline may run on it:
 - `question.asked` — the planner or a task stopped to ask the owner something. Context: `by` (`planner` | `task`), `question`, `task`.
 - `request.undone` — a request was undone. Context: `checkpoint`, `line`.
 
-`{{event}}` names which. A "webhook when a build finishes" is a pipeline on `request.finished` with one `http` step; nothing else is needed. The events are a courtesy to the app: a pipeline that fails does not fail the build.
+Each field is read as `{context.<name>}` in a step (`{context.event}` names which event, `{context.status}`, `{context.line}`). A "webhook when a build finishes" is a pipeline on `request.finished` with one `http` step; nothing else is needed. The events are a courtesy to the app: a pipeline that fails does not fail the build.
 
 ## Plugins and Agent Guidance
 

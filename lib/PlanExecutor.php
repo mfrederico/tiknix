@@ -347,6 +347,12 @@ class PlanExecutor {
             // Not stalled: stopped on purpose. Done for this run once nothing is running.
             return ['done' => $counts['running'] === 0, 'stalled' => false, 'held' => true, 'counts' => $counts, 'total' => $total, 'blocked' => []];
         }
+        // Tasks wait on an answer from their person, and everything that could be built without it
+        // has been: that is a pause for them, not a deadlock — no "stalled", no re-plan, no check.
+        $asking = count(array_filter($fresh, fn($t) => (string) $t->status === 'awaiting' && trim((string) ($t->askedJson ?? '')) !== ''));
+        if ($asking > 0 && !$done && $counts['running'] === 0 && !$this->anyLaunchable($fresh, $byId)) {
+            return ['done' => true, 'stalled' => false, 'held' => true, 'asking' => $asking, 'counts' => $counts, 'total' => $total, 'blocked' => []];
+        }
         return ['done' => $done || $stalled, 'stalled' => $stalled, 'held' => false, 'counts' => $counts, 'total' => $total,
                 // WHY it stalled, not just that it did. Computed here because this is
                 // the only place that knows both the dependency graph and the rule
@@ -661,6 +667,12 @@ class PlanExecutor {
         // What the app noticed about the work (an unlinked page): on the task, where a person reads it.
         foreach ((array) ($r['notes'] ?? []) as $note) $this->logEvent($t, 'warning', (string) $note);   // each note says what kind it is (AgentTask)
         $status = (string) ($r['status'] ?? '');
+        // It stopped to ask its person something (AgentTask::QUESTION_FILE). That is neither done
+        // nor failed: the task waits, its copy kept, and the answer continues it (Retry → --resume).
+        if (($question = trim((string) ($r['question'] ?? ''))) !== '' && in_array($status, ['changed', 'no-change'], true)) {
+            $this->ask($t, $question);
+            return;
+        }
         if ($status === 'no-change') {
             TenantHost::discardTask($this->tenant, $id);
             // It may have changed nothing because it split itself: then THAT is what happened to it, and
@@ -1051,6 +1063,48 @@ class PlanExecutor {
         $n = 0; foreach ($tasks as $t) if ($t->status === $status) $n++; return $n;
     }
 
+    /**
+     * What this task asked its person and what they answered — the decision is theirs and it is
+     * made: the brief says it so the task acts on it instead of asking again or guessing after all.
+     */
+    public static function askedSection($asked): string {
+        if (!is_array($asked)) return '';
+        $out = [];
+        foreach ($asked as $qa) {
+            $q = trim((string) ($qa['q'] ?? '')); $a = trim((string) ($qa['a'] ?? ''));
+            if ($q === '' || $a === '') continue;
+            $out[] = "**You asked:** " . str_replace("\n", "\n  ", $q) . "\n\n**They answered:** " . str_replace("\n", "\n  ", $a);
+        }
+        if (!$out) return '';
+        return "\n## You asked the owner, and they answered\n\nAn earlier run of this task stopped to ask. This is settled — build it the way they said, and do not ask it again.\n\n" . implode("\n\n---\n\n", $out) . "\n";
+    }
+
+    /**
+     * A task asks its person a question and waits. `awaiting` with the question as its progress
+     * message is what the board and Ask already show as "it needs an answer from you"; what was
+     * asked and answered is kept on the task (askedJson) so the exchange stays in the conversation
+     * after it is answered. Its working copy is kept: the answer resumes it.
+     */
+    private function ask($t, string $question): void {
+        $asked = json_decode((string) ($t->askedJson ?? ''), true);
+        if (!is_array($asked)) $asked = [];
+        $asked[] = ['q' => $question, 'at' => date('Y-m-d H:i:s'), 'a' => '', 'answered_at' => ''];
+        $t->askedJson       = json_encode($asked, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $t->status          = 'awaiting';
+        $t->resumable       = 1;
+        $t->progressMessage = mb_substr($question, 0, 1500);
+        $t->errorMessage    = '';
+        $t->agentSession    = '';
+        $t->updatedAt       = date('Y-m-d H:i:s');
+        Bean::store($t);
+        $this->logEvent($t, 'warning', "It stopped to ask its person a question, and waits for the answer:\n\n" . $question);
+    }
+
+    /** How many tasks of this plan wait on an answer from their person. */
+    public function asking(): int {
+        return count(array_filter($this->subtasks(), fn($t) => (string) $t->status === 'awaiting' && trim((string) ($t->askedJson ?? '')) !== ''));
+    }
+
     private function finish($t, string $status, string $note): void {
         // Auto-retry: a retryable failure — under the cap and not repeating the exact
         // same error — gets its blocker corrected and is re-queued (status 'pending')
@@ -1395,6 +1449,7 @@ MD;
         $prove = self::designSection($title) . $prove;
         $several = self::severalSection(!empty($t->needsPlanning), (string) ($t->planningNote ?? ''), (int) ($t->splitDepth ?? 0));
         $several .= self::saidSection($this->saidAbout($t), (string) ($t->lastFailReason ?: $t->errorMessage ?: ''));
+        $several .= self::askedSection(json_decode((string) ($t->askedJson ?? ''), true));
         $several .= self::attachedSection((string) ($this->plan()->planGoal ?? ''));
         return <<<MD
 # Build task: {$title}
@@ -1433,6 +1488,16 @@ commit and merge your work — you just make the code changes.
   committed is merged first and they build on it — so leave the code working (finish or undo
   anything half-made) and say in your Handoff what you did complete. Split early, when you see
   it, not after spending the task's time. Most tasks do not need this.
+- If you reach a DECISION ONLY THE OWNER CAN MAKE — two real ways to build this that they
+  would notice the difference between, a word in the request that could mean two things, a
+  credential or account only they have, something that would remove or overwrite their data —
+  do not guess and do not build both: ASK. Write the question to `.aibuilder/task.question.md`
+  (one question, in plain words, two or three sentences; give the options you see and say
+  which you would pick and why), leave the code working, and stop. They are shown it and
+  answer in a sentence; this task then continues in this same working copy with their answer
+  in its brief. Not for what you can find out yourself (read the code, run it), not for
+  preferences with an obvious default (pick it and say so in your summary), and never the
+  same question twice. Most tasks never need this.
 - END your final message with a section headed exactly `## Handoff`, 3–8 lines, written for
   the NEXT agent, who starts knowing nothing of this session: what now exists (the classes,
   routes, tables and views you added, by name), how to use it (the call to make, the page to

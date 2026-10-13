@@ -135,10 +135,23 @@ if (!$ranOut && !empty($res['held'])) {
     $parent = Bean::load('workbenchtask', $planId);
     $parent->planStatus      = 'approved';
     $parent->status          = 'pending';
-    $parent->progressMessage = 'Waiting for you: a task split itself into smaller tasks. Read them on the board, then press Build to go on.';
+    $asking = (int) ($res['asking'] ?? 0);
+    $parent->progressMessage = $asking > 0
+        ? 'Waiting for your answer: ' . ($asking === 1 ? 'a task has a question for you' : "{$asking} tasks have a question for you") . '. The build goes on by itself when you answer.'
+        : 'Waiting for you: a task split itself into smaller tasks. Read them on the board, then press Build to go on.';
     $parent->updatedAt       = date('Y-m-d H:i:s');
     Bean::store($parent);
-    echo "[orchestrator] plan #{$planId} held for its owner after a split " . date('c') . "\n";
+    echo "[orchestrator] plan #{$planId} held for its owner " . ($asking > 0 ? "with {$asking} question(s)" : 'after a split') . ' ' . date('c') . "\n";
+    // A question nobody sees is a build that silently stopped: the owner is told, as for a finished plan.
+    if ($asking > 0) {
+        try {
+            $q = Bean::findOne('workbenchtask', "parent_task_id = ? AND status = 'awaiting' ORDER BY id", [$planId]);
+            echo '[orchestrator] notify: ' . \app\PlanNotifier::planAsks(dirname(__DIR__) . '/database/tiknix.db', [
+                'plan_id' => $planId, 'slug' => $slug, 'member_id' => (int) $parent->memberId, 'title' => (string) $parent->title, 'base_url' => $baseUrl ?? '',
+                'task' => $q ? (string) $q->title : '', 'question' => $q ? (string) $q->progressMessage : '', 'count' => $asking,
+            ]) . "\n";
+        } catch (\Throwable $e) { echo '[orchestrator] ERROR could not tell the owner a task has a question: ' . $e->getMessage() . "\n"; }
+    }
     exit(0);
 }
 

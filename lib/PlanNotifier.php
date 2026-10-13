@@ -214,6 +214,74 @@ class PlanNotifier {
     }
 
     /**
+     * A build has stopped for its owner's ANSWER: a task asked a question (PlanExecutor::ask) and
+     * everything that could be built without it has been. Said in the plan's own conversation —
+     * in-app first, email as the extra — because a question nobody sees is a build that silently
+     * stopped. The answer is given in the Builder (Ask shows the question, in yellow).
+     *
+     * @param array $p [plan_id, slug, member_id, title, task, question, count, base_url]
+     */
+    public static function planAsks(string $coreDb, array $p): string {
+        $planId = (int) ($p['plan_id'] ?? 0); $memberId = (int) ($p['member_id'] ?? 0); $slug = (string) ($p['slug'] ?? '');
+        if ($planId <= 0 || $memberId <= 0) return 'notify: skipped (no plan/member)';
+        if (!is_file($coreDb)) return 'notify: skipped (no core db at ' . $coreDb . ')';
+        $title = trim((string) ($p['title'] ?? 'Untitled plan'));
+        $n = max(1, (int) ($p['count'] ?? 1));
+        $subject = 'A question for you: ' . $title;
+        $e = fn(string $v) => htmlspecialchars($v, ENT_QUOTES);
+        $content = '<p>The build of <strong>' . $e($title) . '</strong> has stopped for your answer' . ($n > 1 ? " ({$n} tasks are asking)" : '') . '.</p>'
+                 . (trim((string) ($p['task'] ?? '')) !== '' ? '<p><strong>' . $e((string) $p['task']) . '</strong> asks:</p>' : '')
+                 . '<blockquote>' . nl2br($e((string) ($p['question'] ?? ''))) . '</blockquote>'
+                 . '<p>Answer it in the Builder, on the Ask page of this project: the question is there, and the build goes on by itself once you answer.</p>';
+
+        $restore = Bean::hasDatabase('default') ? 'default' : null;
+        if (!Bean::hasDatabase('plannotify')) Bean::addDatabase('plannotify', 'sqlite:' . $coreDb);
+        Bean::selectDatabase('plannotify');
+        try {
+            $now = date('Y-m-d H:i:s');
+            // the plan's own conversation, as planFinished keys it (per project: plan ids are not unique across projects)
+            $thread = Bean::findOne('thread', 'related_type = ? AND related_id = ? AND project_slug = ?', ['plan', $planId, $slug]);
+            if (!$thread || !$thread->id) {
+                $thread = Bean::dispense('thread');
+                $thread->subject = $subject; $thread->relatedType = 'plan'; $thread->relatedId = $planId; $thread->projectSlug = $slug;
+                $thread->ownerMemberId = $memberId; $thread->messageCount = 0; $thread->status = 'open'; $thread->createdAt = $now;
+            }
+            $thread->lastDirection = 'in';
+            $thread->lastPreview   = mb_substr($title . ' — a task has a question for you', 0, 200);
+            $thread->lastMessageAt = $now;
+            $thread->messageCount  = (int) $thread->messageCount + 1;
+            $thread->updatedAt     = $now;
+            Bean::store($thread);
+            ThreadMembers::ensure((int) $thread->id, [$memberId], ThreadMembers::ROLE_OWNER);
+
+            $msg = Bean::dispense('message');
+            $msg->threadId = (int) $thread->id; $msg->direction = 'in'; $msg->notifyType = 'system'; $msg->fromName = 'AI Builder';
+            $msg->subject = $subject; $msg->content = $content;
+            $msg->bodyPlain = trim(html_entity_decode(strip_tags(str_replace(['</p>', '</li>', '<br>', '</blockquote>'], "\n", $content)), ENT_QUOTES));
+            $msg->status = 'received'; $msg->createdAt = $now; $msg->sentAt = $now;
+            Bean::store($msg);
+            $thread->wakeParticipants((int) $msg->id);
+
+            $sent = 'thread #' . (int) $thread->id . ' for member ' . $memberId;
+            self::ensureLogger();
+            if (class_exists('\\app\\Mailer') && Mailer::isConfigured()) {
+                $member = Bean::load('member', $memberId);
+                if (($email = (string) ($member->email ?? '')) !== '') {
+                    try { $sent .= Mailer::create()->to($email, (string) ($member->username ?? ''))->subject($subject)->send($content, $msg->bodyPlain) ? ', emailed ' . $email : ', email FAILED'; }
+                    catch (\Throwable $e2) { $sent .= ', email error: ' . $e2->getMessage(); }
+                }
+            } else {
+                $sent .= ', no email (no Mailgun connection bound to mail)';
+            }
+            return $sent;
+        } catch (\Throwable $e3) {
+            return 'FAILED — ' . $e3->getMessage();
+        } finally {
+            if ($restore) Bean::selectDatabase($restore);
+        }
+    }
+
+    /**
      * Announce that the PLANNER failed before any plan existed.
      *
      * planFinished() is for a plan that RAN; this is the earlier, quieter failure — the

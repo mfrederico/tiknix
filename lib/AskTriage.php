@@ -222,8 +222,13 @@ class AskTriage {
         return (array) CoreDb::with(function () use ($memberId, $instanceTag, $limit) {
             if (!in_array('ask_state', array_keys(Bean::inspect('promptlog')), true)) return [];
             $out = [];
-            foreach (Bean::find('promptlog', "member_id = ? AND instance_tag = ? AND ask_state IN ('thinking', 'answer', 'unsure', 'failed') ORDER BY id DESC LIMIT " . max(1, $limit), [$memberId, $instanceTag]) as $r) {
+            // …and one sent to be built whose PLANNING failed (no plan, not waiting, an error on
+            // it): it used to vanish from the conversation, with only a note elsewhere saying why.
+            foreach (Bean::find('promptlog', "member_id = ? AND instance_tag = ? AND (ask_state IN ('thinking', 'answer', 'unsure', 'failed')"
+                    . " OR (ask_state = 'build' AND (plan_uid IS NULL OR plan_uid = '') AND queued_at IS NULL AND last_error IS NOT NULL AND last_error != '' AND last_attempt_at >= ask_at))"
+                    . ' ORDER BY id DESC LIMIT ' . max(1, $limit), [$memberId, $instanceTag]) as $r) {
                 $state = (string) $r->askState; $answer = (string) $r->askAnswer;
+                if ($state === 'build') { $state = 'failed'; $answer = 'It could not be planned. ' . trim((string) $r->lastError); }
                 if ($state === 'thinking' && time() - (int) strtotime((string) $r->askAt) > self::TIMEOUT + 420) {
                     $state = 'failed'; $answer = 'No answer came back: the run that was reading it ended without one.';
                 }

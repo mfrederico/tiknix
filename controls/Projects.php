@@ -295,6 +295,22 @@ class Projects extends BaseControls\Control {
     }
 
     /**
+     * GET /projects/builder?id=<project> — the Builder, on that project. A project's own app
+     * links here (its AI agents page, once an agent is connected): the project is chosen first,
+     * with the same access check a Change-project click gets, so the Builder opens on IT and
+     * not on whichever project was last chosen here.
+     */
+    public function builder($params = []): void {
+        if (!$this->requireLogin()) return;
+        if (!ProjectContext::set((int) $this->member->id, (int) $this->getParam('id', 0))) {
+            $this->flash('error', 'That project is not available to you.');
+            Flight::redirect('/projects');
+            return;
+        }
+        Flight::redirect('/sidecar/app/workbench?to=' . rawurlencode('/workbench/ask'));
+    }
+
+    /**
      * GET /projects/open?to=/agents — a page of the SELECTED project's own app, signed in.
      *
      * A project in its own container has its own AI agents, pipelines, connections and settings;

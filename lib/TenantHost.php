@@ -705,11 +705,12 @@ class TenantHost {
 
     /**
      * The builder's Ask in the tenant (clitool --agent-ask): the app's agent reads what was typed,
-     * read-only, and its words come back in 'text'. What the run left in the container is removed.
+     * read-only, and its words come back in 'text'. $fast = the quick first reading, on the agent's
+     * fast model with no tools. What the run left in the container is removed.
      */
-    public static function ask(object $inst, string $id, string $brief, int $timeout = 240, string $agent = ''): array {
+    public static function ask(object $inst, string $id, string $brief, int $timeout = 240, string $agent = '', bool $fast = false): array {
         try {
-            return self::runAndWait($inst, $id, '--agent-ask=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $brief, $timeout, []);
+            return self::runAndWait($inst, $id, '--agent-ask=' . escapeshellarg($id) . ($fast ? ' --fast' : '') . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $brief, $timeout, [], 1);
         } finally {
             self::ssh($inst, 'app', 'rm -rf ' . escapeshellarg(TenantRun::DIR . '/' . $id), null, 20);
         }
@@ -721,7 +722,7 @@ class TenantHost {
      * core restart, a dropped SSH) does not stop it, and calling again with the same id while
      * that session is still running waits for it instead of starting another.
      */
-    private static function runAndWait(object $inst, string $id, string $args, ?string $input, int $timeout, array $author): array {
+    private static function runAndWait(object $inst, string $id, string $args, ?string $input, int $timeout, array $author, int $every = 5): array {
         $session = 'tiknix-run-' . $id;
         if (!TenantRun::alive($inst, $session)) {
             // Whether it started is what the container says, not what the ssh that asked for it
@@ -735,7 +736,7 @@ class TenantHost {
         }
         $deadline = time() + $timeout + 300;
         while (true) {
-            sleep(5);
+            sleep(max(1, $every));   // a task runs for minutes; someone is watching an answer arrive
             try {
                 $done = TenantRun::result($inst, $id);
                 if ($done === null && !TenantRun::alive($inst, $session)) {

@@ -47,11 +47,18 @@ class AskTriageTest extends TestCase {
     }
 
     public function testOnlyAnAppWithTheReadOnlyRunIsAsked(): void {
-        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.189'));
-        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.190'));
+        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.191'));
+        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.200'));
         $this->assertTrue(AskTriage::appCanAnswer('v2.0.0'));
-        $this->assertFalse(AskTriage::appCanAnswer('v2.0.0-alpha.188'));
+        $this->assertFalse(AskTriage::appCanAnswer('v2.0.0-alpha.190'));
         $this->assertFalse(AskTriage::appCanAnswer('v2.0.0-alpha.99'));
         $this->assertFalse(AskTriage::appCanAnswer(''));
+    }
+
+    public function testTheFirstReadingOnlySaysWhich(): void {
+        $this->assertSame(['verdict' => 'answer', 'text' => ''], AskTriage::parse('VERDICT: ANSWER', false));
+        $b = AskTriage::classifyBrief('is it done?');
+        $this->assertStringContainsString('Do NOT answer it', $b);
+        $this->assertStringEndsWith('is it done?', $b);
     }
 }

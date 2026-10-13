@@ -4,8 +4,9 @@
  * BUILD, or a question to ANSWER? Every message used to become a plan; "what does the game page
  * do?" cost a minute of planning and left a plan nobody wanted.
  *
- * The project's own agent decides and, when it is a question, answers in the same run — in the
- * app's container, with tools that only read (the runtime's AgentTask::ask). Three outcomes:
+ * The project's own agent decides, in a quick first reading on its FAST model, and — only when
+ * it is a question — answers it in a second run on the builder's own model, in the app's
+ * container, with tools that only read (the runtime's AgentTask::ask). Three outcomes:
  *
  *   build   it goes down the Builder's road as before (PromptQueue: decomposed when the project
  *           is free, behind whatever is building)
@@ -25,8 +26,8 @@ class AskTriage {
     /** How long one run may take, in the container. */
     public const TIMEOUT = 240;
 
-    /** The first runtime whose clitool has --agent-ask. */
-    public const SINCE = '2.0.0-alpha.189';
+    /** The first runtime whose clitool has --agent-ask with --fast (the quick first reading). */
+    public const SINCE = '2.0.0-alpha.191';
 
     /**
      * Can this app's agent be asked? Only from the runtime that has the read-only run; an app on
@@ -36,6 +37,31 @@ class AskTriage {
     public static function appCanAnswer(string $runtime): bool {
         $v = ltrim(trim($runtime), 'v');
         return $v !== '' && version_compare($v, self::SINCE, '>=');
+    }
+
+    /**
+     * The quick first reading, for the agent's FAST model: which is it? Nothing about the app is
+     * looked at — it is a judgement on the words — so it costs a second or two and little money,
+     * and a request to build is on its way to the planner without a slower model having read it.
+     */
+    public static function classifyBrief(string $said): string {
+        return <<<MD
+        # Ask — what kind of message is this?
+
+        Someone typed the message at the end of this file into the Builder of their web app. Do NOT answer it, do not open any file, do not use any tool. Only say what kind of message it is.
+
+        Reply with exactly one line, one of:
+
+        - `VERDICT: BUILD` — they want the app changed: something added, removed, fixed, restyled, connected, imported. A request phrased as a question ("can you add a login page?", "could the header be darker?") is still BUILD. So is a bug report they want fixed.
+        - `VERDICT: ANSWER` — they want to know something: how the app works, what a page does, where something is, why something happened, what is possible, what you would suggest, how a build is going. Nothing is to change.
+        - `VERDICT: UNSURE` — it could honestly be either, or it is too vague to tell what would be built. Do not guess.
+
+        Only after `VERDICT: UNSURE`, add ONE short sentence on the next line saying what you could not tell (it is shown above two buttons: "Build it" and "Just answer").
+
+        ## The message
+
+        {$said}
+        MD;
     }
 
     /** What the agent is handed: how to answer, then what was typed. $mode 'answer' = the person already said it is a question. */
@@ -77,15 +103,15 @@ class AskTriage {
         MD;
     }
 
-    /** The agent's reply, read: ['verdict' => build|answer|unsure, 'text' => …]; throws when it did not say which. */
-    public static function parse(string $reply): array {
+    /** The agent's reply, read: ['verdict' => build|answer|unsure, 'text' => …]; throws when it did not say which. $needAnswer false = the first reading, which only says which. */
+    public static function parse(string $reply, bool $needAnswer = true): array {
         $reply = trim($reply);
         if (!preg_match('/^\s*`?VERDICT:\s*(BUILD|ANSWER|UNSURE)`?\s*$/mi', $reply, $m, PREG_OFFSET_CAPTURE)) {
             throw new \RuntimeException('the agent did not say whether this is something to build or a question');
         }
         $text = trim(substr($reply, $m[0][1] + strlen($m[0][0])));
         $verdict = strtolower($m[1][0]);
-        if ($verdict === 'answer' && $text === '') throw new \RuntimeException('the agent called it a question and gave no answer');
+        if ($verdict === 'answer' && $text === '' && $needAnswer) throw new \RuntimeException('the agent called it a question and gave no answer');
         return ['verdict' => $verdict, 'text' => $verdict === 'build' ? '' : $text];
     }
 
@@ -143,9 +169,21 @@ class AskTriage {
             $tenant = TenantBuilder::bySlug($slug);
             if (!$tenant) throw new \RuntimeException("{$slug} is not running in its own container, so its agent cannot be asked");
             $busy = BuildQueue::busyWith(\Model_Instance::dirForSlug($slug), $slug);
-            $r = TenantHost::ask($tenant, 'ask-' . $promptId, self::brief(trim(GoalBrief::split($q['body'])['goal']), $mode, $busy), self::TIMEOUT);
-            if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
-            $got = self::parse((string) $r['text']);
+            $said = trim(GoalBrief::split($q['body'])['goal']);
+            // First the quick reading, on the fast model: which is it? Only a question goes on to
+            // be answered — by the builder's own model, which reads the app to do it.
+            $got = ['verdict' => 'answer', 'text' => ''];
+            if ($mode === 'auto') {
+                $r = TenantHost::ask($tenant, 'ask-' . $promptId . '-c', self::classifyBrief($said), 90, '', true);
+                if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
+                $got = self::parse((string) $r['text'], false);
+            }
+            if ($got['verdict'] === 'answer') {
+                $r = TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy), self::TIMEOUT);
+                if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
+                $got = self::parse((string) $r['text']);
+                if ($got['verdict'] !== 'answer') throw new \RuntimeException('asked to answer, the agent did not');
+            }
         } catch (\Throwable $e) {
             error_log("ERROR AskTriage #{$promptId} ({$slug}): " . $e->getMessage());
             self::mark($promptId, 'failed', $e->getMessage());

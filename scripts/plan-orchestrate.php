@@ -233,6 +233,20 @@ Bean::store($parent);
 
 echo "[orchestrator] plan #$planId finished status={$parent->planStatus} " . date('c') . "\n";
 
+// A finished request leaves its line in the project's notebook (app\RequestNote, the `built`
+// document): what was asked, what was built, where, what its owner decided on the way. Every
+// later plan and task reads it — the project's own account of how it came to be.
+if ((string) $parent->planStatus === 'done') {
+    try {
+        $line = \app\RequestNote::built($dir, $planId);
+        $ct = $line !== '' ? \app\TenantBuilder::bySlug($slug) : null;
+        if ($ct) {
+            $nb = \app\TenantHost::notebookAdd($ct, [['kind' => 'built', 'doc' => 'built', 'text' => $line]], "request #{$planId}", \app\TenantHost::author((int) $parent->memberId));
+            echo '[orchestrator] notebook: ' . (!empty($nb['ok']) ? ((int) ($nb['added'] ?? 0) ? 'what this request built is written down' : 'already there') : 'ERROR not written — ' . (string) ($nb['error'] ?? '?')) . "\n";
+        }
+    } catch (\Throwable $e) { echo '[orchestrator] ERROR the notebook line for this request was not written: ' . $e->getMessage() . "\n"; }
+}
+
 // TELL THE OWNER. A build that ends by writing a line to a log file inside a tmux
 // session nobody has open has not told anyone anything. This lands in Communications
 // and lights the bell in the shell — no mail configuration required — and emails as

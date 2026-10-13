@@ -47,10 +47,10 @@ class AskTriageTest extends TestCase {
     }
 
     public function testOnlyAnAppWithTheReadOnlyRunIsAsked(): void {
-        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.191'));
+        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.194'));
         $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.200'));
         $this->assertTrue(AskTriage::appCanAnswer('v2.0.0'));
-        $this->assertFalse(AskTriage::appCanAnswer('v2.0.0-alpha.190'));
+        $this->assertFalse(AskTriage::appCanAnswer('v2.0.0-alpha.193'));
         $this->assertFalse(AskTriage::appCanAnswer('v2.0.0-alpha.99'));
         $this->assertFalse(AskTriage::appCanAnswer(''));
     }
@@ -82,5 +82,12 @@ class AskTriageTest extends TestCase {
         }
         $this->assertStringNotContainsString('The conversation so far', AskTriage::brief('x?', 'answer', ''));
         $this->assertStringContainsString('Be brief', AskTriage::brief('x?', 'answer', ''));
+    }
+
+    public function testOnlyAnAdminsBriefOffersTheData(): void {
+        $this->assertStringContainsString('database_query', AskTriage::brief('how many leads this week?', 'answer', '', '', true));
+        $member = AskTriage::brief('how many leads this week?', 'answer', '', '', false);
+        $this->assertStringNotContainsString('database_query', $member);
+        $this->assertStringContainsString('You cannot read rows', $member);
     }
 }

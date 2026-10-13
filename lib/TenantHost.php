@@ -706,11 +706,12 @@ class TenantHost {
     /**
      * The builder's Ask in the tenant (clitool --agent-ask): the app's agent reads what was typed,
      * read-only, and its words come back in 'text'. $fast = the quick first reading, on the agent's
-     * fast model with no tools. What the run left in the container is removed.
+     * fast model with no tools; $rows = it may also read rows (the asker is an admin of the project).
+     * What the run left in the container is removed.
      */
-    public static function ask(object $inst, string $id, string $brief, int $timeout = 240, string $agent = '', bool $fast = false): array {
+    public static function ask(object $inst, string $id, string $brief, int $timeout = 240, string $agent = '', bool $fast = false, bool $rows = false): array {
         try {
-            return self::runAndWait($inst, $id, '--agent-ask=' . escapeshellarg($id) . ($fast ? ' --fast' : '') . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $brief, $timeout, [], 1);
+            return self::runAndWait($inst, $id, '--agent-ask=' . escapeshellarg($id) . ($fast ? ' --fast' : '') . ($rows ? ' --rows' : '') . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $brief, $timeout, [], 1);
         } finally {
             self::ssh($inst, 'app', 'rm -rf ' . escapeshellarg(TenantRun::DIR . '/' . $id), null, 20);
         }

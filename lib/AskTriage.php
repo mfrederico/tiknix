@@ -19,6 +19,9 @@
  * what became of them (history()), so "and the footer?" is read as a follow-up. From our own
  * record, cut short — not an agent session that grows, and is paid for, without limit.
  *
+ * An OWNER or ADMIN of the project is also answered from its data (read-only rows, through the
+ * app's database_query); a member is answered from the code and the counts.
+ *
  * The verdict is the person's to overrule either way (Workbench::askas). A run that fails says so
  * (state failed, with the reason) and builds nothing.
  */
@@ -30,8 +33,8 @@ class AskTriage {
     /** How long one run may take, in the container. */
     public const TIMEOUT = 240;
 
-    /** The first runtime whose clitool has --agent-ask with --fast (the quick first reading). */
-    public const SINCE = '2.0.0-alpha.191';
+    /** The first runtime whose clitool has --agent-ask with --fast (the quick first reading) and --rows. */
+    public const SINCE = '2.0.0-alpha.194';
 
     /**
      * Can this app's agent be asked? Only from the runtime that has the read-only run; an app on
@@ -70,8 +73,11 @@ class AskTriage {
     }
 
     /** What the agent is handed: how to answer, then what was typed. $mode 'answer' = the person already said it is a question. */
-    public static function brief(string $said, string $mode, string $busy, string $before = ''): string {
+    public static function brief(string $said, string $mode, string $busy, string $before = '', bool $rows = false): string {
         $before = self::beforeSection($before);
+        $data = $rows
+            ? "You may also look at the app's DATA with `database_query`: one read-only SELECT at a time, 200 rows at most, passwords and keys withheld. Use it when the answer is in the data (how many, which, when, the latest). Count and summarise; name a person or quote an email or phone number only when they asked for exactly that."
+            : "You cannot read rows: how much data there is (a count a table) is in the facts file, and that is all you can say about the data — say so plainly if they ask for more, and that an admin of the project can ask the same thing and get it.";
         $decide = $mode === 'answer'
             ? "The person has said this is a QUESTION, not something to build. Answer it. Your first line is exactly `VERDICT: ANSWER`."
             : <<<MD
@@ -97,6 +103,7 @@ class AskTriage {
         ## How to answer
 
         - You can only READ: the code (Read, Grep, Glob) and the app's own tools (`reuse_digest`, `describe`, `whatprovides`, `database_schema`, `application_info`, `last_error`, `read_log_entries`). You cannot change a file, run a command or start a build, and must not say you did.
+        - {$data}
         - Look before you answer. Say what the app really has, naming the page or file (`/game/play`, `controls/Game.php`) — not what an app like it usually has.
         - **Be brief.** The first sentence IS the answer ("Yes — …", "It is at /landing.", "7 so far."). Then only what they need to act on it: at most three short bullets or two more sentences, under about 80 words in all. No preamble, no recap of the question, no list of everything you looked at, no closing summary.
         - Write for the person who owns the app, who may not be a programmer: plain words. Name a page by its address (`/landing`) — a file name only when they asked where something is in the code. No headings. Markdown is shown.
@@ -256,6 +263,10 @@ class AskTriage {
             $busy = BuildQueue::busyWith(\Model_Instance::dirForSlug($slug), $slug);
             $said = trim(GoalBrief::split($q['body'])['goal']);
             $before = self::history($q['member'], $q['tag'], $promptId);
+            // Rows only for someone who may see the app's data themselves: its owner, or an admin of a team it is shared with.
+            $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ?', [$slug]), null);
+            $level = $inst && $inst->id ? CoreDb::with(fn() => AppAccess::level($q['member'], $inst), null) : null;
+            $rows = $level !== null && $level <= 50;
             // First the quick reading, on the fast model: which is it? Only a question goes on to
             // be answered — by the builder's own model, which reads the app to do it.
             $got = ['verdict' => 'answer', 'text' => ''];
@@ -265,7 +276,7 @@ class AskTriage {
                 $got = self::parse((string) $r['text'], false);
             }
             if ($got['verdict'] === 'answer') {
-                $r = TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before), self::TIMEOUT);
+                $r = TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before, $rows), self::TIMEOUT, '', false, $rows);
                 if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
                 $got = self::parse((string) $r['text']);
                 if ($got['verdict'] !== 'answer') throw new \RuntimeException('asked to answer, the agent did not');

@@ -144,7 +144,7 @@ $fmt = function (string $iso): string {
   <div class="collapse mb-3" id="proj-new">
     <div class="card shadow-sm">
       <div class="card-body">
-        <form id="proj-new-form" class="row g-2 align-items-end">
+        <form id="proj-new-form" class="row g-2 align-items-start">
           <div class="col-12 col-sm-5">
             <label class="form-label small mb-0">Project name</label>
             <input id="proj-new-slug" class="form-control form-control-sm" placeholder="my-app"
@@ -160,6 +160,8 @@ $fmt = function (string $iso): string {
             </select>
           </div>
           <div class="col-4 col-sm-3">
+            <?php /* an empty label: the button lines up with the two fields beside it */ ?>
+            <label class="form-label small mb-0" aria-hidden="true">&nbsp;</label>
             <button class="btn btn-primary btn-sm w-100" type="submit">Create &amp; work on it</button>
           </div>
           <?php if (\app\ProjectQuota::CLIENT_TIER_OFFERED): ?>

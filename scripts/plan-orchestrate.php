@@ -141,6 +141,9 @@ $ledger = function (string $status, int $memberId) use ($dir, $planId, $slug): v
         if (!$ct) return;
         $nb = \app\TenantHost::notebookAdd($ct, [['kind' => 'built', 'doc' => 'built', 'text' => $line]], "request #{$planId}", \app\TenantHost::author($memberId));
         echo '[orchestrator] notebook: ' . (!empty($nb['ok']) ? ((int) ($nb['added'] ?? 0) ? 'what this request built is written down' : 'already there') : 'ERROR not written — ' . (string) ($nb['error'] ?? '?')) . "\n";
+        // …and the app is told (request.finished): its own pipelines may act on it — a webhook, a notice, a publish.
+        $ev = \app\TenantHost::builderEvent($ct, 'request.finished', ['status' => $status] + (\app\RequestNote::facts($dir, $planId) ?? []));
+        echo '[orchestrator] event request.finished: ' . (empty($ev['ok']) ? 'ERROR ' . (string) ($ev['error'] ?? '?') : count((array) ($ev['fired'] ?? [])) . ' pipeline(s) started') . "\n";
     } catch (\Throwable $e) { echo '[orchestrator] ERROR the notebook line for this request was not written: ' . $e->getMessage() . "\n"; }
 };
 
@@ -166,6 +169,9 @@ if (!$ranOut && !empty($res['held'])) {
                 'task' => $q ? (string) $q->title : '', 'question' => $q ? (string) $q->progressMessage : '', 'count' => $asking,
             ]) . "\n";
         } catch (\Throwable $e) { echo '[orchestrator] ERROR could not tell the owner a task has a question: ' . $e->getMessage() . "\n"; }
+        if (($ct = \app\TenantBuilder::bySlug($slug)) && !empty($q)) {
+            \app\TenantHost::builderEvent($ct, 'question.asked', ['request' => $planId, 'title' => (string) $parent->title, 'by' => 'task', 'task' => (string) $q->title, 'question' => (string) $q->progressMessage]);
+        }
     }
     exit(0);
 }

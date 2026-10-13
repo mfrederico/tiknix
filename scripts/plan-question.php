@@ -24,5 +24,11 @@ Bean::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "cannot open core db\n"); exit(1); }
 \app\AskTriage::asks($id, $q);
 unlink($file);
+// The app is told (question.asked), for its own pipelines: someone may want to hear of it elsewhere.
+try {
+    $tag = (string) (Bean::load('promptlog', $id)->instanceTag ?? '');
+    $ct = \app\TenantBuilder::bySlug((string) (strstr($tag, '.', true) ?: $tag));
+    if ($ct) \app\TenantHost::builderEvent($ct, 'question.asked', ['by' => 'planner', 'question' => $q, 'asked' => (string) (\app\AskStore::get(\app\AskTriage::dirOfTag($tag), $id)['said'] ?? '')]);
+} catch (\Throwable $e) { echo '[plan-question] ERROR the app was not told of the question: ' . $e->getMessage() . "\n"; }
 echo "[plan-question] prompt #{$id} waits on its person: " . mb_substr(str_replace("\n", ' ', $q), 0, 200) . "\n";
 R::close();

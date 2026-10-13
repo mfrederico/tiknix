@@ -94,6 +94,19 @@ class RequestNote {
     }
 
     /**
+     * The same request as an EVENT, for what the app is told about its own building
+     * (TenantHost::builderEvent → the app's pipelines): the facts the line is made of, apart.
+     * @return array<string,mixed>|null null when it is not in the record
+     */
+    public static function facts(string $dir, int $planId): ?array {
+        $pdo = self::pdo($dir);
+        $r = $pdo ? self::of($pdo, $planId) : null;
+        if (!$r) return null;
+        return ['request' => $planId, 'asked' => $r['asked'], 'title' => $r['title'], 'built' => $r['titles'], 'not_built' => array_map(fn($m) => $m[0], $r['missed']),
+                'files' => $r['files'], 'follows' => $r['follows'] ?: null, 'check' => $r['check'], 'problems' => $r['found'], 'line' => self::built($dir, $planId)];
+    }
+
+    /**
      * The line for a request that was UNDONE — the app was put back to the restore point taken
      * before it ($checkpoint, which the plan names). The undo also takes back the line that said
      * it was built (the notebook is in the app's code), so without this the project would have

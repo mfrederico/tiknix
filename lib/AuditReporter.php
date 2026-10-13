@@ -130,6 +130,10 @@ class AuditReporter {
                     if (empty($nb['ok'])) error_log('ERROR AuditReporter: the notebook line for plan #' . (int) $plan->id . ' was not brought up to date: ' . (string) ($nb['error'] ?? 'no answer'));
                 }
             }
+            // …and the app is told its check has ended (check.finished), for its own pipelines.
+            if (\Model_Instance::tenantRow($inst)) {
+                TenantHost::builderEvent($inst, 'check.finished', ['passed' => $passed, 'failures' => count($failures)] + (RequestNote::facts(\Model_Instance::dirOf($inst), (int) $plan->id) ?? ['request' => (int) $plan->id]));
+            }
         } catch (\Throwable $e) { error_log('ERROR AuditReporter: the notebook line for plan #' . (int) $plan->id . ' was not brought up to date: ' . $e->getMessage()); }
 
         // 6) Cap terminus: a fix that failed its audit AT the cap gets no further

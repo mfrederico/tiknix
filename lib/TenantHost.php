@@ -973,6 +973,24 @@ SH;
         return ' --agent=' . escapeshellarg($agent);
     }
 
+    /**
+     * Tell an app about its own building (clitool --builder-event): every pipeline of the app
+     * that subscribes to the event runs, with $about as its context — so the app can post to a
+     * webhook, notify someone, publish. The events are the runtime's InstanceAutomations::BUILDER_EVENTS.
+     *
+     * Never part of the build's own outcome: a pipeline that could not be started is logged as an
+     * ERROR and returned ({ok:false, error}), and the build goes on.
+     * @return array{ok:bool, fired?:array, error?:string}
+     */
+    public static function builderEvent(object $inst, string $event, array $about): array {
+        try {
+            $r = self::taskCall($inst, '--builder-event=' . escapeshellarg($event), (string) json_encode($about, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), 60);
+        } catch (\Throwable $e) { $r = ['ok' => false, 'error' => $e->getMessage()]; }
+        if (empty($r['ok'])) error_log("ERROR TenantHost::builderEvent {$event} for {$inst->slug}: " . (string) ($r['error'] ?? 'no answer'));
+        foreach ((array) ($r['fired'] ?? []) as $f) if (!empty($f['error'])) error_log("ERROR TenantHost::builderEvent {$event} for {$inst->slug}: pipeline {$f['slug']} did not start — {$f['error']}");
+        return $r;
+    }
+
     private static function taskCall(object $inst, string $args, ?string $stdin, int $timeout, string $env = ''): array {
         [$code, $out] = self::ssh($inst, 'app', 'cd /srv/app && ' . $env . 'php scripts/clitool.php ' . $args, $stdin, $timeout);
         $json = json_decode(substr($out, (int) strpos($out, '{')), true);

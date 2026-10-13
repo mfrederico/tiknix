@@ -496,6 +496,21 @@ $sent = Sms::send($to, "Your Inresonance code is 482913. It works for 10 minutes
   with the service's own reason (the number is not registered with the carriers, out of credit, the
   day's limit) — log it and tell the person the text could not be sent.
 
+## Build Events (pipelines that run when the Builder builds)
+
+The Builder tells this app about its own building, and a pipeline may run on it:
+
+```json
+"trigger": { "builder": { "events": ["request.finished", "check.finished"] } }
+```
+
+- `request.finished` — a request's build ended. Context: `status` (`done`, `attention` = some tasks failed, `stalled`), `request`, `asked`, `built[]`, `not_built[]`, `files[]`, `line` (the sentence written to the notebook's Built page).
+- `check.finished` — the browser check after a build ended. Context: `passed`, `failures`, `problems[]`, and the request's fields above.
+- `question.asked` — the planner or a task stopped to ask the owner something. Context: `by` (`planner` | `task`), `question`, `task`.
+- `request.undone` — a request was undone. Context: `checkpoint`, `line`.
+
+`{{event}}` names which. A "webhook when a build finishes" is a pipeline on `request.finished` with one `http` step; nothing else is needed. The events are a courtesy to the app: a pipeline that fails does not fail the build.
+
 ## Plugins and Agent Guidance
 
 ### Plugins (concepts)

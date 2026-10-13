@@ -192,6 +192,10 @@ class PromptQueue {
             if ($inApp !== '') { $out[] = "#$id still waiting on {$q['tag']}: {$inApp} is still planning there"; continue; }
             // What it waited for is in the app now: its planner is told what that was.
             $runner->builtBefore(BuildQueue::builtSince($dir, (string) $q['queued_at']));
+            // A follow-up ("make that bold") names the plan it continues (app\AskStore): its planner is handed what that plan built.
+            try { $msg = AskStore::get($dir, $id); }
+            catch (\Throwable $e) { $msg = null; $out[] = "#$id: the project's record could not be read for what it continues (" . $e->getMessage() . ')'; }
+            if ($msg && (int) ($msg['follows_ref'] ?? 0) > 0) $runner->follows(BuildQueue::builtPlan($dir, (int) $msg['follows_ref']));
 
             try {
                 $runner->start($q['body'], [], true, $id);

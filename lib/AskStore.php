@@ -21,7 +21,13 @@
 namespace app;
 
 class AskStore {
-    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'asking', 'build', 'planned'];
+    /**
+     * thinking — being read · answer — answered · unsure — build it, or answer? · failed — did not
+     * go through · asking — the planner waits on an answer · build — sent to be planned · planned —
+     * it is a plan (plan_ref) · action — it asks for something the board does (retry, undo, fix,
+     * stop: `answer` holds which, as JSON) and waits for the go-ahead · did — that was done.
+     */
+    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'asking', 'build', 'planned', 'action', 'did'];
 
     /** @var array<string,\PDO> */
     private static array $open = [];
@@ -38,6 +44,8 @@ class AskStore {
             said TEXT NOT NULL, state TEXT NOT NULL, answer TEXT, note TEXT, noted_at TEXT, qa_json TEXT,
             plan_ref INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS askmessage_member ON askmessage (member_ref, id)');
+        // follows_ref: the plan of this project a message continues ("make that bold" after it was built).
+        if (!in_array('follows_ref', array_column($pdo->query('PRAGMA table_info(askmessage)')->fetchAll(), 'name'), true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN follows_ref INTEGER');
         return self::$open[$file] = $pdo;
     }
 
@@ -93,6 +101,19 @@ class AskStore {
         $qa[] = ['q' => $q, 'a' => $a, 'at' => self::now()];
         self::db($dir)->prepare("UPDATE askmessage SET qa_json = ?, state = 'build', answer = '', updated_at = ? WHERE prompt_ref = ?")
             ->execute([json_encode($qa, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), self::now(), $promptRef]);
+    }
+
+    /** This message continues that plan of the project: it is planned from what that plan built, and shown with it. */
+    public static function follow(string $dir, int $promptRef, int $planId): void {
+        self::db($dir)->prepare('UPDATE askmessage SET follows_ref = ?, updated_at = ? WHERE prompt_ref = ?')->execute([$planId, self::now(), $promptRef]);
+    }
+
+    /** plan id => the plan it continues, for every plan of this project that came from a follow-up. @return array<int,int> */
+    public static function followers(string $dir): array {
+        if (!is_file(rtrim($dir, '/') . '/data/workbench.db')) return [];
+        $out = [];
+        foreach (self::db($dir)->query('SELECT plan_ref, follows_ref FROM askmessage WHERE follows_ref IS NOT NULL AND plan_ref IS NOT NULL')->fetchAll() as $r) $out[(int) $r['plan_ref']] = (int) $r['follows_ref'];
+        return $out;
     }
 
     public static function noted(string $dir, int $promptRef): void {

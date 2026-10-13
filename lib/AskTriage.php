@@ -29,7 +29,7 @@
 namespace app;
 
 class AskTriage {
-    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'build', 'asking'];
+    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'build', 'asking', 'action', 'did'];
     /** In a goal: what the planner asked its person and what they answered — settled, at its end. */
     public const QA_HEAD = '## What you asked the owner, and their answer';
     /** How long one run may take, in the container. */
@@ -53,8 +53,27 @@ class AskTriage {
      * looked at — it is a judgement on the words — so it costs a second or two and little money,
      * and a request to build is on its way to the planner without a slower model having read it.
      */
-    public static function classifyBrief(string $said, string $before = ''): string {
+    public static function classifyBrief(string $said, string $before = '', string $list = ''): string {
         $before = self::beforeSection($before);
+        // What is on the project's list that a message could be ABOUT: then it is not a new request
+        // but something done to the list — said as which, and to which item.
+        $acts = trim($list) === '' ? '' : <<<MD
+
+        ## Or — is it about something already on this project's list?
+
+        {$list}
+
+        If the message is about one of these, reply with that instead (one line, the number from the list):
+
+        - `VERDICT: FOLLOWUP #N` — a change, addition or correction to what request #N built or is building ("make that bold", "also add a phone field to it", "the prices should be per case"). Not a new, separate thing.
+        - `VERDICT: RETRY #N` — try stopped task #N again ("try that again", "retry the import").
+        - `VERDICT: FIX #N` — fix problem #N that Tiknix found ("fix that", "fix the 500 on the import page").
+        - `VERDICT: UNDO` — put the app back to before the newest finished request ("undo that", "take that out again"). Only when the list says one can be undone.
+        - `VERDICT: STOP` — stop the request being planned now ("stop", "cancel that"). Only when the list says one is being planned.
+
+        Use these only when it is clearly about that item. A new feature that merely touches the same page is `BUILD`. If it is about an item but you cannot tell which, it is `UNSURE`.
+        MD;
+        $acts = preg_replace('/^ {8}/m', '', $acts);
         return <<<MD
         # Ask — what kind of message is this?
 
@@ -67,7 +86,7 @@ class AskTriage {
         - `VERDICT: UNSURE` — it could honestly be either, or it is too vague to tell what would be built. Do not guess.
 
         Only after `VERDICT: UNSURE`, add ONE short sentence on the next line saying what you could not tell (it is shown above two buttons: "Build it" and "Just answer").
-        {$before}
+        {$acts}{$before}
         ## The message
 
         {$said}
@@ -158,7 +177,9 @@ class AskTriage {
             elseif ($state === 'failed')    $then = 'It did not go through' . ($a !== '' ? ': ' . mb_substr($a, 0, 400) : ' (a fault on our side).');
             elseif ($state === 'thinking')  $then = 'It is still being read.';
             elseif ($state === 'asking')    $then = 'Before planning it, the planner asked them: ' . mb_substr($a, 0, 400) . ' (not answered yet)';
-            elseif ($state === 'planned')   $then = 'It was sent to be built, as plan #' . (int) $r['plan_ref'] . ' of this project.';
+            elseif ($state === 'planned')   $then = 'It was sent to be built, as plan #' . (int) $r['plan_ref'] . ' of this project' . ((int) ($r['follows_ref'] ?? 0) > 0 ? ' (a follow-up to #' . (int) $r['follows_ref'] . ')' : '') . '.';
+            elseif ($state === 'did')       $then = $a;
+            elseif ($state === 'action')    $then = 'It asked for something to be done to the list; they have not confirmed it yet.';
             else                            $then = 'It was sent to be built (not planned yet).';
             foreach ((array) (json_decode((string) $r['qa_json'], true) ?: []) as $qa) {
                 $then .= "\n  Before planning it, the planner asked: " . trim((string) ($qa['q'] ?? '')) . ' — they answered: ' . trim((string) ($qa['a'] ?? ''));
@@ -182,8 +203,11 @@ class AskTriage {
     /** The agent's reply, read: ['verdict' => build|answer|unsure, 'text' => …, 'note' => 'kind: one line' or '']; throws when it did not say which. $needAnswer false = the first reading, which only says which. */
     public static function parse(string $reply, bool $needAnswer = true): array {
         $reply = trim($reply);
-        if (!preg_match('/^\s*`?VERDICT:\s*(BUILD|ANSWER|UNSURE)`?\s*$/mi', $reply, $m, PREG_OFFSET_CAPTURE)) {
+        if (!preg_match('/^\s*`?VERDICT:\s*(BUILD|ANSWER|UNSURE|FOLLOWUP|RETRY|FIX|UNDO|STOP)(?:\s+#?(\d+))?`?\s*$/mi', $reply, $m, PREG_OFFSET_CAPTURE)) {
             throw new \RuntimeException('the agent did not say whether this is something to build or a question');
+        }
+        if (in_array(strtoupper($m[1][0]), ['FOLLOWUP', 'RETRY', 'FIX', 'UNDO', 'STOP'], true)) {
+            return ['verdict' => strtolower($m[1][0]), 'text' => '', 'note' => '', 'target' => (int) ($m[2][0] ?? 0)];
         }
         $text = trim(substr($reply, $m[0][1] + strlen($m[0][0])));
         $verdict = strtolower($m[1][0]);
@@ -243,7 +267,7 @@ class AskTriage {
     public static function talk(int $memberId, string $instanceTag, int $limit = 20): array {
         if ($memberId <= 0 || $instanceTag === '') return [];
         $out = [];
-        foreach (AskStore::of(self::dirOfTag($instanceTag), $memberId, ['thinking', 'answer', 'unsure', 'failed', 'asking'], $limit) as $r) {
+        foreach (AskStore::of(self::dirOfTag($instanceTag), $memberId, ['thinking', 'answer', 'unsure', 'failed', 'asking', 'action', 'did'], $limit) as $r) {
             $state = (string) $r['state']; $answer = (string) $r['answer'];
             if ($state === 'thinking' && time() - (int) strtotime((string) $r['updated_at']) > self::TIMEOUT + 420) {
                 $state = 'failed'; $answer = 'No answer came back: the run that was reading it ended without one.';
@@ -394,6 +418,12 @@ class AskTriage {
             $dir  = \Model_Instance::dirForSlug($slug);
             $busy = BuildQueue::busyWith($dir, $slug);
             $board = BoardDigest::markdown($dir);
+            $targets = BoardDigest::targets($dir);
+            $planning = false;
+            foreach (TmuxManager::list('tiknix-') as $sess) {
+                $name = is_array($sess) ? (string) ($sess['name'] ?? '') : (string) $sess;
+                if (preg_match('/^tiknix-\d+-plan-(.+)$/', $name, $pm) && $pm[1] === $slug) $planning = true;
+            }
             $said = trim(GoalBrief::split($q['body'])['goal']);
             $before = self::history($q['member'], $q['tag'], $promptId);
             // Rows only for someone who may see the app's data themselves: its owner, or an admin of a team it is shared with.
@@ -414,7 +444,7 @@ class AskTriage {
                     $ahead = true;
                 }
                 try {
-                    $r = TenantHost::ask($tenant, 'ask-' . $promptId . '-c', self::classifyBrief($said, $before), 90, '', true);
+                    $r = TenantHost::ask($tenant, 'ask-' . $promptId . '-c', self::classifyBrief($said, $before, BoardDigest::targetsText($targets, $planning)), 90, '', true);
                     if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
                     $got = self::parse((string) $r['text'], false);
                 } catch (\Throwable $e) {
@@ -422,6 +452,8 @@ class AskTriage {
                     throw $e;
                 }
                 if ($ahead && $got['verdict'] !== 'answer') { TenantHost::askDrop($tenant, 'ask-' . $promptId); $ahead = false; }
+                // It is about something already on the list: done to the list, not planned as new work.
+                if (in_array($got['verdict'], ['followup', 'retry', 'fix', 'undo', 'stop'], true)) return self::act($promptId, $dir, $got['verdict'], (int) ($got['target'] ?? 0), $targets, $planning);
             }
             if ($got['verdict'] === 'answer') {
                 $r = $ahead ? TenantHost::askWait($tenant, 'ask-' . $promptId, self::TIMEOUT)
@@ -438,6 +470,59 @@ class AskTriage {
         if ($got['verdict'] === 'build') return self::build($promptId);
         self::mark($promptId, $got['verdict'], $got['text'], (string) ($got['note'] ?? ''));
         return "#{$promptId}: {$got['verdict']}";
+    }
+
+    /**
+     * The message is about something already on the project's list (the first reading said which).
+     *
+     *   followup  a change to what request #N built: it IS a request, planned from that plan's
+     *             files and shown with it — started at once, like any build.
+     *   retry · fix · undo · stop
+     *             something the board itself does. It is not done from here: the message becomes
+     *             an `action` naming exactly what and to which item, and the person presses the
+     *             same button the board has — so a misread "undo" costs a glance, not their work,
+     *             and it runs as them, through the code the button runs.
+     *
+     * A target the list does not have is not guessed at: the person is asked.
+     */
+    private static function act(int $promptId, string $dir, string $verb, int $target, array $targets, bool $planning): string {
+        $unsure = function (string $why) use ($promptId): string { self::mark($promptId, 'unsure', $why); return "#{$promptId}: unsure — {$why}"; };
+        if ($verb === 'followup') {
+            if (!isset($targets['plans'][$target])) return $unsure('It read as a change to something already built, but I could not tell to which request.');
+            self::mark($promptId, 'build');
+            AskStore::follow($dir, $promptId, $target);
+            return "#{$promptId}: follow-up to #{$target} — " . substr(self::build($promptId), strlen("#{$promptId}: build — "));
+        }
+        if ($verb === 'retry') {
+            if (!isset($targets['retry'][$target])) return $unsure('It read as "try that again", but I could not tell which task you meant.');
+            $act = ['verb' => 'retry', 'id' => $target, 'title' => $targets['retry'][$target]];
+        } elseif ($verb === 'fix') {
+            if (!isset($targets['fix'][$target])) return $unsure('It read as "fix that", but I could not tell which problem you meant.');
+            $act = ['verb' => 'fix', 'id' => $target, 'title' => $targets['fix'][$target]];
+        } elseif ($verb === 'undo') {
+            if (!$targets['undo']) return $unsure('It read as "undo that", but nothing can be undone right now: only the newest request, once it is finished.');
+            $act = ['verb' => 'undo', 'id' => (int) $targets['undo']['id'], 'title' => (string) $targets['undo']['title'], 'checkpoint' => (string) $targets['undo']['checkpoint']];
+        } else {
+            if (!$planning) return $unsure('It read as "stop", but nothing is being planned right now.');
+            $act = ['verb' => 'stop', 'id' => 0, 'title' => ''];
+        }
+        self::mark($promptId, 'action', (string) json_encode($act, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        return "#{$promptId}: {$verb}" . ($act['id'] ? " #{$act['id']}" : '') . ' — waits for the go-ahead';
+    }
+
+    /**
+     * The action a message asked for was carried out (the person pressed its button): it stays in
+     * the conversation as what was done. False when the message is not this member's waiting action.
+     */
+    public static function did(int $promptId, int $memberId): bool {
+        $p = self::prompt($promptId);
+        $r = AskStore::get($p['dir'], $promptId);
+        if (!$r || (int) $r['member_ref'] !== $memberId || (string) $r['state'] !== 'action') return false;
+        $a = json_decode((string) $r['answer'], true) ?: [];
+        $t = '“' . mb_strimwidth((string) ($a['title'] ?? ''), 0, 90, '…') . '”';
+        $text = ['retry' => "Tried {$t} again.", 'fix' => "Started a fix for {$t}.", 'undo' => "Undid {$t}: your app is back to before it.", 'stop' => 'Stopped what was being planned.'][(string) ($a['verb'] ?? '')] ?? 'Done.';
+        AskStore::mark($p['dir'], $promptId, 'did', $text);
+        return true;
     }
 
     /** It is something to build: down the Builder's road, behind whatever is building. */

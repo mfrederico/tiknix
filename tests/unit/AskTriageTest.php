@@ -114,4 +114,18 @@ class AskTriageTest extends TestCase {
         $this->assertSame([['q' => "What is the number?\nInclude the country.", 'a' => '+1 555 010 2030'], ['q' => 'Bold or plain?', 'a' => 'Plain.']], $p['qa']);
         $this->assertSame(['said' => 'No question here.', 'qa' => []], AskTriage::splitAsked('No question here.'));
     }
+
+    public function testAMessageAboutSomethingOnTheListIsReadAsThatActionAndItsTarget(): void {
+        $this->assertSame(['verdict' => 'followup', 'text' => '', 'note' => '', 'target' => 20], AskTriage::parse('VERDICT: FOLLOWUP #20', false));
+        $this->assertSame(21, AskTriage::parse("`VERDICT: RETRY 21`", false)['target']);
+        $this->assertSame(['undo', 0], [AskTriage::parse('VERDICT: UNDO', false)['verdict'], AskTriage::parse('VERDICT: UNDO', false)['target']]);
+        $list = \app\BoardDigest::targetsText(['plans' => [20 => 'Wholesale prices'], 'retry' => [9 => 'Import products'], 'fix' => [42 => 'Import page 500'], 'undo' => ['id' => 20, 'title' => 'Wholesale prices', 'checkpoint' => 'c'], ], true);
+        $this->assertStringContainsString('request #20: Wholesale prices', $list);
+        $this->assertStringContainsString('task #9 STOPPED', $list);
+        $this->assertStringContainsString('problem #42', $list);
+        $this->assertStringContainsString('can be undone: #20', $list);
+        $b = AskTriage::classifyBrief('make that bold', '', $list);
+        $this->assertStringContainsString('VERDICT: FOLLOWUP #N', $b);
+        $this->assertStringNotContainsString('FOLLOWUP', AskTriage::classifyBrief('make that bold'), 'with nothing on the list there is nothing to be about');
+    }
 }

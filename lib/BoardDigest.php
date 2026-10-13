@@ -18,6 +18,53 @@ class BoardDigest {
 
     private const DONE = ['merged', 'resolved', 'completed'];
 
+    /**
+     * What the board can be asked to do right now, and to what — for reading a typed message as an
+     * action on the list (AskTriage) and for checking the target it names:
+     *   plans   the recent requests a follow-up could be about        [id => title]
+     *   retry   tasks that stopped and can be tried again             [id => title]
+     *   fix     problems Tiknix found, not yet being fixed             [id => title]
+     *   undo    the newest request, when it is finished and has a restore point  {id, title, checkpoint} | null
+     * @return array{plans:array<int,string>,retry:array<int,string>,fix:array<int,string>,undo:?array}
+     */
+    public static function targets(string $dir): array {
+        $out = ['plans' => [], 'retry' => [], 'fix' => [], 'undo' => null];
+        $db = rtrim($dir, '/') . '/data/workbench.db';
+        if (!is_file($db)) return $out;
+        $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC, \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY]);
+        if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn()) return $out;
+        $cols = array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(), 'name');
+        $col = fn(string $c) => in_array($c, $cols, true) ? $c : "'' AS {$c}";
+        $roots = $pdo->query('SELECT id, title, status, plan_status, ' . $col('source') . ', ' . $col('plan_checkpoint') . ' FROM workbenchtask WHERE parent_task_id IS NULL ORDER BY id DESC LIMIT 10')->fetchAll();
+        foreach ($roots as $i => $r) {
+            $found = (string) $r['source'] === 'detected_error';
+            if ($found) { if (in_array((string) $r['status'], ['pending', 'failed'], true)) $out['fix'][(int) $r['id']] = (string) $r['title']; continue; }
+            if (trim((string) $r['plan_status']) === '') continue;
+            $out['plans'][(int) $r['id']] = (string) $r['title'];
+            if ($i === 0 && (string) $r['plan_status'] === 'done' && trim((string) $r['plan_checkpoint']) !== '') {
+                $out['undo'] = ['id' => (int) $r['id'], 'title' => (string) $r['title'], 'checkpoint' => (string) $r['plan_checkpoint']];
+            }
+        }
+        if ($out['plans']) {
+            $ids = array_keys($out['plans']);
+            $q = $pdo->prepare("SELECT id, title FROM workbenchtask WHERE status IN ('failed', 'conflict') AND parent_task_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY id DESC LIMIT 8');
+            $q->execute($ids);
+            foreach ($q->fetchAll() as $t) $out['retry'][(int) $t['id']] = (string) $t['title'];
+        }
+        return $out;
+    }
+
+    /** targets(), as the few lines the first reading of a message is given. */
+    public static function targetsText(array $t, bool $planning): string {
+        $l = [];
+        foreach (array_reverse($t['plans'], true) as $id => $title) $l[] = "- request #{$id}: " . mb_strimwidth($title, 0, 90, '…');
+        foreach ($t['retry'] as $id => $title) $l[] = "- task #{$id} STOPPED (can be tried again): " . mb_strimwidth($title, 0, 90, '…');
+        foreach ($t['fix'] as $id => $title) $l[] = "- problem #{$id} that Tiknix found (not fixed yet): " . mb_strimwidth($title, 0, 90, '…');
+        if ($t['undo']) $l[] = "- the newest finished request, which can be undone: #{$t['undo']['id']}";
+        if ($planning) $l[] = '- a request is being planned right now (it can be stopped)';
+        return implode("\n", $l);
+    }
+
     public static function markdown(string $dir, int $items = 10): string {
         $db = rtrim($dir, '/') . '/data/workbench.db';
         if (!is_file($db)) return '';

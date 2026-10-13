@@ -117,6 +117,28 @@ class BuildQueue {
         return implode("\n", $out);
     }
 
+    /**
+     * What ONE plan of a project built — for the planner of a message that continues it
+     * (PlanRunner::follows): its finished tasks, the files each named, the plugins it adopted.
+     */
+    public static function builtPlan(string $dir, int $planId): string {
+        $db = rtrim($dir, '/') . '/data/workbench.db';
+        if (!is_file($db) || $planId <= 0) return '';
+        $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY]);
+        $p = $pdo->prepare('SELECT title FROM workbenchtask WHERE id = ? AND parent_task_id IS NULL'); $p->execute([$planId]);
+        if (($title = $p->fetchColumn()) === false) return '';
+        $q = $pdo->prepare("SELECT title, status, related_files, adopts, error_message FROM workbenchtask WHERE parent_task_id = ? ORDER BY id"); $q->execute([$planId]);
+        $out = ["### #{$planId} " . trim((string) $title)];
+        foreach ($q->fetchAll(\PDO::FETCH_ASSOC) as $t) {
+            $files  = array_values(array_filter(array_map('strval', (array) (json_decode((string) $t['related_files'], true) ?: []))));
+            $adopts = array_values(array_filter(array_map('strval', (array) (json_decode((string) $t['adopts'], true) ?: []))));
+            $out[] = '- **' . trim((string) $t['title']) . '** [' . (string) $t['status'] . ']' . (trim((string) $t['error_message']) !== '' ? ' — ' . mb_substr(trim((string) $t['error_message']), 0, 160) : '')
+                   . ($files ? "\n  - files: `" . implode('`, `', $files) . '`' : '')
+                   . ($adopts ? "\n  - plugins adopted: " . implode(', ', $adopts) : '');
+        }
+        return implode("\n", $out);
+    }
+
     /** The queue, next first. */
     public static function queued(): array {
         if (!in_array('queue_pos', array_keys(Bean::inspect('workbenchtask')), true)) return [];

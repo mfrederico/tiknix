@@ -106,6 +106,19 @@ class PlanRunner {
         return $this;
     }
 
+    /** What the request continues — see follows(). */
+    private string $follows = '';
+
+    /**
+     * This request continues an earlier one ("make that bold", said after it was built): what
+     * that plan built (BuildQueue::builtPlan). The planner starts from those files and plans
+     * only the change — not the feature again.
+     */
+    public function follows(string $markdown): self {
+        $this->follows = trim($markdown);
+        return $this;
+    }
+
     /**
      * A planner still working in the app's own container, whoever's and whatever became of the
      * session here that waited for it — its name, or ''. The session here is only the WAIT: it
@@ -449,6 +462,12 @@ BASH;
             . "The request may be about it, or may touch the same pages: **open the files named below before you plan anything**, "
             . "`describe` the controllers and models among them, and plan from what they really are — their real paths, names and "
             . "what they already do. Do not plan a second version of something listed here; EXTEND it.\n\n{$this->builtBefore}\n";
+        if ($this->follows !== '') {
+            $before = "\n## This CONTINUES an earlier request — plan only the change\n\n"
+                . "The goal above was said about work that is already in the app (below). It is a follow-up: \"it\", \"that\", \"the section\" mean what this plan built. "
+                . "**Open its files first**, then plan the smallest change that does what is asked — usually ONE task, in the files named here. "
+                . "Do not plan the feature again, and do not plan anything the goal does not ask for.\n\n{$this->follows}\n" . $before;
+        }
         return <<<MD
 # AI Builder — Plan Decomposition
 

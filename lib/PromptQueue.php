@@ -82,6 +82,23 @@ class PromptQueue {
         }, []);
     }
 
+    /**
+     * Change what a WAITING request says — its own member's, and only while it still waits: once
+     * its planner has started, the words it started with are the ones being planned. False when
+     * it is not that member's or no longer waiting.
+     */
+    public static function rewrite(int $promptId, int $memberId, string $body, string $title): bool {
+        if ($promptId <= 0 || $memberId <= 0 || trim($body) === '') return false;
+        return (bool) CoreDb::with(function () use ($promptId, $memberId, $body, $title) {
+            $row = Bean::findOne('promptlog', 'id = ? AND member_id = ? AND queued_at IS NOT NULL', [$promptId, $memberId]);
+            if (!$row || !$row->id || (string) $row->planUid !== '') return false;
+            $row->body  = $body;
+            $row->title = $title;
+            Bean::store($row);
+            return true;
+        }, false);
+    }
+
     /** Stop retrying — the plan landed, it aged out, or it exhausted its attempts. */
     public static function dequeue(int $promptId): void {
         if ($promptId <= 0) return;

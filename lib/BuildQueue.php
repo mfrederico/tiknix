@@ -63,6 +63,32 @@ class BuildQueue {
         return $out;
     }
 
+    /**
+     * What a project is still building, read from its board without selecting it — a sentence,
+     * or '' when nothing is building or queued. A request made now is made AFTER that work: it
+     * is planned once that is in the app, so its plan reads the code it builds on instead of
+     * guessing at pages that do not exist yet (and its check does not run against an app that
+     * lacks them). $dir is the project's builder folder (its data/workbench.db is the board).
+     */
+    public static function busyWith(string $dir, string $slug): string {
+        $db = rtrim($dir, '/') . '/data/workbench.db';
+        if (!is_file($db)) return '';   // no board yet: nothing was ever built here
+        $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY]);
+        if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn()) return '';
+        $ids = [];
+        // a row that says "building" with no build behind it is not one (as building() has it)
+        foreach ($pdo->query("SELECT id FROM workbenchtask WHERE plan_status = 'building' ORDER BY id")->fetchAll(\PDO::FETCH_COLUMN) as $id) {
+            if (PlanOrchestrator::running((int) $id, $slug)) $ids[] = (int) $id;
+        }
+        $n = count($ids);
+        if (in_array('queue_pos', array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(\PDO::FETCH_ASSOC), 'name'), true)) {
+            foreach ($pdo->query('SELECT id FROM workbenchtask WHERE queue_pos > 0 ORDER BY queue_pos, id')->fetchAll(\PDO::FETCH_COLUMN) as $id) $ids[] = (int) $id;
+        }
+        if (!$ids) return '';
+        $ids = array_values(array_unique($ids));
+        return '#' . implode(', #', $ids) . (count($ids) === 1 ? ($n ? ' is still being built' : ' is waiting to be built') : ' are still being built');
+    }
+
     /** The queue, next first. */
     public static function queued(): array {
         if (!in_array('queue_pos', array_keys(Bean::inspect('workbenchtask')), true)) return [];

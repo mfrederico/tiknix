@@ -1,6 +1,7 @@
 <?php
 /**
- * PromptQueue — retry a decompose that was refused because the project was busy.
+ * PromptQueue — retry a decompose that was refused because the project was busy: another
+ * request was being decomposed, or (from Ask) an earlier one was still being built.
  *
  * PlanRunner allows one planner per member+instance, so firing a decompose while another
  * is mid-flight is refused outright. Workbench::decompose() records the prompt BEFORE
@@ -164,6 +165,9 @@ class PromptQueue {
             // STILL busy: leave it queued and do NOT spend an attempt. Attempts are for
             // things that went wrong, not for the condition the queue exists to wait out.
             if ($runner->running()) { $out[] = "#$id still waiting on {$q['tag']}"; continue; }
+            // And while an earlier request is still being built: this one is planned against
+            // what that leaves in the app, not beside it.
+            if (($busy = BuildQueue::busyWith($dir, (string) $slug)) !== '') { $out[] = "#$id still waiting on {$q['tag']}: {$busy}"; continue; }
 
             try {
                 $runner->start($q['body'], [], true, $id);

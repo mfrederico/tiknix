@@ -101,4 +101,19 @@ class BuildQueueTest extends ConceptsTestCase {
         $this->assertSame([(int) $p[0]->id, (int) $p[1]->id], $order());
         $this->assertSame([1, 2], array_map(fn($q) => (int) $q->queuePos, BuildQueue::queued()), 'places close up');
     }
+
+    /** A project's board, read from outside it: queued plans count, a "building" row with no build behind it does not. */
+    public function testBusyWithReadsTheBoardOfAProject(): void {
+        $dir = sys_get_temp_dir() . '/bq-busy-' . bin2hex(random_bytes(4));
+        $this->assertSame('', BuildQueue::busyWith($dir, 'zz-none'), 'no board: nothing was ever built');
+        mkdir($dir . '/data', 0700, true);
+        $pdo = new \PDO('sqlite:' . $dir . '/data/workbench.db');
+        $pdo->exec('CREATE TABLE workbenchtask (id INTEGER PRIMARY KEY, plan_status TEXT, queue_pos INTEGER)');
+        $pdo->exec("INSERT INTO workbenchtask (id, plan_status, queue_pos) VALUES (1, 'done', 0), (2, 'building', 0)");
+        $this->assertSame('', BuildQueue::busyWith($dir, 'zz-none'), 'a row that says building with no session behind it is not a build');
+        $pdo->exec("INSERT INTO workbenchtask (id, plan_status, queue_pos) VALUES (3, 'approved', 1)");
+        $this->assertSame('#3 is waiting to be built', BuildQueue::busyWith($dir, 'zz-none'));
+        $pdo = null;
+        unlink($dir . '/data/workbench.db'); rmdir($dir . '/data'); rmdir($dir);
+    }
 }

@@ -704,6 +704,18 @@ class TenantHost {
     }
 
     /**
+     * The builder's Ask in the tenant (clitool --agent-ask): the app's agent reads what was typed,
+     * read-only, and its words come back in 'text'. What the run left in the container is removed.
+     */
+    public static function ask(object $inst, string $id, string $brief, int $timeout = 240, string $agent = ''): array {
+        try {
+            return self::runAndWait($inst, $id, '--agent-ask=' . escapeshellarg($id) . self::agentArg($agent) . ' --timeout=' . (int) $timeout, $brief, $timeout, []);
+        } finally {
+            self::ssh($inst, 'app', 'rm -rf ' . escapeshellarg(TenantRun::DIR . '/' . $id), null, 20);
+        }
+    }
+
+    /**
      * Run `clitool $args` in a tmux session IN the container (TenantRun, session tiknix-run-<id>)
      * and wait here for its JSON answer. The agent lives in the container: this waiter dying (a
      * core restart, a dropped SSH) does not stop it, and calling again with the same id while

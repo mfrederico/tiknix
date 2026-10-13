@@ -174,6 +174,15 @@ if ($ranOut) {
         . 'reported as a finished one. Press Build again to resume — merged subtasks are skipped.';
     $parent->updatedAt = date('Y-m-d H:i:s');
     Bean::store($parent);
+    // Told, like every other way a plan ends: this one stopped with work unfinished and said so
+    // to nobody — the owner found it stalled the next time they happened to look.
+    try {
+        echo '[orchestrator] ' . \app\PlanNotifier::planFinished(dirname(__DIR__) . '/database/tiknix.db', [
+            'plan_id' => $planId, 'title' => (string) $parent->title, 'slug' => $slug, 'member_id' => (int) $parent->memberId,
+            'status' => 'stalled', 'counts' => $res['counts'] ?? [],
+            'failures' => [['title' => 'The build ran out of time', 'why' => "{$left} task(s) were unfinished after {$maxTicks} ticks. Press Build again to resume — what already merged is kept."]],
+        ]) . "\n";
+    } catch (\Throwable $e) { echo '[orchestrator] ERROR could not tell the owner the build ran out of time: ' . $e->getMessage() . "\n"; }
     exit(0);
 }
 

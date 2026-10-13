@@ -271,6 +271,7 @@ class PlanRunner {
             // re-decides whether the goal is met, so last time's "complete" must not linger.
             @unlink($this->logFile());
             @unlink($ab . '/plan-complete.md');
+            @unlink($ab . '/plan-question.md');
             return $this->launch($goal, $ab);
         } finally {
             /* Exactly one release, on every path. This was a catch that released, plus a
@@ -355,6 +356,7 @@ class PlanRunner {
 
         $logArg     = escapeshellarg($log);
         $ingestArg  = escapeshellarg($mainProjectRoot . '/scripts/plan-ingest.php');
+        $questionArg = escapeshellarg($mainProjectRoot . '/scripts/plan-question.php');
         // Match the unique names SubmitPlanTool writes, and the legacy plan.json.
         $planGlobArg = escapeshellarg($ws . '/.aibuilder');
         $slugArg    = escapeshellarg($this->slug);
@@ -408,6 +410,12 @@ if compgen -G {$planGlobArg}"/*.plan.json" > /dev/null || [ -f {$planGlobArg}"/p
   rm -f {$planGlobArg}"/plan-complete.md"   # a real plan supersedes any stale completion marker
   echo "[planner] ingesting plan into the workbench…" | tee -a {$logArg}
   php {$ingestArg} --slug={$slugArg} --dir={$wsArg} --member={$this->memberId} --app=tiknix{$supersedeArg}{$autoBuildArg}{$promptArg} 2>&1 | tee -a {$logArg}
+elif [ -f {$planGlobArg}"/plan-question.md" ]; then
+  # The planner cannot plan this without a decision only the owner can make, and asked
+  # (the brief's "a decision only the owner can make" step). Not a failure: the question is put
+  # to them in the Builder, and their answer sends the goal back here.
+  echo "[planner] QUESTION for the owner — nothing is planned until they answer." | tee -a {$logArg}
+  php {$questionArg} --dir={$wsArg}{$promptArg} 2>&1 | tee -a {$logArg}
 elif [ -f {$planGlobArg}"/plan-complete.md" ]; then
   # The planner judged the goal already built and wrote a completion marker instead of a
   # plan (see the brief's "is the goal already met?" step). NOT a failure — this is how
@@ -542,6 +550,23 @@ phase — do NOT invent work and do NOT call `submit_plan`. Instead:
    the inventory that satisfy it.
 2. Reply `GOAL_COMPLETE` and stop.
 
+## Or — is there a decision only the owner can make?
+
+If you cannot plan this without something only the owner knows or decides — a fact they did not
+give and that must not be invented (their phone number, their prices, their wording), a word in
+the goal that could mean two different things to build, a choice between two ways they would
+notice the difference between — do NOT guess, do NOT plan both, and do NOT call `submit_plan`:
+
+1. Write the file `.aibuilder/plan-question.md`: ONE question in plain words, two or three
+   sentences. Give the options you see and say which you would pick and why.
+2. Reply `QUESTION_ASKED` and stop.
+
+They are shown it and answer in a sentence; this goal then comes back to you with a section
+`## What you asked the owner, and their answer` at its end. What is in that section is SETTLED:
+plan from it and never ask it again. Ask only what blocks the plan — not what a build task can
+find out by reading the code, and not a preference with an obvious default (take the default and
+say so in the task). Most goals need no question.
+
 Only decompose (below) when real, un-built work remains. A phase of make-work — renaming,
 re-listing, or "polish" nobody asked for — is worse than reporting the goal is done: the
 whole point of "continue to the next phase" is that it STOPS when the goal is realized.
@@ -595,9 +620,9 @@ call the **`submit_plan`** MCP tool exactly once with:
     before anything is built. Judge by breadth, not by length; most tasks are `false`.
   - `complex_reason` — when `complex`, one sentence naming the separate capabilities.
 
-Do not ask the operator questions — make reasonable assumptions and note them in
-the relevant task descriptions. After `submit_plan` returns, reply `PLAN_WRITTEN`
-and stop.
+Apart from the one question above (when the plan truly cannot be made without it), do not
+ask the operator anything — make reasonable assumptions and note them in the relevant task
+descriptions. After `submit_plan` returns, reply `PLAN_WRITTEN` and stop.
 MD;
     }
 

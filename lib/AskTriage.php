@@ -29,7 +29,9 @@
 namespace app;
 
 class AskTriage {
-    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'build'];
+    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'build', 'asking'];
+    /** In a goal: what the planner asked its person and what they answered — settled, at its end. */
+    public const QA_HEAD = '## What you asked the owner, and their answer';
     /** How long one run may take, in the container. */
     public const TIMEOUT = 240;
 
@@ -156,6 +158,7 @@ class AskTriage {
                 } elseif ($state === 'unsure') $then = 'It was not clear whether to build or answer; they have not said which.';
                 elseif ($state === 'failed')   $then = 'It could not be read (a fault on our side).';
                 elseif ($state === 'thinking') $then = 'It is still being read.';
+                elseif ($state === 'asking')   $then = 'Before planning it, the planner asked them: ' . mb_substr(trim((string) $r->askAnswer), 0, 400) . ' (not answered yet)';
                 else $then = (string) $r->planUid !== '' ? 'It was sent to be built' . (trim((string) ($r->planTitle ?? '')) !== '' ? ' as the plan "' . trim((string) $r->planTitle) . '".' : '.')
                                                           : 'It was sent to be built (not planned yet).';
                 $out[] = '**They said:** ' . str_replace("\n", "\n  ", $said) . "\n\n**Then:** " . str_replace("\n", "\n  ", $then);
@@ -224,7 +227,7 @@ class AskTriage {
             $out = [];
             // …and one sent to be built whose PLANNING failed (no plan, not waiting, an error on
             // it): it used to vanish from the conversation, with only a note elsewhere saying why.
-            foreach (Bean::find('promptlog', "member_id = ? AND instance_tag = ? AND (ask_state IN ('thinking', 'answer', 'unsure', 'failed')"
+            foreach (Bean::find('promptlog', "member_id = ? AND instance_tag = ? AND (ask_state IN ('thinking', 'answer', 'unsure', 'failed', 'asking')"
                     . " OR (ask_state = 'build' AND (plan_uid IS NULL OR plan_uid = '') AND queued_at IS NULL AND last_error IS NOT NULL AND last_error != '' AND last_attempt_at >= ask_at))"
                     . ' ORDER BY id DESC LIMIT ' . max(1, $limit), [$memberId, $instanceTag]) as $r) {
                 $state = (string) $r->askState; $answer = (string) $r->askAnswer;
@@ -232,11 +235,59 @@ class AskTriage {
                 if ($state === 'thinking' && time() - (int) strtotime((string) $r->askAt) > self::TIMEOUT + 420) {
                     $state = 'failed'; $answer = 'No answer came back: the run that was reading it ended without one.';
                 }
-                $out[] = ['id' => (int) $r->id, 'asked' => trim(GoalBrief::split((string) $r->body)['goal']), 'at' => (string) $r->createdAt, 'state' => $state, 'answer' => $answer,
+                $parts = self::splitAsked(trim(GoalBrief::split((string) $r->body)['goal']));
+                $out[] = ['id' => (int) $r->id, 'asked' => $parts['said'], 'qa' => $parts['qa'], 'at' => (string) $r->createdAt, 'state' => $state, 'answer' => $answer,
                           'note' => $state === 'answer' ? (string) ($r->askNote ?? '') : '', 'noted' => (string) ($r->askNotedAt ?? '') !== ''];
             }
             return array_reverse($out);
         }, []);
+    }
+
+    /**
+     * The PLANNER has a question for its person before it can plan a request (plan-question.md —
+     * scripts/plan-question.php): the message waits on it, shown in the conversation as a
+     * question to answer. Nothing is planned until they do.
+     */
+    public static function asks(int $promptId, string $question): void {
+        if (trim($question) === '') throw new \InvalidArgumentException('no question to put');
+        self::mark($promptId, 'asking', mb_substr(trim($question), 0, 1500));
+    }
+
+    /**
+     * Their answer: written into the goal itself, at its end, beside the question (QA_HEAD) — the
+     * planner reads the goal, so that is where a settled decision belongs — and the message is
+     * sent to be planned again. False when the message is not waiting on a question of this member's.
+     */
+    public static function answered(int $promptId, int $memberId, string $answer): bool {
+        $answer = trim($answer);
+        if ($answer === '') return false;
+        return (bool) CoreDb::with(function () use ($promptId, $memberId, $answer) {
+            $r = Bean::findOne('promptlog', "id = ? AND member_id = ? AND ask_state = 'asking'", [$promptId, $memberId]);
+            if (!$r || !$r->id) return false;
+            $body = rtrim((string) $r->body);
+            if (!str_contains($body, "\n" . self::QA_HEAD . "\n")) $body .= "\n\n" . self::QA_HEAD . "\n";
+            $body .= "\n**You asked:** " . str_replace("\n", "\n  ", trim((string) $r->askAnswer)) . "\n\n**They answered:** " . str_replace("\n", "\n  ", mb_substr($answer, 0, 2000)) . "\n";
+            $r->body = $body;
+            $r->askState = 'build';
+            $r->askAnswer = '';
+            $r->lastError = '';
+            Bean::store($r);
+            return true;
+        }, false);
+    }
+
+    /**
+     * What was typed, apart from what the planner asked and was answered (QA_HEAD):
+     * ['said' => the request, 'qa' => [['q' => …, 'a' => …], …]] — for showing each as itself.
+     */
+    public static function splitAsked(string $goal): array {
+        $at = strpos($goal, "\n" . self::QA_HEAD . "\n");
+        if ($at === false) return ['said' => $goal, 'qa' => []];
+        $qa = [];
+        if (preg_match_all('/\*\*You asked:\*\* (.*?)\n\n\*\*They answered:\*\* (.*?)(?=\n\n\*\*You asked:\*\* |\z)/s', substr($goal, $at), $m, PREG_SET_ORDER)) {
+            foreach ($m as $x) $qa[] = ['q' => trim(str_replace("\n  ", "\n", $x[1])), 'a' => trim(str_replace("\n  ", "\n", $x[2]))];
+        }
+        return ['said' => rtrim(substr($goal, 0, $at)), 'qa' => $qa];
     }
 
     /**

@@ -106,4 +106,12 @@ class AskTriageTest extends TestCase {
         foreach (['What does the headline read now?', 'where are leads kept', 'Is it done?', 'how many enquiries are spam?'] as $q) $this->assertTrue(AskTriage::readsAsQuestion($q), $q);
         foreach (['Can you add a login page?', 'Could we make the header darker?', 'Add a phone number under the headline', 'please change the footer?', 'the footer'] as $q) $this->assertFalse(AskTriage::readsAsQuestion($q), $q);
     }
+
+    public function testWhatThePlannerAskedIsReadApartFromWhatWasTyped(): void {
+        $goal = "Put our phone number in the footer.\n\n" . AskTriage::QA_HEAD . "\n\n**You asked:** What is the number?\n  Include the country.\n\n**They answered:** +1 555 010 2030\n\n**You asked:** Bold or plain?\n\n**They answered:** Plain.\n";
+        $p = AskTriage::splitAsked($goal);
+        $this->assertSame('Put our phone number in the footer.', $p['said']);
+        $this->assertSame([['q' => "What is the number?\nInclude the country.", 'a' => '+1 555 010 2030'], ['q' => 'Bold or plain?', 'a' => 'Plain.']], $p['qa']);
+        $this->assertSame(['said' => 'No question here.', 'qa' => []], AskTriage::splitAsked('No question here.'));
+    }
 }

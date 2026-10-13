@@ -271,6 +271,11 @@ class TenantBuilder {
             echo "[planner] the agent judged the goal already built (plan-complete.md)\n";
             return 0;
         }
+        if (($r['status'] ?? '') === 'question') {
+            file_put_contents("{$abDir}/plan-question.md", (string) ($r['question'] ?? ''));
+            echo "[planner] the agent has a question for the owner before it can plan this (plan-question.md)\n";
+            return 0;
+        }
         if (($r['status'] ?? '') !== 'planned') {
             echo "No plan came back from {$slug}'s container (" . ($r['status'] ?? '?') . '): ' . ($r['error'] ?? '') . "\n";
             if (!empty($r['output'])) echo "[planner] agent output (tail):\n" . mb_substr((string) $r['output'], -2000) . "\n";

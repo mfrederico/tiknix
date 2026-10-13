@@ -52,6 +52,10 @@ if ($__loggedIn) {
     if ($__isAdmin && !isset($__have['/knowledge'])) {
         $__lead[] = ['url' => '/knowledge', 'label' => 'Knowledge base', 'icon' => 'journal-bookmark'];
     }
+    // What on this install nobody opens (app\PageUse) — the pruning report.
+    if ($__isAdmin && !isset($__have['/usage'])) {
+        $__lead[] = ['url' => '/usage', 'label' => 'What is used', 'icon' => 'bar-chart'];
+    }
     $__sections = [$__mainSec => array_merge($__lead, $__sections[$__mainSec] ?? [])] + $__sections;
 
     // The member's role on the selected project and the plugins they are offered — read by the

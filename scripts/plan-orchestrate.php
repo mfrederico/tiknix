@@ -129,6 +129,21 @@ for ($i = 0; $i < $maxTicks; $i++) {
     sleep(10);
 }
 
+// A request leaves its line in the project's notebook when its build ends (app\RequestNote, the
+// `built` document): what was asked, what was built, where, what its owner decided on the way —
+// and, when it stopped part-way or ran out of time, what is in the app and what is not. Every
+// later plan and task reads it: the project's own account of how it came to be.
+$ledger = function (string $status, int $memberId) use ($dir, $planId, $slug): void {
+    if (!in_array($status, ['done', 'attention', 'stalled'], true)) return;
+    try {
+        $line = \app\RequestNote::built($dir, $planId);
+        $ct = $line !== '' ? \app\TenantBuilder::bySlug($slug) : null;
+        if (!$ct) return;
+        $nb = \app\TenantHost::notebookAdd($ct, [['kind' => 'built', 'doc' => 'built', 'text' => $line]], "request #{$planId}", \app\TenantHost::author($memberId));
+        echo '[orchestrator] notebook: ' . (!empty($nb['ok']) ? ((int) ($nb['added'] ?? 0) ? 'what this request built is written down' : 'already there') : 'ERROR not written — ' . (string) ($nb['error'] ?? '?')) . "\n";
+    } catch (\Throwable $e) { echo '[orchestrator] ERROR the notebook line for this request was not written: ' . $e->getMessage() . "\n"; }
+};
+
 // A task split itself in a plan a person approves step by step: stopped on purpose, with what
 // was running finished. Not a failure and not finished — it waits for Build, like a new plan.
 if (!$ranOut && !empty($res['held'])) {
@@ -174,6 +189,7 @@ if ($ranOut) {
         . 'reported as a finished one. Press Build again to resume — merged subtasks are skipped.';
     $parent->updatedAt = date('Y-m-d H:i:s');
     Bean::store($parent);
+    $ledger('stalled', (int) $parent->memberId);
     // Told, like every other way a plan ends: this one stopped with work unfinished and said so
     // to nobody — the owner found it stalled the next time they happened to look.
     try {
@@ -233,19 +249,7 @@ Bean::store($parent);
 
 echo "[orchestrator] plan #$planId finished status={$parent->planStatus} " . date('c') . "\n";
 
-// A finished request leaves its line in the project's notebook (app\RequestNote, the `built`
-// document): what was asked, what was built, where, what its owner decided on the way. Every
-// later plan and task reads it — the project's own account of how it came to be.
-if ((string) $parent->planStatus === 'done') {
-    try {
-        $line = \app\RequestNote::built($dir, $planId);
-        $ct = $line !== '' ? \app\TenantBuilder::bySlug($slug) : null;
-        if ($ct) {
-            $nb = \app\TenantHost::notebookAdd($ct, [['kind' => 'built', 'doc' => 'built', 'text' => $line]], "request #{$planId}", \app\TenantHost::author((int) $parent->memberId));
-            echo '[orchestrator] notebook: ' . (!empty($nb['ok']) ? ((int) ($nb['added'] ?? 0) ? 'what this request built is written down' : 'already there') : 'ERROR not written — ' . (string) ($nb['error'] ?? '?')) . "\n";
-        }
-    } catch (\Throwable $e) { echo '[orchestrator] ERROR the notebook line for this request was not written: ' . $e->getMessage() . "\n"; }
-}
+$ledger((string) $parent->planStatus, (int) $parent->memberId);
 
 // TELL THE OWNER. A build that ends by writing a line to a log file inside a tmux
 // session nobody has open has not told anyone anything. This lands in Communications

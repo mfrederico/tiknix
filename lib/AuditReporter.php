@@ -114,9 +114,23 @@ class AuditReporter {
             $plan->auditStatus   = $passed ? 'passed' : 'failed';
             $plan->auditAt       = date('Y-m-d H:i:s');
             $plan->auditFailures = count($failures);
+            // what it found, in a few words each: the request's line in the notebook says them (RequestNote)
+            $plan->auditFoundJson = json_encode(array_values(array_filter(array_map(fn($f) => trim((string) (($f['label'] ?? '') ?: ($f['message'] ?? ''))), array_slice($failures, 0, 5)))), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             $plan->updatedAt     = date('Y-m-d H:i:s');
             Bean::store($plan);
         } catch (\Throwable $e) { error_log('ERROR AuditReporter: could not stamp the plan with its audit result: ' . $e->getMessage()); }
+
+        // 5b) The request's line in the project's notebook is written again, now with what the
+        //     check made of it: passed, or what it found (the lessons above say the same in full).
+        try {
+            if (\Model_Instance::tenantRow($inst)) {
+                $line = RequestNote::built(\Model_Instance::dirOf($inst), (int) $plan->id);
+                if ($line !== '') {
+                    $nb = TenantHost::notebookAdd($inst, [['kind' => 'built', 'doc' => 'built', 'text' => $line]], 'request #' . (int) $plan->id, TenantHost::author((int) ($plan->memberId ?: $inst->memberId)));
+                    if (empty($nb['ok'])) error_log('ERROR AuditReporter: the notebook line for plan #' . (int) $plan->id . ' was not brought up to date: ' . (string) ($nb['error'] ?? 'no answer'));
+                }
+            }
+        } catch (\Throwable $e) { error_log('ERROR AuditReporter: the notebook line for plan #' . (int) $plan->id . ' was not brought up to date: ' . $e->getMessage()); }
 
         // 6) Cap terminus: a fix that failed its audit AT the cap gets no further
         //    auto-retry, so flip the source detected error to a distinct 'capped'

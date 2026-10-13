@@ -15,6 +15,10 @@
  *           click on "Build it"; a wrong "build" costs minutes and a plan to clean up — so in
  *           doubt it does not build.
  *
+ * It is a conversation: each reading is handed the last few things this person said here and
+ * what became of them (history()), so "and the footer?" is read as a follow-up. From our own
+ * record, cut short — not an agent session that grows, and is paid for, without limit.
+ *
  * The verdict is the person's to overrule either way (Workbench::askas). A run that fails says so
  * (state failed, with the reason) and builds nothing.
  */
@@ -44,7 +48,8 @@ class AskTriage {
      * looked at — it is a judgement on the words — so it costs a second or two and little money,
      * and a request to build is on its way to the planner without a slower model having read it.
      */
-    public static function classifyBrief(string $said): string {
+    public static function classifyBrief(string $said, string $before = ''): string {
+        $before = self::beforeSection($before);
         return <<<MD
         # Ask — what kind of message is this?
 
@@ -57,7 +62,7 @@ class AskTriage {
         - `VERDICT: UNSURE` — it could honestly be either, or it is too vague to tell what would be built. Do not guess.
 
         Only after `VERDICT: UNSURE`, add ONE short sentence on the next line saying what you could not tell (it is shown above two buttons: "Build it" and "Just answer").
-
+        {$before}
         ## The message
 
         {$said}
@@ -65,7 +70,8 @@ class AskTriage {
     }
 
     /** What the agent is handed: how to answer, then what was typed. $mode 'answer' = the person already said it is a question. */
-    public static function brief(string $said, string $mode, string $busy): string {
+    public static function brief(string $said, string $mode, string $busy, string $before = ''): string {
+        $before = self::beforeSection($before);
         $decide = $mode === 'answer'
             ? "The person has said this is a QUESTION, not something to build. Answer it. Your first line is exactly `VERDICT: ANSWER`."
             : <<<MD
@@ -92,7 +98,9 @@ class AskTriage {
 
         - You can only READ: the code (Read, Grep, Glob) and the app's own tools (`reuse_digest`, `describe`, `whatprovides`, `database_schema`, `application_info`, `last_error`, `read_log_entries`). You cannot change a file, run a command or start a build, and must not say you did.
         - Look before you answer. Say what the app really has, naming the page or file (`/game/play`, `controls/Game.php`) — not what an app like it usually has.
-        - Write for the person who owns the app, who may not be a programmer: plain words, short. A few sentences, or a short list. No headings unless it is long. Markdown is shown.
+        - **Be brief.** The first sentence IS the answer ("Yes — …", "It is at /landing.", "7 so far."). Then only what they need to act on it: at most three short bullets or two more sentences, under about 80 words in all. No preamble, no recap of the question, no list of everything you looked at, no closing summary.
+        - Write for the person who owns the app, who may not be a programmer: plain words. Name a page by its address (`/landing`) — a file name only when they asked where something is in the code. No headings. Markdown is shown.
+        - If there is honestly more worth knowing, end with one line: "Ask if you want the details." They will ask, and you will have this conversation to go on.
         - If you cannot find it, say what you looked at and that you did not find it.
         - If the honest answer is "that would have to be built", say so, and say in one line what you would ask for.
         - {$now}
@@ -106,11 +114,47 @@ class AskTriage {
         - `NOTE: lesson: …` — a mistake and how it is avoided
 
         The person can put that line in the project's notebook with one click; every later build reads the notebook and believes it, so write only what you verified in the code or the facts file. If nothing in the answer is worth keeping (a status, an opinion, "I could not find it"), write `NOTE: none`.
-
+        {$before}
         ## The message
 
         {$said}
         MD;
+    }
+
+    /** The conversation so far as a section of a brief ('' when this is its first message). */
+    private static function beforeSection(string $before): string {
+        if (trim($before) === '') return '';
+        return "\n## The conversation so far\n\nWhat this person said here before, oldest first, and what became of each. The message below is the newest: read it in that light — \"it\", \"that page\", \"and the footer?\", \"do that\" point back at these.\n\n" . trim($before) . "\n";
+    }
+
+    /**
+     * What one member said in one project's Ask before message #$beforeId, and what became of
+     * each — the last $n, oldest first, each cut short: enough to follow "and the footer?", not
+     * a transcript (a conversation that grows without limit is paid for on every message).
+     */
+    public static function history(int $memberId, string $instanceTag, int $beforeId, int $n = 6): string {
+        if ($memberId <= 0 || $instanceTag === '') return '';
+        return (string) CoreDb::with(function () use ($memberId, $instanceTag, $beforeId, $n) {
+            $rows = array_reverse(array_values(Bean::find('promptlog', 'member_id = ? AND instance_tag = ? AND source = ? AND id < ? ORDER BY id DESC LIMIT ' . max(1, $n),
+                [$memberId, $instanceTag, PromptLog::SOURCE_DECOMPOSE, $beforeId])));
+            $out = [];
+            foreach ($rows as $r) {
+                $said = trim(GoalBrief::split((string) $r->body)['goal']);
+                if (($cut = strpos($said, "\n\n" . PlanExecutor::ATTACHED_HEAD)) !== false) $said = trim(substr($said, 0, $cut)) . ' (with files attached)';
+                $said = mb_strlen($said) > 400 ? mb_substr($said, 0, 400) . '…' : $said;
+                $state = (string) ($r->askState ?? '');
+                if ($state === 'answer') {
+                    $a = trim((string) $r->askAnswer);
+                    $then = 'You answered: ' . (mb_strlen($a) > 700 ? mb_substr($a, 0, 700) . '…' : $a);
+                } elseif ($state === 'unsure') $then = 'It was not clear whether to build or answer; they have not said which.';
+                elseif ($state === 'failed')   $then = 'It could not be read (a fault on our side).';
+                elseif ($state === 'thinking') $then = 'It is still being read.';
+                else $then = (string) $r->planUid !== '' ? 'It was sent to be built' . (trim((string) ($r->planTitle ?? '')) !== '' ? ' as the plan "' . trim((string) $r->planTitle) . '".' : '.')
+                                                          : 'It was sent to be built (not planned yet).';
+                $out[] = '**They said:** ' . str_replace("\n", "\n  ", $said) . "\n\n**Then:** " . str_replace("\n", "\n  ", $then);
+            }
+            return implode("\n\n---\n\n", $out);
+        }, '');
     }
 
     /** The agent's reply, read: ['verdict' => build|answer|unsure, 'text' => …, 'note' => 'kind: one line' or '']; throws when it did not say which. $needAnswer false = the first reading, which only says which. */
@@ -199,7 +243,7 @@ class AskTriage {
     public static function run(int $promptId, string $mode): string {
         $q = CoreDb::with(function () use ($promptId) {
             $r = Bean::load('promptlog', $promptId);
-            return $r->id ? ['body' => (string) $r->body, 'tag' => (string) $r->instanceTag, 'plan' => (string) $r->planUid] : null;
+            return $r->id ? ['body' => (string) $r->body, 'tag' => (string) $r->instanceTag, 'plan' => (string) $r->planUid, 'member' => (int) $r->memberId] : null;
         }, null);
         if (!$q) return "#{$promptId}: no such prompt";
         if ($q['plan'] !== '') return "#{$promptId}: already a plan";
@@ -211,16 +255,17 @@ class AskTriage {
             if (!$tenant) throw new \RuntimeException("{$slug} is not running in its own container, so its agent cannot be asked");
             $busy = BuildQueue::busyWith(\Model_Instance::dirForSlug($slug), $slug);
             $said = trim(GoalBrief::split($q['body'])['goal']);
+            $before = self::history($q['member'], $q['tag'], $promptId);
             // First the quick reading, on the fast model: which is it? Only a question goes on to
             // be answered — by the builder's own model, which reads the app to do it.
             $got = ['verdict' => 'answer', 'text' => ''];
             if ($mode === 'auto') {
-                $r = TenantHost::ask($tenant, 'ask-' . $promptId . '-c', self::classifyBrief($said), 90, '', true);
+                $r = TenantHost::ask($tenant, 'ask-' . $promptId . '-c', self::classifyBrief($said, $before), 90, '', true);
                 if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
                 $got = self::parse((string) $r['text'], false);
             }
             if ($got['verdict'] === 'answer') {
-                $r = TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy), self::TIMEOUT);
+                $r = TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before), self::TIMEOUT);
                 if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
                 $got = self::parse((string) $r['text']);
                 if ($got['verdict'] !== 'answer') throw new \RuntimeException('asked to answer, the agent did not');

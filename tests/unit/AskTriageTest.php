@@ -72,4 +72,15 @@ class AskTriageTest extends TestCase {
         $this->assertSame('', AskTriage::parse("VERDICT: ANSWER\nNo note line here.")['note']);
         $this->assertStringContainsString('NOTE: none', AskTriage::brief('x?', 'answer', ''));
     }
+
+    public function testTheConversationSoFarGoesBeforeTheNewestMessage(): void {
+        $before = "**They said:** where is the headline?\n\n**Then:** You answered: at /landing.";
+        foreach ([AskTriage::classifyBrief('and the footer?', $before), AskTriage::brief('and the footer?', 'answer', '', $before)] as $b) {
+            $this->assertStringContainsString('## The conversation so far', $b);
+            $this->assertLessThan(strpos($b, '## The message'), strpos($b, 'where is the headline?'));
+            $this->assertStringEndsWith('and the footer?', $b);
+        }
+        $this->assertStringNotContainsString('The conversation so far', AskTriage::brief('x?', 'answer', ''));
+        $this->assertStringContainsString('Be brief', AskTriage::brief('x?', 'answer', ''));
+    }
 }

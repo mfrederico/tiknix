@@ -84,13 +84,35 @@ class TenantBrowser {
         [$c, $o] = TenantHost::ssh((object) ['slug' => QaHost::HOSTNAME, 'ctIp' => $qa['ip']], 'app',
             'mkdir -p ' . escapeshellarg("{$dir}/out") . ' && cat > ' . escapeshellarg("{$dir}/config.json"), $config, 30);
         if ($c !== 0) throw new \RuntimeException('could not prepare the QA host for a browser: ' . trim((string) $o));
-        $remote = 'cd /srv/qa/mcp && PLAYWRIGHT_BROWSERS_PATH=/srv/qa/browsers exec node node_modules/@playwright/mcp/cli.js'
+        // Whatever still listens on this port there is a browser that outlived the build or audit
+        // it was for (2026-10-13: 38 of them, three days' worth, the host's memory gone — and a
+        // lent browser, whose port is its app's own, could not start on a port still held, so
+        // every build of that app waited 90 s and ran without one). It is ended first.
+        $remote = self::endOnPort($port) . '; cd /srv/qa/mcp && PLAYWRIGHT_BROWSERS_PATH=/srv/qa/browsers exec node node_modules/@playwright/mcp/cli.js'
                 . ' --headless --isolated --browser chromium --host 127.0.0.1 --port ' . $port . ' --allowed-hosts ' . escapeshellarg("127.0.0.1:{$port}")
                 . ' --config ' . escapeshellarg("{$dir}/config.json") . ($idleMs > 0 ? ' --idle-timeout ' . $idleMs : '') . ' --output-dir ' . escapeshellarg("{$dir}/out");
         // -tt: the browser there ends when this connection does (with no terminal it would outlive it).
         return implode(' ', array_map('escapeshellarg', ['ssh', '-tt', '-i', TenantHost::key(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
             '-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=' . TenantHost::knownHosts(), '-o', 'LogLevel=ERROR',
             '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=30', '-L', "127.0.0.1:{$port}:127.0.0.1:{$port}", 'app@' . $qa['ip'], $remote])) . ' < /dev/null';
+    }
+
+    /** Shell, for the QA host: end whatever listens on $port — asked first (it closes its browser), then made to. */
+    private static function endOnPort(int $port): string {
+        if ($port < 1024 || $port > 65535) throw new \InvalidArgumentException("not a port: {$port}");
+        return "fuser -k -TERM -n tcp {$port} >/dev/null 2>&1; i=0; while fuser -n tcp {$port} >/dev/null 2>&1 && [ \$i -lt 5 ]; do sleep 1; i=\$((i+1)); done; fuser -k -KILL -n tcp {$port} >/dev/null 2>&1; true";
+    }
+
+    /**
+     * The command that ends the browser on the QA host that serves $port — run when a build's or
+     * an audit's script ends. Ending the connection that started it does not end it (they were
+     * found alive days later, with no terminal), so it is ended by what it listens on.
+     */
+    public static function qaBrowserStop(int $port): string {
+        $qa = QaHost::state();
+        if (!$qa) throw new \RuntimeException('the QA browser host is not set up');
+        return implode(' ', array_map('escapeshellarg', ['ssh', '-i', TenantHost::key(), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
+            '-o', 'StrictHostKeyChecking=accept-new', '-o', 'UserKnownHostsFile=' . TenantHost::knownHosts(), '-o', 'LogLevel=ERROR', 'app@' . $qa['ip'], self::endOnPort($port)])) . ' < /dev/null';
     }
 
     /** Bring what a browser on the QA host saved (screenshots) into $into here, and clear its folder there. */
@@ -153,6 +175,7 @@ class TenantBrowser {
             try { $browser = self::qaBrowserCommand($port, array_merge($origins, self::PAGE_ASSETS), '/srv/qa/lent/' . $inst->slug, self::IDLE_MS); }
             catch (\Throwable $e) { return ['ok' => false, 'error' => $e->getMessage()]; }
             $tunnel = TenantHost::tunnelCommand($inst, $port);
+            $stop = self::qaBrowserStop($port);
             $path = escapeshellarg('/usr/bin');
             $qlog = escapeshellarg($log);
             $script = <<<BASH
@@ -162,8 +185,11 @@ export PATH={$path}:\$PATH
 echo "[browser] {$inst->slug}: on the QA host, carried here on 127.0.0.1:{$port} \$(date)" > {$qlog}
 {$browser} >> {$qlog} 2>&1 &
 BROWSER=\$!
-trap 'kill \$BROWSER 2>/dev/null' EXIT
-for i in \$(seq 1 90); do curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp && break; sleep 1; done
+# however this ends (the session is killed, the browser dies), the browser on the QA host goes too
+stop_qa() { {$stop} >> {$qlog} 2>&1; }
+trap 'kill \$BROWSER 2>/dev/null; stop_qa' EXIT
+# until it answers — or it has already died (then say so now, not after a minute and a half)
+for i in \$(seq 1 90); do curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp && break; kill -0 \$BROWSER 2>/dev/null || break; sleep 1; done
 curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp || { echo "[browser] ERROR the browser did not start" >> {$qlog}; exit 1; }
 # the tunnel is re-opened whenever it drops (the container restarted, the network blinked)
 while kill -0 \$BROWSER 2>/dev/null; do

@@ -143,6 +143,7 @@ class AuditRunner {
         $log = escapeshellarg($this->logFile());
         $blog = escapeshellarg($ws . '/.aibuilder/audit-browser.log');
         $tunnel = TenantHost::tunnelCommand($tenant, $port);
+        $stop = TenantBrowser::qaBrowserStop($port);
         return <<<BASH
 #!/bin/bash
 # Tiknix audit — {$this->slug}, in its container; its browser runs on the QA host (lib/AuditRunner.php)
@@ -154,8 +155,10 @@ rm -f {$this->escaped($out)}
 {$browser} > {$blog} 2>&1 &
 BROWSER=\$!
 TUNNEL=
-trap 'kill \$BROWSER \$TUNNEL 2>/dev/null' EXIT
-for i in \$(seq 1 90); do curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp && break; sleep 1; done
+# however this ends, the browser on the QA host goes too (ending the connection alone left it running)
+stop_qa() { {$stop} >> {$blog} 2>&1; }
+trap 'kill \$BROWSER \$TUNNEL 2>/dev/null; stop_qa' EXIT
+for i in \$(seq 1 90); do curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp && break; kill -0 \$BROWSER 2>/dev/null || break; sleep 1; done
 curl -s -o /dev/null -m 2 http://127.0.0.1:{$port}/mcp || { echo "[audit] ERROR the browser did not start (see {$ws}/.aibuilder/audit-browser.log)" | tee -a {$log}; exit 1; }
 {$tunnel} &
 TUNNEL=\$!

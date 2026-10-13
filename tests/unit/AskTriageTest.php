@@ -16,7 +16,7 @@ class AskTriageTest extends TestCase {
     }
 
     public function testABuildCarriesNoWords(): void {
-        $this->assertSame(['verdict' => 'build', 'text' => ''], AskTriage::parse("`VERDICT: BUILD`\nI will add it."));
+        $this->assertSame(['verdict' => 'build', 'text' => '', 'note' => ''], AskTriage::parse("`VERDICT: BUILD`\nI will add it."));
     }
 
     public function testUnsureKeepsItsOneSentence(): void {
@@ -56,9 +56,20 @@ class AskTriageTest extends TestCase {
     }
 
     public function testTheFirstReadingOnlySaysWhich(): void {
-        $this->assertSame(['verdict' => 'answer', 'text' => ''], AskTriage::parse('VERDICT: ANSWER', false));
+        $this->assertSame(['verdict' => 'answer', 'text' => '', 'note' => ''], AskTriage::parse('VERDICT: ANSWER', false));
         $b = AskTriage::classifyBrief('is it done?');
         $this->assertStringContainsString('Do NOT answer it', $b);
         $this->assertStringEndsWith('is it done?', $b);
+    }
+
+    public function testTheLineWorthKeepingIsTakenOffTheAnswer(): void {
+        $r = AskTriage::parse("VERDICT: ANSWER\nEnquiries are in the inbox.\n\nNOTE: map: Enquiries are saved by controls/Enquiry.php and also recorded as leads.");
+        $this->assertSame('Enquiries are in the inbox.', $r['text']);
+        $this->assertSame('map: Enquiries are saved by controls/Enquiry.php and also recorded as leads.', $r['note']);
+        $none = AskTriage::parse("VERDICT: ANSWER\nIt is still building.\nNOTE: none");
+        $this->assertSame('It is still building.', $none['text']);
+        $this->assertSame('', $none['note']);
+        $this->assertSame('', AskTriage::parse("VERDICT: ANSWER\nNo note line here.")['note']);
+        $this->assertStringContainsString('NOTE: none', AskTriage::brief('x?', 'answer', ''));
     }
 }

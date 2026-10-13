@@ -97,13 +97,23 @@ class AskTriage {
         - If the honest answer is "that would have to be built", say so, and say in one line what you would ask for.
         - {$now}
 
+        ## One line worth keeping
+
+        After the answer, on a LAST line of its own, write the one thing from it that the next person or agent working on this app should not have to find out again — a fact about THIS app, in one plain sentence under 300 characters, starting with its kind:
+
+        - `NOTE: map: …` — where something lives or how it works ("enquiries are saved by controls/Enquiry.php and also recorded as leads")
+        - `NOTE: decision: …` — something that was decided and why
+        - `NOTE: lesson: …` — a mistake and how it is avoided
+
+        The person can put that line in the project's notebook with one click; every later build reads the notebook and believes it, so write only what you verified in the code or the facts file. If nothing in the answer is worth keeping (a status, an opinion, "I could not find it"), write `NOTE: none`.
+
         ## The message
 
         {$said}
         MD;
     }
 
-    /** The agent's reply, read: ['verdict' => build|answer|unsure, 'text' => …]; throws when it did not say which. $needAnswer false = the first reading, which only says which. */
+    /** The agent's reply, read: ['verdict' => build|answer|unsure, 'text' => …, 'note' => 'kind: one line' or '']; throws when it did not say which. $needAnswer false = the first reading, which only says which. */
     public static function parse(string $reply, bool $needAnswer = true): array {
         $reply = trim($reply);
         if (!preg_match('/^\s*`?VERDICT:\s*(BUILD|ANSWER|UNSURE)`?\s*$/mi', $reply, $m, PREG_OFFSET_CAPTURE)) {
@@ -111,18 +121,26 @@ class AskTriage {
         }
         $text = trim(substr($reply, $m[0][1] + strlen($m[0][0])));
         $verdict = strtolower($m[1][0]);
+        // The line worth keeping, taken off the end of the answer: it is offered beside it, not shown in it.
+        $note = '';
+        if (preg_match('/^\s*`?NOTE:\s*(none|(decision|map|lesson)\s*:\s*(.+?))`?\s*$/mi', $text, $n, PREG_OFFSET_CAPTURE)) {
+            if (!empty($n[2][0]) && mb_strlen(trim($n[3][0])) >= 12) $note = strtolower($n[2][0]) . ': ' . mb_substr(trim(preg_replace('/\s+/', ' ', $n[3][0])), 0, 400);
+            $text = trim(substr($text, 0, $n[0][1]) . substr($text, $n[0][1] + strlen($n[0][0])));
+        }
         if ($verdict === 'answer' && $text === '' && $needAnswer) throw new \RuntimeException('the agent called it a question and gave no answer');
-        return ['verdict' => $verdict, 'text' => $verdict === 'build' ? '' : $text];
+        return ['verdict' => $verdict, 'text' => $verdict === 'build' ? '' : $text, 'note' => $verdict === 'answer' ? $note : ''];
     }
 
     /** Record where a message stands. */
-    public static function mark(int $promptId, string $state, string $answer = ''): void {
+    public static function mark(int $promptId, string $state, string $answer = '', string $note = ''): void {
         if (!in_array($state, self::STATES, true)) throw new \InvalidArgumentException("not an ask state: {$state}");
-        CoreDb::with(function () use ($promptId, $state, $answer) {
+        CoreDb::with(function () use ($promptId, $state, $answer, $note) {
             $row = Bean::load('promptlog', $promptId);
             if (!$row->id) throw new \RuntimeException("no prompt #{$promptId}");
             $row->askState  = $state;
             $row->askAnswer = $answer;
+            $row->askNote   = $note;
+            $row->askNotedAt = null;
             $row->askAt     = date('Y-m-d H:i:s');
             Bean::store($row);
             return null;
@@ -132,7 +150,7 @@ class AskTriage {
     /**
      * The messages of one member on one project that did not (or not yet) become a plan — for the
      * conversation, oldest first. A thinking one whose run is long over is shown as failed.
-     * @return list<array{id:int,asked:string,at:string,state:string,answer:string}>
+     * @return list<array{id:int,asked:string,at:string,state:string,answer:string,note:string,noted:bool}>
      */
     public static function talk(int $memberId, string $instanceTag, int $limit = 20): array {
         if ($memberId <= 0 || $instanceTag === '') return [];
@@ -144,10 +162,33 @@ class AskTriage {
                 if ($state === 'thinking' && time() - (int) strtotime((string) $r->askAt) > self::TIMEOUT + 420) {
                     $state = 'failed'; $answer = 'No answer came back: the run that was reading it ended without one.';
                 }
-                $out[] = ['id' => (int) $r->id, 'asked' => trim(GoalBrief::split((string) $r->body)['goal']), 'at' => (string) $r->createdAt, 'state' => $state, 'answer' => $answer];
+                $out[] = ['id' => (int) $r->id, 'asked' => trim(GoalBrief::split((string) $r->body)['goal']), 'at' => (string) $r->createdAt, 'state' => $state, 'answer' => $answer,
+                          'note' => $state === 'answer' ? (string) ($r->askNote ?? '') : '', 'noted' => (string) ($r->askNotedAt ?? '') !== ''];
             }
             return array_reverse($out);
         }, []);
+    }
+
+    /**
+     * The line worth keeping from an answer, as a notebook entry ({kind, doc, text}) — or null
+     * when there is none, it is not this member's, or it is already in the notebook.
+     */
+    public static function noteOf(int $promptId, int $memberId): ?array {
+        return CoreDb::with(function () use ($promptId, $memberId) {
+            $r = Bean::findOne('promptlog', "id = ? AND member_id = ? AND ask_state = 'answer'", [$promptId, $memberId]);
+            if (!$r || !$r->id || (string) ($r->askNotedAt ?? '') !== '') return null;
+            if (!preg_match('/^(decision|map|lesson): (.+)$/s', (string) ($r->askNote ?? ''), $m)) return null;
+            return ['kind' => $m[1], 'doc' => \app\Notebook::KINDS[$m[1]], 'text' => $m[2], 'tag' => (string) $r->instanceTag];
+        }, null);
+    }
+
+    /** It is in the notebook now. */
+    public static function noted(int $promptId): void {
+        CoreDb::with(function () use ($promptId) {
+            $r = Bean::load('promptlog', $promptId);
+            if ($r->id) { $r->askNotedAt = date('Y-m-d H:i:s'); Bean::store($r); }
+            return null;
+        });
     }
 
     /**
@@ -190,7 +231,7 @@ class AskTriage {
             return "#{$promptId}: failed — " . $e->getMessage();
         }
         if ($got['verdict'] === 'build') return self::build($promptId);
-        self::mark($promptId, $got['verdict'], $got['text']);
+        self::mark($promptId, $got['verdict'], $got['text'], (string) ($got['note'] ?? ''));
         return "#{$promptId}: {$got['verdict']}";
     }
 

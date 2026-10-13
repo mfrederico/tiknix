@@ -75,8 +75,11 @@ class AskTriage {
     }
 
     /** What the agent is handed: how to answer, then what was typed. $mode 'answer' = the person already said it is a question. */
-    public static function brief(string $said, string $mode, string $busy, string $before = '', bool $rows = false): string {
+    public static function brief(string $said, string $mode, string $busy, string $before = '', bool $rows = false, string $board = ''): string {
         $before = self::beforeSection($before);
+        // The project's work list, as its record has it (BoardDigest): what was asked, what each
+        // request became, where every task stands and why. Questions about the WORK are answered from this.
+        $board = trim($board) === '' ? '' : "\n## The work list of this project\n\nWhat has been asked for here and what became of it — each request, its plan, every task with where it stands, why a task failed, what its agent last said, what the check afterwards found. Newest last. When they ask what was built, what is happening, why something failed or what a task did, ANSWER FROM THIS (and say the task by its name); go to the code only for how the app works.\n\n" . trim($board) . "\n";
         $data = $rows
             ? "You may also look at the app's DATA with `database_query`: one read-only SELECT at a time, 200 rows at most, passwords and keys withheld. Use it when the answer is in the data (how many, which, when, the latest). Count and summarise; name a person or quote an email or phone number only when they asked for exactly that."
             : "You cannot read rows: how much data there is (a count a table) is in the facts file, and that is all you can say about the data — say so plainly if they ask for more, and that an admin of the project can ask the same thing and get it.";
@@ -123,7 +126,7 @@ class AskTriage {
         - `NOTE: lesson: …` — a mistake and how it is avoided
 
         The person can put that line in the project's notebook with one click; every later build reads the notebook and believes it, so write only what you verified in the code or the facts file. If nothing in the answer is worth keeping (a status, an opinion, "I could not find it"), write `NOTE: none`.
-        {$before}
+        {$board}{$before}
         ## The message
 
         {$said}
@@ -143,28 +146,26 @@ class AskTriage {
      */
     public static function history(int $memberId, string $instanceTag, int $beforeId, int $n = 6): string {
         if ($memberId <= 0 || $instanceTag === '') return '';
-        return (string) CoreDb::with(function () use ($memberId, $instanceTag, $beforeId, $n) {
-            $rows = array_reverse(array_values(Bean::find('promptlog', 'member_id = ? AND instance_tag = ? AND source = ? AND id < ? ORDER BY id DESC LIMIT ' . max(1, $n),
-                [$memberId, $instanceTag, PromptLog::SOURCE_DECOMPOSE, $beforeId])));
-            $out = [];
-            foreach ($rows as $r) {
-                $said = trim(GoalBrief::split((string) $r->body)['goal']);
-                if (($cut = strpos($said, "\n\n" . PlanExecutor::ATTACHED_HEAD)) !== false) $said = trim(substr($said, 0, $cut)) . ' (with files attached)';
-                $said = mb_strlen($said) > 400 ? mb_substr($said, 0, 400) . '…' : $said;
-                $state = (string) ($r->askState ?? '');
-                if ($state === 'answer') {
-                    $a = trim((string) $r->askAnswer);
-                    $then = 'You answered: ' . (mb_strlen($a) > 700 ? mb_substr($a, 0, 700) . '…' : $a);
-                } elseif ($state === 'unsure') $then = 'It was not clear whether to build or answer; they have not said which.';
-                elseif ($state === 'failed')   $then = 'It could not be read (a fault on our side).';
-                elseif ($state === 'thinking') $then = 'It is still being read.';
-                elseif ($state === 'asking')   $then = 'Before planning it, the planner asked them: ' . mb_substr(trim((string) $r->askAnswer), 0, 400) . ' (not answered yet)';
-                else $then = (string) $r->planUid !== '' ? 'It was sent to be built' . (trim((string) ($r->planTitle ?? '')) !== '' ? ' as the plan "' . trim((string) $r->planTitle) . '".' : '.')
-                                                          : 'It was sent to be built (not planned yet).';
-                $out[] = '**They said:** ' . str_replace("\n", "\n  ", $said) . "\n\n**Then:** " . str_replace("\n", "\n  ", $then);
+        $dir = self::dirOfTag($instanceTag);
+        $out = [];
+        foreach (AskStore::of($dir, $memberId, [], $n, $beforeId) as $r) {
+            $said = trim((string) $r['said']);
+            if (($cut = strpos($said, "\n\n" . PlanExecutor::ATTACHED_HEAD)) !== false) $said = trim(substr($said, 0, $cut)) . ' (with files attached)';
+            $said = mb_strlen($said) > 400 ? mb_substr($said, 0, 400) . '…' : $said;
+            $state = (string) $r['state']; $a = trim((string) $r['answer']);
+            if ($state === 'answer')        $then = 'You answered: ' . (mb_strlen($a) > 700 ? mb_substr($a, 0, 700) . '…' : $a);
+            elseif ($state === 'unsure')    $then = 'It was not clear whether to build or answer; they have not said which.';
+            elseif ($state === 'failed')    $then = 'It did not go through' . ($a !== '' ? ': ' . mb_substr($a, 0, 400) : ' (a fault on our side).');
+            elseif ($state === 'thinking')  $then = 'It is still being read.';
+            elseif ($state === 'asking')    $then = 'Before planning it, the planner asked them: ' . mb_substr($a, 0, 400) . ' (not answered yet)';
+            elseif ($state === 'planned')   $then = 'It was sent to be built, as plan #' . (int) $r['plan_ref'] . ' of this project.';
+            else                            $then = 'It was sent to be built (not planned yet).';
+            foreach ((array) (json_decode((string) $r['qa_json'], true) ?: []) as $qa) {
+                $then .= "\n  Before planning it, the planner asked: " . trim((string) ($qa['q'] ?? '')) . ' — they answered: ' . trim((string) ($qa['a'] ?? ''));
             }
-            return implode("\n\n---\n\n", $out);
-        }, '');
+            $out[] = '**They said:** ' . str_replace("\n", "\n  ", $said) . "\n\n**Then:** " . str_replace("\n", "\n  ", $then);
+        }
+        return implode("\n\n---\n\n", $out);
     }
 
     /**
@@ -199,20 +200,39 @@ class AskTriage {
     /** Record where a message stands. */
     public static function mark(int $promptId, string $state, string $answer = '', string $note = ''): void {
         if (!in_array($state, self::STATES, true)) throw new \InvalidArgumentException("not an ask state: {$state}");
-        CoreDb::with(function () use ($promptId, $state, $answer, $note) {
-            $row = Bean::load('promptlog', $promptId);
-            if (!$row->id) throw new \RuntimeException("no prompt #{$promptId}");
-            $row->askState  = $state;
-            // Sent on to be built ("Build it" under an answer): the answer it had is kept, so that
-            // stopping the planner puts the conversation back as it was (restoreAnswer).
-            if ($state === 'build') { $row->askAt = date('Y-m-d H:i:s'); Bean::store($row); return null; }
-            $row->askAnswer = $answer;
-            $row->askNote   = $note;
-            $row->askNotedAt = null;
-            $row->askAt     = date('Y-m-d H:i:s');
-            Bean::store($row);
-            return null;
-        });
+        $p = self::prompt($promptId);
+        // The item is made the first time anything is said about it: from then on the project has it.
+        AskStore::ensure($p['dir'], $promptId, $p['member'], $p['said'], 'thinking', $p['at']);
+        AskStore::mark($p['dir'], $promptId, $state, $answer, $note);
+    }
+
+    /**
+     * The prompt-log entry of a message, and the project it belongs to: its builder folder (where
+     * the project's own record is), who said it, what was said, and when.
+     * @return array{dir:string,tag:string,member:int,said:string,body:string,plan:string,at:string,queued:bool}
+     */
+    private static function prompt(int $promptId): array {
+        $miss = new \stdClass();
+        $r = CoreDb::with(function () use ($promptId) {
+            $r = Bean::load('promptlog', $promptId);
+            return $r->id ? ['tag' => (string) $r->instanceTag, 'member' => (int) $r->memberId, 'body' => (string) $r->body, 'plan' => (string) $r->planUid,
+                             'at' => (string) $r->createdAt, 'queued' => (string) ($r->queuedAt ?? '') !== ''] : null;
+        }, $miss);
+        if ($r === $miss) throw new \RuntimeException("the prompt log could not be read for #{$promptId}: " . CoreDb::lastError());
+        if (!$r) throw new \RuntimeException("no prompt #{$promptId}");
+        $r['said'] = trim(self::splitAsked(trim(GoalBrief::split($r['body'])['goal']))['said']);
+        $r['dir']  = self::dirOfTag($r['tag']);
+        return $r;
+    }
+
+    /** The builder folder of the project a prompt's tag names ("slug.app"): where its own record is kept. */
+    public static function dirOfTag(string $instanceTag): string {
+        $slug = (string) (strstr($instanceTag, '.', true) ?: $instanceTag);
+        if ($slug === '') throw new \RuntimeException('a message with no project');
+        $miss = new \stdClass();
+        $dir = CoreDb::with(fn() => \Model_Instance::dirForSlug($slug), $miss);
+        if ($dir === $miss || !is_string($dir) || $dir === '') throw new \RuntimeException("where {$slug} keeps its record could not be read: " . CoreDb::lastError());
+        return $dir;
     }
 
     /**
@@ -222,25 +242,18 @@ class AskTriage {
      */
     public static function talk(int $memberId, string $instanceTag, int $limit = 20): array {
         if ($memberId <= 0 || $instanceTag === '') return [];
-        return (array) CoreDb::with(function () use ($memberId, $instanceTag, $limit) {
-            if (!in_array('ask_state', array_keys(Bean::inspect('promptlog')), true)) return [];
-            $out = [];
-            // …and one sent to be built whose PLANNING failed (no plan, not waiting, an error on
-            // it): it used to vanish from the conversation, with only a note elsewhere saying why.
-            foreach (Bean::find('promptlog', "member_id = ? AND instance_tag = ? AND (ask_state IN ('thinking', 'answer', 'unsure', 'failed', 'asking')"
-                    . " OR (ask_state = 'build' AND (plan_uid IS NULL OR plan_uid = '') AND queued_at IS NULL AND last_error IS NOT NULL AND last_error != '' AND last_attempt_at >= ask_at))"
-                    . ' ORDER BY id DESC LIMIT ' . max(1, $limit), [$memberId, $instanceTag]) as $r) {
-                $state = (string) $r->askState; $answer = (string) $r->askAnswer;
-                if ($state === 'build') { $state = 'failed'; $answer = 'It could not be planned. ' . trim((string) $r->lastError); }
-                if ($state === 'thinking' && time() - (int) strtotime((string) $r->askAt) > self::TIMEOUT + 420) {
-                    $state = 'failed'; $answer = 'No answer came back: the run that was reading it ended without one.';
-                }
-                $parts = self::splitAsked(trim(GoalBrief::split((string) $r->body)['goal']));
-                $out[] = ['id' => (int) $r->id, 'asked' => $parts['said'], 'qa' => $parts['qa'], 'at' => (string) $r->createdAt, 'state' => $state, 'answer' => $answer,
-                          'note' => $state === 'answer' ? (string) ($r->askNote ?? '') : '', 'noted' => (string) ($r->askNotedAt ?? '') !== ''];
+        $out = [];
+        foreach (AskStore::of(self::dirOfTag($instanceTag), $memberId, ['thinking', 'answer', 'unsure', 'failed', 'asking'], $limit) as $r) {
+            $state = (string) $r['state']; $answer = (string) $r['answer'];
+            if ($state === 'thinking' && time() - (int) strtotime((string) $r['updated_at']) > self::TIMEOUT + 420) {
+                $state = 'failed'; $answer = 'No answer came back: the run that was reading it ended without one.';
             }
-            return array_reverse($out);
-        }, []);
+            $qa = [];
+            foreach ((array) (json_decode((string) $r['qa_json'], true) ?: []) as $x) $qa[] = ['q' => (string) ($x['q'] ?? ''), 'a' => (string) ($x['a'] ?? '')];
+            $out[] = ['id' => (int) $r['prompt_ref'], 'asked' => (string) $r['said'], 'qa' => $qa, 'at' => (string) $r['created_at'], 'state' => $state, 'answer' => $answer,
+                      'note' => $state === 'answer' ? (string) $r['note'] : '', 'noted' => (string) ($r['noted_at'] ?? '') !== ''];
+        }
+        return $out;
     }
 
     /**
@@ -259,17 +272,20 @@ class AskTriage {
      * sent to be planned again. False when the message is not waiting on a question of this member's.
      */
     public static function answered(int $promptId, int $memberId, string $answer): bool {
-        $answer = trim($answer);
+        $answer = mb_substr(trim($answer), 0, 2000);
         if ($answer === '') return false;
-        return (bool) CoreDb::with(function () use ($promptId, $memberId, $answer) {
-            $r = Bean::findOne('promptlog', "id = ? AND member_id = ? AND ask_state = 'asking'", [$promptId, $memberId]);
-            if (!$r || !$r->id) return false;
+        $p = self::prompt($promptId);
+        $row = AskStore::get($p['dir'], $promptId);
+        if (!$row || (int) $row['member_ref'] !== $memberId || (string) $row['state'] !== 'asking') return false;
+        $q = trim((string) $row['answer']);
+        AskStore::addQa($p['dir'], $promptId, $q, $answer);
+        // …and into the goal the planner is handed (the prompt log is what its pipeline reads).
+        return (bool) CoreDb::with(function () use ($promptId, $q, $answer) {
+            $r = Bean::load('promptlog', $promptId);
+            if (!$r->id) return false;
             $body = rtrim((string) $r->body);
             if (!str_contains($body, "\n" . self::QA_HEAD . "\n")) $body .= "\n\n" . self::QA_HEAD . "\n";
-            $body .= "\n**You asked:** " . str_replace("\n", "\n  ", trim((string) $r->askAnswer)) . "\n\n**They answered:** " . str_replace("\n", "\n  ", mb_substr($answer, 0, 2000)) . "\n";
-            $r->body = $body;
-            $r->askState = 'build';
-            $r->askAnswer = '';
+            $r->body = $body . "\n**You asked:** " . str_replace("\n", "\n  ", $q) . "\n\n**They answered:** " . str_replace("\n", "\n  ", $answer) . "\n";
             $r->lastError = '';
             Bean::store($r);
             return true;
@@ -291,19 +307,38 @@ class AskTriage {
     }
 
     /**
+     * A request became a plan (plan-ingest): its item in the project's record says so and names
+     * the plan — also for a request that did not come through Ask (the board's own form), which
+     * gets its item here. From then on the plan and its tasks are what became of it.
+     */
+    public static function plannedAs(int $promptId, int $planId): void {
+        $p = self::prompt($promptId);
+        AskStore::ensure($p['dir'], $promptId, $p['member'], $p['said'], 'build', $p['at']);
+        AskStore::planned($p['dir'], $promptId, $planId);
+    }
+
+    /** Its planning failed (plan-failed): said on the item, with why — it used to vanish from the conversation. */
+    public static function planningFailed(int $promptId, string $why): void {
+        $p = self::prompt($promptId);
+        $row = AskStore::get($p['dir'], $promptId);
+        if (!$row || !in_array((string) $row['state'], ['build', 'thinking'], true)) return;   // not one of Ask's, or already something else
+        AskStore::mark($p['dir'], $promptId, 'failed', 'It could not be planned. ' . trim($why));
+    }
+
+    /**
      * The planner was stopped: a message that had been ANSWERED and then sent to be built ("Build
      * it" under the answer) goes back to being that answer, instead of vanishing from the
      * conversation. Only the newest such message of this member on this project, with no plan and
      * not waiting. Returns its id, or 0.
      */
     public static function restoreAnswer(int $memberId, string $instanceTag): int {
-        return (int) CoreDb::with(function () use ($memberId, $instanceTag) {
-            $r = Bean::findOne('promptlog', "member_id = ? AND instance_tag = ? AND ask_state = 'build' AND (plan_uid IS NULL OR plan_uid = '') AND queued_at IS NULL ORDER BY id DESC", [$memberId, $instanceTag]);
-            if (!$r || !$r->id || trim((string) ($r->askAnswer ?? '')) === '') return 0;
-            $r->askState = 'answer';
-            Bean::store($r);
-            return (int) $r->id;
-        }, 0);
+        $dir = self::dirOfTag($instanceTag);
+        $rows = AskStore::of($dir, $memberId, ['build'], 1);
+        $r = $rows ? end($rows) : null;
+        if (!$r || trim((string) $r['answer']) === '' || !empty($r['plan_ref'])) return 0;
+        if (self::prompt((int) $r['prompt_ref'])['queued']) return 0;   // it waits its turn: not stopped
+        AskStore::mark($dir, (int) $r['prompt_ref'], 'answer', (string) $r['answer'], (string) $r['note']);
+        return (int) $r['prompt_ref'];
     }
 
     /**
@@ -311,12 +346,11 @@ class AskTriage {
      * when there is none, it is not this member's, or it is already in the notebook.
      */
     public static function noteOf(int $promptId, int $memberId): ?array {
-        return CoreDb::with(function () use ($promptId, $memberId) {
-            $r = Bean::findOne('promptlog', "id = ? AND member_id = ? AND ask_state = 'answer'", [$promptId, $memberId]);
-            if (!$r || !$r->id || (string) ($r->askNotedAt ?? '') !== '') return null;
-            if (!preg_match('/^(decision|map|lesson): (.+)$/s', (string) ($r->askNote ?? ''), $m)) return null;
-            return ['kind' => $m[1], 'doc' => \app\Notebook::KINDS[$m[1]], 'text' => $m[2], 'tag' => (string) $r->instanceTag];
-        }, null);
+        $p = self::prompt($promptId);
+        $r = AskStore::get($p['dir'], $promptId);
+        if (!$r || (int) $r['member_ref'] !== $memberId || (string) $r['state'] !== 'answer' || (string) ($r['noted_at'] ?? '') !== '') return null;
+        if (!preg_match('/^(decision|map|lesson): (.+)$/s', (string) $r['note'], $m)) return null;
+        return ['kind' => $m[1], 'doc' => \app\Notebook::KINDS[$m[1]], 'text' => $m[2], 'tag' => $p['tag']];
     }
 
     /**
@@ -336,11 +370,7 @@ class AskTriage {
 
     /** It is in the notebook now. */
     public static function noted(int $promptId): void {
-        CoreDb::with(function () use ($promptId) {
-            $r = Bean::load('promptlog', $promptId);
-            if ($r->id) { $r->askNotedAt = date('Y-m-d H:i:s'); Bean::store($r); }
-            return null;
-        });
+        AskStore::noted(self::prompt($promptId)['dir'], $promptId);
     }
 
     /**
@@ -361,7 +391,9 @@ class AskTriage {
         try {
             $tenant = TenantBuilder::bySlug($slug);
             if (!$tenant) throw new \RuntimeException("{$slug} is not running in its own container, so its agent cannot be asked");
-            $busy = BuildQueue::busyWith(\Model_Instance::dirForSlug($slug), $slug);
+            $dir  = \Model_Instance::dirForSlug($slug);
+            $busy = BuildQueue::busyWith($dir, $slug);
+            $board = BoardDigest::markdown($dir);
             $said = trim(GoalBrief::split($q['body'])['goal']);
             $before = self::history($q['member'], $q['tag'], $promptId);
             // Rows only for someone who may see the app's data themselves: its owner, or an admin of a team it is shared with.
@@ -378,7 +410,7 @@ class AskTriage {
             $ahead = false;
             if ($mode === 'auto') {
                 if (self::readsAsQuestion($said)) {
-                    TenantHost::askStart($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before, $rows), self::TIMEOUT, '', $rows);
+                    TenantHost::askStart($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before, $rows, $board), self::TIMEOUT, '', $rows);
                     $ahead = true;
                 }
                 try {
@@ -393,7 +425,7 @@ class AskTriage {
             }
             if ($got['verdict'] === 'answer') {
                 $r = $ahead ? TenantHost::askWait($tenant, 'ask-' . $promptId, self::TIMEOUT)
-                            : TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before, $rows), self::TIMEOUT, '', false, $rows);
+                            : TenantHost::ask($tenant, 'ask-' . $promptId, self::brief($said, 'answer', $busy, $before, $rows, $board), self::TIMEOUT, '', false, $rows);
                 if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
                 $got = self::parse((string) $r['text']);
                 if ($got['verdict'] !== 'answer') throw new \RuntimeException('asked to answer, the agent did not');

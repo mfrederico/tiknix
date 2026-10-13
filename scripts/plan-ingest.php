@@ -154,6 +154,9 @@ try {
         \app\PromptLog::linkPlan(
             $promptId, (string) $parentBean->planUid, (string) $parentBean->title, $planId
         );
+        // …and in the project's own record of what was asked (app\AskStore): the item names its plan.
+        try { \app\AskTriage::plannedAs($promptId, $planId); }
+        catch (\Throwable $e) { echo "[ingest] ERROR the request's item in the project's record was not linked to plan #{$planId}: " . $e->getMessage() . "\n"; }
     }
     // The FULL brief (goal + the instance's reuse inventory) is 19KB of mostly
     // per-instance boilerplate, so it is snapshotted to disk rather than stored per

@@ -1,0 +1,82 @@
+<?php
+/**
+ * BoardDigest — a project's work list, written out for a reader that is not a person: what was
+ * asked, the plan each request became, every task with where it stands, what its agent last
+ * said, why it failed, what the check found. The list is the record of the project; Ask reads it
+ * here (AskTriage hands it to the agent that answers), so "why did the import fail?" is answered
+ * from what happened and not from guessing at the code.
+ *
+ * Read from the project's board database without selecting it (PDO, read-only), newest work
+ * last, kept to a budget: the last few requests in full, older ones as a line each.
+ */
+
+namespace app;
+
+class BoardDigest {
+    /** Characters, about: this is read by a model on every question. */
+    public const BUDGET = 7000;
+
+    private const DONE = ['merged', 'resolved', 'completed'];
+
+    public static function markdown(string $dir, int $items = 10): string {
+        $db = rtrim($dir, '/') . '/data/workbench.db';
+        if (!is_file($db)) return '';
+        $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC, \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY]);
+        if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn()) return '';
+        $cols = array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(), 'name');
+        $col = fn(string $c) => in_array($c, $cols, true) ? $c : "'' AS {$c}";
+        $roots = array_reverse($pdo->query('SELECT id, title, status, plan_status, ' . $col('source') . ', ' . $col('plan_goal') . ', ' . $col('audit_status') . ', ' . $col('audit_failures') . ', '
+            . $col('progress_message') . ', ' . $col('error_message') . ', created_at FROM workbenchtask WHERE parent_task_id IS NULL ORDER BY id DESC LIMIT ' . max(1, $items))->fetchAll());
+        if (!$roots) return '';
+        $hasLog = (bool) $pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tasklog'")->fetchColumn();
+        $said = $hasLog ? $pdo->prepare("SELECT message FROM tasklog WHERE task_id = ? AND message LIKE 'Agent output (tail):%' ORDER BY id DESC LIMIT 1") : null;
+        $kidsQ = $pdo->prepare('SELECT id, title, status, ' . $col('error_message') . ', ' . $col('progress_message') . ', ' . $col('asked_json') . ', ' . $col('related_files') . ' FROM workbenchtask WHERE parent_task_id = ? ORDER BY id');
+        $one = fn(string $s, int $n) => mb_strlen($s = trim((string) preg_replace('/\s+/', ' ', $s))) > $n ? mb_substr($s, 0, $n) . '…' : $s;
+
+        $blocks = [];
+        foreach ($roots as $r) {
+            $kidsQ->execute([(int) $r['id']]);
+            $kids = $kidsQ->fetchAll();
+            $found = (string) $r['source'] === 'detected_error';
+            $state = $found ? 'a problem Tiknix found, ' . (string) $r['status'] : (trim((string) $r['plan_status']) !== '' ? (string) $r['plan_status'] : (string) $r['status']);
+            $goal = trim(AskTriage::splitAsked(trim(GoalBrief::split((string) $r['plan_goal'])['goal']))['said']);
+            $b = '### #' . (int) $r['id'] . ' ' . $one((string) $r['title'], 110) . " — {$state}" . ' (' . substr((string) $r['created_at'], 0, 16) . ')';
+            if ($goal !== '' && !$found) $b .= "\nAsked: “" . $one($goal, 260) . '”';
+            if (trim((string) $r['progress_message']) !== '') $b .= "\nNow: " . $one((string) $r['progress_message'], 200);
+            if (trim((string) $r['error_message']) !== '' && !$kids) $b .= "\nWhy: " . $one((string) $r['error_message'], 300);
+            if (trim((string) $r['audit_status']) !== '') $b .= "\nThe check afterwards: " . (string) $r['audit_status'] . ((int) $r['audit_failures'] > 0 ? ', ' . (int) $r['audit_failures'] . ' thing(s) failed' : '');
+            foreach ($kids as $k) {
+                $st = (string) $k['status'];
+                $line = '- #' . (int) $k['id'] . " [{$st}] " . $one((string) $k['title'], 100);
+                if (!in_array($st, self::DONE, true)) {
+                    if (trim((string) $k['error_message']) !== '') $line .= "\n  why: " . $one((string) $k['error_message'], 320);
+                    elseif (trim((string) $k['progress_message']) !== '') $line .= "\n  now: " . $one((string) $k['progress_message'], 240);
+                } elseif (trim((string) $k['error_message']) !== '') {
+                    $line .= ' — ' . $one((string) $k['error_message'], 60);   // "merged into the app as abc123"
+                }
+                $files = array_slice(array_values(array_filter(array_map('strval', (array) (json_decode((string) $k['related_files'], true) ?: [])))), 0, 6);
+                if ($files) $line .= "\n  files: " . implode(', ', $files);
+                foreach ((array) (json_decode((string) $k['asked_json'], true) ?: []) as $qa) {
+                    $line .= "\n  it asked its person: " . $one((string) ($qa['q'] ?? ''), 200) . (trim((string) ($qa['a'] ?? '')) !== '' ? ' — answered: ' . $one((string) $qa['a'], 160) : ' — not answered yet');
+                }
+                if ($said) {
+                    $said->execute([(int) $k['id']]);
+                    if (($m = $said->fetchColumn()) !== false) {
+                        // the END of what it said (its summary and handoff), not the middle of it
+                        $words = trim((string) preg_replace('/\s+/', ' ', substr((string) $m, 20)));
+                        $n = in_array($st, self::DONE, true) ? 240 : 500;
+                        $line .= "\n  its agent's last words: " . (mb_strlen($words) > $n ? '…' . mb_substr($words, -$n) : $words);
+                    }
+                }
+                $b .= "\n" . $line;
+            }
+            $blocks[] = $b;
+        }
+        // Newest in full; older ones give way to a line each until it fits.
+        for ($i = 0; $i < count($blocks) - 1 && mb_strlen(implode("\n\n", $blocks)) > self::BUDGET; $i++) {
+            $blocks[$i] = (string) strtok($blocks[$i], "\n");
+        }
+        $out = implode("\n\n", $blocks);
+        return mb_strlen($out) > self::BUDGET * 1.5 ? '…' . mb_substr($out, -(int) (self::BUDGET * 1.5)) : $out;
+    }
+}

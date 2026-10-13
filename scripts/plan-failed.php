@@ -98,6 +98,9 @@ $row->lastAttemptAt = date('Y-m-d H:i:s');
 // burning the retry budget before the limit even resets.
 $row->queuedAt      = null;
 Bean::store($row);
+// In the project's own record of what was asked (app\AskStore): this request did not go through, and why.
+try { \app\AskTriage::planningFailed($promptId, (string) $row->lastError); }
+catch (\Throwable $e) { echo '[plan-failed] ERROR the failure was not written to the project\'s record: ' . $e->getMessage() . "\n"; }
 
 echo "[plan-failed] prompt #$promptId: " . mb_substr($why, 0, 160) . "\n";
 

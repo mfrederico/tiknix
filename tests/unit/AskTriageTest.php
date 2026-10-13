@@ -45,4 +45,13 @@ class AskTriageTest extends TestCase {
         $this->assertStringNotContainsString('VERDICT: BUILD', $forced);
         $this->assertStringContainsString('Nothing is being built', $forced);
     }
+
+    public function testOnlyAnAppWithTheReadOnlyRunIsAsked(): void {
+        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.189'));
+        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0-alpha.190'));
+        $this->assertTrue(AskTriage::appCanAnswer('v2.0.0'));
+        $this->assertFalse(AskTriage::appCanAnswer('v2.0.0-alpha.188'));
+        $this->assertFalse(AskTriage::appCanAnswer('v2.0.0-alpha.99'));
+        $this->assertFalse(AskTriage::appCanAnswer(''));
+    }
 }

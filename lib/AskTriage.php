@@ -25,6 +25,19 @@ class AskTriage {
     /** How long one run may take, in the container. */
     public const TIMEOUT = 240;
 
+    /** The first runtime whose clitool has --agent-ask. */
+    public const SINCE = '2.0.0-alpha.189';
+
+    /**
+     * Can this app's agent be asked? Only from the runtime that has the read-only run; an app on
+     * an older one (it is updated when it is not building) is sent the message as a request to
+     * build, as before. $runtime is what the app last reported ("v2.0.0-alpha.188"; '' = unknown).
+     */
+    public static function appCanAnswer(string $runtime): bool {
+        $v = ltrim(trim($runtime), 'v');
+        return $v !== '' && version_compare($v, self::SINCE, '>=');
+    }
+
     /** What the agent is handed: how to answer, then what was typed. $mode 'answer' = the person already said it is a question. */
     public static function brief(string $said, string $mode, string $busy): string {
         $decide = $mode === 'answer'

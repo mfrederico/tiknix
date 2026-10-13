@@ -267,7 +267,8 @@ What it holds you to, and why — each is about what a person must read and deci
 A page that is not a list, a form or a record (a calendar, a chat, a dashboard, a public landing
 page) is written by hand — on the design system's classes (`ui-panel`, `ui-stat`, `ui-chip`,
 `ui-eyebrow`; `views/components/design-system.php`) and Bootstrap 5.3, still opening with
-`Ui::page()` and using `Ui::notice()` / `Ui::emptyState()` for those parts.
+`Ui::page()` and using `Ui::notice()` / `Ui::emptyState()` for those parts. A `ui-panel` with a
+title is `ui-panel-header` + `ui-panel-body`; one without holds its content directly and pads itself.
 
 **Which pages, before any view.** Call `ui_pattern` with the bean (or, for a table not built yet,
 its planned `columns`). From the record's shape it answers: the pattern (a list and a form, a

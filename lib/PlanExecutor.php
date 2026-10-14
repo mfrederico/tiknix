@@ -270,6 +270,7 @@ class PlanExecutor {
         // 1b) Reviews (Plan and Fan, step three): a risky task's second reading, running beside the build.
         foreach ($tasks as $t) {
             if ((json_decode((string) ($t->reviewJson ?? ''), true)['state'] ?? '') === 'running') $this->collectReview($t);
+            if ((json_decode((string) ($t->raceJson ?? ''), true)['state'] ?? '') === 'judging') $this->collectJudge($t);
         }
 
         /* 2) Launch: fill open slots with ready tasks (deps all merged).
@@ -626,6 +627,8 @@ class PlanExecutor {
                 return false;
             }
         }
+        // Critical (Plan and Fan, step five): built twice at once — this run and a second attempt beside it.
+        if (empty($t->resumable)) $this->maybeRace($t);
         // What the task adopts is put in the app first (adoptFirst): its agent starts with the plugin there.
         if (empty($t->resumable) && ($why = $this->adoptFirst($t)) !== '') { $this->fail($t, 'the plugin this task adopts could not be installed first: ' . $why); return false; }
         try {
@@ -645,7 +648,7 @@ class PlanExecutor {
             // each model really costs a project) to say where it pays: aibuilder.ini [plan] fast_model_for_small.
             $fast = self::fastForSmall() && PlanRank::fast(json_decode((string) ($t->rankJson ?? ''), true) ?: []);
             TenantRun::start($this->tenant, $session, $id,
-                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : '') . ($catchUp ? ' --catch-up' : '') . ($fast ? ' --fast' : '') . TenantBrowser::sandboxArg($this->tenant), $this->buildTaskBrief($t), $this->author());
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : '') . ($catchUp ? ' --catch-up' : '') . ($fast ? ' --fast' : '') . TenantBrowser::sandboxArg($this->tenant), $this->buildTaskBrief($t) . ((int) ($t->raceOf ?? 0) > 0 ? TaskRace::rivalNote() : ''), $this->author());
             $this->logEvent($t, 'info', ($catchUp ? 'Build agent sent back to bring this task up to date with the app' : ($resume ? 'Build agent RESUMED (continuing the earlier attempt\'s work)' : 'Build agent started')) . " in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
             if ($resume) { $t->resumable = 0; $t->catchUp = 0; Bean::store($t); }
         } catch (\Throwable $e) {
@@ -754,6 +757,14 @@ class PlanExecutor {
             TenantHost::discardTask($this->tenant, $id);
             $this->finish($t, 'failed', 'the task wrote ' . implode(', ', $stray) . ' — nothing applies a seed there, so it would never reach the live app. '
                 . 'Write it as services/Schema/Seeds/NN_Name.php (NN from 50 up; no autoloader or Bootstrap lines — the build includes it inside the app).');
+            return;
+        }
+        // In a race (TaskRace): it waits for its rival, its work kept on its branch; the race decides what is merged.
+        if ($this->racing($t)) {
+            $t->status = 'built'; $t->progressMessage = 'Built. Waiting for the other attempt to finish; one of the two is kept.';
+            $t->completedAt = date('Y-m-d H:i:s'); Bean::store($t);
+            $this->logEvent($t, 'info', 'Built (' . ($r['commit'] ?? '?') . '). In a race with ' . ((int) ($t->raceOf ?? 0) > 0 ? "the first attempt, #{$t->raceOf}" : 'its second attempt') . ': nothing is merged until both have finished.');
+            $this->raceSettle($t);
             return;
         }
         // Merging IS publishing: the app's branch in its container, then its seeds.
@@ -902,9 +913,140 @@ class PlanExecutor {
         return $out;
     }
 
+    /** Set while a race is being settled, so a finish() inside it does not settle it again. */
+    private bool $settling = false;
+
+    /** Is this task one of a race still to be decided? */
+    private function racing($t): bool {
+        if ((int) ($t->raceOf ?? 0) > 0) return (json_decode((string) (Bean::load('workbenchtask', (int) $t->raceOf)->raceJson ?? ''), true)['state'] ?? '') !== 'decided';
+        return in_array(json_decode((string) ($t->raceJson ?? ''), true)['state'] ?? '', ['racing', 'judging'], true);
+    }
+
+    /** A Critical task launched fresh: start its second attempt beside it, when the race is wanted (TaskRace::why). */
+    private function maybeRace($t): void {
+        if (trim((string) ($t->raceJson ?? '')) !== '') return;   // raced already (a retry is not raced again)
+        $rank = json_decode((string) ($t->rankJson ?? ''), true) ?: [];
+        if ((int) ($rank['risk'] ?? 0) < TaskRace::MIN_RISK) return;
+        $ag = $this->agentOf($t);
+        $budget = self::budgetOf(json_decode((string) ($this->tenant->reportJson ?? ''), true), $ag);
+        $est = $budget > 0 ? (PlanLearn::estimate([$rank['effort'] ?? null], PlanLearn::learn(PlanLearn::rows($this->instanceDir)))['tokens'] ?? null) : null;
+        $why = TaskRace::why($rank, (int) ($t->raceOf ?? 0) > 0, (int) ($t->reviewOf ?? 0) > 0, TaskRace::enabled(@parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: []),
+                             $budget, (int) ($this->spentByAgent($this->subtasks())[$ag] ?? 0), $est !== null ? (int) $est : null);
+        if ($why !== '') {
+            if ($why !== 'off' && $why !== 'not a first attempt' && $why !== 'not Critical with effort 3 or more') $this->logEvent($t, 'info', 'Critical, but built once: ' . $why . '.');
+            return;
+        }
+        $n = Bean::dispense('workbenchtask');
+        foreach (['taskType', 'parentTaskId', 'instanceId', 'instanceTag', 'engine', 'model', 'agent', 'memberId', 'authcontrolLevel', 'baseBranch', 'dbSource',
+                  'description', 'priority', 'relatedFiles', 'acceptanceCriteria', 'reuses', 'adopts', 'rankJson', 'dependsOn', 'planRef'] as $f) $n->{$f} = $t->{$f};
+        $n->title = mb_substr((string) $t->title, 0, 180) . ' (second attempt)';
+        $n->planRef = 'race-' . (int) $t->id; $n->status = 'pending'; $n->raceOf = (int) $t->id;
+        $n->createdAt = date('Y-m-d H:i:s'); $n->updatedAt = $n->createdAt;
+        Bean::store($n);
+        $t->raceJson = json_encode(['rival' => (int) $n->id, 'state' => 'racing']);
+        Bean::store($t);
+        $this->logEvent($t, 'info', "Critical: built twice at once — this attempt and a second, #{$n->id}, which is told to take a different approach. Both finish; one is kept whole.");
+    }
+
+    /** A racer has ended (built, or not): when both have, decide — merge the one that built, or have the two judged. */
+    private function raceSettle($racer): void {
+        $first = (int) ($racer->raceOf ?? 0) > 0 ? Bean::load('workbenchtask', (int) $racer->raceOf) : Bean::load('workbenchtask', (int) $racer->id);
+        $race = json_decode((string) ($first->raceJson ?? ''), true) ?: [];
+        if (($race['state'] ?? '') !== 'racing') return;
+        $rival = Bean::load('workbenchtask', (int) ($race['rival'] ?? 0));
+        $ended = fn($x) => in_array((string) $x->status, ['built', 'failed', 'resolved', 'conflict'], true);
+        if (!$rival->id || !$ended($first) || !$ended($rival)) return;
+        $o = TaskRace::outcome((string) $first->status === 'built', (string) $rival->status === 'built');
+        if ($o === 'none') {
+            $first->raceJson = json_encode(['state' => 'decided', 'winner' => ''] + $race); Bean::store($first);
+            $this->logEvent($first, 'error', 'Neither attempt produced work to keep.');
+            return;
+        }
+        if ($o === 'judge') {
+            $id = 'race-p' . $this->planId . '-t' . (int) $first->id;
+            try {
+                $brief = TaskRace::judgeBrief((string) $first->title, (string) $first->description, json_decode((string) ($first->acceptanceCriteria ?? ''), true) ?: [],
+                    TenantHost::branchChange($this->tenant, $this->tenantTaskId($first)), TenantHost::branchChange($this->tenant, $this->tenantTaskId($rival)));
+                TenantHost::askStart($this->tenant, $id, $brief, TaskRace::TIMEOUT, PlanIngestor::agentName($first->agent ?? ''));
+            } catch (\Throwable $e) {
+                // No judge: the first attempt is kept (it was planned; the second is the challenger) — said, never silent.
+                $this->logEvent($first, 'error', 'Both attempts built, and they could not be judged (' . $e->getMessage() . '): the first attempt is kept.');
+                $this->raceMerge($first, $first, $rival, 'not judged: ' . $e->getMessage());
+                return;
+            }
+            $first->raceJson = json_encode(['state' => 'judging', 'run' => $id, 'started' => date('c')] + $race); Bean::store($first);
+            $this->logEvent($first, 'info', 'Both attempts built and their checks passed: the app\'s agent is judging which to keep.');
+            return;
+        }
+        $this->raceMerge($first, $o === 'A' ? $first : $rival, $o === 'A' ? $rival : $first, $o === 'A' ? 'the second attempt did not build' : 'the first attempt did not build');
+    }
+
+    /** A judge has answered (or not yet): the winner is merged. */
+    private function collectJudge($first): void {
+        $race = json_decode((string) ($first->raceJson ?? ''), true) ?: [];
+        try { $r = TenantHost::askCollect($this->tenant, (string) $race['run']); }
+        catch (\RuntimeException $e) { $this->logEvent($first, 'warning', 'Could not read the judge from the container (will try again): ' . $e->getMessage()); return; }
+        if ($r === null) return;
+        $rival = Bean::load('workbenchtask', (int) $race['rival']);
+        $first->raceJson = json_encode(['state' => 'racing'] + $race); Bean::store($first);   // raceMerge decides it
+        try {
+            if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the judge did not answer'));
+            $v = TaskRace::parseJudge((string) ($r['text'] ?? ''));
+        } catch (\Throwable $e) {
+            $this->logEvent($first, 'error', 'The judge gave no verdict (' . $e->getMessage() . '): the first attempt is kept.');
+            $this->raceMerge($first, $first, $rival, 'no verdict: ' . $e->getMessage());
+            return;
+        }
+        $this->raceMerge($first, $v['pick'] === 'A' ? $first : $rival, $v['pick'] === 'A' ? $rival : $first, 'judged: ' . $v['why']);
+    }
+
+    /**
+     * Keep one attempt whole: the loser's tests are saved and its branch discarded, the winner is
+     * merged, and the FIRST attempt's row reads merged (what the plan waits on). Then the loser's
+     * tests run against what was merged; one it fails becomes a fix task.
+     */
+    private function raceMerge($first, $winner, $loser, string $why): void {
+        $this->settling = true;
+        try {
+            $race = json_decode((string) ($first->raceJson ?? ''), true) ?: [];
+            $which = (int) $winner->id === (int) $first->id ? 'first' : 'second';
+            $lid = $this->tenantTaskId($loser);
+            $kept = 0;
+            if ((string) $loser->status === 'built') {
+                try { $kept = TenantHost::keepTests($this->tenant, $lid); }
+                catch (\RuntimeException $e) { $this->logEvent($first, 'warning', 'The other attempt\'s tests could not be kept: ' . $e->getMessage()); }
+                TenantHost::discardTask($this->tenant, $lid);
+            }
+            try { $m = TenantHost::mergeTask($this->tenant, $this->tenantTaskId($winner), $this->author()); }
+            catch (\RuntimeException $e) { $m = ['ok' => false, 'error' => $e->getMessage()]; }
+            if (empty($m['ok'])) {
+                $first->raceJson = json_encode(['state' => 'decided', 'winner' => $which, 'why' => $why] + $race); Bean::store($first);
+                $this->finish($first, 'failed', 'the ' . $which . ' attempt won (' . $why . ') but its merge failed: ' . (string) ($m['error'] ?? '?') . ' — its work is kept on its branch.');
+                return;
+            }
+            $first->raceJson = json_encode(['state' => 'decided', 'winner' => $which, 'why' => $why, 'tests' => $kept] + $race); Bean::store($first);
+            $this->finish($first, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?') . " — the {$which} attempt's work, kept whole ({$why})");
+            $other = (int) $first->raceOf > 0 ? $first : Bean::load('workbenchtask', (int) $race['rival']);
+            $other->status = 'resolved'; $other->progressMessage = ''; $other->completedAt = date('Y-m-d H:i:s');
+            $other->errorMessage = 'Raced with #' . (int) $first->id . '; ' . ($which === 'second' ? 'this attempt won and is merged as #' . (int) $first->id : 'the first attempt was kept') . '.';
+            Bean::store($other);
+            $this->logEvent($other, 'info', (string) $other->errorMessage);
+            $this->startReview($first, (string) ($m['merged'] ?? ''));
+            if ($kept > 0) {
+                try { $run = TenantHost::runKeptTests($this->tenant, $lid); }
+                catch (\RuntimeException $e) { $this->logEvent($first, 'warning', 'The other attempt\'s tests could not be run: ' . $e->getMessage()); return; }
+                if ($run['ok']) { $this->logEvent($first, 'info', "The other attempt's {$kept} test file(s) pass against the kept one."); return; }
+                $f = TaskRace::testsFix((int) $first->id, (string) $first->title, $run['output']);
+                $fix = $this->addFixTask($first, $f, 'race-tests-' . (int) $first->id);
+                $this->logEvent($first, 'warning', "The other attempt's tests do not all pass against the kept one; task #{$fix} looks at them.");
+            }
+        } finally { $this->settling = false; }
+    }
+
     /** Tasks whose review is still reading them. */
     private function reviewing(array $tasks): int {
-        return count(array_filter($tasks, fn($t) => (json_decode((string) ($t->reviewJson ?? ''), true)['state'] ?? '') === 'running'));
+        return count(array_filter($tasks, fn($t) => (json_decode((string) ($t->reviewJson ?? ''), true)['state'] ?? '') === 'running'
+                                                    || (json_decode((string) ($t->raceJson ?? ''), true)['state'] ?? '') === 'judging'));
     }
 
     private function setReview($t, array $review): void {
@@ -968,15 +1110,19 @@ class PlanExecutor {
      * still waits on it (its work is not finished until the fix is). Returns the new task's id.
      */
     private function addReviewFix($t, array $problems): int {
-        $f = TaskReview::fixTask((int) $t->id, (string) $t->title, $problems, json_decode((string) ($t->acceptanceCriteria ?? ''), true) ?: []);
+        return $this->addFixTask($t, TaskReview::fixTask((int) $t->id, (string) $t->title, $problems, json_decode((string) ($t->acceptanceCriteria ?? ''), true) ?: []), 'review-' . (int) $t->id);
+    }
+
+    /** A fix for what was found in a merged task: after it, and before whatever still waits on it. Its id. */
+    private function addFixTask($t, array $f, string $ref): int {
         $now = date('Y-m-d H:i:s');
         $n = Bean::dispense('workbenchtask');
         foreach (['taskType', 'parentTaskId', 'instanceId', 'instanceTag', 'engine', 'model', 'agent', 'memberId', 'authcontrolLevel', 'baseBranch', 'dbSource'] as $k) $n->{$k} = $t->{$k};
         $n->title = $f['title']; $n->description = $f['description']; $n->priority = (int) $t->priority; $n->status = 'pending';
         $n->relatedFiles = (string) ($t->relatedFiles ?? '[]'); $n->acceptanceCriteria = json_encode($f['verify']);
-        $n->reuses = '[]'; $n->adopts = '[]'; $n->planRef = 'review-' . (int) $t->id;
+        $n->reuses = '[]'; $n->adopts = '[]'; $n->planRef = $ref;
         $rank = json_decode((string) ($t->rankJson ?? ''), true) ?: [];
-        $n->rankJson = json_encode(['effort' => 1, 'planner' => null, 'risk' => $rank['risk'] ?? null, 'why' => ['it fixes what the review of #' . (int) $t->id . ' found'], 'set_by' => 'review'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $n->rankJson = json_encode(['effort' => 1, 'planner' => null, 'risk' => $rank['risk'] ?? null, 'why' => ['it fixes what was found in #' . (int) $t->id . ' after it merged'], 'set_by' => 'review'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $n->reviewOf = (int) $t->id;
         $n->dependsOn = json_encode([(int) $t->id]);
         $n->createdAt = $now; $n->updatedAt = $now;
@@ -1362,7 +1508,7 @@ class PlanExecutor {
         // same error — gets its blocker corrected and is re-queued (status 'pending')
         // instead of failing terminally. The orchestrator loop then re-attempts it, so
         // it keeps trying toward the goal until it merges or the backstop trips.
-        if ($status === 'failed' && $this->autoRetry($t, $note)) {
+        if ($status === 'failed' && !$this->racing($t) && $this->autoRetry($t, $note)) {
             return;
         }
 
@@ -1381,6 +1527,8 @@ class PlanExecutor {
         [$lvl, $msg] = $labels[$status] ?? ['info', 'Finished: ' . $status];
         if ($note !== '') $msg .= ' — ' . mb_substr($note, 0, 300);
         $this->logEvent($t, $lvl, $msg);
+        // A racer that ended without work to keep: its rival may now decide the race.
+        if (in_array($status, ['failed', 'resolved', 'conflict'], true) && $this->racing($t) && !$this->settling) $this->raceSettle($t);
     }
 
     private function fail($t, string $note): void { $this->finish($t, 'failed', $note); }

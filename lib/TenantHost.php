@@ -776,6 +776,41 @@ class TenantHost {
         return [trim($stat), $diff];
     }
 
+    /** What a task's branch changed, not yet merged: [diffstat, diff] since it left the app (TaskRace). */
+    public static function branchChange(object $inst, string $id): array {
+        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,40}$/', $id)) throw new \InvalidArgumentException("'{$id}' is not a task id");
+        $b = escapeshellarg('HEAD...task/' . $id);
+        [$code, $stat] = self::ssh($inst, 'app', "cd /srv/app && git diff --stat {$b}", null, 30);
+        if ($code !== 0) throw new \RuntimeException("git diff --stat task/{$id} in {$inst->slug}'s container failed: " . mb_substr(trim($stat), 0, 300));
+        [$code, $diff] = self::ssh($inst, 'app', "cd /srv/app && git diff {$b} | head -c 200000", null, 30);
+        if ($code !== 0) throw new \RuntimeException("git diff task/{$id} in {$inst->slug}'s container failed: " . mb_substr(trim($diff), 0, 300));
+        return [trim($stat), $diff];
+    }
+
+    /**
+     * Keep the tests a task's branch wrote (tests/…*.php it added or changed), before the branch is
+     * discarded: copied to .aibuilder/rival-tests/<id>/ in the app. Returns how many.
+     */
+    public static function keepTests(object $inst, string $id): int {
+        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,40}$/', $id)) throw new \InvalidArgumentException("'{$id}' is not a task id");
+        $dir = '.aibuilder/rival-tests/' . $id;
+        $cmd = 'cd /srv/app && rm -rf ' . escapeshellarg($dir) . ' && n=0; for f in $(git diff --name-only --diff-filter=AM ' . escapeshellarg('HEAD...task/' . $id) . ' -- tests/ | grep "\.php$" | grep -v bootstrap); do '
+             . 'mkdir -p ' . escapeshellarg($dir) . ' && git show "task/' . $id . ':$f" > ' . escapeshellarg($dir) . '/"$(basename "$f")" && n=$((n+1)); done; echo "kept=$n"';
+        [$code, $out] = self::ssh($inst, 'app', $cmd, null, 60);
+        if ($code !== 0 || !preg_match('/kept=(\d+)/', $out, $m)) throw new \RuntimeException("could not keep task/{$id}'s tests in {$inst->slug}'s container: " . mb_substr(trim($out), -300));
+        return (int) $m[1];
+    }
+
+    /** Run tests kept by keepTests() against the app as it now is: ['ok' => bool, 'output' => its tail]. */
+    public static function runKeptTests(object $inst, string $id): array {
+        if (!preg_match('/^[a-z0-9][a-z0-9-]{0,40}$/', $id)) throw new \InvalidArgumentException("'{$id}' is not a task id");
+        $dir = escapeshellarg('.aibuilder/rival-tests/' . $id);
+        [$code, $out] = self::ssh($inst, 'app', 'cd /srv/app && timeout 240 php vendor/bin/phpunit --configuration phpunit.xml --colors=never ' . $dir . ' 2>&1 | tail -60', null, 270);
+        $out = trim((string) $out);
+        if ($code !== 0) throw new \RuntimeException("running the kept tests in {$inst->slug}'s container failed: " . mb_substr($out, -300));
+        return ['ok' => (bool) preg_match('/^OK \(/m', $out), 'output' => $out];
+    }
+
     public static function askDrop(object $inst, string $id): void {
         TenantRun::kill($inst, 'tiknix-run-' . $id);
         self::ssh($inst, 'app', 'rm -rf ' . escapeshellarg(TenantRun::DIR . '/' . $id), null, 20);

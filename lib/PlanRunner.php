@@ -457,6 +457,9 @@ BASH;
     private function buildPlanRequest(string $goal): string {
         $goal = trim($goal);
         $digest = $this->codebaseDigest();
+        // Plan and Fan, step four: what tasks scored like these have really cost in this project.
+        try { $learned = PlanLearn::section(PlanLearn::learn(PlanLearn::rows($this->instanceDir))); }
+        catch (\Throwable $e) { $learned = ''; error_log("ERROR PlanRunner {$this->slug}: the project's task record could not be read for the planner (" . $e->getMessage() . '); it plans without it'); }
         $before = $this->builtBefore === '' ? '' : "\n## Built just before this request — read it first\n\n"
             . "This request was made while the work below was still being built, and waited for it. It is in the app now. "
             . "The request may be about it, or may touch the same pages: **open the files named below before you plan anything**, "
@@ -487,7 +490,7 @@ truth: it is what already exists right now. You do NOT need to call `codebase_ma
 `whatprovides("<concept>")` to drill into any single primitive before you commit.
 
 {$digest}
-
+{$learned}
 ## How to work
 
 1. **MATCH the goal against the inventory above — this is the most important step.**

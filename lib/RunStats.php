@@ -19,6 +19,8 @@ final class RunStats {
         $total['attempts']  = (int) ($total['attempts'] ?? 0) + 1;
         $total['timed_out'] = (int) ($total['timed_out'] ?? 0) + (!empty($run['timed_out']) ? 1 : 0);
         $total['resumed']   = (int) ($total['resumed'] ?? 0) + (!empty($run['resumed']) ? 1 : 0);
+        // the model that did the work (an app on a runtime from before alpha.204 does not say)
+        if (($m = trim((string) ($run['model'] ?? ''))) !== '') { $total['model'] = $m; $total['models'][$m] = (int) ($total['models'][$m] ?? 0) + 1; }
         return $total;
     }
 
@@ -46,6 +48,7 @@ final class RunStats {
         if (!empty($s['timed_out'])) $extra[] = (int) $s['timed_out'] . ' ran out of time';
         if (!empty($s['resumed'])) $extra[] = (int) $s['resumed'] . ' resumed';
         if ($extra) $parts[] = implode(', ', $extra);
+        if (!empty($s['model'])) $parts[] = 'on ' . $s['model'];
         return implode(' · ', $parts);
     }
 
@@ -55,7 +58,7 @@ final class RunStats {
         return intdiv($s, 3600) . 'h ' . intdiv($s % 3600, 60) . 'm';
     }
 
-    private static function tokens(int $n): string {
+    public static function tokens(int $n): string {
         if ($n >= 1000000) return round($n / 1000000, 1) . 'M';
         if ($n >= 1000) return round($n / 1000) . 'k';
         return (string) $n;

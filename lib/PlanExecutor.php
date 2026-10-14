@@ -299,6 +299,10 @@ class PlanExecutor {
             $perAgent[$a] = ($perAgent[$a] ?? 0) + 1;
         }
 
+        // Plan and Fan, step five: what this request has spent on each agent, against the agent's
+        // "Spend per request". An agent whose budget is used starts no more of its tasks.
+        $spent = $this->spentByAgent($fresh);
+        $overBudget = [];
         $slots = self::MAX_CONCURRENT - $running;
         // A task split itself and this plan waits for a person: what is running finishes, nothing new starts.
         $held = $this->heldForSplit();
@@ -328,6 +332,7 @@ class PlanExecutor {
                 }
 
                 $ag    = $this->agentOf($t);
+                if (self::overBudget($spent[$ag] ?? 0, self::budgetOf(json_decode((string) ($this->tenant->reportJson ?? ''), true), $ag))) { $overBudget[$ag] = true; continue; }
                 $agCap = $this->agentCap($ag);
                 if (!self::agentHasRoom($perAgent[$ag] ?? 0, $agCap)) continue;   // that agent is busy; another agent's task may still start
 
@@ -357,6 +362,12 @@ class PlanExecutor {
         $stalled  = (!$done && $counts['running'] === 0 && $reviewing === 0 && $counts['pending'] > 0
                      && !$this->anyLaunchable($fresh, $byId));
 
+        // Its budget is spent and nothing is left running: it waits for its person, who raises the
+        // budget or presses Build to go on past it (clearBudgetHold) — never a quiet stop, never "stalled".
+        if ($overBudget && !$done && $counts['running'] === 0 && $reviewing === 0) {
+            $this->holdForBudget($spent, array_keys($overBudget));
+            return ['done' => true, 'stalled' => false, 'held' => true, 'budget' => array_keys($overBudget), 'counts' => $counts, 'total' => $total, 'blocked' => []];
+        }
         if ($held && !$done) {
             // Not stalled: stopped on purpose. Done for this run once nothing is running.
             return ['done' => $counts['running'] === 0 && $reviewing === 0, 'stalled' => false, 'held' => true, 'counts' => $counts, 'total' => $total, 'blocked' => []];
@@ -770,6 +781,57 @@ class PlanExecutor {
 
     /** How often one task is sent back to be brought up to date with the app before a person is asked. */
     public const MAX_CATCH_UPS = 2;
+
+    /** The "Spend per request" an agent set (Model_Projectreport::headline's `budget`), in tokens; 0 = none. */
+    public static function budgetOf($report, string $agent): int {
+        if (!is_array($report) || $agent === '') return 0;
+        return max(0, (int) (((array) ($report['budget'] ?? []))[$agent] ?? 0));
+    }
+
+    /** Has a request used an agent's budget? No budget is never over it. */
+    public static function overBudget(int $spent, int $budget): bool { return $budget > 0 && $spent >= $budget; }
+
+    /**
+     * Tokens this request's tasks have used on each agent since it was last let go past its budget
+     * (the plan's budget_from). A task still running counts once it ends: its run reports what it used.
+     * @return array<string,int>
+     */
+    private function spentByAgent(array $tasks): array {
+        $out = $this->spentByAgentTotal($tasks);
+        foreach ((array) (json_decode((string) ($this->plan()->budgetFrom ?? ''), true) ?: []) as $a => $n) if (isset($out[$a])) $out[$a] = max(0, $out[$a] - (int) $n);
+        return $out;
+    }
+
+    private function holdForBudget(array $spent, array $agents): void {
+        $plan = $this->plan();
+        if (!empty($plan->budgetHold)) return;
+        $plan->budgetHold = 1; $plan->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($plan);
+        $rep = json_decode((string) ($this->tenant->reportJson ?? ''), true);
+        $say = implode('; ', array_map(fn($a) => ($a !== '' ? $a : 'the default agent') . ' has used ' . RunStats::tokens((int) ($spent[$a] ?? 0)) . ' of its ' . RunStats::tokens(self::budgetOf($rep, $a)) . ' tokens', $agents));
+        $this->logEvent($plan, 'warning', "This request reached its spending limit ({$say}). Nothing more is started until you press Build to go on, or raise Spend per request on the agent.");
+    }
+
+    /** Build was pressed on a request held at its budget: it goes on, with a fresh budget from what it has spent so far. */
+    public function clearBudgetHold(): void {
+        $plan = $this->plan();
+        if (empty($plan->budgetHold)) return;
+        $plan->budgetFrom = json_encode($this->spentByAgentTotal($this->subtasks()), JSON_UNESCAPED_SLASHES);
+        $plan->budgetHold = 0; $plan->progressMessage = '';
+        Bean::store($plan);
+        $this->logEvent($plan, 'info', 'Going on past the spending limit: the request starts a fresh budget from here.');
+    }
+
+    /** spentByAgent() without what an earlier "go on" already let through: everything used so far. */
+    private function spentByAgentTotal(array $tasks): array {
+        $out = [];
+        foreach ($tasks as $t) {
+            $s = json_decode((string) ($t->statsJson ?? ''), true) ?: [];
+            $n = (int) ($s['input_tokens'] ?? 0) + (int) ($s['output_tokens'] ?? 0);
+            if ($n > 0) { $a = $this->agentOf($t); $out[$a] = ($out[$a] ?? 0) + $n; }
+        }
+        return $out;
+    }
 
     /** Tasks whose review is still reading them. */
     private function reviewing(array $tasks): int {

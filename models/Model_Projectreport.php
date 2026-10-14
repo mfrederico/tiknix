@@ -55,11 +55,13 @@ class Model_Projectreport extends \RedBeanPHP\SimpleModel {
         $builders = [];      // the agents that can plan and build, and are ready to (the Builder's picker)
         $taskMinutes = [];   // handle => the agent's own task time limit (PlanExecutor budgets a plan with it)
         $parallel = [];      // handle => how many tasks that agent runs at once (PlanExecutor's per-agent cap)
+        $budget = [];        // handle => the most one request may spend on it, in tokens (PlanExecutor holds a request past it)
         foreach ((array) ($rd['providers'] ?? []) as $p) {
             if (!empty($p['ready'])) $providers[] = (string) ($p['preset'] ?: $p['name']);
             if (trim((string) ($p['display_name'] ?? '')) !== '') $names[(string) $p['name']] = (string) $p['display_name'];
             if ((int) ($p['task_minutes'] ?? 0) > 0) $taskMinutes[(string) $p['name']] = (int) $p['task_minutes'];
             if ((int) ($p['parallel'] ?? 0) > 0) $parallel[(string) $p['name']] = (int) $p['parallel'];
+            if ((int) ($p['budget'] ?? 0) > 0) $budget[(string) $p['name']] = (int) $p['budget'];
             if (($p['type'] ?? '') === 'build' && !empty($p['ready'])) $builders[] = (string) $p['name'];
         }
         if (!empty($rd['anthropic'])) $providers[] = 'anthropic';
@@ -77,6 +79,7 @@ class Model_Projectreport extends \RedBeanPHP\SimpleModel {
             'agent_names'     => $names,
             'task_minutes'    => $taskMinutes,
             'parallel'        => $parallel,
+            'budget'          => $budget,
             'build_agents'    => $builders,
             // false only when the app said so; an app on an older runtime says nothing, which is not "off"
             'tiknix_mcp'      => array_key_exists('tiknix_mcp', $rd) ? (bool) $rd['tiknix_mcp'] : null,

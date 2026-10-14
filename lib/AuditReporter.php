@@ -337,6 +337,14 @@ class AuditReporter {
 
     /** Owner + members of any team the instance is shared with, keyed by email => name. */
     private static function recipients($inst): array {
+        // Members and teams are core's: this runs with the project's board selected (plan-audit.php),
+        // where there is no member table — it found nobody to tell, every time.
+        $got = CoreDb::with(fn() => self::recipientsInCore($inst), null);
+        if ($got === null) { error_log('ERROR AuditReporter: core\'s registry could not be read, so nobody was emailed the check: ' . CoreDb::lastError()); return []; }
+        return $got;
+    }
+
+    private static function recipientsInCore($inst): array {
         $out = [];
         try {
             $owner = Bean::load('member', (int)$inst->memberId);

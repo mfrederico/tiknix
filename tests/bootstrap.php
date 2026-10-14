@@ -20,3 +20,7 @@ foreach (['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_PREFIX', 'GIT_COMMO
 unset($__v);
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 \app\Concepts::boot(dirname(__DIR__));
+// No test ever sends a real email: PlanNotifier's mail goes through scripts/mail-member.php, which
+// boots the REAL core (its database, its mail connection) — the suite's member 1 is a real person
+// there, and a test plan's "Build finished: Serenity build" reached them on every run (2026-10-14).
+\app\PlanNotifier::$sendForTests = static fn(array $payload): string => 'not sent (test): ' . (string) ($payload['subject'] ?? '');

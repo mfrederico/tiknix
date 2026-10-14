@@ -275,7 +275,16 @@ class PlanNotifier {
         return self::mailVia(['email' => $email, 'name' => $name, 'subject' => $subject, 'html' => $html, 'plain' => '', 'attach' => array_values($attach)]);
     }
 
+    /**
+     * Tests only (tests/bootstrap.php sets it): where an email goes instead of scripts/mail-member.php,
+     * which boots the REAL core and sends with its real mail connection. The suite's "member 1" is a
+     * real person there: a test plan's "Build finished" reached the owner every time the tests ran (2026-10-14).
+     * @var callable|null fn(array $payload): string
+     */
+    public static $sendForTests = null;
+
     private static function mailVia(array $payload): string {
+        if (self::$sendForTests !== null) return (self::$sendForTests)($payload);
         $subject = (string) $payload['subject'];
         $memberId = (int) ($payload['member_id'] ?? 0);
         $cmd = 'env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg(dirname(__DIR__) . '/scripts/mail-member.php');

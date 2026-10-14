@@ -302,6 +302,7 @@ class PlanExecutor {
         // Plan and Fan, step five: what this request has spent on each agent, against the agent's
         // "Spend per request". An agent whose budget is used starts no more of its tasks.
         $spent = $this->spentByAgent($fresh);
+        $this->warnNearBudget($spent);
         $overBudget = [];
         $slots = self::MAX_CONCURRENT - $running;
         // A task split itself and this plan waits for a person: what is running finishes, nothing new starts.
@@ -788,6 +789,66 @@ class PlanExecutor {
         return max(0, (int) (((array) ($report['budget'] ?? []))[$agent] ?? 0));
     }
 
+    /** The share of an agent's budget at which its owner is told the request is nearing it. */
+    public const NEAR_BUDGET = 0.8;
+
+    /** Has a request used most of an agent's budget (and not all of it)? */
+    public static function nearBudget(int $spent, int $budget): bool { return $budget > 0 && $spent >= (int) ($budget * self::NEAR_BUDGET) && $spent < $budget; }
+
+    private function coreDb(): string { return dirname(__DIR__) . '/database/tiknix.db'; }
+
+    private function tellOwner(string $kind, array $more): void {
+        $plan = $this->plan();
+        $r = PlanNotifier::planBudget($this->coreDb(), ['kind' => $kind, 'plan_id' => $this->planId, 'member_id' => (int) $plan->memberId, 'slug' => $this->slug, 'title' => (string) $plan->title] + $more);
+        $this->logEvent($plan, str_starts_with($r, 'FAILED') ? 'error' : 'info', 'Told its owner (' . $kind . '): ' . $r);
+    }
+
+    /** Most of an agent's budget used, while it builds: its owner is told once per agent per request. */
+    private function warnNearBudget(array $spent): void {
+        $rep = json_decode((string) ($this->tenant->reportJson ?? ''), true);
+        $plan = $this->plan();
+        $told = json_decode((string) ($plan->budgetNear ?? ''), true) ?: [];
+        foreach ($spent as $a => $n) {
+            $b = self::budgetOf($rep, (string) $a);
+            if (!self::nearBudget((int) $n, $b) || in_array((string) $a, $told, true)) continue;
+            $told[] = (string) $a;
+            $plan->budgetNear = json_encode($told); Bean::store($plan);
+            $this->tellOwner('near', ['spent' => $n, 'limit' => $b]);
+        }
+    }
+
+    /**
+     * Before the first task starts: is what this request's tasks are likely to use HERE (app\PlanLearn,
+     * by each task's effort) more than its agent's budget? Then it does not start, and its owner is
+     * asked (Build anyway). Not asked again for a request its owner let go, or one already building.
+     * @return array{agent:string, estimate:int, limit:int}|null  the hold, or null to go ahead
+     */
+    public function budgetPrecheck(): ?array {
+        $plan = $this->plan();
+        if (!empty($plan->budgetAccepted)) return null;
+        $tasks = $this->subtasks();
+        foreach ($tasks as $t) if (trim((string) ($t->statsJson ?? '')) !== '' || (string) $t->status !== 'pending') return null;   // already under way
+        $rep = json_decode((string) ($this->tenant->reportJson ?? ''), true);
+        $byAgent = [];
+        foreach ($tasks as $t) $byAgent[$this->agentOf($t)][] = (json_decode((string) ($t->rankJson ?? ''), true) ?: [])['effort'] ?? null;
+        $learned = null;
+        foreach ($byAgent as $a => $efforts) {
+            $b = self::budgetOf($rep, (string) $a);
+            if ($b <= 0) continue;
+            $learned ??= PlanLearn::learn(PlanLearn::rows($this->instanceDir));
+            $est = PlanLearn::estimate($efforts, $learned);
+            if ($est === null || $est['tokens'] <= $b) continue;
+            $plan->budgetHold = 2; $plan->budgetEstimate = json_encode(['agent' => (string) $a, 'estimate' => $est['tokens'], 'limit' => $b, 'unknown' => $est['unknown']]);
+            $plan->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($plan);
+            $this->logEvent($plan, 'warning', 'Not started: tasks like these have used about ' . RunStats::tokens($est['tokens']) . ' tokens in this project, more than '
+                . ((string) $a !== '' ? $a : 'its agent') . "'s limit of " . RunStats::tokens($b) . ' for one request. Build anyway, or raise the limit.');
+            $this->tellOwner('estimate', ['estimate' => $est['tokens'], 'limit' => $b]);
+            return ['agent' => (string) $a, 'estimate' => $est['tokens'], 'limit' => $b];
+        }
+        return null;
+    }
+
     /** Has a request used an agent's budget? No budget is never over it. */
     public static function overBudget(int $spent, int $budget): bool { return $budget > 0 && $spent >= $budget; }
 
@@ -810,12 +871,20 @@ class PlanExecutor {
         $rep = json_decode((string) ($this->tenant->reportJson ?? ''), true);
         $say = implode('; ', array_map(fn($a) => ($a !== '' ? $a : 'the default agent') . ' has used ' . RunStats::tokens((int) ($spent[$a] ?? 0)) . ' of its ' . RunStats::tokens(self::budgetOf($rep, $a)) . ' tokens', $agents));
         $this->logEvent($plan, 'warning', "This request reached its spending limit ({$say}). Nothing more is started until you press Build to go on, or raise Spend per request on the agent.");
+        $a = (string) $agents[0];
+        $this->tellOwner('paused', ['spent' => (int) ($spent[$a] ?? 0), 'limit' => self::budgetOf($rep, $a)]);
     }
 
     /** Build was pressed on a request held at its budget: it goes on, with a fresh budget from what it has spent so far. */
     public function clearBudgetHold(): void {
         $plan = $this->plan();
         if (empty($plan->budgetHold)) return;
+        if ((int) $plan->budgetHold === 2) {   // held before it started (budgetPrecheck): its owner said build it anyway
+            $plan->budgetHold = 0; $plan->budgetAccepted = 1; $plan->progressMessage = '';
+            Bean::store($plan);
+            $this->logEvent($plan, 'info', 'Building anyway, past what tasks like these have cost here.');
+            return;
+        }
         $plan->budgetFrom = json_encode($this->spentByAgentTotal($this->subtasks()), JSON_UNESCAPED_SLASHES);
         $plan->budgetHold = 0; $plan->progressMessage = '';
         Bean::store($plan);

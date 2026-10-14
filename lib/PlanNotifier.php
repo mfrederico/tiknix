@@ -233,7 +233,54 @@ class PlanNotifier {
                  . (trim((string) ($p['task'] ?? '')) !== '' ? '<p><strong>' . $e((string) $p['task']) . '</strong> asks:</p>' : '')
                  . '<blockquote>' . nl2br($e((string) ($p['question'] ?? ''))) . '</blockquote>'
                  . '<p>Answer it in the Builder, on the Ask page of this project: the question is there, and the build goes on by itself once you answer.</p>';
+        return self::tellOwner($coreDb, $planId, $memberId, $slug, $subject, $content, $title . ' — a task has a question for you');
+    }
 
+    /**
+     * A request and its agent's Spend per request (Plan and Fan, step five), told to its owner in the
+     * plan's conversation and by email. $p['kind']:
+     *   estimate  it has not started: what tasks like its ones cost here is more than the limit
+     *   near      it is building and has used most of the limit (PlanExecutor::NEAR_BUDGET)
+     *   paused    it has used the limit and started nothing more
+     * $p: plan_id, member_id, slug, title, spent, limit (tokens), estimate (tokens, for 'estimate')
+     */
+    public static function planBudget(string $coreDb, array $p): string {
+        $planId = (int) ($p['plan_id'] ?? 0); $memberId = (int) ($p['member_id'] ?? 0); $slug = (string) ($p['slug'] ?? '');
+        if ($planId <= 0 || $memberId <= 0) return 'notify: skipped (no plan/member)';
+        if (!is_file($coreDb)) return 'notify: skipped (no core db at ' . $coreDb . ')';
+        $title = trim((string) ($p['title'] ?? 'Untitled request'));
+        $e = fn(string $v) => htmlspecialchars($v, ENT_QUOTES);
+        $tok = fn($n) => RunStats::tokens((int) $n);
+        $limit = $tok($p['limit'] ?? 0);
+        $where = '<p>Its limit is the agent\'s <em>Spend per request</em>, on the project\'s AI agents page.</p>';
+        switch ((string) ($p['kind'] ?? '')) {
+            case 'estimate':
+                $subject = 'Before it starts: ' . $title;
+                $content = '<p><strong>' . $e($title) . '</strong> is planned, and has not started. Tasks like its ones have used about <strong>' . $tok($p['estimate'] ?? 0)
+                         . ' tokens</strong> in this project; its agent\'s limit for one request is ' . $limit . '.</p>'
+                         . '<p>Build it anyway from the Ask page, or raise the limit first.</p>' . $where;
+                $preview = $title . ' — likely over its spending limit; waiting for you';
+                break;
+            case 'near':
+                $subject = 'Nearing its spending limit: ' . $title;
+                $content = '<p><strong>' . $e($title) . '</strong> has used <strong>' . $tok($p['spent'] ?? 0) . '</strong> of its ' . $limit . ' token limit and is still building.</p>'
+                         . '<p>Nothing is needed from you now. If it reaches the limit, it stops starting tasks and waits for you.</p>' . $where;
+                $preview = $title . ' — nearing its spending limit';
+                break;
+            case 'paused':
+                $subject = 'Paused at its spending limit: ' . $title;
+                $content = '<p><strong>' . $e($title) . '</strong> has used <strong>' . $tok($p['spent'] ?? 0) . ' tokens</strong>, past its ' . $limit . ' limit, and has stopped starting tasks. What it built so far is in the app.</p>'
+                         . '<p>Press <em>Go on</em> on the Ask page to finish it, or raise the limit first.</p>' . $where;
+                $preview = $title . ' — paused at its spending limit';
+                break;
+            default:
+                throw new \InvalidArgumentException("planBudget: kind must be estimate, near or paused, not '" . (string) ($p['kind'] ?? '') . "'");
+        }
+        return self::tellOwner($coreDb, $planId, $memberId, $slug, $subject, $content, $preview);
+    }
+
+    /** One message in the plan's own conversation, and the same by email when mail is connected. */
+    private static function tellOwner(string $coreDb, int $planId, int $memberId, string $slug, string $subject, string $content, string $preview): string {
         $restore = Bean::hasDatabase('default') ? 'default' : null;
         if (!Bean::hasDatabase('plannotify')) Bean::addDatabase('plannotify', 'sqlite:' . $coreDb);
         Bean::selectDatabase('plannotify');
@@ -247,7 +294,7 @@ class PlanNotifier {
                 $thread->ownerMemberId = $memberId; $thread->messageCount = 0; $thread->status = 'open'; $thread->createdAt = $now;
             }
             $thread->lastDirection = 'in';
-            $thread->lastPreview   = mb_substr($title . ' — a task has a question for you', 0, 200);
+            $thread->lastPreview   = mb_substr($preview, 0, 200);
             $thread->lastMessageAt = $now;
             $thread->messageCount  = (int) $thread->messageCount + 1;
             $thread->updatedAt     = $now;

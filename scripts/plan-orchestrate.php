@@ -117,6 +117,14 @@ echo "[orchestrator] time budget: {$maxTicks} ticks (~" . round($maxTicks * 10 /
 $res = ['done' => false, 'stalled' => false, 'counts' => [], 'total' => 0];
 $ranOut = true;                  // set false the moment the loop breaks on a real outcome
 $known = null;
+// Before the first task (Plan and Fan, step five): likely to cost more than its agent's Spend per
+// request, going by what tasks like these have cost here? Then it does not start; its owner decides.
+if ($pre = $ex->budgetPrecheck()) {
+    echo "[orchestrator] not started: likely " . $pre['estimate'] . " tokens, over the limit of " . $pre['limit'] . "\n";
+    $res = ['done' => true, 'stalled' => false, 'held' => true, 'estimate' => $pre, 'counts' => [], 'total' => 0];
+    $ranOut = false;
+    $maxTicks = 0;
+}
 for ($i = 0; $i < $maxTicks; $i++) {
     $res = $ex->runOnce();
     $c = $res['counts'];
@@ -156,14 +164,16 @@ if (!$ranOut && !empty($res['held'])) {
     $parent->planStatus      = 'approved';
     $parent->status          = 'pending';
     $asking = (int) ($res['asking'] ?? 0);
-    $parent->progressMessage = !empty($res['budget'])
+    $parent->progressMessage = !empty($res['estimate'])
+        ? 'Not started: tasks like these have cost more here than its agent\'s Spend per request. Build anyway, or raise the limit first.'
+        : (!empty($res['budget'])
         ? 'Paused at its spending limit (Spend per request, on the agent). Press Build to go on, or raise the limit first.'
         : ($asking > 0
         ? 'Waiting for your answer: ' . ($asking === 1 ? 'a task has a question for you' : "{$asking} tasks have a question for you") . '. The build goes on by itself when you answer.'
-        : 'Waiting for you: a task split itself into smaller tasks. Read them on the board, then press Build to go on.');
+        : 'Waiting for you: a task split itself into smaller tasks. Read them on the board, then press Build to go on.'));
     $parent->updatedAt       = date('Y-m-d H:i:s');
     Bean::store($parent);
-    echo "[orchestrator] plan #{$planId} held for its owner " . (!empty($res['budget']) ? 'at its spending limit' : ($asking > 0 ? "with {$asking} question(s)" : 'after a split')) . ' ' . date('c') . "\n";
+    echo "[orchestrator] plan #{$planId} held for its owner " . (!empty($res['estimate']) ? 'before starting, over its spending limit' : (!empty($res['budget']) ? 'at its spending limit' : ($asking > 0 ? "with {$asking} question(s)" : 'after a split'))) . ' ' . date('c') . "\n";
     // A question nobody sees is a build that silently stopped: the owner is told, as for a finished plan.
     if ($asking > 0) {
         try {

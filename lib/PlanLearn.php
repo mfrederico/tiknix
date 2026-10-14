@@ -136,6 +136,24 @@ MD;
         return $s;
     }
 
+    /**
+     * What tasks of these efforts have used here, added up, in tokens — the request's likely cost,
+     * before it starts. A task whose effort was never built here adds nothing (said by `unknown`);
+     * null until the project has a record to go on.
+     * @param array $efforts  one effort (1–5 or null) per task
+     * @return array{tokens:int, unknown:int}|null
+     */
+    public static function estimate(array $efforts, array $l): ?array {
+        if ($l['tasks'] < self::MIN_TASKS) return null;
+        $sum = 0; $unknown = 0;
+        foreach ($efforts as $e) {
+            $e = PlanRank::scale($e);
+            if ($e === null || ($l['effort'][$e]['tokens'] ?? null) === null) { $unknown++; continue; }
+            $sum += (int) $l['effort'][$e]['tokens'];
+        }
+        return ['tokens' => $sum, 'unknown' => $unknown];
+    }
+
     private static function median(array $v): int {
         sort($v); $n = count($v);
         if ($n === 0) return 0;

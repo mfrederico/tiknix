@@ -9,7 +9,7 @@
  * email from them read "no Mailgun connection bound to mail" while core's mail worked. This boots
  * core and sends. (app\PlanNotifier::mailMember runs it.)
  *
- * stdin: {"member_id": N, "subject": "…", "html": "…", "plain": "…", "thread_id": N}
+ * stdin: {"member_id": N | "email": "…", "name": "…", "subject": "…", "html": "…", "plain": "…", "thread_id": N, "attach": [paths]}
  *
  * With a thread, the email's Reply-To is that conversation's own address (reply-<token>@ the
  * inbound domain), and the address it went to is added to the thread's reply_allowed: a reply is
@@ -22,16 +22,22 @@ require_once \app\Paths::runtime() . '/bin/_boot.php';
 new \app\Bootstrap();
 
 $in = json_decode((string) stream_get_contents(STDIN), true);
-if (!is_array($in) || (int) ($in['member_id'] ?? 0) <= 0 || trim((string) ($in['subject'] ?? '')) === '') { echo "email FAILED: no member_id or subject on stdin\n"; exit(1); }
+// To a member (member_id), or to an address (email, name) — the check's report goes to a project's team.
+if (!is_array($in) || ((int) ($in['member_id'] ?? 0) <= 0 && trim((string) ($in['email'] ?? '')) === '') || trim((string) ($in['subject'] ?? '')) === '') { echo "email FAILED: no member_id or email, or no subject, on stdin\n"; exit(1); }
 if (!\app\Mailer::isConfigured()) {
     try { \app\Mailer::settings(); $why = 'mail is not configured'; } catch (\Throwable $e) { $why = $e->getMessage(); }
     echo "no email ({$why})\n"; exit(0);
 }
-$member = \app\Bean::load('member', (int) $in['member_id']);
-$email = (string) ($member->email ?? '');
-if ($email === '') { echo "no email (member #{$in['member_id']} has no address)\n"; exit(0); }
+if ((int) ($in['member_id'] ?? 0) > 0) {
+    $member = \app\Bean::load('member', (int) $in['member_id']);
+    $email = (string) ($member->email ?? ''); $toName = (string) ($member->username ?? '');
+    if ($email === '') { echo "no email (member #{$in['member_id']} has no address)\n"; exit(0); }
+} else {
+    $email = trim((string) $in['email']); $toName = (string) ($in['name'] ?? '');
+}
 try {
-    $mail = \app\Mailer::create()->to($email, (string) ($member->username ?? ''))->subject((string) $in['subject']);
+    $mail = \app\Mailer::create()->to($email, $toName)->subject((string) $in['subject']);
+    foreach ((array) ($in['attach'] ?? []) as $path) if (is_string($path) && is_file($path)) $mail->attach($path, basename($path));
     $thread = (int) ($in['thread_id'] ?? 0) > 0 ? \app\Bean::load('thread', (int) $in['thread_id']) : null;
     if ($thread && !$thread->id) { echo "email FAILED: no thread #{$in['thread_id']}\n"; exit(1); }
     $reply = $thread ? \app\BuilderMail::replyAddress($thread) : '';

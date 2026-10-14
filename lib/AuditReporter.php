@@ -281,7 +281,6 @@ class AuditReporter {
     private static function emailReport(array $m, $plan, $inst, bool $passed, array $checks, array $failures, array $levels, callable $web, callable $fs, bool $capped = false): int {
         $recipients = self::recipients($inst);
         if (!$recipients) return 0;
-        if (!\app\Mailer::isConfigured()) return 0;
 
         $slug   = (string)$inst->slug;
         $title  = (string)($plan->title ?: ('Plan #' . $plan->id));
@@ -324,16 +323,14 @@ class AuditReporter {
 
         $subject = "[{$slug}] Build audit " . ($passed ? 'passed' : 'FAILED') . ' — ' . $title;
 
+        // Sent by scripts/mail-member.php (PlanNotifier::mailAddress), which boots core: this runs in the
+        // check's own process, which never had core's mail connection — "emailed 0" every time until 2026-10-14.
+        $files = array_values(array_filter(array_map($fs, array_slice($shots, 0, 12)), 'is_file'));
         $sent = 0;
         foreach ($recipients as $email => $name) {
-            try {
-                $mailer = \app\Mailer::create()->to($email, $name)->subject($subject);
-                foreach (array_slice($shots, 0, 12) as $rel) {
-                    $path = $fs($rel);
-                    if (is_file($path)) $mailer->attach($path, basename($path));
-                }
-                if ($mailer->send($html)) $sent++;
-            } catch (\Throwable $e) { error_log("ERROR AuditReporter: audit mail to {$email} failed: " . $e->getMessage()); }
+            $r = \app\PlanNotifier::mailAddress((string) $email, (string) $name, $subject, $html, $files);
+            if (str_starts_with($r, 'emailed')) $sent++;
+            elseif (!str_starts_with($r, 'no email')) error_log("ERROR AuditReporter: audit mail to {$email}: {$r}");
         }
         return $sent;
     }

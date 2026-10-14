@@ -267,17 +267,28 @@ class PlanNotifier {
      * open, and the build's processes that call this have not booted it. Its one line says what happened.
      */
     private static function mailMember(int $memberId, string $subject, string $html, string $plain, int $threadId): string {
+        return self::mailVia(['member_id' => $memberId, 'subject' => $subject, 'html' => $html, 'plain' => $plain, 'thread_id' => $threadId]);
+    }
+
+    /** An email to an address (a project's teammate), with files attached — the check's report. */
+    public static function mailAddress(string $email, string $name, string $subject, string $html, array $attach = []): string {
+        return self::mailVia(['email' => $email, 'name' => $name, 'subject' => $subject, 'html' => $html, 'plain' => '', 'attach' => array_values($attach)]);
+    }
+
+    private static function mailVia(array $payload): string {
+        $subject = (string) $payload['subject'];
+        $memberId = (int) ($payload['member_id'] ?? 0);
         $cmd = 'env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg(dirname(__DIR__) . '/scripts/mail-member.php');
         $p = proc_open($cmd, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, dirname(__DIR__));
         if (!is_resource($p)) return 'email FAILED: could not start scripts/mail-member.php';
-        fwrite($pipes[0], (string) json_encode(['member_id' => $memberId, 'subject' => $subject, 'html' => $html, 'plain' => $plain, 'thread_id' => $threadId]));
+        fwrite($pipes[0], (string) json_encode($payload));
         fclose($pipes[0]);
         $out = trim((string) stream_get_contents($pipes[1])); $err = trim((string) stream_get_contents($pipes[2]));
         fclose($pipes[1]); fclose($pipes[2]);
         $code = proc_close($p);
         $line = trim((string) (array_slice(explode("\n", $out), -1)[0] ?? ''));
         if ($line === '') return 'email FAILED: mail-member.php said nothing (exit ' . $code . ')' . ($err !== '' ? ': ' . mb_substr($err, -300) : '');
-        if ($code !== 0 || str_starts_with($line, 'email FAILED')) error_log('ERROR PlanNotifier: ' . $line . ' — subject "' . $subject . '", member #' . $memberId);
+        if ($code !== 0 || str_starts_with($line, 'email FAILED')) error_log('ERROR PlanNotifier: ' . $line . ' — subject "' . $subject . '", ' . ($memberId > 0 ? 'member #' . $memberId : (string) ($payload['email'] ?? '')));
         return $line;
     }
 

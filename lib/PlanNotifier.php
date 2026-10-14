@@ -282,6 +282,22 @@ class PlanNotifier {
     }
 
     /**
+     * The planner stopped to ask its person something before it could plan a request (plan-question.php).
+     * Its own conversation (related_type 'askq', the prompt): a reply to that email can only be the answer
+     * (app\BuilderMail), and planning starts again with it.
+     */
+    public static function planQuestion(string $coreDb, int $promptId, int $memberId, string $slug, string $asked, string $question): string {
+        if ($promptId <= 0 || $memberId <= 0) return 'notify: skipped (no prompt/member)';
+        if (!is_file($coreDb)) return 'notify: skipped (no core db at ' . $coreDb . ')';
+        $e = fn(string $v) => htmlspecialchars($v, ENT_QUOTES);
+        $title = mb_strimwidth(trim((string) strtok(trim($asked), "\n")) ?: 'your request', 0, 80, '…');
+        $content = '<p>Before it can plan <strong>' . $e($title) . '</strong>, the planner has a question for you:</p>'
+                 . '<blockquote>' . nl2br($e($question)) . '</blockquote>'
+                 . '<p>Reply to this email with your answer, or answer it on the Ask page of ' . $e($slug) . '. Planning starts again as soon as you do.</p>';
+        return self::tellOwner($coreDb, $promptId, $memberId, $slug, 'A question before planning: ' . $title, $content, $title . ' — the planner has a question for you', 'askq');
+    }
+
+    /**
      * One message on an existing conversation (an answer to an emailed Ask, an acknowledgement of a
      * reply), and the same by email with the conversation's reply address. Core's database must be
      * the one selected or reachable as $coreDb.
@@ -313,17 +329,17 @@ class PlanNotifier {
     }
 
     /** One message in the plan's own conversation, and the same by email when mail is connected. */
-    private static function tellOwner(string $coreDb, int $planId, int $memberId, string $slug, string $subject, string $content, string $preview): string {
+    private static function tellOwner(string $coreDb, int $planId, int $memberId, string $slug, string $subject, string $content, string $preview, string $type = 'plan'): string {
         $restore = Bean::hasDatabase('default') ? 'default' : null;
         if (!Bean::hasDatabase('plannotify')) Bean::addDatabase('plannotify', 'sqlite:' . $coreDb);
         Bean::selectDatabase('plannotify');
         try {
             $now = date('Y-m-d H:i:s');
             // the plan's own conversation, as planFinished keys it (per project: plan ids are not unique across projects)
-            $thread = Bean::findOne('thread', 'related_type = ? AND related_id = ? AND project_slug = ?', ['plan', $planId, $slug]);
+            $thread = Bean::findOne('thread', 'related_type = ? AND related_id = ? AND project_slug = ?', [$type, $planId, $slug]);
             if (!$thread || !$thread->id) {
                 $thread = Bean::dispense('thread');
-                $thread->subject = $subject; $thread->relatedType = 'plan'; $thread->relatedId = $planId; $thread->projectSlug = $slug;
+                $thread->subject = $subject; $thread->relatedType = $type; $thread->relatedId = $planId; $thread->projectSlug = $slug;
                 $thread->ownerMemberId = $memberId; $thread->messageCount = 0; $thread->status = 'open'; $thread->createdAt = $now;
             }
             $thread->lastDirection = 'in';

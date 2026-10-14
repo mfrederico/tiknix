@@ -27,7 +27,7 @@ namespace app;
 
 class BuilderMail {
     /** The conversation types the Builder acts on; others (support, team chat) are left alone. */
-    public const TYPES = ['plan', 'ask'];
+    public const TYPES = ['plan', 'ask', 'askq'];
 
     /** The reply address of a conversation, minting its token the first time. */
     public static function replyAddress($thread): string {
@@ -89,6 +89,15 @@ class BuilderMail {
         $text = mb_substr(trim((string) $ctx['text']), 0, 20000);
         $dir = self::dirOf((string) $inst->slug, (string) ($inst->app ?? ''));
 
+        // The planner's question (one conversation per question): a reply is its answer, and planning starts again.
+        if ((string) $thread->relatedType === 'askq') {
+            if (AskTriage::answered((int) $thread->relatedId, $memberId, $text)) {
+                self::triage((int) $thread->relatedId, 'build');
+                self::say($thread, $memberId, 'Re: ' . self::subjectOf($ctx), '<p>Got your answer. It is being planned with it now; you will hear from its plan when it is built, or if it needs you.</p>');
+                return;
+            }
+            // already answered (or no longer waiting): taken as a new message, as anything else is
+        }
         if ((string) $thread->relatedType === 'plan') {
             $done = self::onPlan((int) $thread->relatedId, $inst, $dir, $memberId, $text);
             if ($done !== '') { self::say($thread, $memberId, 'Re: ' . self::subjectOf($ctx), '<p>' . htmlspecialchars($done) . '</p>'); return; }
@@ -155,12 +164,18 @@ class BuilderMail {
         $promptId = PromptLog::record(['member_id' => $memberId, 'source' => PromptLog::SOURCE_DECOMPOSE, 'title' => mb_substr(trim((string) strtok($text, "\n")), 0, 90),
             'body' => GoalBrief::compose($text, 'none', ''), 'instance_id' => (int) $inst->id, 'instance_tag' => $inst->slug . '.' . $app, 'auto_build' => true]);
         if ($promptId <= 0) throw new \RuntimeException('the emailed message could not be recorded');
-        AskTriage::mark($promptId, 'thinking');
+        AskTriage::mark($promptId, 'thinking');   // makes its item in the project's Ask, which emailed() marks
         AskStore::emailed(self::dirOf((string) $inst->slug, $app), $promptId, $threadId);
-        $core = dirname(__DIR__);
-        $cmd = 'env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg($core . '/scripts/ask-triage.php') . ' --prompt=' . $promptId . ' --mode=auto >> ' . escapeshellarg($core . '/log/tiknix-ask.log') . ' 2>&1';
-        TmuxManager::create('tiknix-ask-' . $promptId . '-' . substr(bin2hex(random_bytes(3)), 0, 4), $cmd, $core);
+        self::triage($promptId, 'auto');
         return $promptId;
+    }
+
+    /** Read a message, detached (scripts/ask-triage.php), as the Ask page does. */
+    private static function triage(int $promptId, string $mode): void {
+        AskTriage::mark($promptId, $mode === 'build' ? 'build' : 'thinking');
+        $core = dirname(__DIR__);
+        $cmd = 'env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg($core . '/scripts/ask-triage.php') . ' --prompt=' . $promptId . ' --mode=' . escapeshellarg($mode) . ' >> ' . escapeshellarg($core . '/log/tiknix-ask.log') . ' 2>&1';
+        TmuxManager::create('tiknix-ask-' . $promptId . '-' . substr(bin2hex(random_bytes(3)), 0, 4), $cmd, $core);
     }
 
     /**

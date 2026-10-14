@@ -28,22 +28,27 @@ class AuditRunner {
     private int $memberLevel;
     private string $sessionName;
     private int $planId = 0;
+    /** One checker of several working at once (Plan and Fan, step five): its level, '' for the only one. */
+    private string $part;
 
-    public function __construct(string $slug, string $instanceDir, string $baseUrl, int $memberId, int $memberLevel = 50) {
+    public function __construct(string $slug, string $instanceDir, string $baseUrl, int $memberId, int $memberLevel = 50, string $part = '') {
+        if ($part !== '' && !preg_match('/^[a-z]{2,12}$/', $part)) throw new \InvalidArgumentException("'{$part}' is not a check part (a level: root, admin, member)");
+        $this->part        = $part;
         $this->slug        = $slug;
         $this->instanceDir = rtrim($instanceDir, '/');
         $this->baseUrl     = rtrim($baseUrl, '/');
         $this->memberId    = $memberId;
         $this->memberLevel = $memberLevel;
         // Distinct from planner (tiknix-<m>-plan-<slug>) and task sessions.
-        $this->sessionName = "tiknix-{$memberId}-audit-{$slug}";
+        $this->sessionName = "tiknix-{$memberId}-audit-{$slug}" . ($part !== '' ? "-{$part}" : '');
     }
 
     public function getSessionName(): string { return $this->sessionName; }
     private function abDir(): string { return $this->instanceDir . '/.aibuilder'; }
-    public function manifestFile(): string { return $this->abDir() . '/audit.json'; }
-    public function logFile(): string  { return $this->abDir() . '/audit.log'; }
-    public function requestFile(): string { return $this->abDir() . '/audit-request.md'; }
+    private function sfx(): string { return $this->part !== '' ? '-' . $this->part : ''; }
+    public function manifestFile(): string { return $this->abDir() . '/audit' . $this->sfx() . '.json'; }
+    public function logFile(): string  { return $this->abDir() . '/audit' . $this->sfx() . '.log'; }
+    public function requestFile(): string { return $this->abDir() . '/audit-request' . $this->sfx() . '.md'; }
 
     /** True while the audit tmux session is alive. */
     public function running(): bool { return TmuxManager::exists($this->sessionName); }
@@ -83,7 +88,7 @@ class AuditRunner {
         $this->planId = $planId;
         file_put_contents($this->requestFile(), $this->buildAuditRequest($creds, $checklist, $planId, $size));
 
-        $scriptFile = $ab . '/run-audit.sh';
+        $scriptFile = $ab . '/run-audit' . $this->sfx() . '.sh';
         file_put_contents($scriptFile, $this->buildRunnerScript());
         @chmod($scriptFile, 0755);
 
@@ -102,7 +107,7 @@ class AuditRunner {
     }
 
     /** The container run id of this member's audit on this project. */
-    private function tenantAuditId(): string { return 'audit-m' . (int) $this->memberId; }
+    private function tenantAuditId(): string { return 'audit-m' . (int) $this->memberId . $this->sfx(); }
 
     /**
      * The audit of a project in its own container: its agent runs THERE (clitool --agent-audit,
@@ -130,18 +135,18 @@ class AuditRunner {
         $origin = ($u['scheme'] ?? 'https') . '://' . ($u['host'] ?? '');
         // The browser runs on the QA host (lib/TenantBrowser.php), like every browser the platform
         // runs for an app — not on this machine. What it saves is fetched here when the audit ends.
-        $qaDir = '/srv/qa/audits/' . $this->slug . '-' . (int) $this->planId;
+        $qaDir = '/srv/qa/audits/' . $this->slug . '-' . (int) $this->planId . $this->sfx();
         $browser = TenantBrowser::qaBrowserCommand($port, array_merge([$origin], TenantBrowser::PAGE_ASSETS), $qaDir);
         $collect = 'php -r ' . escapeshellarg('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . '; new \app\Bootstrap(); '
                  . 'try { \app\TenantBrowser::collect(' . var_export($qaDir, true) . ', ' . var_export($shotsDir, true) . '); } catch (\Throwable $e) { fwrite(STDERR, "[audit] ERROR " . $e->getMessage() . "\n"); exit(1); }');
-        $out = $ws . '/.aibuilder/audit-result.json';
+        $out = $ws . '/.aibuilder/audit-result' . $this->sfx() . '.json';
         $audit = TenantBuilder::tenantCommand($tenant, 'audit', $this->tenantAuditId(), $this->requestFile(), $out,
                                               ['browser-mcp' => "http://127.0.0.1:{$port}/mcp"]);
         $unpack = 'php -r ' . escapeshellarg('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true)
                 . '; exit(\app\TenantBuilder::unpackAudit(' . var_export($out, true) . ', ' . var_export($this->manifestFile(), true)
                 . ', ' . var_export($this->slug, true) . ', ' . var_export($ws, true) . ', ' . (int) $this->planId . '));');
         $log = escapeshellarg($this->logFile());
-        $blog = escapeshellarg($ws . '/.aibuilder/audit-browser.log');
+        $blog = escapeshellarg($ws . '/.aibuilder/audit-browser' . $this->sfx() . '.log');
         $tunnel = TenantHost::tunnelCommand($tenant, $port);
         $stop = TenantBrowser::qaBrowserStop($port);
         return <<<BASH
@@ -170,6 +175,42 @@ BASH;
     }
 
     private function escaped(string $s): string { return escapeshellarg($s); }
+
+    /**
+     * How many checkers to run at once: one per level for a LARGE request, never more than the agent
+     * may run at once (its "Tasks at once"; 0 = no limit of its own), and one when the fan is off.
+     */
+    public static function fanWidth(string $size, int $levels, int $agentCap, bool $on): int {
+        if (!$on || $size !== 'large' || $levels < 2) return 1;
+        $w = $agentCap > 0 ? min($levels, $agentCap) : $levels;
+        return $w >= $levels ? $levels : 1;   // a level per checker, or one checker for them all — never a level left out
+    }
+
+    /**
+     * The manifests of checkers that worked at once, one per level, as the one manifest the report
+     * reads: every level, check, failure and design note; passed only when every part passed. A part
+     * that produced nothing is a failure of the check, named — never a pass by omission.
+     * @param array<string,array|null> $parts  level => its manifest (null: it produced none)
+     */
+    public static function mergeManifests(array $parts, int $planId, string $slug, string $base): array {
+        $m = ['plan_id' => $planId, 'instance' => $slug, 'base_url' => $base, 'passed' => true, 'summary' => '', 'levels' => [], 'checks' => [], 'failures' => [], 'design' => []];
+        $said = [];
+        foreach ($parts as $level => $p) {
+            if (!is_array($p)) {
+                $m['passed'] = false;
+                $m['failures'][] = ['label' => "The {$level} check produced no result", 'level' => (string) $level, 'url' => $base, 'message' => "The checker for {$level} ended without writing what it found; that level was not checked.", 'screens' => []];
+                $said[] = "{$level}: no result";
+                continue;
+            }
+            if (empty($p['passed'])) $m['passed'] = false;
+            foreach ((array) ($p['levels'] ?? []) as $k => $v) $m['levels'][$k] = $v;
+            foreach (['checks', 'failures', 'design'] as $k) foreach ((array) ($p[$k] ?? []) as $e) $m[$k][] = $e;
+            if (trim((string) ($p['summary'] ?? '')) !== '') $said[] = "{$level}: " . trim((string) $p['summary']);
+        }
+        if ($m['failures']) $m['passed'] = false;
+        $m['summary'] = count($parts) . ' checkers at once — ' . implode(' · ', $said);
+        return $m;
+    }
 
     /** The detached runner: headless `claude -p` pointed at the brief file. Model = sonnet
      *  (the QA work is procedural browser driving, not deep reasoning). */
@@ -220,7 +261,8 @@ MD;
 
     private function buildAuditRequest(array $creds, array $checklist, int $planId, string $size = 'large'): string {
         $base = $this->baseUrl;
-        $sizeMd = self::sizeSection($size);
+        $sizeMd = self::sizeSection($size) . ($this->part !== '' ? "\n\nYou are ONE of several checkers working at the same time: you check as **" . strtoupper($this->part)
+            . "** only (the one account below). The others check the other levels; do not try to." : '');
         $checklistMd = $checklist
             ? implode("\n", array_map(fn($l) => '- ' . $l, $checklist))
             : '- (No explicit change list was supplied — explore the site and verify the primary pages render.)';

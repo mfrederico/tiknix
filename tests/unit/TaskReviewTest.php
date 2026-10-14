@@ -49,6 +49,26 @@ class TaskReviewTest extends TestCase {
         $this->assertSame(['Fixed: a.php:1 — wrong', 'stock goes down'], $f['verify']);
     }
 
+    public function testALargeCheckFansOutOnePerLevelWhenTheAgentMay(): void {
+        $this->assertSame(3, AuditRunner::fanWidth('large', 3, 0, true));
+        $this->assertSame(3, AuditRunner::fanWidth('large', 3, 4, true));
+        $this->assertSame(1, AuditRunner::fanWidth('large', 3, 2, true), 'two at once cannot cover three levels one each: one checker does them all');
+        $this->assertSame(1, AuditRunner::fanWidth('large', 3, 1, true), 'z.ai: one request at a time');
+        $this->assertSame(1, AuditRunner::fanWidth('medium', 3, 0, true));
+        $this->assertSame(1, AuditRunner::fanWidth('large', 3, 0, false));
+    }
+
+    public function testTheChecksAtOnceMergeIntoOneAndANullPartFailsIt(): void {
+        $ok = fn($lv, $n) => ['passed' => true, 'summary' => "{$n} checks", 'levels' => [$lv => ['login_ok' => true]], 'checks' => array_fill(0, $n, ['label' => 'x']), 'failures' => [], 'design' => []];
+        $m = AuditRunner::mergeManifests(['root' => $ok('root', 2), 'admin' => $ok('admin', 3)], 9, 'bakery', 'https://b');
+        $this->assertTrue($m['passed']);
+        $this->assertCount(5, $m['checks']);
+        $this->assertSame(['root', 'admin'], array_keys($m['levels']));
+        $m = AuditRunner::mergeManifests(['root' => $ok('root', 2), 'member' => null], 9, 'bakery', 'https://b');
+        $this->assertFalse($m['passed'], 'a level nobody checked is not a pass');
+        $this->assertSame('The member check produced no result', $m['failures'][0]['label']);
+    }
+
     public function testTheCheckIsSizedByTheRequestsClass(): void {
         $this->assertStringContainsString('as the ONE level each is', AuditRunner::sizeSection('small'));
         $this->assertStringContainsString('as EACH level that can reach', AuditRunner::sizeSection('medium'));

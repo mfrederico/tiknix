@@ -168,27 +168,57 @@ $class = \app\PlanRank::rollup($rankTasks)['class'];
 $size  = $class !== '' ? $class : 'large';
 alog('check size: ' . $size . ($class === '' ? ' (the plan was not scored — the full pass)' : ''));
 
-// --- 3) Launch the jailed QA agent and wait for the manifest ------------------
-$runner = new AuditRunner($slug, $dir, $baseUrl, (int)$inst->memberId, $level);
+// --- 3) Launch the jailed QA agent(s) and wait for the manifest ---------------
+// Plan and Fan, step five: a LARGE request's full pass is split by level — one checker and one
+// browser per level, all at once — when the app's builder agent may run that many at once (its
+// "Tasks at once"; one that serves a single request at a time gets one checker, as before).
+// aibuilder.ini [audit] fan = false turns it off.
+$aibIni = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
+$fanOn  = filter_var($aibIni['audit']['fan'] ?? true, FILTER_VALIDATE_BOOLEAN);
+$report = json_decode((string) ($inst->reportJson ?? ''), true);
+$agCap  = \app\PlanExecutor::capOf($report, is_array($report) ? (string) ($report['default_agent'] ?? '') : '');
+$fan    = AuditRunner::fanWidth($size, count($creds), $agCap, $fanOn);
+$runners = [];
 try {
-    $runner->start($creds, $checklist, $planId, $size);
-    alog('QA agent launched (' . $runner->getSessionName() . ')');
+    if ($fan > 1) {
+        foreach ($creds as $role => $c) {
+            $r = new AuditRunner($slug, $dir, $baseUrl, (int)$inst->memberId, $level, $role);
+            $r->start([$role => $c], $checklist, $planId, $size);
+            $runners[$role] = $r;
+        }
+        alog('QA agents launched, ' . count($runners) . ' at once: ' . implode(', ', array_keys($runners)));
+    } else {
+        $runners[''] = new AuditRunner($slug, $dir, $baseUrl, (int)$inst->memberId, $level);
+        $runners['']->start($creds, $checklist, $planId, $size);
+        alog('QA agent launched (' . $runners['']->getSessionName() . ')');
+    }
 } catch (\Throwable $e) {
     alog('failed to launch QA agent: ' . $e->getMessage());
+    foreach ($runners as $r) $r->stop();
     deleteTestUsers($dir, $creds);
     exit(1);
 }
+$auditStarted = time();
 
 $deadline = time() + 15 * 60;    // 15-minute ceiling
 while (time() < $deadline) {
-    if ($runner->manifestReady()) break;
-    if (!$runner->running()) { sleep(2); break; }   // agent exited; give the file a beat to land
+    $left = array_filter($runners, fn($r) => !$r->manifestReady() && $r->running());
+    if (!$left) { sleep(2); break; }   // each has written its manifest or exited; give a file a beat to land
     sleep(10);
 }
-$runner->stop();
+foreach ($runners as $r) $r->stop();
+alog('check took ' . (time() - $auditStarted) . 's' . (count($runners) > 1 ? ' with ' . count($runners) . ' checkers at once' : ''));
 
 // --- 4) Report ----------------------------------------------------------------
-$manifestFile = $runner->manifestFile();
+if (count($runners) > 1) {
+    $parts = [];
+    foreach ($runners as $role => $r) $parts[$role] = is_file($r->manifestFile()) ? json_decode((string) file_get_contents($r->manifestFile()), true) : null;
+    $merged = AuditRunner::mergeManifests($parts, $planId, $slug, $baseUrl);
+    $manifestFile = $dir . '/.aibuilder/audit.json';
+    file_put_contents($manifestFile, json_encode($merged, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+} else {
+    $manifestFile = $runners['']->manifestFile();
+}
 if (!is_file($manifestFile)) {
     alog('no manifest produced within the time budget');
     // Record a failed audit so the UI reflects it, and tear down.

@@ -24,6 +24,13 @@ Bean::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "cannot open core db\n"); exit(1); }
 \app\AskTriage::asks($id, $q);
 unlink($file);
+// …and its person is told, by email too: a reply is the answer (app\BuilderMail).
+try {
+    $pl = Bean::load('promptlog', $id);
+    $ptag = (string) ($pl->instanceTag ?? '');
+    echo '[plan-question] notify: ' . \app\PlanNotifier::planQuestion(dirname(__DIR__) . '/database/tiknix.db', $id, (int) $pl->memberId, (string) (strstr($ptag, '.', true) ?: $ptag),
+        (string) (\app\AskStore::get(\app\AskTriage::dirOfTag($ptag), $id)['said'] ?? $pl->title), $q) . "\n";
+} catch (\Throwable $e) { echo '[plan-question] ERROR its person was not told of the question: ' . $e->getMessage() . "\n"; }
 // The app is told (question.asked), for its own pipelines: someone may want to hear of it elsewhere.
 try {
     $tag = (string) (Bean::load('promptlog', $id)->instanceTag ?? '');

@@ -137,8 +137,10 @@ class PlanIngestor
             // Still marked complex after planning (the depth was "off", or a deeper pass could
             // not make it one agent's work): the board says so before anyone runs it.
             // How much work, how risky, as the planner scored it and the platform raised it (app\PlanRank).
-            $others = [];
-            foreach ($plan['subtasks'] as $o) if ($o !== $st) $others[] = ['title' => (string) ($o['title'] ?? ''), 'files' => is_array($o['files'] ?? null) ? $o['files'] : []];
+            // a file shared with a task that could run beside it — not one it waits on or that waits on it
+            $graph = []; $n = 0;
+            foreach ($plan['subtasks'] as $o) { $n++; $graph[] = ['ref' => trim((string) ($o['id'] ?? '')) ?: ('t' . $n), 'deps' => (array) ($o['depends_on'] ?? []), 'title' => (string) ($o['title'] ?? ''), 'files' => is_array($o['files'] ?? null) ? $o['files'] : []]; }
+            $others = PlanRank::concurrent($ref, $graph);
             $t->rankJson = json_encode(PlanRank::planned($st['effort'] ?? null, $st['risk'] ?? null, (string) ($st['risk_reason'] ?? ''),
                 PlanRank::checks(['files' => $st['files'] ?? [], 'adopts' => $st['adopts'] ?? [], 'verify' => $st['verify'] ?? []], $others)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             $t->needsPlanning = !empty($st['complex']) ? 1 : 0;

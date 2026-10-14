@@ -41,4 +41,13 @@ class PlanRankTest extends TestCase {
         $this->assertSame('medium', PlanRank::rollup([['id' => 1, 'deps' => [], 'effort' => 2, 'risk' => 3]])['class']);
         $this->assertSame('', PlanRank::rollup([['id' => 1, 'deps' => [], 'effort' => null, 'risk' => null]])['class'], 'a plan nobody scored has no class');
     }
+
+    public function testOnlyATaskThatCouldRunBesideItCanCollideOnAFile(): void {
+        $g = [['ref' => 't1', 'deps' => [], 'title' => 'data', 'files' => ['views/index/index.php']],
+              ['ref' => 't2', 'deps' => ['t1'], 'title' => 'design', 'files' => ['views/index/index.php']],
+              ['ref' => 't3', 'deps' => [], 'title' => 'other', 'files' => ['views/index/index.php']]];
+        $this->assertSame(['t3'], array_column(PlanRank::concurrent('t1', $g), 'ref'), 't2 waits on t1: it cannot collide with it');
+        $this->assertSame(['t3'], array_column(PlanRank::concurrent('t2', $g), 'ref'));
+        $this->assertSame([], PlanRank::checks(['files' => ['views/index/index.php'], 'verify' => ['x']], PlanRank::concurrent('t2', [$g[0], $g[1]])));
+    }
 }

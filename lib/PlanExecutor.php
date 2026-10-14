@@ -885,7 +885,7 @@ class PlanExecutor {
             $n->relatedFiles = json_encode($p['files']); $n->acceptanceCriteria = json_encode($p['verify']);
             $n->reuses = '[]'; $n->adopts = '[]'; $n->planRef = 'split-' . (int) $t->id . '-' . $p['ref'];
             // each piece scored as a planned task is (app\PlanRank), its siblings the other pieces
-            $sib = array_values(array_map(fn($o) => ['title' => $o['title'], 'files' => $o['files']], array_filter($sp['pieces'], fn($o) => $o['ref'] !== $p['ref'])));
+            $sib = PlanRank::concurrent($p['ref'], array_map(fn($o) => ['ref' => $o['ref'], 'deps' => $o['deps'], 'title' => $o['title'], 'files' => $o['files']], $sp['pieces']));
             $n->rankJson = json_encode(PlanRank::planned($p['effort'] ?? null, $p['risk'] ?? null, (string) ($p['risk_reason'] ?? ''), PlanRank::checks(['files' => $p['files'], 'adopts' => [], 'verify' => $p['verify']], $sib)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             $n->splitOf = (int) $t->id; $n->splitDepth = $depth + 1;
             $n->createdAt = $now; $n->updatedAt = $now;

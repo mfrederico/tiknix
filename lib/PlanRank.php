@@ -31,7 +31,7 @@ class PlanRank {
     /**
      * What the platform can see about a task that makes it riskier, a sentence each.
      * @param array $task  ['files' => string[], 'adopts' => string[], 'verify' => string[]]
-     * @param array $others  every OTHER task of the plan: [['title' => …, 'files' => string[]], …]
+     * @param array $others  the tasks that could run beside it (concurrent()): [['title' => …, 'files' => string[]], …]
      * @return string[]
      */
     public static function checks(array $task, array $others): array {
@@ -50,6 +50,20 @@ class PlanRank {
         if (array_filter(array_map('strval', (array) ($task['adopts'] ?? [])))) $why[] = 'it adopts a plugin';
         if (!array_filter(array_map('strval', (array) ($task['verify'] ?? [])))) $why[] = 'it has no checks of its own';
         return $why;
+    }
+
+    /**
+     * The tasks that could run AT THE SAME TIME as $ref — not before it nor after it in the
+     * dependency chain. Only those can collide on a shared file; a design task that waits for
+     * the data task it restyles shares its files by design. $tasks: [['ref' => …, 'deps' => refs[], …], …]
+     */
+    public static function concurrent(string $ref, array $tasks): array {
+        $deps = []; foreach ($tasks as $t) $deps[(string) $t['ref']] = array_map('strval', (array) ($t['deps'] ?? []));
+        $reach = function (string $from, array $edges) { $seen = []; $stack = $edges[$from] ?? []; while ($stack) { $x = array_pop($stack); if (isset($seen[$x])) continue; $seen[$x] = true; foreach ($edges[$x] ?? [] as $y) $stack[] = $y; } return $seen; };
+        $up = $reach($ref, $deps);                                             // what it waits on
+        $rev = []; foreach ($deps as $r => $ds) foreach ($ds as $d) $rev[$d][] = $r;
+        $down = $reach($ref, $rev);                                            // what waits on it
+        return array_values(array_filter($tasks, fn($t) => (string) $t['ref'] !== $ref && !isset($up[(string) $t['ref']]) && !isset($down[(string) $t['ref']])));
     }
 
     /** The rank_json of a task as planned: the planner's scores, raised by what the checks found. */

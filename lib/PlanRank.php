@@ -74,6 +74,31 @@ class PlanRank {
         return ['effort' => $e, 'planner' => $r, 'risk' => $final, 'why' => $reasons, 'set_by' => 'planner'];
     }
 
+    /**
+     * Plan and Fan, step two — the order a plan's ready tasks start in: what the longest chain
+     * runs through first (the floor of the whole request is that chain), then what more tasks
+     * wait on, then the riskier (so it fails early, not late), then the planner's priority.
+     * $tasks: [['id', 'deps', 'effort', 'risk', 'priority'], …] → ids, first to start first.
+     * @return int[]
+     */
+    public static function order(array $tasks): array {
+        $r = self::rollup($tasks);
+        $onPath = array_flip($r['path']);
+        usort($tasks, function ($a, $b) use ($onPath, $r) {
+            $k = fn($t) => [isset($onPath[(int) $t['id']]) ? 0 : 1, -($r['leverage'][(int) $t['id']] ?? 0), -((int) ($t['risk'] ?? 0)), (int) ($t['priority'] ?? 3), (int) $t['id']];
+            return $k($a) <=> $k($b);
+        });
+        return array_map(fn($t) => (int) $t['id'], $tasks);
+    }
+
+    /**
+     * Small and safe: both scores at 2 or below (a person's risk counts as theirs). Such a task is
+     * built on the agent's fast model, where it has one. An unscored task is never "small".
+     */
+    public static function fast(array $rank): bool {
+        return isset($rank['effort'], $rank['risk']) && (int) $rank['effort'] <= 2 && (int) $rank['risk'] <= 2;
+    }
+
     /** A person set the risk: it wins, and is kept apart so the estimate it replaced can still be learned from. */
     public static function setByPerson(array $rank, int $risk): array {
         if (self::scale($risk) === null) throw new \InvalidArgumentException('risk is 1 to 5');

@@ -50,4 +50,14 @@ class PlanRankTest extends TestCase {
         $this->assertSame(['t3'], array_column(PlanRank::concurrent('t2', $g), 'ref'));
         $this->assertSame([], PlanRank::checks(['files' => ['views/index/index.php'], 'verify' => ['x']], PlanRank::concurrent('t2', [$g[0], $g[1]])));
     }
+
+    public function testTheChainEverythingWaitsOnStartsFirstAndSmallSafeTasksAreFast(): void {
+        $t = fn($id, $deps, $e, $r, $p = 3) => ['id' => $id, 'deps' => $deps, 'effort' => $e, 'risk' => $r, 'priority' => $p];
+        // 1 → 2 → 3 is the long chain; 4 is a small side task with a better planner priority
+        $order = PlanRank::order([$t(4, [], 1, 1, 1), $t(1, [], 3, 2), $t(2, [1], 3, 2), $t(3, [2], 3, 2), $t(5, [], 2, 4)]);
+        $this->assertSame([1, 2, 3, 5, 4], $order, 'the chain first; then the riskier side task; the planner\'s priority last');
+        $this->assertTrue(PlanRank::fast(['effort' => 2, 'risk' => 2]));
+        $this->assertFalse(PlanRank::fast(['effort' => 2, 'risk' => 3]));
+        $this->assertFalse(PlanRank::fast(['effort' => 1]), 'an unscored risk is never small and safe');
+    }
 }

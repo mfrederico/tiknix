@@ -299,7 +299,14 @@ class PlanExecutor {
         $held = $this->heldForSplit();
         if ($held) $slots = 0;
         if ($slots > 0) {
-            foreach ($fresh as $t) {
+            // Plan and Fan, step two: ready tasks start in rank order (PlanRank::order) — the chain the
+            // whole request waits on first, then what most tasks wait on, then the riskiest.
+            $rankOf = fn($t) => json_decode((string) ($t->rankJson ?? ''), true) ?: [];
+            $ids = PlanRank::order(array_map(fn($t) => ['id' => (int) $t->id, 'deps' => $this->deps($t), 'effort' => $rankOf($t)['effort'] ?? null,
+                                                        'risk' => $rankOf($t)['risk'] ?? null, 'priority' => (int) $t->priority], array_values($fresh)));
+            $byFresh = []; foreach ($fresh as $t) $byFresh[(int) $t->id] = $t;
+            foreach ($ids as $tid) {
+                $t = $byFresh[$tid];
                 if ($slots <= 0) break;
                 if ($t->status !== 'pending') continue;
                 if (!$this->depsMerged($t, $byId)) continue;
@@ -612,8 +619,10 @@ class PlanExecutor {
             // runtime from before --catch-up then resumes in the kept copy, where without it the run
             // would be refused ("already has a worktree") and the built work discarded as a failure.
             $catchUp = $resume && !empty($t->catchUp);
+            // Small and safe (Plan and Fan): on the agent's fast model, where it has a different one.
+            $fast = PlanRank::fast(json_decode((string) ($t->rankJson ?? ''), true) ?: []);
             TenantRun::start($this->tenant, $session, $id,
-                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : '') . ($catchUp ? ' --catch-up' : '') . TenantBrowser::sandboxArg($this->tenant), $this->buildTaskBrief($t), $this->author());
+                '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : '') . ($catchUp ? ' --catch-up' : '') . ($fast ? ' --fast' : '') . TenantBrowser::sandboxArg($this->tenant), $this->buildTaskBrief($t), $this->author());
             $this->logEvent($t, 'info', ($catchUp ? 'Build agent sent back to bring this task up to date with the app' : ($resume ? 'Build agent RESUMED (continuing the earlier attempt\'s work)' : 'Build agent started')) . " in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
             if ($resume) { $t->resumable = 0; $t->catchUp = 0; Bean::store($t); }
         } catch (\Throwable $e) {
@@ -664,6 +673,7 @@ class PlanExecutor {
             $this->logEvent($t, 'info', 'This run: ' . RunStats::line(RunStats::add([], $r['stats'])) . ((int) $total['attempts'] > 1 ? "\nTask so far: " . RunStats::line($total) : ''));
         }
         if (!empty($r['credential'])) $this->logEvent($t, 'info', 'Ran on ' . $r['credential']);
+        if (!empty($r['fast'])) $this->logEvent($t, 'info', 'Built on the fast model: it was scored small and low-risk.');
         // What the app noticed about the work (an unlinked page): on the task, where a person reads it.
         foreach ((array) ($r['notes'] ?? []) as $note) $this->logEvent($t, 'warning', (string) $note);   // each note says what kind it is (AgentTask)
         $status = (string) ($r['status'] ?? '');

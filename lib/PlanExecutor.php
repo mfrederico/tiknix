@@ -833,7 +833,8 @@ class PlanExecutor {
             $refs[$ref] = true;
             $out['pieces'][] = ['ref' => $ref, 'title' => mb_substr($title, 0, 200), 'description' => (string) ($st['description'] ?? ''),
                 'files' => is_array($st['files'] ?? null) ? array_values($st['files']) : [], 'verify' => PlanIngestor::verify($st['verify'] ?? null),
-                'priority' => max(1, min(4, (int) ($st['priority'] ?? 3))), 'deps' => array_values(array_map('strval', (array) ($st['depends_on'] ?? [])))];
+                'priority' => max(1, min(4, (int) ($st['priority'] ?? 3))), 'deps' => array_values(array_map('strval', (array) ($st['depends_on'] ?? []))),
+                'effort' => $st['effort'] ?? null, 'risk' => $st['risk'] ?? null, 'risk_reason' => (string) ($st['risk_reason'] ?? '')];
         }
         if ($out['problems']) return $out;
         $waitedOn = [];
@@ -883,6 +884,9 @@ class PlanExecutor {
             $n->title = $p['title']; $n->description = $p['description']; $n->priority = $p['priority']; $n->status = 'pending';
             $n->relatedFiles = json_encode($p['files']); $n->acceptanceCriteria = json_encode($p['verify']);
             $n->reuses = '[]'; $n->adopts = '[]'; $n->planRef = 'split-' . (int) $t->id . '-' . $p['ref'];
+            // each piece scored as a planned task is (app\PlanRank), its siblings the other pieces
+            $sib = array_values(array_map(fn($o) => ['title' => $o['title'], 'files' => $o['files']], array_filter($sp['pieces'], fn($o) => $o['ref'] !== $p['ref'])));
+            $n->rankJson = json_encode(PlanRank::planned($p['effort'] ?? null, $p['risk'] ?? null, (string) ($p['risk_reason'] ?? ''), PlanRank::checks(['files' => $p['files'], 'adopts' => [], 'verify' => $p['verify']], $sib)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             $n->splitOf = (int) $t->id; $n->splitDepth = $depth + 1;
             $n->createdAt = $now; $n->updatedAt = $now;
             Bean::store($n);

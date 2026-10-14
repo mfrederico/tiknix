@@ -638,6 +638,15 @@ call the **`submit_plan`** MCP tool exactly once with:
     name its files and steps without first investigating. It is then planned more deeply
     before anything is built. Judge by breadth, not by length; most tasks are `false`.
   - `complex_reason` — when `complex`, one sentence naming the separate capabilities.
+  - `effort` — how much work this task is, 1 to 5 (5 the most): 1 a few lines in one file ·
+    2 one page or one model changed · 3 one slice of a feature (page, logic and its data) ·
+    4 several layers, new tables, several pages · 5 broad — usually a sign it should be split.
+  - `risk` — how likely it is to go wrong, and how badly, 1 to 5 (5 the most): how unclear the
+    task is, and what breaks if it is wrong (money, data, who can see what, a page many others
+    use). Score it honestly — a 5 is not a failure of the plan, it tells the build where to look
+    hardest. The platform adds to it what it can see for itself (a shared file, a seed, sign-in
+    or permissions, a plugin, no checks), so do not count those.
+  - `risk_reason` — one short phrase on why, when `risk` is 3 or more.
 
 Apart from the one question above (when the plan truly cannot be made without it), do not
 ask the operator anything — make reasonable assumptions and note them in the relevant task
@@ -836,7 +845,8 @@ changed or not), in the same shape it has now.
 
 Call `submit_plan` exactly once with `title`, `summary` (say in one sentence what this pass
 changed) and the full `subtasks` array — each with `id`, `title`, `priority`, `description`,
-`files`, `depends_on`, `reuses`, `adopts`, `verify`, `complex`, `complex_reason`. Then reply
+`files`, `depends_on`, `reuses`, `adopts`, `verify`, `complex`, `complex_reason`, `effort`, `risk`,
+`risk_reason` (score a piece you split out yourself; keep a task's scores when you keep the task). Then reply
 `PLAN_WRITTEN` and stop. Do not ask the operator questions.
 MD;
     }

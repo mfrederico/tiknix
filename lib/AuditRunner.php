@@ -265,8 +265,9 @@ MD;
             . "** only (the one account below). The others check the other levels; do not try to.\n\n"
             . "Nobody else checks what " . strtoupper($this->part) . " can DO. Every change in the list above that this level can reach is yours to exercise "
             . "end to end: create one, edit it, delete it, and check what it changed (a sale lowers the stock it uses; deleting it puts the stock back). "
-            . "Use throwaway names (\"QA test …\") and delete what you made. Looking at a page is not checking it. If this level is kept out of a page, "
-            . "check that it is refused, and move on." : '');
+            . "The other checkers are changing the same app at the same moment: make your OWN records for every check, named \"QA " . strtoupper($this->part) . " …\", "
+            . "judge numbers (stock, totals) only on those, never on records you did not make, and delete them when you are done. "
+            . "Looking at a page is not checking it. If this level is kept out of a page, check that it is refused, and move on." : '');
         $checklistMd = $checklist
             ? implode("\n", array_map(fn($l) => '- ' . $l, $checklist))
             : '- (No explicit change list was supplied — explore the site and verify the primary pages render.)';

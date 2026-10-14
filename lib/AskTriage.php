@@ -29,7 +29,7 @@
 namespace app;
 
 class AskTriage {
-    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'build', 'asking', 'action', 'did'];
+    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'build', 'asking', 'action', 'did', 'operation'];
     /** In a goal: what the planner asked its person and what they answered — settled, at its end. */
     public const QA_HEAD = '## What you asked the owner, and their answer';
     /** How long one run may take, in the container. */
@@ -83,7 +83,10 @@ class AskTriage {
 
         - `VERDICT: BUILD` — they want the app changed: something added, removed, fixed, restyled, connected, imported. A request phrased as a question ("can you add a login page?", "could the header be darker?") is still BUILD. So is a bug report they want fixed.
         - `VERDICT: ANSWER` — they want to know something: how the app works, what a page does, where something is, why something happened, what is possible, what you would suggest, how a build is going. Nothing is to change.
+        - `VERDICT: DO` — they want something done to the app's RECORDS with what the app already has, not the app changed: record a delivery, add a product, change a price, mark an order paid, delete a test entry, set someone's level. The code stays as it is.
         - `VERDICT: UNSURE` — it could honestly be either, or it is too vague to tell what would be built. Do not guess.
+
+        BUILD changes what the app can do; DO uses what it can already do, once. "Let me record deliveries" is BUILD; "record a 10 kg flour delivery from Mill Co" is DO.
 
         Only after `VERDICT: UNSURE`, add ONE short sentence on the next line saying what you could not tell (it is shown above two buttons: "Build it" and "Just answer").
         {$acts}{$before}
@@ -148,7 +151,7 @@ class AskTriage {
 
         ## What they will likely ask next
 
-        Then one more line: `NEXT: …` — the message this person is most likely to type next, written as THEY would type it into this box (a request to build, or a question), under 15 words, following from this answer ("Add a phone number field to the enquiry form"). It is shown greyed in their box; one key accepts it. Not a question back to them, and not something already done. If nothing obvious follows, write `NEXT: none`.
+        Then one more line: `NEXT: …` — the message this person is most likely to type next, written as THEY would type it into this box (a request to build, or a question), under 15 words, following from this answer ("Add a phone number field to the enquiry form"). It is shown greyed in their box; one key accepts it. Not a question back to them, and not something already done. Something to do to the app's records is said as that ("Record a 10 kg flour delivery from Mill Co"), never as "Fix …". If nothing obvious follows, write `NEXT: none`.
         {$board}{$before}
         ## The message
 
@@ -184,6 +187,7 @@ class AskTriage {
             elseif ($state === 'planned')   $then = 'It was sent to be built, as plan #' . (int) $r['plan_ref'] . ' of this project' . ((int) ($r['follows_ref'] ?? 0) > 0 ? ' (a follow-up to #' . (int) $r['follows_ref'] . ')' : '') . '.';
             elseif ($state === 'did')       $then = $a;
             elseif ($state === 'action')    $then = 'It asked for something to be done to the list; they have not confirmed it yet.';
+            elseif ($state === 'operation') $then = 'An action on the app\'s records was written for it; they have not pressed Do it yet.';
             else                            $then = 'It was sent to be built (not planned yet).';
             foreach ((array) (json_decode((string) $r['qa_json'], true) ?: []) as $qa) {
                 $then .= "\n  Before planning it, the planner asked: " . trim((string) ($qa['q'] ?? '')) . ' — they answered: ' . trim((string) ($qa['a'] ?? ''));
@@ -207,10 +211,10 @@ class AskTriage {
     /** The agent's reply, read: ['verdict' => build|answer|unsure, 'text' => …, 'note' => 'kind: one line' or '']; throws when it did not say which. $needAnswer false = the first reading, which only says which. */
     public static function parse(string $reply, bool $needAnswer = true): array {
         $reply = trim($reply);
-        if (!preg_match('/^\s*`?VERDICT:\s*(BUILD|ANSWER|UNSURE|FOLLOWUP|RETRY|FIX|UNDO|STOP)(?:\s+#?(\d+))?`?\s*$/mi', $reply, $m, PREG_OFFSET_CAPTURE)) {
+        if (!preg_match('/^\s*`?VERDICT:\s*(BUILD|ANSWER|UNSURE|DO|FOLLOWUP|RETRY|FIX|UNDO|STOP)(?:\s+#?(\d+))?`?\s*$/mi', $reply, $m, PREG_OFFSET_CAPTURE)) {
             throw new \RuntimeException('the agent did not say whether this is something to build or a question');
         }
-        if (in_array(strtoupper($m[1][0]), ['FOLLOWUP', 'RETRY', 'FIX', 'UNDO', 'STOP'], true)) {
+        if (in_array(strtoupper($m[1][0]), ['DO', 'FOLLOWUP', 'RETRY', 'FIX', 'UNDO', 'STOP'], true)) {
             return ['verdict' => strtolower($m[1][0]), 'text' => '', 'note' => '', 'target' => (int) ($m[2][0] ?? 0)];
         }
         $text = trim(substr($reply, $m[0][1] + strlen($m[0][0])));
@@ -296,7 +300,7 @@ class AskTriage {
     public static function talk(int $memberId, string $instanceTag, int $limit = 20): array {
         if ($memberId <= 0 || $instanceTag === '') return [];
         $out = [];
-        foreach (AskStore::of(self::dirOfTag($instanceTag), $memberId, ['thinking', 'answer', 'unsure', 'failed', 'asking', 'action', 'did'], $limit) as $r) {
+        foreach (AskStore::of(self::dirOfTag($instanceTag), $memberId, ['thinking', 'answer', 'unsure', 'failed', 'asking', 'action', 'did', 'operation'], $limit) as $r) {
             $state = (string) $r['state']; $answer = (string) $r['answer'];
             if ($state === 'thinking' && time() - (int) strtotime((string) $r['updated_at']) > self::TIMEOUT + 420) {
                 $state = 'failed'; $answer = 'No answer came back: the run that was reading it ended without one.';
@@ -305,7 +309,8 @@ class AskTriage {
             foreach ((array) (json_decode((string) $r['qa_json'], true) ?: []) as $x) $qa[] = ['q' => (string) ($x['q'] ?? ''), 'a' => (string) ($x['a'] ?? '')];
             $out[] = ['id' => (int) $r['prompt_ref'], 'asked' => (string) $r['said'], 'qa' => $qa, 'at' => (string) $r['created_at'], 'state' => $state, 'answer' => $answer,
                       'note' => $state === 'answer' ? (string) $r['note'] : '', 'noted' => (string) ($r['noted_at'] ?? '') !== '',
-                      'next' => $state === 'answer' ? (string) ($r['next_hint'] ?? '') : ''];
+                      'next' => $state === 'answer' ? (string) ($r['next_hint'] ?? '') : '',
+                      'op' => $state === 'operation' ? (string) ($r['op_code'] ?? '') : ''];
         }
         return $out;
     }
@@ -484,6 +489,8 @@ class AskTriage {
                 if ($ahead && $got['verdict'] !== 'answer') { TenantHost::askDrop($tenant, 'ask-' . $promptId); $ahead = false; }
                 // It is about something already on the list: done to the list, not planned as new work.
                 if (in_array($got['verdict'], ['followup', 'retry', 'fix', 'undo', 'stop'], true)) return self::act($promptId, $dir, $got['verdict'], (int) ($got['target'] ?? 0), $targets, $planning);
+                // Something to DO to the app's records: written now, run only when they press Do it (app\AskOperation).
+                if ($got['verdict'] === 'do') return self::operation($promptId, $tenant, $dir, $said, $before, $rows);
             }
             if ($got['verdict'] === 'answer') {
                 $r = $ahead ? TenantHost::askWait($tenant, 'ask-' . $promptId, self::TIMEOUT)
@@ -501,6 +508,42 @@ class AskTriage {
         self::mark($promptId, $got['verdict'], $got['text'], (string) ($got['note'] ?? ''));
         if (($got['next'] ?? '') !== '') { $pp = self::prompt($promptId); AskStore::next($pp['dir'], $promptId, (string) $got['next']); }
         return "#{$promptId}: {$got['verdict']}";
+    }
+
+    /**
+     * An action on the app's records: the app's agent writes it (read-only), and it waits for the
+     * person's Do it. Only someone who may change the app's data (an admin of it) gets one.
+     */
+    private static function operation(int $promptId, object $tenant, string $dir, string $said, string $before, bool $admin): string {
+        if (!$admin) {
+            self::mark($promptId, 'answer', 'That would change this app\'s data, which only an admin of the project can have done from here. You can do it on the app\'s own pages, or ask an admin.');
+            return "#{$promptId}: do — not an admin";
+        }
+        $r = TenantHost::ask($tenant, 'ask-' . $promptId . '-op', AskOperation::brief($said, $before), self::TIMEOUT, '', false, true);
+        if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the agent gave no answer'));
+        $op = AskOperation::parse((string) $r['text']);
+        if (isset($op['cannot'])) { self::mark($promptId, 'answer', 'I can\'t do that directly: ' . $op['cannot']); return "#{$promptId}: do — cannot"; }
+        if (($why = AskOperation::refusal($op['code'])) !== '') { self::mark($promptId, 'failed', 'What it wrote was refused, so nothing will run: ' . $why . '.'); return "#{$promptId}: do — refused ({$why})"; }
+        self::mark($promptId, 'operation', $op['summary']);
+        AskStore::op($dir, $promptId, $op['code']);
+        return "#{$promptId}: do — waiting for Do it";
+    }
+
+    /** Do it: the person runs the action Ask wrote. ['ok', 'text'] — what it printed, or why it did not run. */
+    public static function doIt(int $promptId, int $memberId): array {
+        $p = self::prompt($promptId);
+        $row = AskStore::get($p['dir'], $promptId);
+        if (!$row || (int) $row['member_ref'] !== $memberId || (string) $row['state'] !== 'operation') return ['ok' => false, 'text' => 'That is not waiting to be done.'];
+        $slug = (string) (strstr($p['tag'], '.', true) ?: $p['tag']);
+        $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ?', [$slug]), null);
+        $level = $inst && $inst->id ? CoreDb::with(fn() => AppAccess::level($memberId, $inst), null) : null;
+        if ($level === null || $level > 50) return ['ok' => false, 'text' => 'Only an admin of this project can change its data from here.'];
+        $tenant = TenantBuilder::bySlug($slug);
+        if (!$tenant) return ['ok' => false, 'text' => "{$slug} is not running in its own container."];
+        $r = AskOperation::run($tenant, $promptId, (string) $row['op_code'], TenantHost::author($memberId));
+        $said = (string) $row['answer'] . "\n\n" . ($r['ok'] ? 'Done: ' : 'It did not finish: ') . $r['output'] . ($r['checkpoint'] !== '' ? "\n\nA restore point was taken first ({$r['checkpoint']})." : '');
+        AskStore::mark($p['dir'], $promptId, $r['ok'] ? 'did' : 'failed', $said);
+        return ['ok' => $r['ok'], 'text' => $r['output']];
     }
 
     /**

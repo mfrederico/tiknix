@@ -11,7 +11,9 @@
 4. **`Bean::`, never `R::`** (except schema seeds)
 5. String external IDs end in `_eid`, never `_id` (reserved for RedBean integer FKs)
 6. **No fallbacks. Fail loudly** — see [No Fallbacks](#no-fallbacks)
-7. **Data and permissions ship as seeds**, never as direct DB writes — see [Codebase Introspection](#codebase-introspection-mcp)
+7. **Data and permissions ship as seeds**, never as direct DB writes — see [Codebase Introspection](#codebase-introspection-mcp).
+   A seed is for what the APP needs (a table, a permission row, starter data); never for one owner's records —
+   "record a delivery", "set this price" is done through the app's own pages, not committed as code
 
 ## No Fallbacks
 

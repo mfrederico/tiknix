@@ -27,7 +27,7 @@ class AskStore {
      * it is a plan (plan_ref) · action — it asks for something the board does (retry, undo, fix,
      * stop: `answer` holds which, as JSON) and waits for the go-ahead · did — that was done.
      */
-    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'asking', 'build', 'planned', 'action', 'did'];
+    public const STATES = ['thinking', 'answer', 'unsure', 'failed', 'asking', 'build', 'planned', 'action', 'did', 'operation'];
 
     /** @var array<string,\PDO> */
     private static array $open = [];
@@ -51,6 +51,8 @@ class AskStore {
         if (!in_array('email_thread', $cols, true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN email_thread INTEGER');
         // next_hint: the answerer's guess at the person's next message (shown greyed in their box).
         if (!in_array('next_hint', $cols, true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN next_hint TEXT');
+        // op_code: an action on the app's records, written and waiting for Do it (app\AskOperation).
+        if (!in_array('op_code', $cols, true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN op_code TEXT');
         return self::$open[$file] = $pdo;
     }
 
@@ -90,6 +92,11 @@ class AskStore {
             $n->execute([$state, $answer, $note, self::now(), $promptRef]);
         }
         if ($n->rowCount() === 0) throw new \RuntimeException("AskStore: no message for prompt #{$promptRef} in {$dir}");
+    }
+
+    /** The code of an action on the app's records, as written (state 'operation'). */
+    public static function op(string $dir, int $promptRef, string $code): void {
+        self::db($dir)->prepare('UPDATE askmessage SET op_code = ?, updated_at = ? WHERE prompt_ref = ?')->execute([$code, self::now(), $promptRef]);
     }
 
     /** The answerer's guess at what this person will type next. */

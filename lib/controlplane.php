@@ -84,7 +84,7 @@
     \app\SignupFlow::ensureTenantFor($memberId);
     \app\SignupFlow::welcome($memberId);
 };
-// The sign-up form: a new member gets what every member of Tiknix gets (the Builder).
+// The sign-up form: a new member gets what every member of Tiknix gets (the Builder and Deploy).
 \app\Auth::$onNewMember = static fn(int $memberId) => \app\SignupFlow::welcome($memberId);
 
 // Tiknix's own agents (the AI agents page here, ROOT only — seed 34) run Tiknix's own tooling:

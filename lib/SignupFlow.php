@@ -513,7 +513,7 @@ class SignupFlow {
 
     /**
      * What EVERY new member of Tiknix gets, however they arrived — the sign-up form, the
-     * card-on-file sign-up, Google, an invitation: the Builder.
+     * card-on-file sign-up, Google, an invitation: the Builder and Deploy (WELCOME).
      *
      * Only invited members used to get it. Someone who signed up on their own could create a
      * project and then had no Builder in their menu to build it with — nothing said why, and
@@ -522,12 +522,19 @@ class SignupFlow {
      *
      * A grant that did not take is an ERROR in the log naming the member: they are let in
      * regardless (nobody is turned away from signing up over this), and an admin can grant it.
+     *
+     * Deploy joined the Builder on 2026-10-14 (the owner): a project built and then nowhere to
+     * put it live is half the product.
      */
+    public const WELCOME = ['workbench' => 'the Builder', 'publisher' => 'Deploy'];
+
     public static function welcome(int $memberId): void {
         if ($memberId <= 0) return;
-        \app\Feature::setEnabled('workbench', true, $memberId);
-        if (!\app\Feature::isEnabled('workbench', $memberId, 100)) {   // 100 = MEMBER (LEVELS is not defined in a script)
-            error_log("ERROR SignupFlow::welcome: member #{$memberId} signed up and could NOT be given the Builder (the 'workbench' capability) — grant it on Admin → Members");
+        foreach (self::WELCOME as $flag => $label) {
+            \app\Feature::setEnabled($flag, true, $memberId);
+            if (!\app\Feature::isEnabled($flag, $memberId, 100)) {   // 100 = MEMBER (LEVELS is not defined in a script)
+                error_log("ERROR SignupFlow::welcome: member #{$memberId} signed up and could NOT be given {$label} (the '{$flag}' capability) — grant it on Admin → Members");
+            }
         }
     }
 }

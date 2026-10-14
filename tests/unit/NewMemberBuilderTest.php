@@ -26,7 +26,8 @@ class NewMemberBuilderTest extends ConceptsTestCase {
         $this->assertFalse(Feature::allows('workbench', $id, 100), 'the grant is what gives it, not the level');
         SignupFlow::welcome($id);
         $this->assertTrue(Feature::allows('workbench', $id, 100));
-        $this->assertFalse(Feature::allows('qa', $id, 100), 'only the Builder: the rest stays an admin\'s to grant');
+        $this->assertTrue(Feature::allows('publisher', $id, 100), 'Deploy comes with it');
+        $this->assertFalse(Feature::allows('qa', $id, 100), 'only the Builder and Deploy: the rest stays an admin\'s to grant');
     }
 
     public function testWelcomingTwiceIsTheSameAsOnce(): void {

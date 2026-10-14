@@ -87,7 +87,7 @@ class BuilderMail {
         $inst = Bean::findOne('instance', 'slug = ?', [(string) $thread->projectSlug]);
         if (!$inst || !$inst->id || !$inst->accessibleBy($memberId)) { self::note($thread, 'Not acted on: the project ' . $thread->projectSlug . ' is gone, or no longer yours to build in.'); return; }
         $text = mb_substr(trim((string) $ctx['text']), 0, 20000);
-        $dir = WorkbenchDb::dirOf((string) $inst->slug, (string) ($inst->app ?? ''));
+        $dir = self::dirOf((string) $inst->slug, (string) ($inst->app ?? ''));
 
         if ((string) $thread->relatedType === 'plan') {
             $done = self::onPlan((int) $thread->relatedId, $inst, $dir, $memberId, $text);
@@ -156,7 +156,7 @@ class BuilderMail {
             'body' => GoalBrief::compose($text, 'none', ''), 'instance_id' => (int) $inst->id, 'instance_tag' => $inst->slug . '.' . $app, 'auto_build' => true]);
         if ($promptId <= 0) throw new \RuntimeException('the emailed message could not be recorded');
         AskTriage::mark($promptId, 'thinking');
-        AskStore::emailed(WorkbenchDb::dirOf((string) $inst->slug, $app), $promptId, $threadId);
+        AskStore::emailed(self::dirOf((string) $inst->slug, $app), $promptId, $threadId);
         $core = dirname(__DIR__);
         $cmd = 'env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg($core . '/scripts/ask-triage.php') . ' --prompt=' . $promptId . ' --mode=auto >> ' . escapeshellarg($core . '/log/tiknix-ask.log') . ' 2>&1';
         TmuxManager::create('tiknix-ask-' . $promptId . '-' . substr(bin2hex(random_bytes(3)), 0, 4), $cmd, $core);
@@ -172,7 +172,7 @@ class BuilderMail {
         if (!$p->id) return '';
         $slug = (string) (strstr((string) $p->instanceTag, '.', true) ?: $p->instanceTag);
         $app = (string) substr((string) $p->instanceTag, strlen($slug) + 1);
-        $dir = WorkbenchDb::dirOf($slug, $app);
+        $dir = self::dirOf($slug, $app);
         $m = AskStore::get($dir, $promptId);
         if (!$m || (int) ($m['email_thread'] ?? 0) <= 0) return '';
         $ask = 'the Ask page of ' . $slug;
@@ -214,6 +214,11 @@ class BuilderMail {
             . '<p>Only this email address is listened to. Mail to it from anywhere else is kept, and not acted on.</p>');
         if (!preg_match('/replies to (\S+)\)/', $r, $m)) throw new \RuntimeException('the introduction was not sent: ' . $r);
         return $m[1];
+    }
+
+    /** A project's builder folder on core (its board, its Ask) — core's registry says where. */
+    private static function dirOf(string $slug, string $app): string {
+        return \Model_Instance::dirForSlug($slug, $app !== '' ? $app : \Model_Instance::DEFAULT_APP);
     }
 
     /** What the reply was about, for the subject of the answer. */

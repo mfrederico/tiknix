@@ -619,8 +619,12 @@ class PlanExecutor {
             // runtime from before --catch-up then resumes in the kept copy, where without it the run
             // would be refused ("already has a worktree") and the built work discarded as a failure.
             $catchUp = $resume && !empty($t->catchUp);
-            // Small and safe (Plan and Fan): on the agent's fast model, where it has a different one.
-            $fast = PlanRank::fast(json_decode((string) ($t->rankJson ?? ''), true) ?: []);
+            // Small and safe (Plan and Fan): on the agent's fast model, where it has a different one —
+            // when switched on. OFF by default: on the first real tasks (2026-10-14, sunrise-bakery) the
+            // fast model took 5–7 times as long and 10–18 times the tokens of the main model on the
+            // same kind of small task, wandering through dozens of turns. It is for step four (what
+            // each model really costs a project) to say where it pays: aibuilder.ini [plan] fast_model_for_small.
+            $fast = self::fastForSmall() && PlanRank::fast(json_decode((string) ($t->rankJson ?? ''), true) ?: []);
             TenantRun::start($this->tenant, $session, $id,
                 '--agent-task=' . escapeshellarg($id) . TenantHost::agentArg($agent) . ' --timeout=' . self::timeLimit($t) . ($resume ? ' --resume' : '') . ($catchUp ? ' --catch-up' : '') . ($fast ? ' --fast' : '') . TenantBrowser::sandboxArg($this->tenant), $this->buildTaskBrief($t), $this->author());
             $this->logEvent($t, 'info', ($catchUp ? 'Build agent sent back to bring this task up to date with the app' : ($resume ? 'Build agent RESUMED (continuing the earlier attempt\'s work)' : 'Build agent started')) . " in {$this->slug}'s container on " . ($agent !== '' ? "agent '{$agent}'" : "the app's default agent"));
@@ -1066,6 +1070,12 @@ class PlanExecutor {
             if ($t->status === 'pending' && $this->depsMerged($t, $byId)) return true;
         }
         return false;
+    }
+
+    /** aibuilder.ini [plan] fast_model_for_small — small, low-risk tasks on the agent's fast model. Off unless set true. */
+    public static function fastForSmall(): bool {
+        $ini = @parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [];
+        return filter_var($ini['plan']['fast_model_for_small'] ?? false, FILTER_VALIDATE_BOOLEAN);
     }
 
     private function deps($t): array {

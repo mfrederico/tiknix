@@ -748,6 +748,34 @@ class TenantHost {
         }
     }
 
+    /**
+     * askWait() without waiting: null while the run is still going; its answer (and what it left
+     * in the container removed) once it has ended. A run that ended with no answer says so.
+     */
+    public static function askCollect(object $inst, string $id): ?array {
+        $session = 'tiknix-run-' . $id;
+        $done = TenantRun::result($inst, $id);
+        if ($done === null) {
+            if (TenantRun::alive($inst, $session)) return null;
+            $done = TenantRun::result($inst, $id);   // its exit file is written before the session ends
+        }
+        self::ssh($inst, 'app', 'rm -rf ' . escapeshellarg(TenantRun::DIR . '/' . $id), null, 20);
+        if ($done === null) return ['ok' => false, 'status' => 'failed', 'error' => "{$session} ended in {$inst->slug}'s container without finishing"];
+        if ($done['result'] === null) return ['ok' => false, 'status' => 'failed', 'error' => "{$id} exited {$done['exit']} in the container with no answer: " . mb_substr($done['log'], -800)];
+        return $done['result'];
+    }
+
+    /** What a merge commit brought into the app: [diffstat, diff] against its first parent. */
+    public static function mergedChange(object $inst, string $commit): array {
+        if (!preg_match('/^[0-9a-f]{6,40}$/', $commit)) throw new \InvalidArgumentException("'{$commit}' is not a commit");
+        $c = escapeshellarg($commit);
+        [$code, $stat] = self::ssh($inst, 'app', "cd /srv/app && git diff --stat {$c}^1 {$c}", null, 30);
+        if ($code !== 0) throw new \RuntimeException("git diff --stat {$commit} in {$inst->slug}'s container failed: " . mb_substr(trim($stat), 0, 300));
+        [$code, $diff] = self::ssh($inst, 'app', "cd /srv/app && git diff {$c}^1 {$c} | head -c 200000", null, 30);
+        if ($code !== 0) throw new \RuntimeException("git diff {$commit} in {$inst->slug}'s container failed: " . mb_substr(trim($diff), 0, 300));
+        return [trim($stat), $diff];
+    }
+
     public static function askDrop(object $inst, string $id): void {
         TenantRun::kill($inst, 'tiknix-run-' . $id);
         self::ssh($inst, 'app', 'rm -rf ' . escapeshellarg(TenantRun::DIR . '/' . $id), null, 20);

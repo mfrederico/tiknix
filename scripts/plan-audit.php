@@ -157,10 +157,21 @@ foreach (Bean::find('workbenchtask', 'parent_task_id = ? ORDER BY priority ASC, 
     $checklist[] = $line;
 }
 
+// How much the check looks at follows the request's class (Plan and Fan, step three): a small
+// request is checked on the pages it named, as one level; a large one gets the full pass.
+$rankTasks = [];
+foreach (Bean::find('workbenchtask', 'parent_task_id = ?', [$planId]) as $s) {
+    $rk = json_decode((string) ($s->rankJson ?? ''), true) ?: [];
+    $rankTasks[] = ['id' => (int) $s->id, 'deps' => json_decode((string) ($s->dependsOn ?? ''), true) ?: [], 'effort' => $rk['effort'] ?? null, 'risk' => $rk['risk'] ?? null];
+}
+$class = \app\PlanRank::rollup($rankTasks)['class'];
+$size  = $class !== '' ? $class : 'large';
+alog('check size: ' . $size . ($class === '' ? ' (the plan was not scored — the full pass)' : ''));
+
 // --- 3) Launch the jailed QA agent and wait for the manifest ------------------
 $runner = new AuditRunner($slug, $dir, $baseUrl, (int)$inst->memberId, $level);
 try {
-    $runner->start($creds, $checklist, $planId);
+    $runner->start($creds, $checklist, $planId, $size);
     alog('QA agent launched (' . $runner->getSessionName() . ')');
 } catch (\Throwable $e) {
     alog('failed to launch QA agent: ' . $e->getMessage());

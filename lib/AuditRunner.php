@@ -69,7 +69,7 @@ class AuditRunner {
      * @param array $checklist  Human-readable lines describing what the plan added (routes, UI, subtasks).
      * @param int   $planId
      */
-    public function start(array $creds, array $checklist, int $planId): string {
+    public function start(array $creds, array $checklist, int $planId, string $size = 'large'): string {
         if ($this->running()) {
             throw new \Exception('An audit is already running for this instance.');
         }
@@ -81,7 +81,7 @@ class AuditRunner {
         @unlink($this->logFile());
 
         $this->planId = $planId;
-        file_put_contents($this->requestFile(), $this->buildAuditRequest($creds, $checklist, $planId));
+        file_put_contents($this->requestFile(), $this->buildAuditRequest($creds, $checklist, $planId, $size));
 
         $scriptFile = $ab . '/run-audit.sh';
         file_put_contents($scriptFile, $this->buildRunnerScript());
@@ -184,8 +184,43 @@ BASH;
      * created for it), the checklist of what changed, the exact screenshot output
      * convention, and the strict manifest schema it must write.
      */
-    private function buildAuditRequest(array $creds, array $checklist, int $planId): string {
+    /**
+     * Plan and Fan, step three: how much the check looks at follows the request's class (PlanRank::rollup):
+     *   small   the pages the change list names, as the ONE level they are for, desktop and phone
+     *   medium  those pages, as every level that can reach them, desktop and phone
+     *   large   the full pass: every level, the pages and what they lead to, then the design look
+     * A plan with no scores has no class and gets the full pass (said in the brief, not assumed small).
+     */
+    public const SIZES = ['small', 'medium', 'large'];
+
+    public static function sizeSection(string $size): string {
+        if (!in_array($size, self::SIZES, true)) throw new \InvalidArgumentException("'{$size}' is not a check size (" . implode(', ', self::SIZES) . ')');
+        if ($size === 'small') return <<<MD
+## How much to check: a SMALL request
+
+This request was scored small. Check ONLY the pages the change list names, as the ONE level each is
+for (a member's page as the member, an admin page as the admin) — log in as that level alone; do not
+log in as the others, and leave them out of `levels`. Look at each named page at desktop width
+(1280×800) and phone width (390×844), one screenshot each. Do not explore further, and skip the
+separate "look at each changed page" pass below: one `design` line per named page is enough.
+MD;
+        if ($size === 'medium') return <<<MD
+## How much to check: a MEDIUM request
+
+This request was scored medium. Check the pages the change list names, as EACH level that can reach
+them (and as a level that must NOT reach an admin page, to see it refused). Do not explore pages the
+change did not touch. Then do the "look at each changed page" pass below for the named pages only.
+MD;
+        return <<<MD
+## How much to check: a LARGE request
+
+This request was scored large (or was not scored): the full pass, every level, below.
+MD;
+    }
+
+    private function buildAuditRequest(array $creds, array $checklist, int $planId, string $size = 'large'): string {
         $base = $this->baseUrl;
+        $sizeMd = self::sizeSection($size);
         $checklistMd = $checklist
             ? implode("\n", array_map(fn($l) => '- ' . $l, $checklist))
             : '- (No explicit change list was supplied — explore the site and verify the primary pages render.)';
@@ -227,7 +262,9 @@ the whole audit for that.
 
 {$checklistMd}
 
-## Procedure (repeat for EACH level: root, admin, member)
+{$sizeMd}
+
+## Procedure (repeat for EACH level: root, admin, member — fewer when the size above says so)
 
 1. `browser_navigate` to `{$base}/auth/login`; log in with that level's credentials.
 2. Take a screenshot of the landing page after login.

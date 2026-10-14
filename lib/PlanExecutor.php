@@ -267,6 +267,10 @@ class PlanExecutor {
                 $this->reapTask($t);
             }
         }
+        // 1b) Reviews (Plan and Fan, step three): a risky task's second reading, running beside the build.
+        foreach ($tasks as $t) {
+            if ((json_decode((string) ($t->reviewJson ?? ''), true)['state'] ?? '') === 'running') $this->collectReview($t);
+        }
 
         /* 2) Launch: fill open slots with ready tasks (deps all merged).
          *
@@ -287,7 +291,8 @@ class PlanExecutor {
         $perEngine = [];
         $perAgent  = [];
         foreach ($fresh as $t) {
-            if ($t->status !== 'running') continue;
+            // A review runs on the task's own agent and model: it takes a place of the provider's and the agent's, as a task does.
+            if ($t->status !== 'running' && (json_decode((string) ($t->reviewJson ?? ''), true)['state'] ?? '') !== 'running') continue;
             $e = (string) ($t->engine ?: EngineRegistry::defaultEngine()) . ':' . (string) ($t->model ?? '');
             $perEngine[$e] = ($perEngine[$e] ?? 0) + 1;
             $a = $this->agentOf($t);
@@ -345,19 +350,21 @@ class PlanExecutor {
         foreach ($fresh as $t) { $counts[$t->status] = ($counts[$t->status] ?? 0) + 1; }
         $total    = count($fresh);
         $terminal = ($counts['merged'] + $counts['resolved'] + $counts['failed'] + $counts['conflict']);
-        $done     = ($total > 0 && $terminal >= $total);
+        // A review still reading a merged task holds the plan open: what it finds is built in this plan.
+        $reviewing = $this->reviewing($fresh);
+        $done     = ($total > 0 && $terminal >= $total && $reviewing === 0);
         // Deadlock guard: nothing running, nothing launchable, but not all merged.
-        $stalled  = (!$done && $counts['running'] === 0 && $counts['pending'] > 0
+        $stalled  = (!$done && $counts['running'] === 0 && $reviewing === 0 && $counts['pending'] > 0
                      && !$this->anyLaunchable($fresh, $byId));
 
         if ($held && !$done) {
             // Not stalled: stopped on purpose. Done for this run once nothing is running.
-            return ['done' => $counts['running'] === 0, 'stalled' => false, 'held' => true, 'counts' => $counts, 'total' => $total, 'blocked' => []];
+            return ['done' => $counts['running'] === 0 && $reviewing === 0, 'stalled' => false, 'held' => true, 'counts' => $counts, 'total' => $total, 'blocked' => []];
         }
         // Tasks wait on an answer from their person, and everything that could be built without it
         // has been: that is a pause for them, not a deadlock — no "stalled", no re-plan, no check.
         $asking = count(array_filter($fresh, fn($t) => (string) $t->status === 'awaiting' && trim((string) ($t->askedJson ?? '')) !== ''));
-        if ($asking > 0 && !$done && $counts['running'] === 0 && !$this->anyLaunchable($fresh, $byId)) {
+        if ($asking > 0 && !$done && $counts['running'] === 0 && $reviewing === 0 && !$this->anyLaunchable($fresh, $byId)) {
             return ['done' => true, 'stalled' => false, 'held' => true, 'asking' => $asking, 'counts' => $counts, 'total' => $total, 'blocked' => []];
         }
         return ['done' => $done || $stalled, 'stalled' => $stalled, 'held' => false, 'counts' => $counts, 'total' => $total,
@@ -600,7 +607,7 @@ class PlanExecutor {
                 $this->logEvent($t, 'info', "An earlier attempt already built this ({$built}) and was stopped only at the merge — merging that work instead of building it again.");
                 try { $m = TenantHost::mergeTask($this->tenant, $id, $this->author()); }
                 catch (\RuntimeException $e) { $m = ['ok' => false, 'error' => $e->getMessage()]; }
-                if (!empty($m['ok'])) { $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?') . ' (work built by an earlier attempt)'); return false; }
+                if (!empty($m['ok'])) { $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?') . ' (work built by an earlier attempt)'); $this->startReview($t, (string) ($m['merged'] ?? '')); return false; }
                 $err = (string) ($m['error'] ?? 'the merge failed');
                 if ($this->catchUp($t, $err)) return false;   // pending again: the next tick starts its catch-up run
                 $this->finish($t, str_contains($err, 'merge of task/') ? 'conflict' : 'failed', $err . ' — its built work is kept; Retry merges it.');
@@ -746,6 +753,7 @@ class PlanExecutor {
         if (!empty($m['ok'])) {
             $this->finish($t, 'merged', 'merged into the app as ' . ($m['merged'] ?? '?'));
             $this->addToNotebook($t, (string) ($r['output'] ?? ''));
+            $this->startReview($t, (string) ($m['merged'] ?? ''));
             $pieces = $this->applySplit($t, $r['split'] ?? null);
             if ($pieces) $this->saySplitOutcome($t, 'split ' . count($pieces));
             elseif (!empty($t->needsPlanning)) {
@@ -762,6 +770,95 @@ class PlanExecutor {
 
     /** How often one task is sent back to be brought up to date with the app before a person is asked. */
     public const MAX_CATCH_UPS = 2;
+
+    /** Tasks whose review is still reading them. */
+    private function reviewing(array $tasks): int {
+        return count(array_filter($tasks, fn($t) => (json_decode((string) ($t->reviewJson ?? ''), true)['state'] ?? '') === 'running'));
+    }
+
+    private function setReview($t, array $review): void {
+        $t->reviewJson = json_encode($review, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        Bean::store($t);
+    }
+
+    /**
+     * Plan and Fan, step three: a task scored Medium risk or above has just merged — the app's agent
+     * reads its change against its checks (app\TaskReview), read-only, while the next tasks build.
+     * A review that cannot start is said on the task; the task stays merged and the plan goes on.
+     */
+    private function startReview($t, string $merged): void {
+        $rank = json_decode((string) ($t->rankJson ?? ''), true) ?: [];
+        if (!TaskReview::enabled(@parse_ini_file(dirname(__DIR__) . '/conf/aibuilder.ini', true) ?: [])) return;
+        if (!TaskReview::wanted($rank, (int) ($t->reviewOf ?? 0) > 0)) return;
+        $id = TaskReview::runId($this->planId, (int) $t->id);
+        try {
+            if ($merged === '') throw new \RuntimeException('the merge did not say which commit it made');
+            [$stat, $diff] = TenantHost::mergedChange($this->tenant, $merged);
+            $brief = TaskReview::brief((string) $t->title, (string) $t->description, json_decode((string) ($t->acceptanceCriteria ?? ''), true) ?: [], $rank, $stat, $diff);
+            TenantHost::askStart($this->tenant, $id, $brief, TaskReview::TIMEOUT, PlanIngestor::agentName($t->agent ?? ''));
+        } catch (\Throwable $e) {
+            $this->setReview($t, ['state' => 'failed', 'error' => $e->getMessage(), 'finished' => date('c')]);
+            $this->logEvent($t, 'error', 'Its review could not start: ' . $e->getMessage() . ' — the task stays merged; nothing read it a second time.');
+            return;
+        }
+        $this->setReview($t, ['state' => 'running', 'run' => $id, 'commit' => $merged, 'started' => date('c')]);
+        $this->logEvent($t, 'info', 'Scored ' . (PlanRank::LABELS[(int) $rank['risk']] ?? '?') . ' risk: its agent is reading what it changed against its checks, while the next tasks build.');
+    }
+
+    /** A running review: still reading (nothing to do), or ended — its verdict recorded, and a fix task added for what it found. */
+    private function collectReview($t): void {
+        $review = json_decode((string) ($t->reviewJson ?? ''), true) ?: [];
+        try { $r = TenantHost::askCollect($this->tenant, (string) $review['run']); }
+        catch (\RuntimeException $e) { $this->logEvent($t, 'warning', 'Could not read its review from the container (will try again): ' . $e->getMessage()); return; }
+        if ($r === null) return;
+        $review['finished'] = date('c');
+        $review['seconds'] = max(0, time() - (int) strtotime((string) ($review['started'] ?? 'now')));
+        try {
+            if (empty($r['ok'])) throw new \RuntimeException((string) ($r['error'] ?? 'the review run failed'));
+            $review['said'] = mb_substr(trim((string) ($r['text'] ?? '')), 0, 2000);   // its own words, kept: a verdict alone cannot be checked
+            $v = TaskReview::parse((string) ($r['text'] ?? ''));
+        } catch (\Throwable $e) {
+            $this->setReview($t, ['state' => 'failed', 'error' => $e->getMessage()] + $review);
+            $this->logEvent($t, 'error', 'Its review did not finish: ' . $e->getMessage() . ' — the task stays merged; nothing read it a second time.');
+            return;
+        }
+        if ($v['verdict'] === 'pass') {
+            $this->setReview($t, ['state' => 'passed'] + $review);
+            $this->logEvent($t, 'info', 'Review: nothing wrong found in what it changed (' . $review['seconds'] . ' s).');
+            return;
+        }
+        $fix = $this->addReviewFix($t, $v['problems']);
+        $this->setReview($t, ['state' => 'found', 'problems' => $v['problems'], 'fix' => $fix] + $review);
+        $this->logEvent($t, 'warning', 'Review found ' . count($v['problems']) . ' thing' . (count($v['problems']) === 1 ? '' : 's') . " wrong; task #{$fix} fixes " . (count($v['problems']) === 1 ? 'it' : 'them') . ":\n- " . implode("\n- ", $v['problems']));
+    }
+
+    /**
+     * What a review found, as one task of this plan: after the reviewed task, and before whatever
+     * still waits on it (its work is not finished until the fix is). Returns the new task's id.
+     */
+    private function addReviewFix($t, array $problems): int {
+        $f = TaskReview::fixTask((int) $t->id, (string) $t->title, $problems, json_decode((string) ($t->acceptanceCriteria ?? ''), true) ?: []);
+        $now = date('Y-m-d H:i:s');
+        $n = Bean::dispense('workbenchtask');
+        foreach (['taskType', 'parentTaskId', 'instanceId', 'instanceTag', 'engine', 'model', 'agent', 'memberId', 'authcontrolLevel', 'baseBranch', 'dbSource'] as $k) $n->{$k} = $t->{$k};
+        $n->title = $f['title']; $n->description = $f['description']; $n->priority = (int) $t->priority; $n->status = 'pending';
+        $n->relatedFiles = (string) ($t->relatedFiles ?? '[]'); $n->acceptanceCriteria = json_encode($f['verify']);
+        $n->reuses = '[]'; $n->adopts = '[]'; $n->planRef = 'review-' . (int) $t->id;
+        $rank = json_decode((string) ($t->rankJson ?? ''), true) ?: [];
+        $n->rankJson = json_encode(['effort' => 1, 'planner' => null, 'risk' => $rank['risk'] ?? null, 'why' => ['it fixes what the review of #' . (int) $t->id . ' found'], 'set_by' => 'review'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $n->reviewOf = (int) $t->id;
+        $n->dependsOn = json_encode([(int) $t->id]);
+        $n->createdAt = $now; $n->updatedAt = $now;
+        Bean::store($n);
+        foreach ($this->subtasks() as $other) {
+            if ((int) $other->id === (int) $n->id || (string) $other->status !== 'pending') continue;
+            $deps = $this->deps($other);
+            if (!in_array((int) $t->id, $deps, true)) continue;
+            $other->dependsOn = json_encode(array_values(array_unique(array_merge($deps, [(int) $n->id]))));
+            Bean::store($other);
+        }
+        return (int) $n->id;
+    }
 
     /** Is this merge error the app having changed under the task (and not uncommitted changes, or seeds)? */
     public static function isConflict(string $err): bool { return str_contains($err, 'merge of task/'); }

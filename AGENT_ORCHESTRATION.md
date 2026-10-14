@@ -63,8 +63,17 @@ instance clones until they sync from core).
 - **Rule: the review model MUST differ from the worker model.** Same-model review
   catches correlated errors poorly (Cursor's finding). Minimum: workers=sonnet →
   auditor=opus; ideally a *different engine* once one is registered.
-- **Lens 2 (planned):** a *codebase-only diff* lens — pre-merge validation of the task
-  branch diff via `lib/PhpValidator.php` / `ValidationService`, no transcript access.
+- **Lens 2 (built, Plan and Fan step three):** a *codebase-only diff* lens — `lib/TaskReview.php`.
+  A task scored Medium risk or above (`PlanRank`, risk >= 3) is read a second time AFTER it
+  merges, while the next tasks build: a fresh, read-only run of the app's agent (`--agent-ask`)
+  handed the merge's diff and the task's own checks, no transcript. It answers `REVIEW: PASS` or
+  `REVIEW: PROBLEMS` + lines; a finding becomes one fix task in the same plan (`review_of`),
+  which what waited on the reviewed task then waits on too. One round. Off with
+  `aibuilder.ini [plan] review_risky = false`. Decorrelated by context only so far: it runs on the
+  task's own agent and model, not a different one.
+- **The check is sized by the request** (`AuditRunner::sizeSection`): small = the named pages as
+  the one level they are for; medium = those pages at each level that reaches them; large (or
+  unscored) = the full pass.
 - **Lens 3 (optional, cheap):** a *transcript* lens over the agent's `stream-json` log.
 
 ## 5. Neutral third-party conflict resolution

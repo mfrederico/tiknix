@@ -975,7 +975,7 @@ class PlanExecutor {
                 return;
             }
             $first->raceJson = json_encode(['state' => 'judging', 'run' => $id, 'started' => date('c')] + $race); Bean::store($first);
-            $this->logEvent($first, 'info', 'Both attempts built and their checks passed: the app\'s agent is judging which to keep.');
+            $this->logEvent($first, 'info', 'Both attempts built: the app\'s agent is judging which to keep.');
             return;
         }
         $this->raceMerge($first, $o === 'A' ? $first : $rival, $o === 'A' ? $rival : $first, $o === 'A' ? 'the second attempt did not build' : 'the first attempt did not build');

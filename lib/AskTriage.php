@@ -145,6 +145,10 @@ class AskTriage {
         - `NOTE: lesson: …` — a mistake and how it is avoided
 
         The person can put that line in the project's notebook with one click; every later build reads the notebook and believes it, so write only what you verified in the code or the facts file. If nothing in the answer is worth keeping (a status, an opinion, "I could not find it"), write `NOTE: none`.
+
+        ## What they will likely ask next
+
+        Then one more line: `NEXT: …` — the message this person is most likely to type next, written as THEY would type it into this box (a request to build, or a question), under 15 words, following from this answer ("Add a phone number field to the enquiry form"). It is shown greyed in their box; one key accepts it. Not a question back to them, and not something already done. If nothing obvious follows, write `NEXT: none`.
         {$board}{$before}
         ## The message
 
@@ -217,8 +221,33 @@ class AskTriage {
             if (!empty($n[2][0]) && mb_strlen(trim($n[3][0])) >= 12) $note = strtolower($n[2][0]) . ': ' . mb_substr(trim(preg_replace('/\s+/', ' ', $n[3][0])), 0, 400);
             $text = trim(substr($text, 0, $n[0][1]) . substr($text, $n[0][1] + strlen($n[0][0])));
         }
+        // …and its guess at the person's next message (shown greyed in their box; Tab takes it).
+        $next = '';
+        if (preg_match('/^\s*`?NEXT:\s*(.+?)`?\s*$/mi', $text, $x, PREG_OFFSET_CAPTURE)) {
+            $g = trim((string) preg_replace('/\s+/', ' ', trim($x[1][0], " \t\"'“”")));
+            if (strcasecmp($g, 'none') !== 0 && mb_strlen($g) >= 8) $next = mb_substr($g, 0, 160);
+            $text = trim(substr($text, 0, $x[0][1]) . substr($text, $x[0][1] + strlen($x[0][0])));
+        }
         if ($verdict === 'answer' && $text === '' && $needAnswer) throw new \RuntimeException('the agent called it a question and gave no answer');
-        return ['verdict' => $verdict, 'text' => $verdict === 'build' ? '' : $text, 'note' => $verdict === 'answer' ? $note : ''];
+        return ['verdict' => $verdict, 'text' => $verdict === 'build' ? '' : $text, 'note' => $verdict === 'answer' ? $note : '', 'next' => $verdict === 'answer' ? $next : ''];
+    }
+
+    /**
+     * After a build, what to ask next — from what its check said, no agent asked: the first page it
+     * found broken, else the first page it said reads badly. '' when it found nothing (or never ran).
+     * $manifest: the check's audit.json, for this plan.
+     */
+    public static function nextAfterCheck(array $manifest): string {
+        foreach ((array) ($manifest['failures'] ?? []) as $f) {
+            $what = trim((string) ($f['message'] ?? $f['label'] ?? ''));
+            if ($what !== '') return mb_substr('Fix: ' . $what . (!empty($f['url']) ? ' (' . (string) (parse_url((string) $f['url'], PHP_URL_PATH) ?: $f['url']) . ')' : ''), 0, 160);
+        }
+        foreach ((array) ($manifest['design'] ?? []) as $d) {
+            if (strcasecmp((string) ($d['verdict'] ?? ''), 'needs work') !== 0) continue;
+            $note = trim((string) (((array) ($d['notes'] ?? []))[0] ?? ''));
+            if ($note !== '') return mb_substr('On ' . (string) ($d['page'] ?? 'that page') . ': ' . rtrim($note, '.') . ' — fix that', 0, 160);
+        }
+        return '';
     }
 
     /** Record where a message stands. */
@@ -275,7 +304,8 @@ class AskTriage {
             $qa = [];
             foreach ((array) (json_decode((string) $r['qa_json'], true) ?: []) as $x) $qa[] = ['q' => (string) ($x['q'] ?? ''), 'a' => (string) ($x['a'] ?? '')];
             $out[] = ['id' => (int) $r['prompt_ref'], 'asked' => (string) $r['said'], 'qa' => $qa, 'at' => (string) $r['created_at'], 'state' => $state, 'answer' => $answer,
-                      'note' => $state === 'answer' ? (string) $r['note'] : '', 'noted' => (string) ($r['noted_at'] ?? '') !== ''];
+                      'note' => $state === 'answer' ? (string) $r['note'] : '', 'noted' => (string) ($r['noted_at'] ?? '') !== '',
+                      'next' => $state === 'answer' ? (string) ($r['next_hint'] ?? '') : ''];
         }
         return $out;
     }
@@ -469,6 +499,7 @@ class AskTriage {
         }
         if ($got['verdict'] === 'build') return self::build($promptId);
         self::mark($promptId, $got['verdict'], $got['text'], (string) ($got['note'] ?? ''));
+        if (($got['next'] ?? '') !== '') { $pp = self::prompt($promptId); AskStore::next($pp['dir'], $promptId, (string) $got['next']); }
         return "#{$promptId}: {$got['verdict']}";
     }
 

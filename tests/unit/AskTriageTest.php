@@ -16,7 +16,7 @@ class AskTriageTest extends TestCase {
     }
 
     public function testABuildCarriesNoWords(): void {
-        $this->assertSame(['verdict' => 'build', 'text' => '', 'note' => ''], AskTriage::parse("`VERDICT: BUILD`\nI will add it."));
+        $this->assertSame(['verdict' => 'build', 'text' => '', 'note' => '', 'next' => ''], AskTriage::parse("`VERDICT: BUILD`\nI will add it."));
     }
 
     public function testUnsureKeepsItsOneSentence(): void {
@@ -56,7 +56,7 @@ class AskTriageTest extends TestCase {
     }
 
     public function testTheFirstReadingOnlySaysWhich(): void {
-        $this->assertSame(['verdict' => 'answer', 'text' => '', 'note' => ''], AskTriage::parse('VERDICT: ANSWER', false));
+        $this->assertSame(['verdict' => 'answer', 'text' => '', 'note' => '', 'next' => ''], AskTriage::parse('VERDICT: ANSWER', false));
         $b = AskTriage::classifyBrief('is it done?');
         $this->assertStringContainsString('Do NOT answer it', $b);
         $this->assertStringEndsWith('is it done?', $b);
@@ -127,5 +127,20 @@ class AskTriageTest extends TestCase {
         $b = AskTriage::classifyBrief('make that bold', '', $list);
         $this->assertStringContainsString('VERDICT: FOLLOWUP #N', $b);
         $this->assertStringNotContainsString('FOLLOWUP', AskTriage::classifyBrief('make that bold'), 'with nothing on the list there is nothing to be about');
+    }
+
+    public function testTheAnswerersGuessAtTheNextMessageIsTakenOffTheAnswer(): void {
+        $r = AskTriage::parse("VERDICT: ANSWER\nThe form saves name and email.\nNOTE: none\nNEXT: Add a phone number field to the enquiry form");
+        $this->assertSame('The form saves name and email.', $r['text'], 'neither line is shown in the answer');
+        $this->assertSame('Add a phone number field to the enquiry form', $r['next']);
+        $this->assertSame('', AskTriage::parse("VERDICT: ANSWER\nIt does.\nNEXT: none")['next']);
+        $this->assertSame('', AskTriage::parse("VERDICT: BUILD\nNEXT: Add more")['next'], 'only an answer offers one');
+    }
+
+    public function testAfterABuildTheNextMessageIsWhatItsCheckFound(): void {
+        $this->assertSame('Fix: MEMBER should not see Delete (/leads)', AskTriage::nextAfterCheck(['failures' => [['label' => 'x', 'message' => 'MEMBER should not see Delete', 'url' => 'https://a.tiknix.com/leads']]]));
+        $this->assertSame('On /bakery/sales: on a phone the table scrolls sideways — fix that',
+            AskTriage::nextAfterCheck(['failures' => [], 'design' => [['page' => '/x', 'verdict' => 'ok', 'notes' => []], ['page' => '/bakery/sales', 'verdict' => 'needs work', 'notes' => ['on a phone the table scrolls sideways.']]]]));
+        $this->assertSame('', AskTriage::nextAfterCheck(['failures' => [], 'design' => [['page' => '/x', 'verdict' => 'ok', 'notes' => []]]]), 'nothing found: nothing suggested');
     }
 }

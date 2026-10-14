@@ -49,6 +49,8 @@ class AskStore {
         if (!in_array('follows_ref', $cols, true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN follows_ref INTEGER');
         // email_thread: it came by email (app\BuilderMail) — the conversation (core's thread) its answer goes back on.
         if (!in_array('email_thread', $cols, true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN email_thread INTEGER');
+        // next_hint: the answerer's guess at the person's next message (shown greyed in their box).
+        if (!in_array('next_hint', $cols, true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN next_hint TEXT');
         return self::$open[$file] = $pdo;
     }
 
@@ -88,6 +90,11 @@ class AskStore {
             $n->execute([$state, $answer, $note, self::now(), $promptRef]);
         }
         if ($n->rowCount() === 0) throw new \RuntimeException("AskStore: no message for prompt #{$promptRef} in {$dir}");
+    }
+
+    /** The answerer's guess at what this person will type next. */
+    public static function next(string $dir, int $promptRef, string $hint): void {
+        self::db($dir)->prepare('UPDATE askmessage SET next_hint = ?, updated_at = ? WHERE prompt_ref = ?')->execute([mb_substr($hint, 0, 160), self::now(), $promptRef]);
     }
 
     /** It came by email: its answer goes back on this conversation. */

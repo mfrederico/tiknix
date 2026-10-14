@@ -23,4 +23,7 @@ Bean::freeze(false);
 if (!R::testConnection()) { fwrite(STDERR, "cannot open core db\n"); exit(1); }
 
 echo '[' . date('c') . '] ask ' . \app\AskTriage::run($id, $mode) . "\n";
+// It came by email (app\BuilderMail): the answer, or what became of it, goes back by email.
+try { if (($m = \app\BuilderMail::afterTriage($id, dirname(__DIR__) . '/database/tiknix.db')) !== '') echo '[' . date('c') . "] emailed back: {$m}\n"; }
+catch (\Throwable $e) { echo '[' . date('c') . '] ERROR the emailed answer was not sent: ' . $e->getMessage() . "\n"; error_log('ERROR ask-triage: the emailed answer for #' . $id . ' was not sent: ' . $e->getMessage()); }
 R::close();

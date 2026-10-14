@@ -87,6 +87,10 @@
 // The sign-up form: a new member gets what every member of Tiknix gets (the Builder and Deploy).
 \app\Auth::$onNewMember = static fn(int $memberId) => \app\SignupFlow::welcome($memberId);
 
+// A reply to one of the Builder's emails, or a message to a project's Ask address: acted on as if
+// typed into that project's Ask — only from an address the conversation was sent to (app\BuilderMail).
+\app\Webhook::$onReply[] = [\app\BuilderMail::class, 'reply'];
+
 // Tiknix's own agents (the AI agents page here, ROOT only — seed 34) run Tiknix's own tooling:
 // QA Testing, and pipelines of this install. Their keys are the platform's money, so no builder
 // verb may ever run on them — a task, plan, audit, terminal or merge asked of this install is

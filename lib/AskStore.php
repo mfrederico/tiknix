@@ -45,7 +45,10 @@ class AskStore {
             plan_ref INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS askmessage_member ON askmessage (member_ref, id)');
         // follows_ref: the plan of this project a message continues ("make that bold" after it was built).
-        if (!in_array('follows_ref', array_column($pdo->query('PRAGMA table_info(askmessage)')->fetchAll(), 'name'), true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN follows_ref INTEGER');
+        $cols = array_column($pdo->query('PRAGMA table_info(askmessage)')->fetchAll(), 'name');
+        if (!in_array('follows_ref', $cols, true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN follows_ref INTEGER');
+        // email_thread: it came by email (app\BuilderMail) — the conversation (core's thread) its answer goes back on.
+        if (!in_array('email_thread', $cols, true)) $pdo->exec('ALTER TABLE askmessage ADD COLUMN email_thread INTEGER');
         return self::$open[$file] = $pdo;
     }
 
@@ -84,6 +87,13 @@ class AskStore {
             $n = $db->prepare('UPDATE askmessage SET state = ?, answer = ?, note = ?, noted_at = NULL, updated_at = ? WHERE prompt_ref = ?');
             $n->execute([$state, $answer, $note, self::now(), $promptRef]);
         }
+        if ($n->rowCount() === 0) throw new \RuntimeException("AskStore: no message for prompt #{$promptRef} in {$dir}");
+    }
+
+    /** It came by email: its answer goes back on this conversation. */
+    public static function emailed(string $dir, int $promptRef, int $threadId): void {
+        $n = self::db($dir)->prepare('UPDATE askmessage SET email_thread = ?, updated_at = ? WHERE prompt_ref = ?');
+        $n->execute([$threadId, self::now(), $promptRef]);
         if ($n->rowCount() === 0) throw new \RuntimeException("AskStore: no message for prompt #{$promptRef} in {$dir}");
     }
 

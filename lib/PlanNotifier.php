@@ -186,7 +186,7 @@ class PlanNotifier {
 
             // Email is the EXTRA. No mail connection is a normal, silent state — the in-app
             // notice above has already done the job.
-            $sent .= ', ' . self::mailMember($memberId, $subject, $content, (string) $msg->bodyPlain);
+            $sent .= ', ' . self::mailMember($memberId, $subject, $content, (string) $msg->bodyPlain, (int) $thread->id);
 
             return $sent;
         } catch (\Throwable $e) {
@@ -266,11 +266,11 @@ class PlanNotifier {
      * The email, sent by scripts/mail-member.php: core's mail is a connection only a booted core can
      * open, and the build's processes that call this have not booted it. Its one line says what happened.
      */
-    private static function mailMember(int $memberId, string $subject, string $html, string $plain): string {
+    private static function mailMember(int $memberId, string $subject, string $html, string $plain, int $threadId): string {
         $cmd = 'env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg(dirname(__DIR__) . '/scripts/mail-member.php');
         $p = proc_open($cmd, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, dirname(__DIR__));
         if (!is_resource($p)) return 'email FAILED: could not start scripts/mail-member.php';
-        fwrite($pipes[0], (string) json_encode(['member_id' => $memberId, 'subject' => $subject, 'html' => $html, 'plain' => $plain]));
+        fwrite($pipes[0], (string) json_encode(['member_id' => $memberId, 'subject' => $subject, 'html' => $html, 'plain' => $plain, 'thread_id' => $threadId]));
         fclose($pipes[0]);
         $out = trim((string) stream_get_contents($pipes[1])); $err = trim((string) stream_get_contents($pipes[2]));
         fclose($pipes[1]); fclose($pipes[2]);
@@ -279,6 +279,37 @@ class PlanNotifier {
         if ($line === '') return 'email FAILED: mail-member.php said nothing (exit ' . $code . ')' . ($err !== '' ? ': ' . mb_substr($err, -300) : '');
         if ($code !== 0 || str_starts_with($line, 'email FAILED')) error_log('ERROR PlanNotifier: ' . $line . ' — subject "' . $subject . '", member #' . $memberId);
         return $line;
+    }
+
+    /**
+     * One message on an existing conversation (an answer to an emailed Ask, an acknowledgement of a
+     * reply), and the same by email with the conversation's reply address. Core's database must be
+     * the one selected or reachable as $coreDb.
+     */
+    public static function onThread(string $coreDb, int $threadId, int $memberId, string $subject, string $content): string {
+        $restore = Bean::hasDatabase('default') ? 'default' : null;
+        if (!Bean::hasDatabase('plannotify')) Bean::addDatabase('plannotify', 'sqlite:' . $coreDb);
+        Bean::selectDatabase('plannotify');
+        try {
+            $thread = Bean::load('thread', $threadId);
+            if (!$thread->id) return 'FAILED — no thread #' . $threadId;
+            $now = date('Y-m-d H:i:s');
+            $msg = Bean::dispense('message');
+            $msg->threadId = (int) $thread->id; $msg->direction = 'in'; $msg->notifyType = 'system'; $msg->fromName = 'AI Builder';
+            $msg->subject = $subject; $msg->content = $content;
+            $msg->bodyPlain = trim(html_entity_decode(strip_tags(str_replace(['</p>', '</li>', '<br>', '</blockquote>'], "\n", $content)), ENT_QUOTES));
+            $msg->status = 'received'; $msg->createdAt = $now; $msg->sentAt = $now;
+            Bean::store($msg);
+            $thread->lastDirection = 'in'; $thread->lastPreview = mb_substr($msg->bodyPlain, 0, 200); $thread->lastMessageAt = $now;
+            $thread->messageCount = (int) $thread->messageCount + 1; $thread->updatedAt = $now;
+            Bean::store($thread);
+            try { $thread->wakeParticipants((int) $msg->id); } catch (\Throwable $e) { /* the message is stored; the badge comes on the next poll */ }
+            return 'thread #' . (int) $thread->id . ', ' . self::mailMember($memberId, $subject, $content, (string) $msg->bodyPlain, (int) $thread->id);
+        } catch (\Throwable $e) {
+            return 'FAILED — ' . $e->getMessage();
+        } finally {
+            if ($restore) Bean::selectDatabase($restore);
+        }
     }
 
     /** One message in the plan's own conversation, and the same by email when mail is connected. */
@@ -312,7 +343,7 @@ class PlanNotifier {
             $thread->wakeParticipants((int) $msg->id);
 
             $sent = 'thread #' . (int) $thread->id . ' for member ' . $memberId;
-            $sent .= ', ' . self::mailMember($memberId, $subject, $content, (string) $msg->bodyPlain);
+            $sent .= ', ' . self::mailMember($memberId, $subject, $content, (string) $msg->bodyPlain, (int) $thread->id);
             return $sent;
         } catch (\Throwable $e3) {
             return 'FAILED — ' . $e3->getMessage();
@@ -413,7 +444,7 @@ class PlanNotifier {
 
             $sent = 'notify: fail-thread #' . (int) $thread->id . ' for member ' . $memberId;
 
-            $sent .= ', ' . self::mailMember($memberId, $subject, $content, (string) $msg->bodyPlain);
+            $sent .= ', ' . self::mailMember($memberId, $subject, $content, (string) $msg->bodyPlain, (int) $thread->id);
 
             return $sent;
         } catch (\Throwable $e) {

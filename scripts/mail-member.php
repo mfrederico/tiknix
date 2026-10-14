@@ -9,7 +9,11 @@
  * email from them read "no Mailgun connection bound to mail" while core's mail worked. This boots
  * core and sends. (app\PlanNotifier::mailMember runs it.)
  *
- * stdin: {"member_id": N, "subject": "…", "html": "…", "plain": "…"}
+ * stdin: {"member_id": N, "subject": "…", "html": "…", "plain": "…", "thread_id": N}
+ *
+ * With a thread, the email's Reply-To is that conversation's own address (reply-<token>@ the
+ * inbound domain), and the address it went to is added to the thread's reply_allowed: a reply is
+ * acted on only from an address the conversation was sent to (app\BuilderMail).
  * stdout: one line — "emailed <address>", "no email (<why>)", or "email FAILED: <why>"; exit 0 / 1.
  */
 if (php_sapi_name() !== 'cli') { die("cli only\n"); }
@@ -27,7 +31,13 @@ $member = \app\Bean::load('member', (int) $in['member_id']);
 $email = (string) ($member->email ?? '');
 if ($email === '') { echo "no email (member #{$in['member_id']} has no address)\n"; exit(0); }
 try {
-    $ok = \app\Mailer::create()->to($email, (string) ($member->username ?? ''))->subject((string) $in['subject'])->send((string) ($in['html'] ?? ''), (string) ($in['plain'] ?? ''));
-    echo $ok ? "emailed {$email}\n" : "email FAILED: Mailgun did not accept it (see core's log)\n";
+    $mail = \app\Mailer::create()->to($email, (string) ($member->username ?? ''))->subject((string) $in['subject']);
+    $thread = (int) ($in['thread_id'] ?? 0) > 0 ? \app\Bean::load('thread', (int) $in['thread_id']) : null;
+    if ($thread && !$thread->id) { echo "email FAILED: no thread #{$in['thread_id']}\n"; exit(1); }
+    $reply = $thread ? \app\BuilderMail::replyAddress($thread) : '';
+    if ($reply !== '') $mail->replyTo($reply);
+    $ok = $mail->send((string) ($in['html'] ?? ''), (string) ($in['plain'] ?? ''));
+    if ($ok && $thread) \app\BuilderMail::allow($thread, $email);
+    echo $ok ? "emailed {$email}" . ($reply !== '' ? " (replies to {$reply})" : '') . "\n" : "email FAILED: Mailgun did not accept it (see core's log)\n";
     exit($ok ? 0 : 1);
 } catch (\Throwable $e) { echo 'email FAILED: ' . $e->getMessage() . "\n"; exit(1); }

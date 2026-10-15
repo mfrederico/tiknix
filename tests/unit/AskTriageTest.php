@@ -143,4 +143,12 @@ class AskTriageTest extends TestCase {
             AskTriage::nextAfterCheck(['failures' => [], 'design' => [['page' => '/x', 'verdict' => 'ok', 'notes' => []], ['page' => '/bakery/sales', 'verdict' => 'needs work', 'notes' => ['on a phone the table scrolls sideways.']]]]));
         $this->assertSame('', AskTriage::nextAfterCheck(['failures' => [], 'design' => [['page' => '/x', 'verdict' => 'ok', 'notes' => []]]]), 'nothing found: nothing suggested');
     }
+
+    public function testRewritingAWaitingRequestKeepsTheAnswersAlreadyGiven(): void {
+        $old = "Record wholesale orders as sales.\n\n" . AskTriage::QA_HEAD . "\n\n**You asked:** Which product?\n\n**They answered:** match by SKU\n";
+        $new = \app\PromptQueue::keepAnswers($old, 'Record delivered wholesale orders as sales, by product.');
+        $this->assertStringStartsWith('Record delivered wholesale orders as sales, by product.', $new);
+        $this->assertStringContainsString('**They answered:** match by SKU', $new, 'the answer survives the edit');
+        $this->assertSame('Just this.', \app\PromptQueue::keepAnswers('Nothing asked yet.', 'Just this.'));
+    }
 }

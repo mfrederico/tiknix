@@ -92,11 +92,21 @@ class PromptQueue {
         return (bool) CoreDb::with(function () use ($promptId, $memberId, $body, $title) {
             $row = Bean::findOne('promptlog', 'id = ? AND member_id = ? AND queued_at IS NOT NULL', [$promptId, $memberId]);
             if (!$row || !$row->id || (string) $row->planUid !== '') return false;
-            $row->body  = $body;
+            $row->body  = self::keepAnswers((string) $row->body, $body);
             $row->title = $title;
             Bean::store($row);
             return true;
         }, false);
+    }
+
+    /**
+     * What its planner already asked and the person answered (AskTriage::QA_HEAD) is part of the request,
+     * not of the words being changed: a rewrite keeps it. Replacing the whole body threw the answers away.
+     */
+    public static function keepAnswers(string $old, string $new): string {
+        $head = "\n" . AskTriage::QA_HEAD . "\n";
+        if (($at = strpos($old, $head)) === false || str_contains($new, $head)) return $new;
+        return rtrim($new) . "\n\n" . ltrim(substr($old, $at));
     }
 
     /** Stop retrying — the plan landed, it aged out, or it exhausted its attempts. */

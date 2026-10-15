@@ -33,7 +33,15 @@ class QuickbooksWebhook {
         }
         try { $changes = QuickbooksNotice::parse($body); }
         catch (\Throwable $e) { \Flight::get('log')?->warning('QuickbooksWebhook: unreadable notice', ['error' => $e->getMessage()]); \Flight::json(['accepted' => false], 200); return; }
-        if (!$changes) { \Flight::json(['accepted' => true, 'changes' => 0], 200); return; }
+        if (!$changes) {
+            // Signed by Intuit and nothing in it read as a change: a format this does not know yet. Said, with
+            // what it did hold — never accepted as "nothing happened".
+            $j = json_decode($body, true);
+            $types = is_array($j) ? (array_is_list($j) ? array_column($j, 'type') : array_keys($j)) : [];
+            error_log('ERROR QuickbooksWebhook: a signed notice held no change it could read — its ' . (is_array($j) && array_is_list($j) ? 'event types' : 'keys') . ': '
+                . implode(', ', array_slice(array_map('strval', $types), 0, 10)) . ' — ' . mb_substr($body, 0, 400));
+            \Flight::json(['accepted' => true, 'changes' => 0], 200); return;
+        }
         // Answered now, forwarded after: a project that is slow or down must not make Intuit retry everyone's.
         $dir = Paths::root() . '/data/connector-events';
         if (!is_dir($dir) && !@mkdir($dir, 0770, true)) { error_log("ERROR QuickbooksWebhook: could not create {$dir}"); \Flight::json(['error' => 'storage'], 500); return; }

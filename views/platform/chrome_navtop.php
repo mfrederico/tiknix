@@ -39,11 +39,7 @@ $__pLink   = function (array $__p) use ($__active): void { ?>
         <div class="ui-nav-heading">Build</div>
         <?php if ($__pBuild) $__pLink($__pBuild[0]); ?>
         <a class="ui-nav-link<?= $__active('/connections') ?>" href="/connections"><i class="bi bi-plug"></i> Connections</a>
-        <?php /* A project in its own container has Integrations as a page of its app (below);
-                 one that is not (core itself) has it here. */ ?>
-        <?php if (!$__inCt): ?>
-        <a class="ui-nav-link<?= $__active('/integrations') ?>" href="/integrations"><i class="bi bi-diagram-3"></i> Integrations</a>
-        <?php endif; ?>
+        <?php /* Pipelines: a page of the project's app (below); core's own is in its admin menu. */ ?>
         <?php foreach (array_slice($__pBuild, 1) as $__p) $__pLink($__p); ?>
         <?php foreach ($__pDeploy as $__p) $__pLink($__p); ?>
 

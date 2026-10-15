@@ -82,8 +82,8 @@ $isConnected = function (array $card): bool {
     <i class="bi bi-shield-check me-1"></i>
     External accounts this instance connects to — GitHub, Stripe, stores &amp; more.
     Keys never leave the platform, and you can disconnect any of them at any time.
-    The automations it <em>exposes</em> (pipelines, tools &amp; APIs) live on the
-    <a href="/integrations?id=<?= $iid ?>" class="text-decoration-underline">Integrations</a> page.
+    What it <em>does</em> with them — its automations, and the tools &amp; APIs it offers — is on its
+    <a href="/projects/open?id=<?= $iid ?>&amp;to=<?= rawurlencode('/pipelines') ?>" class="text-decoration-underline">Pipelines</a> page.
   </div>
   <?php if (!empty($listError)): ?>
     <div class="alert alert-danger py-2 small mb-4">

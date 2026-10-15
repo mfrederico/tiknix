@@ -39,8 +39,7 @@ class ProjectNav {
     public const APP_PAGES = [
         ['/dashboard',    'speedometer2', 'Dashboard',    100],
         ['/agents',       'robot',        'Agents & MCP', 50],   // models, MCP servers, skills & plugins: one page of the app
-        ['/pipelines',    'diagram-2',    'Data',         50],
-        ['/integrations', 'diagram-3',    'Integrations', 50],
+        ['/pipelines',    'diagram-2',    'Pipelines',    50],   // its automations; what Integrations showed is at its top (2026-10-15)
         ['/settings',     'gear',         'Settings',     50],
         ['/admin',        'people',       'Members',      50],
     ];

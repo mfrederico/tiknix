@@ -115,7 +115,7 @@
     'fleet'      => '/fleet',
     'reports'    => '/projectreport',   // what every hosted app reports about itself
 ];
-\app\Chrome::$omit = ['/connections', '/integrations'];   // the project panel offers them (chrome_navtop)
+\app\Chrome::$omit = ['/connections'];   // the project panel offers them (chrome_navtop)
 // The sidebar shows two things' pages: the selected project's (the panel) and Tiknix's own. The
 // menu and the admin group say they are Tiknix's, or "Data" and "AI agents" read as the project's.
 \app\Chrome::$menuHeading = 'Tiknix';

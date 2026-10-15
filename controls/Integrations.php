@@ -38,7 +38,7 @@ class Integrations extends Control {
             Flight::redirect('/projects');
             return;
         }
-        Flight::redirect('/projects/open?to=' . rawurlencode('/integrations'));
+        Flight::redirect('/projects/open?to=' . rawurlencode('/pipelines'));   // Integrations is part of the app's Pipelines page now
     }
 
     /** A project the member may work on, in its container — the project picker's rule (Model_Instance::accessibleBy). */

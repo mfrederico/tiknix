@@ -45,6 +45,9 @@ class Deploy extends BaseControls\Control {
             // QA Testing here: the door when the member has it, the upgrade when it is on offer
             // and they do not, "coming soon" until it is — the sidebar's rule (ProjectNav::offer).
             'qa'          => ProjectNav::offer('qa', (int) $this->member->id, (int) $this->member->level),
+            // QuickBooks companies connected through the platform's Intuit app (app\ConnectorRoutes): an export says
+            // what keeps them working and how to take them along entirely.
+            'quickbooks'  => (int) Bean::count('connectorroute', 'instance_ref = ? AND connector = ?', [(int) $inst->id, 'quickbooks']),
         ]);
     }
 

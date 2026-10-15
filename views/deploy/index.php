@@ -146,6 +146,14 @@ $__name = (string) ($instance->displayName ?: $instance->slug);
 })();
 </script>
 
+  <?php if ($quickbooks > 0): /* connected through the platform's Intuit app (ConnectorRoutes) */ ?>
+  <?= \app\Ui::notice(['tone' => 'info', 'title' => 'QuickBooks keeps working through Tiknix',
+      'text' => 'This project has ' . $quickbooks . ' QuickBooks ' . ($quickbooks === 1 ? 'company' : 'companies') . ' connected through Tiknix. '
+              . 'Exported to a server of your own, it keeps working the same way while your Tiknix account is active: Tiknix renews its access every hour and passes on its change notices. '
+              . 'To leave Tiknix entirely, create your own Intuit app; put its keys in conf/quickbooks.ini ([oauth] client_id and client_secret, [webhook] verifier_token); '
+              . 'register https://your-domain/connections/callback/quickbooks and https://your-domain/webhook/quickbooks on it; then connect each company once more under Connections. Your data stays as it is.']) ?>
+  <?php endif; ?>
+
   <?php /* QA Testing (QA-TESTING-PLAN.md): the door when the member has it, the upgrade when it
            is on offer, "coming soon" until then. $qa = {state: enabled|upsell|soon, url}. */ ?>
   <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2 mt-4" style="letter-spacing:.06em">Before it goes live</h2>

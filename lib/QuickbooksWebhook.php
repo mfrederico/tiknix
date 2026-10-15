@@ -72,7 +72,8 @@ class QuickbooksWebhook {
                         ConnectorRoutes::forget($iid, self::CONNECTOR, (string) $company);
                         $lines[] = "company {$company} → project {$iid}: it no longer has that company — forgotten";
                     } else {
-                        $lines[] = "company {$company} → project {$iid}: " . count($list) . ' change(s), ' . (int) ($d['fired'] ?? 0) . ' pipeline run(s) started';
+                        $what = implode(', ', array_map(fn($c) => ($c['entity'] ?? '?') . ' ' . ($c['id'] ?? '') . ' ' . strtolower((string) ($c['operation'] ?? '')), array_slice($list, 0, 6)));
+                        $lines[] = "company {$company} → project {$iid}: " . count($list) . " change(s) ({$what}), " . (int) ($d['fired'] ?? 0) . ' pipeline run(s) started';
                     }
                 } catch (\Throwable $e) {
                     $lines[] = "company {$company} → project {$iid}: ERROR " . $e->getMessage();

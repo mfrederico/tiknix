@@ -85,6 +85,16 @@ class Brokerinfo extends Control {
         if (!in_array($type, self::RENEWS, true)) { Flight::jsonError(ucfirst($type) . ' connections are not renewed by the platform.', 400); return; }
         if (!$connector->isConfigured()) { Flight::jsonError(ucfirst($type) . ' is not configured on this server.', 503); return; }
         if ($refresh === '') { Flight::jsonError('No refresh token was sent.', 400); return; }
+        // Only a company this project connected through core, and only so often (app\ConnectorRoutes).
+        $company = trim((string) ($body['company'] ?? ''));
+        if (!\app\ConnectorRoutes::allows($iid, $type, $company)) {
+            $this->logger->warning('Brokerinfo renew: refused, not this project\'s company', ['instance' => $iid, 'connector' => $type, 'company' => $company]);
+            Flight::jsonError("This project did not connect that {$type} company through Tiknix — connect it again under Connections.", 403); return;
+        }
+        if (!\app\ConnectorRoutes::countRenewal($iid, $type, $company)) {
+            $this->logger->warning('Brokerinfo renew: refused, too many this hour', ['instance' => $iid, 'connector' => $type]);
+            Flight::jsonError('Too many renewals this hour for that company (' . \app\ConnectorRoutes::RENEWALS_PER_HOUR . ' at most).', 429); return;
+        }
         $conn = (object) ['plainRefreshToken' => $refresh, 'environment' => $this->env((string) ($body['environment'] ?? 'production'))];
         try { $fresh = $connector->refreshToken($conn, ''); }
         catch (\Throwable $e) {

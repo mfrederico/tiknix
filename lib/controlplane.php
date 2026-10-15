@@ -91,6 +91,10 @@
 // typed into that project's Ask — only from an address the conversation was sent to (app\BuilderMail).
 \app\Webhook::$onReply[] = [\app\BuilderMail::class, 'reply'];
 
+// Intuit's QuickBooks notices for every company connected through the platform's Intuit app: routed by
+// company to the project that connected it, through its own door (app\QuickbooksWebhook).
+\app\Webhook::$handlers['quickbooks'] = [\app\QuickbooksWebhook::class, 'handle'];
+
 // Tiknix's own agents (the AI agents page here, ROOT only — seed 34) run Tiknix's own tooling:
 // QA Testing, and pipelines of this install. Their keys are the platform's money, so no builder
 // verb may ever run on them — a task, plan, audit, terminal or merge asked of this install is

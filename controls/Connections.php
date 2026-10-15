@@ -869,7 +869,11 @@ class Connections extends Control {
         $payload['auth_type'] = $authType;
         $env = $this->normalizeEnv($claims['environment'] ?? 'production');
 
-        return \app\ConnectorPush::push((int) $claims['instance_id'], $type, $env, $payload);
+        $id = \app\ConnectorPush::push((int) $claims['instance_id'], $type, $env, $payload);
+        // A provider whose app is the platform's: remember which company went to which project (no token) —
+        // its webhooks name only the company, and the project may renew only what it connected.
+        if (\app\ConnectorRoutes::routed($type)) \app\ConnectorRoutes::record((int) $claims['instance_id'], $type, $env, (string) ($payload['external_eid'] ?? ''), $id);
+        return $id;
     }
 
     /**

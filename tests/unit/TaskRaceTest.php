@@ -44,4 +44,13 @@ class TaskRaceTest extends TestCase {
         $f = TaskRace::testsFix(33, 'Sales', "FAILURES!\nTests: 3, Failures: 1");
         $this->assertStringContainsString('.aibuilder/rival-tests/', $f['description']);
     }
+
+    public function testTheOtherAttemptsOwnNamesAreNotAFailureToFix(): void {
+        $names = "EEE\n\nThere were 3 errors:\n\n1) WholesaleDeliveryTest::testProductIsRequired\nError: Call to undefined method Model_Wholesaleorder::deliveryProblem()\n\n/srv/app/x.php:14\n\n2) WholesaleDeliveryTest::testB\nError: Class \"Delivery\" not found\n\nERRORS!\nTests: 2, Assertions: 0, Errors: 2.";
+        $this->assertTrue(TaskRace::onlyItsOwnNames($names));
+        $assert = "F\n\nThere was 1 failure:\n\n1) SaleTest::testStockGoesDown\nFailed asserting that 98 is identical to 96.\n\nFAILURES!\nTests: 1, Assertions: 1, Failures: 1.";
+        $this->assertFalse(TaskRace::onlyItsOwnNames($assert), 'a wrong result is a real failure');
+        $mixed = "EE\n\nThere were 2 errors:\n\n1) A::a\nError: Call to undefined method X::y()\n\n2) A::b\nTypeError: Argument 1 must be of type int\n\nERRORS!";
+        $this->assertFalse(TaskRace::onlyItsOwnNames($mixed), 'any other error counts');
+    }
 }

@@ -119,6 +119,20 @@ MD;
         return 'none';
     }
 
+    /**
+     * Did the other attempt's tests fail only on names THAT attempt made (a method, class, function or
+     * table the kept one does not have)? Then they test its design, not a promise the kept one broke —
+     * no fix is owed. A failed assertion, or any other error, is a real failure. PHPUnit's own output.
+     */
+    public static function onlyItsOwnNames(string $output): bool {
+        if (preg_match('/^Failures?:\s*[1-9]|There (?:was|were) \d+ failures?/mi', $output)) return false;   // an assertion did not hold
+        if (!preg_match_all('/^\d+\) .+\n(.+)$/m', $output, $m)) return false;
+        foreach ($m[1] as $err) {
+            if (!preg_match('/Call to undefined (?:method|function)|Class "[^"]+" not found|Interface "[^"]+" not found|no such (?:table|column)|Undefined constant/i', $err)) return false;
+        }
+        return true;
+    }
+
     /** The fix task for the losing attempt's tests that the kept one fails: [title, description, verify]. */
     public static function testsFix(int $taskId, string $title, string $failures): array {
         return ['title' => 'Pass the other attempt\'s tests for #' . $taskId,

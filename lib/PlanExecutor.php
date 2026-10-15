@@ -1036,6 +1036,10 @@ class PlanExecutor {
                 try { $run = TenantHost::runKeptTests($this->tenant, $lid); }
                 catch (\RuntimeException $e) { $this->logEvent($first, 'warning', 'The other attempt\'s tests could not be run: ' . $e->getMessage()); return; }
                 if ($run['ok']) { $this->logEvent($first, 'info', "The other attempt's {$kept} test file(s) pass against the kept one."); return; }
+                if (TaskRace::onlyItsOwnNames($run['output'])) {
+                    $this->logEvent($first, 'info', "The other attempt's tests fail only on names it made itself (methods, classes or tables the kept one does not have) — they test its design, not a promise the kept one broke. No fix.");
+                    return;
+                }
                 $f = TaskRace::testsFix((int) $first->id, (string) $first->title, $run['output']);
                 $fix = $this->addFixTask($first, $f, 'race-tests-' . (int) $first->id);
                 $this->logEvent($first, 'warning', "The other attempt's tests do not all pass against the kept one; task #{$fix} looks at them.");

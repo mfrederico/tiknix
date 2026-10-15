@@ -68,6 +68,37 @@ class Brokerinfo extends Control {
         Flight::jsonSuccess(['url' => $base . '/connections/handoff/' . rawurlencode($type) . '?intent=' . urlencode($intent)]);
     }
 
+    /**
+     * POST /brokerinfo/renew — an app's connection has expired (QuickBooks access lasts an hour) and
+     * renewing it needs the platform's app secret, which never leaves core. The app sends its refresh
+     * token; core adds the secret, asks the provider, and answers with the new access. Nothing is kept
+     * here: the connection, and both tokens, are the app's. An ordinary authenticated call (the app's
+     * broker key), so an app hosted anywhere renews the same way. Body: {connector, environment, refresh_token}.
+     */
+    public function renew($params = []) {
+        [$key, $iid] = $this->requireBroker(); if (!$key) return;
+        $body = $this->jsonBody();
+        $type = strtolower(trim((string) ($body['connector'] ?? '')));
+        $refresh = trim((string) ($body['refresh_token'] ?? ''));
+        $connector = ConnectorRegistry::get($type);
+        if (!$connector) { Flight::jsonError('Unknown connector: ' . $type, 400); return; }
+        if (!in_array($type, self::RENEWS, true)) { Flight::jsonError(ucfirst($type) . ' connections are not renewed by the platform.', 400); return; }
+        if (!$connector->isConfigured()) { Flight::jsonError(ucfirst($type) . ' is not configured on this server.', 503); return; }
+        if ($refresh === '') { Flight::jsonError('No refresh token was sent.', 400); return; }
+        $conn = (object) ['plainRefreshToken' => $refresh, 'environment' => $this->env((string) ($body['environment'] ?? 'production'))];
+        try { $fresh = $connector->refreshToken($conn, ''); }
+        catch (\Throwable $e) {
+            $this->logger->warning('Brokerinfo renew: the provider refused', ['instance' => $iid, 'connector' => $type, 'error' => $e->getMessage()]);
+            Flight::jsonError($e->getMessage(), 502); return;
+        }
+        if (!is_array($fresh) || ($fresh['access_token'] ?? '') === '') { Flight::jsonError('The provider returned no access.', 502); return; }
+        $this->logger->info('Brokerinfo renew: renewed', ['instance' => $iid, 'connector' => $type]);
+        Flight::jsonSuccess(['access_token' => $fresh['access_token'], 'refresh_token' => (string) ($fresh['refresh_token'] ?? ''), 'expires_at' => (int) ($fresh['expires_at'] ?? 0)]);
+    }
+
+    /** The connectors whose renewal needs the platform's own app secret (and so are renewed here). */
+    private const RENEWS = ['quickbooks'];
+
     /** Return $url only if it's https on the instance's OWN configured host, else ''. */
     private function safeInstanceUrl(string $url, int $instanceId): string {
         $inst = Bean::load('instance', $instanceId);

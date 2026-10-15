@@ -16,6 +16,7 @@ echo '  authcontrol: sidecar::* => ' . \app\PermissionCache::seedRule('sidecar',
 echo '  authcontrol: brokerinfo::modelconnections => ' . \app\PermissionCache::seedRule('brokerinfo', 'modelconnections', 101, "The project owner's opted-in model connections, for pipeline agents (broker key)") . "\n";
 echo '  authcontrol: brokerinfo::modelcall => ' . \app\PermissionCache::seedRule('brokerinfo', 'modelcall', 101, "Start a model call on the owner's connection; key stays in core (broker key)") . "\n";
 echo '  authcontrol: brokerinfo::support => ' . \app\PermissionCache::seedRule('brokerinfo', 'support', 101, "A project's AI agent escalates to Tiknix support, member agreed (broker key)") . "\n";
+echo '  authcontrol: brokerinfo::renew => ' . \app\PermissionCache::seedRule('brokerinfo', 'renew', 101, "Renew an app's expiring connection with the platform's app secret, which stays in core (broker key)") . "\n";
 echo '  authcontrol: brokerinfo::connectintent => ' . \app\PermissionCache::seedRule('brokerinfo', 'connectintent', 101, 'Instance-driven OAuth connect handoff (broker key)') . "\n";
 echo '  authcontrol: brokerinfo::modelresult => ' . \app\PermissionCache::seedRule('brokerinfo', 'modelresult', 101, 'Poll a pipeline model call this project started (broker key)') . "\n";
 echo '  authcontrol: concepthub::search => ' . \app\PermissionCache::seedRule('concepthub', 'search', 101, 'Concept catalog search (self-authenticating broker key)') . "\n";

@@ -7,6 +7,7 @@ use RedBeanPHP\R;
  *                     project's agent wrote the same thing down again (before 2026-10-16 a repeat
  *                     was dropped, so nobody could tell a one-off from a mistake every task makes)
  *   seen_in  TEXT     the projects it came from, one slug per line
+ *   ruled_seen INTEGER  `seen` when it was made a rule (KnowledgeBase::markRuled), else NULL
  *
  * Declared, not left to the first store: an INTEGER and a TEXT from the start (a later widen
  * rebuilds a SQLite table and empties it). Existing rows start at 1.
@@ -14,6 +15,9 @@ use RedBeanPHP\R;
 $cols = R::inspect('kbentry');
 if (!isset($cols['seen']))    { R::exec('ALTER TABLE kbentry ADD COLUMN seen INTEGER'); echo "  kbentry.seen: added\n"; }
 if (!isset($cols['seen_in'])) { R::exec('ALTER TABLE kbentry ADD COLUMN seen_in TEXT'); echo "  kbentry.seen_in: added\n"; }
+// What `seen` was when the lesson was written into the agents' guidelines: it is offered as a rule
+// again only if it comes up RULE_AFTER more times after that (the rule is not working).
+if (!isset($cols['ruled_seen'])) { R::exec('ALTER TABLE kbentry ADD COLUMN ruled_seen INTEGER'); echo "  kbentry.ruled_seen: added\n"; }
 $n = R::exec('UPDATE kbentry SET seen = 1 WHERE seen IS NULL');
 echo "  kbentry.seen: {$n} row(s) started at 1\n";
 

@@ -20,6 +20,10 @@ class KnowledgeSeenTest extends ConceptsTestCase {
         if (!Bean::hasDatabase(self::DB)) Bean::addDatabase(self::DB, 'sqlite::memory:');
         Bean::selectDatabase(self::DB);
         \RedBeanPHP\R::nuke();
+        // Declared as seeds 45 and 53 declare it: a column the query names but no store has made
+        // yet would read as no rows in fluid mode.
+        Bean::exec('CREATE TABLE kbentry (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, symptom TEXT, cause TEXT, fix TEXT, status TEXT, source TEXT, source_note TEXT,
+            hits INTEGER, last_hit_at TEXT, reviewed_at TEXT, created_by INTEGER, created_at TEXT, updated_at TEXT, seen INTEGER, seen_in TEXT, ruled_seen INTEGER)');
     }
     protected function tearDown(): void { Bean::selectDatabase('default'); parent::tearDown(); }
 
@@ -34,6 +38,12 @@ class KnowledgeSeenTest extends ConceptsTestCase {
         $this->assertSame(3, (int) $b->seen);
         $this->assertSame("bakery\nmileage", (string) $b->seenIn, 'each project once');
         $this->assertSame([$id], array_map(fn($r) => (int) $r->id, KB::ruleWorthy()));
+        KB::markRuled($id);
+        $this->assertSame([], KB::ruleWorthy(), 'made a rule: not named again');
+        foreach (['a', 'b'] as $p) KB::propose(self::LESSON, self::LESSON, '', self::LESSON, 'notebook', "{$p} — plan 1");
+        $this->assertSame([], KB::ruleWorthy(), 'twice more is not yet a rule that does not work');
+        KB::propose(self::LESSON, self::LESSON, '', self::LESSON, 'notebook', 'c — plan 1');
+        $this->assertSame([$id], array_map(fn($r) => (int) $r->id, KB::ruleWorthy()), 'three more times: the rule is not working');
     }
 
     public function testARepeatOfAMergedCandidateCountsOnTheEntryItWasMergedInto(): void {

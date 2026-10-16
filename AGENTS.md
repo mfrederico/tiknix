@@ -166,6 +166,9 @@ $product->sharedTagList[] = $tag;                               // many-to-many 
   `IN (?,?)` binding, the keys become parameter positions → `column index out of range`. `array_values()`
   first.
 - `Bean::getAll()` / `getRow()` return **arrays**, not beans.
+- In a seed, `R` is not imported: write `\RedBeanPHP\R::…` (or `use RedBeanPHP\R;` at the top). Read a
+  table's columns with `Bean::inspect('type')` — `SHOW COLUMNS` is MySQL-only. In a test, never preset
+  a bean's `id`: on a new table RedBean takes it as an update; let it autoincrement.
 - RedBean runs in fluid mode: there are no real transactions (`begin`/`rollback` do not protect a write),
   and a wrong column name can read as an empty result — check with `database_schema`.
 
@@ -180,6 +183,19 @@ Controllers extend `BaseControls\Control` and live in `controls/` — one per fe
 - JSON: `Flight::jsonSuccess($data, 'msg')`, `Flight::jsonError('msg', 400)`; redirect: `Flight::redirect('/path')`
 - Levels: `LEVELS['ROOT']=1`, `ADMIN=50`, `MEMBER=100`, `PUBLIC=101` — lower is more privileged;
   `Flight::hasLevel(LEVELS['ADMIN'])`
+
+Shapes that are easy to guess wrong:
+
+- Config is `Flight::get('section.key')`. The base controller has no `isPost()`: test
+  `Flight::request()->method === 'POST'`.
+- Log with `$this->logger->error('…', [context])` (or `Flight::get('log')`) — that reaches
+  `log/app-*.log`; `error_log()` does not.
+- The `authcontrol` table's columns are `control`, `method`, `level` (not `controller`). A plugin's
+  seeded permission row is `kept` by `seedRule()`: to tighten it, write a seed that changes that row.
+- `lib/app.php` runs **before** plugins boot: a rule that needs a plugin's class goes in
+  `Flight::before('start', fn() => …)`. The layout's own slots (`Chrome` `head`/`scripts`) run in the
+  layout's scope, without `header.php`'s variables: use `$isLoggedIn`, `Flight::getMember()`,
+  `member_id()`. Who the layout shows is `$__mid` / `Flight::getMember()`, never a view's `$member`.
 
 The MCP endpoint `mcp::message` is PUBLIC (101) on purpose: it authenticates itself, and only discovery
 (`initialize`, `tools/list`, `ping`) works without an API key. `tools/call` without a key is a bug.
@@ -265,6 +281,21 @@ What it holds you to, and why — each is about what a person must read and deci
 - **Words are the user's, not the schema's**: "Who sees it", not "Audience"; "Stop showing it at",
   not "expires_at". Status values get `labels`.
 - **Something destructive is a `post` with `confirm`** that says what will be lost.
+
+What `Ui` refuses or does that agents keep tripping on (each has cost a 500 or a missing figure):
+
+- `Ui::table` needs `'empty'` on **every** call, even for a list that is never empty, and its heading key
+  is `'title'` (`'heading'` is refused). A `'quiet'` column is hidden below 992px wide — never mark
+  quiet the column the page exists to show. Badge `tones` match the rendered text exactly, so a
+  badge whose text varies ("Paid 3 Oct") needs its map built from those strings. There is no
+  per-group action: put it in a small row above the table.
+- `Ui::form` refuses more than 8 fields in one run (`Ui::MAX_FLAT_FIELDS`) — group them with
+  `'section'` or fold some with `'more' => true`. It escapes `help` (no links: put a link in a
+  `Ui::notice` with an action), adds its own blank "—" first option to an optional select (do not
+  add a `'' => …` one), and has no option groups (carry the kind in the label: "Material: Flour").
+  A short note for the whole form is its `'lead'`; `'width' => 6` sits two fields side by side.
+- `Ui::agenda`'s `'until'` must give a time for every item: when the end is optional, leave
+  `'until'` out and put the end in `'sub'`.
 
 A page that is not a list, a form or a record (a calendar, a chat, a dashboard, a public landing
 page) is written by hand — on the design system's classes (`ui-panel`, `ui-stat`, `ui-chip`,
@@ -594,6 +625,22 @@ Code changes are commits.
   `LeadGate::forPublicForm($params, $ip, [...])` for anything a visitor posted, or
   `LeadGate::trusted('why')`. Never `Bean::dispense('lead')` in a controller.
 - Before calling a task done, request every route it added and check the status code
+- **In a build task's sandbox:** your brief names its address and three signed-in cookie jars — use
+  those, do not sign in by hand. If you must, `GET /auth/login` for `_csrf_token`, then POST it with
+  `username` and `password` to `/auth/dologin` (not `/auth/login`); an admin is sent to 2FA setup
+  first, so POST `_csrf_token` to `/auth/twofaskip`. One cookie jar throughout. The sandbox has no
+  connections (S3, mail, QuickBooks…) and APCu is off: test the "not connected" path there, and say in
+  the Handoff what only the live app can show.
+- **When the brief says a browser is lent, use it** for every page whose view you changed — the
+  sandbox records which address asked for which page, and a view change the lent browser never
+  opened is not merged (curl does not count). Resize to 390×844 and compare `scrollWidth` with
+  `clientWidth`; read `browser_console_messages` after a JS change. If it cannot be used, say why on
+  a Handoff line that starts `Browser:`.
+- **Testing a controller in PHPUnit:** its constructor calls Flight maps — define the ones it uses
+  (`getMember`, `hasLevel`, `isLoggedIn`, `loadMenu`, `siteName`, `siteLogo`) and override `render()`
+  in a test subclass. `tests/support/` is not autoloaded: `require_once` it. `Storage` needs
+  `Flight::set('app.baseurl', …)` and has no fake bucket: test the key your code builds and the
+  not-connected refusal, not an upload.
 - **No browser lives in an app.** Never install Playwright, Puppeteer, Chromium, Selenium or Node in the app or
   its container, and never plan a task that does: the container is small, and a build is lent a browser from the
   platform's QA host (the `playwright` tools, which open the task's sandbox). What a person sees is checked

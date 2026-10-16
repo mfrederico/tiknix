@@ -84,6 +84,17 @@ class Knowledge extends BaseControls\Control {
         Flight::redirect('/knowledge?show=' . rawurlencode((string) $this->getParam('back', 'candidate')));
     }
 
+    /** POST /knowledge/ruled {id} — its lesson is now in the agents' guidelines (KnowledgeBase::markRuled). */
+    public function ruled() {
+        if (!$this->requireLevel(LEVELS['ADMIN'])) return;
+        if (!$this->requirePost() || !$this->validateCSRF()) return;
+        try {
+            KnowledgeBase::markRuled((int) $this->getParam('id', 0));
+            $this->flash('success', 'Marked as a rule — it is named here again only if it comes up ' . KnowledgeBase::RULE_AFTER . ' more times.');
+        } catch (\RuntimeException $e) { $this->flash('error', $e->getMessage()); }
+        Flight::redirect('/knowledge?show=' . rawurlencode((string) $this->getParam('back', 'published')));
+    }
+
     /** POST /knowledge/delete {id} — remove an entry for good (a dismissed candidate could then be offered again). */
     public function delete() {
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;

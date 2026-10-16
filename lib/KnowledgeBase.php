@@ -198,9 +198,20 @@ final class KnowledgeBase {
         return trim((string) preg_split('/\s+—\s+/u', $note, 2)[0]);
     }
 
-    /** Published or waiting entries that have come up RULE_AFTER times or more, most first. */
+    /**
+     * Published or waiting entries that have come up RULE_AFTER times or more — counted since they
+     * were last made a rule, so one that is already a rule returns only if the rule is not working.
+     */
     public static function ruleWorthy(): array {
-        return array_values(Bean::find('kbentry', "status IN ('published', 'candidate') AND seen >= ? ORDER BY seen DESC, id DESC", [self::RULE_AFTER]));
+        return array_values(Bean::find('kbentry', "status IN ('published', 'candidate') AND seen - COALESCE(ruled_seen, 0) >= ? ORDER BY seen DESC, id DESC", [self::RULE_AFTER]));
+    }
+
+    /** The entry's lesson is now in the agents' guidelines: remember how often it had come up. */
+    public static function markRuled(int $id): void {
+        $b = Bean::load('kbentry', $id);
+        if (!$b->id) throw new \RuntimeException("No knowledge-base entry #{$id}.");
+        $b->ruledSeen = max(1, (int) $b->seen); $b->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($b);
     }
 
     // ---- promotion from a project's notebook ---------------------------------------------------

@@ -16,9 +16,10 @@ echo Ui::page(['eyebrow' => 'Platform', 'title' => 'Knowledge base',
 if ($rules) {
     $list = implode('; ', array_map(fn($r) => '“' . $r->title . '” (' . (int) $r->seen . ' times' . (($n = count(array_filter(explode("\n", (string) $r->seenIn)))) > 1 ? ", {$n} projects" : '') . ')', array_slice($rules, 0, 5)));
     echo Ui::notice(['tone' => 'info', 'title' => count($rules) === 1 ? 'One lesson keeps coming up.' : count($rules) . ' lessons keep coming up.',
-        'text' => "Agents keep writing these down, so they keep making the mistake: {$list}. Make each a rule in the agents' guidelines, which every agent reads before it starts — an entry here only reaches one that asks."]);
+        'text' => "Agents keep writing these down, so they keep making the mistake: {$list}. Make each a rule in the agents' guidelines, which every agent reads before it starts — an entry here only reaches one that asks — then mark it “Made it a rule” below."]);
 }
 ?>
+<?php $ruleIds = array_flip(array_map(fn($r) => (int) $r->id, $rules)); ?>
 <ul class="nav nav-pills mb-3 gap-1" aria-label="Entries by state">
     <?php foreach ($labels as $key => $label): ?>
         <li class="nav-item"><a class="nav-link py-1<?= $key === $show ? ' active' : '' ?>" <?= $key === $show ? 'aria-current="page"' : '' ?> href="/knowledge?show=<?= htmlspecialchars($key) ?>">
@@ -50,6 +51,7 @@ echo Ui::table([
         $show === 'candidate' ? ['label' => 'Review', 'url' => '/knowledge/edit?id=' . (int) $r->id, 'icon' => 'pencil'] : ['label' => 'Edit', 'url' => '/knowledge/edit?id=' . (int) $r->id, 'icon' => 'pencil'],
         $show === 'candidate' ? $move($r, 'dismissed', 'Dismiss', 'slash-circle') : null,
         $show === 'published' ? $move($r, 'retired', 'Retire', 'archive') : null,
+        isset($ruleIds[(int) $r->id]) ? ['label' => 'Made it a rule', 'post' => '/knowledge/ruled', 'fields' => ['id' => (int) $r->id, 'back' => $show], 'icon' => 'check2-square'] : null,
         in_array($show, ['retired', 'dismissed'], true) ? $move($r, 'candidate', 'Reconsider', 'arrow-counterclockwise') : null,
         ['label' => 'Delete', 'post' => '/knowledge/delete', 'fields' => ['id' => (int) $r->id, 'back' => $show], 'icon' => 'trash',
          'confirm' => "Delete “{$r->title}” for good? If it came from a project, the same thing can then be offered to you again.", 'danger' => true],

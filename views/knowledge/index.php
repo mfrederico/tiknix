@@ -10,6 +10,15 @@ echo Ui::page(['eyebrow' => 'Platform', 'title' => 'Knowledge base',
     'lead' => "What every project's agent is told when it asks about Tiknix — before it asks its user about support. Nothing is handed out until you publish it.",
     'primary' => ['label' => 'Write an entry', 'url' => '/knowledge/edit', 'icon' => 'plus-lg']]);
 ?>
+<?php
+// A lesson that has come up RULE_AFTER times is a mistake agents keep making: an entry is given to
+// an agent that asks; a rule (the runtime's agent/guidelines/) is read by every agent before it starts.
+if ($rules) {
+    $list = implode('; ', array_map(fn($r) => '“' . $r->title . '” (' . (int) $r->seen . ' times' . (($n = count(array_filter(explode("\n", (string) $r->seenIn)))) > 1 ? ", {$n} projects" : '') . ')', array_slice($rules, 0, 5)));
+    echo Ui::notice(['tone' => 'info', 'title' => count($rules) === 1 ? 'One lesson keeps coming up.' : count($rules) . ' lessons keep coming up.',
+        'text' => "Agents keep writing these down, so they keep making the mistake: {$list}. Make each a rule in the agents' guidelines, which every agent reads before it starts — an entry here only reaches one that asks."]);
+}
+?>
 <ul class="nav nav-pills mb-3 gap-1" aria-label="Entries by state">
     <?php foreach ($labels as $key => $label): ?>
         <li class="nav-item"><a class="nav-link py-1<?= $key === $show ? ' active' : '' ?>" <?= $key === $show ? 'aria-current="page"' : '' ?> href="/knowledge?show=<?= htmlspecialchars($key) ?>">
@@ -31,6 +40,8 @@ echo Ui::table([
         ['label' => 'What is seen', 'value' => 'title', 'sub' => fn($r) => (string) $r->fix, 'url' => fn($r) => '/knowledge/edit?id=' . (int) $r->id],
         ['label' => 'From', 'value' => 'source', 'sub' => fn($r) => (string) ($r->sourceNote ?? ''),
          'labels' => ['seed' => 'Known incident', 'support' => 'A support ticket', 'notebook' => "A project's notebook", 'manual' => 'Written here']],
+        in_array($show, ['candidate', 'published'], true) ? ['label' => 'Came up', 'value' => fn($r) => max(1, (int) ($r->seen ?? 1)), 'as' => 'number',
+            'sub' => fn($r) => ($n = count(array_filter(explode("\n", (string) ($r->seenIn ?? ''))))) > 1 ? "in {$n} projects" : ''] : null,
         $show === 'published' ? ['label' => 'Times given', 'value' => fn($r) => (int) ($r->hits ?? 0), 'as' => 'number'] : null,
         $show === 'published' ? ['label' => 'Last confirmed', 'value' => fn($r) => (string) ($r->reviewedAt ?? ''), 'as' => 'date', 'quiet' => true]
                               : ['label' => 'Added', 'value' => fn($r) => (string) ($r->createdAt ?? ''), 'as' => 'date', 'quiet' => true],

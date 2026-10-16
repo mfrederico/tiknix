@@ -30,7 +30,9 @@ class Knowledge extends BaseControls\Control {
             'show'    => $show,
             'labels'  => self::SHOW,
             'counts'  => $counts,
-            'rows'    => array_values(Bean::find('kbentry', 'status = ? ORDER BY ' . ($show === 'published' ? 'hits DESC, ' : '') . 'id DESC', [$show])),
+            // A candidate that keeps coming up is the one to look at first.
+            'rows'    => array_values(Bean::find('kbentry', 'status = ? ORDER BY ' . ($show === 'published' ? 'hits DESC, ' : ($show === 'candidate' ? 'seen DESC, ' : '')) . 'id DESC', [$show])),
+            'rules'   => KnowledgeBase::ruleWorthy(),
             'q'       => $q,
             // search(), not ask(): trying a question here must not count as an agent having been helped
             'answers' => $q !== '' ? KnowledgeBase::search($q, 5) : null,

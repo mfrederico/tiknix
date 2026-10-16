@@ -1567,6 +1567,9 @@ class PlanExecutor {
         // Starting a run in the container is mechanical; a fresh launch is the retry. Merge
         // conflicts and code/logic failures are not — they need a rebase or a correction agent.
         if (strpos($n, 'could not start the task in the container') !== false) return ['class' => 'session', 'retryable' => true];
+        // Built, but not looked at in the browser it was lent (SandboxCheck::browserMissed): its work
+        // is kept, and the retry continues it with the reason in its brief — open the pages, or say why not.
+        if (strpos($n, 'and the browser never opened') !== false) return ['class' => 'browser', 'retryable' => true];
         return ['class' => 'unknown', 'retryable' => false];
     }
 

@@ -122,7 +122,7 @@ final class KnowledgeBase {
         $now = date('Y-m-d H:i:s');
         foreach (['title', 'symptom', 'cause', 'fix'] as $k) if (array_key_exists($k, $in)) $b->{$k} = trim((string) $in[$k]);
         if (!$b->id) {
-            $b->status = 'candidate'; $b->hits = 0; $b->createdAt = $now; $b->createdBy = $memberId;
+            $b->status = 'candidate'; $b->hits = 0; $b->seen = 1; $b->createdAt = $now; $b->createdBy = $memberId;
             $b->source = in_array($in['source'] ?? '', self::SOURCES, true) ? (string) $in['source'] : 'manual';
             $b->sourceNote = mb_substr(trim((string) ($in['source_note'] ?? '')), 0, 200);
         }
@@ -151,15 +151,56 @@ final class KnowledgeBase {
     public static function propose(string $title, string $symptom, string $cause, string $fix, string $source, string $note): int {
         $title = mb_substr(trim(preg_replace('/\s+/', ' ', $title)), 0, 160);
         if (mb_strlen($title) < 8) return 0;
-        foreach (Bean::getAll('SELECT title, symptom, cause, fix FROM kbentry') as $r) {
-            if (self::score($title . ' ' . $symptom, $r) >= 0.75 || strcasecmp(trim((string) $r['title']), $title) === 0) return 0;
+        // The same thing written down again is not dropped: it is COUNTED on the entry it repeats,
+        // so a mistake every task makes reads differently from a one-off. A candidate merged into
+        // a published entry ("merged into #N") passes its count on to that entry.
+        $best = null; $bestScore = 0.0;
+        foreach (Bean::getAll('SELECT id, title, symptom, cause, fix, source_note FROM kbentry') as $r) {
+            $s = strcasecmp(trim((string) $r['title']), $title) === 0 ? 1.0 : self::score($title . ' ' . $symptom, $r);
+            if ($s >= 0.75 && $s > $bestScore) { $best = $r; $bestScore = $s; }
+        }
+        if ($best) {
+            $id = preg_match('/merged into #(\d+)/', (string) $best['source_note'], $m) ? (int) $m[1] : (int) $best['id'];
+            self::seenAgain($id, $note);
+            return 0;
         }
         $b = Bean::dispense('kbentry');
+        $b->seen = 1; $b->seenIn = self::project($note);
         $now = date('Y-m-d H:i:s');
         $b->title = $title; $b->symptom = trim($symptom); $b->cause = trim($cause); $b->fix = trim($fix);
         $b->status = 'candidate'; $b->source = in_array($source, self::SOURCES, true) ? $source : 'manual';
         $b->sourceNote = mb_substr(trim($note), 0, 200); $b->hits = 0; $b->createdBy = 0; $b->createdAt = $now; $b->updatedAt = $now;
         return (int) Bean::store($b);
+    }
+
+    /**
+     * How many times a lesson must have come up before the desk says it belongs in the agents'
+     * rules (agent/guidelines/) rather than only here: an entry is given to an agent that ASKS;
+     * a rule is read by every agent before it starts. (Meta's Forum team: "a correction is encoded
+     * once a mistake recurs more than twice" — the first time and two more.)
+     */
+    public const RULE_AFTER = 3;
+
+    /** One more time the entry's lesson was written down, and where. */
+    public static function seenAgain(int $id, string $note): void {
+        $b = Bean::load('kbentry', $id);
+        if (!$b->id) throw new \RuntimeException("No knowledge-base entry #{$id} to count a repeat on.");
+        $b->seen = max(1, (int) $b->seen) + 1;
+        $in = array_filter(explode("\n", (string) $b->seenIn));
+        $p = self::project($note);
+        if ($p !== '' && !in_array($p, $in, true)) $in[] = $p;
+        $b->seenIn = implode("\n", $in);
+        Bean::store($b);
+    }
+
+    /** The project a proposal's note names ("<slug> — <source>"), or ''. */
+    private static function project(string $note): string {
+        return trim((string) preg_split('/\s+—\s+/u', $note, 2)[0]);
+    }
+
+    /** Published or waiting entries that have come up RULE_AFTER times or more, most first. */
+    public static function ruleWorthy(): array {
+        return array_values(Bean::find('kbentry', "status IN ('published', 'candidate') AND seen >= ? ORDER BY seen DESC, id DESC", [self::RULE_AFTER]));
     }
 
     // ---- promotion from a project's notebook ---------------------------------------------------

@@ -41,6 +41,9 @@ class TenantApp {
         // a brand-new project as a host clone and looked for a folder that never existed (500).
         $inst->ctKind = 'tenant'; $inst->ctVmid = 0; $inst->ctIp = ''; $inst->ctDomain = '';
         Bean::store($inst);
+        // Owner's decision (2026-10-16): a failed check or a new error fixes itself (at most
+        // AuditReporter::MAX_AUDIT_CYCLES rounds) — recorded as any other switch of it is.
+        $inst->box()->setAutoTriage(true, $memberId, 'on for every new app (owner decision 2026-10-16)');
         GitHttp::deployToken($inst);
 
         $steps = [];

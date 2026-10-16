@@ -513,6 +513,44 @@ The Builder tells this app about its own building, and a pipeline may run on it:
 
 Each field is read as `{context.<name>}` in a step (`{context.event}` names which event, `{context.status}`, `{context.line}`). A "webhook when a build finishes" is a pipeline on `request.finished` with one `http` step; nothing else is needed. The events are a courtesy to the app: a pipeline that fails does not fail the build.
 
+## QuickBooks Online
+
+A person connects their QuickBooks company under **Connections → QuickBooks Online**; the app then
+holds that company's access (sealed with its own key) and reaches it through `\app\ConnectorCall`.
+The app never holds Intuit's app secret: when the access expires (every hour) it is renewed for you.
+There is no copy of anyone's books in the app unless the app itself saves one — read from QuickBooks
+when the page needs it.
+
+```php
+// any query — QuickBooks' own SQL-like syntax
+$r = ConnectorCall::call('quickbooks', 'query', ['environment' => 'development', 'query' => "SELECT * FROM Customer WHERE PrimaryEmailAddr = 'a@b.com'"]);
+$customers = $r['body']['QueryResponse']['Customer'] ?? [];
+// any endpoint, after /v3/company/<id>
+$r = ConnectorCall::call('quickbooks', 'request', ['environment' => 'development', 'method' => 'POST', 'path' => '/invoice', 'body' => [...]]);
+$invoice = $r['body']['Invoice'] ?? null;
+```
+
+- **Name the environment on every call.** A sandbox company is a `development` connection; a live one is
+  `production`, which is the default. A call without `environment` looks for live books and refuses when
+  there are none — check under Connections which one this app has, and keep it in one place (one
+  function or constant), not repeated in every call.
+- **Changes in QuickBooks can start a pipeline.** The platform receives Intuit's change notices and sends
+  this app those of its own companies:
+  ```json
+  "trigger": { "connector": { "quickbooks": { "entities": ["Invoice", "Payment"], "operations": ["Create", "Update"] } } }
+  ```
+  Context: `{context.entity}` ("Invoice"), `{context.id}`, `{context.operation}` ("Update"),
+  `{context.company}`, `{context.at}`. A notice says only WHAT changed — fetch the record to see it.
+- **Paying an invoice is a `Payment`,** not always an `Invoice` change: to notice "paid", listen for
+  `Payment` too and read the invoices it pays (`Line[].LinkedTxn` of type `Invoice`); paid = balance 0.
+- **An item books to an income account.** A product's item belongs to the product-sales account (an
+  Income account with `AccountSubType` `SalesOfProductIncome`) — never "the first Income account". When
+  there is none, refuse and say so; do not guess.
+- **Match records by something both sides have** (an email, a SKU) and store QuickBooks' id on yours
+  (`qbo_customer_eid`, `qbo_invoice_eid`) once matched.
+- A build task's sandbox copy of the app has **no connections**: there, QuickBooks calls refuse. Test what
+  you can without it (the refusal, the page), and say in the Handoff what only the live app can show.
+
 ## Plugins and Agent Guidance
 
 ### Plugins (concepts)

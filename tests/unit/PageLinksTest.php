@@ -58,6 +58,12 @@ class PageLinksTest extends TestCase {
         $this->assertSame([], $this->routes());
     }
 
+    public function testANavCommentItCannotReadIsNamedNotTaken(): void {
+        $this->ctl('Me', '// nav: Me tab');
+        $this->assertSame(['/me'], $this->routes(), 'only "none" says a page is deliberately unlinked');
+        $this->assertStringContainsString('// nav: none — reached from Me tab', PageLinks::unlinked($this->root)[0]['message']);
+    }
+
     public function testValidatingAControllerByNameFailsItAndASweepWarns(): void {
         $this->ctl('Cafe');
         $v = new ValidationService($this->root);

@@ -107,6 +107,12 @@ class UiTest extends TestCase {
         $this->refused(fn() => Ui::form(['action' => '/x', 'fields' => [['name' => 'a', 'label' => 'A']]]), "/needs 'submit'/");
     }
 
+    public function testAFormCarriesAWidgetAboveItsButtonsOnlyAsRawMarkup(): void {
+        $h = Ui::form(['action' => '/x', 'submit' => 'Send', 'fields' => [['name' => 'a', 'label' => 'A']], 'extra' => Ui::raw('<div class="cf-turnstile"></div>')]);
+        $this->assertLessThan(strpos($h, 'ui-form-foot'), strpos($h, 'cf-turnstile'), 'after the fields, before the buttons');
+        $this->refused(fn() => Ui::form(['action' => '/x', 'submit' => 'Send', 'fields' => [['name' => 'a', 'label' => 'A']], 'extra' => '<b>x</b>']), '/given as Ui::raw/');
+    }
+
     public function testDetailAndNoticeEscapeAndRawIsDeliberate(): void {
         $h = Ui::detail(['title' => 'Contact', 'items' => ['Email' => '<a@x>', 'Phone' => '', 'Bio' => Ui::raw('<em>hi</em>')]]);
         $this->assertStringContainsString('&lt;a@x&gt;', $h);

@@ -205,6 +205,17 @@ if ($supersede) {
     foreach ($supersede as $tid) {
         $t = Bean::load('workbenchtask', $tid);
         if (!$t->id || (int)$t->memberId !== $member) continue;
+        // A problem Tiknix found is not deleted by the plan that fixes it: it stays where it was
+        // in the Ask view and follows that plan to "Fixed!" (fixed_by = the plan). Decided, so its
+        // Fix it button goes; if the fix stops, Ask offers it again.
+        if ((string) ($t->source ?? '') === 'detected_error' && empty($t->parentTaskId)) {
+            $t->status = 'resolved'; $t->fixedBy = $planId; $t->fixAskedAt = 0;
+            $t->progressMessage = "Being fixed by request #{$planId}";
+            $t->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($t);
+            echo "[ingest] found problem #{$t->id} is fixed by plan #{$planId}\n";
+            continue;
+        }
         if ($t->parentTaskId) $parents[(int)$t->parentTaskId] = true;
         $t->xownTasklogList; $t->xownTasksnapshotList; $t->xownTaskcommentList; // cascade children
         Bean::trash($t);

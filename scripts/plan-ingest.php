@@ -210,6 +210,14 @@ if ($supersede) {
         // Fix it button goes; if the fix stops, Ask offers it again.
         if ((string) ($t->source ?? '') === 'detected_error' && empty($t->parentTaskId)) {
             $t->status = 'resolved'; $t->fixedBy = $planId; $t->fixAskedAt = 0;
+            // The plan carries the problem's place in a fix-check-fix chain (AuditReporter caps it at
+            // MAX_AUDIT_CYCLES) and the error it answers, so the chain still ends and the error is closed.
+            $pb = Bean::load('workbenchtask', $planId);
+            if ($pb->id) {
+                $pb->auditCycle = max((int) ($pb->auditCycle ?? 0), (int) ($t->auditCycle ?? 0));
+                if ((int) ($t->detectederrorId ?? 0) > 0 && (int) ($pb->detectederrorId ?? 0) === 0) $pb->detectederrorId = (int) $t->detectederrorId;
+                Bean::store($pb);
+            }
             $t->progressMessage = "Being fixed by request #{$planId}";
             $t->updatedAt = date('Y-m-d H:i:s');
             Bean::store($t);

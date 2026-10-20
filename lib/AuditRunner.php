@@ -192,6 +192,32 @@ BASH;
      * that produced nothing is a failure of the check, named — never a pass by omission.
      * @param array<string,array|null> $parts  level => its manifest (null: it produced none)
      */
+    /**
+     * How the app is MEANT to work, from its own notebook (decisions.md): what the checker must not
+     * call a failure. inresonance is entered only by a QR code scanned in person; its checks, given
+     * only an old plan's wording, filed "no register link" and "no typed meet code" as problems, and
+     * automatic fixes would have built them (2026-10-20). '' when the notebook cannot be read — the
+     * check goes on without it, and says so in the log.
+     */
+    private function intentSection(): string {
+        try {
+            $inst = CoreDb::with(fn() => Bean::findOne('instance', 'slug = ?', [$this->slug]));
+            if (!$inst || !$inst->id) return '';
+            $nb = TenantHost::notebook($inst);
+            $text = trim((string) ($nb['docs']['decisions'] ?? ''));
+        } catch (\Throwable $e) {
+            error_log("ERROR AuditRunner {$this->slug}: the notebook's decisions could not be read for the check: " . $e->getMessage());
+            return '';
+        }
+        if ($text === '') return '';
+        if (mb_strlen($text) > 9000) $text = '…' . mb_substr($text, -9000);
+        return "## How this app is meant to work — not failures\n\n"
+             . "These are the app's own recorded decisions. Behaviour they describe is intended: never report it as a failure, even when an older plan's\n"
+             . "wording or a usual web convention suggests otherwise (a closed sign-up, a code that is only scanned, a page kept from guests).\n"
+             . "Judge the change list above against them; where a check in that list contradicts them, the decision wins — say so in `design`, not `failures`.\n\n"
+             . $text . "\n\n";
+    }
+
     public static function mergeManifests(array $parts, int $planId, string $slug, string $base): array {
         $m = ['plan_id' => $planId, 'instance' => $slug, 'base_url' => $base, 'passed' => true, 'summary' => '', 'levels' => [], 'checks' => [], 'failures' => [], 'design' => []];
         $said = [];
@@ -207,6 +233,9 @@ BASH;
             foreach (['checks', 'failures', 'design'] as $k) foreach ((array) ($p[$k] ?? []) as $e) $m[$k][] = $e;
             if (trim((string) ($p['summary'] ?? '')) !== '') $said[] = "{$level}: " . trim((string) $p['summary']);
         }
+        // Each checker says what it found in its own words: the same problem from three levels is one
+        // problem (ProblemMatch), filed once with every level that saw it.
+        $m['failures'] = ProblemMatch::fold($m['failures']);
         if ($m['failures']) $m['passed'] = false;
         $m['summary'] = count($parts) . ' checkers at once — ' . implode(' · ', $said);
         return $m;
@@ -280,6 +309,7 @@ MD;
             $credLines[] = "- **{$label}** — email `{$c['email']}` · password `{$c['password']}`";
         }
         $credsMd = implode("\n", $credLines);
+        $intentMd = $this->intentSection();
 
         return <<<MD
 # Definition-of-Done Audit — {$this->slug}
@@ -296,7 +326,7 @@ edit code.
 Use the **Playwright MCP tools** (`browser_navigate`, `browser_click`, `browser_type`,
 `browser_snapshot`, `browser_take_screenshot`, `browser_resize`). Navigate only to `{$base}/...` URLs.
 
-## Test accounts (already created for you)
+{$intentMd}## Test accounts (already created for you)
 
 {$credsMd}
 

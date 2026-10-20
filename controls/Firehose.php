@@ -123,8 +123,9 @@ class Firehose extends Control {
             // Known signature — bump counters, never duplicate (Layer 3).
             $err->hitCount   = (int)$err->hitCount + 1;
             $err->lastSeenAt = $now;
-            // Regression: a previously resolved/ignored error is firing again.
-            if (in_array($err->status, ['resolved', 'ignored'], true)) {
+            // Regression: a previously RESOLVED error is firing again. An ignored one stays ignored —
+            // ignoring is "this is not a problem" (behaviour the app has on purpose); it is counted, not reopened.
+            if ($err->status === 'resolved') {
                 $err->status = 'reopened';
             }
             Bean::store($err);
@@ -133,6 +134,20 @@ class Firehose extends Control {
                 'hits' => (int)$err->hitCount, 'new' => false,
             ], 'recorded');
             return;
+        }
+
+        // The same problem in other words (ProblemMatch) — a check's checkers each word it their own
+        // way, and a re-check words it again: counted on the open one, not filed again.
+        $said = trim((string) ($data['message'] ?? ''));
+        if ($said !== '') {
+            foreach (Bean::find('detectederror', "instance_tag = ? AND status IN ('new','triaged','building','deferred','reopened','ignored') ORDER BY id DESC LIMIT 200", [$instance]) as $open) {
+                if (!\app\ProblemMatch::same((string) $open->message, $said)) continue;
+                $open->hitCount = (int) $open->hitCount + 1;
+                $open->lastSeenAt = $now;
+                Bean::store($open);
+                Flight::jsonSuccess(['id' => (int) $open->id, 'status' => $open->status, 'hits' => (int) $open->hitCount, 'new' => false, 'same_as' => (int) $open->id], 'recorded');
+                return;
+            }
         }
 
         // New signature — record it.
@@ -226,14 +241,18 @@ class Firehose extends Control {
         // merge-back + auto-retry). When off, create a highlighted task the human
         // can Run. Layer 3 dedup already guarantees this fires once per signature.
         if (!$busy && filter_var($inst->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN)) {
-            $planId = $this->launchViaOrchestrator($err, $inst);
-            if ($planId) {
-                $err->taskId = $planId;
-                $err->status = 'building';
+            $fix = $this->launchFix($err, $inst, $tag);
+            if ($fix === null) {
+                $err->status = 'untriaged';
                 Bean::store($err);
-                return ['action' => 'launched', 'plan_id' => $planId];
+                return ['action' => 'skipped', 'reason' => 'project has no task board yet'];
             }
-            // Launch failed — fall through to a plain triage task so nothing is lost.
+            // The problem is on the project's board either way; the request that fixes it may not
+            // have started (the project's planner was busy) — then its Fix it button is the way on.
+            $err->taskId = $fix['task'];
+            $err->status = $fix['launched'] ? 'building' : 'triaged';
+            Bean::store($err);
+            return ['action' => $fix['launched'] ? 'launched' : 'triaged', 'task_id' => $fix['task']];
         }
 
         $task = $this->createTriageTask($err, $inst, $tag);
@@ -396,75 +415,36 @@ class Firehose extends Control {
     }
 
     /**
-     * Auto-launch the fix by wrapping the detected error as a 1-task plan and
-     * running it through the existing headless orchestrator (worktree off
-     * instance/<slug> + merge-back + auto-retry). Returns the plan id, or 0 on
-     * failure (caller falls back to a plain triage task).
+     * Fix a found problem the way Ask's Fix it does: the problem filed on the PROJECT's board, and a
+     * request for the project's own planner that takes its place (plan-ingest links the two —
+     * fixed_by — and carries the problem's audit cycle onto the plan, so a fix-check-fix chain ends).
+     *
+     * It used to ingest a ready-made one-task plan here, with core's database selected: the plan
+     * landed in core (whose old task table fluid mode recreated), got id 1 or 3, and the orchestrator
+     * then ran whatever had THAT id on the project's board. On 2026-10-20, the day automatic fixes were
+     * switched on, inresonance's two-week-old phase-1 plan was re-run and checked against its old
+     * promises, and every promise it had since outgrown came back as a "problem" to fix.
+     *
+     * @return array{task:int, launched:bool}|null  null: the project has no board to file it on
      */
-    private function launchViaOrchestrator($err, $inst): int {
+    private function launchFix($err, $inst, string $tag): ?array {
+        $task = $this->createTriageTask($err, $inst, $tag);
+        if (!$task) return null;
         try {
-            $app  = $inst->app ?: 'tiknix';
-            $plan = [
-                'title'    => 'Fix: ' . mb_substr((string)$err->message, 0, 120),
-                'summary'  => 'Auto-triaged from a detected runtime error on ' . $err->instanceTag . '.',
-                'subtasks' => [[
-                    'id'          => 't1',
-                    'title'       => 'Fix: ' . mb_substr((string)$err->message, 0, 120),
-                    'description' => $this->triageBrief($err),
-                    'files'       => $err->file ? [(string)$err->file] : [],
-                    'priority'    => 2,
-                    'depends_on'  => [],
-                ]],
-            ];
-            $res    = \app\PlanIngestor::ingest($inst, $plan, (int)$inst->memberId, '', $app);
-            $planId = (int)($res['parent']['id'] ?? 0);
-            if (!$planId) return 0;
-
-            // Mark the plan building (mirrors Workbench::planbuild) + tag it as
-            // detected-error so the workbench can highlight it.
-            $parent = Bean::load('workbenchtask', $planId);
-            // Core keeps no tasks. The plan above was ingested into the PROJECT's board; marking
-            // it here used to write a second, unrelated row into core's own table (now dropped).
-            // Until this launcher opens the project's board for these stamps it does not launch:
-            // the caller files the plain triage task instead.
-            if (!$parent->id) {
-                $this->logger->error("ERROR Firehose: fix plan #{$planId} for {$inst->slug} is on the project's board, and this launcher still stamps core's (gone) task table — not launched; lib controls/Firehose.php launchViaOrchestrator must select the project's workbench.db");
-                return 0;
-            }
-            $parent->planStatus      = 'building';
-            $parent->status          = 'running';
-            $parent->source          = 'detected_error';
-            $parent->detectederrorId = (int)$err->id;
-            // Inherit the audit-chain depth so this fix's own post-build audit knows
-            // how deep it is and the audit->fix loop terminates (see AuditReporter).
-            $parent->auditCycle      = (int)(json_decode((string)$err->context, true)['audit_cycle'] ?? 0);
-            $parent->updatedAt       = date('Y-m-d H:i:s');
-            Bean::store($parent);
-
-            $level = (int)((Bean::load('member', (int)$inst->memberId)->level) ?: 1);
-            return $this->startOrchestrator($planId, $inst, $level) ? $planId : 0;
+            $level = (int) ((Bean::load('member', (int) $inst->memberId)->level) ?: 1);
+            $runner = new \app\PlanRunner((string) $inst->slug, \Model_Instance::dirOf($inst), (int) $inst->memberId, $level, (string) ($inst->engine ?: \app\EngineRegistry::defaultEngine()));
+            $runner->useAgent('');
+            $runner->deepen('flagged');
+            $said = "Fix this problem, which Tiknix found:\n\n" . $this->triageBrief($err)
+                  . "\n\nFind the cause before changing anything, fix that, and give the task a check in its `verify` that would have caught this."
+                  . " If what it describes is how the app is MEANT to work — the project's notebook records its decisions — change nothing and say so in the plan's summary.";
+            $runner->start(\app\GoalBrief::compose($said, 'none', ''), [(int) $task['id']], true, 0);
+            return ['task' => (int) $task['id'], 'launched' => true];
         } catch (\Throwable $e) {
-            $this->logger->error('Firehose auto-launch failed: ' . $e->getMessage());
-            return 0;
+            $this->logger->warning('Firehose: the fix was filed but its request did not start', ['instance' => $inst->slug, 'task' => (int) $task['id'], 'error' => $e->getMessage()]);
+            return ['task' => (int) $task['id'], 'launched' => false];
         }
     }
 
     /** Launch the detached worktree orchestrator for a plan (headless mirror of Workbench). */
-    private function startOrchestrator(int $planId, $inst, int $level): bool {
-        $app = $inst->app ?: 'tiknix';
-        $dir = $inst->dir();
-        /* The cap-cycle model escalation is GONE, and saying so beats leaving code that
-           looks like it still works. It handed 'opus' (or 'sonnet') to launch() as a
-           plan-wide model. That parameter no longer exists — PlanExecutor resolves each
-           task's model from that task's own engine — so the value was landing in
-           $workbenchDb and the orchestrator exited with "no tasks db at sonnet". The
-           firehose's auto-fix has not started since.
-           The names were wrong regardless: 'opus' means nothing to a project on another
-           provider. Restoring the escalation means setting a model on the TASKS, by engine
-           tier, not on the launcher. */
-        // This copy of the launcher used to omit the TIKNIX_WORKBENCH_DB export the
-        // sidecar's copy had, so a sweep-launched plan for an instance wrote its task
-        // state to core's db instead of the instance's. app\PlanOrchestrator carries it.
-        return \app\PlanOrchestrator::launch($planId, (string)$inst->slug, $dir, $level);
-    }
 }

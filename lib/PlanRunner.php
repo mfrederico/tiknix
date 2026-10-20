@@ -370,6 +370,12 @@ class PlanRunner {
         $logArg     = escapeshellarg($log);
         $ingestArg  = escapeshellarg($mainProjectRoot . '/scripts/plan-ingest.php');
         $questionArg = escapeshellarg($mainProjectRoot . '/scripts/plan-question.php');
+        $nothingArg  = escapeshellarg($mainProjectRoot . '/scripts/plan-nothing.php');
+        // A request that was to fix found problems, judged to need no change: those problems are closed with its reason.
+        $nothingCmd  = $this->supersedeIds
+            ? 'env -u TIKNIX_WORKBENCH_DB php ' . $nothingArg . ' --dir=' . escapeshellarg($this->instanceDir) . ' --member=' . (int) $this->memberId
+              . ' --supersede=' . escapeshellarg(implode(',', $this->supersedeIds)) . ' 2>&1 | tee -a ' . escapeshellarg($this->logFile())
+            : 'true';
         // Match the unique names SubmitPlanTool writes, and the legacy plan.json.
         $planGlobArg = escapeshellarg($ws . '/.aibuilder');
         $slugArg    = escapeshellarg($this->slug);
@@ -435,6 +441,7 @@ elif [ -f {$planGlobArg}"/plan-complete.md" ]; then
   # "continue to the next phase" learns there is no next phase. Leave the marker for the
   # board to read; do not run plan-failed.
   echo "[planner] GOAL COMPLETE — nothing left to plan for this goal." | tee -a {$logArg}
+  {$nothingCmd}
 else
   # No plan file. That is NOT proof of failure, and treating it as one told a client
   # their decompose had failed when it had in fact succeeded: the file legitimately

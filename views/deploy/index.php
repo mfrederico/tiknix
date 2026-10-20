@@ -71,6 +71,20 @@ $__name = (string) ($instance->displayName ?: $instance->slug);
     return r.json().catch(() => ({success: false, message: 'HTTP ' + r.status}));
   }
   function when(s) { return s ? new Date(s.replace(' ', 'T')).toLocaleString() : ''; }
+  // How a GitHub repository is connected: shown on the add form and on the card until the first push.
+  function githubHowto(open, saved) {
+    return `<details class="mt-2 border rounded px-2 py-1 bg-body-tertiary" ${open ? 'open' : ''}><summary class="small fw-semibold">How to set it up</summary>
+      <ol class="small mb-1 mt-2 ps-3">
+        <li class="mb-1"><strong>Create the repository on GitHub, empty</strong> — no README, licence or .gitignore. A repository GitHub already put a commit in shares no history with this app and is refused.</li>
+        <li class="mb-1"><strong>Name it here</strong> as <code>owner/name</code>${saved ? ' (done)' : ''}. The branch is <code>main</code> unless you say otherwise.</li>
+        <li class="mb-1"><strong>Add the deploy key</strong> — on GitHub: the repository → Settings → Deploy keys → Add deploy key. Paste the key ${saved ? 'shown below' : 'shown once this is saved'}, and tick <strong>Allow write access</strong>.</li>
+        <li class="mb-1"><strong>Add the webhook</strong> — Settings → Webhooks → Add webhook: the payload URL and secret ${saved ? 'below' : 'shown once this is saved'}, content type <code>application/json</code>, <em>Just the push event</em>. This is how what you push comes back into the app.</li>
+        <li class="mb-1"><strong>For a pull request per request</strong>, make a fine-grained token (GitHub → Settings → Developer settings → Fine-grained tokens) for this one repository, with <em>Contents</em> and <em>Pull requests</em> set to read and write, and paste it in the token field${saved ? ' — to change it later, remove this connection and add it again; the deploy key stays the same' : ''}. It is kept sealed on the platform and never shown again.</li>
+        <li class="mb-1"><strong>Test the connection</strong>, then <strong>Push now</strong>: the first push sends the app's whole history.</li>
+      </ol>
+      <div class="small text-body-secondary mb-1">After that: each request is opened as a pull request and merged, so <code>main</code> always equals the live app. What you push to <code>main</code> comes back into the app — a restore point first — and is checked like a request. A conflict leaves the app as it was and puts its side on <code>tiknix/app</code> for you to merge on GitHub.</div>
+    </details>`;
+  }
   function render() {
     if (!TARGETS.length) { $('exp-list').innerHTML = 'No exports yet.'; return; }
     $('exp-list').innerHTML = '<ul class="list-group">' + TARGETS.map(t => {
@@ -98,7 +112,7 @@ $__name = (string) ($instance->displayName ?: $instance->slug);
             <button class="btn btn-outline-secondary btn-sm exp-verify" data-id="${t.id}" type="button">Test connection</button>
             <button class="btn btn-outline-danger btn-sm exp-del" data-id="${t.id}" type="button" aria-label="Remove ${esc(t.label)}">Remove</button></span>` : ''}
         </div>
-        <div class="small mt-1">${last}</div>${sync}${key}${hook}
+        <div class="small mt-1">${last}</div>${sync}${gh ? githubHowto(!st.pushed, true) : ''}${key}${hook}
       </li>`;
     }).join('') + '</ul>';
     document.querySelectorAll('.exp-run').forEach(b => b.addEventListener('click', () => run(+b.dataset.id)));
@@ -121,9 +135,9 @@ $__name = (string) ($instance->displayName ?: $instance->slug);
       return `<div class="${f.type === 'textarea' ? 'col-12' : 'col-sm-4'}"><label class="form-label small fw-semibold mb-1" for="${id}">${esc(f.label || f.name)}${req}</label>${input}${f.help ? `<div class="form-text">${esc(f.help)}</div>` : ''}</div>`;
     }).join('');
     $('exp-form').innerHTML = `<div class="border rounded p-3">
-      <div class="fw-semibold mb-1">${esc(d.label)}</div><div class="small text-body-secondary mb-2">${esc(d.blurb)}</div>
+      <div class="fw-semibold mb-1">${esc(d.label)}</div><div class="small text-body-secondary mb-2">${esc(d.blurb)}</div>${driver === 'github' ? githubHowto(true, false) : ''}
       <div class="row g-2">
-        <div class="col-12"><label class="form-label small fw-semibold mb-1" for="expf-label">Name</label><input id="expf-label" class="form-control form-control-sm" placeholder="e.g. client's server"></div>
+        <div class="col-12"><label class="form-label small fw-semibold mb-1" for="expf-label">Name</label><input id="expf-label" class="form-control form-control-sm" placeholder="${driver === 'github' ? 'e.g. inresonance on GitHub' : 'e.g. client\'s server'}"></div>
         ${fields}
       </div>
       <div class="d-flex gap-2 mt-3"><button class="btn btn-primary btn-sm" id="exp-save" type="button">Save</button><button class="btn btn-outline-secondary btn-sm" id="exp-cancel" type="button">Cancel</button></div>

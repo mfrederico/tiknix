@@ -107,6 +107,15 @@ class UiTest extends TestCase {
         $this->refused(fn() => Ui::form(['action' => '/x', 'fields' => [['name' => 'a', 'label' => 'A']]]), "/needs 'submit'/");
     }
 
+    public function testAPageCanShowOneActionBesideItsPrimary(): void {
+        $h = Ui::page(['title' => 'Church', 'primary' => ['label' => 'Start a discussion', 'url' => '#c'],
+            'beside' => ['label' => 'Make this my home community', 'post' => '/communities/home', 'fields' => ['id' => 2], 'icon' => 'house'],
+            'more' => [['label' => 'Details', 'url' => '#d'], ['label' => 'Leave', 'post' => '/x', 'confirm' => 'Leave?', 'danger' => true], ['label' => 'Gatherings', 'url' => '/g']]]);
+        $this->assertLessThan(strpos($h, 'Make this my home community'), strpos($h, 'Start a discussion'), 'to the right of the primary');
+        $this->assertStringContainsString('btn btn-outline-primary', $h);
+        $this->refused(fn() => Ui::page(['title' => 'X', 'beside' => [['label' => 'A', 'url' => '/a'], ['label' => 'B', 'url' => '/b']]]), "/ONE action/");
+    }
+
     public function testAFormCarriesAWidgetAboveItsButtonsOnlyAsRawMarkup(): void {
         $h = Ui::form(['action' => '/x', 'submit' => 'Send', 'fields' => [['name' => 'a', 'label' => 'A']], 'extra' => Ui::raw('<div class="cf-turnstile"></div>')]);
         $this->assertLessThan(strpos($h, 'ui-form-foot'), strpos($h, 'cf-turnstile'), 'after the fields, before the buttons');

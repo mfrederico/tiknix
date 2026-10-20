@@ -133,6 +133,12 @@ class AuditReporter {
             // …and the app is told its check has ended (check.finished), for its own pipelines.
             if (\Model_Instance::tenantRow($inst)) {
                 TenantHost::builderEvent($inst, 'check.finished', ['passed' => $passed, 'failures' => count($failures)] + (RequestNote::facts(\Model_Instance::dirOf($inst), (int) $plan->id) ?? ['request' => (int) $plan->id]));
+                // …and a project kept in step with GitHub sends the request there now, as a pull request
+                // that says what the check found (app\GitSync). The target is core's: asked of core's db.
+                $miss = new \stdClass();
+                $git = CoreDb::with(fn() => (bool) GitSync::target($inst), $miss);
+                if ($git === $miss) error_log('ERROR AuditReporter: could not ask core whether ' . $inst->slug . ' is kept in step with GitHub: ' . CoreDb::lastError());
+                elseif ($git) GitSync::launch($inst, 'after', (int) $plan->id);
             }
         } catch (\Throwable $e) { error_log('ERROR AuditReporter: the notebook line for plan #' . (int) $plan->id . ' was not brought up to date: ' . $e->getMessage()); }
 

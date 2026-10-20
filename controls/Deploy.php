@@ -11,6 +11,8 @@
  *   Export   copies of its code to servers of your own: rsync over SSH, an SSH command
  *            (Publish\RsyncDriver, SshDriver). The SSH key is made and kept here, sealed —
  *            the app never holds it; the code shipped is the container's HEAD.
+ *            And a GitHub repository kept in step both ways (Publish\GithubDriver, app\GitSync):
+ *            one per project; its token is kept sealed with its key and never shown again.
  *
  * Anyone on a project sees its page; only its owner changes or runs anything.
  */
@@ -22,7 +24,7 @@ use \Flight as Flight;
 class Deploy extends BaseControls\Control {
 
     /** Export drivers offered here: a copy on a server of your own. */
-    private const EXPORT_DRIVERS = ['rsync' => Publish\RsyncDriver::class, 'ssh' => Publish\SshDriver::class];
+    private const EXPORT_DRIVERS = ['github' => Publish\GithubDriver::class, 'rsync' => Publish\RsyncDriver::class, 'ssh' => Publish\SshDriver::class];
 
     // ---------------------------------------------------------------- the page
 
@@ -132,6 +134,8 @@ class Deploy extends BaseControls\Control {
                 'driver_label' => $cls ? $cls::label() : (string) $t->driver, 'config' => $cfg,
                 'status' => $cls ? (new $cls())->status($inst, $cfg) : null,
                 'last_run_at' => (string) ($t->lastRunAt ?? ''), 'last_ok' => (bool) $t->lastOk, 'last_message' => (string) ($t->lastMessage ?? ''),
+                // what GitHub signs its notices with: the owner pastes it into the repository's webhook
+                'webhook_secret' => (string) $t->driver === 'github' && $inst->ownedBy((int) $this->member->id) && Publish\GithubDriver::keyRow($inst, false) ? Publish\GithubDriver::webhookSecret($inst) : '',
             ];
         }
         Flight::jsonSuccess(['targets' => $out, 'can_manage' => $inst->ownedBy((int) $this->member->id)]);
@@ -147,22 +151,35 @@ class Deploy extends BaseControls\Control {
         $driver = $id > 0 ? (string) $t->driver : (string) $this->getParam('driver', '');
         $cls = self::EXPORT_DRIVERS[$driver] ?? null;
         if (!$cls) { Flight::jsonError("Unknown export kind '{$driver}'.", 400); return; }
-        $cfg = []; $missing = [];
+        if ($driver === 'github' && $id <= 0 && GitSync::target($inst)) { Flight::jsonError('This project is already connected to a GitHub repository — change or remove that one.', 409); return; }
+        $cfg = []; $missing = []; $secrets = [];
         foreach ($cls::fields() as $f) {
             $v = trim((string) $this->getParam((string) $f['name'], ''));
+            // A secret is kept sealed by its driver, never in the target's settings, and never sent back.
+            if (($f['type'] ?? '') === 'secret') { if ($v !== '') $secrets[(string) $f['name']] = $v; continue; }
             if ($v === '' && !empty($f['required'])) $missing[] = (string) ($f['label'] ?? $f['name']);
             if ($v !== '') $cfg[(string) $f['name']] = $v;
         }
         if ($missing) { Flight::jsonError('Required: ' . implode(', ', $missing) . '.', 400); return; }
+        if ($driver === 'github') {
+            try {
+                [$repo, $branch] = GitSync::repo($cfg);
+                $cfg['repo'] = $repo; $cfg['branch'] = $branch;
+                if (isset($secrets['token'])) Publish\GithubDriver::setToken($inst, $secrets['token']);
+                Publish\GithubDriver::webhookSecret($inst);   // makes the deploy key too: both are shown at once
+            } catch (\InvalidArgumentException $e) { Flight::jsonError($e->getMessage(), 400); return; }
+        }
         $t->instanceRef = (int) $inst->id;
         $t->driver      = $driver;
-        $t->label       = trim((string) $this->getParam('label', '')) ?: ($cls::label() . ' → ' . ($cfg['host'] ?? ''));
+        $t->label       = trim((string) $this->getParam('label', '')) ?: ($cls::label() . ' → ' . ($cfg['host'] ?? $cfg['repo'] ?? ''));
         $t->configJson  = json_encode($cfg, JSON_UNESCAPED_SLASHES);
         if (!$t->createdAt) $t->createdAt = date('Y-m-d H:i:s');
         $t->updatedAt   = date('Y-m-d H:i:s');
         Bean::store($t);
         $this->logger->info('Export target saved', ['instance' => $inst->slug, 'target' => (int) $t->id, 'driver' => $driver]);
-        Flight::jsonSuccess(['id' => (int) $t->id], 'Saved. Test the connection to get the key to authorise on your server.');
+        Flight::jsonSuccess(['id' => (int) $t->id], $driver === 'github'
+            ? 'Saved. On GitHub, add the deploy key (with write access) and the webhook shown below, then Test the connection.'
+            : 'Saved. Test the connection to get the key to authorise on your server.');
     }
 
     /** POST target: remove it (its driver key stays with the project, for the next target on that host). */
@@ -201,6 +218,19 @@ class Deploy extends BaseControls\Control {
         $this->logger->info('Export run', ['instance' => $inst->slug, 'target' => (int) $t->id, 'ok' => $ok, 'message' => mb_substr($msg, 0, 300)]);
         if (!$ok) { Flight::jsonError($msg, 400); return; }
         Flight::jsonSuccess(['steps' => array_values((array) ($r['steps'] ?? []))], $msg);
+    }
+
+    /** POST target: bring in what was pushed to the GitHub repository's branch, now (app\GitSync::pull). */
+    public function targetpull($params = []) {
+        if (!$this->requireLogin() || !$this->requirePost()) return;
+        if (!($inst = $this->containerProject(true))) return;
+        if (!($t = $this->target($inst, (int) $this->getParam('target', 0)))) return;
+        if ((string) $t->driver !== 'github') { Flight::jsonError('Only a GitHub repository brings changes in.', 400); return; }
+        set_time_limit(700);
+        $r = GitSync::pull($inst);
+        $this->logger->info('GitHub pull', ['instance' => $inst->slug, 'ok' => $r['ok'], 'message' => mb_substr((string) $r['message'], 0, 300)]);
+        if (empty($r['ok'])) { Flight::jsonError((string) $r['message'], 400); return; }
+        Flight::jsonSuccess(['plan' => (int) ($r['plan'] ?? 0), 'deferred' => !empty($r['deferred'])], (string) $r['message']);
     }
 
     /** One of the project's targets, or a JSON 404. */

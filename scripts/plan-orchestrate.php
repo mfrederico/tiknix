@@ -358,5 +358,12 @@ if (empty($res['stalled'])) {
              . ' > ' . escapeshellarg($dir . '/.aibuilder/audit-driver.log') . ' 2>&1 &';
         exec($cmd);
         echo "[orchestrator] launched Definition-of-Done audit for plan #$planId\n";
+        $audited = true;
     }
+}
+// A project kept in step with GitHub (app\GitSync) sends each request there when its check reports
+// (AuditReporter). With no check — stalled, or checks switched off — it goes now: what merged is live.
+if (empty($audited) && $__inst && \app\CoreDb::with(fn() => (bool) \app\GitSync::target($__inst), false)) {
+    \app\GitSync::launch($__inst, 'after', (int) $planId);
+    echo "[orchestrator] sending plan #$planId to GitHub\n";
 }

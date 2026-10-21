@@ -12,6 +12,7 @@
  * later check is counted on it, not filed again (Firehose). This is how a check that took the app's
  * intended behaviour for a fault (inresonance's closed sign-up, 2026-10-20) is answered by the planner.
  */
+chdir(dirname(__DIR__));   // cron and background launches start elsewhere; the app boots from its root
 require dirname(__DIR__) . '/vendor/autoload.php';
 require_once \app\Paths::runtime() . '/bin/_boot.php';
 new \app\Bootstrap();

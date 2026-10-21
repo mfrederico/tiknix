@@ -10,6 +10,7 @@
  * and by the Deploy page. A pull that finds the project building waits: it is tried again every two
  * minutes for an hour, and the end of the next request brings it in regardless.
  */
+chdir(dirname(__DIR__));   // cron and background launches start elsewhere; the app boots from its root
 require dirname(__DIR__) . '/vendor/autoload.php';
 require_once \app\Paths::runtime() . '/bin/_boot.php';
 new \app\Bootstrap();

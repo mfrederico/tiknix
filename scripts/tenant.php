@@ -205,7 +205,7 @@ if (isset($o['browser']) || isset($o['browser-stop'])) {
     // Lend ONE app a browser for its agents (lib/TenantBrowser.php), or take it back.
     $lend = isset($o['browser']);
     $i = inst((string) ($lend ? $o['browser'] : $o['browser-stop']));
-    $r = $lend ? \app\TenantBrowser::lend($i) : \app\TenantBrowser::takeBack($i);
+    $r = $lend ? \app\TenantBrowser::keep($i) : \app\TenantBrowser::takeBack($i);
     foreach ($r['steps'] ?? [] as $st) echo "  {$st}\n";
     if (!$r['ok']) { fwrite(STDERR, "ERROR browser for {$i->slug}: {$r['error']}\n"); exit(1); }
     exit(0);

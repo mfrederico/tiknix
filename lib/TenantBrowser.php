@@ -62,12 +62,46 @@ class TenantBrowser {
      *         false with the reason when the app already holds one, none is free, or it failed.
      */
     public static function lendForBuild(object $inst): array {
-        if (self::lent($inst)) return ['lent' => false, 'why' => 'this app already holds a lent browser'];
+        if (self::lent($inst)) return ['lent' => false, 'why' => 'this app already holds a lent browser' . (self::forBuilds($inst) ? ' (lent for its builds)' : ' (kept lent by hand)')];
         if (self::lentCount() >= self::MAX_LENT) {
             return ['lent' => false, 'why' => 'all ' . self::MAX_LENT . ' browsers are lent to other builds, so this build runs without one (its tasks list what they could not look at)'];
         }
         $r = self::lend($inst);
-        return $r['ok'] ? ['lent' => true, 'why' => 'a browser on the QA host, for this build'] : ['lent' => false, 'why' => 'the browser could not be lent: ' . (string) ($r['error'] ?? '?')];
+        if (!$r['ok']) return ['lent' => false, 'why' => 'the browser could not be lent: ' . (string) ($r['error'] ?? '?')];
+        if (file_put_contents(self::buildMark($inst), date('c') . "\n") === false) error_log('ERROR TenantBrowser: could not write ' . self::buildMark($inst) . " — {$inst->slug}'s lent browser will not be taken back by its builds");
+        return ['lent' => true, 'why' => 'a browser on the QA host, for this build'];
+    }
+
+    /**
+     * Was the app's browser lent for its builds (taken back when the last of them ends) rather than
+     * kept lent by hand (tenant.php --browser)? Recorded on disk, not on the build that lent it: two
+     * builds of one app overlap, and the one that lent it is not always the one that ends last — the
+     * lender left it to the other, which had not lent it and so never took it back (inresonance
+     * held one for a day, 2026-10-20).
+     */
+    public static function forBuilds(object $inst): bool { return is_file(self::buildMark($inst)); }
+
+    private static function buildMark(object $inst): string { return TenantBuilder::workspace($inst) . '/.aibuilder/browser-for-builds'; }
+
+    /** Lend it and keep it lent: no build takes it back (tenant.php --browser). */
+    public static function keep(object $inst): array {
+        $r = self::lend($inst);
+        if ($r['ok'] && is_file(self::buildMark($inst)) && !unlink(self::buildMark($inst))) return ['ok' => false, 'steps' => $r['steps'] ?? [], 'error' => 'could not remove ' . self::buildMark($inst) . ': builds would still take it back'];
+        return $r;
+    }
+
+    /**
+     * A build ended: when the browser was lent for builds and no other build of the app is still
+     * running, take it back. @return string what happened, for the build's log ('' = nothing to do)
+     */
+    public static function afterBuild(object $inst, string $ownSession): string {
+        if (!self::lent($inst) || !self::forBuilds($inst)) return '';
+        exec("tmux list-sessions -F '#{session_name}' 2>/dev/null", $names);
+        foreach ($names as $n) {
+            if ($n !== $ownSession && str_contains((string) $n, (string) $inst->slug) && str_contains((string) $n, 'orchestrator')) return "kept for {$n}, still building";
+        }
+        $r = self::takeBack($inst);
+        return $r['ok'] ? 'taken back' : 'ERROR not taken back: ' . ($r['error'] ?? '?');
     }
 
     /**
@@ -230,6 +264,7 @@ BASH;
     public static function takeBack(object $inst): array {
         $session = self::session($inst);
         $steps = [];
+        if (is_file(self::buildMark($inst)) && !unlink(self::buildMark($inst))) return ['ok' => false, 'error' => 'could not remove ' . self::buildMark($inst)];
         exec('tmux kill-session -t ' . escapeshellarg('=' . $session) . ' 2>/dev/null', $x, $code);
         $steps[] = $code === 0 ? "ended: tmux session {$session}" : "no tmux session {$session} was running";
         $unset = '$f = "/srv/app/.mcp.json"; if (!is_file($f)) { echo "no .mcp.json"; exit(0); } $c = json_decode((string) file_get_contents($f), true); '

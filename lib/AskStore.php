@@ -101,7 +101,7 @@ class AskStore {
 
     /** The answerer's guess at what this person will type next. */
     public static function next(string $dir, int $promptRef, string $hint): void {
-        self::db($dir)->prepare('UPDATE askmessage SET next_hint = ?, updated_at = ? WHERE prompt_ref = ?')->execute([mb_substr($hint, 0, 160), self::now(), $promptRef]);
+        self::db($dir)->prepare('UPDATE askmessage SET next_hint = ?, updated_at = ? WHERE prompt_ref = ?')->execute([AskTriage::whole($hint), self::now(), $promptRef]);
     }
 
     /** It came by email: its answer goes back on this conversation. */

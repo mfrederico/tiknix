@@ -151,4 +151,13 @@ class AskTriageTest extends TestCase {
         $this->assertStringContainsString('**They answered:** match by SKU', $new, 'the answer survives the edit');
         $this->assertSame('Just this.', \app\PromptQueue::keepAnswers('Nothing asked yet.', 'Just this.'));
     }
+
+    public function testAGuessIsKeptWholeNotCutMidSentence(): void {
+        $note = "a private community with no questions set tells the visitor only that it is 'not taking requests yet', with no Ask to join, while the /communities list shows an 'Ask to join' button for the same community";
+        $g = \app\AskTriage::nextAfterCheck(['design' => [['page' => '/communities/view?id=7', 'verdict' => 'needs work', 'notes' => [$note]]]]);
+        $this->assertStringEndsWith('for the same community — fix that', $g, 'the whole note, then what to do');
+        $this->assertSame('Add a phone number field', \app\AskTriage::whole('Add a phone number field'));
+        $long = 'The first sentence says what is wrong with the page. ' . str_repeat('Then more and more words follow ', 20);
+        $this->assertSame('The first sentence says what is wrong with the page.', \app\AskTriage::whole($long, 120), 'ends at a complete sentence');
+    }
 }

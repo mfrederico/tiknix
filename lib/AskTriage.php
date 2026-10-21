@@ -229,7 +229,7 @@ class AskTriage {
         $next = '';
         if (preg_match('/^\s*`?NEXT:\s*(.+?)`?\s*$/mi', $text, $x, PREG_OFFSET_CAPTURE)) {
             $g = trim((string) preg_replace('/\s+/', ' ', trim($x[1][0], " \t\"'“”")));
-            if (strcasecmp($g, 'none') !== 0 && mb_strlen($g) >= 8) $next = mb_substr($g, 0, 160);
+            if (strcasecmp($g, 'none') !== 0 && mb_strlen($g) >= 8) $next = self::whole($g);
             $text = trim(substr($text, 0, $x[0][1]) . substr($text, $x[0][1] + strlen($x[0][0])));
         }
         if ($verdict === 'answer' && $text === '' && $needAnswer) throw new \RuntimeException('the agent called it a question and gave no answer');
@@ -242,16 +242,35 @@ class AskTriage {
      * $manifest: the check's audit.json, for this plan.
      */
     public static function nextAfterCheck(array $manifest): string {
+        // (the guesses below are whole sentences: Tab sends what it shows, so a cut one sends half a request)
         foreach ((array) ($manifest['failures'] ?? []) as $f) {
             $what = trim((string) ($f['message'] ?? $f['label'] ?? ''));
-            if ($what !== '') return mb_substr('Fix: ' . $what . (!empty($f['url']) ? ' (' . (string) (parse_url((string) $f['url'], PHP_URL_PATH) ?: $f['url']) . ')' : ''), 0, 160);
+            if ($what !== '') return 'Fix: ' . self::whole($what, self::NEXT_MAX - 60) . (!empty($f['url']) ? ' (' . (string) (parse_url((string) $f['url'], PHP_URL_PATH) ?: $f['url']) . ')' : '');
         }
         foreach ((array) ($manifest['design'] ?? []) as $d) {
             if (strcasecmp((string) ($d['verdict'] ?? ''), 'needs work') !== 0) continue;
             $note = trim((string) (((array) ($d['notes'] ?? []))[0] ?? ''));
-            if ($note !== '') return mb_substr('On ' . (string) ($d['page'] ?? 'that page') . ': ' . rtrim($note, '.') . ' — fix that', 0, 160);
+            if ($note !== '') return 'On ' . (string) ($d['page'] ?? 'that page') . ': ' . rtrim(self::whole($note, self::NEXT_MAX - 80), '.') . ' — fix that';
         }
         return '';
+    }
+
+    /** The most a guess at the next message may be: long enough for a real request, short enough to read in the box. */
+    public const NEXT_MAX = 400;
+
+    /**
+     * $s kept whole when it fits; otherwise ended at its last complete sentence, else its last clause
+     * (", " / "; " / " — "), within $max — never cut mid-word or mid-thought. Tab accepts the guess
+     * exactly as shown, so "…with no Ask to join, while the" sent half a request (inresonance, 2026-10-21).
+     */
+    public static function whole(string $s, int $max = self::NEXT_MAX): string {
+        $s = trim($s);
+        if (mb_strlen($s) <= $max) return $s;
+        $cut = mb_substr($s, 0, $max);
+        foreach (['/^(.*[.!?])\s/su', '/^(.*?)(?:,|;| —| -)\s[^,;—]*$/su'] as $re) {
+            if (preg_match($re, $cut, $m) && mb_strlen(trim($m[1])) >= (int) ($max * 0.4)) return rtrim(trim($m[1]), ',;—- ');
+        }
+        return rtrim(mb_substr($cut, 0, (int) mb_strrpos($cut, ' ')), ',;—- ') . '…';
     }
 
     /** Record where a message stands. */

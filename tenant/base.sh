@@ -133,6 +133,16 @@ nginx -t 2>&1 | tail -1
 systemctl enable -q php$PHPV-fpm nginx
 systemctl restart php$PHPV-fpm nginx
 
+say "quiet logins: cron logs failed jobs only, no session lines; app and root linger"
+# Two cron jobs a minute logged a session and a command each, and every core SSH login started and
+# stopped a user manager: ~300 MB a day of journal writes, which thin storage keeps as pool space.
+# lib/TenantHost.php BASE_RECIPES 'quiet-sessions' has the same for containers made before this.
+sed -i 's/^@include common-session-noninteractive.*/session optional pam_umask.so   # Tiknix: not common-session-noninteractive, whose pam_unix logs two lines per cron run/' /etc/pam.d/cron
+printf '# Tiknix: log only failed jobs (-L 4), not every start (two jobs a minute)\nEXTRA_OPTS="-L 4"\n' > /etc/default/cron
+systemctl restart cron
+loginctl enable-linger app
+loginctl enable-linger root
+
 say "trim: services a tenant never uses, their packages, docs and caches"
 # postfix (mail goes through the Mailgun API), rsyslog (journald keeps the logs),
 # networkd-dispatcher (python, unused), polkit/packagekit, sysstat. software-properties-common

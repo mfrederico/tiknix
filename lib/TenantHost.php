@@ -265,6 +265,21 @@ class TenantHost {
             'install' => 'mkdir -p /etc/systemd/journald.conf.d && printf "[Journal]\nSystemMaxUse=50M\n" > /etc/systemd/journald.conf.d/90-tiknix.conf; '
                        . 'systemctl restart systemd-journald; journalctl --rotate >/dev/null 2>&1; journalctl --vacuum-size=50M >/dev/null 2>&1; echo "installed: journal capped at 50M ($(journalctl --disk-usage 2>/dev/null | grep -o "[0-9.]*[KMG]" | head -1) now)"',
         ],
+        // Logins that write nothing to the journal (tenant/base.sh has the same). Two cron jobs a minute
+        // each logged a session opened/closed and its command, and every core SSH login started and
+        // stopped a systemd user manager (~30 lines): about 1,250 lines an hour of nothing, which
+        // journald turned into ~300 MB a day of writes. On thin storage nothing discards, so that
+        // churn is pool space (local-lvm filled, 2026-10-21). Cron still logs a job that FAILS (-L 4);
+        // the user managers of app and root stay up (linger) instead of starting per login.
+        'quiet-sessions' => [
+            'check'   => 'grep -q "^session optional pam_umask.so" /etc/pam.d/cron && ! grep -q "^@include common-session-noninteractive" /etc/pam.d/cron && grep -qx "EXTRA_OPTS=\"-L 4\"" /etc/default/cron '
+                       . '&& tr "\0" " " < /proc/$(pidof cron)/cmdline | grep -q -- "-L 4" && [ "$(loginctl show-user app -p Linger --value 2>/dev/null)" = yes ] && [ "$(loginctl show-user root -p Linger --value 2>/dev/null)" = yes ]',
+            'install' => 'sed -i "s/^@include common-session-noninteractive.*/session optional pam_umask.so   # Tiknix: not common-session-noninteractive, whose pam_unix logs two lines per cron run/" /etc/pam.d/cron; '
+                       . 'grep -q "^session optional pam_umask.so" /etc/pam.d/cron || { echo "/etc/pam.d/cron has no common-session-noninteractive line to replace"; exit 1; }; '
+                       . 'printf "# Tiknix: log only failed jobs (-L 4), not every start (two jobs a minute)\nEXTRA_OPTS=\"-L 4\"\n" > /etc/default/cron; systemctl restart cron; '
+                       . 'tr "\0" " " < /proc/$(pidof cron)/cmdline | grep -q -- "-L 4" || { echo "cron did not restart with -L 4"; exit 1; }; '
+                       . 'loginctl enable-linger app; loginctl enable-linger root; echo "installed: cron logs failed jobs only, no session lines; app and root linger"',
+        ],
     ];
 
     public const SYSTEM_RECIPES = [

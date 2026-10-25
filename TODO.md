@@ -34,3 +34,15 @@ Deferred 2026-10-23: no outside users yet. Pick it up before apps with public vi
    - no network beyond the sandbox
 
 **Not the defence on its own:** word-frequency (Bayesian) filtering and small classifiers catch copied attacks, not determined ones. An attacker who can test against them gets through. The protection is steps 1 and 5. The filters only decide what a person looks at.
+
+## Attack surface found 2026-10-25 (verified from inside a tenant container)
+
+None critical while every owner is the platform's own people; do 4 now, 1 and 3 before the next outside owner.
+
+1. **A build task is the whole app.** The agent runs `--permission-mode bypassPermissions` as `app`, with no jail; the only hook shipped to an app is the PHP validator (core's `security-sandbox.php` never reaches a container). A task can write `/srv/app` directly (skipping merge review), read `database/*.db` and `secure/` (`connections.key` opens every connection and `claude-oauth.enc`), install a crontab, or add a `pipelines/*.json` that runs every minute. Fix: a write guard shipped to apps (worktree only; `secure/`, `pipelines/`, crontab, `.mcp.json` refused), or tasks under a separate user that cannot read `secure/`.
+2. **The owner's outside accounts go with a compromised task**: S3, Stripe, Shopify, QuickBooks, Quo SMS, Mailgun, the Claude OAuth token, GitHub sync (both directions). Broker-key endpoints on core are bound to the instance and owner; `publish` is gated at the owner's level.
+3. **Flat tenant network.** From one container: every other container's 80/22/3990, the node's 8006 and 22, the QA host's 22. Proxmox firewall off at cluster, node and CT level. All credential-gated today. Fix: CT firewall rules — 80 only from core and the QA host, 22/3990 only from core, no tenant-to-tenant, no tenant-to-node management.
+4. **BUG NOW: every visitor is 173.231.12.84 to an app.** Capricorn sends X-Forwarded-For/X-Real-IP; the app's nginx (`tenant/base.sh`) never applies them; `RateLimiter` keys on `REMOTE_ADDR`, `LeadGate` on `request->ip`. Five failed sign-ins by anyone lock sign-in for all of an app's visitors for five minutes. Fix: `set_real_ip_from <capricorn>; real_ip_header X-Real-IP;` in base.sh + a BASE_RECIPES entry (trusting only capricorn also stops spoofing from other tenants).
+5. **Shared Mailgun** (inresonance only): Tiknix's notify.tiknix.com key sits in the app's store, sealed with the app's own key, so its agent can send as Tiknix. Check whether it is a domain sending key or the account key; prefer a per-app sending key or a relay through core with per-app limits.
+
+Sound: `PlatformAgent` (QA author: no tools, bare, cost-capped), per-instance broker keys, per-app HMAC terminal bridge, authenticated git, loopback valkey, keyed MCP `tools/call`, the QA host's egress firewall.

@@ -1012,7 +1012,19 @@ SH;
     /** Merge task/<id> into the app — the merge commit is $author's (the member approving it). */
     public static function mergeTask(object $inst, string $id, array $author): array {
         if ($author === []) return ['ok' => false, 'status' => 'failed', 'error' => "merging task/{$id} needs the member doing it as the commit's author"];
-        return self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600, self::gitEnv($author));
+        $r = self::taskCall($inst, '--agent-merge=' . escapeshellarg($id), null, 600, self::gitEnv($author));
+        // What the site serves is what php-fpm has compiled: a merge that moved classes or rebuilt
+        // the class map left workers answering 500 from the old map until someone restarted
+        // php-fpm by hand (inresonance, 2026-10-25). A graceful reload, every merge — cheap, and
+        // the one thing the app itself cannot do (no root).
+        if (!empty($r['ok'])) {
+            [$c, $o] = self::ssh($inst, 'root', 'systemctl reload "php$(php -r \'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;\')-fpm" 2>&1 && echo reloaded', null, 60);
+            if ($c !== 0 || !str_contains((string) $o, 'reloaded')) {
+                error_log("ERROR TenantHost::mergeTask: php-fpm in {$inst->slug} was not reloaded after merging task {$id}: " . trim((string) $o));
+                $r['warning'] = 'merged, but php-fpm was not reloaded: ' . trim((string) $o);
+            }
+        }
+        return $r;
     }
     /** What may be attached to a request, and how large one file may be. */
     public const ATTACH_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp', 'gif' => 'image/gif',

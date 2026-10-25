@@ -1,0 +1,20 @@
+{
+  "name": "messaging",
+  "version": "1.0.0",
+  "kind": "capability",
+  "title": "Messaging",
+  "blurb": "Email and text messages to members, with the member in control: kinds of message each with their own switch (what reaches you), signed one-click unsubscribe, a suppression list fed by bounces and complaints, and the owner's messages to an audience they own with a derived recipient list (never typed), a weekly cap, scheduling, tracked links, replies, and a ledger that makes sending twice impossible. Also a weekly digest and nudges, run hourly. The app hands in its audiences, digest content and phone numbers from code.",
+  "tags": ["messaging", "email", "sms", "text", "campaigns", "newsletter", "digest", "unsubscribe", "preferences", "suppression", "mailgun", "reminders"],
+  "requires": {
+    "lib": ["Bean", "EncryptionService", "Mailer", "PermissionCache", "Sites", "Sms", "Ui"]
+  },
+  "provides": {
+    "controllers": ["Messaging", "Msgtrack", "Msgpref"],
+    "beans": ["msgcategory", "msgpref", "msgcampaign", "msgsend", "msgevent", "msgsuppression"],
+    "pipelines": ["messaging-hourly"],
+    "capabilities": ["messaging", "email-campaigns", "unsubscribe", "message-preferences", "suppression", "sms-opt-in", "digest"]
+  },
+  "uses": {
+    "beans": ["member"]
+  }
+}

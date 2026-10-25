@@ -1,6 +1,15 @@
 {
     "version": 1,
-    "concepts": [],
+    "concepts": {
+        "messaging": {
+            "version": "1.0.0",
+            "enabled": true,
+            "source": "control-plane catalog",
+            "installed_at": "2026-10-25T22:00:54+00:00",
+            "hash": "sha256:36be485af881505e963333f47b554d6cb0c68136f22f0f6831bf9b8ba86ef5b5",
+            "enabled_at": "2026-10-25T22:00:54+00:00"
+        }
+    },
     "connectors": {
         "cannonwms": {
             "version": "1.0.0",

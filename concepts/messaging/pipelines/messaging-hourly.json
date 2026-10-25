@@ -1,0 +1,19 @@
+{
+  "slug": "messaging-hourly",
+  "name": "Messaging, hourly",
+  "description": "Every hour: sends the scheduled messages whose time has come and evaluates the active digest, nudge and repeating messages (app\\concepts\\messaging\\Runner::hourly). Each recipient is written to the msgsend ledger before the message goes out, so a run that is repeated or interrupted never sends twice.",
+  "trigger": { "cron": "0 * * * *" },
+  "steps": [
+    {
+      "name": "send",
+      "type": "shell",
+      "config": {
+        "cwd": "{root}",
+        "command": "php -r 'require \"vendor/autoload.php\"; require \\app\\Paths::runtime() . \"/bin/_boot.php\"; new app\\Bootstrap(\"conf/config.ini\"); echo implode(\"\\n\", \\app\\concepts\\messaging\\Runner::hourly()) . \"\\n\";'",
+        "timeout": 600
+      },
+      "on_success": "exit",
+      "on_fail": "exit"
+    }
+  ]
+}

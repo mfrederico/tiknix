@@ -126,3 +126,17 @@
 \app\Chrome::add('navTop', 'platform/chrome_navtop');
 foreach (['prepare', 'bar', 'account', 'footer', 'dashboard'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
 unset($__slot);
+
+// Messages to members (concepts/messaging, the plugin harvested from inresonance): Tiknix has no
+// audiences of its own (an admin writes to everyone with that kind of message on), no digest, no
+// phone numbers — only its own nudge, "signed up but no project yet" (lib/MessagingNoProject.php).
+// The plugin's classes autoload only after Concepts::boot; a CLI run (the hourly pipeline) never
+// fires the start hook, so boot and register here, at load. The Mailgun webhook for delivery
+// events and replies rides the runtime's /webhook/mailgun: the plugin looks first.
+if (\app\Concepts::has('messaging')) {
+    \app\Concepts::boot(\app\Paths::root());
+    \app\concepts\messaging\Providers::register([
+        'triggers' => ['no_project_days' => \app\MessagingNoProject::class],
+    ]);
+    \Flight::before('start', function () { \app\concepts\messaging\Webhook::intercept(); });
+}

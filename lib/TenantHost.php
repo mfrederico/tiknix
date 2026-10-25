@@ -287,14 +287,22 @@ class TenantHost {
         // so PHP saw capricorn for everyone and the runtime's per-IP rate limit (5 failed sign-ins in
         // 5 minutes) was per APP: one visitor's failures locked sign-in for all of them. Only
         // capricorn's address ({proxy_ip}, conf/proxmox.ini) is believed, so no container can spoof
-        // one. The check is that nginx started AFTER the file was written (a reload leaves
-        // ActiveEnterTimestamp alone, so the recipe restarts).
+        // one. TWO files, together: real_ip makes REMOTE_ADDR the visitor, and the TCP peer goes to
+        // PHP apart as TIKNIX_PEER_ADDR — app\Host judges "did this come through capricorn" by the
+        // peer. The first version set only real_ip: Host then judged by REMOTE_ADDR, distrusted
+        // capricorn's X-Forwarded-Host, and serenity's sites answered 404 to every outside visitor
+        // (2026-10-25). So the recipe refuses on an app whose runtime does not read the peer yet
+        // (update it first), and the check is that nginx started AFTER both files were written (a
+        // reload leaves ActiveEnterTimestamp alone, so the recipe restarts).
         'real-ip' => [
-            'check'   => 'F=/etc/nginx/conf.d/realip.conf; grep -qx "set_real_ip_from {proxy_ip};" $F 2>/dev/null && grep -qx "real_ip_header X-Real-IP;" $F '
-                       . '&& [ "$(stat -c %Y $F)" -le "$(date -d "$(systemctl show nginx -p ActiveEnterTimestamp --value)" +%s)" ]',
-            'install' => 'printf "# Tiknix: visitors come through capricorn, which says who they are; only it is believed\nset_real_ip_from {proxy_ip};\nreal_ip_header X-Real-IP;\n" > /etc/nginx/conf.d/realip.conf; '
+            'check'   => 'F=/etc/nginx/conf.d/realip.conf; A=/etc/nginx/sites-available/app; grep -qx "set_real_ip_from {proxy_ip};" $F 2>/dev/null && grep -qx "real_ip_header X-Real-IP;" $F '
+                       . '&& grep -q "fastcgi_param TIKNIX_PEER_ADDR \$realip_remote_addr;" $A && S=$(date -d "$(systemctl show nginx -p ActiveEnterTimestamp --value)" +%s) && [ "$(stat -c %Y $F)" -le "$S" ] && [ "$(stat -c %Y $A)" -le "$S" ]',
+            'install' => 'grep -q "TIKNIX_PEER_ADDR" /srv/app/vendor/tiknix/runtime/lib/Host.php || { echo "the runtime here does not read TIKNIX_PEER_ADDR yet: update the app first (v2.0.0-alpha.221+), or outside visitors lose X-Forwarded-Host"; exit 1; }; '
+                       . 'A=/etc/nginx/sites-available/app; grep -q "fastcgi_param TIKNIX_PEER_ADDR" $A || sed -i "/fastcgi_param HTTPS \\$fwd_https;/a \\        fastcgi_param TIKNIX_PEER_ADDR \\$realip_remote_addr;   # the TCP peer (capricorn), apart from REMOTE_ADDR (the visitor, real_ip)" $A; '
+                       . 'grep -q "fastcgi_param TIKNIX_PEER_ADDR \$realip_remote_addr;" $A || { echo "could not add the peer param to $A (no fastcgi_param HTTPS line to follow?)"; exit 1; }; '
+                       . 'printf "# Tiknix: visitors come through capricorn, which says who they are; only it is believed\nset_real_ip_from {proxy_ip};\nreal_ip_header X-Real-IP;\n" > /etc/nginx/conf.d/realip.conf; '
                        . 'nginx -t 2>/dev/null || { rm -f /etc/nginx/conf.d/realip.conf; echo "nginx refused the real_ip config"; nginx -t; exit 1; }; '
-                       . 'systemctl restart nginx; systemctl is-active -q nginx || { echo "nginx did not come back"; exit 1; }; echo "installed: visitors are seen by their own address, X-Real-IP from {proxy_ip} only (nginx restarted)"',
+                       . 'systemctl restart nginx; systemctl is-active -q nginx || { echo "nginx did not come back"; exit 1; }; echo "installed: visitors are seen by their own address (X-Real-IP from {proxy_ip} only), the peer passed apart (nginx restarted)"',
         ],
     ];
 

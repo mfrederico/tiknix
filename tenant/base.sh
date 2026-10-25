@@ -121,6 +121,9 @@ server {
         fastcgi_pass unix:/run/php/app.sock;
         # capricorn terminates TLS: tell PHP the original scheme
         fastcgi_param HTTPS $fwd_https;
+        # the TCP peer (capricorn), kept apart from REMOTE_ADDR, which real_ip below makes the visitor:
+        # app\Host believes X-Forwarded-Host and -Proto from the peer it trusts, never from REMOTE_ADDR
+        fastcgi_param TIKNIX_PEER_ADDR $realip_remote_addr;
     }
     location ~ /\.(?!well-known) { deny all; }
     location ~* \.(log|db|sqlite|ini)$ { deny all; }
@@ -133,6 +136,9 @@ EOF
 # the app saw capricorn for everyone: a per-IP rate limit (5 failed sign-ins in 5 minutes) was
 # per app, so one visitor's failures locked sign-in for all. Only capricorn's address is believed,
 # so another container cannot spoof one. lib/TenantHost.php BASE_RECIPES 'real-ip' has the same.
+# Goes WITH the TIKNIX_PEER_ADDR param above: without it, REMOTE_ADDR becoming the visitor made
+# app\Host distrust capricorn's X-Forwarded-Host, and a multi-site app answered 404 to every
+# outside visitor (serenity, 2026-10-25).
 printf '# Tiknix: visitors come through capricorn, which says who they are; only it is believed\nset_real_ip_from %s;\nreal_ip_header X-Real-IP;\n' "$PROXY_IP" > /etc/nginx/conf.d/realip.conf
 ln -sf /etc/nginx/sites-available/app /etc/nginx/sites-enabled/app
 rm -f /etc/nginx/sites-enabled/default

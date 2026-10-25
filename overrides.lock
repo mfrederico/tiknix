@@ -17,9 +17,9 @@
             "recorded_at": "2026-10-15T15:05:03+00:00"
         },
         "controls/Teams.php": {
-            "base": "sha256:d59790a7926aeec2d1411735cbb34085cf02179e518443b71b2209c212d332dc",
+            "base": "sha256:5fc4131eef543bc1e98406843bfe465b36e5926dfcd493284647c6984b6394e4",
             "release": "dev-main",
-            "recorded_at": "2026-09-30T17:02:29+00:00"
+            "recorded_at": "2026-10-25T17:45:40+00:00"
         },
         "mcptools/SendToTiknixSupportTool.php": {
             "base": "sha256:231b0511755a4a7c21e3a3c99aeb1c7f867b041bdab2a68447420b845c3ab1fc",

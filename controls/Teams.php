@@ -416,7 +416,7 @@ class Teams extends Control {
         }
 
         // Check if already a member
-        $existingMember = Bean::findOne('member', 'email = ?', [$email]);
+        $existingMember = \Model_Member::byEmail((string) $email);
         if ($existingMember) {
             $existingMembership = Bean::findOne('teammember', 'team_id = ? AND member_id = ?', [$teamId, $existingMember->id]);
             if ($existingMembership) {
@@ -518,7 +518,7 @@ class Teams extends Control {
         // If not logged in, check if we need to auto-create account
         if (!Flight::isLoggedIn()) {
             // Check if member exists with this email
-            $existingMember = Bean::findOne('member', 'email = ?', [$invitation->email]);
+            $existingMember = \Model_Member::byEmail((string) $invitation->email);
 
             if ($existingMember) {
                 // Member exists, redirect to login

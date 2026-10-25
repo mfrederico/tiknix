@@ -46,3 +46,7 @@ None critical while every owner is the platform's own people; do 4 now, 1 and 3 
 5. **Shared Mailgun** (inresonance only): Tiknix's notify.tiknix.com key sits in the app's store, sealed with the app's own key, so its agent can send as Tiknix. Check whether it is a domain sending key or the account key; prefer a per-app sending key or a relay through core with per-app limits.
 
 Sound: `PlatformAgent` (QA author: no tools, bare, cost-capped), per-instance broker keys, per-app HMAC terminal bridge, authenticated git, loopback valkey, keyed MCP `tools/call`, the QA host's egress firewall.
+
+## Status report: "agent ready" should mean the agent can run
+
+Found 2026-10-25: inresonance's `bin/claude` was a corrupt file that segfaulted on every real run (exit 139) while `--version` still answered, so the hourly report said `agent_ready: true` for days and the first build stalled in three minutes. The readiness check should run a token-free invocation — `bin/claude --permission-mode bypassPermissions --max-turns 1 -p "say ok" </dev/null` exits 1 with "Not logged in" (or 0) when the binary works, 139 when it does not — and report `agent_ready: false` with the exit code and the binary's version and sha256 otherwise. Fleet check on 2026-10-25: only inresonance was affected; the fix was reinstalling the binary and `ClaudeBinary::link`.

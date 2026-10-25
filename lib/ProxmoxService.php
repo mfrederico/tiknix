@@ -78,11 +78,12 @@ class ProxmoxService {
         $t    = $ini['tenant'] ?? null;
         if (!is_array($t)) throw new \RuntimeException("{$file} has no [tenant] section — the node's container layout (see conf/proxmox.example.ini).");
         $out = [];
-        foreach (['os_template', 'storage', 'bridge', 'subnet', 'gateway', 'dns', 'key', 'known_hosts'] as $k) {
+        foreach (['os_template', 'storage', 'bridge', 'subnet', 'gateway', 'dns', 'key', 'known_hosts', 'proxy_ip'] as $k) {
             $v = trim((string) ($t[$k] ?? ''));
             if ($v === '') throw new \RuntimeException("{$file}: [tenant] {$k} is not set.");
             $out[$k] = $v;
         }
+        if (!filter_var($out['proxy_ip'], FILTER_VALIDATE_IP)) throw new \RuntimeException("{$file}: [tenant] proxy_ip must be the address capricorn forwards visitors from (an IP), not \"{$out['proxy_ip']}\".");
         foreach (['rootfs_gb', 'memory_mb', 'swap_mb', 'cores'] as $k) {
             if (!isset($t[$k]) || !is_numeric($t[$k]) || (int) $t[$k] <= 0) throw new \RuntimeException("{$file}: [tenant] {$k} must be a positive number.");
             $out[$k] = (int) $t[$k];

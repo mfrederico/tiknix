@@ -9,6 +9,8 @@
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 PHPV=8.5
+# capricorn's address: the one source an app's nginx believes X-Real-IP from (conf/proxmox.ini [tenant] proxy_ip)
+PROXY_IP="${1:?usage: base.sh <proxy address capricorn forwards visitors from>}"
 say() { echo "== $*"; }
 
 say "no docs, man pages or translations (for everything installed from here on)"
@@ -127,6 +129,11 @@ EOF
 cat > /etc/nginx/conf.d/forwarded.conf <<'EOF'
 map $http_x_forwarded_proto $fwd_https { default ""; https on; }
 EOF
+# Every visitor arrives through capricorn, which sends their address as X-Real-IP. Without this
+# the app saw capricorn for everyone: a per-IP rate limit (5 failed sign-ins in 5 minutes) was
+# per app, so one visitor's failures locked sign-in for all. Only capricorn's address is believed,
+# so another container cannot spoof one. lib/TenantHost.php BASE_RECIPES 'real-ip' has the same.
+printf '# Tiknix: visitors come through capricorn, which says who they are; only it is believed\nset_real_ip_from %s;\nreal_ip_header X-Real-IP;\n' "$PROXY_IP" > /etc/nginx/conf.d/realip.conf
 ln -sf /etc/nginx/sites-available/app /etc/nginx/sites-enabled/app
 rm -f /etc/nginx/sites-enabled/default
 nginx -t 2>&1 | tail -1

@@ -95,7 +95,9 @@ class TenantHost {
         $steps[] = "container {$vmid} ({$name}) at {$ip}";
         $probe = (object) ['slug' => $name, 'ctIp' => $ip];
         foreach (['base' => self::BASE_SH, 'seal' => self::SEAL_SH] as $what => $file) {
-            [$code, $out] = self::ssh($probe, 'root', 'bash -s', (string) file_get_contents($file), 1800);
+            // base.sh is told capricorn's address (the one source of X-Real-IP its nginx believes)
+            $args = $what === 'base' ? ' -- ' . escapeshellarg(self::node()['proxy_ip']) : '';
+            [$code, $out] = self::ssh($probe, 'root', 'bash -s' . $args, (string) file_get_contents($file), 1800);
             $steps[] = trim(implode("\n", array_filter(explode("\n", $out), fn($l) => str_starts_with($l, '==') || str_contains($l, 'PHP ') || str_contains($l, 'Claude Code'))));
             if ($code !== 0) return ['ok' => false, 'error' => "{$what}.sh exited {$code} in {$vmid}", 'steps' => $steps, 'output' => $out];
         }
@@ -280,6 +282,20 @@ class TenantHost {
                        . 'tr "\0" " " < /proc/$(pidof cron)/cmdline | grep -q -- "-L 4" || { echo "cron did not restart with -L 4"; exit 1; }; '
                        . 'loginctl enable-linger app; loginctl enable-linger root; echo "installed: cron logs failed jobs only, no session lines; app and root linger"',
         ],
+        // Visitors' own addresses (tenant/base.sh has the same). Every request reaches an app through
+        // capricorn, which sends the visitor's address as X-Real-IP; the app's nginx never applied it,
+        // so PHP saw capricorn for everyone and the runtime's per-IP rate limit (5 failed sign-ins in
+        // 5 minutes) was per APP: one visitor's failures locked sign-in for all of them. Only
+        // capricorn's address ({proxy_ip}, conf/proxmox.ini) is believed, so no container can spoof
+        // one. The check is that nginx started AFTER the file was written (a reload leaves
+        // ActiveEnterTimestamp alone, so the recipe restarts).
+        'real-ip' => [
+            'check'   => 'F=/etc/nginx/conf.d/realip.conf; grep -qx "set_real_ip_from {proxy_ip};" $F 2>/dev/null && grep -qx "real_ip_header X-Real-IP;" $F '
+                       . '&& [ "$(stat -c %Y $F)" -le "$(date -d "$(systemctl show nginx -p ActiveEnterTimestamp --value)" +%s)" ]',
+            'install' => 'printf "# Tiknix: visitors come through capricorn, which says who they are; only it is believed\nset_real_ip_from {proxy_ip};\nreal_ip_header X-Real-IP;\n" > /etc/nginx/conf.d/realip.conf; '
+                       . 'nginx -t 2>/dev/null || { rm -f /etc/nginx/conf.d/realip.conf; echo "nginx refused the real_ip config"; nginx -t; exit 1; }; '
+                       . 'systemctl restart nginx; systemctl is-active -q nginx || { echo "nginx did not come back"; exit 1; }; echo "installed: visitors are seen by their own address, X-Real-IP from {proxy_ip} only (nginx restarted)"',
+        ],
     ];
 
     public const SYSTEM_RECIPES = [
@@ -335,8 +351,9 @@ class TenantHost {
         }
         $steps = [];
         // The base first: what every container has, whether or not a plugin asks for anything.
+        $fill = ['{proxy_ip}' => self::node()['proxy_ip']];   // a recipe is a constant; the node's values go in here
         foreach (self::BASE_RECIPES as $need => $recipe) {
-            [$c, $o] = self::ssh($inst, 'root', 'set -e; if ' . $recipe['check'] . '; then echo "already installed"; exit 0; fi; ' . $recipe['install'], null, 900);
+            [$c, $o] = self::ssh($inst, 'root', 'set -e; if ' . strtr($recipe['check'], $fill) . '; then echo "already installed"; exit 0; fi; ' . strtr($recipe['install'], $fill), null, 900);
             $last = trim((string) strrchr("\n" . trim((string) $o), "\n"));
             if ($c !== 0) return ['ok' => false, 'steps' => $steps, 'error' => "installing {$need} (base) in {$inst->slug} failed: " . trim((string) $o)];
             $steps[] = "{$need}: {$last} (base)";

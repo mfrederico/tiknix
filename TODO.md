@@ -55,3 +55,7 @@ Found 2026-10-25: inresonance's `bin/claude` was a corrupt file that segfaulted 
 - Daily, run the probe WITH the credential chain (one tiny real call): classify the result as `ok`, `expired`/`revoked` (the auth error), `missing` (no token file), or `binary` (exit 139), and report it as `agent_auth` beside `agent_ready`.
 - Record when the token was stored (`stored_at` beside the sealed file; today the file's mtime is the only trace) and report `token_age_days`.
 - When the token is older than 11 months, or the daily probe answers expired/revoked, tell the OWNER — an in-app note and an email with the link to the app's `/agents` sign-in terminal — once, and again weekly until a new token is stored. Core's project list and the Builder show the same state, so a build is never started against a sign-in that is about to lapse.
+
+## The audit's QA agent edits live data
+
+Seen 2026-10-25: the Definition-of-Done audit of plan #463 (the campaign edit form on inresonance) tested the form against the LIVE app and saved "QA new subject {headline}" as the digest's subject. It landed on the slug host's database (test data), not the inresonance.social site's, by luck of which host the audit opens. The checkers create and remove their own test users, but a form they submit changes real rows. Either the audit runs against a sandbox copy (the task sandbox already exists for this), or a checker is told never to save a form that changes existing data — a test send to itself is fine, an edit is not — and the audit reports what it changed so it can be put back.

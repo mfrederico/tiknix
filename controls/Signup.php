@@ -86,9 +86,8 @@ class Signup extends BaseControls\Control {
             // too. They were not, and an invited member therefore read "Last login: Never,
             // Logins: 0" on /admin/editMember for as long as that first session lasted —
             // about a real person who was signed in and building at that moment.
-            $member->lastLogin  = date('Y-m-d H:i:s');
-            $member->loginCount = 1;
             $id = (int) Bean::store($member);
+            $member->signedIn();   // the runtime's Model_Member: what every sign-in records
 
             /* An invited member is a billing subject like any other — per-member billing,
                their own tenant, their own invoice. Registered here so an invite produces a
@@ -168,6 +167,7 @@ class Signup extends BaseControls\Control {
                 return;
             }
 
+            $member->signedIn();   // created by SignupFlow with nothing recorded: this first session is a sign-in
             session_regenerate_id(true);   // new account, new session id
             $_SESSION['member'] = $member->export();
             $_SESSION['member']['id'] = (int) $member->id;

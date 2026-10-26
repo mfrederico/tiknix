@@ -127,16 +127,31 @@
 foreach (['prepare', 'bar', 'account', 'footer', 'dashboard'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
 unset($__slot);
 
-// Messages to members (concepts/messaging, the plugin harvested from inresonance): Tiknix has no
-// audiences of its own (an admin writes to everyone with that kind of message on), no digest, no
-// phone numbers — only its own nudge, "signed up but no project yet" (lib/MessagingNoProject.php).
-// The plugin's classes autoload only after Concepts::boot; a CLI run (the hourly pipeline) never
-// fires the start hook, so boot and register here, at load. The Mailgun webhook for delivery
-// events and replies rides the runtime's /webhook/mailgun: the plugin looks first.
+// Messages to members (concepts/messaging 2.x, the client of the messaging service — Tiknix is a
+// tenant of its own service, as instance "core"): Tiknix has no audiences of its own (an admin writes
+// to everyone with that kind of message on), no digest, no phone numbers — only its two kinds of
+// message and two nudges, one of them its own, "signed up but no project yet" (lib/MessagingNoProject.php).
+// The nudges are made ONCE in the service, paused: an admin reads them on /messaging and switches them
+// on. The plugin's classes autoload only after Concepts::boot; a CLI run (the hourly pipeline) never
+// fires the start hook, so boot and register here, at load. Mailgun's events and replies go to the
+// service's own webhook address (shown on /messaging), not to the runtime's /webhook/mailgun.
 if (\app\Concepts::has('messaging')) {
     \app\Concepts::boot(\app\Paths::root());
     \app\concepts\messaging\Providers::register([
-        'triggers' => ['no_project_days' => \app\MessagingNoProject::class],
+        'triggers'   => ['no_project_days' => \app\MessagingNoProject::class],
+        'categories' => [
+            ['technical', 'Technical notices', 'Changes to the platform that affect your projects: new runtime releases, a plugin you use, something you must act on', true, true, 'email'],
+            ['marketing', 'News from Tiknix', 'What is new on Tiknix and what people build with it; a nudge when we have not seen you for a while', true, true, 'email,text'],
+        ],
+        'system' => [
+            ['kind' => 'trigger', 'trigger_code' => 'no_project_days', 'trigger_days' => 7, 'cadence' => 'once', 'category' => 'reminders',
+             'subject' => 'Your first app is one sentence away',
+             'body_email' => "<p>Hi {first_name|there}, you signed up for Tiknix a week ago and have not started a project yet.</p>{content_html|}",
+             'body_text' => "Hi {first_name|there}, you signed up for Tiknix a week ago and have not started a project yet.\n\n{content_text|}"],
+            ['kind' => 'trigger', 'trigger_code' => 'inactive_days', 'trigger_days' => 30, 'cadence' => 'every_n_days', 'cadence_days' => 60, 'category' => 'marketing',
+             'subject' => 'We have not seen you in a while, {first_name|friend}',
+             'body_email' => "<p>Hi {first_name|there}, it has been a month since you last signed in to Tiknix. Your projects are where you left them.</p>{content_html|}",
+             'body_text' => "Hi {first_name|there}, it has been a month since you last signed in to Tiknix. Your projects are where you left them.\n\n{content_text|}"],
+        ],
     ]);
-    \Flight::before('start', function () { \app\concepts\messaging\Webhook::intercept(); });
 }

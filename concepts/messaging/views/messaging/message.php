@@ -1,13 +1,14 @@
 <?php
-/** @var \RedBeanPHP\OODBBean $m @var string $where @var string $composeUrl @var array $stats @var array $links */
+/** @var array $c @var string $where @var string $composeUrl @var array $links */
+$s = $c['stats'];
 ?>
-<?= \app\Ui::page(['title' => (string) $m->subject, 'back' => ['label' => 'Messages to ' . $where, 'url' => $composeUrl]]) ?>
+<?= \app\Ui::page(['title' => $c['subject'], 'back' => ['label' => 'Messages to ' . $where, 'url' => $composeUrl]]) ?>
 <?= \app\Ui::detail(['title' => 'What came of it', 'items' => [
-    'Status' => ucfirst((string) $m->status),
-    ((string) $m->status === 'scheduled' ? 'Goes out' : 'Sent') => (string) ($m->sentAt ?: $m->scheduledAt),
-    'Sent' => $stats['sent'], 'Delivered' => $stats['delivered'], 'Clicked' => $stats['clicked'], 'Acted' => $stats['acted'], 'Replies' => $stats['replies'],
+    'Status' => ucfirst($c['status']),
+    ($c['status'] === 'scheduled' ? 'Goes out' : 'Sent') => $c['sent_at'] !== '' ? $c['sent_at'] : $c['scheduled_at'],
+    'Sent' => $s['sent'], 'Delivered' => $s['delivered'], 'Clicked' => $s['clicked'], 'Acted' => $s['acted'], 'Replies' => $s['replies'],
 ]]) ?>
-<?= \app\Ui::detail(['title' => 'Message', 'items' => ['Text' => \app\Ui::raw('<div class="text-break" style="white-space:pre-wrap">' . htmlspecialchars((string) $m->bodyText) . '</div>')]]) ?>
+<?= \app\Ui::detail(['title' => 'Message', 'items' => ['Text' => \app\Ui::raw('<div class="text-break" style="white-space:pre-wrap">' . htmlspecialchars($c['body_text']) . '</div>')]]) ?>
 <?= \app\Ui::table(['title' => 'Links', 'rows' => array_map(fn($l) => (object) $l, $links),
     'columns' => [['label' => 'Link', 'value' => 'url'], ['label' => 'Clicks', 'value' => 'clicks']],
     'empty' => ['title' => 'No links counted yet', 'text' => 'Links appear here once the message has gone out.']]) ?>

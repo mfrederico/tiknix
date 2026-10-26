@@ -18,6 +18,7 @@ foreach ([
     ['msgpref', '*', 100, 'What reaches you: a member\'s choices (members)'],
     ['msgpref', 'unsubscribe', 101, 'An unsubscribe link from before the service: this app\'s signed token, the switch turned off in the service (public)'],
     ['msgtrack', '*', 101, 'Links and open pixel in mail sent before the service: one hop to the service (public)'],
+    ['msghook', '*', 101, 'What happened to a message, posted by the service and signed with the site\'s hook key: this app\'s own event, a pipeline trigger (public)'],
 ] as [$control, $method, $level, $why]) {
     echo '  ' . PermissionCache::seedRule($control, $method, $level, $why) . " {$control}::{$method}\n";
 }

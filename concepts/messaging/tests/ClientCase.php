@@ -7,7 +7,7 @@
 
 namespace app\concepts\messaging\tests;
 
-foreach (['Client', 'Providers', 'Sync', 'Reach', 'Campaigns', 'Digest', 'Runner'] as $c) require_once dirname(__DIR__) . "/lib/{$c}.php";
+foreach (['Client', 'Providers', 'Sync', 'Reach', 'Campaigns', 'Digest', 'Runner', 'Events'] as $c) require_once dirname(__DIR__) . "/lib/{$c}.php";
 
 use app\Bean;
 use app\concepts\messaging\Client;

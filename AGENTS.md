@@ -655,7 +655,7 @@ Code changes are commits.
 - https://redbeanphp.com/ - Official RedBeanPHP documentation
 - `vendor/tiknix/runtime/README.md` - the runtime package: what it is, how an app extends or overrides it
 
-## Concept: messaging (2.2.1)
+## Concept: messaging (2.3.0)
 
 Messages to members — email and, for those who ask, text — with the member in control, SENT BY THE TIKNIX MESSAGING
 SERVICE (messaging.tiknix.com) with this app's own Mailgun account. This plugin is the service's client: it mirrors the app's
@@ -721,20 +721,20 @@ APP-FED: each hour `Runner::hourly` asks the service who is due and posts each p
 a trigger's `qualifies` + `content`); `inactive_days` and `joined_days` the service evaluates itself. `/messaging/calendar`
 shows when messages go out and what came of them; an owner's `?scope=` shows their audience's.
 
-### Settings (on /messaging)
+### Settings (on /messaging); texts
 
 Per site: the from-name and the reply domain (replies come back to `reply-{token}@` it through a Mailgun route to the site's
 webhook address; empty = untracked). `weekly_cap`, `owners_may_text`, `text_link_base`. v1's webhook key and `Webhook::intercept()` are gone.
-
-### Texts
-
 A text needs the phone provider, the member's opt-in (off by default, recorded) and a proved phone; one part only, ending with
 "Reply STOP or:" and the stop link. Texting through the service is not switched on yet: texts are recorded as not sent, loudly.
 
-### Credit an action; link the choices
+### Credit an action; message events; the choices
 
 `Campaigns::acted($memberId, 'rsvp'|'post', $meta)` where members act credits the campaign whose link they followed in the last
-48 hours (a service that does not answer is an ERROR in the log, never a broken page). `Reach::prefsUrl($memberId)` is the signed
-hosted page where a member chooses what reaches them. Old `/msgpref/unsubscribe?t=` links (v1) still work, through the service.
+48 hours (a service that does not answer is an ERROR in the log, never a broken page). What happens to a message is the app's own
+event: the service posts it to `/msghook/event` (signed with the site's hook key) and a pipeline starts on `"trigger": {"event":
+"message.replied"}` — delivered | opened | clicked | replied | unsubscribed | bounced | complained, with `{context.member_id}`,
+`{context.campaign_code}`, `{context.subject}`, `{context.meta.*}`. `Reach::prefsUrl($memberId)` is the signed hosted page where a
+member chooses what reaches them. Old `/msgpref/unsubscribe?t=` links (v1) still work, through the service.
 
 <!-- tiknix:managed end -->

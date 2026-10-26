@@ -2,12 +2,12 @@
     "version": 1,
     "concepts": {
         "messaging": {
-            "version": "2.2.1",
+            "version": "2.3.0",
             "enabled": true,
             "source": "control-plane catalog",
-            "installed_at": "2026-10-26T13:26:14+00:00",
-            "hash": "sha256:f0aeff21afebc207a64707a040b6e3e854a171527673b7c13fc6f929f3d19bf1",
-            "enabled_at": "2026-10-26T13:26:14+00:00"
+            "installed_at": "2026-10-26T15:18:11+00:00",
+            "hash": "sha256:dfde70f4a1a071b66cbe40761d4366b23132043bebceb99348685db7c3e4b9ed",
+            "enabled_at": "2026-10-26T15:18:11+00:00"
         }
     },
     "connectors": {

@@ -655,7 +655,7 @@ Code changes are commits.
 - https://redbeanphp.com/ - Official RedBeanPHP documentation
 - `vendor/tiknix/runtime/README.md` - the runtime package: what it is, how an app extends or overrides it
 
-## Concept: messaging (2.0.5)
+## Concept: messaging (2.1.0)
 
 Messages to members — email and, for those who ask, text — with the member in control, SENT BY THE TIKNIX MESSAGING
 SERVICE (messaging.tiknix.com) with this app's own Mailgun account. This plugin is the service's client: it mirrors the

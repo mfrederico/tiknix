@@ -202,6 +202,35 @@ class Messaging extends Control {
         Flight::redirect('/messaging');
     }
 
+    // ---- the calendar: when messages go out, what came of the ones that did --------------------------
+
+    /** An admin sees every message; an owner (?scope=) their audience's — the same rule as compose. [key, label] */
+    private function calendarScope(): array {
+        $key = trim((string) $this->getParam('scope'));
+        if ($key === '') {
+            if (!Flight::hasLevel(LEVELS['ADMIN'])) $this->forbid('Only an admin can see every message.');
+            return [null, 'Everyone'];
+        }
+        [$k, $label] = $this->audience();
+        return [$k, $label];
+    }
+
+    /** GET /messaging/calendar[?scope=] — the page; its days come from calendardata. */
+    public function calendar($params = []) {
+        [$key, $label] = $this->calendarScope();
+        $this->render('messaging/calendar', ['title' => 'Message calendar', 'scope' => $key, 'label' => $label,
+            'backUrl' => $key !== null ? '/messaging/compose?scope=' . urlencode($key) : '/messaging']);
+    }
+
+    /** GET /messaging/calendardata?from=&to=[&scope=] — the service's calendar, as JSON for the page. */
+    public function calendardata($params = []) {
+        [$key] = $this->calendarScope();
+        $from = (string) $this->getParam('from', date('Y-m-01'));
+        $to = (string) $this->getParam('to', date('Y-m-t'));
+        try { Flight::json(['ok' => true] + Campaigns::calendar($from, $to, $key)); }
+        catch (ServiceException $e) { Flight::json(['ok' => false, 'error' => Client::said($e)], $e->status === 422 ? 422 : 503); }
+    }
+
     // ---- the owner's pages -----------------------------------------------------------------------
 
     /** The audience in ?scope= the signed-in member may message: [key, label, category code]. 404 for one that is none, 403 for one they may not message. */

@@ -13,6 +13,8 @@ foreach ([
     ['messaging', '*', 50, 'Messages across audiences, the sending cap, each site\'s words and the suppression list (admins)'],
     ['messaging', 'compose', 100, 'Write to an audience you own (members; the audiences provider decides who may)'],
     ['messaging', 'message', 100, 'One message to an audience you own (members; the audiences provider decides who may)'],
+    ['messaging', 'calendar', 100, 'The calendar of messages: an admin sees all, an owner their audience (members; the audiences provider decides who may)'],
+    ['messaging', 'calendardata', 100, 'The calendar\'s days, as JSON (members; same rule as the page)'],
     ['msgpref', '*', 100, 'What reaches you: a member\'s choices (members)'],
     ['msgpref', 'unsubscribe', 101, 'An unsubscribe link from before the service: this app\'s signed token, the switch turned off in the service (public)'],
     ['msgtrack', '*', 101, 'Links and open pixel in mail sent before the service: one hop to the service (public)'],

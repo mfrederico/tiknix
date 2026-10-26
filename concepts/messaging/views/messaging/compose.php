@@ -3,7 +3,8 @@
  *  @var array $rows @var ?string $notice @var mixed $test @var bool $mayText @var ?string $backUrl */
 $action = '/messaging/compose' . ($scope !== null ? '?scope=' . urlencode($scope) : '');
 $tones = ['sent' => 'success', 'scheduled' => 'info', 'sending' => 'warning', 'draft' => 'secondary'];
-$page = ['title' => 'Messages to ' . $label, 'lead' => $audienceLine];
+$page = ['title' => 'Messages to ' . $label, 'lead' => $audienceLine,
+    'more' => [['label' => 'Calendar', 'url' => '/messaging/calendar' . ($scope !== null ? '?scope=' . urlencode($scope) : ''), 'icon' => 'calendar3']]];
 if ($backUrl !== null) $page['back'] = ['label' => $scope !== null ? $label : 'Messages', 'url' => $backUrl];
 ?>
 <?= \app\Ui::page($page) ?>

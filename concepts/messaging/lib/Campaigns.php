@@ -49,6 +49,17 @@ class Campaigns {
     public static function isSystem(array $c): bool { return in_array((string) $c['kind'], self::SYSTEM, true); }
 
     /**
+     * When messages went out and when they will, between two dates (Y-m-d, at most 93 days): the service's answer —
+     * past: per campaign per day (sent, delivered, opened, engaged, unsubscribed, bounced); future: per campaign per day
+     * with an estimate; hourly: the app-fed nudges, with how many are eligible. $scope narrows it to one audience.
+     */
+    public static function calendar(string $from, string $to, ?string $scope = null): array {
+        $q = ['from' => $from, 'to' => $to];
+        if ($scope !== null) $q['scope'] = $scope;
+        return Client::get('calendar', $q)['calendar'];
+    }
+
+    /**
      * An action a member took in the app, credited to the campaign whose link they clicked in the last 48 hours.
      * Nothing to credit is normal (null). A service that cannot be reached is an ERROR in the log, never a broken page:
      * the action itself (the post, the RSVP) already happened.

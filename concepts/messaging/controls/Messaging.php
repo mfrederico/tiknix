@@ -65,7 +65,8 @@ class Messaging extends Control {
             $categories = Client::get('categories')['categories'];
             $suppressed = Client::get('suppressions')['suppressions'];
             $settings = Client::get('settings')['settings'];
-            $sites = Client::get('sites')['sites'];
+            // the project may have several sites (one per domain, each its own database): this page is one of them
+            $sites = array_values(array_filter(Client::get('sites')['sites'], fn($s) => (string) $s['host'] === Client::site()));
         } catch (ServiceException $e) { $this->unavailable($e); return; }
         $this->render('messaging/index', ['title' => 'Messages', 'rows' => array_map(fn($c) => $this->row($c), $all),
             'categories' => array_map(fn($c) => (object) ['label' => $c['label'], 'description' => $c['description'], 'default' => $c['default_on'] ? 'On' : 'Off',

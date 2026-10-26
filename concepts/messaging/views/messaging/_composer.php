@@ -48,6 +48,8 @@ $editorId = 'msgHtml'; $editorCode = (string) ($form['body_email'] ?? ''); $edit
   if (!html) return;
   var box = function (el) { return el.closest('.col-md-6, .col-12, .col-6, .ui-form-field, .mb-3') || el.parentElement; };
   // the editor row takes the HTML field's place; the field itself stays, hidden, and carries the editor's text on submit
+  // the editor component keeps its own hidden textarea named "code", which must not be submitted with this form (the message's code field is)
+  var own = document.getElementById('msgHtml-textarea'); if (own) own.removeAttribute('name');
   var htmlBox = box(html); html.hidden = true; var htmlLabel = htmlBox.querySelector('label'); if (htmlLabel) htmlLabel.hidden = true;
   htmlBox.insertBefore(document.getElementById('msgEditorRow'), html);
   if (text) box(text).insertBefore(document.getElementById('msgTextTools'), text);

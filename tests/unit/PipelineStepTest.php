@@ -48,6 +48,46 @@ class PipelineStepTest extends ConceptsTestCase {
         return (new Executor($this->root))->run($def, $ctx, 'test');
     }
 
+    /* ---- one run per row, once per key ---- */
+
+    public function testEachStartsOneRunPerRowOncePerKey(): void {
+        mkdir("{$this->root}/scripts"); file_put_contents("{$this->root}/scripts/pipeline-run.php", "<?php exit(0);\n");   // the worker: a stand-in
+        $this->pipe('journey', [$this->say('hi', 'hello {context.member_id}')]);
+        $rows = json_encode([['member_id' => 7, 'name' => 'Ann'], ['member_id' => 9, 'name' => 'Bob']]);
+        $this->pipe('fan', [['name' => 'start', 'type' => 'pipeline', 'config' => ['slug' => 'journey', 'each' => $rows, 'key' => '{item.member_id}', 'context' => ['member_id' => '{item.member_id}', 'who' => '{item.name}']], 'on_success' => 'exit', 'on_fail' => 'exit']]);
+
+        $r = $this->runPipe('fan');
+        $this->assertSame('completed', $r['status']);
+        $out = $r['output'];
+        $this->assertSame(2, $out['started']); $this->assertSame(0, $out['skipped']);
+        $runs = Bean::find('piperun', 'slug = ? ORDER BY id', ['journey']);
+        $this->assertCount(2, $runs);
+        $this->assertSame(['7', '9'], array_values(array_map(fn($x) => (string) $x->flowKey, $runs)));
+        $this->assertSame(['member_id' => '7', 'who' => 'Ann'], json_decode((string) array_values($runs)[0]->contextJson, true));
+        $this->assertTrue(\app\Pipeline\FlowKeys::exists('journey', '9'));
+
+        $again = $this->runPipe('fan');
+        $this->assertSame(0, $again['output']['started'], 'the same members do not start again');
+        $this->assertSame(2, $again['output']['skipped']);
+        $this->assertSame(['7', '9'], $again['output']['skipped_keys']);
+        $this->assertCount(2, Bean::find('piperun', 'slug = ?', ['journey']));
+
+        // a plain list, and an empty key is refused
+        $this->pipe('fan2', [['name' => 'start', 'type' => 'pipeline', 'config' => ['slug' => 'journey', 'each' => '11, 12', 'context' => ['member_id' => '{item}']], 'on_success' => 'exit', 'on_fail' => 'exit']]);
+        $this->assertSame(2, $this->runPipe('fan2')['output']['started']);
+        $this->pipe('fan3', [['name' => 'start', 'type' => 'pipeline', 'config' => ['slug' => 'journey', 'each' => $rows, 'key' => '{item.nope}'], 'on_success' => 'exit', 'on_fail' => 'exit']]);
+        $this->assertSame('failed', $this->runPipe('fan3')['status']);
+    }
+
+    public function testEveryStarterFlowIsValid(): void {
+        $all = \app\Pipeline\Templates::all();
+        $this->assertGreaterThanOrEqual(4, count($all));
+        foreach ($all as $t) {
+            $this->assertSame([], Loader::validate($t['def']), "starter flow {$t['id']}");
+            $this->assertNotSame('', $t['setup']);
+        }
+    }
+
     /* ---- sync: the child's output comes back ---- */
 
     public function testSyncChildOutputFlowsBackAndTheChildIsItsOwnRun(): void {
@@ -117,6 +157,6 @@ class PipelineStepTest extends ConceptsTestCase {
 
     public function testTheStepIsRegisteredWithItsFields(): void {
         $c = \app\Pipeline\StepRegistry::components()['pipeline'];
-        $this->assertSame(['slug', 'context', 'mode'], array_column($c['schema']['fields'] ?? $c['fields'], 'name'));
+        $this->assertSame(['slug', 'context', 'mode', 'each', 'key'], array_column($c['schema']['fields'] ?? $c['fields'], 'name'));
     }
 }

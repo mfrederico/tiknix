@@ -37,6 +37,44 @@ class PipelineSchedulerTest extends ConceptsTestCase {
         file_put_contents("{$this->root}/pipelines/{$slug}.json", json_encode($def));
     }
 
+    /** A wait until "2 hours": the run pauses with a wake time; the tick after that time wakes it, and it goes on from the next step. */
+    public function testATimedWaitPausesTheRunAndTheTickWakesIt(): void {
+        $def = ['slug' => 'later', 'name' => 'later', 'steps' => [
+            ['name' => 'nap', 'type' => 'wait', 'config' => ['mode' => 'until', 'for' => '2 hours'], 'on_success' => 'next'],
+            ['name' => 'say', 'type' => 'transform', 'config' => ['mode' => 'template', 'input' => 'woke {nap.woke_at}'], 'on_success' => 'exit']]];
+        file_put_contents("{$this->root}/pipelines/later.json", json_encode($def));
+        $this->assertSame([], \app\Pipeline\Loader::validate($def));
+        $bad = $def; $bad['steps'][0]['config']['for'] = 'soonish';
+        $this->assertStringContainsString("not a duration", implode('; ', \app\Pipeline\Loader::validate($bad)));
+        $this->assertSame(3600 * 24 * 3 + 100, \app\Pipeline\Steps\WaitStep::wakeTime('3 days', 100));
+        $this->assertNull(\app\Pipeline\Steps\WaitStep::wakeTime('0 days'));
+
+        $r = (new \app\Pipeline\Executor($this->root))->run($def, [], 'test');
+        $this->assertSame('paused', $r['status']);
+        $this->assertSame('nap', $r['awaiting']);
+        $run = Bean::load('piperun', (int) $r['run_id']);
+        $wake = strtotime((string) $run->wakeAt);
+        $this->assertEqualsWithDelta(time() + 7200, $wake, 5, 'the wake time is two hours out');
+
+        $early = Scheduler::tick($this->root, $wake - 60);
+        $this->assertSame([], $early['woken'], 'not yet');
+        $this->assertSame('paused', (string) Bean::load('piperun', (int) $run->id)->status);
+
+        $due = Scheduler::tick($this->root, $wake + 1);
+        $this->assertSame([(int) $run->id], array_column($due['woken'], 'run_id'));
+        $this->assertSame('queued', (string) Bean::load('piperun', (int) $run->id)->status, 'claimed before the worker starts');
+        $this->assertSame([], Scheduler::tick($this->root, $wake + 61)['woken'], 'a queued run is not woken twice');
+
+        // what the worker the tick spawned does
+        $done = (new \app\Pipeline\Executor($this->root))->wake((int) $run->id);
+        $this->assertSame('completed', $done['status']);
+        $this->assertSame(2, $done['steps_done']);
+        $final = Bean::load('piperun', (int) $run->id);
+        $this->assertNull($final->wakeAt);
+        $out = json_decode((string) $final->outputJson, true);
+        $this->assertStringContainsString('woke 20', is_array($out) ? json_encode($out) : (string) $out, 'the step after the wait read {nap.woke_at}');
+    }
+
     public function testATickFiresWhatIsDueOnceAndReportsTheRest(): void {
         $this->pipe('every',   '* * * * *');
         $this->pipe('at-six',  '0 6 * * *');

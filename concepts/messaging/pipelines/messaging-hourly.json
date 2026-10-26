@@ -1,18 +1,18 @@
 {
     "slug": "messaging-hourly",
     "name": "Messaging, hourly",
-    "description": "Every hour: mirrors this app into the messaging service (members, kinds of message, audiences; the platform's own messages made once) and feeds the digest and the app's own nudges with what they say (app\\concepts\\messaging\\Runner::hourly). The service keeps the ledger and sends; a run that is repeated or interrupted never sends twice.",
+    "description": "Every hour: mirrors this app into the messaging service (members, kinds of message, audiences; the platform's own messages made once) and feeds the digest and the app's own nudges with what they say. One http step to this app's own /msghook/hourly, signed as the app by the runtime (no secret in this file); the answer lists what was done. The service keeps the ledger and sends; a run that is repeated or interrupted never sends twice.",
     "trigger": {
         "cron": "0 * * * *"
     },
     "steps": [
         {
-            "name": "send",
-            "type": "shell",
+            "name": "run",
+            "type": "http",
             "config": {
-                "cwd": "{root}",
-                "command": "php -r 'require \"vendor/autoload.php\"; require \\app\\Paths::runtime() . \"/bin/_boot.php\"; new app\\Bootstrap(\"conf/config.ini\"); echo implode(\"\\n\", \\app\\concepts\\messaging\\Runner::hourly()) . \"\\n\";'",
-                "timeout": 600
+                "method": "POST",
+                "url": "{app.url}/msghook/hourly",
+                "timeout": 300
             },
             "on_success": "exit",
             "on_fail": "exit"

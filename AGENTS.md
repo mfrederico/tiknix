@@ -655,7 +655,7 @@ Code changes are commits.
 - https://redbeanphp.com/ - Official RedBeanPHP documentation
 - `vendor/tiknix/runtime/README.md` - the runtime package: what it is, how an app extends or overrides it
 
-## Concept: messaging (2.4.0)
+## Concept: messaging (2.4.1)
 
 Messages to members — email and, for those who ask, text — with the member in control, SENT BY THE TIKNIX MESSAGING
 SERVICE (messaging.tiknix.com) with this app's own Mailgun account. This plugin is the service's client: it mirrors the app's
@@ -670,7 +670,7 @@ Messaging is a premium Tiknix service the project's owner switches on. Then, fro
 `php scripts/clitool.php --connection-share=mailgun --with=messaging --site=<host>` — the app's Mailgun connection becomes a
 sealed copy the service sends with; the site is made on first sight. The owner pastes the site's webhook address (on `/messaging`)
 into Mailgun's webhooks and the reply route; the signing key is set on Connections → Mailgun and travels by itself. The hourly
-pipeline (`pipelines/messaging-hourly.json`) does the mirroring; a page that needs one member in the service now mirrors them itself.
+pipeline (`pipelines/messaging-hourly.json`, one http step to the app's own `/msghook/hourly`, signed as the app by the runtime's `SelfCall`) does the mirroring; a page that needs one member in the service now mirrors them itself.
 
 ### Say what the app has — once, in lib/app.php
 

@@ -83,8 +83,90 @@ class Messaging extends Control {
             $links = Campaigns::get((int) $c['id'])['links'];
             $recipients = $this->recipientRows(Campaigns::recipients((int) $c['id']));
         } catch (ServiceException $e) { $this->unavailable($e); return; }
+        $custom = $c['kind'] === 'trigger' && $c['trigger_code'] === Providers::TRIGGER_PIPELINE;
+        $audience = null;
+        if (!$custom && !$c['locked'] && in_array($c['kind'], ['message', 'gathering', 'trigger'], true) && !$c['content_from_app']) {
+            try { $audience = Campaigns::audience((int) $c['id']); }
+            catch (\Throwable $e) { $this->logger->error('Messaging: the audience could not be counted: ' . $e->getMessage(), ['campaign' => (int) $c['id']]); }
+        }
         $this->render('messaging/view', ['title' => $c['subject'], 'c' => $c, 'row' => $this->row($c), 'links' => $links, 'recipients' => $recipients,
-            'preview' => $this->previewFor($c), 'unavailable' => $c['kind'] === 'digest' && !Providers::has('digest')]);
+            'preview' => $this->previewFor($c), 'unavailable' => $c['kind'] === 'digest' && !Providers::has('digest'),
+            'custom' => $custom, 'on' => in_array($c['status'], ['active', 'scheduled', 'sending', 'sent'], true), 'audience' => $audience,
+            'feeders' => $custom ? $this->feeders($c) : [], 'reactors' => $this->reactors($c)]);
+    }
+
+    /**
+     * GET: the form for a new message — when it goes out first, then the words. POST: make it in the service, paused (a dated
+     * one as a draft), and go to its page to test it and turn it on. Admins (the page's permission row).
+     */
+    public function new($params = []) {
+        try {
+            $categories = [];
+            foreach (Client::get('categories')['categories'] as $cat) if (!in_array($cat['code'], [Reach::TRANSACTIONAL, Reach::REMINDERS], true)) $categories[$cat['code']] = $cat['label'];
+            if (!$categories) throw new \RuntimeException('Messaging: there is no kind of message an admin could write. Register one (Providers categories).');
+            $form = ['when' => 'date', 'scheduled_at' => '', 'cadence_days' => '', 'trigger_days' => '', 'code' => '', 'category' => array_key_first($categories), 'subject' => '', 'body_email' => '', 'body_text' => ''];
+            $problems = [];
+            if (Flight::request()->method === 'POST') {
+                $this->validateCSRF();
+                foreach (array_keys($form) as $k) if (($v = $this->getParam($k)) !== null) $form[$k] = trim((string) $v);
+                if (!isset($categories[$form['category']])) $problems['category'] = 'Pick a kind of message.';
+                [$doc, $whenProblems] = Campaigns::whenDoc($form + ['on' => '0'], null, fn(string $v) => $this->scheduledAt($v));
+                $problems += $whenProblems;
+                if (!$problems) {
+                    $me = Flight::getMember();
+                    $doc += ['category' => $form['category'], 'sender' => ['eid' => (string) $me->id, 'email' => (string) $me->email, 'name' => trim((string) $me->firstName)]];
+                    try {
+                        $c = Campaigns::create($doc);
+                        $this->flash('success', 'Saved, paused. Send yourself a test, then turn it on.');
+                        Flight::redirect('/messaging/view?id=' . (int) $c['id']);
+                        return;
+                    } catch (ServiceException $e) {
+                        if ($e->status !== 422) throw $e;
+                        $f = Client::field($e);
+                        $problems[$f !== '' && array_key_exists($f, $form) ? $f : 'subject'] = Client::said($e);
+                    }
+                }
+            }
+            $this->render('messaging/new', ['title' => 'A new message', 'form' => $form, 'problems' => $problems, 'categories' => $categories]);
+        } catch (ServiceException $e) { $this->unavailable($e); }
+    }
+
+    /** POST: turn a message on or off (?id=, on=1|0) — the last step on its page, after the test. */
+    public function status($params = []) {
+        try {
+            $c = $this->campaign();
+            if ($c === null) return;
+            if (Flight::request()->method !== 'POST') { Flight::redirect('/messaging/view?id=' . (int) $c['id']); return; }
+            $this->validateCSRF();
+            if ($c['locked']) { $this->flash('error', 'That message has already gone out.'); Flight::redirect('/messaging/view?id=' . (int) $c['id']); return; }
+            [$status, $why] = Campaigns::statusFor($c, (string) $this->getParam('on') === '1');
+            if ($status === null) { $this->flash('error', $why); Flight::redirect('/messaging/view?id=' . (int) $c['id']); return; }
+            try { Campaigns::update((int) $c['id'], ['status' => $status]); $this->flash('success', $status === 'draft' || $status === 'paused' ? 'Paused.' : 'On.'); }
+            catch (ServiceException $e) { if ($e->status !== 422) throw $e; $this->flash('error', Client::said($e)); }
+            Flight::redirect('/messaging/view?id=' . (int) $c['id']);
+        } catch (ServiceException $e) { $this->unavailable($e); }
+    }
+
+    /**
+     * The pipelines that start on a message event (trigger.event message.*): every message's, or narrowed to this one when
+     * its definition names the message's code. @return array<int,array{slug:string,name:string,events:string,scope:string}>
+     */
+    private function reactors(array $c): array {
+        if (!class_exists('\\app\\Pipeline\\Runner')) return [];
+        $out = [];
+        try { $all = \app\Pipeline\Runner::list(); } catch (\Throwable $e) { $this->logger->error('Messaging: the pipelines could not be listed: ' . $e->getMessage()); return []; }
+        foreach ($all as $p) {
+            $slug = (string) ($p['slug'] ?? '');
+            $def = $slug !== '' ? \app\Pipeline\Runner::get($slug) : null;
+            if (!is_array($def)) continue;
+            $events = array_values(array_filter((array) ($def['trigger']['event'] ?? []), fn($e) => is_string($e) && str_starts_with($e, 'message.')));
+            if (!$events) continue;
+            $code = (string) ($c['code'] ?? '');
+            $names = $code !== '' && str_contains(json_encode($def['steps'] ?? [], JSON_UNESCAPED_SLASHES), $code);
+            $out[] = ['slug' => $slug, 'name' => (string) ($def['name'] ?? $slug), 'events' => implode(', ', array_map(fn($e) => substr($e, 8), $events)),
+                      'scope' => $names ? 'this message (' . $code . ')' : 'every message'];
+        }
+        return $out;
     }
 
     /** The copy the signed-in member would get (a system message filled with what the app gives them now); null, with the reason logged, when it cannot be made. */
@@ -186,40 +268,7 @@ class Messaging extends Control {
                 $fixed = in_array($form['when'], ['digest', 'app'], true) ? $form['when'] : null;   // the digest and an app-evaluated nudge keep their kind
                 foreach (array_keys($form) as $k) if (($v = $this->getParam($k)) !== null) $form[$k] = trim((string) $v);
                 if ($fixed !== null) $form['when'] = $fixed;
-                $doc = ['subject' => $form['subject'], 'body_email' => $form['body_email'], 'body_text' => $form['body_text']];
-                if ($form['subject'] === '') $problems['subject'] = 'Write a subject.';
-                if ($form['body_email'] === '') $problems['body_email'] = 'Write the message.';
-                $on = $form['on'] === '1';
-                switch ($form['when']) {
-                    case 'date':
-                        $at = $this->scheduledAt($form['scheduled_at']);
-                        if ($on && $at === null) $problems['scheduled_at'] = 'Pick the day and time it goes out.';
-                        elseif ($on && strtotime($at) <= time()) $problems['scheduled_at'] = 'That time has passed. Pick a time ahead.';
-                        else { $doc += ['kind' => $c['kind'] === 'gathering' ? 'gathering' : 'message', 'cadence' => 'once', 'cadence_days' => 0, 'status' => $on ? 'scheduled' : 'draft']; if ($at !== null) $doc['scheduled_at'] = $at; }
-                        break;
-                    case 'repeat':
-                        if (!ctype_digit($form['cadence_days']) || (int) $form['cadence_days'] < 1) $problems['cadence_days'] = 'A whole number of days, 1 or more.';
-                        else $doc += ['kind' => 'message', 'cadence' => 'every_n_days', 'cadence_days' => (int) $form['cadence_days'], 'status' => $on ? 'active' : 'paused'];
-                        break;
-                    case 'inactive': case 'joined':
-                        if (!ctype_digit($form['trigger_days']) || (int) $form['trigger_days'] < 1) $problems['trigger_days'] = 'A whole number of days, 1 or more.';
-                        else $doc += ['kind' => 'trigger', 'trigger_code' => $form['when'] === 'joined' ? 'joined_days' : 'inactive_days', 'trigger_days' => (int) $form['trigger_days'],
-                                      'cadence' => $c['cadence'] === 'every_n_days' && $c['cadence_days'] > 0 ? 'every_n_days' : 'once', 'cadence_days' => (int) $c['cadence_days'], 'status' => $on ? 'active' : 'paused'];
-                        break;
-                    case 'custom':
-                        if (!preg_match('/^[a-z][a-z0-9_]{0,39}$/D', $form['code'])) $problems['code'] = 'A short name a pipeline can use: lowercase letters, digits and _, like no_friends.';
-                        else $doc += ['kind' => 'trigger', 'trigger_code' => Providers::TRIGGER_PIPELINE, 'code' => $form['code'], 'cadence' => $c['cadence'] === 'every_n_days' && $c['cadence_days'] > 0 ? 'every_n_days' : 'once', 'cadence_days' => (int) $c['cadence_days'], 'status' => $on ? 'active' : 'paused'];
-                        break;
-                    case 'app':
-                        if (!ctype_digit($form['trigger_days']) || (int) $form['trigger_days'] < 1) $problems['trigger_days'] = 'A whole number of days, 1 or more.';
-                        else $doc += ['trigger_days' => (int) $form['trigger_days'], 'status' => $on ? 'active' : 'paused'];
-                        break;
-                    case 'digest':
-                        $doc += ['status' => $on ? 'active' : 'paused'];
-                        break;
-                    default:
-                        $problems['when'] = 'Choose when it goes out.';
-                }
+                [$doc, $problems] = Campaigns::whenDoc($form, $c, fn(string $v) => $this->scheduledAt($v));
                 if (!$problems) {
                     try {
                         Campaigns::update((int) $c['id'], $doc);
@@ -254,7 +303,7 @@ class Messaging extends Control {
                 Flight::redirect('/messaging/edit?id=' . (int) $c['id']);
                 return;
             }
-            if ($preview['sent']) { $this->flash('success', 'A test was sent to ' . $me->email . '.'); Flight::redirect('/messaging/edit?id=' . (int) $c['id']); return; }
+            if ($preview['sent']) { $this->flash('success', 'A test was sent to ' . $me->email . '.'); Flight::redirect('/messaging/view?id=' . (int) $c['id']); return; }
             if ($preview['mail_ready']) $this->flash('error', 'The test could not be sent; the reason is in the service\'s log. Here is what it would have said.');
             $this->editPage($c, $this->formOf($c), [], $preview);
         } catch (ServiceException $e) { $this->unavailable($e); }

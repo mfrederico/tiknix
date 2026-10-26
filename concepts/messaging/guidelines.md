@@ -2,7 +2,7 @@ Messages to members — email and, for those who ask, text — with the member i
 SERVICE (messaging.tiknix.com) with this app's own Mailgun account. This plugin is the service's client: it mirrors the app's
 members, kinds of message and audiences hourly, feeds the digest and the app's nudges, and draws the pages; it owns no beans.
 Classes `app\concepts\messaging\{Client, Providers, Sync, Reach, Campaigns, Digest, Runner}`; controllers `Messaging` (`/messaging`,
-admins; `/messaging/compose?scope=KEY` for an audience's owner), `Msgpref` (`/msgpref` "What reaches you"). Link `/msgpref` from the
+admins — `/messaging/new` makes a message: its trigger first, then the words; its page tests it and turns it on; `/messaging/compose?scope=KEY` for an audience's owner), `Msgpref` (`/msgpref` "What reaches you"). Link `/msgpref` from the
 member's settings and `/messaging` from the admin menu; do not draw a preferences panel of your own.
 
 ### Joining the service — once, from a terminal

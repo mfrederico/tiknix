@@ -5,7 +5,8 @@ foreach ($providers as $key => [$label, $what]) $wired[$label] = in_array($key, 
 $h = fn($v) => htmlspecialchars((string) $v);
 ?>
 <?= \app\Ui::page(['title' => 'Messages', 'lead' => 'Everything owners and the platform send to members, and what came of it. Sent by the messaging service with this app\'s own accounts.',
-    'more' => [['label' => 'Calendar', 'url' => '/messaging/calendar', 'icon' => 'calendar3'], ['label' => 'The service', 'url' => $serviceUrl . '/messaging', 'icon' => 'box-arrow-up-right']]]) ?>
+    'primary' => ['label' => 'Write a message', 'url' => '/messaging/new', 'icon' => 'plus-lg'],
+    'more' => [['label' => 'Send to everyone now', 'url' => '/messaging/compose', 'icon' => 'send'], ['label' => 'Calendar', 'url' => '/messaging/calendar', 'icon' => 'calendar3'], ['label' => 'The service', 'url' => $serviceUrl . '/messaging', 'icon' => 'box-arrow-up-right']]]) ?>
 <?php if (!$sites): ?>
 <?= \app\Ui::notice(['tone' => 'warning', 'title' => 'No site has a mail connection in the service yet.', 'text' => 'Share this app\'s Mailgun connection from a terminal: php scripts/clitool.php --connection-share=mailgun --with=messaging --site=<host>. Nothing is sent until then.']) ?>
 <?php endif; ?>

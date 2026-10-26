@@ -110,4 +110,75 @@ class Campaigns {
         $paras = array_map(fn($p) => '<p>' . nl2br($p, false) . '</p>', preg_split('/\n{2,}/', $html));
         return implode("\n", $paras);
     }
+
+    /** The choices of WHEN a message goes out, as the pages name them, with the one follow-up field each needs. */
+    public const WHEN = ['date' => 'scheduled_at', 'repeat' => 'cadence_days', 'inactive' => 'trigger_days', 'joined' => 'trigger_days', 'custom' => 'code'];
+
+    /** A datetime-local value ("2026-11-01T09:00") as the service's "Y-m-d H:i:s"; null when empty or not a time. */
+    public static function scheduledAt(string $v): ?string {
+        $v = trim($v);
+        if ($v === '') return null;
+        $t = strtotime(str_replace('T', ' ', $v));
+        return $t === false ? null : date('Y-m-d H:i:s', $t);
+    }
+
+    /**
+     * What a form says about WHEN a message goes out, as the service's document — and what is wrong with it, by field.
+     * One choice ($form['when']: date | repeat | inactive | joined | custom | app | digest) and its follow-up; $form['on']
+     * ('1'|'0') makes it live or paused (a dated one: scheduled or a draft). $c is the message as it is, or null for a new
+     * one. The words (subject, body_email, body_text) are checked here too.
+     * @return array{0:array,1:array<string,string>} [doc, problems]
+     */
+    public static function whenDoc(array $form, ?array $c, ?callable $toTime = null): array {
+        $toTime = $toTime ?? [self::class, 'scheduledAt'];   // the page passes one that knows the member's timezone
+        $problems = [];
+        $doc = ['subject' => trim((string) ($form['subject'] ?? '')), 'body_email' => trim((string) ($form['body_email'] ?? '')), 'body_text' => trim((string) ($form['body_text'] ?? ''))];
+        if ($doc['subject'] === '') $problems['subject'] = 'Write a subject.';
+        if ($doc['body_email'] === '') $problems['body_email'] = 'Write the message.';
+        $on = (string) ($form['on'] ?? '0') === '1';
+        $days = fn(string $k): bool => ctype_digit((string) ($form[$k] ?? '')) && (int) $form[$k] >= 1;
+        $keepCadence = ['cadence' => $c !== null && $c['cadence'] === 'every_n_days' && $c['cadence_days'] > 0 ? 'every_n_days' : 'once', 'cadence_days' => $c !== null ? (int) $c['cadence_days'] : 0];
+        switch ((string) ($form['when'] ?? '')) {
+            case 'date':
+                $at = $toTime((string) ($form['scheduled_at'] ?? ''));
+                if ($on && $at === null) $problems['scheduled_at'] = 'Pick the day and time it goes out.';
+                elseif ($on && strtotime($at) <= time()) $problems['scheduled_at'] = 'That time has passed. Pick a time ahead.';
+                else { $doc += ['kind' => $c !== null && $c['kind'] === 'gathering' ? 'gathering' : 'message', 'cadence' => 'once', 'cadence_days' => 0, 'status' => $on ? 'scheduled' : 'draft']; if ($at !== null) $doc['scheduled_at'] = $at; }
+                break;
+            case 'repeat':
+                if (!$days('cadence_days')) $problems['cadence_days'] = 'A whole number of days, 1 or more.';
+                else $doc += ['kind' => 'message', 'cadence' => 'every_n_days', 'cadence_days' => (int) $form['cadence_days'], 'status' => $on ? 'active' : 'paused'];
+                break;
+            case 'inactive': case 'joined':
+                if (!$days('trigger_days')) $problems['trigger_days'] = 'A whole number of days, 1 or more.';
+                else $doc += ['kind' => 'trigger', 'trigger_code' => $form['when'] === 'joined' ? 'joined_days' : 'inactive_days', 'trigger_days' => (int) $form['trigger_days'], 'status' => $on ? 'active' : 'paused'] + $keepCadence;
+                break;
+            case 'custom':
+                if (!preg_match('/^[a-z][a-z0-9_]{0,39}$/D', (string) ($form['code'] ?? ''))) $problems['code'] = 'A short name a pipeline can use: lowercase letters, digits and _, like no_friends.';
+                else $doc += ['kind' => 'trigger', 'trigger_code' => Providers::TRIGGER_PIPELINE, 'code' => (string) $form['code'], 'status' => $on ? 'active' : 'paused'] + $keepCadence;
+                break;
+            case 'app':
+                if ($c === null) $problems['when'] = 'A nudge the app evaluates is declared in code, not made here.';
+                elseif (!$days('trigger_days')) $problems['trigger_days'] = 'A whole number of days, 1 or more.';
+                else $doc += ['trigger_days' => (int) $form['trigger_days'], 'status' => $on ? 'active' : 'paused'];
+                break;
+            case 'digest':
+                if ($c === null) $problems['when'] = 'The digest is declared in code, not made here.';
+                else $doc += ['status' => $on ? 'active' : 'paused'];
+                break;
+            default:
+                $problems['when'] = 'Choose when it goes out.';
+        }
+        return [$doc, $problems];
+    }
+
+    /** The status that turns a message on or off, given what it is; null with a reason when it cannot be turned on as it stands. */
+    public static function statusFor(array $c, bool $on): array {
+        if (!$on) return [$c['kind'] === 'message' && $c['cadence'] !== 'every_n_days' ? 'draft' : 'paused', null];
+        if ($c['kind'] === 'message' && $c['cadence'] !== 'every_n_days') {
+            if ($c['scheduled_at'] === '' || strtotime($c['scheduled_at']) <= time()) return [null, 'Set the day and time it goes out on Edit first.'];
+            return ['scheduled', null];
+        }
+        return ['active', null];
+    }
 }

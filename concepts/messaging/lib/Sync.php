@@ -121,9 +121,9 @@ class Sync {
             } elseif (isset($codes[$s['trigger_code']])) {
                 $lines[] = "nudge {$s['trigger_code']}: kept #{$codes[$s['trigger_code']]}"; continue;
             }
-            $doc = array_intersect_key($s, array_flip(['kind', 'category', 'subject', 'body_email', 'body_text', 'body_sms', 'cadence', 'cadence_days', 'trigger_code', 'trigger_days', 'site']));
+            $doc = array_intersect_key($s, array_flip(['kind', 'category', 'subject', 'body_email', 'body_text', 'body_sms', 'cadence', 'cadence_days', 'trigger_code', 'trigger_days', 'code', 'site']));
             $doc['status'] = 'paused';
-            if ($s['kind'] === 'trigger' && !in_array($s['trigger_code'], Providers::BUILT_IN_TRIGGERS, true)) $doc['content_from_app'] = true;
+            if ($s['kind'] === 'trigger' && !in_array($s['trigger_code'], Providers::BUILT_IN_TRIGGERS, true) && $s['trigger_code'] !== Providers::TRIGGER_PIPELINE) $doc['content_from_app'] = true;
             $doc['sender'] = self::systemSender();
             $r = Client::post('campaigns', $doc);
             $lines[] = ($s['kind'] === 'digest' ? 'digest' : "nudge {$s['trigger_code']}") . ": made #{$r['campaign']['id']}, paused — read it on /messaging and switch it on";

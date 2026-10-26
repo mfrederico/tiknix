@@ -129,38 +129,96 @@ class Messaging extends Control {
         return $out;
     }
 
+    /** The form's shape: the words, then WHEN it goes out as one choice with its one follow-up, then on/off. */
     private function formOf(array $c): array {
-        return ['subject' => $c['subject'], 'body_email' => $c['body_email'], 'body_text' => $c['body_text'],
-            'trigger_days' => $c['trigger_days'] > 0 ? (int) $c['trigger_days'] : '', 'cadence' => $c['cadence'], 'cadence_days' => $c['cadence_days'] > 0 ? (int) $c['cadence_days'] : '',
-            'status' => $c['status'] === 'paused' ? 'paused' : 'active'];
+        $when = 'date';
+        if ($c['kind'] === 'digest') $when = 'digest';
+        elseif ($c['kind'] === 'trigger') $when = $c['trigger_code'] === Providers::TRIGGER_PIPELINE ? 'custom' : ($c['trigger_code'] === 'joined_days' ? 'joined' : ($c['trigger_code'] === 'inactive_days' ? 'inactive' : 'app'));
+        elseif ($c['cadence'] === 'every_n_days') $when = 'repeat';
+        $on = in_array($c['status'], ['active', 'scheduled', 'sending', 'sent'], true);
+        return ['subject' => $c['subject'], 'body_email' => $c['body_email'], 'body_text' => $c['body_text'], 'when' => $when,
+            'scheduled_at' => $c['scheduled_at'] !== '' ? substr(str_replace(' ', 'T', $c['scheduled_at']), 0, 16) : '',
+            'cadence_days' => $c['cadence_days'] > 0 ? (int) $c['cadence_days'] : '', 'trigger_days' => $c['trigger_days'] > 0 ? (int) $c['trigger_days'] : '',
+            'code' => $c['code'], 'on' => $on ? '1' : '0'];
+    }
+
+    /** The pipelines of this app whose messaging step names this campaign (by code or id). @return array<int,array{slug:string,name:string,trigger:string}> */
+    private function feeders(array $c): array {
+        if (!class_exists('\\app\\Pipeline\\Runner')) return [];
+        $out = [];
+        try { $all = \app\Pipeline\Runner::list(); } catch (\Throwable $e) { $this->logger->error('Messaging: the pipelines could not be listed: ' . $e->getMessage()); return []; }
+        foreach ($all as $p) {
+            $slug = (string) ($p['slug'] ?? '');
+            $def = $slug !== '' ? \app\Pipeline\Runner::get($slug) : null;
+            if (!is_array($def)) continue;
+            foreach ((array) ($def['steps'] ?? []) as $st) {
+                if (($st['type'] ?? '') !== 'messaging') continue;
+                $ref = trim((string) ($st['config']['campaign'] ?? ''));
+                if ($ref === '' || ($ref !== (string) $c['id'] && $ref !== (string) $c['code'])) continue;
+                $t = (array) ($def['trigger'] ?? []);
+                $how = isset($t['cron']) ? 'on a schedule (' . $t['cron'] . ')' : (isset($t['event']) ? 'when the app says ' . implode(', ', (array) $t['event']) : (isset($t['connector']) ? 'when ' . implode(', ', array_keys((array) $t['connector'])) . ' reports a change' : 'by hand'));
+                $out[] = ['slug' => $slug, 'name' => (string) ($def['name'] ?? $slug), 'trigger' => $how];
+                break;
+            }
+        }
+        return $out;
     }
 
     private function editPage(array $c, array $form, array $problems, ?array $preview): void {
         $this->render('messaging/edit', ['title' => 'Edit this message', 'c' => $c, 'system' => Campaigns::isSystem($c), 'locked' => $c['locked'], 'form' => $form, 'problems' => $problems, 'preview' => $preview,
-            'triggerLabel' => Providers::triggerLabels()[$c['trigger_code']] ?? null]);
+            'appTrigger' => $form['when'] === 'app' ? (Providers::triggerLabels()[$c['trigger_code']] ?? $c['trigger_code']) : null,
+            'feeders' => $form['when'] === 'custom' ? $this->feeders($c) : []]);
     }
 
-    /** GET: the form. POST: save it (the service checks the words: a {variable} nothing can fill is refused by field). */
+    /**
+     * GET: the form. POST: save it — the words, when it goes out (one choice and its follow-up), on or off. The service checks
+     * the words: a {variable} nothing can fill is refused by field.
+     */
     public function edit($params = []) {
         try {
             $c = $this->campaign();
             if ($c === null) return;
-            $system = Campaigns::isSystem($c);
             $form = $this->formOf($c);
             $problems = [];
             if (Flight::request()->method === 'POST') {
                 $this->validateCSRF();
                 if ($c['locked']) { $this->flash('error', 'That message has already gone out, so it cannot be changed.'); Flight::redirect('/messaging/view?id=' . (int) $c['id']); return; }
+                $fixed = in_array($form['when'], ['digest', 'app'], true) ? $form['when'] : null;   // the digest and an app-evaluated nudge keep their kind
                 foreach (array_keys($form) as $k) if (($v = $this->getParam($k)) !== null) $form[$k] = trim((string) $v);
+                if ($fixed !== null) $form['when'] = $fixed;
                 $doc = ['subject' => $form['subject'], 'body_email' => $form['body_email'], 'body_text' => $form['body_text']];
                 if ($form['subject'] === '') $problems['subject'] = 'Write a subject.';
                 if ($form['body_email'] === '') $problems['body_email'] = 'Write the message.';
-                if ($system) {
-                    if ($c['kind'] === 'trigger') { if (!ctype_digit($form['trigger_days']) || (int) $form['trigger_days'] < 1) $problems['trigger_days'] = 'A whole number of days, 1 or more.'; else $doc['trigger_days'] = (int) $form['trigger_days']; }
-                    if (!in_array($form['cadence'], ['once', 'every_n_days'], true)) $problems['cadence'] = 'Choose once or every N days.';
-                    elseif ($form['cadence'] === 'every_n_days' && (!ctype_digit($form['cadence_days']) || (int) $form['cadence_days'] < 1)) $problems['cadence_days'] = 'A whole number of days, 1 or more.';
-                    else { $doc['cadence'] = $form['cadence']; $doc['cadence_days'] = $form['cadence'] === 'every_n_days' ? (int) $form['cadence_days'] : 0; }
-                    if (!in_array($form['status'], ['active', 'paused'], true)) $problems['status'] = 'Choose active or paused.'; else $doc['status'] = $form['status'];
+                $on = $form['on'] === '1';
+                switch ($form['when']) {
+                    case 'date':
+                        $at = $this->scheduledAt($form['scheduled_at']);
+                        if ($on && $at === null) $problems['scheduled_at'] = 'Pick the day and time it goes out.';
+                        elseif ($on && strtotime($at) <= time()) $problems['scheduled_at'] = 'That time has passed. Pick a time ahead.';
+                        else { $doc += ['kind' => $c['kind'] === 'gathering' ? 'gathering' : 'message', 'cadence' => 'once', 'cadence_days' => 0, 'status' => $on ? 'scheduled' : 'draft']; if ($at !== null) $doc['scheduled_at'] = $at; }
+                        break;
+                    case 'repeat':
+                        if (!ctype_digit($form['cadence_days']) || (int) $form['cadence_days'] < 1) $problems['cadence_days'] = 'A whole number of days, 1 or more.';
+                        else $doc += ['kind' => 'message', 'cadence' => 'every_n_days', 'cadence_days' => (int) $form['cadence_days'], 'status' => $on ? 'active' : 'paused'];
+                        break;
+                    case 'inactive': case 'joined':
+                        if (!ctype_digit($form['trigger_days']) || (int) $form['trigger_days'] < 1) $problems['trigger_days'] = 'A whole number of days, 1 or more.';
+                        else $doc += ['kind' => 'trigger', 'trigger_code' => $form['when'] === 'joined' ? 'joined_days' : 'inactive_days', 'trigger_days' => (int) $form['trigger_days'],
+                                      'cadence' => $c['cadence'] === 'every_n_days' && $c['cadence_days'] > 0 ? 'every_n_days' : 'once', 'cadence_days' => (int) $c['cadence_days'], 'status' => $on ? 'active' : 'paused'];
+                        break;
+                    case 'custom':
+                        if (!preg_match('/^[a-z][a-z0-9_]{0,39}$/D', $form['code'])) $problems['code'] = 'A short name a pipeline can use: lowercase letters, digits and _, like no_friends.';
+                        else $doc += ['kind' => 'trigger', 'trigger_code' => Providers::TRIGGER_PIPELINE, 'code' => $form['code'], 'cadence' => $c['cadence'] === 'every_n_days' && $c['cadence_days'] > 0 ? 'every_n_days' : 'once', 'cadence_days' => (int) $c['cadence_days'], 'status' => $on ? 'active' : 'paused'];
+                        break;
+                    case 'app':
+                        if (!ctype_digit($form['trigger_days']) || (int) $form['trigger_days'] < 1) $problems['trigger_days'] = 'A whole number of days, 1 or more.';
+                        else $doc += ['trigger_days' => (int) $form['trigger_days'], 'status' => $on ? 'active' : 'paused'];
+                        break;
+                    case 'digest':
+                        $doc += ['status' => $on ? 'active' : 'paused'];
+                        break;
+                    default:
+                        $problems['when'] = 'Choose when it goes out.';
                 }
                 if (!$problems) {
                     try {
@@ -170,7 +228,8 @@ class Messaging extends Control {
                         return;
                     } catch (ServiceException $e) {
                         if ($e->status !== 422) throw $e;
-                        $problems[Client::field($e) ?: 'subject'] = Client::said($e);
+                        $f = Client::field($e);
+                        $problems[$f !== '' && array_key_exists($f, $form) ? $f : 'subject'] = Client::said($e);
                     }
                 }
             }

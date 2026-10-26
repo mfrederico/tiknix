@@ -1,6 +1,6 @@
 {
   "name": "messaging",
-  "version": "2.1.1",
+  "version": "2.2.1",
   "kind": "capability",
   "title": "Messaging",
   "blurb": "Email and text messages to members, with the member in control, sent by the Tiknix messaging service with this app's own Mailgun account: kinds of message each with their own switch (what reaches you), hosted one-click unsubscribe and preferences pages, a suppression list fed by bounces and complaints (a complaint anywhere counts everywhere), the owner's messages to an audience they own with a derived recipient list (never typed), a weekly cap, scheduling, tracked links, replies, and a ledger that makes sending twice impossible. Also a weekly digest and nudges. The app hands in its audiences, digest content and phone numbers from code and mirrors its members hourly; the engine, the ledger and the Mailgun webhook are the service's. Needs Messaging switched on for the project's owner (a premium Tiknix service).",

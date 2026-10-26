@@ -27,7 +27,7 @@ class Runner {
     public static function dryRun(): array {
         $lines = [];
         foreach (Campaigns::list(['status' => 'active']) as $c) {
-            if (!$c['content_from_app']) continue;
+            if (!$c['content_from_app'] || $c['trigger_code'] === Providers::TRIGGER_PIPELINE) continue;   // a Custom one is its pipeline's to send
             $what = $c['kind'] . ($c['trigger_code'] !== '' ? "/{$c['trigger_code']}" : '');
             $plan = Digest::plan($c, true);
             $lines[] = "campaign #{$c['id']} {$what} \"{$c['subject']}\": " . count($plan) . ' would receive it' . ($c['kind'] === 'digest' ? ' (send time, Sunday morning, ignored)' : '');

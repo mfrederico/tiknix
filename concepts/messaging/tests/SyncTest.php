@@ -52,6 +52,7 @@ class SyncTest extends ClientCase {
                 ['kind' => 'digest', 'category' => 'news', 'subject' => '{headline}', 'body_email' => '<p>{content_html}</p>', 'cadence' => 'every_n_days', 'cadence_days' => 7],
                 ['kind' => 'trigger', 'trigger_code' => 'no_friends_days', 'trigger_days' => 7, 'category' => 'reminders', 'subject' => 'Hi', 'body_email' => '<p>x</p>'],
                 ['kind' => 'trigger', 'trigger_code' => 'inactive_days', 'trigger_days' => 30, 'category' => 'news', 'subject' => 'Hey', 'body_email' => '<p>y</p>'],
+                ['kind' => 'trigger', 'trigger_code' => 'pipeline', 'code' => 'thanks', 'category' => 'news', 'subject' => 'Thanks {total}', 'body_email' => '<p>z</p>'],
             ],
         ]);
         self::$answers['GET campaigns'] = function ($body, $path) {
@@ -61,13 +62,21 @@ class SyncTest extends ClientCase {
         $n = 0;
         self::$answers['POST campaigns'] = function ($body) use (&$n) { $n++; return [201, ['campaign' => ['id' => 100 + $n] + $body]]; };
         $lines = Sync::system();
-        $this->assertSame(['digest: made #101, paused — read it on /messaging and switch it on', 'nudge no_friends_days: made #102, paused — read it on /messaging and switch it on', 'nudge inactive_days: kept #9'], $lines);
+        $this->assertSame(['digest: made #101, paused — read it on /messaging and switch it on', 'nudge no_friends_days: made #102, paused — read it on /messaging and switch it on', 'nudge inactive_days: kept #9', 'nudge pipeline: made #103, paused — read it on /messaging and switch it on'], $lines);
         $posts = $this->sent('POST', 'campaigns');
-        $this->assertCount(2, $posts);
+        $this->assertCount(3, $posts);
+        $this->assertSame(['pipeline', 'thanks'], [$posts[2]['trigger_code'], $posts[2]['code']], 'a Custom message carries its code; the service makes it pipeline-fed');
+        $this->assertArrayNotHasKey('content_from_app', $posts[2]);
         $this->assertSame('paused', $posts[0]['status']);
         $this->assertSame((string) $this->ids['ann'], $posts[0]['sender']['eid'], 'the first admin is the sender');
         $this->assertTrue($posts[1]['content_from_app'], "the app's own trigger is app-fed");
         $this->assertArrayNotHasKey('content_from_app', $posts[0], 'the digest is app-fed by the service\'s own rule');
+    }
+
+    public function testACustomSystemMessageNeedsACode(): void {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('needs a code');
+        Providers::register(['system' => [['kind' => 'trigger', 'trigger_code' => 'pipeline', 'category' => 'news', 'subject' => 's', 'body_email' => 'b']]]);
     }
 
     public function testRegisterRefusesABadContract(): void {

@@ -16,7 +16,7 @@ class Digest {
     public static function feed(): array {
         $lines = [];
         foreach (Campaigns::list(['status' => 'active']) as $c) {
-            if (!$c['content_from_app']) continue;
+            if (!$c['content_from_app'] || $c['trigger_code'] === Providers::TRIGGER_PIPELINE) continue;   // a Custom one is its pipeline's to send
             $plan = self::plan($c, false);
             if (!$plan) { $lines[] = "campaign #{$c['id']} ({$c['kind']}" . ($c['trigger_code'] !== '' ? "/{$c['trigger_code']}" : '') . '): nobody due'; continue; }
             $r = Client::post("campaigns/{$c['id']}/deliveries", ['deliveries' => $plan])['result'];

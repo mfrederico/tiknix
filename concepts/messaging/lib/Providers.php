@@ -15,7 +15,7 @@ namespace app\concepts\messaging;
  *       'phone'      => \app\MessagingPhone::class,
  *       'categories' => [['news', 'News', 'What is new in your groups', true, true, 'email,text']],
  *       'system'     => [['kind' => 'digest', 'category' => 'news', 'subject' => '{headline}', 'body_email' => '…', 'body_text' => '…', 'cadence' => 'every_n_days', 'cadence_days' => 7],
- *                        ['kind' => 'trigger', 'trigger_code' => 'no_friends_days', 'trigger_days' => 7, 'category' => 'reminders', 'subject' => '…', 'body_email' => '…']],
+ *                        ['kind' => 'trigger', 'trigger_code' => 'pipeline', 'code' => 'no_friends', 'category' => 'reminders', 'subject' => '…', 'body_email' => '…']],   // Custom: a pipeline's messaging step sends it
  *   ]);
  *
  * audiences — who a message can be for. Keys look like community:5 (kind:id).
@@ -57,6 +57,8 @@ class Providers {
     ];
     private const PHONE_PROVING = ['prove', 'pending', 'confirm', 'cancel'];
     public const BUILT_IN_TRIGGERS = ['inactive_days', 'joined_days'];
+    /** A Custom campaign: a pipeline is its trigger and its condition (a messaging step sends it); the service only takes deliveries. */
+    public const TRIGGER_PIPELINE = 'pipeline';
 
     /** @var array<string,mixed> */
     private static array $p = [];
@@ -90,11 +92,15 @@ class Providers {
                 if (!is_array($s) || !in_array($s['kind'] ?? '', ['digest', 'trigger'], true) || trim((string) ($s['subject'] ?? '')) === '' || trim((string) ($s['body_email'] ?? '')) === '' || trim((string) ($s['category'] ?? '')) === '') {
                     throw new \InvalidArgumentException("Providers::register: system[$i] needs kind (digest|trigger), category, subject and body_email");
                 }
-                if ($s['kind'] === 'trigger' && (!preg_match('/^[a-z][a-z0-9_]*$/D', (string) ($s['trigger_code'] ?? '')) || (int) ($s['trigger_days'] ?? 0) < 1)) {
-                    throw new \InvalidArgumentException("Providers::register: system[$i]: a trigger needs trigger_code and trigger_days");
+                $tc = (string) ($s['trigger_code'] ?? '');
+                if ($s['kind'] === 'trigger' && (!preg_match('/^[a-z][a-z0-9_]*$/D', $tc) || ($tc !== self::TRIGGER_PIPELINE && (int) ($s['trigger_days'] ?? 0) < 1))) {
+                    throw new \InvalidArgumentException("Providers::register: system[$i]: a trigger needs trigger_code and trigger_days (a Custom one, trigger_code pipeline, needs a code instead)");
                 }
-                if ($s['kind'] === 'trigger' && !in_array($s['trigger_code'], self::BUILT_IN_TRIGGERS, true) && !isset($providers['triggers'][$s['trigger_code']])) {
-                    throw new \InvalidArgumentException("Providers::register: system[$i] names trigger '{$s['trigger_code']}', which 'triggers' does not register");
+                if ($s['kind'] === 'trigger' && $tc === self::TRIGGER_PIPELINE && !preg_match('/^[a-z][a-z0-9_]{0,39}$/D', (string) ($s['code'] ?? ''))) {
+                    throw new \InvalidArgumentException("Providers::register: system[$i]: a Custom message needs a code (what its pipeline's messaging step names)");
+                }
+                if ($s['kind'] === 'trigger' && $tc !== self::TRIGGER_PIPELINE && !in_array($tc, self::BUILT_IN_TRIGGERS, true) && !isset($providers['triggers'][$tc])) {
+                    throw new \InvalidArgumentException("Providers::register: system[$i] names trigger '{$tc}', which 'triggers' does not register");
                 }
             }
         }
@@ -144,7 +150,7 @@ class Providers {
 
     /** @return array<string,string> every trigger code that can be evaluated, with the words the admin sees for its number of days */
     public static function triggerLabels(): array {
-        $out = ['inactive_days' => 'After this many days without signing in', 'joined_days' => 'Days after joining'];
+        $out = ['inactive_days' => 'After this many days without signing in', 'joined_days' => 'Days after joining', self::TRIGGER_PIPELINE => 'When a pipeline decides (Custom)'];
         foreach (self::triggers() as $code => $class) $out[$code] = (string) $class::label();
         return $out;
     }

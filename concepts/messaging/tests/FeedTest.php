@@ -17,6 +17,7 @@ class FeedTest extends ClientCase {
             ['id' => 1, 'kind' => 'digest', 'trigger_code' => '', 'trigger_days' => 0, 'content_from_app' => true, 'status' => 'active', 'subject' => '{headline}'],
             ['id' => 2, 'kind' => 'trigger', 'trigger_code' => 'no_friends_days', 'trigger_days' => 7, 'content_from_app' => true, 'status' => 'active', 'subject' => 'Hi'],
             ['id' => 3, 'kind' => 'trigger', 'trigger_code' => 'inactive_days', 'trigger_days' => 30, 'content_from_app' => false, 'status' => 'active', 'subject' => 'Hey'],
+            ['id' => 4, 'kind' => 'trigger', 'trigger_code' => 'pipeline', 'trigger_days' => 0, 'content_from_app' => true, 'status' => 'active', 'subject' => 'Thanks'],
         ];
     }
 
@@ -38,6 +39,7 @@ class FeedTest extends ClientCase {
         $d2 = $this->sent('POST', 'campaigns/2/deliveries')[0]['deliveries'];
         $this->assertSame([['contact' => (string) $bo, 'headline' => "Make a friend, #$bo", 'content_html' => '<p>go</p>', 'content_text' => 'go']], $d2, 'only the one who qualifies');
         $this->assertSame([], $this->sent('GET', 'campaigns/3/due'), 'the service evaluates inactive_days itself: not asked');
+        $this->assertSame([], $this->sent('GET', 'campaigns/4/due'), 'a Custom one is its pipeline\'s to send: not asked');
     }
 
     public function testNobodyDueSendsNothing(): void {

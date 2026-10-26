@@ -20,6 +20,15 @@ class Campaigns {
 
     public static function create(array $doc): array { return Client::post('campaigns', $doc)['campaign']; }
 
+    /** A campaign by its id or its code (the name the app and its pipelines use); throws when there is none. */
+    public static function byRef(string $ref): array {
+        $ref = trim($ref);
+        if (ctype_digit($ref)) return Client::get("campaigns/{$ref}")['campaign'];
+        $list = Client::get('campaigns', ['code' => $ref])['campaigns'];
+        if (!$list) throw new \InvalidArgumentException("no campaign has the code '{$ref}' (set it on /messaging → the message → Edit)");
+        return $list[0];
+    }
+
     public static function update(int $id, array $doc): array { return Client::patch("campaigns/{$id}", $doc)['campaign']; }
 
     /** A draft only. */

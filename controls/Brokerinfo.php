@@ -149,6 +149,21 @@ class Brokerinfo extends Control {
         Flight::jsonSuccess(['url' => $url, 'project' => (string) $inst->slug]);
     }
 
+    /**
+     * GET /brokerinfo/messaging — where the messaging service is, for this project's app (its
+     * `clitool --connection-share=… --with=messaging` asks before sending a connection there).
+     * Answered only when the project's OWNER has Messaging switched on (a premium flag).
+     */
+    public function messaging($params = []) {
+        [$key, $iid] = $this->requireBroker(); if (!$key) return;
+        $inst = Bean::load('instance', $iid);
+        if (!$inst->id) { Flight::jsonError('That project is gone.', 404); return; }
+        if (!Feature::isEnabled('messaging', (int) $inst->memberId)) { Flight::jsonError("Messaging is not switched on for this project's owner.", 403); return; }
+        $url = rtrim((string) ((\app\Sidecar\Registry::get('messaging') ?? [])['url'] ?? ''), '/');
+        if ($url === '') { Flight::jsonError('Messaging is not set up on this platform ([sidecar.messaging] url).', 503); return; }
+        Flight::jsonSuccess(['url' => $url, 'project' => (string) $inst->slug]);
+    }
+
     /* ---- the owner's model connections, for this project's pipelines --------------
      * MODEL_CONNECTIONS_PLAN.md phase 4. The key never leaves core: a pipeline agent step
      * asks core to make the call. The payer is the project's OWNER (instance.member_id, read

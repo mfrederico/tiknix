@@ -655,7 +655,7 @@ Code changes are commits.
 - https://redbeanphp.com/ - Official RedBeanPHP documentation
 - `vendor/tiknix/runtime/README.md` - the runtime package: what it is, how an app extends or overrides it
 
-## Concept: messaging (2.3.1)
+## Concept: messaging (2.3.2)
 
 Messages to members — email and, for those who ask, text — with the member in control, SENT BY THE TIKNIX MESSAGING
 SERVICE (messaging.tiknix.com) with this app's own Mailgun account. This plugin is the service's client: it mirrors the app's
@@ -734,7 +734,8 @@ A text needs the phone provider, the member's opt-in (off by default, recorded) 
 48 hours (a service that does not answer is an ERROR in the log, never a broken page). What happens to a message is the app's own
 event: the service posts it to `/msghook/event` (signed with the site's hook key) and a pipeline starts on `"trigger": {"event":
 "message.replied"}` — delivered | opened | clicked | replied | unsubscribed | bounced | complained, with `{context.member_id}`,
-`{context.campaign_code}`, `{context.subject}`, `{context.meta.*}`. `Reach::prefsUrl($memberId)` is the signed hosted page where a
-member chooses what reaches them. Old `/msgpref/unsubscribe?t=` links (v1) still work, through the service.
+`{context.campaign_code}`, `{context.subject}`, `{context.meta.*}`. `Campaigns::recipient($code, $memberId)` (a `messaging` step's
+`check`) says what one member did with a message. `Reach::prefsUrl($memberId)` is the signed hosted page where a member chooses
+what reaches them. Old `/msgpref/unsubscribe?t=` links (v1) still work, through the service.
 
 <!-- tiknix:managed end -->

@@ -60,4 +60,13 @@ class EventsTest extends ClientCase {
         $this->assertSame(self::KEY, Events::hookKey(), 'the setting answers; the service is not asked again');
         $this->assertCount(1, array_filter(self::$calls, fn($c) => $c[0] === 'GET' && $c[1] === 'sites/' . rawurlencode($host)));
     }
+
+    public function testWhatOneMemberDidWithAMessage(): void {
+        self::$answers['GET campaigns?code=welcome_1'] = ['ok' => true, 'campaigns' => [['id' => 7, 'code' => 'welcome_1', 'subject' => 'Welcome']]];
+        self::$answers['GET campaigns/7/recipients?contact=42'] = ['ok' => true, 'recipients' => [['contact' => '42', 'sent_at' => '2026-10-20 09:00:00', 'opened' => true, 'clicks' => 0, 'replies' => 0]]];
+        $r = \app\concepts\messaging\Campaigns::recipient('welcome_1', 42);
+        $this->assertTrue($r['opened']); $this->assertSame(7, $r['campaign']);
+        self::$answers['GET campaigns/7/recipients?contact=43'] = ['ok' => true, 'recipients' => []];
+        $this->assertNull(\app\concepts\messaging\Campaigns::recipient('welcome_1', 43), 'never sent to them');
+    }
 }

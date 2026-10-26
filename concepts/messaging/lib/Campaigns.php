@@ -58,6 +58,16 @@ class Campaigns {
     /** Every recipient of a campaign and what happened to their copy, newest first (the service's rows; `contact` is the member id). */
     public static function recipients(int $id): array { return Client::get("campaigns/{$id}/recipients")['recipients']; }
 
+    /**
+     * What one member did with a message (by code or id): the recipient row — sent_at, delivered_at, opened, clicks, replies,
+     * unsubscribed_at, bounced_at, complained_at — or null when they never got it. A pipeline's "if they did not open it".
+     */
+    public static function recipient(string $ref, int $memberId): ?array {
+        $c = self::byRef($ref);
+        $rows = Client::get("campaigns/{$c['id']}/recipients", ['contact' => (string) $memberId])['recipients'];
+        return $rows ? $rows[0] + ['campaign' => (int) $c['id']] : null;
+    }
+
     /** @return array{count:int,contacts:string[],texts:int} who would get it now */
     public static function audience(int $id): array { $r = Client::get("campaigns/{$id}/audience"); return ['count' => $r['count'], 'contacts' => $r['contacts'], 'texts' => $r['texts']]; }
 

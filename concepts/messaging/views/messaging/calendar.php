@@ -29,6 +29,7 @@ $dataUrl = '/messaging/calendardata' . ($scope !== null ? '?scope=' . urlencode(
   .cal-item{font-size:.75rem;line-height:1.25;border-radius:.25rem;padding:.15rem .3rem;margin-bottom:.2rem;overflow:hidden;text-overflow:ellipsis}
   .cal-item.future{background:var(--bs-primary-bg-subtle);color:var(--bs-primary-text-emphasis)}
   .cal-item.past{background:var(--bs-success-bg-subtle);color:var(--bs-success-text-emphasis)}
+  a.cal-item{cursor:pointer}a.cal-item:hover{filter:brightness(.93);text-decoration:none}
   .cal-item .n{font-variant-numeric:tabular-nums;opacity:.85}
   .cal-list .cal-item{font-size:.875rem;padding:.4rem .6rem}
   @media (max-width: 767px){.cal-grid{grid-template-columns:repeat(1,minmax(0,1fr))}.cal-cell{min-height:auto}.cal-cell.empty{display:none}}
@@ -51,15 +52,18 @@ $dataUrl = '/messaging/calendardata' . ($scope !== null ? '?scope=' . urlencode(
     var f = new Date(anchor.getFullYear(), anchor.getMonth(), 1), l = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
     return [f, l];
   }
+  var scoped = dataUrl.indexOf('scope=') > -1;
+  // an owner's page is the message's own page; an admin's the admin view
+  var href = function (c) { return '/messaging/' + (scoped || !<?= json_encode(\Flight::hasLevel(LEVELS['ADMIN'])) ?> ? 'message' : 'view') + '?id=' + c.id; };
   function itemHtml(it, past) {
     var c = it.campaign, s = esc(c.subject);
     if (past) {
       var eng = it.sent ? Math.round(100 * it.engaged / it.sent) : 0;
-      return '<div class="cal-item past" title="' + s + ' — sent ' + it.sent + ', delivered ' + it.delivered + ', opened ' + it.opened + ', engaged ' + it.engaged + ' (clicked, replied or acted), unsubscribed ' + it.unsubscribed + ', bounced ' + it.bounced + '">'
-        + '<a class="text-reset text-decoration-none" href="/messaging/' + (c.scope ? 'message' : 'view') + '?id=' + c.id + '">' + s + '</a> <span class="n">· sent ' + it.sent + ' · engaged ' + it.engaged + (it.sent ? ' (' + eng + '%)' : '') + ' · unsubs ' + it.unsubscribed + '</span></div>';
+      return '<a class="cal-item past d-block text-reset text-decoration-none" href="' + href(c) + '" title="' + s + ' — sent ' + it.sent + ', delivered ' + it.delivered + ', opened ' + it.opened + ', engaged ' + it.engaged + ' (clicked, replied or acted), unsubscribed ' + it.unsubscribed + ', bounced ' + it.bounced + '. Open the message.">'
+        + '<span class="fw-semibold">' + s + '</span> <span class="n">· sent ' + it.sent + ' · engaged ' + it.engaged + (it.sent ? ' (' + eng + '%)' : '') + ' · unsubs ' + it.unsubscribed + '</span></a>';
     }
-    return '<div class="cal-item future" title="' + s + ' — ' + esc(it.why) + ', about ' + it.estimate + ' people">'
-      + '<a class="text-reset text-decoration-none" href="/messaging/' + (c.scope ? 'message' : 'view') + '?id=' + c.id + '">' + s + '</a> <span class="n">· ~' + it.estimate + ' · ' + esc(it.why) + '</span></div>';
+    return '<a class="cal-item future d-block text-reset text-decoration-none" href="' + href(c) + '" title="' + s + ' — ' + esc(it.why) + ', about ' + it.estimate + ' people. Open the message.">'
+      + '<span class="fw-semibold">' + s + '</span> <span class="n">· ~' + it.estimate + ' · ' + esc(it.why) + '</span></a>';
   }
   function render(data) {
     var byDay = {};

@@ -75,15 +75,58 @@ class Messaging extends Control {
             'providers' => self::PROVIDERS, 'have' => Providers::registered(), 'serviceUrl' => Client::url()]);
     }
 
-    /** One campaign: its message, counts and the clicks on each link. */
+    /** One campaign: its message, counts, the clicks on each link, who got it and what they did, and the copy as you would get it. */
     public function view($params = []) {
         try {
             $c = $this->campaign();
             if ($c === null) return;
             $links = Campaigns::get((int) $c['id'])['links'];
+            $recipients = $this->recipientRows(Campaigns::recipients((int) $c['id']));
         } catch (ServiceException $e) { $this->unavailable($e); return; }
-        $this->render('messaging/view', ['title' => $c['subject'], 'c' => $c, 'row' => $this->row($c), 'links' => $links,
-            'unavailable' => $c['kind'] === 'digest' && !Providers::has('digest')]);
+        $this->render('messaging/view', ['title' => $c['subject'], 'c' => $c, 'row' => $this->row($c), 'links' => $links, 'recipients' => $recipients,
+            'preview' => $this->previewFor($c), 'unavailable' => $c['kind'] === 'digest' && !Providers::has('digest')]);
+    }
+
+    /** The copy the signed-in member would get (a system message filled with what the app gives them now); null, with the reason logged, when it cannot be made. */
+    private function previewFor(array $c): ?array {
+        $me = (int) $this->member->id;
+        try {
+            Sync::contact($me);
+            return Campaigns::preview((int) $c['id'], $me, Digest::previewExtra($c, $me));
+        } catch (\Throwable $e) {
+            $this->logger->error('Messaging preview could not be made: ' . $e->getMessage(), ['campaign' => (int) $c['id']]);
+            return ['error' => $e instanceof ServiceException ? Client::said($e) : $e->getMessage()];
+        }
+    }
+
+    /** The service's recipient rows with the member's name from this app, for the table. */
+    private function recipientRows(array $rows): array {
+        $names = [];
+        $ids = array_values(array_unique(array_filter(array_map(fn($r) => (int) $r['contact'], $rows))));
+        foreach (array_chunk($ids, 500) as $chunk) {
+            $in = implode(',', array_fill(0, count($chunk), '?'));
+            // the columns every member table has; a display_name, when the app keeps one, wins
+            $cols = array_keys(\app\Bean::inspect('member'));
+            $pick = in_array('display_name', $cols, true) ? 'display_name, first_name, username' : 'first_name, username';
+            foreach (\app\Bean::getAll("SELECT id, {$pick} FROM member WHERE id IN ($in)", $chunk) as $m) {
+                $names[(int) $m['id']] = trim((string) ($m['display_name'] ?? '')) ?: (trim((string) $m['first_name']) ?: (string) $m['username']);
+            }
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            $did = [];
+            if ($r['opened']) $did[] = 'opened';
+            if ($r['clicks'] > 0) $did[] = 'clicked' . ($r['clicks'] > 1 ? " ×{$r['clicks']}" : '');
+            if ($r['replies'] > 0) $did[] = 'replied';
+            if ($r['acted_at'] !== '') $did[] = 'acted';
+            if ($r['unsubscribed_at'] !== '') $did[] = 'unsubscribed';
+            if ($r['bounced_at'] !== '') $did[] = 'bounced';
+            if ($r['complained_at'] !== '') $did[] = 'complained';
+            $state = $r['bounced_at'] !== '' ? 'bounced' : ($r['delivered_at'] !== '' ? 'delivered' : ($r['sent_at'] !== '' ? 'sent' : 'not sent'));
+            $out[] = (object) ['member' => (int) $r['contact'], 'name' => $names[(int) $r['contact']] ?? ($r['first_name'] !== '' ? $r['first_name'] : 'Member #' . $r['contact']), 'email' => $r['email'],
+                'channel' => $r['channel'], 'state' => $state, 'did' => $did ? implode(', ', $did) : '—', 'when' => $r['sent_at'] !== '' ? $r['sent_at'] : $r['created_at']];
+        }
+        return $out;
     }
 
     private function formOf(array $c): array {
@@ -464,7 +507,9 @@ class Messaging extends Control {
                 $this->forbid('Only the owner of ' . $this->whereLabel($key) . ' can see its messages.', ['scope' => $key]);
             }
             $links = Campaigns::get((int) $c['id'])['links'];
+            $recipients = $this->recipientRows(Campaigns::recipients((int) $c['id']));
         } catch (ServiceException $e) { $this->unavailable($e); return; }
-        $this->render('messaging/message', ['title' => $c['subject'], 'c' => $c, 'where' => $this->whereLabel($key !== '' ? $key : null), 'composeUrl' => $this->composeUrl($key !== '' ? $key : null), 'links' => $links]);
+        $this->render('messaging/message', ['title' => $c['subject'], 'c' => $c, 'where' => $this->whereLabel($key !== '' ? $key : null), 'composeUrl' => $this->composeUrl($key !== '' ? $key : null), 'links' => $links,
+            'recipients' => $recipients, 'preview' => $this->previewFor($c)]);
     }
 }

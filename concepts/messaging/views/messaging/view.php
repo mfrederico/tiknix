@@ -1,5 +1,5 @@
 <?php
-/** @var ?array $c @var object $row @var array $links @var bool $unavailable */
+/** @var ?array $c @var object $row @var array $links @var array $recipients @var ?array $preview @var bool $unavailable */
 if (!$c): ?>
 <?= \app\Ui::page(['title' => 'Not found', 'back' => ['label' => 'Messages', 'url' => '/messaging']]) ?>
 <?php return; endif; ?>
@@ -16,3 +16,4 @@ if (!$c): ?>
 <?= \app\Ui::table(['title' => 'Links', 'rows' => array_map(fn($l) => (object) $l, $links),
     'columns' => [['label' => 'Link', 'value' => 'url'], ['label' => 'Clicks', 'value' => 'clicks']],
     'empty' => ['title' => 'No links counted yet', 'text' => 'Links appear here once the message has gone out.']]) ?>
+<?php include __DIR__ . '/_copy.php'; ?>

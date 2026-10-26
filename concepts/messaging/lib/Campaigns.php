@@ -37,8 +37,17 @@ class Campaigns {
         return Client::post("campaigns/{$id}/test", $body)['test'];
     }
 
-    /** @return array{subject:string,html:string,text:string} */
-    public static function preview(int $id, int $memberId): array { return Client::get("campaigns/{$id}/preview", ['contact' => (string) $memberId])['preview']; }
+    /** @return array{subject:string,html:string,text:string} the copy one member would get; $extra = Digest::previewExtra for a system message */
+    public static function preview(int $id, int $memberId, array $extra = []): array {
+        $q = ['contact' => (string) $memberId];
+        if (isset($extra['vars']['headline'])) $q['headline'] = $extra['vars']['headline'];
+        if (isset($extra['html']['content_html'])) $q['content_html'] = $extra['html']['content_html'];
+        if (isset($extra['text']['content_text'])) $q['content_text'] = $extra['text']['content_text'];
+        return Client::get("campaigns/{$id}/preview", $q)['preview'];
+    }
+
+    /** Every recipient of a campaign and what happened to their copy, newest first (the service's rows; `contact` is the member id). */
+    public static function recipients(int $id): array { return Client::get("campaigns/{$id}/recipients")['recipients']; }
 
     /** @return array{count:int,contacts:string[],texts:int} who would get it now */
     public static function audience(int $id): array { $r = Client::get("campaigns/{$id}/audience"); return ['count' => $r['count'], 'contacts' => $r['contacts'], 'texts' => $r['texts']]; }

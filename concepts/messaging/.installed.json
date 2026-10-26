@@ -1,7 +1,7 @@
 {
     "name": "messaging",
-    "version": "2.4.1",
+    "version": "2.5.0",
     "source": "control-plane catalog",
-    "installed_at": "2026-10-26T17:17:07+00:00",
-    "bundle_sha256": "c9f4fe24c3e690684ac2504747ed0c05f43458806cd338b5f8d8f38a5220bf66"
+    "installed_at": "2026-10-26T17:50:17+00:00",
+    "bundle_sha256": "2198d0c9150731d39730e1863367bdcb7eb63c219a6fdb0acc6204eb4b92f36e"
 }

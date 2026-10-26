@@ -22,7 +22,8 @@ $list = fn(array $extra) => 'You can use ' . implode(', ', array_merge($vars, $e
 $fields = [
     ['name' => 'subject', 'label' => 'Subject', 'required' => true, 'help' => $list([])],
     ['name' => 'body_email', 'label' => 'Message', 'type' => 'textarea', 'rows' => 10, 'required' => true, 'help' => 'HTML is allowed. ' . $list($system ? ['{content_html}'] : [])],
-    ['name' => 'body_text', 'label' => 'Text version', 'type' => 'textarea', 'rows' => 6, 'more' => true, 'help' => 'Plain text. Left empty, it is made from the message. ' . $list($system ? ['{content_text}'] : [])],
+    ['name' => 'body_text', 'label' => 'Text version', 'type' => 'textarea', 'rows' => 6, 'help' => 'Plain text, for mail readers that show no HTML. Left empty, the service makes one from the HTML. ' . $list($system ? ['{content_text}'] : [])],
+    ['name' => 'body_sms', 'label' => 'Text message', 'type' => 'textarea', 'rows' => 2, 'help' => 'For members who asked for texts: one part, at most 144 characters before the STOP line. Empty: no text goes out.'],
 ];
 if ($form['when'] === 'digest') {
     $fields[] = ['name' => 'on', 'section' => 'When it goes out', 'label' => 'The weekly digest: Sunday morning, to each member who turned it on, with their own news', 'type' => 'radio', 'required' => true, 'options' => ['1' => 'On', '0' => 'Paused']];
@@ -48,6 +49,7 @@ if ($form['when'] === 'digest') {
     'empty' => ['title' => 'No pipeline names it yet', 'text' => 'A pipeline with a "messaging" step whose campaign is this message\'s code sends it. Make one on the Pipelines page.',
                 'action' => ['label' => 'Pipelines', 'url' => '/pipelines']]]) ?>
 <?php endif; ?>
+<?php include __DIR__ . '/_composer.php'; ?>
 <script>
 // one follow-up field per trigger: show the chosen one, keep the others out of the way
 (function () {

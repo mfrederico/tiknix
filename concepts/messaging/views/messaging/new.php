@@ -1,5 +1,5 @@
 <?php
-/** @var array $form @var array $problems @var array $categories (code => label) */
+/** @var array $form @var array $problems @var array $categories (code => label) @var array $templates (EmailTemplates::all()) */
 $help = 'You can use {first_name|there}, {unsubscribe_url}, {prefs_url} and what the audience offers (like {community.name}). {name|a default} says what to show when it is empty.';
 ?>
 <?= \app\Ui::page(['title' => 'A new message', 'lead' => 'First when it goes out, then the words. It is saved paused: send yourself a test from its page, then turn it on.',
@@ -16,8 +16,10 @@ $help = 'You can use {first_name|there}, {unsubscribe_url}, {prefs_url} and what
         ['name' => 'category', 'section' => 'The words', 'label' => 'Kind of message', 'type' => 'select', 'options' => $categories, 'required' => true, 'help' => 'Members can switch each kind off in their settings.'],
         ['name' => 'subject', 'label' => 'Subject', 'required' => true, 'help' => $help],
         ['name' => 'body_email', 'label' => 'Message', 'type' => 'textarea', 'rows' => 10, 'required' => true, 'help' => 'HTML is allowed. ' . $help . ' A Custom message may also use what its pipeline hands over.'],
-        ['name' => 'body_text', 'label' => 'Text version', 'type' => 'textarea', 'rows' => 6, 'more' => true, 'help' => 'Plain text. Left empty, it is made from the message.'],
+        ['name' => 'body_text', 'label' => 'Text version', 'type' => 'textarea', 'rows' => 6, 'help' => 'Plain text, for mail readers that show no HTML. Left empty, the service makes one from the HTML.'],
+        ['name' => 'body_sms', 'label' => 'Text message', 'type' => 'textarea', 'rows' => 2, 'help' => 'For members who asked for texts: one part, at most 144 characters before the STOP line. Empty: no text goes out.'],
     ]]) ?>
+<?php include __DIR__ . '/_composer.php'; ?>
 <script>
 // one follow-up field per trigger: show the chosen one, keep the others out of the way
 (function () {

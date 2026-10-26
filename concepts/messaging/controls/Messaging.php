@@ -92,7 +92,7 @@ class Messaging extends Control {
         $this->render('messaging/view', ['title' => $c['subject'], 'c' => $c, 'row' => $this->row($c), 'links' => $links, 'recipients' => $recipients,
             'preview' => $this->previewFor($c), 'unavailable' => $c['kind'] === 'digest' && !Providers::has('digest'),
             'custom' => $custom, 'on' => in_array($c['status'], ['active', 'scheduled', 'sending', 'sent'], true), 'audience' => $audience,
-            'feeders' => $custom ? $this->feeders($c) : [], 'reactors' => $this->reactors($c)]);
+            'feeders' => $custom ? $this->feeders($c) : [], 'reactors' => $this->reactors($c), 'attachments' => array_map(fn($a) => (object) $a, (array) ($c['attachments'] ?? []))]);
     }
 
     /**
@@ -104,7 +104,7 @@ class Messaging extends Control {
             $categories = [];
             foreach (Client::get('categories')['categories'] as $cat) if (!in_array($cat['code'], [Reach::TRANSACTIONAL, Reach::REMINDERS], true)) $categories[$cat['code']] = $cat['label'];
             if (!$categories) throw new \RuntimeException('Messaging: there is no kind of message an admin could write. Register one (Providers categories).');
-            $form = ['when' => 'date', 'scheduled_at' => '', 'cadence_days' => '', 'trigger_days' => '', 'code' => '', 'category' => array_key_first($categories), 'subject' => '', 'body_email' => '', 'body_text' => ''];
+            $form = ['when' => 'date', 'scheduled_at' => '', 'cadence_days' => '', 'trigger_days' => '', 'code' => '', 'category' => array_key_first($categories), 'subject' => '', 'body_email' => '', 'body_text' => '', 'body_sms' => ''];
             $problems = [];
             if (Flight::request()->method === 'POST') {
                 $this->validateCSRF();
@@ -127,8 +127,66 @@ class Messaging extends Control {
                     }
                 }
             }
-            $this->render('messaging/new', ['title' => 'A new message', 'form' => $form, 'problems' => $problems, 'categories' => $categories]);
+            $this->render('messaging/new', ['title' => 'A new message', 'form' => $form, 'problems' => $problems, 'categories' => $categories, 'templates' => EmailTemplates::all()]);
         } catch (ServiceException $e) { $this->unavailable($e); }
+    }
+
+    /** POST (multipart): attach one file to a message (?id=). The service keeps it and sends it with every copy. */
+    public function attach($params = []) {
+        try {
+            $c = $this->campaign();
+            if ($c === null) return;
+            $back = '/messaging/view?id=' . (int) $c['id'];
+            if (Flight::request()->method !== 'POST') { Flight::redirect($back); return; }
+            $this->validateCSRF();
+            $f = $_FILES['file'] ?? null;
+            if (!is_array($f) || (int) ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) { $this->flash('error', 'Pick a file to attach.'); Flight::redirect($back); return; }
+            if ((int) $f['error'] !== UPLOAD_ERR_OK) { $this->flash('error', 'The file did not upload (error ' . (int) $f['error'] . '); a file may be 4 MB at most.'); Flight::redirect($back); return; }
+            $type = (string) (mime_content_type((string) $f['tmp_name']) ?: '');   // the file's real kind, not the browser's word for it
+            try {
+                $a = Campaigns::attach((int) $c['id'], (string) $f['name'], $type, (string) file_get_contents((string) $f['tmp_name']));
+                $this->flash('success', 'Attached ' . $a['name'] . ' (' . round($a['size'] / 1024) . ' KB). It goes with every copy, the test included.');
+            } catch (ServiceException $e) { $this->flash('error', Client::said($e)); }
+            Flight::redirect($back);
+        } catch (ServiceException $e) { $this->unavailable($e); }
+    }
+
+    /** POST: remove an attachment (?id=, attachment=). */
+    public function detach($params = []) {
+        try {
+            $c = $this->campaign();
+            if ($c === null) return;
+            $back = '/messaging/view?id=' . (int) $c['id'];
+            if (Flight::request()->method !== 'POST') { Flight::redirect($back); return; }
+            $this->validateCSRF();
+            try { Campaigns::detach((int) $c['id'], (int) $this->getParam('attachment')); $this->flash('success', 'Removed.'); }
+            catch (ServiceException $e) { $this->flash('error', Client::said($e)); }
+            Flight::redirect($back);
+        } catch (ServiceException $e) { $this->unavailable($e); }
+    }
+
+    /**
+     * POST /messaging/derive — the composer's two buttons: what=text makes the plain-text version from the HTML, what=sms a
+     * text message of at most 144 characters from the text; both by this app's agent (AgentTask::ask, its fast model, no
+     * tools). JSON {ok, text, chars} or {ok:false, reason} — an app with no agent is told so, and types it by hand.
+     */
+    public function derive($params = []) {
+        if (Flight::request()->method !== 'POST') { Flight::json(['ok' => false, 'reason' => 'POST only'], 405); return; }
+        if (!\app\SimpleCsrf::validateRequest()) { Flight::json(['ok' => false, 'reason' => 'Security validation failed; reload the page.'], 403); return; }
+        $what = (string) $this->getParam('what');
+        $html = (string) $this->getParam('html'); $text = (string) $this->getParam('text');
+        if (!in_array($what, ['text', 'sms'], true)) { Flight::json(['ok' => false, 'reason' => 'what: text or sms'], 400); return; }
+        $source = $what === 'text' ? trim($html) : trim($text !== '' ? $text : strip_tags($html));
+        if ($source === '') { Flight::json(['ok' => false, 'reason' => $what === 'text' ? 'Write the HTML message first.' : 'Build the text version first.'], 400); return; }
+        if (!class_exists('\\app\\AgentTask')) { Flight::json(['ok' => false, 'reason' => 'This runtime has no agent to ask.'], 500); return; }
+        $brief = $what === 'text'
+            ? "Rewrite the HTML email below as the PLAIN-TEXT version of the same email, for mail readers that show no HTML.\nRules: keep every sentence and its order; a link becomes its words followed by the address in parentheses, e.g. See the community (https://…); headings on their own line; a blank line between paragraphs; lists as lines starting with \"- \"; keep every {variable} such as {first_name|there}, {unsubscribe_url}, {prefs_url} EXACTLY as written; no HTML tags, no markdown, no commentary. Reply with the text alone.\n\n=== HTML ===\n{$source}"
+            : "Write a text message (SMS) of AT MOST 144 characters that says what the message below says: the one thing the reader should know or do. Keep {first_name|there} if the message greets by name. No links unless the message's single call to action is a link, then {link}. No emoji. Reply with the text message alone, nothing else.\n\n=== MESSAGE ===\n" . mb_substr($source, 0, 6000);
+        $r = \app\AgentTask::ask(\app\Paths::root(), 'messaging-derive-' . (int) $this->member->id, $brief, 'claude', 120, '', true);
+        if (!$r['ok']) { $this->logger?->error('Messaging derive: the agent did not answer', ['what' => $what, 'status' => $r['status'], 'error' => $r['error']]); Flight::json(['ok' => false, 'reason' => 'The agent did not answer: ' . $r['error']], 502); return; }
+        $out = trim((string) $r['text']);
+        if ($what === 'sms') $out = trim(preg_replace('/\s+/', ' ', $out));
+        Flight::json(['ok' => true, 'what' => $what, 'text' => $out, 'chars' => mb_strlen($out), 'over' => $what === 'sms' && mb_strlen($out) > 144]);
     }
 
     /** POST: turn a message on or off (?id=, on=1|0) — the last step on its page, after the test. */
@@ -218,7 +276,7 @@ class Messaging extends Control {
         elseif ($c['kind'] === 'trigger') $when = $c['trigger_code'] === Providers::TRIGGER_PIPELINE ? 'custom' : ($c['trigger_code'] === 'joined_days' ? 'joined' : ($c['trigger_code'] === 'inactive_days' ? 'inactive' : 'app'));
         elseif ($c['cadence'] === 'every_n_days') $when = 'repeat';
         $on = in_array($c['status'], ['active', 'scheduled', 'sending', 'sent'], true);
-        return ['subject' => $c['subject'], 'body_email' => $c['body_email'], 'body_text' => $c['body_text'], 'when' => $when,
+        return ['subject' => $c['subject'], 'body_email' => $c['body_email'], 'body_text' => $c['body_text'], 'body_sms' => (string) ($c['body_sms'] ?? ''), 'when' => $when,
             'scheduled_at' => $c['scheduled_at'] !== '' ? substr(str_replace(' ', 'T', $c['scheduled_at']), 0, 16) : '',
             'cadence_days' => $c['cadence_days'] > 0 ? (int) $c['cadence_days'] : '', 'trigger_days' => $c['trigger_days'] > 0 ? (int) $c['trigger_days'] : '',
             'code' => $c['code'], 'on' => $on ? '1' : '0'];

@@ -58,6 +58,13 @@ class Campaigns {
     /** Every recipient of a campaign and what happened to their copy, newest first (the service's rows; `contact` is the member id). */
     public static function recipients(int $id): array { return Client::get("campaigns/{$id}/recipients")['recipients']; }
 
+    /** Attach a file (its bytes) to a message: it goes with every copy. The service refuses a kind or a size it does not take, by name. */
+    public static function attach(int $id, string $name, string $type, string $bytes): array {
+        return Client::post("campaigns/{$id}/attachments", ['name' => $name, 'type' => $type, 'data' => base64_encode($bytes)])['attachment'];
+    }
+
+    public static function detach(int $id, int $attachmentId): void { Client::delete("campaigns/{$id}/attachments?attachment={$attachmentId}"); }
+
     /**
      * What one member did with a message (by code or id): the recipient row — sent_at, delivered_at, opened, clicks, replies,
      * unsubscribed_at, bounced_at, complained_at — or null when they never got it. A pipeline's "if they did not open it".
@@ -132,7 +139,7 @@ class Campaigns {
     public static function whenDoc(array $form, ?array $c, ?callable $toTime = null): array {
         $toTime = $toTime ?? [self::class, 'scheduledAt'];   // the page passes one that knows the member's timezone
         $problems = [];
-        $doc = ['subject' => trim((string) ($form['subject'] ?? '')), 'body_email' => trim((string) ($form['body_email'] ?? '')), 'body_text' => trim((string) ($form['body_text'] ?? ''))];
+        $doc = ['subject' => trim((string) ($form['subject'] ?? '')), 'body_email' => trim((string) ($form['body_email'] ?? '')), 'body_text' => trim((string) ($form['body_text'] ?? '')), 'body_sms' => trim((string) ($form['body_sms'] ?? ''))];
         if ($doc['subject'] === '') $problems['subject'] = 'Write a subject.';
         if ($doc['body_email'] === '') $problems['body_email'] = 'Write the message.';
         $on = (string) ($form['on'] ?? '0') === '1';

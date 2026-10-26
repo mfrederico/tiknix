@@ -33,7 +33,16 @@ if (!$c['locked']) {
     'columns' => [['label' => 'Pipeline', 'value' => 'name', 'sub' => 'slug', 'url' => fn($r) => '/pipelines'], ['label' => 'Starts when', 'value' => 'events'], ['label' => 'Applies to', 'value' => 'scope', 'quiet' => true]],
     'empty' => ['title' => 'Nothing reacts to it yet', 'text' => 'A pipeline whose trigger is a message event — delivered, opened, clicked, replied, unsubscribed, bounced, complained — starts for each one. "Follow up a message nobody opened" is a starter flow.',
                 'action' => ['label' => 'Pipelines', 'url' => '/pipelines']]]) ?>
-<?= \app\Ui::detail(['title' => 'Message', 'items' => ['Text' => \app\Ui::raw('<div class="text-break" style="white-space:pre-wrap">' . htmlspecialchars($c['body_text'] !== '' ? $c['body_text'] : strip_tags($c['body_email'])) . '</div>')]]) ?>
+<?= \app\Ui::detail(['title' => 'Message', 'items' => ['Text' => \app\Ui::raw('<div class="text-break" style="white-space:pre-wrap">' . htmlspecialchars($c['body_text'] !== '' ? $c['body_text'] : strip_tags($c['body_email'])) . '</div>'),
+    'Text message' => $c['body_sms'] !== '' ? $c['body_sms'] : '']]) ?>
+<?= \app\Ui::table(['title' => 'Attachments', 'rows' => $attachments, 'count' => 'file',
+    'columns' => [['label' => 'File', 'value' => 'name', 'sub' => 'type'], ['label' => 'Size', 'value' => fn($a) => round($a->size / 1024) . ' KB'], ['label' => 'Added', 'value' => 'added', 'as' => 'date', 'quiet' => true]],
+    'actions' => fn($a) => $c['locked'] ? [] : [['label' => 'Remove', 'post' => '/messaging/detach?id=' . (int) $c['id'], 'fields' => ['attachment' => $a->id], 'confirm' => 'Remove ' . $a->name . ' from this message?', 'danger' => true]],
+    'empty' => ['title' => 'No attachments', 'text' => 'A file attached here goes with every copy of the email, the test included: a certificate, a programme, a flyer. PDF, pictures, calendar, text, CSV or Office files, 4 MB each, 10 MB in all.']]) ?>
+<?php if (!$c['locked']): ?>
+<?= \app\Ui::form(['action' => '/messaging/attach?id=' . (int) $c['id'], 'submit' => 'Attach this file', 'upload' => true,
+    'fields' => [['name' => 'file', 'label' => 'A file to attach', 'type' => 'file', 'required' => true, 'help' => 'PDF, PNG, JPG, GIF, WebP, ICS, TXT, CSV, DOCX, XLSX or PPTX; 4 MB at most.']]]) ?>
+<?php endif; ?>
 <?= \app\Ui::table(['title' => 'Links', 'rows' => array_map(fn($l) => (object) $l, $links),
     'columns' => [['label' => 'Link', 'value' => 'url'], ['label' => 'Clicks', 'value' => 'clicks']],
     'empty' => ['title' => 'No links counted yet', 'text' => 'Links appear here once the message has gone out.']]) ?>

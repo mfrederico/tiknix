@@ -53,4 +53,19 @@ class WhenDocTest extends ClientCase {
         $this->assertSame(['active', null], Campaigns::statusFor($custom, true));
         $this->assertSame(['paused', null], Campaigns::statusFor($custom, false));
     }
+
+    public function testTheWordsCarryTheTextMessageAndEveryStarterIsAnEmail(): void {
+        [$doc] = Campaigns::whenDoc($this->form(['when' => 'custom', 'code' => 'x', 'body_sms' => ' Hi {first_name|there}, see your inbox ']), null);
+        $this->assertSame('Hi {first_name|there}, see your inbox', $doc['body_sms']);
+        require_once dirname(__DIR__) . '/lib/EmailTemplates.php';
+        $all = \app\concepts\messaging\EmailTemplates::all();
+        $this->assertGreaterThanOrEqual(3, count($all));
+        foreach ($all as $t) {
+            $this->assertStringContainsString('{unsubscribe_url}', $t['html'], $t['id'] . ' lets the reader unsubscribe');
+            $this->assertStringContainsString('{prefs_url}', $t['html']);
+            $this->assertStringContainsString('width="600"', $t['html'], $t['id'] . ' is email-safe table markup');
+            $this->assertNotNull(\app\concepts\messaging\EmailTemplates::get($t['id']));
+        }
+        $this->assertNull(\app\concepts\messaging\EmailTemplates::get('nope'));
+    }
 }

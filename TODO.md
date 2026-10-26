@@ -59,3 +59,9 @@ Found 2026-10-25: inresonance's `bin/claude` was a corrupt file that segfaulted 
 ## The audit's QA agent edits live data
 
 Seen 2026-10-25: the Definition-of-Done audit of plan #463 (the campaign edit form on inresonance) tested the form against the LIVE app and saved "QA new subject {headline}" as the digest's subject. It landed on the slug host's database (test data), not the inresonance.social site's, by luck of which host the audit opens. The checkers create and remove their own test users, but a form they submit changes real rows. Either the audit runs against a sandbox copy (the task sandbox already exists for this), or a checker is told never to save a form that changes existing data — a test send to itself is fine, an edit is not — and the audit reports what it changed so it can be put back.
+
+- RedBean binds a numeric-looking string as an INTEGER (RPDO::bindParams → AQueryWriter::canBeTreatedAsInt, which is
+  filter_var(FILTER_VALIDATE_INT) and accepts a leading +): `$b->phone = '+15551234567'; Bean::store($b)` stores
+  15551234567 — every E.164 phone a core app stores loses its +. Seen 2026-10-26 in messaging.tiknix (fixed there with
+  setUseStringOnlyBinding(true) on its own database); the runtime's Bootstrap should set the same, and Sms::e164 callers
+  should be checked for phones stored without the +.

@@ -1,13 +1,19 @@
 {
     "key": "mailgun",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "label": "Mailgun",
     "blurb": "Transactional email over Mailgun's API: password resets, receipts, invitations, and the threaded comms inbox. One connection per sending domain.",
     "category": "Messaging",
     "icon": "envelope",
     "color": "danger",
-    "features": ["Transactional email", "Inbound routes (replies land in a thread)", "Delivery events"],
-    "roles": ["mail"],
+    "features": [
+        "Transactional email",
+        "Inbound routes (replies land in a thread)",
+        "Delivery events"
+    ],
+    "roles": [
+        "mail"
+    ],
     "multiple": true,
     "base_url": "https://api.mailgun.net",
     "ask_base_url": true,
@@ -37,7 +43,7 @@
             "type": "text",
             "required": false,
             "placeholder": "noreply@mail.example.com",
-            "help": "Leave blank for noreply@<sending domain>. A site's own conf/sites/<slug>.ini [mail] from_email overrides it per site."
+            "help": "Blank = noreply@ your sending domain."
         },
         {
             "name": "inbound_domain",
@@ -45,14 +51,135 @@
             "type": "text",
             "required": false,
             "placeholder": "mail.example.com",
-            "help": "Where reply-<token>@ addresses are routed for the comms inbox (Mailgun → Receiving). Blank = the sending domain."
+            "help": "The domain replies come back to. Blank = your sending domain."
         }
     ],
     "endpoints": [
-        { "method": "POST", "path": "/v3/{domain}/messages", "label": "Send a message", "description": "from, to, subject, text/html, h:Reply-To; multipart form.", "params": ["domain"] },
-        { "method": "GET",  "path": "/v3/domains", "label": "Domains", "description": "The account's sending domains — the connect probe." },
-        { "method": "GET",  "path": "/v3/{domain}/events", "label": "Events", "description": "Delivery, failure and bounce events for a domain.", "params": ["domain", "event", "begin", "limit"] },
-        { "method": "GET",  "path": "/v3/routes", "label": "Inbound routes", "description": "The receiving routes that forward mail to /webhook/mailgun." }
+        {
+            "method": "POST",
+            "path": "/v3/{domain}/messages",
+            "label": "Send a message",
+            "description": "from, to, subject, text/html, h:Reply-To; multipart form.",
+            "params": [
+                "domain"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/v3/domains",
+            "label": "Domains",
+            "description": "The account's sending domains — the connect probe."
+        },
+        {
+            "method": "GET",
+            "path": "/v3/{domain}/events",
+            "label": "Events",
+            "description": "Delivery, failure and bounce events for a domain.",
+            "params": [
+                "domain",
+                "event",
+                "begin",
+                "limit"
+            ]
+        },
+        {
+            "method": "GET",
+            "path": "/v3/routes",
+            "label": "Inbound routes",
+            "description": "The receiving routes that forward mail to /webhook/mailgun."
+        }
     ],
-    "suggests": { "concepts": ["outreach"] }
+    "suggests": {
+        "concepts": [
+            "outreach"
+        ]
+    },
+    "setup": [
+        {
+            "id": "key",
+            "kind": "key",
+            "title": "Add your Mailgun key",
+            "words": "Paste your Mailgun key and the domain your mail is sent from.",
+            "fields": [
+                "base_url",
+                "domain"
+            ],
+            "link": {
+                "label": "Where the key is",
+                "url": "https://app.mailgun.com/settings/api_security"
+            },
+            "help": {
+                "base_url": "Most accounts: https://api.mailgun.net. Accounts in the EU: https://api.eu.mailgun.net.",
+                "domain": "The domain your mail is sent from, as Mailgun lists it under Sending → Domains."
+            }
+        },
+        {
+            "id": "from",
+            "kind": "fields",
+            "title": "Who mail is from",
+            "words": "The address people see your mail come from. Leave it empty to use noreply at your domain.",
+            "fields": [
+                "from_email"
+            ]
+        },
+        {
+            "id": "events",
+            "kind": "secret",
+            "title": "Hear what happens to your mail",
+            "optional": true,
+            "words": "In Mailgun, open Webhooks and add this address for delivered, opened, clicked and bounced. Then paste Mailgun's webhook signing key here.",
+            "copy": [
+                {
+                    "label": "Webhook address",
+                    "value": "{webhook}"
+                }
+            ],
+            "secret_label": "HTTP webhook signing key",
+            "link": {
+                "label": "Open Mailgun",
+                "url": "https://app.mailgun.com/"
+            }
+        },
+        {
+            "id": "replies",
+            "kind": "copy",
+            "title": "Get replies back",
+            "optional": true,
+            "words": "In Mailgun, open Receiving and add a route. When mail matches this, forward it to this address.",
+            "copy": [
+                {
+                    "label": "Match",
+                    "value": "match_recipient(\"reply-.*@{field.inbound_domain|field.domain}\")"
+                },
+                {
+                    "label": "Forward to",
+                    "value": "{webhook}"
+                }
+            ],
+            "fields": [
+                "inbound_domain"
+            ],
+            "mark": "I added the route",
+            "link": {
+                "label": "Open Mailgun",
+                "url": "https://app.mailgun.com/"
+            }
+        },
+        {
+            "id": "share",
+            "kind": "share",
+            "with": "messaging",
+            "when": "concept:messaging",
+            "title": "Let Messaging send for this site",
+            "words": "The Messaging service sends this site's newsletters and reminders with this Mailgun account.",
+            "button": "Share with Messaging"
+        },
+        {
+            "id": "test",
+            "kind": "test",
+            "title": "Send yourself a test",
+            "words": "One email to your own address, to see it arrive.",
+            "button": "Send me a test email"
+        }
+    ]
 }

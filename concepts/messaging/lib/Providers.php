@@ -64,6 +64,7 @@ class Providers {
     private static array $p = [];
 
     public static function register(array $providers): void {
+        Setup::register();   // Mailgun's setup steps, as they are with Messaging on (Connections → Mailgun)
         foreach (array_keys($providers) as $k) {
             if (!in_array($k, self::KEYS, true)) throw new \InvalidArgumentException("Providers::register: '$k' is not a provider. Known: " . implode(', ', self::KEYS) . '.');
         }

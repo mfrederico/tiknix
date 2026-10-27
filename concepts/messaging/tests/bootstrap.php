@@ -7,7 +7,7 @@
  *   vendor/bin/phpunit --bootstrap concepts/messaging/tests/bootstrap.php concepts/messaging/tests      (from the app root)
  *   TIKNIX_ROOT=/path/to/a/tiknix vendor/bin/phpunit …                                                   (from the catalog)
  */
-foreach (['Client', 'Providers', 'Sync', 'Reach', 'Campaigns', 'Digest', 'Runner', 'Events'] as $c) require_once dirname(__DIR__) . "/lib/{$c}.php";
+foreach (['Client', 'Providers', 'Sync', 'Reach', 'Campaigns', 'Digest', 'Runner', 'Events', 'Setup'] as $c) require_once dirname(__DIR__) . "/lib/{$c}.php";
 $root = getenv('TIKNIX_ROOT') ?: getcwd();
 if (!is_file($root . '/vendor/autoload.php')) { fwrite(STDERR, "no vendor/autoload.php in {$root}: run from an app root or set TIKNIX_ROOT\n"); exit(2); }
 require $root . '/vendor/autoload.php';

@@ -622,7 +622,9 @@ Code changes are commits.
 - **Nothing loads from a CDN or Google Fonts.** A visitor's address must reach no one but the app before they
   agree to anything (GDPR). Bootstrap, its icons, jQuery and the design system's fonts are already on every page;
   `/rt/vendor/` holds the rest (its README lists them). A library that is not there goes in the app's own
-  `public/vendor/<name>-<version>/`, downloaded once — never a `https://cdn…` tag.
+  `public/assets/<name>-<version>/` (not `public/vendor`: the app ignores every `vendor/`), downloaded once and
+  committed — never a `https://cdn…` tag. An outside service a person sees (a map's tiles, a review widget) is
+  not a library: it waits for the visitor's consent.
 - Escape view output: `<?= htmlspecialchars($var) ?>`; let an undefined view variable error rather
   than default it — a controller/view mismatch should surface
 - A lead is written one way: `Model_Lead::capture($email, $first, $last, ['gate' => …])` with

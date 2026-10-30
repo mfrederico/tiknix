@@ -21,12 +21,11 @@ namespace app;
  * (it closes itself after IDLE_MS without a call, and the next call opens it again).
  */
 class TenantBrowser {
-    /**
-     * Where an app's pages load their styles, fonts and scripts from (the runtime's layout and the
-     * design system). A browser held to the app's own addresses alone renders every page UNSTYLED —
-     * which an audit's design pass then reports as the page's fault.
+    /*
+     * A browser here reaches the app's own addresses and nothing else. Pages load no library or font from a CDN
+     * (runtime alpha.241: /rt/vendor, an app's public/assets), so one that does renders broken in a build's check
+     * and the audit's design pass reports it — on purpose: a visitor's address must reach no one before they agree.
      */
-    public const PAGE_ASSETS = ['https://cdn.jsdelivr.net', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://code.jquery.com'];
 
     /** A build task's sandbox ports (the runtime's AgentTask::SANDBOX_PORTS; tenant/qa.sh lets them through). */
     public const SANDBOX_PORTS = [41000, 41999];
@@ -206,7 +205,7 @@ class TenantBrowser {
             $sock = @fsockopen('127.0.0.1', $port, $e, $es, 0.3);
             if ($sock) { fclose($sock); return ['ok' => false, 'error' => "port {$port} on this machine is already in use and not by {$session}"]; }
             $log = "{$ws}/.aibuilder/browser.log";
-            try { $browser = self::qaBrowserCommand($port, array_merge($origins, self::PAGE_ASSETS), '/srv/qa/lent/' . $inst->slug, self::IDLE_MS); }
+            try { $browser = self::qaBrowserCommand($port, $origins, '/srv/qa/lent/' . $inst->slug, self::IDLE_MS); }
             catch (\Throwable $e) { return ['ok' => false, 'error' => $e->getMessage()]; }
             $tunnel = TenantHost::tunnelCommand($inst, $port);
             $stop = self::qaBrowserStop($port);

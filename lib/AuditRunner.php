@@ -136,7 +136,7 @@ class AuditRunner {
         // The browser runs on the QA host (lib/TenantBrowser.php), like every browser the platform
         // runs for an app — not on this machine. What it saves is fetched here when the audit ends.
         $qaDir = '/srv/qa/audits/' . $this->slug . '-' . (int) $this->planId . $this->sfx();
-        $browser = TenantBrowser::qaBrowserCommand($port, array_merge([$origin], TenantBrowser::PAGE_ASSETS), $qaDir);
+        $browser = TenantBrowser::qaBrowserCommand($port, [$origin], $qaDir);
         $collect = 'php -r ' . escapeshellarg('require ' . var_export(dirname(__DIR__) . '/vendor/autoload.php', true) . '; new \app\Bootstrap(); '
                  . 'try { \app\TenantBrowser::collect(' . var_export($qaDir, true) . ', ' . var_export($shotsDir, true) . '); } catch (\Throwable $e) { fwrite(STDERR, "[audit] ERROR " . $e->getMessage() . "\n"); exit(1); }');
         $out = $ws . '/.aibuilder/audit-result' . $this->sfx() . '.json';

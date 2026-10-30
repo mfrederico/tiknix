@@ -484,7 +484,7 @@ No library is a legitimate state — `Video::isConnected()` is false; say so on 
 $up = Video::start($title);                 // ['id' => …, 'endpoint' => …, 'headers' => [ … ]]
 $post->videoEid = $up['id'];                // store the ID (TEXT, `_eid`) — it is all the app keeps
 // 2. the BROWSER sends the file to $up['endpoint'] with $up['headers'], using the tus protocol
-//    (tus-js-client: new tus.Upload(file, {endpoint, headers, metadata: {filetype: file.type, title}}))
+//    (tus-js-client, from /rt/vendor/tus-js-client-4.3.1/tus.min.js: new tus.Upload(file, {endpoint, headers, metadata: {filetype: file.type, title}}))
 // 3. showing it
 $v = Video::info($post->videoEid);          // state: waiting | processing | ready | failed; progress 0–100; seconds; thumbnail
 if ($v['state'] === 'ready') echo Video::embed($post->videoEid, ['ratio' => '16 / 9']);   // already escaped HTML
@@ -619,6 +619,10 @@ Code changes are commits.
 
 - `json_encode([])` is `[]`, not `{}` — use `(object)[]` when the client expects an object
 - Cast query-string ints: `$page = (int)($page ?? 1)`
+- **Nothing loads from a CDN or Google Fonts.** A visitor's address must reach no one but the app before they
+  agree to anything (GDPR). Bootstrap, its icons, jQuery and the design system's fonts are already on every page;
+  `/rt/vendor/` holds the rest (its README lists them). A library that is not there goes in the app's own
+  `public/vendor/<name>-<version>/`, downloaded once — never a `https://cdn…` tag.
 - Escape view output: `<?= htmlspecialchars($var) ?>`; let an undefined view variable error rather
   than default it — a controller/view mismatch should surface
 - A lead is written one way: `Model_Lead::capture($email, $first, $last, ['gate' => …])` with

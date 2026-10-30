@@ -55,9 +55,7 @@ $jsonld = [
             document.documentElement.className += ' motion';
         }
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet">
+    <link href="/rt/vendor/fonts/playfair-italic.css" rel="stylesheet">
     <?php include __DIR__ . '/_marketing-style.php'; ?>
     <style>
         :root{ --tape:#f4c542; --ink:#1b2440; --ease:cubic-bezier(.2,.8,.2,1); }

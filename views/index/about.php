@@ -40,9 +40,7 @@ $jsonld = [
     <meta property="og:title" content="Who we are: Matt and Fabian — tiknix">
     <meta property="og:description" content="<?= htmlspecialchars($desc) ?>">
     <meta property="og:url" content="<?= $site ?>/about">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet">
+    <link href="/rt/vendor/fonts/playfair-italic.css" rel="stylesheet">
     <?php include __DIR__ . '/_marketing-style.php'; ?>
     <style>
         .who-hero{ text-align:center; padding:48px 0 40px; }

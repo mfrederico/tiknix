@@ -16,9 +16,7 @@ $names = array_map(fn($s) => $s['founder'], $stories);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($title) ?></title>
     <meta name="description" content="How <?= htmlspecialchars(implode(', ', $names)) ?> built real software with tiknix — from a business plan, an idea or a client's catalogue to apps running live.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="/rt/vendor/fonts/playfair.css" rel="stylesheet">
     <?php include __DIR__ . '/_marketing-style.php'; ?>
 </head>
 <body>

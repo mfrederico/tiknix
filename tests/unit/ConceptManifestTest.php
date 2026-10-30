@@ -27,6 +27,14 @@ class ConceptManifestTest extends TestCase {
         $this->assertSame([], $m->slots);
     }
 
+    public function testBootNamesAMethodOfItsOwn(): void {
+        $this->assertNull($this->make([])->boot);
+        $this->assertSame(['Guard', 'boot'], [$this->make(['boot' => 'Guard::boot'])->boot['class'], $this->make(['boot' => 'Guard::boot'])->boot['method']]);
+        foreach ([['boot' => 'notacallable'], ['boot' => 7], ['boot' => 'other:Guard::boot', 'requires' => ['concepts' => ['other']]]] as $bad) {
+            try { $this->make($bad); $this->fail('accepted ' . json_encode($bad)); } catch (ConceptException $e) { $this->assertStringContainsString('boot', $e->getMessage()); }
+        }
+    }
+
     public function testNameMustMatchDirectory(): void {
         $this->expectException(ConceptException::class);
         $this->expectExceptionMessage('must match');

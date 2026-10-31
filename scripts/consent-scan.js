@@ -1,11 +1,13 @@
 // The consent plugin's page scan, run on the QA host by scripts/consent-scan.php (CONFIG is put in front of this file).
-// Visits a site as a stranger, then signed in, and NEVER answers the cookie question: all it sees is what happens before consent.
-// It cannot change anything: every request that is not a GET is noted and stopped, and addresses that look like actions are skipped.
+// Visits a site as a stranger, then as a plain member, and NEVER answers the cookie question: all it sees is what happens before consent.
+// Every request that is not a GET is noted and stopped, and addresses that look like actions are skipped: a GET should change nothing,
+// but not every app's older code keeps to that. Signed in it follows only links a person could click, and skips more.
 const { chromium } = require(require.resolve('playwright', {paths: [process.cwd(), process.cwd() + '/node_modules/@playwright/mcp']}));
 const ACTION = /(^|\/)[^/]*(logout|signout|delete|remove|destroy|cancel|unsubscribe|revoke|disconnect|reset|save|submit|store|update|create|send|webhook|callback|hook|report|choose|launch|download|export)[^/]*(\/|$)/i;
+const SIGNED_IN_ACTION = /(^|\/)[^/]*(close|withdraw|giveback|unshare|install|flag|going|buy|pay|checkout|switch|run|forget|apply|like|join|leave|follow|approve|reject|publish|invite|accept|decline|add|connect|mark|clear|toggle|upload|delete)[^/]*(\/|$)/i;
 const SKIP_EXT = /\.(pdf|zip|csv|xlsx?|docx?|png|jpe?g|gif|webp|svg|ico|mp4|webm|mp3|css|js|json|xml|txt)$/i;
 
-async function crawl(context, start, base, limits) {
+async function crawl(context, start, base, limits, signedIn) {
   const own = new URL(base).host;
   const seen = new Set(), shape = {}, queue = start.map(p => p);
   const out = {pages: [], hosts: {}, cookies: {}, storage: {}, stopped: 0};
@@ -25,7 +27,7 @@ async function crawl(context, start, base, limits) {
   const started = Date.now();
   while (queue.length && out.pages.length < limits.pages && Date.now() - started < limits.ms) {
     const path = queue.shift();
-    if (seen.has(path) || ACTION.test(path) || SKIP_EXT.test(path)) continue;
+    if (seen.has(path) || ACTION.test(path) || SKIP_EXT.test(path) || (signedIn && SIGNED_IN_ACTION.test(path))) continue;
     // /community/5 and /community/6 are one page to look at: two of a kind is enough
     const kind = path.replace(/\/\d+(?=\/|$)/g, '/N');
     if ((shape[kind] = (shape[kind] || 0) + 1) > 2) continue;
@@ -64,9 +66,9 @@ async function crawl(context, start, base, limits) {
     await p.close();
   }
   const stranger = await b.newContext({viewport: {width: 1280, height: 900}});
-  result.visitor = await crawl(stranger, ['/', ...CONFIG.visitorPages], CONFIG.base, {pages: CONFIG.maxPages, ms: 200000});
+  result.visitor = await crawl(stranger, ['/', ...CONFIG.visitorPages], CONFIG.base, {pages: CONFIG.maxPages, ms: 200000}, false);
   await stranger.close();
-  if (signedIn) { result.member = await crawl(signedIn, ['/', ...CONFIG.memberPages], CONFIG.base, {pages: CONFIG.maxPages, ms: 200000}); await signedIn.close(); }
+  if (signedIn) { result.member = await crawl(signedIn, ['/'], CONFIG.base, {pages: CONFIG.maxPages, ms: 200000}, true); await signedIn.close(); }
   await b.close();
   console.log('CONSENT-SCAN-RESULT ' + JSON.stringify(result));
 })().catch(e => { console.log('CONSENT-SCAN-RESULT ' + JSON.stringify({ok: false, error: e.message.slice(0, 500)})); process.exit(0); });

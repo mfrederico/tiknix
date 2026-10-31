@@ -165,7 +165,7 @@ class Brokerinfo extends Control {
     }
 
     /**
-     * POST /brokerinfo/consentscan {host, pages: {visitor: [...], member: [...]}} — the consent plugin asks for its page scan.
+     * POST /brokerinfo/consentscan {host, pages: {visitor: [...]}} — the consent plugin asks for its page scan.
      * Only a domain of the project the key belongs to, one at a time: a browser on the QA host walks it (scripts/consent-scan.php)
      * and posts what it saw to that domain's /consent/scanresult.
      */
@@ -180,8 +180,8 @@ class Brokerinfo extends Control {
         $stamp = Paths::root() . '/cache/consent-scan-' . preg_replace('/[^a-z0-9.-]/', '', $host) . '.last';
         if (is_file($stamp) && filemtime($stamp) > time() - 600) { Flight::jsonError('A scan of this site started less than ten minutes ago.', 429); return; }
         $pages = tempnam(sys_get_temp_dir(), 'consent-scan');
-        if ($pages === false || file_put_contents($pages, json_encode(['visitor' => $clean($in['pages']['visitor'] ?? []), 'member' => $clean($in['pages']['member'] ?? [])])) === false || !touch($stamp)) { Flight::jsonError('The scan could not be started here.', 500); return; }
-        exec('nohup env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg(Paths::root() . '/scripts/consent-scan.php') . ' --instance=' . (int) $inst->id . ' --host=' . escapeshellarg($host) . ' --pages=' . escapeshellarg($pages)
+        if ($pages === false || file_put_contents($pages, json_encode(['visitor' => $clean($in['pages']['visitor'] ?? [])])) === false || !touch($stamp)) { Flight::jsonError('The scan could not be started here.', 500); return; }
+        exec('nohup env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg(Paths::root() . '/scripts/consent-scan.php') . ' --instance=' . (int) $inst->id . ' --site=' . escapeshellarg($host) . ' --pages=' . escapeshellarg($pages)
            . ' >> ' . escapeshellarg(Paths::root() . '/log/consent-scan.log') . ' 2>&1 &');
         Flight::jsonSuccess(['host' => $host], 'The scan has started.');
     }

@@ -123,4 +123,31 @@ class StorageTest extends TestCase {
         $this->assertStringNotContainsString('Pull Zone', $none);
         $this->assertStringContainsString('Pull Zone', \app\Storage::noPolicyHelp('bunny', true));
     }
+
+    /** The storage page, for each kind of store: drawn for real, so a mistake in the view fails here. */
+    private function storagePage(array $over): string {
+        $storage = $over + ['bucket' => 'b', 'alias' => 'a', 'public_url' => '', 'provider' => 'r2', 'policy' => false, 'cors' => true];
+        $problem = ''; $applied = false; $policy = '{}'; $origins = ['https://app.example.com']; $check = [];
+        ob_start();
+        try { include \app\Paths::runtime() . '/views/connections/storage.php'; }
+        finally { $html = (string) ob_get_clean(); }
+        return $html;
+    }
+
+    public function testTheStoragePageDrawsForEveryKindOfStore(): void {
+        $r2 = $this->storagePage([]);
+        $this->assertStringContainsString('Public files do not open yet.', $r2);
+        $this->assertStringContainsString('Allow uploads from this site', $r2);
+        $this->assertStringNotContainsString('Apply the access template', $r2);
+        $this->assertStringContainsString('None yet', $r2);
+        $withDomain = $this->storagePage(['public_url' => 'https://media.example.com']);
+        $this->assertStringContainsString('This store has no access template to apply.', $withDomain);
+        $this->assertStringContainsString('https://media.example.com', $withDomain);
+        $bunny = $this->storagePage(['provider' => 'bunny', 'cors' => false]);
+        $this->assertStringNotContainsString('Allow uploads from this site', $bunny);
+        $this->assertStringContainsString('Pull Zone', $bunny);
+        $wasabi = $this->storagePage(['provider' => 'wasabi', 'policy' => true]);
+        $this->assertStringContainsString('Apply the access template', $wasabi);
+        $this->assertStringNotContainsString('Allow uploads from this site', $wasabi);
+    }
 }

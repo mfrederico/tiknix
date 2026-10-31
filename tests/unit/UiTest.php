@@ -165,4 +165,10 @@ class UiTest extends TestCase {
         $this->refused(fn() => Ui::agenda(['items' => [['at' => 'whenever', 'who' => 'x']], 'at' => 'at', 'title' => 'who', 'empty' => self::EMPTY]), '/not a date and time/');
         $this->refused(fn() => Ui::agenda(['items' => [], 'at' => 'at', 'title' => 'who']), "/needs 'empty'/");
     }
+
+    public function testARowMenuEscapesItsTablesPanel(): void {
+        $html = \app\Ui::table(['rows' => [(object) ['n' => 'a']], 'columns' => [['label' => 'N', 'value' => 'n']], 'empty' => ['title' => 'None'],
+            'actions' => fn($r) => [['label' => 'One', 'url' => '/a'], ['label' => 'Two', 'url' => '/b'], ['label' => 'Three', 'url' => '/c'], ['label' => 'Four', 'url' => '/d']]]);
+        $this->assertStringContainsString('data-bs-popper-config=\'{"strategy":"fixed"}\'', $html, 'a panel clips its contents: a short table cut its menu off');
+    }
 }

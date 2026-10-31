@@ -211,7 +211,8 @@ in the place its users will look — and `full_validation` on a controller repor
   'icon' => 'people']` (Bootstrap Icons names). `$__loggedIn` and `$__isAdmin` say who is
   looking: show a member's pages to members and an admin's to admins. If the app has no
   `views/app/nav.php` yet, create it and register it; if it has one, ADD to it — one part owns
-  the menu. Do not name a section `Admin`: the shell draws its own.
+  the menu. Do not name a section `Admin`: the shell draws its own, and an admin's page joins it with
+  `$__adminItems[] = ['url' => '/cafe/settings', 'label' => 'Cafe settings', 'icon' => 'gear'];`.
 - **A list page links to its own create / edit / delete**, and a detail page links back to its
   list. Those inner links are not what makes the feature reachable: something outside the
   feature's own views must link to its list page.

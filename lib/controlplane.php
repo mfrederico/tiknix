@@ -123,6 +123,8 @@
 \app\Chrome::$copyright = 'ClickSimple LLC';
 \app\Chrome::$mark = true;
 \app\Member::$builderPrefs = true;
+// An agent's investigation of a support ticket waits on the ticket for a person (lib/SupportDraft.php).
+\app\Contact::$extension = new \app\SupportDraft();
 // tiknix.com's own Measurement ID: core's /connections is the hub for projects, so the plugin's page links to this one.
 \Flight::set('concept.setup_url.googleanalytics', '/siteanalytics');
 // The consent plugin must never ask about, or block, the platform's own tools: pages here embed its sidecars.

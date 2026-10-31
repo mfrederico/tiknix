@@ -115,6 +115,12 @@ Only on a yes, call `send_to_tiknix_support(user_agreed: true, subject, message)
 engineer: what was attempted, what happened (exact errors, URLs, times), what you checked, what you
 suspect. The answer reaches the user in Communications and by email. 5 per hour at most.
 
+## Answering a Support Ticket (control plane)
+
+When you investigate a ticket here, never send the answer yourself. Leave it for a person: the `support_draft` tool, or from a terminal
+`php scripts/support-draft.php --ticket=N --reply=FILE --findings=FILE`. The reply is plain text for the customer; paths, log lines and
+anything internal go in the findings, which only admins see. A person reads both on `/contact/view?id=N`, edits, and presses Send Response.
+
 ## RedBeanPHP Rules
 
 Manual: https://redbeanphp.com/

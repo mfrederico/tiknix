@@ -164,6 +164,28 @@ class Brokerinfo extends Control {
         Flight::jsonSuccess(['url' => $url, 'project' => (string) $inst->slug]);
     }
 
+    /**
+     * POST /brokerinfo/consentscan {host, pages: {visitor: [...], member: [...]}} — the consent plugin asks for its page scan.
+     * Only a domain of the project the key belongs to, one at a time: a browser on the QA host walks it (scripts/consent-scan.php)
+     * and posts what it saw to that domain's /consent/scanresult.
+     */
+    public function consentscan($params = []) {
+        [$key, $iid] = $this->requireBroker(); if (!$key) return;
+        $inst = Bean::load('instance', $iid);
+        if (!$inst->id) { Flight::jsonError('That project is gone.', 404); return; }
+        $in = json_decode((string) file_get_contents('php://input'), true);
+        $host = strtolower(trim((string) ($in['host'] ?? '')));
+        if (!in_array($host, DomainCerts::domainsOf($inst), true)) { Flight::jsonError("{$host} is not one of this project's addresses.", 403); return; }
+        $clean = fn($list) => array_slice(array_values(array_filter((array) $list, fn($p) => is_string($p) && preg_match('#^/[A-Za-z0-9/_-]*$#', $p))), 0, 200);
+        $stamp = Paths::root() . '/cache/consent-scan-' . preg_replace('/[^a-z0-9.-]/', '', $host) . '.last';
+        if (is_file($stamp) && filemtime($stamp) > time() - 600) { Flight::jsonError('A scan of this site started less than ten minutes ago.', 429); return; }
+        $pages = tempnam(sys_get_temp_dir(), 'consent-scan');
+        if ($pages === false || file_put_contents($pages, json_encode(['visitor' => $clean($in['pages']['visitor'] ?? []), 'member' => $clean($in['pages']['member'] ?? [])])) === false || !touch($stamp)) { Flight::jsonError('The scan could not be started here.', 500); return; }
+        exec('nohup env -u TIKNIX_WORKBENCH_DB php ' . escapeshellarg(Paths::root() . '/scripts/consent-scan.php') . ' --instance=' . (int) $inst->id . ' --host=' . escapeshellarg($host) . ' --pages=' . escapeshellarg($pages)
+           . ' >> ' . escapeshellarg(Paths::root() . '/log/consent-scan.log') . ' 2>&1 &');
+        Flight::jsonSuccess(['host' => $host], 'The scan has started.');
+    }
+
     /* ---- the owner's model connections, for this project's pipelines --------------
      * MODEL_CONNECTIONS_PLAN.md phase 4. The key never leaves core: a pipeline agent step
      * asks core to make the call. The payer is the project's OWNER (instance.member_id, read

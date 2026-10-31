@@ -208,6 +208,9 @@ class Projects extends BaseControls\Control {
             return;
         }
 
+        // Counted in the owner's Google Analytics, on their next page, if they said yes (admins never are).
+        if (Concepts::has('googleanalytics')) \app\concepts\googleanalytics\Tag::event('project_created');
+
         // Select it straight away — the point of creating one is to work on it.
         $id = (int) ($res['id'] ?? 0);
         if ($id > 0) ProjectContext::set($memberId, $id);

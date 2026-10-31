@@ -177,6 +177,7 @@ class PlanHandoff {
         $h->decompose    = $decompose ? 1 : 0;
         Bean::store($h);
         ProjectContext::set($memberId, (int) $res['id']);
+        if (Concepts::has('googleanalytics')) \app\concepts\googleanalytics\Tag::event('project_created', ['from' => 'wizard']);
         return ['ok' => true, 'slug' => (string) $res['slug'], 'id' => (int) $res['id'],
                 'url' => '/handoff/claim/' . $h->token, 'planner' => 'starts once the project is set up'];
     }

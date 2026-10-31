@@ -1,7 +1,7 @@
 {
     "name": "googleanalytics",
-    "version": "1.1.1",
+    "version": "1.2.1",
     "source": "control-plane catalog",
-    "installed_at": "2026-10-31T14:32:32+00:00",
-    "bundle_sha256": "41dedb2b4e50e99aba8d618aa673d51266318bbbc3f3d832f73c6ffef0eb67e2"
+    "installed_at": "2026-10-31T15:00:50+00:00",
+    "bundle_sha256": "cf0754e79dc2742cfa660e702cef71f4672d91cd7f980af4939556b511610e8a"
 }

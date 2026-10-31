@@ -10,12 +10,12 @@
             "enabled_at": "2026-10-31T14:25:18+00:00"
         },
         "googleanalytics": {
-            "version": "1.1.1",
+            "version": "1.2.1",
             "enabled": true,
             "source": "control-plane catalog",
-            "installed_at": "2026-10-31T14:32:32+00:00",
-            "hash": "sha256:85410c62158d5b6d1966ed927142f463cc036a9ebf469ba9ba49d31ed5372916",
-            "enabled_at": "2026-10-31T14:32:32+00:00"
+            "installed_at": "2026-10-31T15:00:50+00:00",
+            "hash": "sha256:d664a247ba2e8248d35e9a2a81ac2b5746ed866b35f08d548e7277e44d4f5675",
+            "enabled_at": "2026-10-31T15:00:50+00:00"
         },
         "messaging": {
             "version": "2.6.0",

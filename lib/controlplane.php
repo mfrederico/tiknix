@@ -123,6 +123,8 @@
 \app\Chrome::$copyright = 'ClickSimple LLC';
 \app\Chrome::$mark = true;
 \app\Member::$builderPrefs = true;
+// tiknix.com's own Measurement ID: core's /connections is the hub for projects, so the plugin's page links to this one.
+\Flight::set('concept.setup_url.googleanalytics', '/siteanalytics');
 // The consent plugin must never ask about, or block, the platform's own tools: pages here embed its sidecars.
 \Flight::set('consent.needed', ['*.tiknix.com' => ['necessary', 'Tiknix tools', 'The builder and tools this platform runs.']]);
 \app\Chrome::add('navTop', 'platform/chrome_navtop');

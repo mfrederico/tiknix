@@ -1,6 +1,6 @@
 {
   "name": "googleanalytics",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "kind": "capability",
   "icon": "bar-chart",
   "title": "Google Analytics",
@@ -15,6 +15,7 @@
     "tracking"
   ],
   "boot": "Tag::boot",
+  "setup_url": "/connections?show=googleanalytics",
   "requires": {
     "concepts": [
       "consent"

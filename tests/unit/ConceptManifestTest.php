@@ -27,6 +27,14 @@ class ConceptManifestTest extends TestCase {
         $this->assertSame([], $m->slots);
     }
 
+    public function testSetupUrlIsAPageOfThisApp(): void {
+        $this->assertSame('', $this->make([])->setupUrl);
+        $this->assertSame('/connections?show=x', $this->make(['setup_url' => '/connections?show=x'])->setupUrl);
+        foreach (['https://elsewhere.example/', '//elsewhere.example/', 'connections', 7] as $bad) {
+            try { $this->make(['setup_url' => $bad]); $this->fail('accepted ' . json_encode($bad)); } catch (ConceptException $e) { $this->assertStringContainsString('setup_url', $e->getMessage()); }
+        }
+    }
+
     public function testBootNamesAMethodOfItsOwn(): void {
         $this->assertNull($this->make([])->boot);
         $this->assertSame(['Guard', 'boot'], [$this->make(['boot' => 'Guard::boot'])->boot['class'], $this->make(['boot' => 'Guard::boot'])->boot['method']]);

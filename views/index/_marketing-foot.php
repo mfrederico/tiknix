@@ -14,6 +14,7 @@
       <a href="/contact">Contact</a>
       <a href="/index/security">Security</a>
       <a href="/privacy">Privacy</a>
+      <a href="/consent/cookies">Cookie choices</a>
       <a href="/terms">Terms</a>
     </div>
   </footer>

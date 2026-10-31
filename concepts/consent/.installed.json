@@ -1,7 +1,7 @@
 {
     "name": "consent",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "source": "control-plane catalog",
-    "installed_at": "2026-10-31T14:12:43+00:00",
-    "bundle_sha256": "ddcea09131da48cc0d9f43ffa33f266fe0a769b1d3f999121c2f1c5411ae5d7a"
+    "installed_at": "2026-10-31T14:25:18+00:00",
+    "bundle_sha256": "cee2dbfaf51d607d81a9d74949d8fe43eace8623e2c0c93d78407d14382ff417"
 }

@@ -1,0 +1,60 @@
+{
+  "name": "googleanalytics",
+  "version": "1.1.0",
+  "kind": "capability",
+  "icon": "bar-chart",
+  "title": "Google Analytics",
+  "blurb": "Puts Google's tag on every page once a site connects Google Analytics (Connections, Marketing), only for visitors who said yes to Statistics. Before a yes nothing is sent to Google at all. It needs the Cookie consent plugin, which asks the question and makes the browser keep to the answer.",
+  "tags": [
+    "analytics",
+    "google",
+    "ga4",
+    "gtag",
+    "statistics",
+    "consent-mode",
+    "tracking"
+  ],
+  "boot": "Tag::boot",
+  "requires": {
+    "concepts": [
+      "consent"
+    ],
+    "lib": [
+      "ConnectionStore",
+      "ConnectorSetup"
+    ]
+  },
+  "provides": {
+    "capabilities": [
+      "google-analytics",
+      "web-analytics"
+    ]
+  },
+  "collect": {
+    "consent.services": [
+      {
+        "level": "PUBLIC",
+        "when": "Tag::active",
+        "data": {
+          "services": {
+            "www.googletagmanager.com": {
+              "group": "analytics",
+              "name": "Google Analytics",
+              "purpose": "Counts visits and what people do here."
+            },
+            "*.google-analytics.com": {
+              "group": "analytics",
+              "name": "Google Analytics",
+              "purpose": "Counts visits and what people do here."
+            },
+            "*.analytics.google.com": {
+              "group": "analytics",
+              "name": "Google Analytics",
+              "purpose": "Counts visits and what people do here."
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -78,3 +78,4 @@ if ($__loggedIn) {
     // sets --ui-projectbar-height before .ui-main opens (the sidecar iframe subtracts it).
     $__chromeBar = true;
 }
+if (!empty($__isAdmin)) $__adminItems[] = ['url' => '/siteanalytics', 'label' => 'Google Analytics', 'icon' => 'bar-chart'];

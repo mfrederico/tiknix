@@ -114,6 +114,7 @@ $logoV = @filemtime(\app\Paths::runtime() . '/public/img/tiknix.svg') ?: '1';
         <div class="mini-links">
             <a href="/">&larr; Home</a>
             <a href="/privacy">Privacy</a>
+            <a href="/consent/cookies">Cookie choices</a>
             <a href="/terms">Terms</a>
         </div>
     </div>

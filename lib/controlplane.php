@@ -123,6 +123,8 @@
 \app\Chrome::$copyright = 'ClickSimple LLC';
 \app\Chrome::$mark = true;
 \app\Member::$builderPrefs = true;
+// The consent plugin must never ask about, or block, the platform's own tools: pages here embed its sidecars.
+\Flight::set('consent.needed', ['*.tiknix.com' => ['necessary', 'Tiknix tools', 'The builder and tools this platform runs.']]);
 \app\Chrome::add('navTop', 'platform/chrome_navtop');
 foreach (['prepare', 'bar', 'account', 'footer', 'dashboard'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
 unset($__slot);

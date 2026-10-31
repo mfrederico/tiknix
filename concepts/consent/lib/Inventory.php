@@ -51,6 +51,8 @@ class Inventory {
      */
     public static function fromConnections(): array {
         $out = [];
+        // what the install itself says it needs (Flight config consent.needed, host => [group, name, purpose]): the control plane's own tools
+        foreach ((array) (\Flight::get('consent.needed') ?? []) as $h => $row) $out[(string) $h] = array_values((array) $row);
         $live = \app\ConnectionMentions::liveRows();
         if (isset($live['s3']) && \app\Storage::isConnected()) {
             // the bucket's own address (signed links to private files) and the public one (a CDN in front, when set)

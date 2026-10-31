@@ -2,12 +2,20 @@
     "version": 1,
     "concepts": {
         "consent": {
-            "version": "1.4.0",
+            "version": "1.4.1",
             "enabled": true,
             "source": "control-plane catalog",
-            "installed_at": "2026-10-31T14:12:43+00:00",
-            "hash": "sha256:3d3ed450a0ba38c8165656bea47304255d622a7dabb2094772c83564ba158b22",
-            "enabled_at": "2026-10-31T14:12:43+00:00"
+            "installed_at": "2026-10-31T14:25:18+00:00",
+            "hash": "sha256:7d3c21172de0b525f7a823b96f9b1f099fc735a92e3a3564de50ef20bb62890f",
+            "enabled_at": "2026-10-31T14:25:18+00:00"
+        },
+        "googleanalytics": {
+            "version": "1.1.0",
+            "enabled": true,
+            "source": "control-plane catalog",
+            "installed_at": "2026-10-31T14:25:18+00:00",
+            "hash": "sha256:4d9c03cd0563db416dc3313efe816fc99d1cf36d23d5ba19c4973fe78453632e",
+            "enabled_at": "2026-10-31T14:25:18+00:00"
         },
         "messaging": {
             "version": "2.6.0",

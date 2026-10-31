@@ -1,0 +1,21 @@
+{
+  "name": "consent",
+  "version": "1.3.3",
+  "kind": "capability",
+  "icon": "cookie",
+  "title": "Cookie consent",
+  "blurb": "GDPR cookie consent the browser itself enforces. It starts by watching: every outside service a page loads is reported and listed, and known ones sort themselves. When the owner starts asking, visitors get Accept, Reject or Choose, and the browser refuses anything they did not say yes to, however a page's code wrote it. A public page lists what the site uses, and each answer is kept as proof.",
+  "tags": ["consent", "cookies", "gdpr", "privacy", "eprivacy", "banner", "csp", "tracking", "analytics"],
+  "boot": "Guard::boot",
+  "hosts": { "collect": ["consent.services"] },
+  "requires": {
+    "lib": ["Bean", "Chrome", "ConnectionMentions", "Host", "Paths", "PermissionCache", "Storage", "Turnstile", "Ui"]
+  },
+  "provides": {
+    "controllers": ["Consent"],
+    "tools": [{ "class": "ConsentScan", "level": "ADMIN" }],
+    "beans": ["consenthost", "consentrecord", "consentscan"],
+    "capabilities": ["cookie-consent", "gdpr", "third-party-scan", "privacy-policy-list"]
+  },
+  "uses": { "beans": ["member"] }
+}

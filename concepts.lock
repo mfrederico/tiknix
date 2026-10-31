@@ -1,6 +1,14 @@
 {
     "version": 1,
     "concepts": {
+        "consent": {
+            "version": "1.3.3",
+            "enabled": true,
+            "source": "control-plane catalog",
+            "installed_at": "2026-10-31T13:49:05+00:00",
+            "hash": "sha256:ec65a3861f867191f161f777682df8c1abc7f473d55d554163a8e825435022b9",
+            "enabled_at": "2026-10-31T13:49:05+00:00"
+        },
         "messaging": {
             "version": "2.6.0",
             "enabled": true,

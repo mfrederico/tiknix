@@ -67,6 +67,6 @@ class VideoTest extends TestCase {
         $s3 = \app\services\connectors\S3Connector::class;
         $this->assertSame('https://ny-s3.storage.bunnycdn.com', $s3::endpointFor('bunny', 'ny'));
         $this->assertFalse($s3::hasPolicy('bunny'), 'Bunny Storage takes no bucket policy: public files come from a Pull Zone');
-        foreach (['wasabi', 'aws', 'r2', 'b2', 'digitalocean', 'other'] as $p) $this->assertTrue($s3::hasPolicy($p), $p);
+        foreach (['wasabi', 'aws', 'b2', 'digitalocean', 'other'] as $p) $this->assertTrue($s3::hasPolicy($p), $p);
     }
 }

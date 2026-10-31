@@ -92,4 +92,35 @@ class StorageTest extends TestCase {
         $role = \app\ConnectionBindings::role(\app\ConnectionBindings::CORE, 'storage');
         $this->assertSame(['s3'], $role['types']);
     }
+
+    public function testCloudflareR2HasNoBucketPolicyButTakesCors(): void {
+        $c = \app\services\connectors\S3Connector::class;
+        $this->assertFalse($c::hasPolicy('r2'));
+        $this->assertTrue($c::hasCors('r2'), 'browser uploads are still set from the page');
+        $this->assertFalse($c::hasPolicy('bunny'));
+        $this->assertFalse($c::hasCors('bunny'));
+        $this->assertTrue($c::hasPolicy('wasabi'));
+        $this->assertTrue($c::hasCors('wasabi'));
+    }
+
+    public function testOnlyR2sOwnRefusalCountsAsARefusalAt400(): void {
+        $r2 = '<?xml version="1.0"?><Error><Code>InvalidArgument</Code><Message>Authorization</Message></Error>';
+        $this->assertTrue(\app\Storage::refused(400, $r2, true, 'r2'));
+        $this->assertFalse(\app\Storage::refused(400, '<Error><Code>InvalidRequest</Code></Error>', true, 'r2'), 'any other 400 is still a fault');
+        $this->assertFalse(\app\Storage::refused(400, $r2, true, 'wasabi'), 'only R2 refuses this way');
+        $this->assertFalse(\app\Storage::refused(400, $r2, false, 'r2'), 'only at its own address');
+        $this->assertFalse(\app\Storage::refused(200, 'private', true, 'r2'), 'the file itself is never a refusal');
+        foreach ([401, 403] as $code) $this->assertTrue(\app\Storage::refused($code, '', true, 'wasabi'));
+        $this->assertTrue(\app\Storage::refused(404, '', false, 'wasabi'), 'a CDN that will not serve it');
+        $this->assertFalse(\app\Storage::refused(404, '', true, 'wasabi'), 'not found at the store itself proves nothing');
+    }
+
+    public function testTheHelpNamesWhatStandsInFrontAndTheRuleComesFirst(): void {
+        $none = \app\Storage::noPolicyHelp('r2', false);
+        $this->assertStringContainsString('custom domain', $none);
+        $this->assertStringContainsString('BEFORE you turn it on', $none);
+        $this->assertStringContainsString('/private/', $none);
+        $this->assertStringNotContainsString('Pull Zone', $none);
+        $this->assertStringContainsString('Pull Zone', \app\Storage::noPolicyHelp('bunny', true));
+    }
 }

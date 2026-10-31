@@ -662,7 +662,7 @@ Code changes are commits.
 - https://redbeanphp.com/ - Official RedBeanPHP documentation
 - `vendor/tiknix/runtime/README.md` - the runtime package: what it is, how an app extends or overrides it
 
-## Concept: consent (1.4.1)
+## Concept: consent (1.4.2)
 
 Cookie consent the browser enforces. Classes `app\concepts\consent\{Guard, Policy, Inventory, Known, Groups, Choice, Banner, Settings}`;
 controller `Consent` (`/consent` for admins, `/consent/cookies` public). The plugin adds its own menu entry, footer link and banner.

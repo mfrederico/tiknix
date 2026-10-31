@@ -20,12 +20,15 @@ class Inventory {
     /** The list, from this site's cache file when it is fresh (cache/consent-<host>.json). */
     public static function cached(): array {
         $file = self::cacheFile();
-        if (is_file($file) && filemtime($file) > time() - self::CACHE_SECONDS) {
+        // a connection made since (Google Analytics, a video library) counts now, not in ten minutes
+        $connections = \app\ConnectionStore::ownDbPath();
+        if (is_file($file) && filemtime($file) > time() - self::CACHE_SECONDS && (!is_file($connections) || filemtime($connections) <= filemtime($file))) {
             $list = json_decode((string) file_get_contents($file), true);
             if (is_array($list)) return $list;
             \Flight::get('log')->error("consent: {$file} is not a list; reading it again");
         }
         $list = self::all();
+        Settings::noteGroups(array_keys(Banner::inUse($list)));
         $dir = dirname($file);
         // the list itself is good: a cache that cannot be written costs speed, not the page
         if ((!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) || @file_put_contents($file . '.tmp', json_encode($list, JSON_UNESCAPED_SLASHES)) === false || !@rename($file . '.tmp', $file)) {

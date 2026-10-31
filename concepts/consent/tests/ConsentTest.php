@@ -6,7 +6,6 @@
 
 namespace app\concepts\consent\tests;
 
-foreach (['Groups', 'Known', 'Settings', 'Inventory', 'Choice', 'Policy', 'Banner', 'Guard', 'Scan'] as $c) require_once dirname(__DIR__) . "/lib/{$c}.php";
 
 use app\Bean;
 use app\concepts\consent\{Banner, Choice, Groups, Guard, Inventory, Known, Policy, Scan};
@@ -167,6 +166,12 @@ class ConsentTest extends TestCase {
         $this->assertSame('the QA browser host is not set up', $s['error']);
         $r = Bean::dispense('consentscan'); $r->status = 'running'; $r->startedAt = date('Y-m-d H:i:s', time() - 3600); $r->finishedAt = ''; $r->error = ''; $r->result = ''; Bean::store($r);
         $this->assertSame('stale', Scan::latest([], 'APP_SESSION')['state'], 'a scan that never came back is said to have failed');
+    }
+
+    public function testANewKindOfServiceAsksEveryoneAgain(): void {
+        $this->assertTrue(\app\concepts\consent\Settings::grew([], ['analytics']));
+        $this->assertTrue(\app\concepts\consent\Settings::grew(['media'], ['analytics', 'media']));
+        $this->assertFalse(\app\concepts\consent\Settings::grew(['analytics', 'media'], ['media']), 'dropping one needs no new answer');
     }
 
     public function testRefusingAGroupClearsWhatItLeft(): void {

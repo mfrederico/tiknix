@@ -1,6 +1,6 @@
 {
   "name": "consent",
-  "version": "1.3.3",
+  "version": "1.4.0",
   "kind": "capability",
   "icon": "cookie",
   "title": "Cookie consent",
@@ -9,7 +9,7 @@
   "boot": "Guard::boot",
   "hosts": { "collect": ["consent.services"] },
   "requires": {
-    "lib": ["Bean", "Chrome", "ConnectionMentions", "Host", "Paths", "PermissionCache", "Storage", "Turnstile", "Ui"]
+    "lib": ["Bean", "Chrome", "ConnectionMentions", "ConnectionStore", "Host", "Paths", "PermissionCache", "Storage", "Turnstile", "Ui"]
   },
   "provides": {
     "controllers": ["Consent"],

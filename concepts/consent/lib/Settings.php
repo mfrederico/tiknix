@@ -27,6 +27,17 @@ class Settings {
 
     public static function version(): int { return max(1, (int) (\Flight::getSetting(self::KEY . 'version', 0) ?? 1)); }
 
+    /** A group the site did not use before: an earlier answer did not cover it. */
+    public static function grew(array $had, array $now): bool { return (bool) array_diff($now, $had); }
+
+    /** Remember which groups are in use; when one is new, everyone is asked again. Dropping one asks nobody. */
+    public static function noteGroups(array $now): void {
+        $had = array_values(array_filter(explode(',', (string) (\Flight::getSetting(self::KEY . 'groups', 0) ?? ''))));
+        sort($now);
+        if (self::grew($had, $now)) self::bumpVersion();
+        if ($had !== $now) \Flight::setSetting(self::KEY . 'groups', implode(',', $now), 0);
+    }
+
     public static function bumpVersion(): int {
         $v = self::version() + 1;
         \Flight::setSetting(self::KEY . 'version', (string) $v, 0);

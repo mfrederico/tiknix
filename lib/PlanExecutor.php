@@ -49,6 +49,37 @@ class PlanExecutor {
         $this->tenant = $inst;
     }
 
+    /**
+     * A task's needs (kept, keyed by connector) with what this run said it needs. A need first said when the app already has
+     * the connection ($have) is connected from the start; one already marked connected stays so.
+     */
+    public static function mergeNeeds(array $had, array $needs, array $have): array {
+        foreach ($needs as $n) {
+            $c = (string) ($n['connector'] ?? ''); if ($c === '') continue;
+            $was = (string) ($had[$c]['connected_at'] ?? '');
+            $had[$c] = ['connector' => $c, 'why' => (string) ($n['why'] ?? ''), 'at' => $had[$c]['at'] ?? date('Y-m-d H:i:s'),
+                        'connected_at' => $was !== '' ? $was : (isset($have[$c]) ? date('Y-m-d H:i:s') : '')];
+        }
+        return $had;
+    }
+
+    /**
+     * The connectors this app has a working connection to (enabled, not revoked), asked of the app itself: keyed by connector.
+     * When the app cannot be asked, that is logged and nothing counts as connected — the card offers Connect, whose panel
+     * shows the truth — never a guess that it is connected.
+     */
+    private function connectedNow(): array {
+        $id = (int) $this->tenant->id;
+        $rows = CoreDb::with(fn() => \app\ConnectorPush::ask($id, '/connectorapi/list')['connections'] ?? null, false);
+        if (!is_array($rows)) {
+            error_log("WARNING PlanExecutor: could not ask {$this->slug} what it is connected to: " . CoreDb::lastError());
+            return [];
+        }
+        $have = [];
+        foreach ($rows as $c) if (!empty($c['enabled']) && empty($c['revoked'])) $have[strtolower((string) $c['connector'])] = true;
+        return $have;
+    }
+
     /** Per-task budget when there is not enough history to measure one. */
     private const TASK_BUDGET_TICKS = 180;      // 30 minutes
 
@@ -707,12 +738,13 @@ class PlanExecutor {
         // "not connected" path.
         if (!empty($r['needs']) && is_array($r['needs'])) {
             $had = json_decode((string) ($t->needsJson ?? ''), true) ?: [];
-            foreach ($r['needs'] as $n) {
-                $c = (string) ($n['connector'] ?? ''); if ($c === '') continue;
-                if (!isset($had[$c])) $this->logEvent($t, 'info', "Needs a connection: {$c}" . (($n['why'] ?? '') !== '' ? " (for {$n['why']})" : '') . '. Ask shows a card to connect it.');
-                $had[$c] = ['connector' => $c, 'why' => (string) ($n['why'] ?? ''), 'at' => $had[$c]['at'] ?? date('Y-m-d H:i:s'), 'connected_at' => $had[$c]['connected_at'] ?? ''];
+            $merged = self::mergeNeeds($had, $r['needs'], $this->connectedNow());   // one the app already has shows as connected
+            foreach ($merged as $c => $n) {
+                if (isset($had[$c])) continue;
+                $this->logEvent($t, 'info', "Needs a connection: {$c}" . ($n['why'] !== '' ? " (for {$n['why']})" : '')
+                    . ($n['connected_at'] !== '' ? '. The app already has it.' : '. Ask shows a card to connect it.'));
             }
-            $t->needsJson = json_encode($had, JSON_UNESCAPED_SLASHES);
+            $t->needsJson = json_encode($merged, JSON_UNESCAPED_SLASHES);
             Bean::store($t);
         }
         $status = (string) ($r['status'] ?? '');

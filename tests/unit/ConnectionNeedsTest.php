@@ -34,6 +34,16 @@ class ConnectionNeedsTest extends TestCase {
         return \app\BuilderMail::inBoard($this->dir, fn() => json_decode((string) Bean::load('workbenchtask', $id)->needsJson, true));
     }
 
+    public function testANeedTheAppAlreadyHasIsConnectedFromTheStart(): void {
+        $m = \app\PlanExecutor::mergeNeeds([], [['connector' => 'mailgun', 'why' => 'invites'], ['connector' => 's3', 'why' => '']], ['mailgun' => true]);
+        $this->assertNotSame('', $m['mailgun']['connected_at'], 'already connected: no Connect card');
+        $this->assertSame('', $m['s3']['connected_at']);
+        $again = \app\PlanExecutor::mergeNeeds($m, [['connector' => 'mailgun', 'why' => 'receipts']], []);
+        $this->assertSame($m['mailgun']['connected_at'], $again['mailgun']['connected_at'], 'once connected, a later run that cannot ask does not undo it');
+        $this->assertSame('receipts', $again['mailgun']['why']);
+        $this->assertSame($m['mailgun']['at'], $again['mailgun']['at']);
+    }
+
     public function testABoardWithNoTasksIsNothingToDo(): void {
         $this->assertSame(0, ConnectionNeeds::metIn($this->dir, 'mailgun'));
         $this->assertSame(0, ConnectionNeeds::metIn($this->dir . '/nowhere', 'mailgun'), 'a project with no board');

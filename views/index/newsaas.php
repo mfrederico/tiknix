@@ -48,7 +48,11 @@ $jsonld = [
     <meta property="og:title" content="Stop software overfitting — NewSaaS, software that fits you, that you own">
     <meta property="og:description" content="<?= htmlspecialchars($desc) ?>">
     <meta property="og:url" content="<?= $site ?>/newsaas">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:image" content="<?= $site ?>/img/og-tiknix.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:image" content="<?= $site ?>/img/og-tiknix.png">
+    <meta name="twitter:card" content="summary_large_image">
     <script>
         /* Before first paint, so nothing flashes: motion only for visitors who have not asked for less of it. */
         if (window.matchMedia && 'IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {

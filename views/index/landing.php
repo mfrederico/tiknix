@@ -16,6 +16,16 @@ $hasShowcase = !empty($showcase);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($title ?? 'tiknix — build a real app for every client') ?></title>
     <meta name="description" content="tiknix spins up a full-stack app per project with AI — isolated, integrated, and theirs to keep. Bring your own model, no credits. First project free, then $49/mo per project.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="tiknix">
+    <meta property="og:title" content="<?= htmlspecialchars($title ?? 'tiknix — build a real app for every client') ?>">
+    <meta property="og:description" content="tiknix spins up a full-stack app per project with AI — isolated, integrated, and theirs to keep. Bring your own model, no credits.">
+    <meta property="og:url" content="https://tiknix.com/">
+    <meta property="og:image" content="https://tiknix.com/img/og-tiknix.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://tiknix.com/img/og-tiknix.png">
     <link rel="canonical" href="https://tiknix.com/index/landing">
     <link href="/rt/vendor/fonts/playfair.css" rel="stylesheet">
     <?php include __DIR__ . '/_marketing-style.php'; ?>

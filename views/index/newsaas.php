@@ -73,6 +73,9 @@ $jsonld = [
         .ns-hero h2.second{ font-size:clamp(22px,2.9vw,36px); font-weight:600; line-height:1.2; margin:14px auto 0; max-width:760px; text-wrap:balance; }
         .ns-hero .w{ display:inline-block; }
         .ns-hero .sub{ font-size:clamp(16px,1.6vw,19px); color:var(--soft); line-height:1.6; max-width:680px; margin:22px auto 0; }
+        .ns-what{ max-width:680px; margin:24px auto 0; padding:16px 20px; border:1px solid var(--line2); border-radius:14px; color:var(--soft); line-height:1.6; font-size:16px; }
+        .ns-what p{ margin:0; } .ns-what strong{ color:var(--text); }
+        .ns-what-go{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:14px; }
         .tape{ position:relative; left:50%; width:100vw; margin:38px 0 0 -50vw; height:30px; overflow:hidden; transform:rotate(-1.5deg);
                background:var(--tape); box-shadow:0 10px 30px rgba(0,0,0,0.35); }
         .tape i{ display:block; height:100%; width:calc(100% + 700px);
@@ -203,8 +206,8 @@ $jsonld = [
         @supports (height:1svh){ .motion .ns-hero{ min-height:calc(100svh - 86px); } }
         .motion .ns-hero .w{ opacity:0; transform:translateY(.55em) rotate(4deg); animation:wordin .75s var(--ease) forwards; animation-delay:calc(var(--i) * 75ms + .1s); }
         @keyframes wordin{ to{ opacity:1; transform:none; } }
-        .motion .ns-hero .eyebrow, .motion .ns-hero .sub, .motion .ns-hero .tape, .motion .cue{ opacity:0; animation:fadeup .8s var(--ease) forwards; }
-        .motion .ns-hero .sub{ animation-delay:1.5s; } .motion .ns-hero .tape{ animation-name:tapein; animation-delay:1.75s; } .motion .cue{ animation-delay:2.3s; }
+        .motion .ns-hero .eyebrow, .motion .ns-hero .sub, .motion .ns-hero .ns-what, .motion .ns-hero .tape, .motion .cue{ opacity:0; animation:fadeup .8s var(--ease) forwards; }
+        .motion .ns-hero .sub{ animation-delay:.7s; } .motion .ns-hero .ns-what{ animation-delay:.9s; } .motion .ns-hero .tape{ animation-name:tapein; animation-delay:1.75s; } .motion .cue{ animation-delay:2.3s; }
         @keyframes fadeup{ from{ opacity:0; transform:translateY(14px); } to{ opacity:1; transform:none; } }
         @keyframes tapein{ from{ opacity:0; transform:rotate(-1.5deg) translateX(-30%); } to{ opacity:1; transform:rotate(-1.5deg); } }
         .motion .cue{ display:block; margin-top:34px; font:600 12px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--dim); }
@@ -266,6 +269,15 @@ $jsonld = [
       a lot of companies buy the SaaS software and systems they think they need. Then: what that costs them
       every year, and the word we use for the alternative.
     </p>
+    <?php /* What Tiknix IS, on the first screen: the story above never says, and the only sign-up button was in the menu. */ ?>
+    <div class="ns-what">
+      <p><strong>Tiknix is a harness utility.</strong> You bring the AI &mdash; your Claude subscription or an API key &mdash;
+        and Tiknix gives it a place to build your app: its own server, database, tests, and a browser to check its work.</p>
+      <div class="ns-what-go">
+        <a class="btn btn-primary" href="https://start.tiknix.com/start">Start free</a>
+        <a class="btn btn-ghost" href="/pricing">See pricing</a>
+      </div>
+    </div>
     <div class="tape" aria-hidden="true"><i></i></div>
     <div class="cue" aria-hidden="true">Scroll. It&rsquo;s a short story.<b></b></div>
   </section>

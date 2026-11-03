@@ -3,7 +3,7 @@
 $h = fn($v) => htmlspecialchars((string) $v);
 ?>
 <div class="page-col">
-<?= \app\Ui::page(['title' => 'What reaches you', 'lead' => 'Every message we send belongs to one of these. Choose how each one reaches you.',
+<?= \app\Ui::page(['title' => 'Messages you get', 'lead' => 'Every message we send belongs to one of these. Choose how each one reaches you.',
     'back' => ['label' => 'Settings', 'url' => '/me/settings']]) ?>
 <div class="card mb-4" id="reaches"><div class="card-body">
     <?php if ($text['offered']): ?>

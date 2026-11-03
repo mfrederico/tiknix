@@ -1,6 +1,6 @@
 {
   "name": "messaging",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "kind": "capability",
   "icon": "envelope-paper",
   "title": "Messaging",
@@ -22,12 +22,16 @@
   ],
   "requires": {
     "lib": [
+      "AgentTask",
+      "AppEvents",
       "Bean",
       "ConnectorSetup",
       "EncryptionService",
       "Host",
       "Paths",
       "PermissionCache",
+      "SelfCall",
+      "SimpleCsrf",
       "Ui"
     ]
   },

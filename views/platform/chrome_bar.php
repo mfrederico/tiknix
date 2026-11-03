@@ -23,6 +23,7 @@
           <a href="/projects" class="btn btn-outline-primary btn-sm" title="Change project"><i class="bi bi-grid-3x3-gap"></i><span class="ui-pb-label">Change</span></a>
         </nav>
       </div>
+    <?php elseif (!\app\MemberProjects::accessible((int) (\Flight::getMember()->id ?? 0))): /* none yet: the dashboard's first steps and the sidebar say so; a third "no project" is noise */ ?>
     <?php else:
         /* No project selected. Said here, where the project normally is — everything that
            works on a project quietly does nothing until one is chosen. The state a new

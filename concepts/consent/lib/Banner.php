@@ -34,11 +34,14 @@ class Banner {
 #tcConsent p{margin:0 0 .75rem}
 #tcConsent a{color:inherit;text-decoration:underline}
 #tcConsent .tc-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
+#tcConsent [hidden]{display:none!important}
 #tcConsent button{padding:.55rem .4rem;border-radius:.5rem;border:1px solid currentColor;background:transparent;color:inherit;font:inherit;font-weight:600;cursor:pointer}
 #tcConsent button:hover{background:rgba(127,127,127,.15)}
 #tcConsent .tc-pick{margin-bottom:.75rem}
 #tcConsent .tc-row{display:flex;gap:.6rem;align-items:flex-start;padding:.4rem 0;cursor:pointer}
-#tcConsent .tc-row input{margin-top:.25rem;flex:none}
+#tcConsent .tc-row{text-align:left}
+#tcConsent .tc-row input{margin-top:.25rem;flex:none;width:auto;height:auto} /* a page's own input{width:100%} took the row and hid the words */
+#tcConsent .tc-row span{flex:1;min-width:0}
 #tcConsent .tc-row small{display:block;opacity:.8}
 #tcConsent .tc-err{color:#b02a37;margin-top:.5rem}
 </style>

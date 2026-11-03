@@ -18,11 +18,12 @@ $__projects = $__me && (int) $__me->id > 0 ? \app\MemberProjects::accessible((in
                 <?php if (!$__projects): ?>
                     <p class="ui-eyebrow mb-2">Your first project, in three steps</p>
                     <ol class="small mb-3 ps-3">
-                        <li class="mb-1"><strong>Create a project.</strong> Give it a name; its own server is ready in a few minutes.</li>
-                        <li class="mb-1"><strong>Connect an agent.</strong> On the project's Agents page, sign in with Claude, add an API key, or use a model of your own.</li>
+                        <li class="mb-1"><strong>Create a project.</strong> Name your app; its own server is ready in a few minutes.</li>
+                        <li class="mb-1"><strong>Connect your AI.</strong> Tiknix is a harness utility: it runs the AI you bring. On the project's Agents page, sign in with your Claude account or paste an API key.</li>
                         <li class="mb-1"><strong>Ask for what you want.</strong> Open Ask in the Builder and describe it — "a booking page for my classes". The agent plans it, asks what it needs, and builds.</li>
                     </ol>
-                    <a href="/projects" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Create your first project</a>
+                    <a href="/projects?new=1" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Create your first project</a>
+                    <a href="https://start.tiknix.com/start" class="ms-2 small">Or answer a few questions first, and we draft the plan</a>
                 <?php else: ?>
                     <ul class="list-unstyled mb-3 small">
                         <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Ask for features, fixes and changes in your own words</li>

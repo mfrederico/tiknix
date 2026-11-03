@@ -25,7 +25,7 @@ class Msgpref extends Control {
         $phone = Providers::has('phone');
         $pending = $phone && Providers::can('phone', 'pending') ? Providers::need('phone')::pending($mid) : null;
         $text = ['offered' => $phone && $panel['texts']['offered'], 'verified' => $panel['texts']['verified'], 'canProve' => $phone && Providers::can('phone', 'prove'), 'pending' => $pending];
-        $this->render('msgpref/index', ['title' => 'What reaches you', 'rows' => $panel['categories'], 'scopes' => $panel['audiences'], 'digest' => $panel['digest'], 'text' => $text]);
+        $this->render('msgpref/index', ['title' => 'Messages you get', 'rows' => $panel['categories'], 'scopes' => $panel['audiences'], 'digest' => $panel['digest'], 'text' => $text]);
     }
 
     /** POST: a radio per category and channel, the digest, a switch per audience. Texts wait for the phone to be proved. */

@@ -141,23 +141,24 @@ $fmt = function (string $iso): string {
      selected, so a "new instance" button inside one would create something you were not
      yet working on. Creating here selects it too, closing the loop. */
   ?>
-  <div class="collapse mb-3" id="proj-new">
+  <div class="collapse mb-3<?= (isset($_GET['new']) || empty($projects)) ? ' show' : '' ?>" id="proj-new">
     <div class="card shadow-sm">
       <div class="card-body">
         <form id="proj-new-form" class="row g-2 align-items-start">
           <div class="col-12 col-sm-5">
-            <label class="form-label small mb-0">Project name</label>
-            <input id="proj-new-slug" class="form-control form-control-sm" placeholder="my-app"
-                   autocomplete="off" spellcheck="false" required>
-            <div class="form-text">Lowercase letters, then letters/numbers or hyphens.</div>
+            <label class="form-label small mb-0" for="proj-new-name">Name of your app</label>
+            <input id="proj-new-name" class="form-control form-control-sm" placeholder="Sunrise Bakery"
+                   autocomplete="off" maxlength="80" required>
+            <div class="form-text" id="proj-new-addr">Its address is made from the name.</div>
           </div>
           <div class="col-8 col-sm-4">
-            <label class="form-label small mb-0">Engine</label>
-            <select id="proj-new-engine" class="form-select form-select-sm">
+            <label class="form-label small mb-0" for="proj-new-engine">Which AI builds it</label>
+            <select id="proj-new-engine" class="form-select form-select-sm" aria-describedby="proj-new-engine-help">
               <?php foreach (\app\EngineRegistry::menu() as $engName => $engLabel): ?>
                 <option value="<?= htmlspecialchars($engName) ?>"><?= htmlspecialchars($engLabel) ?></option>
               <?php endforeach; ?>
             </select>
+            <div class="form-text" id="proj-new-engine-help">Yours: you connect it next, on the project's Agents page.</div>
           </div>
           <div class="col-4 col-sm-3">
             <?php /* an empty label: the button lines up with the two fields beside it */ ?>
@@ -188,7 +189,7 @@ $fmt = function (string $iso): string {
   </div>
 
   <?php if (empty($projects)): ?>
-    <div class="alert alert-info">You don't have any projects yet.</div>
+    <p class="text-body-secondary">No projects yet. Name your first one above. Tiknix is a harness utility: once it exists, you connect the AI that builds it.</p>
   <?php else: ?>
     <div class="row g-3" id="proj-grid">
       <?php foreach ($projects as $p): $active = $p['id'] === $currentId; ?>
@@ -522,23 +523,31 @@ $fmt = function (string $iso): string {
     });
   });
 
+  // The address part of a name (ProvisionService::BASE_RE: a letter first, then letters, digits and single hyphens, 2-40).
+  function slugOf(name) {
+    let s = name.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^[^a-z]+/, '').replace(/-+$/, '');
+    s = s.slice(0, 40).replace(/-+$/, '');
+    return s.length >= 2 ? s : '';
+  }
   const newForm = document.getElementById('proj-new-form');
+  const nameIn = document.getElementById('proj-new-name'), addr = document.getElementById('proj-new-addr');
+  if (nameIn && addr) nameIn.addEventListener('input', function () { const s = slugOf(nameIn.value.trim()); addr.textContent = s ? 'Its address starts with: ' + s : 'Its address is made from the name.'; });
   if (newForm) {
     newForm.addEventListener('submit', function (e) {
       e.preventDefault();
-      const slug = document.getElementById('proj-new-slug').value.trim().toLowerCase(),
+      const name = document.getElementById('proj-new-name').value.trim(), slug = slugOf(name),
             eng  = document.getElementById('proj-new-engine').value,
             plan = (newForm.querySelector('input[name=proj-new-plan]:checked') || {value: 'project'}).value,
             msg  = document.getElementById('proj-new-msg'),
             btn  = newForm.querySelector('button[type=submit]');
-      if (!slug) return;
+      if (!slug) { document.getElementById('proj-new-msg').className = 'form-text text-danger'; document.getElementById('proj-new-msg').textContent = 'The name needs a letter in it.'; return; }
       btn.disabled = true;
       msg.className = 'form-text text-body-secondary';
       msg.textContent = 'Provisioning… this can take a minute.';
       fetch('/projects/create', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest'},
-        body: new URLSearchParams({csrf_token: csrf, slug: slug, engine: eng, plan: plan}).toString()
+        body: new URLSearchParams({csrf_token: csrf, slug: slug, name: name, engine: eng, plan: plan}).toString()
       }).then(r => r.json()).then(function (j) {
         // Created AND selected, so go straight to work rather than back to a list — the
         // button says "Create & work on it", and it should mean it —

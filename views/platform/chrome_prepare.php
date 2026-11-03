@@ -59,7 +59,7 @@ if ($__loggedIn) {
     // Messages to members (the messaging plugin): every member chooses what reaches them; an
     // admin writes the campaigns and the nudges and sees what each one moved.
     if (\app\Concepts::has('messaging')) {
-        if (!isset($__have['/msgpref'])) $__lead[] = ['url' => '/msgpref', 'label' => 'What reaches you', 'icon' => 'bell'];
+        if (!isset($__have['/msgpref'])) $__lead[] = ['url' => '/msgpref', 'label' => 'Messages you get', 'icon' => 'bell'];
         if ($__isAdmin && !isset($__have['/messaging'])) $__lead[] = ['url' => '/messaging', 'label' => 'Messages', 'icon' => 'envelope'];
     }
     $__sections = [$__mainSec => array_merge($__lead, $__sections[$__mainSec] ?? [])] + $__sections;

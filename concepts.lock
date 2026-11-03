@@ -2,12 +2,12 @@
     "version": 1,
     "concepts": {
         "consent": {
-            "version": "1.4.2",
+            "version": "1.4.4",
             "enabled": true,
             "source": "control-plane catalog",
-            "installed_at": "2026-10-31T16:27:58+00:00",
-            "hash": "sha256:6f030aaba370bda3f29cae7cbd50774f6708182c9dc04c8450b539b6663854bd",
-            "enabled_at": "2026-10-31T16:27:58+00:00"
+            "installed_at": "2026-11-03T16:20:16+00:00",
+            "hash": "sha256:e763a99d36447ef3de141af433dfee08fe543d65b4ed0d55205e68440649d198",
+            "enabled_at": "2026-11-03T16:20:16+00:00"
         },
         "googleanalytics": {
             "version": "1.2.1",
@@ -18,12 +18,12 @@
             "enabled_at": "2026-10-31T15:00:50+00:00"
         },
         "messaging": {
-            "version": "2.6.0",
+            "version": "2.6.1",
             "enabled": true,
             "source": "control-plane catalog",
-            "installed_at": "2026-10-27T20:57:58+00:00",
-            "hash": "sha256:5e20e07d622a2a11675adfdaa63bfccb9776d4cc427aeff747cb0e8cae4288f6",
-            "enabled_at": "2026-10-27T20:57:58+00:00"
+            "installed_at": "2026-11-03T16:17:17+00:00",
+            "hash": "sha256:90149344e38e443ffb16f85739b630dd30df476ee82bb6ee9748ead5105fde71",
+            "enabled_at": "2026-11-03T16:17:17+00:00"
         }
     },
     "connectors": {

@@ -24,7 +24,7 @@ class Help extends BaseControls\Control {
      */
     public function start() {
         $this->render('help/getting-started', [
-            'title' => 'Getting Started'
+            'title' => 'Your first project'
         ]);
     }
     

@@ -31,6 +31,7 @@ $__projects = $__me && (int) $__me->id > 0 ? \app\MemberProjects::accessible((in
                     <a href="/projects?new=1" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Create your first project</a>
                     <?php endif; ?>
                     <a href="https://start.tiknix.com/start" class="ms-2 small">Or answer a few questions first, and we draft the plan</a>
+                    <div class="small mt-2"><a href="/help/start"><i class="bi bi-signpost-2 me-1"></i>The whole way, step by step</a></div>
                 <?php else: ?>
                     <ul class="list-unstyled mb-3 small">
                         <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Ask for features, fixes and changes in your own words</li>

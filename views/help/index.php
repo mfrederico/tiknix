@@ -51,8 +51,8 @@ $has = fn(string $flag) => $__signedIn
         <a href="/contact" class="btn btn-primary btn-lg">
           <i class="bi bi-envelope me-1"></i> Message support
         </a>
-        <a href="https://docs.tiknix.com" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-lg">
-          <i class="bi bi-book me-1"></i> Docs
+        <a href="/help/start" class="btn btn-outline-secondary btn-lg">
+          <i class="bi bi-signpost-2 me-1"></i> Your first project, step by step
         </a>
       </div>
     </div>

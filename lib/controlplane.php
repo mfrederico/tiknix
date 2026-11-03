@@ -110,7 +110,7 @@
 // dashboard and footer — what the runtime used to decide with is_core_install().
 \app\Chrome::$links = [
     'projects'   => '/projects',
-    'docs'       => 'https://docs.tiknix.com',
+    // no 'docs': docs.tiknix.com is for developers; members get /help/start, the first project step by step
     'help'       => '/help',
     'fleet'      => '/fleet',
     'reports'    => '/projectreport',   // what every hosted app reports about itself

@@ -58,6 +58,12 @@ class PlanHandoffTest extends ConceptsTestCase {
         $this->assertSame(['status' => 'offered', 'name' => 'Shop Portal', 'project_slug' => '', 'project_url' => '', 'progress' => '', 'note' => ''], PlanHandoff::state($h));
     }
 
+    public function testItKeepsTheVisitorsEmailSoTheClaimPageCanOpenTheRightDoor(): void {
+        $this->assertSame('ann@example.com', (string) PlanHandoff::offer(7, $this->package(['email' => '  Ann@Example.com ']))->email, 'trimmed and lower-cased: it is matched to a member');
+        $this->assertSame('', (string) PlanHandoff::offer(7, $this->package(['email' => 'not an email']))->email, 'not an address: no door is guessed');
+        $this->assertSame('', (string) PlanHandoff::offer(7, $this->package())->email, 'an older wizard sends none');
+    }
+
     public function testTheObjectsMayArriveInlineOrAsStrings(): void {
         // The wizard sends the decoded objects; a string of JSON is the same value.
         $inline = PlanHandoff::offer(7, $this->package([

@@ -53,7 +53,14 @@ class Handoff extends Control {
             // The token waits in the session so registration (which has no redirect of its
             // own) lands here too; login carries it explicitly as well.
             $_SESSION['handoff_token'] = $token;
-            Flight::redirect('/auth/login?redirect=' . urlencode('/handoff/claim/' . $token));
+            // Not a bare sign-in page: the door that fits. The interview's email says whether they already have an
+            // account here (shown only to whoever holds this claim link: the visitor who typed it).
+            $email = (string) ($h->email ?? '');
+            $known = $email !== '' && (bool) Bean::findOne('member', 'LOWER(email) = ?', [$email]);
+            $back = '/handoff/claim/' . $token;
+            $this->render('handoff/welcome', ['title' => 'Your project', 'name' => (string) $h->name, 'email' => $email, 'known' => $known,
+                'login' => '/auth/login?redirect=' . urlencode($back) . ($known ? '&email=' . urlencode($email) : ''),
+                'register' => '/auth/register' . ($email !== '' && !$known ? '?email=' . urlencode($email) : '')]);
             return;
         }
         $memberId = (int) $this->member->id;

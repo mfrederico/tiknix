@@ -61,6 +61,9 @@ class PlanHandoff {
         $h->blueprintJson     = $blueprint;
         $h->briefJson         = $brief;
         $h->resumeUrl         = $resume;
+        // The visitor's email from the interview, when it gave one: the claim page uses it to send them to sign in or to sign up.
+        $email = strtolower(trim((string) ($in['email'] ?? '')));
+        $h->email             = filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : '';
         $h->sourceInstanceRef = $sourceInstanceId;
         $h->memberRef         = 0;
         $h->instanceRef       = 0;

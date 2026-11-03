@@ -34,7 +34,9 @@ class Yourai extends Control {
     public function save($params = []): void {
         if (!$this->requireLogin() || !$this->validateCSRF()) return;
         $preset = (string) $this->getParam('preset', '');
-        if ($preset === '') $preset = MemberAi::detect((string) $this->getParam('api_key', ''));
+        // A key whose first letters name its provider is that provider's, whatever was picked (the page switches too, and says so).
+        $detected = MemberAi::detect((string) $this->getParam('api_key', ''));
+        if ($detected !== '') $preset = $detected;
         try {
             $r = MemberAi::save((int) $this->member->id, $preset, (string) $this->getParam('api_key', ''), (string) $this->getParam('endpoint', ''),
                               (string) $this->getParam('model', ''), Flight::hasLevel(LEVELS['ROOT']));

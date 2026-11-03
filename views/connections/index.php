@@ -37,7 +37,9 @@ $isConnected = function (array $card): bool {
 };
 
 ?>
-<div class="container py-4" style="max-width:960px">
+<div class="container <?= !empty($embed) ? 'py-2' : 'py-4' ?>" style="max-width:960px">
+  <?php /* Embedded (the Builder's Ask, ?only=…&embed=1): the one connector's card, nothing around it. */ ?>
+  <?php if (empty($embed)): ?>
 
   <div class="d-flex align-items-center gap-2 mb-3">
     <i class="bi bi-plug fs-3"></i>
@@ -125,7 +127,9 @@ $isConnected = function (array $card): bool {
     <a href="/deploy" class="text-decoration-underline">Deploy</a>.
   </div>
 
-  <?php if (!empty($connectorErrors)): ?>
+  <?php endif; /* embed */ ?>
+
+  <?php if (!empty($connectorErrors) && empty($embed)): ?>
     <div class="alert alert-warning mt-3">
       <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Some connector manifests were not loaded</div>
       <ul class="mb-0 small">
@@ -344,7 +348,12 @@ $isConnected = function (array $card): bool {
         headers: {'Content-Type':'application/x-www-form-urlencoded','X-CSRF-TOKEN':csrf,'X-Requested-With':'XMLHttpRequest'},
         body: new URLSearchParams(new FormData(form)).toString()
       }).then(r=>r.json()).then(function(j){
-        if (j && j.success) { location.reload(); }
+        if (j && j.success) {
+          // Inside the Builder's Ask (a frame): tell it, so its card turns to "connected" and the panel can close.
+          var typ = form.querySelector('[name=type]');
+          if (window.parent !== window && typ) window.parent.postMessage({tiknix: 'connected', connector: typ.value}, '*');
+          location.reload();
+        }
         else { tkAlert((j && j.message) || 'Could not connect', {type: 'error'}); if (btn) btn.disabled = false; }
       }).catch(function(){ tkAlert('Could not connect', {type: 'error'}); if (btn) btn.disabled = false; });
     });

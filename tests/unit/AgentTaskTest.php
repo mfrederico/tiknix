@@ -125,6 +125,18 @@ class AgentTaskTest extends TestCase {
         $this->assertSame('Pat Member', $this->git('log -1 --format=%cn'));
     }
 
+    /** A connection the work needs comes back checked: a good key kept (once), a bad one said as a note and left out. */
+    public function testConnectionsTheWorkNeedsComeBackChecked(): void {
+        $needs = json_encode([['connector' => 'Mailgun', 'why' => 'invitation emails'], ['connector' => 'mailgun', 'why' => 'again'],
+                              ['connector' => '../etc', 'why' => 'x'], ['connector' => 's3']]);
+        file_put_contents("{$this->app}/bin/claude", "#!/bin/sh\necho 'x' >> README.md\nprintf '%s' " . escapeshellarg($needs) . " > .aibuilder/task.needs.json\necho done\n");
+        $r = AgentTask::start($this->app, 't3', 'Invite people by email');
+        $this->assertTrue($r['ok'], json_encode($r));
+        $this->assertSame([['connector' => 'mailgun', 'why' => 'again'], ['connector' => 's3', 'why' => '']], $r['needs']);
+        $this->assertNotEmpty(array_filter($r['notes'] ?? [], fn($n) => str_contains($n, 'not a connector key')), 'the bad entry is said');
+        AgentTask::discard($this->app, 't3');
+    }
+
     /**
      * A task that runs out of time keeps what it did, and the retry continues in it: the agent is
      * told it is resuming, both attempts' work merges, and nothing is built twice.

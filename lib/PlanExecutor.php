@@ -702,6 +702,19 @@ class PlanExecutor {
         if (!empty($r['fast'])) $this->logEvent($t, 'info', 'Built on the fast model: it was scored small and low-risk.');
         // What the app noticed about the work (an unlinked page): on the task, where a person reads it.
         foreach ((array) ($r['notes'] ?? []) as $note) $this->logEvent($t, 'warning', (string) $note);   // each note says what kind it is (AgentTask)
+        // Connections the work needs that the app does not have (AgentTask::NEEDS_FILE): kept on the task, where the Builder's
+        // Ask shows each as a card that opens the connector's own panel. Nothing waits on them: the work built the
+        // "not connected" path.
+        if (!empty($r['needs']) && is_array($r['needs'])) {
+            $had = json_decode((string) ($t->needsJson ?? ''), true) ?: [];
+            foreach ($r['needs'] as $n) {
+                $c = (string) ($n['connector'] ?? ''); if ($c === '') continue;
+                if (!isset($had[$c])) $this->logEvent($t, 'info', "Needs a connection: {$c}" . (($n['why'] ?? '') !== '' ? " (for {$n['why']})" : '') . '. Ask shows a card to connect it.');
+                $had[$c] = ['connector' => $c, 'why' => (string) ($n['why'] ?? ''), 'at' => $had[$c]['at'] ?? date('Y-m-d H:i:s'), 'connected_at' => $had[$c]['connected_at'] ?? ''];
+            }
+            $t->needsJson = json_encode($had, JSON_UNESCAPED_SLASHES);
+            Bean::store($t);
+        }
         $status = (string) ($r['status'] ?? '');
         // It stopped to ask its person something (AgentTask::QUESTION_FILE). That is neither done
         // nor failed: the task waits, its copy kept, and the answer continues it (Retry → --resume).
@@ -1891,6 +1904,13 @@ commit and merge your work — you just make the code changes.
   committed is merged first and they build on it — so leave the code working (finish or undo
   anything half-made) and say in your Handoff what you did complete. Split early, when you see
   it, not after spending the task's time. Most tasks do not need this.
+- If the work needs a SERVICE THIS APP IS NOT CONNECTED TO — email (Mailgun: `Mailer::isConfigured()` false), file storage
+  (S3: `Storage::isConnected()` false), video (`bunnystream`), text messages (`quo`), payments (`stripe`), QuickBooks
+  (`quickbooks`) — do NOT stop and do NOT ask for a key. Build the feature with its "not connected" path working and saying
+  so on the page, and list the connection in `.aibuilder/task.needs.json`:
+  `[{"connector": "mailgun", "why": "invitation emails"}]` (the connector's key as Connections names it; "why" in a few
+  plain words). The owner is shown a card to connect it, right where they read about this build; once connected, the
+  feature works with no further change. Never put a key or a secret in code, config or a seed.
 - If you reach a DECISION ONLY THE OWNER CAN MAKE — two real ways to build this that they
   would notice the difference between, a word in the request that could mean two things, a
   credential or account only they have, something that would remove or overwrite their data —

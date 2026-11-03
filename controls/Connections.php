@@ -275,7 +275,17 @@ class Connections extends Control {
             ];
         }
 
+        // ?only=<connector>: that connector's card alone; &embed=1: no menus (the Builder's Ask opens it in a frame, and the page
+        // tells it when the connector is connected). An unknown connector is said, never an empty page.
+        $only = strtolower(trim((string) $this->getParam('only', '')));
+        if ($only !== '') {
+            $cards = array_values(array_filter($cards, fn($c) => $c['key'] === $only));
+            if (!$cards) { Flight::response()->status(404); $this->render('connections/notfound', ['title' => 'Unknown connection', 'key' => $only], 'layouts/embedded'); return; }
+        }
+        $embed = $only !== '' && (string) $this->getParam('embed', '') === '1';
         $this->render('connections/index', [
+            'only'           => $only,
+            'embed'          => $embed,
             'mc'             => $this->modelsViewData(),
             'title'          => 'Connections',
             'instance'       => $inst,
@@ -294,7 +304,7 @@ class Connections extends Control {
             'connectorErrors' => ConnectorRegistry::errors(),
             'environments'   => ['development', 'production'],
             'categoryOrder'  => ['Project', 'Payments', 'Stores', 'Messaging', 'Social', 'Other'],
-        ]);
+        ], $embed ? 'layouts/embedded' : true);
     }
 
     // --- Human verification (Cloudflare Turnstile) ----------------------------
@@ -821,6 +831,7 @@ class Connections extends Control {
         } catch (\Throwable $e) {
             error_log('[connections] store wiring failed for instance ' . $iid . ': ' . $e->getMessage());
         }
+        ConnectionNeeds::met($inst, $type);   // a build that asked for this connection: its card in Ask turns to "connected"
         if ($handoff) { $this->redirectBack($returnUrl, ['connected' => $type]); return; }
         $this->flash('success', ucfirst($type) . ' store connected.');
         Flight::redirect('/connections?id=' . $iid);
@@ -916,6 +927,7 @@ class Connections extends Control {
         } catch (\Throwable $e) {
             error_log('[connections] store wiring failed for instance ' . (int)$inst->id . ': ' . $e->getMessage());
         }
+        ConnectionNeeds::met($inst, $type);   // a build that asked for this connection: its card in Ask turns to "connected"
         $this->jsonSuccess([
             'type'        => $type,
             'environment' => $env,

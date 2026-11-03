@@ -24,6 +24,7 @@ class SignInLinkTest extends ConceptsTestCase {
         if (!defined('LEVELS')) define('LEVELS', ['ROOT' => 1, 'ADMIN' => 50, 'MEMBER' => 100, 'PUBLIC' => 101]);
         $this->log = \Flight::get('log');
         \Flight::set('log', new \Monolog\Logger('test', [new \Monolog\Handler\NullHandler()]));
+        \Flight::map('siteName', fn() => 'Tiknix');
     }
 
     private $log;
@@ -39,7 +40,7 @@ class SignInLinkTest extends ConceptsTestCase {
     private function link(int $memberId, string $token, int $ageSeconds = 0, string $to = ''): void {
         $r = Bean::dispense('signinlink');
         $r->emailHash = hash('sha256', 'x'); $r->ipHash = hash('sha256', '1.2.3.4'); $r->memberRef = $memberId; $r->tokenHash = hash('sha256', $token);
-        $r->landing = $to; $r->createdAt = date('Y-m-d H:i:s', time() - $ageSeconds); $r->expiresAt = date('Y-m-d H:i:s', time() - $ageSeconds + SignInLink::TTL); $r->usedAt = '';
+        $r->landing = $to; $r->createdAt = date('Y-m-d H:i:s', time() - $ageSeconds); $r->expiresAt = date('Y-m-d H:i:s', time() - $ageSeconds + SignInLink::TTL); $r->usedAt = ''; $r->joinEmail = '';
         Bean::store($r);
     }
 
@@ -88,6 +89,28 @@ class SignInLinkTest extends ConceptsTestCase {
         $this->assertNotSame('', (string) $m->username);
         try { SignInLink::createAccount('new.person@example.com'); $this->fail('a second account for one address'); }
         catch (\InvalidArgumentException $e) { $this->assertStringContainsString('already has an account', $e->getMessage()); }
+    }
+
+    public function testACreateYourAccountLinkMakesTheAccountOnlyWhenPressed(): void {
+        $r = Bean::dispense('signinlink');
+        $r->emailHash = hash('sha256', 'x'); $r->ipHash = hash('sha256', 'ip'); $r->memberRef = 0; $r->tokenHash = hash('sha256', str_repeat('d', 64));
+        $r->landing = '/yourai?next=%2Fhandoff%2Fclaim%2Fabc'; $r->createdAt = date('Y-m-d H:i:s'); $r->expiresAt = date('Y-m-d H:i:s', time() + 900); $r->usedAt = ''; $r->joinEmail = 'fresh@example.com';
+        Bean::store($r);
+        $this->assertNotNull(SignInLink::peek(str_repeat('d', 64)), 'a join link is a link');
+        $this->assertSame(0, (int) Bean::count('member', 'email = ?', ['fresh@example.com']), 'opening it makes nothing (a mail scanner may be opening it)');
+        $used = SignInLink::consume(str_repeat('d', 64));
+        $this->assertTrue($used['joined']);
+        $this->assertSame('fresh@example.com', (string) $used['member']->email);
+        $this->assertSame('', (string) $used['member']->password);
+        $this->assertSame('/yourai?next=%2Fhandoff%2Fclaim%2Fabc', $used['to']);
+        $this->assertSame('', (string) Bean::findOne('signinlink', 'token_hash = ?', [hash('sha256', str_repeat('d', 64))])->joinEmail, 'the address does not stay on the used row');
+        $this->assertNull(SignInLink::consume(str_repeat('d', 64)), 'once');
+    }
+
+    public function testACreateYourAccountRequestForAnAddressWithAnAccountIsASignInLink(): void {
+        $this->member('has@example.com');
+        try { SignInLink::requestJoin('has@example.com', '5.5.5.5'); } catch (\Throwable $e) { /* sending the sign-in mail, which a test cannot */ }
+        $this->assertSame(0, (int) Bean::count('signinlink', "join_email <> ''"), 'no account is made for an address that has one');
     }
 
     public function testOnlyAPathOfThisSiteIsALanding(): void {

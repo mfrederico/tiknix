@@ -38,7 +38,7 @@ class SignInLink {
         $row = Bean::dispense('signinlink');
         $row->emailHash = self::hash($email); $row->ipHash = self::hash($ip); $row->memberRef = $member ? (int) $member->id : 0;
         $row->tokenHash = ''; $row->landing = self::safePath($to); $row->createdAt = date('Y-m-d H:i:s');
-        $row->expiresAt = date('Y-m-d H:i:s', time() + self::TTL); $row->usedAt = '';
+        $row->expiresAt = date('Y-m-d H:i:s', time() + self::TTL); $row->usedAt = ''; $row->joinEmail = '';
         if (!$member || (int) Bean::count('signinlink', "member_ref = ? AND token_hash <> '' AND created_at > ?", [(int) $member->id, $since]) >= self::PER_ADDRESS) {
             Bean::store($row);   // counted, nothing sent
             if ($member) \Flight::get('log')->warning('SignInLink: an address asked for more links than allowed this hour', ['member' => (int) $member->id]);
@@ -60,20 +60,64 @@ class SignInLink {
         \Flight::get('log')->info('SignInLink: a sign-in link was sent', ['member' => (int) $member->id]);
     }
 
+    /**
+     * Ask for a link that MAKES an account: for an address with no account yet (a plan to build, no password wanted). Opening it
+     * proves the inbox, and its button creates the account (or signs in, if the address has one by then). An address that already
+     * has an account gets an ordinary sign-in link instead. Limited exactly like request().
+     */
+    public static function requestJoin(string $email, string $ip, string $to = ''): void {
+        $email = strtolower(trim($email));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) throw new \InvalidArgumentException('That is not an email address.');
+        if (Bean::findOne('member', 'LOWER(email) = ?', [$email])) { self::request($email, $ip, $to); return; }
+        $since = date('Y-m-d H:i:s', time() - 3600);
+        if ((int) Bean::count('signinlink', 'ip_hash = ? AND created_at > ?', [self::hash($ip), $since]) >= self::PER_NETWORK) {
+            throw new \RuntimeException('Too many emails were asked for from here. Try again in an hour.');
+        }
+        $row = Bean::dispense('signinlink');
+        $row->emailHash = self::hash($email); $row->ipHash = self::hash($ip); $row->memberRef = 0; $row->tokenHash = '';
+        $row->landing = self::safePath($to); $row->createdAt = date('Y-m-d H:i:s');
+        $row->expiresAt = date('Y-m-d H:i:s', time() + self::TTL); $row->usedAt = ''; $row->joinEmail = '';
+        if ((int) Bean::count('signinlink', "email_hash = ? AND token_hash <> '' AND created_at > ?", [self::hash($email), $since]) >= self::PER_ADDRESS) {
+            Bean::store($row); return;   // counted, nothing sent
+        }
+        $token = bin2hex(random_bytes(32));
+        $row->tokenHash = self::hash($token); $row->joinEmail = $email;
+        Bean::store($row);
+        $link = rtrim((string) \Flight::get('app.baseurl'), '/') . '/signin/link/' . $token;
+        $site = (string) \Flight::siteName();
+        $html = '<p>Hello,</p>'
+              . '<p><a href="' . htmlspecialchars($link) . '" style="display:inline-block;padding:10px 18px;background:#2f66df;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Create my ' . htmlspecialchars($site) . ' account</a></p>'
+              . '<p>One click confirms this is your email and makes your free account: no password needed. The link works once, for 15 minutes. If you did not ask for it, ignore this email: nothing is created without it.</p>';
+        if (!Mailer::create()->to($email)->subject("Create your {$site} account")->send($html, "Create your {$site} account: {$link}\n\nThe link works once, for 15 minutes. If you did not ask for it, ignore this email.")) {
+            \Flight::get('log')->error('SignInLink: the create-your-account email could not be sent');
+            throw new \RuntimeException('We could not send the email just now. Try again in a few minutes.');
+        }
+        \Flight::get('log')->info('SignInLink: a create-your-account link was sent');
+    }
+
     /** The link's row while it can still be used, or null. Changes nothing (a mail scanner may be the one opening it). */
     public static function peek(string $token): ?object {
         if (!preg_match('/^[0-9a-f]{64}$/', $token)) return null;
         $row = Bean::findOne('signinlink', "token_hash = ? AND used_at = '' AND expires_at > ?", [self::hash($token), date('Y-m-d H:i:s')]);
-        return $row && (int) $row->memberRef > 0 ? $row : null;
+        return $row && ((int) $row->memberRef > 0 || (string) ($row->joinEmail ?? '') !== '') ? $row : null;
     }
 
     /** Use the link: once. @return array{member: object, to: string}|null null when it is used, expired or unknown */
     public static function consume(string $token): ?array {
         if (!preg_match('/^[0-9a-f]{64}$/', $token)) return null;
         $now = date('Y-m-d H:i:s');
-        $n = Bean::exec("UPDATE signinlink SET used_at = ? WHERE token_hash = ? AND used_at = '' AND expires_at > ? AND member_ref > 0", [$now, self::hash($token), $now]);
+        $n = Bean::exec("UPDATE signinlink SET used_at = ? WHERE token_hash = ? AND used_at = '' AND expires_at > ? AND (member_ref > 0 OR join_email <> '')", [$now, self::hash($token), $now]);
         if ($n !== 1) return null;
         $row = Bean::findOne('signinlink', 'token_hash = ?', [self::hash($token)]);
+        if ((int) $row->memberRef === 0) {
+            // A create-your-account link: the click proved the inbox. The account is made now (or, if one appeared since, used).
+            $email = (string) $row->joinEmail;
+            $existing = Bean::findOne('member', 'LOWER(email) = ?', [$email]);
+            $member = $existing ?: self::createAccount($email);
+            $row->memberRef = (int) $member->id; $row->joinEmail = '';   // nothing of the address stays on the row once used
+            Bean::store($row);
+            return (string) $member->status === 'active' ? ['member' => $member, 'to' => (string) $row->landing, 'joined' => !$existing] : null;
+        }
         $member = Bean::load('member', (int) $row->memberRef);
         if (!$member->id || (string) $member->status !== 'active') return null;
         return ['member' => $member, 'to' => (string) $row->landing];

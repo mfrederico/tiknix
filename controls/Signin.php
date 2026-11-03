@@ -33,10 +33,21 @@ class Signin extends Control {
         $this->render('signin/sent', ['title' => 'Check your email', 'email' => $email, 'to' => $to]);
     }
 
+    /** POST /signin/join — email me a link that makes my account (a plan to build); an existing account gets a sign-in link. */
+    public function join($params = []): void {
+        if (!$this->validateCSRF()) return;
+        $email = trim((string) $this->getParam('email', ''));
+        $to = SignInLink::safePath((string) $this->getParam('to', ''));
+        $back = SignInLink::safePath((string) $this->getParam('back', '')) ?: '/signin';
+        try { SignInLink::requestJoin($email, (string) (Flight::request()->ip ?? ''), $to); }
+        catch (\InvalidArgumentException | \RuntimeException $e) { $this->flash('error', $e->getMessage()); Flight::redirect($back); return; }
+        $this->render('signin/sent', ['title' => 'Check your email', 'email' => $email, 'to' => $to, 'join' => true]);
+    }
+
     public function link($params = []): void {
         $token = (string) ($this->opId() ?? '');
         $row = SignInLink::peek($token);
-        $this->render('signin/link', ['title' => 'Sign in', 'token' => $row ? $token : '', 'valid' => $row !== null]);
+        $this->render('signin/link', ['title' => 'Sign in', 'token' => $row ? $token : '', 'valid' => $row !== null, 'join' => $row !== null && (int) $row->memberRef === 0]);
     }
 
     public function go($params = []): void {
@@ -46,7 +57,8 @@ class Signin extends Control {
             $this->flash('error', 'That sign-in link was already used or has run out. Send yourself a new one.');
             Flight::redirect('/signin'); return;
         }
-        $this->logger->info('Signed in with an emailed link', ['id' => (int) $r['member']->id]);
+        $this->logger->info(!empty($r['joined']) ? 'Account made from an emailed link' : 'Signed in with an emailed link', ['id' => (int) $r['member']->id]);
+        if (!empty($r['joined'])) $this->flash('success', 'Your account is ready. Next: connect your AI, then we build.');
         Flight::redirect(SignInLink::startSession($r['member'], $r['to']));
     }
 }

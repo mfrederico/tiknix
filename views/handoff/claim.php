@@ -34,13 +34,20 @@ $h = $handoff;
       <p class="text-body-secondary small mb-3"><?= htmlspecialchars($project['project_url'] ?? '') ?></p>
       <?php /* Follows PlanHandoff::state(): the container setting up, PLAN.md going in, the project's AI
                agent connected (a step of its own: nothing is planned without it), then Phase 1. */ ?>
+      <?php /* Motion, so a person can see it is working: a bar that fills as steps finish, the step in progress spinning, and
+               how long it has been against how long it usually takes, with the last check's age (the page asks every 5 s). */ ?>
+      <div class="progress mb-2" role="progressbar" aria-label="Setting up your project" style="height:.6rem">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" id="handoff-bar" style="width:8%"></div>
+      </div>
+      <p class="small text-body-secondary mb-3" id="handoff-clock" aria-live="polite">Starting&hellip;</p>
       <ol class="list-unstyled mb-3" id="handoff-steps">
         <li data-step="setting-up"><span class="hs-ic"></span> Setting up your project &mdash; about two minutes</li>
         <li data-step="plan-committed"><span class="hs-ic"></span> <code>PLAN.md</code> committed to your project</li>
         <li data-step="agent"><span class="hs-ic"></span> Connect your AI agent
           <div id="handoff-agent" class="hs-detail d-none">
-            <p class="mb-2 small">Your project builds with its own AI agent. Sign one in &mdash; about a minute &mdash; and Phase 1 starts as soon as it&rsquo;s connected. Nothing is planned or built until then.</p>
-            <a class="btn btn-sm btn-primary" href="/projects/open?to=<?= rawurlencode('/agents') ?>" target="_blank" rel="noopener">Sign in with Claude</a>
+            <p class="mb-2 small">Tiknix is a harness utility: your project builds with the AI you bring. Connect it &mdash; about a minute &mdash; and Phase 1 starts as soon as it&rsquo;s connected. Nothing is planned or built until then.</p>
+            <a class="btn btn-sm btn-primary" href="/yourai" target="_blank" rel="noopener">Connect your AI</a>
+            <a class="btn btn-sm btn-link" href="/projects/open?to=<?= rawurlencode('/agents') ?>" target="_blank" rel="noopener">or sign in with Claude</a>
             <span class="small text-body-secondary ms-2" id="handoff-agent-wait">Waiting for the sign-in&hellip;</span>
           </div>
         </li>
@@ -55,7 +62,11 @@ $h = $handoff;
         #handoff-steps li.now { color: var(--bs-body-color); font-weight: 600; }
         .hs-ic { display: inline-block; width: 1.2rem; }
         #handoff-steps li.done .hs-ic::before { content: "✓"; color: var(--bs-success); }
-        #handoff-steps li.now .hs-ic::before { content: "…"; }
+        #handoff-steps li.now .hs-ic::before { content: ""; display: inline-block; width: .8rem; height: .8rem; border: 2px solid var(--bs-primary); border-right-color: transparent; border-radius: 50%; animation: hs-spin .8s linear infinite; vertical-align: -1px; }
+        #handoff-steps li.now { animation: hs-pulse 1.8s ease-in-out infinite; }
+        @keyframes hs-spin { to { transform: rotate(360deg); } }
+        @keyframes hs-pulse { 50% { opacity: .65; } }
+        @media (prefers-reduced-motion: reduce) { #handoff-steps li.now, #handoff-steps li.now .hs-ic::before { animation: none; } #handoff-steps li.now .hs-ic::before { border-right-color: var(--bs-primary); } }
         .hs-detail { font-weight: normal; margin: .5rem 0 .25rem 1.2rem; padding: .75rem 1rem; border-radius: .5rem; background: var(--bs-info-bg-subtle); }
       </style>
       <script>
@@ -63,9 +74,21 @@ $h = $handoff;
         var token = <?= json_encode((string) $h->token) ?>, csrf = <?= json_encode(csrf_token()) ?>;
         // Where each progress value stands in the four steps (index of the step in progress).
         var at = {'setting-up': 0, 'plan-committed': 1, 'waiting-agent': 2, 'planning': 3};
-        var timer = null, asking = false, last = '';
+        var timer = null, asking = false, last = '', started = Date.now(), checked = Date.now(), ticker = null;
+        var bar = document.getElementById('handoff-bar'), clock = document.getElementById('handoff-clock');
+        function mmss(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+        function tick() {
+          var ago = Math.round((Date.now() - checked) / 1000);
+          var usual = last === 'setting-up' ? ' · usually about two minutes' : last === 'waiting-agent' ? ' · waiting for your AI' : '';
+          clock.textContent = mmss(Date.now() - started) + ' so far' + usual + ' · checked ' + (ago < 2 ? 'just now' : ago + ' s ago');
+        }
         function show(st) {
           var p = st.progress || 'setting-up', n = at[p] === undefined ? 0 : at[p];
+          checked = Date.now();
+          // the bar: each finished step a quarter; while setting up it also creeps with time, so a two-minute wait still moves
+          var pct = p === 'planning' ? 100 : Math.max(8, n * 25 + (p === 'setting-up' ? Math.min(20, (Date.now() - started) / 6000) : 6));
+          bar.style.width = pct + '%';
+          if (p === 'planning' || p === 'failed') { bar.classList.remove('progress-bar-animated'); if (p === 'failed') bar.classList.add('bg-danger'); clearInterval(ticker); clock.textContent = p === 'planning' ? 'Done: Phase 1 is being planned.' : 'Stopped.'; }
           document.querySelectorAll('#handoff-steps > li').forEach(function (li, i) {
             li.className = (i < n || (p === 'planning' && i <= n)) ? 'done' : (i === n && p !== 'failed' ? 'now' : '');
           });
@@ -94,6 +117,7 @@ $h = $handoff;
         }
         show(<?= json_encode($project) ?>);
         poll(); timer = setInterval(poll, 5000);
+        if (last !== 'planning' && last !== 'failed') { tick(); ticker = setInterval(tick, 1000); }
       })();
       </script>
     <?php endif; ?>

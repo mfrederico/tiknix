@@ -122,8 +122,9 @@ class ProvisionService {
         try {
             // The owner's own AI goes in once the container is up (MemberAi): they connect it once, every new project builds with it.
             $then = (array) ($p['then'] ?? []);
-            try { if (MemberAi::chosen($memberId) !== null) array_unshift($then, '--your-ai=' . $slug); }   // first: a hand-off may start a build
-            catch (\RuntimeException $e) { Flight::get('log')->error('new project: the owner\'s AI choice is broken, so it is not connected', ['slug' => $slug, 'err' => $e->getMessage()]); }
+            // Always, and first (a hand-off may start a build): it looks at the owner's AI when the container is UP, not now, so an
+            // AI connected during the two-minute setup (the build page invites it) still reaches the project. None by then: it says so.
+            array_unshift($then, '--your-ai=' . $slug);
             $this->setUpContainer($inst, $then);
         } catch (\RuntimeException $e) {
             Flight::get('log')->error('project container setup could not start', ['slug' => $slug, 'err' => $e->getMessage()]);

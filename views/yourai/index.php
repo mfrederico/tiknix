@@ -36,15 +36,13 @@ $opts = array_map(fn($p) => $p['label'], $providers);
     'fields' => [
         ['name' => 'preset', 'label' => 'Who is your AI with?', 'type' => 'select', 'options' => $opts, 'required' => true,
          'help' => 'The company you have an AI account with. Pick it first; the key comes from them.'],
-        ['name' => 'api_key', 'label' => 'Your API key', 'type' => 'password', 'required' => true, 'autocomplete' => 'off',
-         'help' => 'Copy it from your account with them, and paste it here.'],
+        ['name' => 'api_key', 'label' => 'Your API key', 'type' => 'password', 'required' => true, 'autocomplete' => 'off'],   // its help (with the key link) is below, moved under the field
         ['name' => 'endpoint', 'label' => 'Your model server\'s address', 'type' => 'url', 'more' => true, 'placeholder' => 'https://models.example.com',
          'help' => 'Only for your own model server: a public address serving the Anthropic Messages API.'],
         ['name' => 'model', 'label' => 'Model', 'more' => true, 'help' => 'Leave empty for the provider\'s usual model. Your own server needs the name of the model it serves.'],
     ]]) ?>
 <?php $__keys = array_map(fn($p) => ['label' => $p['label'], 'keys' => $p['keys']], $providers); ?>
-<p class="small mb-2" id="yourai-getkey-line"<?= ($providers[$__first]['keys'] ?? '') === '' ? ' hidden' : '' ?>><i class="bi bi-key me-1"></i>Where to get your key: <a id="yourai-getkey" href="<?= htmlspecialchars((string) ($providers[$__first]['keys'] ?? '')) ?>" target="_blank" rel="noopener"><span><?= htmlspecialchars((string) ($providers[$__first]['label'] ?? '')) ?></span> API keys <i class="bi bi-box-arrow-up-right"></i></a></p>
-<p class="small text-body-secondary mt-n2 mb-4">Your key is stored encrypted and never shown again.</p>
+<div class="form-text mb-4" id="yourai-keyhelp"><span id="yourai-getkey-line"<?= ($providers[$__first]['keys'] ?? '') === '' ? ' hidden' : '' ?>>No key yet? <a id="yourai-getkey" href="<?= htmlspecialchars((string) ($providers[$__first]['keys'] ?? '')) ?>" target="_blank" rel="noopener">Get one from <span><?= htmlspecialchars((string) ($providers[$__first]['label'] ?? '')) ?></span></a>. </span>Your key is stored encrypted and never shown again.</div>
 <script type="application/json" id="yourai-providers"><?= json_encode($__keys, JSON_HEX_TAG | JSON_HEX_AMP) ?></script>
 
 <?php if ($mine): ?>
@@ -66,8 +64,8 @@ $opts = array_map(fn($p) => $p['label'], $providers);
   var key = document.querySelector('[name="api_key"]'), sel = document.querySelector('select[name="preset"]');
   var info = JSON.parse(document.getElementById('yourai-providers').textContent), line = document.getElementById('yourai-getkey-line'), link = document.getElementById('yourai-getkey');
   if (!key || !sel) return;
-  // The "where to get your key" link sits right under the provider: picking one shows where its key comes from.
-  sel.parentNode.appendChild(line); line.classList.add('mt-2');
+  // The key field's help: where to get that provider's key, and how it is kept. It sits right under the key box.
+  var help = document.getElementById('yourai-keyhelp'); key.parentNode.appendChild(help); help.classList.remove('mb-4');
   var note = document.createElement('div'); note.className = 'form-text text-success'; note.hidden = true; key.closest('.mb-3, .col-12, div').appendChild(note);
   function follow() {
     var p = info[sel.value] || {}; line.hidden = !p.keys; if (p.keys) { link.href = p.keys; link.querySelector('span').textContent = p.label; }

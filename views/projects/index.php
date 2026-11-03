@@ -152,13 +152,16 @@ $fmt = function (string $iso): string {
             <div class="form-text" id="proj-new-addr">Its address is made from the name.</div>
           </div>
           <div class="col-8 col-sm-4">
-            <label class="form-label small mb-0" for="proj-new-engine">Which AI builds it</label>
-            <select id="proj-new-engine" class="form-select form-select-sm" aria-describedby="proj-new-engine-help">
-              <?php foreach (\app\EngineRegistry::menu() as $engName => $engLabel): ?>
-                <option value="<?= htmlspecialchars($engName) ?>"><?= htmlspecialchars($engLabel) ?></option>
-              <?php endforeach; ?>
-            </select>
-            <div class="form-text" id="proj-new-engine-help">Yours: you connect it next, on the project's Agents page.</div>
+            <?php /* The AI it builds with is the member's own (Your AI, lib/MemberAi.php), handed to the project when its container is up.
+                     The engine is the harness that drives it; there is one. */
+            try { $__ai = \app\MemberAi::chosen((int) (\Flight::getMember()->id ?? 0)); $__aiBroken = ''; } catch (\RuntimeException $e) { $__ai = null; $__aiBroken = $e->getMessage(); } ?>
+            <span class="form-label small mb-0 d-block">Builds with</span>
+            <input type="hidden" id="proj-new-engine" value="claude">
+            <?php if ($__ai): ?>
+              <div class="small py-1"><i class="bi bi-cpu text-success me-1"></i><strong><?= htmlspecialchars((string) $__ai->name) ?></strong> (Your AI) · <a href="/yourai">change</a></div>
+            <?php else: ?>
+              <div class="small py-1 text-danger-emphasis"><i class="bi bi-cpu me-1"></i>No AI yet. <a href="/yourai">Connect yours once</a>, or after, on the project.</div>
+            <?php endif; ?>
           </div>
           <div class="col-4 col-sm-3">
             <?php /* an empty label: the button lines up with the two fields beside it */ ?>

@@ -10,6 +10,7 @@
  *   php scripts/tenant.php --up=SLUG --domain=HOST        create + provision + publish
  *   php scripts/tenant.php --ssh=SLUG [--root] -- CMD…    run a command in the tenant (as app)
  *   php scripts/tenant.php --clitool=SLUG -- ARGS…        the app's own clitool, in /srv/app (as app)
+ *   php scripts/tenant.php --your-ai=SLUG                 the owner's own AI (MemberAi) connected as the project's builder
  *   php scripts/tenant.php --task=SLUG --id=ID --member=N [--agent=NAME] < prompt   an agent task in the tenant, its commits by member N
  *   php scripts/tenant.php --merge=SLUG --id=ID --member=N   merge a task branch (then the seeds), the merge by member N
  *   php scripts/tenant.php --discard=SLUG --id=ID         throw a task away
@@ -53,7 +54,7 @@ use app\TenantHost;
 $argvRest = [];
 $dd = array_search('--', $argv, true);
 if ($dd !== false) { $argvRest = array_slice($argv, $dd + 1); $argv = array_slice($argv, 0, $dd); $_SERVER['argv'] = $argv; }
-$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'fixspace:', 'space:', 'resolve:', 'browser:', 'browser-stop:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending']);
+$o = getopt('', ['build-template', 'new-app:', 'name:', 'member:', 'create:', 'provision:', 'publish:', 'up:', 'ssh:', 'clitool:', 'task:', 'merge:', 'discard:', 'id:', 'root', 'status:', 'destroy:', 'yes', 'domain:', 'plan:', 'member:', 'out:', 'agent:', 'domain-add:', 'domain-remove:', 'domains:', 'renew-certs', 'share:', 'unshare:', 'terminal:', 'fixspace:', 'space:', 'resolve:', 'browser:', 'browser-stop:', 'system:', 'audit:', 'browser-mcp:', 'connector:', 'bind:', 'handoff-finish:', 'handoff-pending', 'your-ai:']);
 
 function done(array $r, string $what): void {
     if (!empty($r['steps'])) foreach ($r['steps'] as $s) echo "  {$s}\n";
@@ -73,6 +74,15 @@ function domain(array $o): string {
     return $d;
 }
 
+if (isset($o['your-ai'])) {
+    // The project owner's own AI (MemberAi), connected to the app as its builder. Run after a new project's container is up.
+    $inst = inst((string) $o['your-ai']);
+    $conn = \app\MemberAi::chosen((int) $inst->memberId);
+    if ($conn === null) { echo "# your-ai: the owner has not connected an AI yet; the project's dashboard says so\n"; exit(0); }
+    $r = \app\MemberAi::share($inst, $conn);
+    done(['ok' => $r['ok'], 'error' => $r['message'], 'output' => $r['ok'] ? $r['message'] : ''], 'your AI on ' . $inst->slug);
+    exit(0);
+}
 if (isset($o['build-template'])) { done(TenantHost::buildTemplate(), 'tenant template'); exit(0); }
 if (isset($o['new-app'])) {
     $name = trim((string) ($o['name'] ?? ''));

@@ -13,6 +13,19 @@
         <a href="<?= htmlspecialchars($__purl) ?>" target="_blank" rel="noopener" class="ui-pb-name link-body-emphasis text-decoration-none"
            title="Open the working instance — <?= htmlspecialchars($__purl) ?>"><?= htmlspecialchars($__pname) ?><i class="bi bi-box-arrow-up-right ms-1 small opacity-75"></i></a>
         <?php if (!empty($__proj->isDefault)): ?><span class="badge text-bg-warning flex-none" style="font-size:.62rem">default · core</span><?php endif; ?>
+        <?php /* Which AI builds it (the app's own report: hourly, and at once when a provider changes). Nothing when not reported yet. */
+        $__rep = json_decode((string) ($__proj->reportJson ?? ''), true) ?: [];
+        if (array_key_exists('agent_ready', $__rep)):
+            $__def = (string) ($__rep['default_agent'] ?? '');
+            $__aiName = (string) (($__rep['agent_names'][$__def] ?? '') ?: (\Model_Agent::PRESETS[$__def]['label'] ?? $__def));
+            if ($__def === 'anthropic' || $__def === 'claude') $__aiName = 'Anthropic';
+            $__yours = (int) ((json_decode((string) ($__proj->yourAiJson ?? ''), true) ?: [])['connection'] ?? 0) > 0; ?>
+          <?php if (!empty($__rep['agent_ready'])): ?>
+            <span class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle flex-none" title="The AI this project builds with"><i class="bi bi-cpu me-1"></i>AI: <?= htmlspecialchars(mb_strimwidth($__aiName, 0, 28, '…')) ?><?= $__yours ? ' (yours)' : '' ?> ✓</span>
+          <?php else: ?>
+            <a href="/yourai" class="badge text-bg-danger text-decoration-none flex-none" title="<?= htmlspecialchars((string) ($__rep['agent_problem'] ?? '')) ?>"><i class="bi bi-cpu me-1"></i>No AI connected — Connect</a>
+          <?php endif; ?>
+        <?php endif; ?>
         <nav class="ui-pb-actions" aria-label="Project actions">
           <?php /* Feature-gated like every sidecar: offering Publish without the flag lands on a plugin they cannot open. */ ?>
           <?php if (\app\Feature::isEnabled('publisher', $__pmid, $__level)): ?>

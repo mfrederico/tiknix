@@ -117,7 +117,11 @@ class ProvisionService {
         $inst->isDefault = $isDefault ? 1 : 0;
         Bean::store($inst);
         try {
-            $this->setUpContainer($inst, (array) ($p['then'] ?? []));
+            // The owner's own AI goes in once the container is up (MemberAi): they connect it once, every new project builds with it.
+            $then = (array) ($p['then'] ?? []);
+            try { if (MemberAi::chosen($memberId) !== null) array_unshift($then, '--your-ai=' . $slug); }   // first: a hand-off may start a build
+            catch (\RuntimeException $e) { Flight::get('log')->error('new project: the owner\'s AI choice is broken, so it is not connected', ['slug' => $slug, 'err' => $e->getMessage()]); }
+            $this->setUpContainer($inst, $then);
         } catch (\RuntimeException $e) {
             Flight::get('log')->error('project container setup could not start', ['slug' => $slug, 'err' => $e->getMessage()]);
             return ['ok' => true, 'id' => (int) $inst->id, 'slug' => $slug, 'warning' => 'The project exists, but setting up its container could not start: ' . $e->getMessage()];
@@ -152,7 +156,11 @@ class ProvisionService {
             foreach ($then as $a) {
                 if (!preg_match('/^--[a-z][a-z-]*(=[A-Za-z0-9._-]+)?$/D', (string) $a)) throw new \RuntimeException("not a tenant.php argument: {$a}");
             }
-            $cmd .= ' && echo "[then] $(date) ' . implode(' ', $then) . '" && env -u TIKNIX_WORKBENCH_DB php scripts/tenant.php ' . implode(' ', array_map('escapeshellarg', $then));
+            // One tenant.php per step (it acts on the first option it reads), each whatever the one before did: a failed step is
+            // in the log, and the next (a plan hand-off) still runs.
+            $steps = [];
+            foreach ($then as $a) $steps[] = 'echo "[then] $(date) ' . $a . '"; env -u TIKNIX_WORKBENCH_DB php scripts/tenant.php ' . escapeshellarg($a);
+            $cmd .= ' && { ' . implode('; ', $steps) . '; }';
         }
         $script = 'echo $$ > ' . escapeshellarg($pid) . '; (' . $cmd . ') >> ' . escapeshellarg($log) . ' 2>&1';
         exec('setsid nohup bash -lc ' . escapeshellarg($script) . ' > /dev/null 2>&1 &', $o, $c);

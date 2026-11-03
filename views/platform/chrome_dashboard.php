@@ -18,8 +18,10 @@ $__projects = $__me && (int) $__me->id > 0 ? \app\MemberProjects::accessible((in
                 <?php if (!$__projects): ?>
                     <p class="ui-eyebrow mb-2">Your first project, in three steps</p>
                     <ol class="small mb-3 ps-3">
+                        <?php try { $__ai = \app\MemberAi::chosen((int) $__me->id); } catch (\RuntimeException $e) { $__ai = null; } ?>
+                        <li class="mb-1"><strong>Connect your AI<?= $__ai ? ' ✓' : '' ?>.</strong> Tiknix is a harness utility: it runs the AI you bring.
+                            <?= $__ai ? 'Yours is ' . htmlspecialchars((string) $__ai->name) . '; every project you make builds with it.' : '<a href="/yourai">Paste your API key once</a>; every project you make builds with it.' ?></li>
                         <li class="mb-1"><strong>Create a project.</strong> Name your app; its own server is ready in a few minutes.</li>
-                        <li class="mb-1"><strong>Connect your AI.</strong> Tiknix is a harness utility: it runs the AI you bring. On the project's Agents page, sign in with your Claude account or paste an API key.</li>
                         <li class="mb-1"><strong>Ask for what you want.</strong> Open Ask in the Builder and describe it — "a booking page for my classes". The agent plans it, asks what it needs, and builds.</li>
                     </ol>
                     <a href="/projects?new=1" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Create your first project</a>

@@ -33,6 +33,7 @@ if ($__loggedIn) {
     // question all the others assume you have already answered. Teams share projects.
     $__lead = [];
     foreach ([['url' => '/projects', 'label' => 'Projects', 'icon' => 'grid-3x3-gap'],
+              ['url' => '/yourai',   'label' => 'Your AI',  'icon' => 'cpu'],   // the AI every project builds with (MemberAi)
               ['url' => '/teams',    'label' => 'Teams',    'icon' => 'people']] as $__add) {
         if (!isset($__have[$__add['url']])) $__lead[] = $__add;
     }

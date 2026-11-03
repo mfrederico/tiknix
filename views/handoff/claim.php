@@ -54,7 +54,8 @@ $h = $handoff;
         <li data-step="planning"><span class="hs-ic"></span> Phase 1 being planned</li>
       </ol>
       <div id="handoff-failed" class="alert alert-danger d-none"></div>
-      <a class="btn btn-primary d-none" id="handoff-open" href="/sidecar/app/workbench?to=<?= rawurlencode('/workbench') ?>">Open the Builder</a>
+      <?php /* The Builder's front door, not its board: it opens on Ask (Workbench::DEFAULT_VIEW), or the view this person chose. */ ?>
+      <a class="btn btn-primary d-none" id="handoff-open" href="/sidecar/app/workbench">Open the Builder</a>
       <a class="btn btn-outline-secondary" href="/projects">All projects</a>
       <style>
         #handoff-steps li { padding: .35rem 0; color: var(--bs-secondary-color); }

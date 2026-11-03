@@ -11,7 +11,7 @@
         *{ margin:0; padding:0; box-sizing:border-box; }
         :root{
             --bg2:#060d20; --bg1:#0b1530; --panel:#0e1a38;
-            --text:#eaedf5; --soft:#9ba4bd; --dim:#6b7593;
+            --text:#eaedf5; --soft:#9ba4bd; --dim:#8792b0; --cta:#2f66df;   /* --dim and --cta at 4.5:1 or more: #6b7593 and the #3b76f0 buttons read about 4.1 */
             --accent:#3b76f0; --accent2:#6b97f6; --good:#3ddc97;
             --line:rgba(255,255,255,0.08); --line2:rgba(255,255,255,0.14);
             --serif:'Playfair Display', Georgia, serif;
@@ -33,7 +33,7 @@
         .btn{ display:inline-flex; align-items:center; gap:9px; padding:14px 24px; border-radius:11px;
               font-weight:600; font-size:16px; transition:transform .1s ease, box-shadow .15s ease; }
         .btn:active{ transform:translateY(1px); }
-        .btn-primary{ background:var(--accent); color:#fff; box-shadow:0 8px 26px rgba(59,118,240,0.4); }
+        .btn-primary{ background:var(--cta); color:#fff; box-shadow:0 8px 26px rgba(59,118,240,0.4); }
         .btn-primary:hover{ color:#fff; }
         .btn-ghost{ border:1px solid var(--line2); color:var(--text); }
         .btn-ghost:hover{ color:var(--text); border-color:var(--soft); }
@@ -49,7 +49,7 @@
         .nav{ display:flex; align-items:center; justify-content:space-between; padding:22px 0; }
         .nav-links{ display:flex; align-items:center; gap:30px; font-size:15px; }
         .nav-links a{ color:var(--soft); } .nav-links a:hover{ color:var(--text); }
-        .nav-cta{ padding:9px 18px; border-radius:9px; background:var(--accent); color:#fff !important; font-weight:600;
+        .nav-cta{ padding:9px 18px; border-radius:9px; background:var(--cta); color:#fff !important; font-weight:600;
                   box-shadow:0 4px 18px rgba(59,118,240,0.36); }
 
         /* hero */

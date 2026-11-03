@@ -47,7 +47,7 @@ $has = fn(string $flag) => $__signedIn
           happened instead — that is usually enough to sort it out in one reply.
         </p>
       </div>
-      <div class="d-flex gap-2 flex-shrink-0">
+      <div class="d-flex flex-wrap gap-2">
         <a href="/contact" class="btn btn-primary btn-lg">
           <i class="bi bi-envelope me-1"></i> Message support
         </a>

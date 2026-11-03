@@ -254,7 +254,45 @@ class PlanHandoff {
             $r = self::startPhaseOne($h);
             $out[substr((string) $h->token, 0, 8)] = (string) ($r['progress'] ?? '') . (empty($r['ok']) ? ' — ' . ($r['error'] ?? '') : '');
         }
+        // …and once Phase 1 is planned, it is built: "Build it" on the Get-started wizard is the go-ahead (the owner's decision,
+        // 2026-11-03), so the plan does not wait as a draft for a second press in the Builder.
+        foreach (Bean::find('planhandoff', "status = 'claimed' AND progress = 'planning' AND decompose = 1") as $h) {
+            try { $what = self::buildWhenPlanned($h); }
+            catch (\Throwable $e) { $what = 'failed — ' . $e->getMessage(); self::fail($h, 'Phase 1 was planned but could not be started: ' . $e->getMessage()); }
+            if ($what !== '') $out[substr((string) $h->token, 0, 8)] = $what;
+        }
         return $out;
+    }
+
+    /**
+     * Phase 1's plan is in the project's Builder: approve it and start it, as the Builder's Build does (BuildQueue::start: now,
+     * or queued behind another plan changing the same files). One the owner already approved or started is left as it is.
+     * @return string what happened, '' while the plan is not there yet
+     */
+    public static function buildWhenPlanned(\RedBeanPHP\OODBBean $h): string {
+        $inst = Bean::load('instance', (int) $h->instanceRef);
+        if (!$inst->id) return '';
+        $dir = \Model_Instance::dirOf($inst);
+        if (!is_file($dir . '/data/workbench.db')) return '';
+        $level = (int) (Bean::load('member', (int) $h->memberRef)->level ?? LEVELS['MEMBER']);
+        $r = BuilderMail::inBoard($dir, function () use ($inst, $dir, $level) {
+            $plan = Bean::findOne('workbenchtask', 'parent_task_id IS NULL AND plan_goal LIKE ? ORDER BY id DESC', ['Build Phase 1 of PLAN.md%']);
+            if (!$plan) return null;
+            if (in_array((string) $plan->planStatus, ['approved', 'building', 'done', 'complete'], true) || PlanOrchestrator::running((int) $plan->id, (string) $inst->slug)) {
+                return ['id' => (int) $plan->id, 'state' => 'already ' . $plan->planStatus];
+            }
+            if ((string) $plan->planStatus !== 'draft') return ['id' => (int) $plan->id, 'state' => 'left ' . $plan->planStatus];
+            $plan->planStatus = 'approved'; $plan->updatedAt = date('Y-m-d H:i:s');
+            Bean::store($plan);
+            $s = BuildQueue::start($plan, (string) $inst->slug, $dir, $level);
+            if ($s['state'] === 'failed') throw new \RuntimeException("plan #{$plan->id} could not be started");
+            return ['id' => (int) $plan->id, 'state' => (string) $s['state']];
+        });
+        if ($r === null) return '';
+        $h->progress = 'building'; $h->progressNote = "plan #{$r['id']} {$r['state']}";
+        Bean::store($h);
+        Flight::get('log')?->info('handoff: Phase 1 planned and started', ['token' => substr((string) $h->token, 0, 8) . '…', 'plan' => $r['id'], 'state' => $r['state']]);
+        return "building (plan #{$r['id']} {$r['state']})";
     }
 
     private static function fail(\RedBeanPHP\OODBBean $h, string $why): array {

@@ -52,6 +52,7 @@ $h = $handoff;
           </div>
         </li>
         <li data-step="planning"><span class="hs-ic"></span> Phase 1 being planned</li>
+        <li data-step="building"><span class="hs-ic"></span> Phase 1 being built &mdash; follow it in the Builder</li>
       </ol>
       <div id="handoff-failed" class="alert alert-danger d-none"></div>
       <?php /* The Builder's front door, not its board: it opens on Ask (Workbench::DEFAULT_VIEW), or the view this person chose. */ ?>
@@ -74,7 +75,7 @@ $h = $handoff;
       (function () {
         var token = <?= json_encode((string) $h->token) ?>, csrf = <?= json_encode(csrf_token()) ?>;
         // Where each progress value stands in the four steps (index of the step in progress).
-        var at = {'setting-up': 0, 'plan-committed': 1, 'waiting-agent': 2, 'planning': 3};
+        var at = {'setting-up': 0, 'plan-committed': 1, 'waiting-agent': 2, 'planning': 3, 'building': 4};
         var timer = null, asking = false, last = '', started = Date.now(), checked = Date.now(), ticker = null;
         var bar = document.getElementById('handoff-bar'), clock = document.getElementById('handoff-clock');
         function mmss(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
@@ -87,19 +88,19 @@ $h = $handoff;
           var p = st.progress || 'setting-up', n = at[p] === undefined ? 0 : at[p];
           checked = Date.now();
           // the bar: each finished step a quarter; while setting up it also creeps with time, so a two-minute wait still moves
-          var pct = p === 'planning' ? 100 : Math.max(8, n * 25 + (p === 'setting-up' ? Math.min(20, (Date.now() - started) / 6000) : 6));
+          var pct = p === 'building' ? 100 : Math.max(8, n * 20 + (p === 'setting-up' ? Math.min(16, (Date.now() - started) / 7500) : 5));
           bar.style.width = pct + '%';
-          if (p === 'planning' || p === 'failed') { bar.classList.remove('progress-bar-animated'); if (p === 'failed') bar.classList.add('bg-danger'); clearInterval(ticker); clock.textContent = p === 'planning' ? 'Done: Phase 1 is being planned.' : 'Stopped.'; }
+          if (p === 'building' || p === 'failed') { bar.classList.remove('progress-bar-animated'); if (p === 'failed') bar.classList.add('bg-danger'); clearInterval(ticker); clock.textContent = p === 'building' ? 'Phase 1 is building. Follow it in the Builder.' : 'Stopped.'; }
           document.querySelectorAll('#handoff-steps > li').forEach(function (li, i) {
-            li.className = (i < n || (p === 'planning' && i <= n)) ? 'done' : (i === n && p !== 'failed' ? 'now' : '');
+            li.className = (i < n || (p === 'building' && i <= n)) ? 'done' : (i === n && p !== 'failed' ? 'now' : '');
           });
           document.getElementById('handoff-agent').classList.toggle('d-none', p !== 'waiting-agent');
           // The Builder is the next place to be only once Phase 1 is under way.
-          document.getElementById('handoff-open').classList.toggle('d-none', p !== 'planning');
+          document.getElementById('handoff-open').classList.toggle('d-none', p !== 'planning' && p !== 'building');
           var f = document.getElementById('handoff-failed');
           f.classList.toggle('d-none', p !== 'failed');
           if (p === 'failed') f.textContent = 'Something went wrong: ' + (st.note || 'see the project log') + '.';
-          if (p === 'planning' || p === 'failed') { clearInterval(timer); timer = null; }
+          if (p === 'building' || p === 'failed') { clearInterval(timer); timer = null; }
           last = p;
         }
         function poll() {
@@ -118,7 +119,7 @@ $h = $handoff;
         }
         show(<?= json_encode($project) ?>);
         poll(); timer = setInterval(poll, 5000);
-        if (last !== 'planning' && last !== 'failed') { tick(); ticker = setInterval(tick, 1000); }
+        if (last !== 'building' && last !== 'failed') { tick(); ticker = setInterval(tick, 1000); }
       })();
       </script>
     <?php endif; ?>

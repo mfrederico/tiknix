@@ -258,7 +258,8 @@ class BuilderMail {
     }
 
     /** Work in a project's board database, then go back to core's. */
-    private static function inBoard(string $dir, callable $fn) {
+    /** Run $fn with a project's Builder data (data/workbench.db) as the database; core's again afterwards. Also PlanHandoff's. */
+    public static function inBoard(string $dir, callable $fn) {
         $key = 'board-' . md5($dir);
         if (!Bean::hasDatabase($key)) Bean::addDatabase($key, 'sqlite:' . rtrim($dir, '/') . '/data/workbench.db');
         Bean::selectDatabase($key);

@@ -45,4 +45,10 @@ class AppWatchTest extends TestCase {
         $this->assertSame('missing', AppWatch::decide(['quiet' => self::QUIET, 'state' => 'ok', 'ct' => 'missing']));
         $this->assertSame('wait', AppWatch::decide(['quiet' => self::QUIET, 'state' => 'missing', 'ct' => 'missing']));
     }
+
+    public function testANewProjectThatHasNotReportedYetIsNewNotQuiet(): void {
+        $this->assertSame('wait', AppWatch::decide(['quiet' => null, 'age' => 120, 'state' => 'ok', 'ct' => 'running']), 'two minutes old: no "gone quiet" email');
+        $this->assertSame('silent', AppWatch::decide(['quiet' => null, 'age' => AppWatch::QUIET + 60, 'state' => 'ok', 'ct' => 'running']), 'never reported, and old enough: it is quiet');
+        $this->assertSame('restart', AppWatch::decide(['quiet' => null, 'age' => 120, 'state' => 'ok', 'ct' => 'stopped', 'restarts' => 0]), 'a new project whose container stopped is still started again');
+    }
 }

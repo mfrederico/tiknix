@@ -104,8 +104,13 @@ class MemberAi {
             \Flight::get('log')->error('MemberAi: could not use a member\'s AI on a project', ['slug' => $inst->slug, 'connection' => (int) $conn->id, 'why' => mb_substr($why, 0, 400)]);
             return ['ok' => false, 'message' => "{$inst->slug} refused it: " . mb_substr($why, 0, 300)];
         }
-        $inst->yourAiJson = json_encode(['connection' => (int) $conn->id, 'preset' => $preset, 'at' => date('c')]);
-        Bean::store($inst);
+        // Only this field, on a FRESH copy: the import above made the app report, and core stored that on the instance while this
+        // held an older copy. Storing that copy put "last reported" back to empty, and the watcher emailed "gone quiet" two
+        // minutes into a new project's life.
+        $fresh = Bean::load('instance', (int) $inst->id);
+        $fresh->yourAiJson = json_encode(['connection' => (int) $conn->id, 'preset' => $preset, 'at' => date('c')]);
+        Bean::store($fresh);
+        $inst->yourAiJson = $fresh->yourAiJson;
         \Flight::get('log')->info('MemberAi: a member\'s AI is now a project\'s builder', ['slug' => $inst->slug, 'connection' => (int) $conn->id, 'preset' => $preset]);
         return ['ok' => true, 'message' => ($inst->displayName ?: $inst->slug) . ' builds with ' . $conn->name . '.'];
     }

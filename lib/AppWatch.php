@@ -48,6 +48,8 @@ class AppWatch {
             if ((int) ($f['restarts'] ?? 0) >= self::MAX_RESTARTS) return $state === 'wont_stay_up' ? 'wait' : 'wont_stay_up';
             return 'restart';
         }
+        // a project made minutes ago that has not reported yet is new, not quiet: it gets a report's time like a restart does
+        if ($quiet === null && ($f['age'] ?? null) !== null && $f['age'] < self::QUIET) return 'wait';
         // running (or starting) and still quiet: just after a restart, give it a report's time first
         if ($state === 'restarted' && ($f['sinceRestart'] ?? null) !== null && $f['sinceRestart'] < self::QUIET) return 'wait';
         return $state === 'silent' ? 'wait' : 'silent';
@@ -74,7 +76,8 @@ class AppWatch {
         $quiet = $lastTs ? time() - $lastTs : null;
         $restarts = array_values(array_filter((array) (json_decode((string) $w->restarts, true) ?: []), fn($t) => (int) $t > time() - self::RESTART_WINDOW));
 
-        $f = ['quiet' => $quiet, 'state' => (string) $w->state, 'restarts' => count($restarts), 'ct' => '', 'stoppedBy' => '',
+        $created = strtotime((string) ($inst->createdAt ?? ''));
+        $f = ['quiet' => $quiet, 'age' => $created ? time() - $created : null, 'state' => (string) $w->state, 'restarts' => count($restarts), 'ct' => '', 'stoppedBy' => '',
               'sinceRestart' => $restarts ? time() - (int) max($restarts) : null];
         if ($quiet === null || $quiet > self::QUIET) {
             $f['ct'] = $pve->ctExists($node, (int) $inst->ctVmid) ? (string) ($pve->ctStatus($node, (int) $inst->ctVmid)['status'] ?? '') : 'missing';

@@ -67,6 +67,9 @@ class ProvisionService {
      * Returns '' if a free slug can't be allocated (astronomically unlikely).
      */
     private function mintSlug(string $base): string {
+        // The whole slug is at most 40 (TenantApp): the name part gives way to the 7-character "-<hash>", never the other
+        // way round. A 38-character name ("builds-marketing-software-for-agencies") was refused as "not a slug".
+        $base = rtrim(substr($base, 0, 40 - 7), '-');
         for ($i = 0; $i < 8; $i++) {
             $hash = substr(bin2hex(random_bytes(4)), 0, 6);   // 6 hex chars: [0-9a-f], DNS/path safe
             $slug = $base . '-' . $hash;

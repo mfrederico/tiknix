@@ -21,7 +21,8 @@ class TenantApp {
     const TEMPLATE = '/var/www/html/default/tiknix-app';
 
     public static function create(string $slug, string $name, int $memberId): array {
-        if (!preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $slug) || strlen($slug) > 40) return ['ok' => false, 'error' => "'{$slug}' is not a slug (lowercase letters, digits, hyphens)"];
+        if (strlen($slug) > 40) return ['ok' => false, 'error' => "'{$slug}' is " . strlen($slug) . ' characters; a project address is at most 40'];
+        if (!preg_match('/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/', $slug)) return ['ok' => false, 'error' => "'{$slug}' is not a slug (lowercase letters, digits, hyphens)"];
         if (Bean::findOne('instance', 'slug = ?', [$slug])) return ['ok' => false, 'error' => "instance '{$slug}' already exists"];
         if (InstanceRepo::hasOrigin($slug)) return ['ok' => false, 'error' => 'an origin already exists at ' . InstanceRepo::originPath($slug)];
         if (!is_dir(self::TEMPLATE . '/.git')) return ['ok' => false, 'error' => 'no template repository at ' . self::TEMPLATE];

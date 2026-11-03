@@ -11,9 +11,10 @@ $opts = array_map(fn($p) => $p['label'], $providers);
 <?= \app\Ui::notice(['tone' => 'danger', 'title' => 'Your AI choice is broken.', 'text' => $problem . ' Connect it again below.']) ?>
 <?php elseif ($chosen): ?>
 <?= \app\Ui::notice(['tone' => 'success', 'title' => 'Your AI: ' . $chosen->name,
-    'text' => 'New projects build with it.' . ($chosen->lastTestAt ? ' It last answered a test on ' . date('j M Y, H:i', strtotime((string) $chosen->lastTestAt)) . '.' : '')]) ?>
+    'text' => 'New projects build with it.' . ($chosen->lastTestAt ? ' It last answered a test on ' . date('j M Y, H:i', strtotime((string) $chosen->lastTestAt)) . '.' : ''),
+    'action' => $projects ? null : ['label' => 'Create your first project', 'url' => '/projects?new=1']]) ?>
 <?php else: ?>
-<?= \app\Ui::notice(['tone' => 'info', 'title' => 'No AI connected yet.', 'text' => 'Paste an API key below. We test it on the spot, and from then on your projects build with it.']) ?>
+<?= \app\Ui::notice(['tone' => 'info', 'title' => 'No AI connected yet.', 'text' => 'Paste an API key below. We test it on the spot, and from then on your projects build with it. Using a Claude subscription instead of a key? Sign in with it on a project\'s AI agents page.']) ?>
 <?php endif; ?>
 
 <?php if ($chosen && $projects): ?>
@@ -30,8 +31,8 @@ $opts = array_map(fn($p) => $p['label'], $providers);
     'fields' => [
         ['name' => 'api_key', 'label' => 'Your API key', 'type' => 'password', 'required' => true, 'autocomplete' => 'off',
          'help' => 'A key that starts with sk-ant- (Anthropic) or sk-or- (OpenRouter) is recognised by itself.'],
-        ['name' => 'preset', 'label' => 'Who it is from', 'type' => 'select', 'options' => $opts,
-         'help' => 'Leave it on the dash for a key we recognise.'],
+        ['name' => 'preset', 'label' => 'Provider', 'type' => 'select', 'options' => $opts,
+         'help' => 'Filled in for you when the key says who it is from; pick it for the others.'],
         ['name' => 'endpoint', 'label' => 'Your model server\'s address', 'type' => 'url', 'more' => true, 'placeholder' => 'https://models.example.com',
          'help' => 'Only for your own model server: a public address serving the Anthropic Messages API.'],
         ['name' => 'model', 'label' => 'Model', 'more' => true, 'help' => 'Leave empty for the provider\'s usual model. Your own server needs the name of the model it serves.'],

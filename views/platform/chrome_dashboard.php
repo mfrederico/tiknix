@@ -24,7 +24,12 @@ $__projects = $__me && (int) $__me->id > 0 ? \app\MemberProjects::accessible((in
                         <li class="mb-1"><strong>Create a project.</strong> Name your app; its own server is ready in a few minutes.</li>
                         <li class="mb-1"><strong>Ask for what you want.</strong> Open Ask in the Builder and describe it — "a booking page for my classes". The agent plans it, asks what it needs, and builds.</li>
                     </ol>
+                    <?php /* the button is the next step: the AI first, then the project */ ?>
+                    <?php if (!$__ai): ?>
+                    <a href="/yourai" class="btn btn-primary"><i class="bi bi-cpu"></i> Connect your AI</a>
+                    <?php else: ?>
                     <a href="/projects?new=1" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Create your first project</a>
+                    <?php endif; ?>
                     <a href="https://start.tiknix.com/start" class="ms-2 small">Or answer a few questions first, and we draft the plan</a>
                 <?php else: ?>
                     <ul class="list-unstyled mb-3 small">

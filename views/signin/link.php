@@ -7,10 +7,10 @@
  */
 ?>
 <?php if ($valid): ?>
-<?= \app\Ui::page(['title' => $join ? 'Creating your account' : 'Signing you in', 'lead' => $join ? 'Your email is confirmed. One moment while we make your free account.' : 'One moment.']) ?>
+<?= \app\Ui::page(['title' => $join ? 'Thanks for signing up!' : 'Welcome back', 'lead' => $join ? 'Your email is confirmed. Next we make your free account and take you to your project.' : 'Your email is confirmed.']) ?>
 <form method="post" action="/signin/go" class="mt-2" id="signin-go"><?= csrf_field() ?><input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
-    <p class="small text-body-secondary mb-2" id="signin-wait" hidden><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span><?= $join ? 'Creating your account…' : 'Signing you in…' ?></p>
-    <button type="submit" class="btn btn-primary btn-lg" id="signin-btn"><i class="bi bi-<?= $join ? 'person-check' : 'box-arrow-in-right' ?> me-1"></i><?= $join ? 'Create my account and continue' : 'Sign in' ?></button></form>
+    <p class="small text-body-secondary mb-2" id="signin-wait" hidden><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span><?= $join ? 'Making your account…' : 'Signing you in…' ?></p>
+    <button type="submit" class="btn btn-primary btn-lg" id="signin-btn"><i class="bi bi-<?= $join ? 'person-check' : 'box-arrow-in-right' ?> me-1"></i><?= $join ? 'I&rsquo;m ready!' : 'Sign me in' ?></button></form>
 <script>
 (function () {
   // A person opened this in a browser: carry on for them. Once only, so going Back does not try a used link again.

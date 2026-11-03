@@ -47,7 +47,8 @@ class Signin extends Control {
     public function link($params = []): void {
         $token = (string) ($this->opId() ?? '');
         $row = SignInLink::peek($token);
-        $this->render('signin/link', ['title' => 'Sign in', 'token' => $row ? $token : '', 'valid' => $row !== null, 'join' => $row !== null && (int) $row->memberRef === 0]);
+        $join = $row !== null && (int) $row->memberRef === 0;
+        $this->render('signin/link', ['title' => $join ? 'Welcome' : 'Sign in', 'token' => $row ? $token : '', 'valid' => $row !== null, 'join' => $join]);
     }
 
     public function go($params = []): void {

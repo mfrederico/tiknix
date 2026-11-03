@@ -25,7 +25,8 @@ class Yourai extends Control {
                            'reported' => array_key_exists('agent_ready', $rep), 'yours' => $chosenId > 0 && (int) ($shared['connection'] ?? 0) === $chosenId];
         }
         $this->render('yourai/index', ['title' => 'Your AI', 'providers' => MemberAi::providers(), 'mine' => $mine, 'chosenId' => $chosenId,
-                                       'problem' => $problem, 'projects' => $projects, 'form' => $_SESSION['yourai_form'] ?? []]);
+                                       'problem' => $problem, 'projects' => $projects, 'form' => $_SESSION['yourai_form'] ?? [],
+                                       'next' => SignInLink::safePath((string) $this->getParam('next', ''))]);   // where to go once it is connected (a plan to build)
         unset($_SESSION['yourai_form']);
     }
 
@@ -42,9 +43,22 @@ class Yourai extends Control {
             $this->flash('error', $e->getMessage());
             Flight::redirect('/yourai'); return;
         }
-        $this->flash($r['ok'] ? 'success' : 'error', $r['ok'] ? 'It answered. This is Your AI now: new projects build with it. Use it on the projects you already have below.'
-                                                               : 'Saved, but it did not answer, so it is not Your AI yet: ' . $r['message']);
-        Flight::redirect('/yourai');
+        $next = SignInLink::safePath((string) $this->getParam('next', ''));
+        if (!$r['ok']) {
+            $this->flash('error', 'Saved, but it did not answer, so it is not Your AI yet: ' . $r['message']);
+            Flight::redirect('/yourai' . ($next !== '' ? '?next=' . urlencode($next) : '')); return;
+        }
+        // It answered: the member's projects that have no AI working get it now (a project made before it was connected).
+        $given = [];
+        try { $conn = MemberAi::chosen((int) $this->member->id); } catch (\RuntimeException $e) { $conn = null; }
+        if ($conn) foreach (MemberAi::projects((int) $this->member->id) as $p) {
+            $rep = json_decode((string) ($p->reportJson ?? ''), true) ?: [];
+            if (!array_key_exists('agent_ready', $rep) || !empty($rep['agent_ready'])) continue;
+            $s = MemberAi::share($p, $conn);
+            if ($s['ok']) $given[] = (string) ($p->displayName ?: $p->slug); else $this->flash('error', $s['message']);
+        }
+        $this->flash('success', 'It answered. This is Your AI now: new projects build with it.' . ($given ? ' ' . implode(', ', $given) . ' had no AI and ' . (count($given) === 1 ? 'uses' : 'use') . ' it now.' : ''));
+        Flight::redirect($next !== '' ? $next : '/yourai');
     }
 
     /** POST: make one of my saved AIs Your AI. */

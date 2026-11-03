@@ -64,6 +64,8 @@ class PlanHandoff {
         // The visitor's email from the interview, when it gave one: the claim page uses it to send them to sign in or to sign up.
         $email = strtolower(trim((string) ($in['email'] ?? '')));
         $h->email             = filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : '';
+        // The start site proved the visitor owns it (its email link was opened): then an account can be made without a password.
+        $h->emailVerified     = $h->email !== '' && !empty($in['email_verified']) ? 1 : 0;
         $h->sourceInstanceRef = $sourceInstanceId;
         $h->memberRef         = 0;
         $h->instanceRef       = 0;

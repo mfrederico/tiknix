@@ -26,8 +26,12 @@ $opts = array_map(fn($p) => $p['label'], $providers);
     'empty' => ['title' => 'No projects yet', 'text' => 'A project you make builds with Your AI from the start.', 'action' => ['label' => 'Create a project', 'url' => '/projects?new=1']]]) ?>
 <?php endif; ?>
 
+<?php if ($next !== ''): /* on the way to building a plan: say what comes after, and that it can wait */ ?>
+<?= \app\Ui::notice(['tone' => 'neutral', 'title' => 'Next: build your project.', 'text' => $chosen ? 'Your AI is connected.' : 'Connect your AI first and the build starts with it. You can also do this later.',
+    'action' => ['label' => $chosen ? 'Build my project' : 'Skip for now', 'url' => $next]]) ?>
+<?php endif; ?>
 <?= \app\Ui::form(['action' => '/yourai/save', 'submit' => 'Connect and test', 'title' => $chosen ? 'Connect a different AI' : 'Connect your AI',
-    'values' => $form + ['preset' => ''],
+    'values' => $form + ['preset' => ''], 'hidden' => ['next' => $next],
     'fields' => [
         ['name' => 'api_key', 'label' => 'Your API key', 'type' => 'password', 'required' => true, 'autocomplete' => 'off',
          'help' => 'A key that starts with sk-ant- (Anthropic) or sk-or- (OpenRouter) is recognised by itself.'],

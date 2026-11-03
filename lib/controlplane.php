@@ -130,7 +130,7 @@
 // The consent plugin must never ask about, or block, the platform's own tools: pages here embed its sidecars.
 \Flight::set('consent.needed', ['*.tiknix.com' => ['necessary', 'Tiknix tools', 'The builder and tools this platform runs.']]);
 \app\Chrome::add('navTop', 'platform/chrome_navtop');
-foreach (['prepare', 'bar', 'account', 'footer', 'dashboard', 'register'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
+foreach (['prepare', 'bar', 'account', 'footer', 'dashboard', 'register', 'login'] as $__slot) \app\Chrome::add($__slot, "platform/chrome_{$__slot}");
 unset($__slot);
 
 // Messages to members (concepts/messaging 2.x, the client of the messaging service — Tiknix is a

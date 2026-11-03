@@ -59,6 +59,7 @@ class Handoff extends Control {
             $known = $email !== '' && (bool) Bean::findOne('member', 'LOWER(email) = ?', [$email]);
             $back = '/handoff/claim/' . $token;
             $this->render('handoff/welcome', ['title' => 'Your project', 'name' => (string) $h->name, 'email' => $email, 'known' => $known,
+                'verified' => !empty($h->emailVerified), 'token' => $token, 'back' => $back,
                 'login' => '/auth/login?redirect=' . urlencode($back) . ($known ? '&email=' . urlencode($email) : ''),
                 'register' => '/auth/register' . ($email !== '' && !$known ? '?email=' . urlencode($email) : '')]);
             return;
@@ -75,6 +76,28 @@ class Handoff extends Control {
             'refusal'  => $refusal,
             'project'  => $project,
         ]);
+    }
+
+    /**
+     * POST /handoff/join — "Create my account and build": an account with no password for the hand-off's email, which the start
+     * site proved the visitor owns. Signed in at once, then straight to connecting their AI, then back to build. Only for an
+     * offered plan, a proven address and one with no account yet; anything else goes back to the plan's page.
+     */
+    public function join($params = []): void {
+        if (!$this->validateCSRF()) return;
+        $token = (string) $this->getParam('token', '');
+        $h = PlanHandoff::byToken($token);
+        $back = '/handoff/claim/' . $token;
+        if (!$h || (string) $h->status !== 'offered' || empty($h->emailVerified) || (string) ($h->email ?? '') === '' || Flight::isLoggedIn()) {
+            $this->flash('error', 'That plan cannot make an account by itself. Sign in or create your account to build it.');
+            Flight::redirect($h ? $back : '/'); return;
+        }
+        try { $member = SignInLink::createAccount((string) $h->email); }
+        catch (\InvalidArgumentException $e) { $this->flash('error', $e->getMessage()); Flight::redirect($back); return; }
+        $_SESSION['handoff_token'] = $token;
+        $next = SignInLink::startSession($member, '/yourai?next=' . urlencode($back));
+        $this->flash('success', 'Your account is ready. Next: connect your AI, then we build ' . $h->name . '.');
+        Flight::redirect($next);
     }
 
     public function create($params = []): void {

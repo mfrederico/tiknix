@@ -1,9 +1,19 @@
 <?php
-/** A signed-out visitor holding a plan's claim link: the one door that fits (an account here already, or a new one). @var string $name @var string $email @var bool $known @var string $login @var string $register */
+/**
+ * A signed-out visitor holding a plan's claim link: the one door that fits.
+ *   an account here already  → a sign-in link by email (or their password)
+ *   a new address the start site proved is theirs → one press makes the account (no password) and goes to connecting their AI
+ *   a new address not proven, or none → the sign-up form, with the address filled in
+ * @var string $name @var string $email @var bool $known @var bool $verified @var string $token @var string $back @var string $login @var string $register
+ */
 if ($known) {
-    echo \app\Ui::page(['title' => 'Welcome back', 'lead' => "Sign in as {$email} and we start building {$name}.",
-        'primary' => ['label' => 'Sign in to build', 'url' => $login, 'icon' => 'box-arrow-in-right'],
-        'more' => [['label' => 'Use a different account', 'url' => '/auth/register']]]);
+    echo \app\Ui::page(['title' => 'Welcome back', 'lead' => "We email {$email} a sign-in link, and you start building {$name}.",
+        'primary' => ['label' => 'Email me a sign-in link', 'post' => '/signin/send', 'fields' => ['email' => $email, 'to' => $back], 'icon' => 'envelope'],
+        'more' => [['label' => 'Sign in with my password', 'url' => $login]]]);
+} elseif ($email !== '' && $verified) {
+    echo \app\Ui::page(['title' => 'Your project is ready to build', 'lead' => "One press makes your free account for {$email}, and we start on {$name}. No password needed: you sign in with links we email you.",
+        'primary' => ['label' => 'Create my account and build', 'post' => '/handoff/join', 'fields' => ['token' => $token], 'icon' => 'rocket-takeoff'],
+        'more' => [['label' => 'I already have a Tiknix account', 'url' => $login]]]);
 } elseif ($email !== '') {
     echo \app\Ui::page(['title' => 'Your project is ready to build', 'lead' => "Create your free account with {$email} and we start building {$name}. Your first project is free.",
         'primary' => ['label' => 'Create my account', 'url' => $register, 'icon' => 'person-plus'],

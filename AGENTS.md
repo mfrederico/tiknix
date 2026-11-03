@@ -347,6 +347,30 @@ a planner's brief ends with it; from a terminal, call the `notebook` tool before
   and its reason, where something non-obvious lives, a mistake and its fix. Not what you built,
   not what the code plainly shows, nothing you are unsure of. Nothing to add is a fine answer.
 
+## The after-build check's accounts — give them what your pages need
+
+After every build, a checker signs in to the live app as three new accounts — ROOT (1), ADMIN (50), MEMBER (100),
+addresses `qa-<role>-<plan>-<token>@audit.example.com` — and deletes them when it is done. They have a site level and
+nothing else. When people in this app also have roles inside its own records (an organization's admin, a team's owner,
+a shop's staff), a fresh account is refused by exactly the pages the check is meant to test.
+
+So, in the SAME task that adds such a role, say once in `lib/app.php` how a test account gets it:
+
+```php
+\app\QaAccounts::prepare(
+    function (object $member, int $level): string {      // ADMIN and ROOT run something; MEMBER belongs to it
+        $org = \Model_Organization::createFor($member, 'QA ' . $member->id);   // the app's own way, rules and all
+        return 'owner of organization "' . $org->name . '"';                     // what the checker is told
+    },
+    function (object $member): void { /* remove what prepare made; the account is deleted next */ }
+);
+```
+
+- Use the app's own models and methods, so the test account is made the way a real one is. Never a fallback.
+- Only check accounts are handed to it (`QaAccounts::isTestAccount()`); a real member never is.
+- Try it: `php scripts/clitool.php --adduser=qa-admin-1-0000abcd@audit.example.com --password=… --level=50`, then
+  `--user=… --qa-prepare`, then `--user=… --delete-user --yes`.
+
 ## File Structure — the runtime and the app
 
 A tiknix app is a Composer project that requires the **runtime**, `tiknix/runtime`, installed at

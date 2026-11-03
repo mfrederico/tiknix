@@ -306,7 +306,8 @@ MD;
         foreach (['root' => 'ROOT (level 1)', 'admin' => 'ADMIN (level 50)', 'member' => 'MEMBER (level 100)'] as $k => $label) {
             if (empty($creds[$k])) continue;
             $c = $creds[$k];
-            $credLines[] = "- **{$label}** — email `{$c['email']}` · password `{$c['password']}`";
+            $credLines[] = "- **{$label}** — email `{$c['email']}` · password `{$c['password']}`"
+                . (($c['setup'] ?? '') !== '' ? " — in this app: {$c['setup']}" : '');
         }
         $credsMd = implode("\n", $credLines);
         $intentMd = $this->intentSection();

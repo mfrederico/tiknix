@@ -128,7 +128,14 @@ foreach ($specs as $role => $lvl) {
     runClitool($dir, ['--user=' . $email, '--delete-user', '--yes']);
     $r = runClitool($dir, ['--adduser=' . $email, '--password=' . $pw, '--level=' . $lvl, '--username=qa' . $role . $token]);
     if (!$r['ok']) { alog("could not create $role test user: " . substr($r['out'], -200)); continue; }
-    $creds[$role] = ['email' => $email, 'password' => $pw, 'level' => $lvl];
+    $creds[$role] = ['email' => $email, 'password' => $pw, 'level' => $lvl, 'setup' => ''];
+    // What the app's own pages need of this account (an organization it runs, a team it is on): the app says, in
+    // lib/app.php (\app\QaAccounts::prepare). A failed setup is logged and the check goes on — the pages it could
+    // not reach are then reported, not skipped.
+    $p = runClitool($dir, ['--user=' . $email, '--qa-prepare']);
+    $said = trim((string) preg_replace('/^# /m', '', trim($p['out'])));
+    if (!$p['ok']) alog("ERROR: the app could not set up the $role test account: " . substr($p['out'], -300));
+    elseif (preg_match('/set up for the check: (.+)$/m', $said, $mm)) { $creds[$role]['setup'] = trim($mm[1]); alog("$role test account: {$mm[1]}"); }
 }
 if (!$creds) { alog('no test users could be created — aborting'); exit(1); }
 alog('created ' . count($creds) . ' test users');

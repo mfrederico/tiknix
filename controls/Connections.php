@@ -911,7 +911,8 @@ class Connections extends Control {
         $env = $this->normalizeEnv($this->getParam('env', 'production'));
         $key = trim((string)$this->getParam('key', ''));
         try {
-            $payload = $connector->validateApiKey($key, $this->declaredFields($connector));
+            // The environment rides along: PayPal's Sandbox or Live follows it.
+            $payload = $connector->validateApiKey($key, $this->declaredFields($connector) + ['environment' => $env]);
             $this->upsertConnection($type, [
                 'member_id'   => (int)$this->member->id,
                 'instance_id' => (int)$inst->id,

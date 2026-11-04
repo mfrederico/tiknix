@@ -25,20 +25,20 @@ class PaypalTest extends TestCase {
 
     protected function tearDown(): void { if ($this->prev !== null && Bean::hasDatabase($this->prev)) Bean::selectDatabase($this->prev); }
 
-    public function testTheConnectorIsAKeyConnectorThatAsksForModeAndClientId(): void {
+    public function testTheConnectorIsAKeyConnectorWhoseSandboxOrLiveFollowsTheEnvironment(): void {
         $c = ConnectorRegistry::get('paypal');
         $this->assertNotNull($c, 'PayPal is in the registry');
         $m = $c->meta();
         $this->assertSame('api_key', $m['auth_type']);
         $this->assertSame('Payments', $m['category']);
-        $this->assertSame(['mode', 'client_id'], array_column($m['fields'], 'name'));
+        $this->assertSame(['client_id'], array_column($m['fields'], 'name'), 'no separate Sandbox/Live choice: the environment is it');
     }
 
     public function testMissingPiecesAreRefusedBeforePayPalIsAsked(): void {
         $c = ConnectorRegistry::get('paypal');
-        foreach ([[['mode' => 'nope', 'client_id' => 'x'], 'secret', 'Sandbox or Live'],
-                  [['mode' => 'sandbox', 'client_id' => ''], 'secret', 'Client ID is required'],
-                  [['mode' => 'live', 'client_id' => 'x'], '  ', 'Secret is required']] as [$opts, $key, $said]) {
+        foreach ([[['client_id' => 'x'], 'secret', 'live site\'s PayPal or a testing one'],
+                  [['environment' => 'development', 'client_id' => ''], 'secret', 'Client ID is required'],
+                  [['environment' => 'production', 'client_id' => 'x'], '  ', 'Secret is required']] as [$opts, $key, $said]) {
             try { $c->validateApiKey($key, $opts); $this->fail('accepted ' . json_encode($opts)); }
             catch (\Exception $e) { $this->assertStringContainsString($said, $e->getMessage()); }
         }

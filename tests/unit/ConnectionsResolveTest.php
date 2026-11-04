@@ -67,6 +67,26 @@ class ConnectionsResolveTest extends ConceptsTestCase {
         return ConnectionStore::put('stripe', 'production', ['external_eid' => $eid, 'external_name' => $name, 'access_token' => 'sk_' . $eid, 'auth_type' => 'api_key']);
     }
 
+    /** The connector page's "Used by": which connection each role uses now, read without binding; a person's switch. */
+    public function testWhatUsesAConnectorAndSwitchingIt(): void {
+        $test = ConnectionStore::put('stripe', 'development', ['external_eid' => 'acct_t', 'external_name' => 'Sandbox', 'access_token' => 'sk_test_x', 'auth_type' => 'api_key']);
+        $live = $this->stripe('acct_l', 'Live');
+        $uses = ConnectionBindings::usesOf('stripe', [$this->concept]);
+        $this->assertSame([[$this->concept, 'payments', null]], array_map(fn($u) => [$u['concept'], $u['role'], $u['bound']], $uses), 'two candidates, nothing chosen, nothing bound by looking');
+        $this->assertSame([], ConnectionBindings::bindings($this->concept));
+
+        ConnectionBindings::switchTo($this->concept, 'payments', $test, 'member:1');
+        $this->assertSame($test, ConnectionBindings::usesOf('stripe', [$this->concept])[0]['bound']);
+        $this->assertSame($test, (int) ConnectionBindings::for($this->concept, 'payments')->id);
+        ConnectionBindings::switchTo($this->concept, 'payments', $live, 'member:1');
+        $this->assertSame($live, (int) ConnectionBindings::for($this->concept, 'payments')->id, 'switched to live');
+        $this->assertCount(1, ConnectionBindings::bindings($this->concept), 'the same binding changed, not a second one');
+
+        $mailgun = ConnectionStore::put('mailgun', 'production', ['external_eid' => 'mg', 'external_name' => 'Mail', 'access_token' => 'key', 'auth_type' => 'api_key']);
+        $this->expectException(\InvalidArgumentException::class);
+        ConnectionBindings::switchTo($this->concept, 'payments', $mailgun, 'member:1');
+    }
+
     public function testNoneOneTwo(): void {
         try { ConnectionBindings::for($this->concept, 'payments'); $this->fail(); }
         catch (MissingConnectorException $e) { $this->assertStringContainsString('connect one under Connections → Stripe', $e->getMessage()); }
@@ -86,7 +106,7 @@ class ConnectionsResolveTest extends ConceptsTestCase {
         catch (UnboundRoleException $e) {
             $this->assertStringContainsString('2 candidates', $e->getMessage());
             $this->assertStringContainsString('Serenity main (stripe), Serenity Denver (stripe)', $e->getMessage());
-            $this->assertStringContainsString('Plugins →', $e->getMessage());
+            $this->assertStringContainsString('Connections page of Stripe (/connections?show=stripe', $e->getMessage());
         }
         ConnectionBindings::bind($this->concept, 'payments', $d, 'member:1');
         $this->assertSame($d, (int) ConnectionBindings::for($this->concept, 'payments')->id);

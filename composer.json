@@ -26,6 +26,7 @@
         "fastmcphp/fastmcphp": "^0.1",
         "flightphp/core": "^3.19.3",
         "gabordemooij/redbean": "^5.7",
+        "lbuchs/webauthn": "^2.2",
         "mailgun/mailgun-php": "^4.0",
         "monolog/monolog": "^3.5",
         "nesbot/carbon": "^3.1",

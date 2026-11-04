@@ -169,14 +169,12 @@ class TenantBrowser {
 
     /** The app's own addresses, as origins. @return string[] */
     public static function origins(object $inst): array {
-        $hosts = [(string) $inst->ctDomain];
-        foreach (['ctHosts', 'ctAliases'] as $col) {
-            $raw = trim((string) $inst->{$col});
-            if ($raw === '') continue;
-            $more = json_decode($raw, true);
-            if (!is_array($more)) throw new \RuntimeException("{$inst->slug}: instance.{$col} is not a JSON list, so its addresses are unknown");
-            foreach ($more as $k => $v) $hosts[] = is_string($k) ? $k : (is_array($v) ? (string) ($v['host'] ?? '') : (string) $v);
-        }
+        // ct_hosts is a JSON list (TenantDomains), ct_aliases a comma list (ProxmoxDeploy writes it so, TenantHost and
+        // TenantCarry read it so). This read ct_aliases as JSON and threw on every app with an alias: no build could start.
+        $raw = trim((string) $inst->ctHosts);
+        if ($raw !== '' && !is_array(json_decode($raw, true))) throw new \RuntimeException("{$inst->slug}: instance.ctHosts is not a JSON list, so its addresses are unknown");
+        $hosts = array_merge([(string) $inst->ctDomain], TenantDomains::of($inst),
+                             array_filter(array_map('trim', explode(',', (string) ($inst->ctAliases ?? '')))));
         $hosts = array_values(array_unique(array_filter($hosts, fn($h) => (bool) preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $h))));
         if (!$hosts) throw new \RuntimeException("{$inst->slug} has no address to browse");
         $origins = array_map(fn($h) => 'https://' . $h, $hosts);

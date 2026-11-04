@@ -231,6 +231,22 @@ class Model_Instance extends \RedBeanPHP\SimpleModel {
         ) > 0;
     }
 
+    /**
+     * Everyone who may use this instance (accessibleBy): its owner, and the members of the teams it is shared with.
+     * The project's team — who a change asked for on its site goes to.
+     *
+     * @return int[] member ids, the owner first
+     */
+    public function people(): array {
+        $ids = [(int) $this->bean->memberId];
+        if (in_array('instance_team', \app\Bean::inspect(), true)) {
+            $ids = array_merge($ids, array_map('intval', \app\Bean::getCol(
+                'SELECT DISTINCT tm.member_id FROM instance_team it JOIN teammember tm ON tm.team_id = it.team_id WHERE it.instance_id = ?',
+                [(int) $this->bean->id])));
+        }
+        return array_values(array_unique(array_filter($ids, fn($i) => $i > 0)));
+    }
+
     /** Is unattended auto-triage on for this instance? */
     public function autoTriageOn(): bool {
         return filter_var($this->bean->autoTriage ?? false, FILTER_VALIDATE_BOOLEAN);

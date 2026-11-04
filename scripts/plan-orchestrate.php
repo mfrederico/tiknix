@@ -140,6 +140,11 @@ for ($i = 0; $i < $maxTicks; $i++) {
 // later plan and task reads it: the project's own account of how it came to be.
 $ledger = function (string $status, int $memberId) use ($dir, $planId, $slug): void {
     if (!in_array($status, ['done', 'attention', 'stalled'], true)) return;
+    // A change asked for on the app's site that became this request: done when it built, and its asker told.
+    try {
+        $cr = \app\SiteChanges::built(dirname(__DIR__) . '/database/tiknix.db', $dir, $planId, $status);
+        if ($cr !== '') echo "[orchestrator] {$cr}\n";
+    } catch (\Throwable $e) { echo '[orchestrator] ERROR change requests of this request were not marked done: ' . $e->getMessage() . "\n"; }
     try {
         $line = \app\RequestNote::built($dir, $planId);
         $ct = $line !== '' ? \app\TenantBuilder::bySlug($slug) : null;

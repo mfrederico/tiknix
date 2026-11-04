@@ -123,6 +123,8 @@
 \app\Chrome::$copyright = 'ClickSimple LLC';
 \app\Chrome::$mark = true;
 \app\Member::$builderPrefs = true;
+// The platform's grants (its sidecars, invitations) are offered here; an app's own (Ask for changes) are not.
+\app\Feature::$platform = true;
 // An agent's investigation of a support ticket waits on the ticket for a person (lib/SupportDraft.php).
 \app\Contact::$extension = new \app\SupportDraft();
 // tiknix.com's own Measurement ID: core's /connections is the hub for projects, so the plugin's page links to this one.

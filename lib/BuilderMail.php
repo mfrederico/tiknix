@@ -160,13 +160,22 @@ class BuilderMail {
      * and read (scripts/ask-triage.php). Its answer is emailed back on $threadId (afterTriage()).
      */
     public static function ask($inst, int $memberId, string $text, int $threadId): int {
+        return self::queue($inst, $memberId, $text, 'auto', $threadId);
+    }
+
+    /**
+     * A message for the project's Ask from $memberId, recorded as one typed there would be and read, detached:
+     * $mode 'auto' lets the reading decide (answer or build), 'build' sends it to be planned (a person already decided
+     * — a change request's "Build it"). $threadId > 0: its answer is emailed back on that conversation.
+     */
+    public static function queue($inst, int $memberId, string $text, string $mode = 'auto', int $threadId = 0): int {
         $app = (string) ($inst->app ?: 'tiknix');
         $promptId = PromptLog::record(['member_id' => $memberId, 'source' => PromptLog::SOURCE_DECOMPOSE, 'title' => mb_substr(trim((string) strtok($text, "\n")), 0, 90),
             'body' => GoalBrief::compose($text, 'none', ''), 'instance_id' => (int) $inst->id, 'instance_tag' => $inst->slug . '.' . $app, 'auto_build' => true]);
-        if ($promptId <= 0) throw new \RuntimeException('the emailed message could not be recorded');
+        if ($promptId <= 0) throw new \RuntimeException('the message could not be recorded for the project\'s Ask');
         AskTriage::mark($promptId, 'thinking');   // makes its item in the project's Ask, which emailed() marks
-        AskStore::emailed(self::dirOf((string) $inst->slug, $app), $promptId, $threadId);
-        self::triage($promptId, 'auto');
+        if ($threadId > 0) AskStore::emailed(self::dirOf((string) $inst->slug, $app), $promptId, $threadId);
+        self::triage($promptId, $mode);
         return $promptId;
     }
 

@@ -37,6 +37,10 @@ if ($__loggedIn) {
               ['url' => '/teams',    'label' => 'Teams',    'icon' => 'people']] as $__add) {
         if (!isset($__have[$__add['url']])) $__lead[] = $__add;
     }
+    // Changes asked for on the sites of this member's projects (app\SiteChanges): shown once there are any.
+    if (!isset($__have['/changerequests']) && \app\SiteChanges::any($__mid, $__level)) {
+        $__lead[] = ['url' => '/changerequests', 'label' => 'Change requests', 'icon' => 'lightbulb', 'badge' => \app\SiteChanges::waiting($__mid)];
+    }
     // Members write to support from inside the platform (Helpdesk) instead of by email;
     // the answer comes back to their Communications.
     if (!$__isAdmin && !isset($__have['/helpdesk'])) {

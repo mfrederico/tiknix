@@ -10,6 +10,8 @@
  *   modelconnections / modelcall  a pipeline step runs on the project OWNER's model connection;
  *   / modelresult                 the key to that model stays here
  *   support                       the app's AI agent escalates to Tiknix support
+ *   change / changes /            someone on the app's site asks its builders for a change, and reads
+ *   changereply                   where it is (app\SiteChanges)
  *
  * It used to answer "what am I connected to?", list connectors, take a pasted key and
  * disconnect — from when an app's credentials lived on core. An app holds its own connections
@@ -340,6 +342,54 @@ class Brokerinfo extends Control {
         // only while THIS project is the one selected there, and a link cannot select it — with
         // another project selected, /workbench/view?id=N would open that project's task N.
         Flight::json(['ok' => true] + $r + ['url' => rtrim((string) Flight::get('app.baseurl'), '/') . '/sidecar/app/workbench  (project: ' . ($inst->displayName ?: $inst->slug) . ')']);
+    }
+
+    /**
+     * POST /brokerinfo/change — someone on the project's site asked its builders for a change (the runtime's
+     * app\ChangeAsk): it reaches the project's team (app\SiteChanges). Answers {ok, ref}.
+     */
+    public function change($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { Flight::jsonError('POST only.', 405); return; }
+        $inst = Bean::load('instance', $iid);
+        if (!$inst->id) { Flight::jsonError('That project is gone.', 404); return; }
+        try {
+            $id = SiteChanges::receive($inst, $this->jsonBody());
+        } catch (\InvalidArgumentException $e) {
+            Flight::jsonError($e->getMessage(), 400); return;
+        } catch (\RuntimeException $e) {
+            Flight::jsonError($e->getMessage(), 409); return;
+        }
+        Flight::json(['ok' => true, 'ref' => $id]);
+    }
+
+    /** GET /brokerinfo/changes?site=&refs=1,2[&detail=1] — where the site's requests are, for its asker's pages. */
+    public function changes($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        $inst = Bean::load('instance', $iid);
+        if (!$inst->id) { Flight::jsonError('That project is gone.', 404); return; }
+        $refs = explode(',', (string) $this->getParam('refs', ''));
+        Flight::json(['ok' => true, 'requests' => SiteChanges::forApp($inst, (string) $this->getParam('site', ''), $refs, (bool) $this->getParam('detail', 0))]);
+    }
+
+    /** POST /brokerinfo/changereply {site, ref, text} — the asker adds to their request from the site. */
+    public function changereply($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { Flight::jsonError('POST only.', 405); return; }
+        $inst = Bean::load('instance', $iid);
+        if (!$inst->id) { Flight::jsonError('That project is gone.', 404); return; }
+        $d = $this->jsonBody();
+        try {
+            SiteChanges::addFromApp($inst, (string) ($d['site'] ?? ''), (int) ($d['ref'] ?? 0), (string) ($d['text'] ?? ''));
+        } catch (\InvalidArgumentException $e) {
+            Flight::jsonError($e->getMessage(), 400); return;
+        } catch (\RuntimeException $e) {
+            Flight::jsonError($e->getMessage(), 404); return;
+        }
+        Flight::json(['ok' => true]);
     }
 
     /** GET /brokerinfo/modelresult?job= — a call this instance started. */

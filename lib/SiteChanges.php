@@ -304,7 +304,8 @@ final class SiteChanges {
         foreach ($rows as $m) {
             $text = trim((string) $m['body_plain']) !== '' ? (string) $m['body_plain'] : trim(html_entity_decode(strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>'], "\n", (string) $m['content']))));
             $mine = (int) $m['sender_member_id'] <= 0 && (string) $m['direction'] === 'in';
-            $out[] = ['who' => $mine ? 'You' : ((string) $m['from_name'] ?: 'The team'), 'mine' => $mine, 'at' => (string) $m['created_at'], 'text' => trim($text)];
+            // With its offset: the site shows it in its own time zone, which need not be this one's.
+            $out[] = ['who' => $mine ? 'You' : ((string) $m['from_name'] ?: 'The team'), 'mine' => $mine, 'at' => date('c', strtotime((string) $m['created_at'])), 'text' => trim($text)];
         }
         return $out;
     }

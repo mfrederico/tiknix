@@ -67,6 +67,7 @@
 
 // Leads — the lead list shows each address's sign-up invitation state and offers an invite.
 \app\Leads::$inviteStates = static fn(): array => \app\Invites::leadStates();
+\app\Leads::$invite = static fn(object $lead, object $by): array => \app\Invites::inviteLead($lead, $by);
 
 // Auth — after login, a Get-started plan waiting to be claimed; card-on-file sign-up.
 \app\Auth::$afterLogin = static fn(): ?string => \app\PlanHandoff::afterLoginTarget();

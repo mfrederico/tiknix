@@ -178,30 +178,39 @@ class Invites extends Control {
 
         $lead = Bean::load('lead', (int) $this->getParam('id', 0));
         if (!$lead->id) { Flight::jsonError('No such lead.', 404); return; }
+        $r = self::inviteLead($lead, $this->member);
+        if (!$r['ok']) { Flight::jsonError($r['message'], 409); return; }
+        Flight::jsonSuccess(['invite_id' => $r['invite_id'], 'url' => $r['url'], 'emailed' => $r['emailed']], $r['message']);
+    }
 
+    /**
+     * Invite one lead, as $by: the one way a lead becomes a member (see lead()). Used by POST /invites/lead and by
+     * the Leads list (Leads::$invite, set in lib/controlplane.php). Never throws for a refusal: ok=false says why.
+     *
+     * @return array{ok:bool,message:string,url:string,invite_id:int,emailed:bool}
+     */
+    public static function inviteLead(object $lead, object $by): array {
+        $out = ['ok' => false, 'message' => '', 'url' => '', 'invite_id' => 0, 'emailed' => false];
         $email = strtolower(trim((string) $lead->email));
-        if ($email === '') { Flight::jsonError('That lead has no email address to invite.', 409); return; }
+        if ($email === '') return ['message' => 'That lead has no email address to invite.'] + $out;
 
-        $r = Invite::create($email, (int) $this->member->id, (int) $this->member->level);
-        if (empty($r['ok'])) { Flight::jsonError((string) $r['error'], 409); return; }
+        $r = Invite::create($email, (int) $by->id, (int) $by->level);
+        if (empty($r['ok'])) return ['message' => (string) $r['error']] + $out;
 
         $inv  = $r['invite'];
-        $from = $this->member->displayName('Someone');
-
+        $log  = Flight::get('log');
         // The invite EXISTS and its link works even if the mail fails, so report that
         // honestly and hand back the URL rather than calling the whole thing a failure.
         $sent = false;
         try {
             if (Mailer::isConfigured()) {
                 $sent = Mailer::sendSiteInvite(
-                    $email, $from, Invite::url($inv),
+                    $email, $by->displayName('Someone'), Invite::url($inv),
                     date('j M Y', strtotime((string) $inv->expiresAt)), ''
                 );
             }
         } catch (\Throwable $e) {
-            $this->logger->error('Lead invite email failed', [
-                'lead' => (int) $lead->id, 'invite' => (int) $inv->id, 'error' => $e->getMessage(),
-            ]);
+            $log?->error('Lead invite email failed', ['lead' => (int) $lead->id, 'invite' => (int) $inv->id, 'error' => $e->getMessage()]);
         }
 
         $inv->emailSent = $sent ? 1 : 0;
@@ -209,21 +218,19 @@ class Invites extends Control {
         Bean::store($inv);
         \app\Leads::bustLeadCache();
 
-        $this->logger->info('Lead invited', [
+        $log?->info('Lead invited', [
             'lead' => (int) $lead->id, 'invite' => (int) $inv->id,
-            'to' => $email, 'by' => (int) $this->member->id, 'emailed' => $sent,
+            'to' => $email, 'by' => (int) $by->id, 'emailed' => $sent,
             'resend' => !empty($r['resend']),
         ]);
 
-        Flight::jsonSuccess(
-            ['invite_id' => (int) $inv->id, 'url' => Invite::url($inv), 'emailed' => $sent],
-            !empty($r['resend'])
+        return ['ok' => true, 'url' => Invite::url($inv), 'invite_id' => (int) $inv->id, 'emailed' => $sent,
+            'message' => !empty($r['resend'])
                 ? $email . ' already had an open invitation — it has been sent again, and no allowance was used.'
                 : ($sent
                     ? 'Invitation emailed to ' . $email . '. It expires on '
                       . date('j M Y', strtotime((string) $inv->expiresAt)) . '.'
-                    : 'Invitation created but could NOT be emailed. Send them this link: ' . Invite::url($inv))
-        );
+                    : 'Invitation created but could NOT be emailed. Send them this link: ' . Invite::url($inv))];
     }
 
     /**

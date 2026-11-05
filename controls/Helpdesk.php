@@ -16,13 +16,20 @@ class Helpdesk extends BaseControls\Control {
 
     public function index() {
         if (!$this->requireLogin()) return;
+        // The newest 20, or with the search box, every one of theirs whose subject or message has the words.
+        $q = trim((string) $this->getParam('q', ''));
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 100)) . '%';
+        $mine = $q === ''
+            ? Bean::find('contact', 'member_id = ? ORDER BY id DESC LIMIT 20', [(int) $this->member->id])
+            : Bean::find('contact', "member_id = ? AND (subject LIKE ? ESCAPE '\\' OR message LIKE ? ESCAPE '\\') ORDER BY id DESC LIMIT 100", [(int) $this->member->id, $like, $like]);
         $this->render('helpdesk/index', [
             'title'   => 'Support',
+            'q'       => $q,
             'project' => $this->projectParam((string) $this->getParam('project', '')) ?? ProjectContext::current((int) $this->member->id),
             'tickets' => array_map(fn($c) => [
                 'ticket' => $c,
                 'thread' => (int) (Bean::findOne('thread', 'related_type = ? AND related_id = ?', ['contact', (int) $c->id])->id ?? 0),
-            ], array_values(Bean::find('contact', 'member_id = ? ORDER BY id DESC LIMIT 20', [(int) $this->member->id]))),
+            ], array_values($mine)),
         ]);
     }
 

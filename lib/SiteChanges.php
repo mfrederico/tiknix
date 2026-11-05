@@ -146,9 +146,15 @@ final class SiteChanges {
     }
 
     /** The requests $memberId may see (their projects'; ROOT all), newest first. */
-    public static function forMember(int $memberId, int $level, string $status = ''): array {
+    public static function forMember(int $memberId, int $level, string $status = '', string $q = ''): array {
         $where = $status !== '' ? ' AND status = ?' : '';
         $bind = $status !== '' ? [$status] : [];
+        $q = trim($q);
+        if ($q !== '') {   // the search box: what was asked, who asked, the site
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 100)) . '%';
+            $where .= " AND (said LIKE ? ESCAPE '\\' OR from_name LIKE ? ESCAPE '\\' OR from_email LIKE ? ESCAPE '\\' OR site LIKE ? ESCAPE '\\')";
+            array_push($bind, $like, $like, $like, $like);
+        }
         if ($level <= LEVELS['ROOT']) return array_values(Bean::find('changerequest', '1 = 1' . $where . ' ORDER BY id DESC LIMIT 200', $bind));
         $ids = self::projectsOf($memberId);
         if (!$ids) return [];

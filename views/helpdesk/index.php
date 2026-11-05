@@ -4,10 +4,9 @@
  * The message joins the admin queue (/contact/admin) and opens a conversation the member
  * is part of, so the answer arrives in Communications and by email.
  *
- * Vars: $project (instance bean|null — the selected project), $tickets [['ticket' => contact, 'thread' => int]]
+ * Vars: $project (instance bean|null — the selected project), $tickets [['ticket' => contact, 'thread' => int]], $q (the search)
  */
 $h = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
-$statusBadge = ['new' => 'text-bg-warning', 'responded' => 'text-bg-success', 'closed' => 'text-bg-secondary'];
 ?>
 <div class="container-fluid" style="max-width:52rem">
   <h1 class="h4 mb-1"><i class="bi bi-life-preserver me-2"></i>Support</h1>
@@ -51,17 +50,16 @@ $statusBadge = ['new' => 'text-bg-warning', 'responded' => 'text-bg-success', 'c
     </div>
   </div>
 
-  <?php if ($tickets): ?>
-  <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2" style="letter-spacing:.06em">Your messages</h2>
-  <div class="list-group shadow-sm">
-    <?php foreach ($tickets as $t): $c = $t['ticket']; ?>
-      <a class="list-group-item list-group-item-action d-flex align-items-center gap-2"
-         href="<?= $t['thread'] ? '/communications/thread/' . $t['thread'] : '#' ?>">
-        <span class="flex-grow-1 text-truncate"><?= $h($c->subject) ?></span>
-        <span class="badge <?= $statusBadge[(string) $c->status] ?? 'text-bg-light' ?>"><?= $h($c->status === 'new' ? 'waiting' : $c->status) ?></span>
-        <span class="small text-muted text-nowrap"><?= $h(substr((string) $c->createdAt, 0, 10)) ?></span>
-      </a>
-    <?php endforeach; ?>
-  </div>
+  <?php if ($tickets || $q !== ''): ?>
+  <?= \app\Ui::table(['title' => 'Your messages', 'rows' => array_values($tickets), 'count' => 'message',
+      'columns' => [
+          ['label' => 'Message', 'value' => fn($t) => (string) $t['ticket']->subject, 'url' => fn($t) => $t['thread'] ? '/communications/thread/' . $t['thread'] : '/helpdesk'],
+          ['label' => 'Where it is', 'value' => fn($t) => (string) $t['ticket']->status, 'as' => 'badge',
+           'tones' => ['new' => 'warning', 'read' => 'info', 'responded' => 'success', 'closed' => 'neutral', 'spam' => 'neutral'],
+           'labels' => ['new' => 'Waiting', 'read' => 'Read', 'responded' => 'Answered', 'closed' => 'Closed', 'spam' => 'Closed']],
+          ['label' => 'Sent', 'value' => fn($t) => (string) $t['ticket']->createdAt, 'as' => 'date'],
+      ],
+      'search' => ['value' => $q, 'placeholder' => 'Search your messages', 'action' => '/helpdesk'],
+      'empty' => ['title' => 'None match', 'text' => 'None of your messages mentions “' . $q . '”.']]) ?>
   <?php endif; ?>
 </div>

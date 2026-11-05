@@ -17,5 +17,10 @@ foreach (['' => 'All', 'new' => 'New', 'building' => 'Being built', 'done' => 'D
          'tones' => ['new' => 'info', 'building' => 'warning', 'done' => 'success', 'declined' => 'neutral']],
         ['label' => 'Asked', 'value' => 'created_at', 'as' => 'date'],
     ],
-    'empty' => ['title' => $status !== '' ? 'None ' . strtolower($labels[$status]) : 'No change requests yet',
+    'search' => ['value' => $q, 'placeholder' => 'Search what was asked, who, or the site', 'keep' => ['status' => $status], 'action' => '/changerequests'],
+    'bulk' => ['post' => '/changerequests/bulk', 'value' => fn($r) => (int) $r->id, 'noun' => 'request',
+               'fields' => ['back' => '/changerequests?' . http_build_query(array_filter(['status' => $status, 'q' => $q]))],
+               'actions' => [['label' => 'Mark done', 'value' => 'done', 'icon' => 'check2',
+                              'confirm' => 'Mark the selected requests done? Each person who asked is emailed that theirs is live.']]],
+    'empty' => $q !== '' ? ['title' => 'None match', 'text' => 'No request mentions “' . $q . '”.'] : ['title' => $status !== '' ? 'None ' . strtolower($labels[$status]) : 'No change requests yet',
                 'text' => 'When someone on one of your projects\' sites asks for a change (Edit Member → "Ask for changes" lets them), it arrives here and by email.']]) ?>

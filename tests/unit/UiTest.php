@@ -78,8 +78,25 @@ class UiTest extends TestCase {
         $this->assertSame(2, substr_count($h, '" disabled'), 'nothing to act on until something is ticked');
         $this->assertStringContainsString('data-confirm="Delete the selected customers?"', $h);
         $this->assertSame(substr_count($h, '<th '), substr_count($h, '<td ') / 2, 'the tick has its own heading cell');
+        $this->assertStringContainsString('data-ui-select-toggle="' . $form . '"', $h, 'a Select button brings the ticks out');
+        $this->assertMatchesRegularExpression('/<form id="' . $form . '"[^>]* hidden/', $h, 'the bar waits for Select');
         $this->refused(fn() => Ui::table(['rows' => [['x' => 1]], 'columns' => [['label' => 'A', 'value' => 'x']], 'empty' => self::EMPTY,
             'bulk' => ['post' => '/b', 'value' => fn($r) => 1, 'actions' => [['label' => 'Delete', 'value' => 'delete', 'danger' => true]]]]), '/must ask first/');
+    }
+
+    public function testAListCanBeSearchedAndAnEmptySearchKeepsItsBox(): void {
+        $cols = [['label' => 'Name', 'value' => 'name']];
+        $h = Ui::table(['rows' => [['name' => 'Ann']], 'columns' => $cols, 'empty' => self::EMPTY,
+            'search' => ['value' => 'an"n', 'placeholder' => 'Search people', 'keep' => ['status' => 'new', 'category' => 'all', 'page' => ''], 'action' => '/c']]);
+        $this->assertStringContainsString('<form method="get" action="/c"', $h);
+        $this->assertStringContainsString('name="q" value="an&quot;n"', $h, 'what is searched for stays in the box, escaped');
+        $this->assertStringContainsString('name="status" value="new"', $h, 'the page\'s filters are kept');
+        $this->assertStringNotContainsString('name="category"', $h, '"all" and empty filters are not carried');
+        $this->assertStringContainsString('href="/c?status=new" aria-label="Clear the search"', $h);
+        $none = Ui::table(['rows' => [], 'columns' => $cols, 'empty' => ['title' => 'No matches'], 'search' => ['value' => 'zzz', 'action' => '/c']]);
+        $this->assertStringContainsString('value="zzz"', $none, 'a search that found nothing can be changed');
+        $this->assertStringContainsString('No matches', $none);
+        $this->refused(fn() => Ui::table(['rows' => [], 'columns' => $cols, 'empty' => self::EMPTY, 'search' => ['placeholder' => 'x']]), "/needs 'value'/");
     }
 
     public function testAListThatCannotBeScannedOrADeleteThatDoesNotAskIsRefused(): void {

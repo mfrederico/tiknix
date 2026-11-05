@@ -25,10 +25,29 @@ class Changerequests extends Control {
         if (!$this->requireLogin()) return;
         $status = (string) $this->getParam('status', '');
         if ($status !== '' && !in_array($status, SiteChanges::STATES, true)) $status = '';
-        $rows = SiteChanges::forMember((int) $this->member->id, (int) $this->member->level, $status);
+        $q = trim((string) $this->getParam('q', ''));
+        $rows = SiteChanges::forMember((int) $this->member->id, (int) $this->member->level, $status, $q);
         $names = [];
         foreach ($rows as $r) $names[(int) $r->instanceId] ??= (function ($id) { $i = Bean::load('instance', $id); return $i->id ? (string) ($i->displayName ?: $i->slug) : "#{$id}"; })((int) $r->instanceId);
-        $this->render('changerequests/index', ['title' => 'Change requests', 'rows' => $rows, 'status' => $status, 'projects' => $names]);
+        $this->render('changerequests/index', ['title' => 'Change requests', 'rows' => $rows, 'status' => $status, 'projects' => $names, 'q' => $q]);
+    }
+
+    /** POST ids[] + do=done: several marked done at once (the list's Select); each asker is told, as with one. */
+    public function bulk($params = []) {
+        if (!$this->requireLogin()) return;
+        if (!$this->requirePost()) return;   // the method, and the CSRF token
+        $back = (string) $this->getParam('back', '');
+        $back = str_starts_with($back, '/changerequests') ? $back : '/changerequests';
+        if ((string) $this->getParam('do', '') !== 'done') { $this->flash('error', 'The list can only mark requests done.'); Flight::redirect($back); return; }
+        $done = 0; $skipped = 0;
+        foreach (array_unique(array_filter(array_map('intval', (array) $this->getParam('ids', [])))) as $id) {
+            $cr = Bean::load('changerequest', $id);
+            if (!$cr->id || !SiteChanges::may($cr, (int) $this->member->id, (int) $this->member->level) || in_array((string) $cr->status, ['done', 'declined'], true)) { $skipped++; continue; }
+            try { SiteChanges::done($cr, (int) $this->member->id, ''); $done++; }
+            catch (\Throwable $e) { $skipped++; $this->logger->error('Change request: bulk done failed', ['id' => $id, 'error' => $e->getMessage()]); }
+        }
+        $this->flash($done ? 'success' : 'error', "Marked {$done} done; each asker was told." . ($skipped ? " {$skipped} skipped (already finished, or not one of your projects')." : ''));
+        Flight::redirect($back);
     }
 
     public function view($params = []) {

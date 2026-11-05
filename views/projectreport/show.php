@@ -1,7 +1,10 @@
-<?php /** @var object $inst  @var array $reports — Projectreport::show */ ?>
+<?php /** @var object $inst  @var array $groups — Projectreport::changes  @var int $total — Projectreport::show */
+$latest = $groups[0]['report'] ?? null; ?>
 <div class="container-fluid py-4">
   <h1 class="h3 mb-1"><?= htmlspecialchars($inst->displayName ?: $inst->slug) ?> — reports</h1>
-  <p class="text-body-secondary"><a href="/projectreport">All projects</a> · <?= count($reports) ?> report(s), newest first (90 days are kept).</p>
+  <p class="text-body-secondary"><a href="/projectreport">All projects</a>
+    · last checked <?= $latest ? htmlspecialchars((string) $latest->receivedAt) : 'never' ?>
+    · <?= count($groups) ?> change(s) in <?= (int) $total ?> report(s), newest first. Hourly reports that change nothing about the app are folded together; they are kept <?= \app\Projectreport::KEEP_SCHEDULED_DAYS ?> days, the rest <?= \app\Projectreport::KEEP_DAYS ?>.</p>
   <?php if (!empty($domains)): ?>
   <div class="card mb-3"><div class="card-header d-flex justify-content-between"><strong>Domains &amp; TLS</strong><a href="/deploy?id=<?= (int) $inst->id ?>">Edit domains</a></div>
     <table class="table table-sm mb-0"><thead><tr><th>Domain</th><th>Certificate</th><th class="text-end">Days left</th><th>Checked</th></tr></thead><tbody>
@@ -19,9 +22,10 @@
   <table class="table table-sm align-middle">
     <thead><tr><th>Received</th><th>Why</th><th>Runtime</th><th>Agent</th><th class="text-end">Disk MB</th><th class="text-end">DB MB</th><th class="text-end">Files</th><th class="text-end">Mem MB</th><th class="text-end">Peak</th><th class="text-end">CPU %</th><th class="text-end">Load</th><th class="text-end">Req/h</th><th class="text-end">Err/h</th><th></th></tr></thead>
     <tbody>
-    <?php foreach ($reports as $r): ?>
+    <?php foreach ($groups as $g): $r = $g['report']; ?>
       <tr>
-        <td><?= htmlspecialchars((string) $r->receivedAt) ?></td>
+        <td><?= htmlspecialchars((string) $r->receivedAt) ?>
+          <?php if ($g['count'] > 1): ?><div class="small text-body-secondary">checked <?= (int) $g['count'] ?> times since <?= htmlspecialchars($g['since']) ?>, no change</div><?php endif; ?></td>
         <td class="small text-body-secondary"><?= htmlspecialchars((string) $r->why) ?></td>
         <td><code><?= htmlspecialchars((string) $r->runtime) ?></code> <span class="small text-body-secondary"><?= htmlspecialchars((string) $r->appCommit) ?></span></td>
         <td><?= $r->agentReady ? '<span class="badge text-bg-success">ready</span> <span class="small">' . htmlspecialchars((string) $r->providers) . '</span>' : '<span class="badge text-bg-danger">none</span>' ?></td>

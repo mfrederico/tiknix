@@ -22,6 +22,10 @@ use app\BaseControls\Control;
 class Projectreport extends Control {
 
     public const KEEP_DAYS = 90;
+    /** The hourly reports: samples for the sparklines (two days) and a fortnight's trend. */
+    public const KEEP_SCHEDULED_DAYS = 14;
+    /** What a report says about the app itself (not its load): a change in any of these starts a new row on its page. */
+    public const STATE = ['runtime', 'app_commit', 'agent_ready', 'providers', 'default_agent', 'concepts', 'members'];
     /** A latest report older than this is stale: the Builder asks the app directly instead. */
     public const FRESH_SECONDS = 1500;
 
@@ -47,7 +51,10 @@ class Projectreport extends Control {
         $inst->lastReportedAt = $row->receivedAt;
         $inst->reportJson = json_encode(\Model_Projectreport::headline($rep), JSON_UNESCAPED_SLASHES);
         Bean::store($inst);
-        $pruned = Bean::exec('DELETE FROM projectreport WHERE instance_ref = ? AND received_at < ?', [$iid, date('Y-m-d H:i:s', time() - self::KEEP_DAYS * 86400)]);
+        // A report sent for a reason (an update, a provider changed) is history, kept KEEP_DAYS; the hourly
+        // 'scheduled' ones are samples for the sparklines and are kept KEEP_SCHEDULED_DAYS.
+        $pruned = Bean::exec('DELETE FROM projectreport WHERE instance_ref = ? AND received_at < ?', [$iid, date('Y-m-d H:i:s', time() - self::KEEP_DAYS * 86400)])
+                + Bean::exec("DELETE FROM projectreport WHERE instance_ref = ? AND why = 'scheduled' AND received_at < ?", [$iid, date('Y-m-d H:i:s', time() - self::KEEP_SCHEDULED_DAYS * 86400)]);
         $this->logger->info('Project report received', ['instance' => $inst->slug, 'why' => (string) ($rep['why'] ?? ''), 'agent_ready' => (bool) ($rep['readiness']['agent_ready'] ?? false),
             'disk_mb' => $row->diskMb, 'mem_mb' => $row->memMb, 'cpu_pct' => $row->cpuPct, 'pruned' => (int) $pruned]);
         Flight::jsonSuccess(['id' => (int) $row->id, 'received_at' => $row->receivedAt]);
@@ -72,7 +79,9 @@ class Projectreport extends Control {
             foreach (array_reverse(Bean::getAll('SELECT received_at, mem_mb, cpu_pct, requests_hour, errors_hour, disk_mb FROM projectreport WHERE instance_ref = ? ORDER BY id DESC LIMIT ?', [(int) $inst->id, self::SPARK_POINTS])) as $r) {
                 foreach ($series as $k => $_) $series[$k][] = $r[$k] === null ? null : (float) $r[$k];
             }
+            $owner = (int) $inst->memberId > 0 ? Bean::load('member', (int) $inst->memberId) : null;
             $rows[] = ['inst' => $inst, 'at' => (string) ($inst->lastReportedAt ?? ''), 'h' => $h, 'age' => $age, 'series' => $series,
+                       'owner' => $owner && $owner->id ? ['name' => $owner->displayName('member #' . $owner->id), 'email' => (string) $owner->email, 'id' => (int) $owner->id] : null,
                        'domains' => $inst->isDefault ? null : DomainCerts::summary($inst)];
             if ($inst->isDefault) continue;   // the control plane is shown, not counted among the projects
             $sum['projects']++;
@@ -93,9 +102,30 @@ class Projectreport extends Control {
         if (!$this->requireLevel(LEVELS['ADMIN'])) return;
         $inst = Bean::load('instance', (int) ($params['operation']->name ?? $this->getParam('id', 0)));   // /projectreport/show/<id>
         if (!$inst->id) { Flight::notFound(); return; }
-        $reports = Bean::find('projectreport', 'instance_ref = ? ORDER BY received_at DESC LIMIT 200', [(int) $inst->id]);
-        $this->render('projectreport/show', ['title' => 'Reports — ' . ($inst->displayName ?: $inst->slug), 'inst' => $inst, 'reports' => array_values($reports),
+        $reports = array_values(Bean::find('projectreport', 'instance_ref = ? ORDER BY received_at DESC, id DESC', [(int) $inst->id]));
+        $this->render('projectreport/show', ['title' => 'Reports — ' . ($inst->displayName ?: $inst->slug), 'inst' => $inst, 'groups' => self::changes($reports), 'total' => count($reports),
             'domains' => $inst->isDefault ? null : DomainCerts::summary($inst)]);
+    }
+
+    /**
+     * Reports (newest first) as what changed: hourly 'scheduled' reports that say the same about the app
+     * (STATE) as the one before them fold into it. A report sent for a reason of its own stands alone.
+     *
+     * @return array<int,array{report:object,count:int,since:string}> newest first; report = the newest of the run
+     */
+    public static function changes(array $reports): array {
+        $key = fn($r) => json_encode(array_map(fn($c) => (string) ($r->$c ?? ''), self::STATE));
+        $out = [];
+        foreach ($reports as $r) {
+            $i = count($out) - 1;
+            if ($i >= 0 && (string) $r->why === 'scheduled' && (string) $out[$i]['report']->why === 'scheduled' && $key($r) === $out[$i]['key']) {
+                $out[$i]['count']++;
+                $out[$i]['since'] = (string) $r->receivedAt;
+                continue;
+            }
+            $out[] = ['report' => $r, 'count' => 1, 'since' => (string) $r->receivedAt, 'key' => $key($r)];
+        }
+        return array_map(fn($g) => ['report' => $g['report'], 'count' => $g['count'], 'since' => $g['since']], $out);
     }
 
     /**

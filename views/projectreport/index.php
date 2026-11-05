@@ -51,6 +51,9 @@ $spark = function (array $pts, string $color = 'currentColor', int $w = 96, int 
             <a class="fw-semibold text-decoration-none" href="/projectreport/show/<?= (int) $inst->id ?>"><?= htmlspecialchars($inst->displayName ?: $inst->slug) ?></a>
             <?php if ($inst->isDefault): ?><span class="badge text-bg-dark ms-1">control plane</span><?php endif; ?>
             <div class="small text-body-secondary text-truncate"><?= htmlspecialchars((string) ($inst->ctDomain ?: $inst->slug)) ?></div>
+            <div class="small text-truncate" title="<?= htmlspecialchars($r['owner']['email'] ?? '') ?>"><i class="bi bi-person"></i>
+              <?php if ($r['owner']): ?><a class="text-decoration-none" href="/admin/editMember?id=<?= (int) $r['owner']['id'] ?>"><?= htmlspecialchars($r['owner']['name']) ?></a> <span class="text-body-secondary"><?= htmlspecialchars($r['owner']['email']) ?></span>
+              <?php else: ?><span class="text-warning">no owner</span><?php endif; ?></div>
           </div>
           <div class="text-end text-nowrap small" title="<?= htmlspecialchars($r['at']) ?>">
             <span class="<?= $stale ? 'text-warning fw-semibold' : 'text-success' ?>"><i class="bi bi-broadcast"></i> <?= $ago($r['age']) ?></span>

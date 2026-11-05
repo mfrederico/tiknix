@@ -61,6 +61,27 @@ class UiTest extends TestCase {
         $this->assertStringNotContainsString('<table', $empty);
     }
 
+    public function testAListsRowsCanBeTickedAndActedOnTogetherAndADeleteAsksFirst(): void {
+        $h = Ui::table(['rows' => [['id' => 7, 'name' => 'Ann'], ['id' => 8, 'name' => 'Bo']], 'columns' => [['label' => 'Name', 'value' => 'name']], 'empty' => self::EMPTY,
+            'bulk' => ['post' => '/c/bulk', 'value' => fn($r) => $r['id'], 'noun' => 'customer', 'fields' => ['back' => '/c?page=2'],
+                       'actions' => [['label' => 'Mark read', 'value' => 'read'],
+                                     ['label' => 'Delete', 'value' => 'delete', 'danger' => true, 'confirm' => 'Delete the selected customers?']]]]);
+        preg_match('/<form id="(uiBulk\d+)" method="post" action="\/c\/bulk"/', $h, $m);
+        $this->assertNotEmpty($m, 'one form holds the bulk actions');
+        $form = $m[1];
+        $this->assertSame(2, substr_count($h, 'name="ids[]"'), 'a tick per row');
+        $this->assertStringContainsString('value="7" form="' . $form . '"', $h, 'each tick belongs to the bulk form, outside the rows\' own forms');
+        $this->assertStringContainsString('aria-label="Select Ann"', $h);
+        $this->assertStringContainsString('data-ui-select-all="' . $form . '"', $h);
+        $this->assertStringContainsString('name="back" value="/c?page=2"', $h);
+        $this->assertSame(2, substr_count($h, 'name="do"'), 'one button per action, each sending its value');
+        $this->assertSame(2, substr_count($h, '" disabled'), 'nothing to act on until something is ticked');
+        $this->assertStringContainsString('data-confirm="Delete the selected customers?"', $h);
+        $this->assertSame(substr_count($h, '<th '), substr_count($h, '<td ') / 2, 'the tick has its own heading cell');
+        $this->refused(fn() => Ui::table(['rows' => [['x' => 1]], 'columns' => [['label' => 'A', 'value' => 'x']], 'empty' => self::EMPTY,
+            'bulk' => ['post' => '/b', 'value' => fn($r) => 1, 'actions' => [['label' => 'Delete', 'value' => 'delete', 'danger' => true]]]]), '/must ask first/');
+    }
+
     public function testAListThatCannotBeScannedOrADeleteThatDoesNotAskIsRefused(): void {
         $wide = array_map(fn($i) => ['label' => "C{$i}", 'value' => 'x'], range(1, Ui::MAX_COLUMNS + 1));
         $this->refused(fn() => Ui::table(['rows' => [['x' => 1]], 'columns' => $wide, 'empty' => self::EMPTY]), '/more than a person can scan/');

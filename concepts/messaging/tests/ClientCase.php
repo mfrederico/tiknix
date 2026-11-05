@@ -48,9 +48,10 @@ class FakeDigest {
 
 class FakeTrigger {
     public static array $qualify = [];
+    public static array $nothing = [];   // members it qualifies but has nothing to say to
     public static function label(): string { return 'Days with no friends'; }
     public static function qualifies(int $memberId, int $days): bool { return in_array($memberId, self::$qualify, true); }
-    public static function content(int $memberId): ?array { return ['headline' => "Make a friend, #$memberId", 'html' => '<p>go</p>', 'text' => 'go']; }
+    public static function content(int $memberId): ?array { return in_array($memberId, self::$nothing, true) ? null : ['headline' => "Make a friend, #$memberId", 'html' => '<p>go</p>', 'text' => 'go']; }
 }
 
 class FakePhone {

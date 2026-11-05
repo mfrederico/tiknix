@@ -1,5 +1,5 @@
 <?php
-/** @var array $rows @var array $categories @var array $suppressed @var array $settings @var array $sites @var array $providers @var string[] $have @var string $serviceUrl */
+/** @var array $rows @var string $q the search @var array $categories @var array $suppressed @var array $settings @var array $sites @var array $providers @var string[] $have @var string $serviceUrl */
 $wired = [];
 foreach ($providers as $key => [$label, $what]) $wired[$label] = in_array($key, $have, true) ? 'Connected — ' . $what : 'Not connected — ' . $what;
 $h = fn($v) => htmlspecialchars((string) $v);
@@ -20,7 +20,9 @@ $h = fn($v) => htmlspecialchars((string) $v);
         ['label' => 'Acted', 'value' => 'acted', 'quiet' => true],
         ['label' => 'Replies', 'value' => 'replies', 'quiet' => true],
     ],
-    'empty' => ['title' => 'Nothing sent yet', 'text' => 'Messages appear here when an owner sends one or the platform\'s own run.']]) ?>
+    'search' => ['value' => $q, 'placeholder' => 'Search messages', 'action' => '/messaging'],
+    'empty' => $q !== '' ? ['title' => 'None match', 'text' => 'No message mentions “' . $q . '”.']
+                         : ['title' => 'Nothing sent yet', 'text' => 'Messages appear here when an owner sends one or the platform\'s own run.']]) ?>
 <?php foreach ($sites as $s): $items = ['Sends as' => $s['from_name'] !== '' ? $s['from_name'] : '(the project\'s name)', 'Replies to' => $s['reply_domain'] !== '' ? 'reply-…@' . $s['reply_domain'] : 'not tracked (no reply domain)',
     'Mail connection' => in_array('mailgun', $s['connections_live'], true) ? ($s['signing_key_present'] ? 'Mailgun, with its webhook signing key' : 'Mailgun — NO webhook signing key: delivery events and replies are refused until the connection is shared again with it') : 'none shared']; ?>
 <?= \app\Ui::detail(['title' => 'Site ' . $s['host'], 'items' => $items + (isset($s['webhook_url']) ? ['Mailgun calls' => \app\Ui::raw('<code class="user-select-all">' . $h($s['webhook_url']) . '</code> — paste it into Mailgun\'s webhooks and the reply route')] : [])]) ?>

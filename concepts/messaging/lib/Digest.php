@@ -54,7 +54,10 @@ class Digest {
         $class = Providers::triggers()[$code] ?? null;
         if ($class === null) throw new \RuntimeException("campaign #{$c['id']} has trigger_code '$code', which this app does not register (Providers::register(['triggers' => …]))");
         if (!$class::qualifies($memberId, (int) $c['trigger_days'])) return null;
-        return is_callable([$class, 'content']) ? ($class::content($memberId) ?? ['headline' => '', 'html' => '', 'text' => '']) : ['headline' => '', 'html' => '', 'text' => ''];
+        // A nudge with no content() is its own words alone. One WITH content() that has nothing to say this time is not sent:
+        // a "we miss you — here is what you missed" with nothing under it is worse than no email (it sent blanks).
+        if (!is_callable([$class, 'content'])) return ['headline' => '', 'html' => '', 'text' => ''];
+        return $class::content($memberId);
     }
 
     /** What a test or preview fills into a system campaign for one member (Campaigns::test's $extra). */

@@ -93,6 +93,9 @@ class UiTest extends TestCase {
         $this->assertStringContainsString('name="status" value="new"', $h, 'the page\'s filters are kept');
         $this->assertStringNotContainsString('name="category"', $h, '"all" and empty filters are not carried');
         $this->assertStringContainsString('href="/c?status=new" aria-label="Clear the search"', $h);
+        $fresh = Ui::table(['rows' => [['name' => 'Ann']], 'columns' => $cols, 'empty' => self::EMPTY, 'search' => ['value' => '', 'action' => '/c']]);
+        $this->assertStringContainsString('name="q" value=""', $fresh, 'nothing searched for yet is a value, not a missing one');
+        $this->assertStringNotContainsString('Clear the search', $fresh);
         $none = Ui::table(['rows' => [], 'columns' => $cols, 'empty' => ['title' => 'No matches'], 'search' => ['value' => 'zzz', 'action' => '/c']]);
         $this->assertStringContainsString('value="zzz"', $none, 'a search that found nothing can be changed');
         $this->assertStringContainsString('No matches', $none);

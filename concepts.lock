@@ -18,12 +18,12 @@
             "enabled_at": "2026-10-31T15:00:50+00:00"
         },
         "messaging": {
-            "version": "2.6.1",
+            "version": "2.6.3",
             "enabled": true,
             "source": "control-plane catalog",
-            "installed_at": "2026-11-03T16:17:17+00:00",
-            "hash": "sha256:90149344e38e443ffb16f85739b630dd30df476ee82bb6ee9748ead5105fde71",
-            "enabled_at": "2026-11-03T16:17:17+00:00"
+            "installed_at": "2026-11-05T18:23:56+00:00",
+            "hash": "sha256:93d691ff3a9431b6a960b7f8166bd387ffdce6e4f9ca30b55920953858cbfeda",
+            "enabled_at": "2026-11-05T18:23:56+00:00"
         }
     },
     "connectors": {

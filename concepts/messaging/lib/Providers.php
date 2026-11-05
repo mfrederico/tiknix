@@ -36,7 +36,8 @@ namespace app\concepts\messaging;
  * digest — the weekly digest.
  *   content(int $memberId, string $since): ?array   ['headline' => …, 'html' => …, 'text' => …], or null when they have nothing new (no digest)
  * triggers — the app's own nudges. code => class with qualifies(int $memberId, int $days): bool, label(): string,
- *   and optionally content(int $memberId): ?array (as the digest's). inactive_days and joined_days the service evaluates itself.
+ *   and optionally content(int $memberId): ?array (as the digest's: null = nothing to say this time, so it is NOT sent). inactive_days
+ *   and joined_days the service evaluates itself, and sends with no content from the app: for "only when there is something", use an app trigger.
  * phone — the text channel.
  *   verified(int $memberId): string            the member's proved phone in E.164, or ''
  *   optional, to let a member prove it from the preferences page: prove(int $memberId, array $categoryCodes): array ['ok' => bool, 'message' => string],

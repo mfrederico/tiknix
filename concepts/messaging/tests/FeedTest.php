@@ -42,6 +42,17 @@ class FeedTest extends ClientCase {
         $this->assertSame([], $this->sent('GET', 'campaigns/4/due'), 'a Custom one is its pipeline\'s to send: not asked');
     }
 
+    public function testANudgeWithNothingToSayIsNotSent(): void {
+        Providers::register(['triggers' => ['no_friends_days' => FakeTrigger::class]]);
+        $ann = $this->ids['ann']; $bo = $this->ids['bo'];
+        FakeTrigger::$qualify = [$ann, $bo];
+        FakeTrigger::$nothing = [$ann];
+        $c = $this->campaigns()[1];
+        $this->assertNull(Digest::content($c, $ann, ''), 'qualifies, but nothing to say: no email');
+        $this->assertSame('<p>go</p>', Digest::content($c, $bo, '')['html']);
+        FakeTrigger::$nothing = [];
+    }
+
     public function testNobodyDueSendsNothing(): void {
         Providers::register(['digest' => FakeDigest::class]);
         self::$answers['GET campaigns'] = ['campaigns' => [$this->campaigns()[0]]];

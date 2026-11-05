@@ -1,6 +1,6 @@
 {
   "name": "messaging",
-  "version": "2.6.1",
+  "version": "2.6.3",
   "kind": "capability",
   "icon": "envelope-paper",
   "title": "Messaging",

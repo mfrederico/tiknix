@@ -68,7 +68,11 @@ class Messaging extends Control {
             // the project may have several sites (one per domain, each its own database): this page is one of them
             $sites = array_values(array_filter(Client::get('sites')['sites'], fn($s) => (string) $s['host'] === Client::site()));
         } catch (ServiceException $e) { $this->unavailable($e); return; }
-        $this->render('messaging/index', ['title' => 'Messages', 'rows' => array_map(fn($c) => $this->row($c), $all),
+        // The list's search box: words in a message's subject or where it goes.
+        $q = trim((string) $this->getParam('q', ''));
+        $rows = array_map(fn($c) => $this->row($c), $all);
+        if ($q !== '') $rows = array_values(array_filter($rows, fn($r) => stripos((string) $r->subject . ' ' . (string) $r->where, $q) !== false));
+        $this->render('messaging/index', ['title' => 'Messages', 'rows' => $rows, 'q' => $q,
             'categories' => array_map(fn($c) => (object) ['label' => $c['label'], 'description' => $c['description'], 'default' => $c['default_on'] ? 'On' : 'Off',
                 'optout' => $c['can_opt_out'] ? 'Members can switch it off' : 'Always on', 'channels' => implode(', ', $c['channels'])], $categories),
             'suppressed' => array_map(fn($s) => (object) $s, $suppressed), 'settings' => $settings, 'sites' => $sites,

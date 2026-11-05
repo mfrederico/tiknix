@@ -726,7 +726,7 @@ event from a page: `if (window.gtag) gtag('event', 'signup')` (`gtag` exists onl
 `\app\concepts\googleanalytics\Tag::event('project_created')` (check `Concepts::has('googleanalytics')` first): it goes out on the visitor's next page, only after a yes.
 Never put a name, an email or anything about a person in an event. `sign_up` is sent by itself.
 
-## Concept: messaging (2.6.1)
+## Concept: messaging (2.6.3)
 
 Messages to members — email and, for those who ask, text — with the member in control, SENT BY THE TIKNIX MESSAGING
 SERVICE (messaging.tiknix.com) with this app's own Mailgun account. This plugin is the service's client: it mirrors the app's

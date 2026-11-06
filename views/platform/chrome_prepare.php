@@ -84,3 +84,5 @@ if ($__loggedIn) {
     $__chromeBar = true;
 }
 if (!empty($__isAdmin)) $__adminItems[] = ['url' => '/siteanalytics', 'label' => 'Google Analytics', 'icon' => 'bar-chart'];
+// The browserdrive plugin's runner: an admin leaves it open so an agent's checks play in their own tab, signed in as them.
+if (!empty($__isAdmin) && \app\Concepts::has('browserdrive')) $__adminItems[] = ['url' => '/browserdrive', 'label' => 'Browser drive', 'icon' => 'cursor'];

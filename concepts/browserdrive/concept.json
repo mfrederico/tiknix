@@ -1,0 +1,16 @@
+{
+  "name": "browserdrive",
+  "version": "1.0.3",
+  "kind": "capability",
+  "icon": "mouse-pointer",
+  "title": "Browser drive",
+  "blurb": "Playwright-style browser automation with no browser on the server. An agent or a script sends steps (go to a page, click, type, press, drag, wait for, read text, run JavaScript, screenshot); a person's open runner page claims the session and plays each step in a frame of this site, and the result comes back. For checking pages and flows an agent built, against sandbox pages only.",
+  "tags": ["playwright", "browser", "automation", "testing", "e2e", "screenshot", "agent", "qa", "click", "headless"],
+  "provides": {
+    "controllers": ["Browserdrive"],
+    "tools": [{ "class": "BrowserdriveDrive", "level": "ADMIN" }],
+    "beans": ["drivesession", "drivestep"],
+    "capabilities": ["browser-automation", "playwright", "e2e-testing", "page-screenshots"]
+  },
+  "uses": { "beans": ["member"] }
+}

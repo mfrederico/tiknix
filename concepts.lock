@@ -1,6 +1,14 @@
 {
     "version": 1,
     "concepts": {
+        "browserdrive": {
+            "version": "1.0.3",
+            "enabled": true,
+            "source": "control-plane catalog",
+            "installed_at": "2026-11-06T23:48:37+00:00",
+            "hash": "sha256:3af5a5c3edfe7f4179c07a7f61ee8954cb7e11629c2b468e260913d014d15f91",
+            "enabled_at": "2026-11-06T23:48:38+00:00"
+        },
         "consent": {
             "version": "1.4.4",
             "enabled": true,

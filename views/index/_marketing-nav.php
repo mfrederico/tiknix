@@ -1,4 +1,4 @@
-<?php /* The marketing pages' top nav (landing, stories). Anchors are absolute (/index/landing#how) so they work from any page; the logo goes home, which is the NewSaaS story. */ ?>
+<?php /* The marketing pages' top nav (front page, stories, pricing…). Anchors are absolute (/#one-app) so they work from any page; the logo goes home, the agency front page (index/agencies). */ ?>
   <!-- NAV -->
   <nav class="nav">
     <a class="logo" href="/">
@@ -6,9 +6,9 @@
       <span class="logo-word">tiknix</span>
     </a>
     <div class="nav-links">
-      <a class="hide-sm" href="/index/landing#how">How it works</a>
+      <a class="hide-sm" href="/#one-app">How it works</a>
+      <a class="hide-sm" href="/#clients">Client requests</a>
       <a class="hide-sm" href="/newsaas">Why NewSaaS</a>
-      <a class="hide-sm" href="/index/landing#integrations">Integrations</a>
       <a class="hide-sm" href="/stories">Stories</a>
       <a class="hide-xs" href="/pricing">Pricing</a>
       <a class="hide-xs" href="/contact">Contact</a>

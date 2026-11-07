@@ -28,26 +28,17 @@ class Index extends BaseControls\Control {
         // First-run setup takes precedence over the landing page.
         if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
 
-        // The front door is the NewSaaS story (owner's call, 2026-10-02): a visitor meets the
-        // argument first. Temporary (302) on purpose — a permanent redirect of "/" is cached
-        // by browsers for good, and the home page is the one URL that must stay movable.
-        // The marketing landing it replaced is still there, at /index/landing.
-        Flight::redirect('/newsaas', 302);
+        // The front door is Tiknix for agencies (owner's call, 2026-11-07): build bespoke software once and
+        // run it for every client. Served at "/" itself, not a redirect. The NewSaaS manifesto it replaced
+        // here keeps its own address, /newsaas, and this page links to it.
+        $this->render('index/agencies', [], false);
     }
 
-    /**
-     * The marketing landing (ICP: freelance devs & small agencies). It was the home page
-     * until the NewSaaS story took that slot; the nav's "How it works" and "Integrations"
-     * anchors point here. Rendered without the app layout, as a standalone page.
-     */
+    /** The old marketing landing's address (2026-11-07 the agency front page replaced it). */
     public function landing() {
-        if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
-        $showcase = $this->showcaseItems();
-        $this->render('index/landing', [
-            'title'    => 'tiknix — build a real app for every client',
-            'showcase' => $showcase,
-            'stories'  => \Model_Showcase::stories($showcase),
-        ], false);
+        // Its place is the front page now (index/agencies, at "/"); links to it, and to its #how and
+        // #integrations anchors, keep working (the new page has #integrations; the rest land on top).
+        Flight::redirect('/', 301);
     }
 
     /**

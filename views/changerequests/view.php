@@ -99,7 +99,7 @@ if ($dialog || $dialogProblem !== ''):
   <div class="ui-panel-body d-flex flex-wrap gap-2">
     <?php foreach ($files as $i => $f): ?>
       <a class="ui-chip text-decoration-none" href="/changerequests/file?id=<?= $id ?>&amp;n=<?= $i + 1 ?>"><i class="bi bi-paperclip"></i> <?= htmlspecialchars((string) $f['name']) ?>
-        <span class="ui-sub small"><?= htmlspecialchars(number_format(((int) $f['size']) / 1024, 0)) ?> KB<?= $f['note'] !== null ? ' · note ' . ((int) $f['note'] + 1) : '' ?></span></a>
+        <span class="ui-sub small"><?= htmlspecialchars(max(1, (int) ceil(((int) $f['size']) / 1024))) ?> KB<?= $f['note'] !== null ? ' · note ' . ((int) $f['note'] + 1) : '' ?></span></a>
     <?php endforeach; ?>
   </div>
 </section>

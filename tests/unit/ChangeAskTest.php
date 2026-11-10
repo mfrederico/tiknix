@@ -70,6 +70,21 @@ class ChangeAskTest extends ConceptsTestCase {
         $this->assertContains('mcp', $core);
     }
 
+    public function testNotesAreKeptWithinBoundsAndEachPointsAtARealPicture(): void {
+        $el = ['label' => 'Button “Save”', 'code' => 'button.btn.btn-primary', 'selector' => '#form > button', 'tag' => 'button', 'text' => 'Save', 'html' => str_repeat('<b>x</b>', 400), 'size' => '80×36'];
+        $ok = ChangeAsk::checkNotes([['page' => '/leads', 'text' => 'Make it green', 'element' => $el, 'shot' => 0, 'screen' => '1440x900'],
+                                     ['page' => '/leads?q=a', 'text' => 'Whole page is slow', 'element' => null, 'shot' => null]], 1);
+        $this->assertCount(2, $ok);
+        $this->assertSame('#form > button', $ok[0]['element']['selector']);
+        $this->assertSame(1300, mb_strlen($ok[0]['element']['html']), 'a long element is cut, not refused');
+        $this->assertNull($ok[1]['element'], 'a note about the whole page');
+        foreach ([[['page' => '/x', 'text' => 'hi']], [['page' => 'http://evil/x', 'text' => 'Make it green']], [['page' => '/x', 'text' => 'Make it green', 'shot' => 3]],
+                  array_fill(0, ChangeAsk::MAX_SHOTS + 1, ['page' => '/x', 'text' => 'Make it green'])] as $i => $bad) {
+            try { ChangeAsk::checkNotes($bad, 1); $this->fail("case {$i} was taken"); }
+            catch (\InvalidArgumentException $e) { $this->assertNotSame('', $e->getMessage()); }
+        }
+    }
+
     public function testWhatIsNotARequestIsRefusedBeforeAnythingIsKept(): void {
         Feature::$platform = false;
         $m = $this->member(1);

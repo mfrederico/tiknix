@@ -70,6 +70,7 @@ final class SiteChanges {
         $cr->browser = mb_substr(trim((string) ($d['browser'] ?? '')), 0, 300);
         $cr->errorsJson = json_encode(array_slice(array_map(fn($e) => mb_substr((string) $e, 0, 600), (array) ($d['errors'] ?? [])), 0, 5), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $cr->shotsJson = '[]';
+        $cr->notesJson = json_encode(self::checkNotes((array) ($d['notes'] ?? []), count($shots)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $cr->status = 'new';
         $cr->threadRef = 0;
         $cr->promptRef = 0;
@@ -194,6 +195,23 @@ final class SiteChanges {
         return $promptId;
     }
 
+    /**
+     * Open in Ask: the request goes into the project's Ask as a message, which answers it or plans it there (BuilderMail::queue,
+     * 'auto'). Nothing is decided for the asker, so they are not told; if a build comes of it, its end marks this done (built()).
+     *
+     * @return int the Ask message's prompt id
+     */
+    public static function ask(object $cr, int $memberId): int {
+        if (in_array((string) $cr->status, ['done', 'declined'], true)) throw new \RuntimeException('This request is ' . strtolower(self::LABELS[(string) $cr->status]) . ' already.');
+        $inst = Bean::load('instance', (int) $cr->instanceId);
+        if (!$inst->id) throw new \RuntimeException('Its project is gone.');
+        $promptId = BuilderMail::queue($inst, $memberId, self::brief($cr), 'auto');
+        $cr->promptRef = $promptId;
+        $cr->updatedAt = date('Y-m-d H:i:s');
+        Bean::store($cr);
+        return $promptId;
+    }
+
     /** Not going ahead, with the reason (sent to the asker). */
     public static function decline(object $cr, int $memberId, string $reason): void {
         $reason = trim($reason);
@@ -230,7 +248,8 @@ final class SiteChanges {
         $tell = [];
         try {
             if (!in_array('changerequest', Bean::inspect(), true)) return '';
-            foreach (Bean::find('changerequest', "status = 'building' AND prompt_ref IN (" . Bean::genSlots($prompts) . ')', $prompts) as $cr) {
+            // 'building' (Build it) or still 'new' (Open in Ask, which planned it there).
+            foreach (Bean::find('changerequest', "status IN ('new', 'building') AND prompt_ref IN (" . Bean::genSlots($prompts) . ')', $prompts) as $cr) {
                 $now = date('Y-m-d H:i:s');
                 $cr->status = 'done';
                 $cr->updatedAt = $now;
@@ -283,8 +302,20 @@ final class SiteChanges {
            . trim((string) $cr->said) . "\n\n"
            . ($page !== '' ? 'The page it is about: https://' . $cr->site . (str_starts_with($page, '/') ? $page : '/' . $page) . "\n" : '')
            . ($cr->browser ? "Their browser: {$cr->browser}\n" : '');
+        $notes = json_decode((string) ($cr->notesJson ?? '[]'), true) ?: [];
+        if ($notes) {
+            // Each note points at one thing on one page: what it is, how to find it, a little of its HTML, its picture.
+            $t .= "\nTheir notes, each about one thing they pointed at on the site:\n";
+            foreach ($notes as $i => $n) {
+                $e = $n['element'] ?? null;
+                $t .= "\n" . ($i + 1) . '. On ' . $n['page'] . ($e ? ', ' . $e['label'] : ', the whole page') . ': ' . $n['text'] . "\n";
+                if ($e) $t .= "   Element: {$e['code']} ({$e['size']} on a {$n['screen']} screen)\n   Selector: {$e['selector']}\n   HTML: {$e['html']}\n";
+                if ($n['shot'] !== null && ($p = (string) ($shots[$n['shot']]['app_path'] ?? '')) !== '') $t .= "   Picture of it: {$p}\n";
+            }
+        }
         $paths = array_values(array_filter(array_map(fn($s) => (string) ($s['app_path'] ?? ''), $shots)));
-        if ($paths) $t .= "\nScreenshots they sent (pictures on this app's server — look at them before planning):\n" . implode("\n", array_map(fn($p) => "- {$p}", $paths)) . "\n";
+        if ($paths && !$notes) $t .= "\nScreenshots they sent (pictures on this app's server — look at them before planning):\n" . implode("\n", array_map(fn($p) => "- {$p}", $paths)) . "\n";
+        elseif ($paths) $t .= "\nLook at the pictures before planning: they show what each note points at.\n";
         if ($errors) $t .= "\nErrors the site logged in the half hour before they asked:\n" . implode("\n", array_map(fn($e) => "- {$e}", $errors)) . "\n";
         return $t;
     }
@@ -355,6 +386,22 @@ final class SiteChanges {
              . ($page !== '' ? ' · page ' . htmlspecialchars($page) : '') . '</p>'
              . '<p class="small"><a href="' . htmlspecialchars(self::url((int) $cr->id)) . '">Open the request</a> to build it, or say it is not going ahead. '
              . 'A reply here reaches ' . htmlspecialchars((string) $cr->fromName) . ' by email.</p>';
+    }
+
+    /** The notes as the site sent them, kept within bounds (the site checked them; this keeps what reaches a page and a brief small). */
+    public static function checkNotes(array $notes, int $shots): array {
+        if (count($notes) > self::MAX_SHOTS) throw new \InvalidArgumentException('notes: at most ' . self::MAX_SHOTS . '.');
+        $cut = fn($v, int $n) => mb_substr(trim((string) $v), 0, $n);
+        $out = [];
+        foreach (array_values($notes) as $i => $n) {
+            if (!is_array($n) || $cut($n['text'] ?? '', 1000) === '') throw new \InvalidArgumentException('notes[' . $i . ']: a note says what should change.');
+            $shot = isset($n['shot']) && $n['shot'] !== null ? (int) $n['shot'] : null;
+            if ($shot !== null && ($shot < 0 || $shot >= $shots)) throw new \InvalidArgumentException('notes[' . $i . ']: its picture is not among the shots.');
+            $e = is_array($n['element'] ?? null) ? $n['element'] : null;
+            $out[] = ['page' => $cut($n['page'] ?? '', 300), 'title' => $cut($n['title'] ?? '', 160), 'text' => $cut($n['text'], 1000), 'screen' => $cut($n['screen'] ?? '', 40), 'shot' => $shot,
+                      'element' => $e === null ? null : array_map(fn($k) => $cut($e[$k] ?? '', $k === 'html' ? 1300 : 400), ['label' => 'label', 'code' => 'code', 'selector' => 'selector', 'tag' => 'tag', 'text' => 'text', 'html' => 'html', 'size' => 'size'])];
+        }
+        return $out;
     }
 
     /** @return array<int,array{name:string,type:string,bytes:string,app_path:string}> */

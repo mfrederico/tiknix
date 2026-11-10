@@ -70,6 +70,20 @@ class Changerequests extends Control {
         Flight::redirect('/changerequests/view?id=' . (int) $cr->id);
     }
 
+    /** POST: into the project's Ask, which answers it or plans it there. */
+    public function ask($params = []) {
+        if (!$cr = $this->request(true)) return;
+        try {
+            SiteChanges::ask($cr, (int) $this->member->id);
+            $inst = Bean::load('instance', (int) $cr->instanceId);
+            $this->flash('success', 'It is in ' . ($inst->displayName ?: $inst->slug) . '\'s Ask: it answers there, or plans it for you to build. If it is built, this request is marked done and ' . $cr->fromName . ' is told.');
+        } catch (\Throwable $e) {
+            $this->logger->error('Change request: Open in Ask failed', ['id' => (int) $cr->id, 'error' => $e->getMessage()]);
+            $this->flash('error', 'It was not put into Ask: ' . $e->getMessage());
+        }
+        Flight::redirect('/changerequests/view?id=' . (int) $cr->id);
+    }
+
     public function decline($params = []) {
         if (!$cr = $this->request(true)) return;
         try {

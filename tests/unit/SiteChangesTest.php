@@ -131,6 +131,21 @@ class SiteChangesTest extends ConceptsTestCase {
         $this->assertStringContainsString('ERROR: boom', $brief);
     }
 
+    public function testNotesReachTheBuilderWithWhatTheyPointAt(): void {
+        $owner = $this->member('owner@x.test');
+        $cr = Bean::load('changerequest', $this->ask($this->project($owner, $owner), 9, ['notes' => [
+            ['page' => '/shop', 'text' => 'Bigger photo please', 'screen' => '1440x900', 'shot' => null,
+             'element' => ['label' => 'Picture “Tiffany Stone”', 'code' => 'img.card-img', 'selector' => 'main > div:nth-of-type(2) > img', 'tag' => 'img', 'text' => '', 'html' => '<img class="card-img" src="/a.webp">', 'size' => '300×200']]]]));
+        $notes = json_decode((string) $cr->notesJson, true);
+        $this->assertSame('Bigger photo please', $notes[0]['text']);
+        $brief = SiteChanges::brief($cr);
+        $this->assertStringContainsString('1. On /shop, Picture “Tiffany Stone”: Bigger photo please', $brief);
+        $this->assertStringContainsString('Selector: main > div:nth-of-type(2) > img', $brief);
+        $this->assertStringContainsString('<img class="card-img" src="/a.webp">', $brief);
+        try { $this->ask($this->project($owner, $owner), 10, ['notes' => [['page' => '/shop', 'text' => 'x', 'shot' => 2]]]); $this->fail('a note whose picture is not among the shots was taken'); }
+        catch (\InvalidArgumentException $e) { $this->assertStringContainsString('notes[0]', $e->getMessage()); }
+    }
+
     public function testWhatIsNotARequestIsRefusedBeforeAnythingIsKept(): void {
         $inst = $this->project($o = $this->member('owner@x.test'), $o);
         foreach ([['said' => 'short'], ['from_email' => 'nope'], ['site' => 'not a host'], ['shots' => [['name' => 'x.png', 'data' => base64_encode('<?php echo 1;')]]]] as $bad) {

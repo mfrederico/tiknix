@@ -70,7 +70,12 @@ final class SiteChanges {
         $cr->browser = mb_substr(trim((string) ($d['browser'] ?? '')), 0, 300);
         $cr->errorsJson = json_encode(array_slice(array_map(fn($e) => mb_substr((string) $e, 0, 600), (array) ($d['errors'] ?? [])), 0, 5), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $cr->shotsJson = '[]';
-        $cr->notesJson = json_encode(self::checkNotes((array) ($d['notes'] ?? []), count($shots)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $files = self::checkFiles((array) ($d['files'] ?? []));
+        $checked = self::checkNotes((array) ($d['notes'] ?? []), count($shots), count($files));
+        foreach ($checked as $ni => $n) foreach ($n['files'] as $fi) $files[$fi]['note'] = $ni;   // each file knows its note
+        $cr->notesJson = json_encode($checked, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $cr->filesJson = json_encode($files, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $cr->prompts = '';
         $cr->status = 'new';
         $cr->threadRef = 0;
         $cr->promptRef = 0;
@@ -107,8 +112,33 @@ final class SiteChanges {
             . '<blockquote>' . nl2br(htmlspecialchars($said)) . '</blockquote>'
             . (count($shots) ? '<p>With ' . count($shots) . ' screenshot' . (count($shots) === 1 ? '' : 's') . '.</p>' : '')
             . '<p><a href="' . htmlspecialchars(self::url($id)) . '">Open the request</a> to answer, build it, or say it is not going ahead.</p>');
-        \Flight::get('log')?->info('Change request received', ['id' => $id, 'instance' => (string) $inst->slug, 'site' => $site, 'shots' => count($shots), 'team' => count($people)]);
+        \Flight::get('log')?->info('Change request received', ['id' => $id, 'instance' => (string) $inst->slug, 'site' => $site, 'shots' => count($shots), 'files' => count($files), 'team' => count($people), 'build' => !empty($d['build'])]);
         return $id;
+    }
+
+    /**
+     * The site's ROOT asked for it to go straight to the Builder: built at once, as the project's owner pressing Build it,
+     * when the project's builder is ready (canBuild). Otherwise it waits for the team, and why is said.
+     * @return array{built:bool,why:string}
+     */
+    public static function buildNow(object $inst, int $id): array {
+        $ready = self::canBuild($inst);
+        if (!$ready['ready']) return ['built' => false, 'why' => $ready['why']];
+        try { self::build(Bean::load('changerequest', $id), (int) $inst->memberId); }
+        catch (\Throwable $e) { \Flight::get('log')?->error('Change request: straight to build failed', ['id' => $id, 'error' => $e->getMessage()]); return ['built' => false, 'why' => 'the Builder did not take it: ' . $e->getMessage()]; }
+        return ['built' => true, 'why' => ''];
+    }
+
+    /**
+     * Is the project's builder ready to build? What the project last reported about its own agent (the hourly status
+     * report, Projectreport::freshReadiness): not ready, or no recent report, is a no with the reason.
+     * @return array{ready:bool,why:string}
+     */
+    public static function canBuild(object $inst): array {
+        $r = Projectreport::freshReadiness($inst);
+        if ($r === null) return ['ready' => false, 'why' => 'Tiknix has not heard from this project in the last half hour, so whether its builder is ready is not known.'];
+        if (!$r['agent_ready']) return ['ready' => false, 'why' => 'this project has no builder agent ready' . ($r['agent_problem'] !== '' ? ' (' . $r['agent_problem'] . ')' : '') . '. Set one up on its AI agents page.'];
+        return ['ready' => true, 'why' => ''];
     }
 
     /**
@@ -189,7 +219,7 @@ final class SiteChanges {
         $inst = Bean::load('instance', (int) $cr->instanceId);
         if (!$inst->id) throw new \RuntimeException('Its project is gone.');
         $promptId = BuilderMail::queue($inst, $memberId, self::brief($cr), 'build');
-        $cr->status = 'building'; $cr->promptRef = $promptId;
+        $cr->status = 'building'; self::track($cr, $promptId);
         self::decided($cr, $memberId);
         self::answer($cr, $memberId, '<p>This is being built now. You will hear here when it is live on the site.</p>');
         return $promptId;
@@ -206,10 +236,85 @@ final class SiteChanges {
         $inst = Bean::load('instance', (int) $cr->instanceId);
         if (!$inst->id) throw new \RuntimeException('Its project is gone.');
         $promptId = BuilderMail::queue($inst, $memberId, self::brief($cr), 'auto');
-        $cr->promptRef = $promptId;
+        self::track($cr, $promptId);
         $cr->updatedAt = date('Y-m-d H:i:s');
         Bean::store($cr);
         return $promptId;
+    }
+
+    // ---- the dialog with the Builder: what Ask said about this request, answered from its page -------------------
+
+    /**
+     * Every Ask message this request became, oldest first, as the project's Ask keeps them (AskStore): who sent it, what
+     * was sent, where it is (thinking, asking a question, answered, being planned, planned…), the Builder's words, and the
+     * questions already answered. A message whose project record cannot be read says so.
+     *
+     * @return list<array{prompt:int,member:int,who:string,sent:string,first:bool,state:string,said:string,qa:array,plan:int,at:string}>
+     */
+    public static function dialog(object $cr): array {
+        $ids = self::prompts($cr);
+        if (!$ids) return [];
+        $inst = Bean::load('instance', (int) $cr->instanceId);
+        if (!$inst->id) return [];
+        $dir = \Model_Instance::dirForSlug((string) $inst->slug, (string) ($inst->app ?: \Model_Instance::DEFAULT_APP));
+        $out = [];
+        foreach ($ids as $i => $pid) {
+            $m = AskStore::get($dir, $pid);
+            if (!$m) { $out[] = ['prompt' => $pid, 'member' => 0, 'who' => '', 'sent' => '', 'first' => $i === 0, 'state' => 'missing', 'said' => 'This message is not in the project\'s Ask.', 'qa' => [], 'plan' => 0, 'at' => '']; continue; }
+            $who = Bean::load('member', (int) $m['member_ref']);
+            $qa = array_map(fn($x) => ['q' => (string) ($x['q'] ?? ''), 'a' => (string) ($x['a'] ?? '')], (array) (json_decode((string) $m['qa_json'], true) ?: []));
+            $out[] = ['prompt' => $pid, 'member' => (int) $m['member_ref'], 'who' => $who->id ? $who->displayName('Someone') : 'Someone',
+                      'sent' => $i === 0 ? '' : trim((string) $m['said']),
+                      'first' => $i === 0, 'state' => (string) $m['state'], 'said' => (string) $m['answer'], 'qa' => $qa, 'plan' => (int) ($m['plan_ref'] ?? 0), 'at' => (string) $m['created_at']];
+        }
+        return $out;
+    }
+
+    /**
+     * Answer the Builder's question about this request (its latest message waits on one): written into that message's
+     * goal, and planning goes on with it (AskTriage::answered). Only the person whose message it is may answer it.
+     */
+    public static function answerBuilder(object $cr, int $memberId, string $text): void {
+        $text = trim($text);
+        if ($text === '') throw new \InvalidArgumentException('Write your answer.');
+        $last = self::lastPrompt($cr);
+        if ($last <= 0) throw new \RuntimeException('This request has not been sent to the Builder.');
+        if (!AskTriage::answered($last, $memberId, $text)) {
+            throw new \RuntimeException('The Builder is not waiting on an answer from you here (it has moved on, or it asked whoever sent this to it).');
+        }
+        $cr->updatedAt = date('Y-m-d H:i:s'); Bean::store($cr);
+    }
+
+    /**
+     * Carry on with the Builder about this request: a new message in the project's Ask, read with what came before
+     * (BuilderMail::queue, 'auto' — it answers, or plans and builds). If a build comes of it, its end marks this done.
+     */
+    public static function followUp(object $cr, int $memberId, string $text): int {
+        $text = trim($text);
+        if ($text === '') throw new \InvalidArgumentException('Write what you want to say to the Builder.');
+        if (mb_strlen($text) > 4000) throw new \InvalidArgumentException('That is longer than 4,000 characters.');
+        $inst = Bean::load('instance', (int) $cr->instanceId);
+        if (!$inst->id) throw new \RuntimeException('Its project is gone.');
+        $pid = BuilderMail::queue($inst, $memberId, "About change request #{$cr->id} (\"" . self::headline((string) $cr->said) . "\" on {$cr->site}):\n\n" . $text, 'auto');
+        self::track($cr, $pid);
+        $cr->updatedAt = date('Y-m-d H:i:s'); Bean::store($cr);
+        return $pid;
+    }
+
+    /** @return int[] the Ask messages of this request, oldest first */
+    public static function prompts(object $cr): array {
+        $ids = array_values(array_filter(array_map('intval', explode(',', (string) ($cr->prompts ?? ''))), fn($i) => $i > 0));
+        if (!$ids && (int) $cr->promptRef > 0) $ids = [(int) $cr->promptRef];
+        return $ids;
+    }
+
+    private static function lastPrompt(object $cr): int { $p = self::prompts($cr); return $p ? (int) end($p) : 0; }
+
+    /** Another Ask message of this request: the latest is prompt_ref, all of them are in prompts. */
+    private static function track(object $cr, int $promptId): void {
+        $ids = self::prompts($cr); $ids[] = $promptId;
+        $cr->promptRef = $promptId;
+        $cr->prompts = ',' . implode(',', array_values(array_unique($ids))) . ',';
     }
 
     /** Not going ahead, with the reason (sent to the asker). */
@@ -249,7 +354,9 @@ final class SiteChanges {
         try {
             if (!in_array('changerequest', Bean::inspect(), true)) return '';
             // 'building' (Build it) or still 'new' (Open in Ask, which planned it there).
-            foreach (Bean::find('changerequest', "status IN ('new', 'building') AND prompt_ref IN (" . Bean::genSlots($prompts) . ')', $prompts) as $cr) {
+            $like = implode(' OR ', array_fill(0, count($prompts), 'prompts LIKE ?'));
+            foreach (Bean::find('changerequest', "status IN ('new', 'building') AND (prompt_ref IN (" . Bean::genSlots($prompts) . ") OR {$like})",
+                                array_merge($prompts, array_map(fn($p) => '%,' . $p . ',%', $prompts))) as $cr) {
                 $now = date('Y-m-d H:i:s');
                 $cr->status = 'done';
                 $cr->updatedAt = $now;
@@ -316,6 +423,17 @@ final class SiteChanges {
         $paths = array_values(array_filter(array_map(fn($s) => (string) ($s['app_path'] ?? ''), $shots)));
         if ($paths && !$notes) $t .= "\nScreenshots they sent (pictures on this app's server — look at them before planning):\n" . implode("\n", array_map(fn($p) => "- {$p}", $paths)) . "\n";
         elseif ($paths) $t .= "\nLook at the pictures before planning: they show what each note points at.\n";
+        $files = json_decode((string) ($cr->filesJson ?? '[]'), true) ?: [];
+        if ($files) {
+            // what each kind of file is for, so it is used, not just mentioned
+            $t .= "\nFiles they attached (on this app's server — open each one before planning):\n";
+            foreach ($files as $f) {
+                $ext = strtolower(pathinfo((string) $f['name'], PATHINFO_EXTENSION));
+                $how = in_array($ext, ['xls', 'xlsx', 'csv'], true) ? 'a spreadsheet: read its columns and formulas, and make the page work exactly like it (same columns, same results, deterministically)'
+                     : (in_array($ext, ['md', 'markdown', 'txt', 'docx'], true) ? 'directions in words: follow them' : (in_array($ext, ['png', 'jpg', 'jpeg', 'webp', 'gif'], true) ? 'a picture of a look they like: match its look and feel' : 'read it'));
+                $t .= "- {$f['path']} ({$f['name']}" . ($f['note'] !== null ? ', with note ' . ($f['note'] + 1) : '') . "): {$how}\n";
+            }
+        }
         if ($errors) $t .= "\nErrors the site logged in the half hour before they asked:\n" . implode("\n", array_map(fn($e) => "- {$e}", $errors)) . "\n";
         return $t;
     }
@@ -389,7 +507,7 @@ final class SiteChanges {
     }
 
     /** The notes as the site sent them, kept within bounds (the site checked them; this keeps what reaches a page and a brief small). */
-    public static function checkNotes(array $notes, int $shots): array {
+    public static function checkNotes(array $notes, int $shots, int $files = 0): array {
         if (count($notes) > self::MAX_SHOTS) throw new \InvalidArgumentException('notes: at most ' . self::MAX_SHOTS . '.');
         $cut = fn($v, int $n) => mb_substr(trim((string) $v), 0, $n);
         $out = [];
@@ -398,10 +516,45 @@ final class SiteChanges {
             $shot = isset($n['shot']) && $n['shot'] !== null ? (int) $n['shot'] : null;
             if ($shot !== null && ($shot < 0 || $shot >= $shots)) throw new \InvalidArgumentException('notes[' . $i . ']: its picture is not among the shots.');
             $e = is_array($n['element'] ?? null) ? $n['element'] : null;
-            $out[] = ['page' => $cut($n['page'] ?? '', 300), 'title' => $cut($n['title'] ?? '', 160), 'text' => $cut($n['text'], 1000), 'screen' => $cut($n['screen'] ?? '', 40), 'shot' => $shot,
+            $fs = array_values(array_map('intval', (array) ($n['files'] ?? [])));
+            foreach ($fs as $f) if ($f < 0 || $f >= $files) throw new \InvalidArgumentException('notes[' . $i . ']: a file it names is not among the files.');
+            $out[] = ['page' => $cut($n['page'] ?? '', 300), 'title' => $cut($n['title'] ?? '', 160), 'text' => $cut($n['text'], 1000), 'screen' => $cut($n['screen'] ?? '', 40), 'shot' => $shot, 'files' => $fs,
                       'element' => $e === null ? null : array_map(fn($k) => $cut($e[$k] ?? '', $k === 'html' ? 1300 : 400), ['label' => 'label', 'code' => 'code', 'selector' => 'selector', 'tag' => 'tag', 'text' => 'text', 'html' => 'html', 'size' => 'size'])];
         }
         return $out;
+    }
+
+    /**
+     * The files the site kept for the builder (their bytes stay on the app): name, type, size, path on the app — under its
+     * data/changes/, which is all /changerequests/file will ever read — and the note they belong to (set below).
+     */
+    public static function checkFiles(array $files): array {
+        if (count($files) > 6) throw new \InvalidArgumentException('files: at most 6.');
+        $out = [];
+        foreach (array_values($files) as $i => $f) {
+            $path = (string) ($f['path'] ?? '');
+            if (!self::appPathOk($path)) throw new \InvalidArgumentException('files[' . $i . ']: not a file the site keeps for a request.');
+            $out[] = ['name' => mb_substr(basename((string) ($f['name'] ?? 'file')), 0, 120), 'type' => mb_substr((string) ($f['type'] ?? ''), 0, 120),
+                      'size' => max(0, (int) ($f['size'] ?? 0)), 'path' => $path, 'note' => null];
+        }
+        return $out;
+    }
+
+    /** A path an app keeps a request's files at: /srv/app/[hosts/<host>/]data/changes/<id>/files/<n>-<name>. */
+    public static function appPathOk(string $path): bool {
+        return (bool) preg_match('#^/srv/app/(hosts/[a-z0-9.-]+/)?data/changes/\d+/files/\d+-[A-Za-z0-9._-]+$#', $path) && !str_contains($path, '..');
+    }
+
+    /** One attached file, fetched from the app's container into a temporary file: [path, name]. @throws \RuntimeException */
+    public static function fetchFile(object $cr, int $n): array {
+        $f = (json_decode((string) ($cr->filesJson ?? '[]'), true) ?: [])[$n - 1] ?? null;
+        if (!is_array($f) || !self::appPathOk((string) $f['path'])) throw new \RuntimeException('No such file on this request.');
+        $inst = Bean::load('instance', (int) $cr->instanceId);
+        if (!$inst->id) throw new \RuntimeException('Its project is gone.');
+        $tmp = tempnam(sys_get_temp_dir(), 'crf');
+        [$code, $err] = TenantHost::ssh($inst, 'app', 'cat ' . escapeshellarg((string) $f['path']), null, 60, null, $tmp);
+        if ($code !== 0) { @unlink($tmp); throw new \RuntimeException('The file could not be fetched from the app: ' . trim($err)); }
+        return [$tmp, (string) $f['name']];
     }
 
     /** @return array<int,array{name:string,type:string,bytes:string,app_path:string}> */

@@ -1,6 +1,7 @@
 <?php
 // ui: hand-made — the screenshots are a row of pictures
-/** @var object $cr changerequest  @var string $project  @var string $decidedBy */
+/** @var object $cr changerequest  @var string $project  @var string $decidedBy  @var array $dialog SiteChanges::dialog  @var string $dialogProblem  @var int $me */
+$files = json_decode((string) ($cr->filesJson ?? '[]'), true) ?: [];   // kept on the app for the builder; opened through /changerequests/file
 $id = (int) $cr->id;
 $status = (string) $cr->status;
 $shots = json_decode((string) $cr->shotsJson, true) ?: [];
@@ -25,6 +26,46 @@ if ($status !== 'done') $more[] = ['label' => 'Mark done', 'post' => '/changereq
                    'back' => ['label' => 'Change requests', 'url' => '/changerequests'], 'primary' => $primary, 'more' => $more]) ?>
 <?php if ($status === 'building'): ?>
 <?= \app\Ui::notice(['tone' => 'info', 'title' => 'Being built.', 'text' => 'It is in ' . $project . '\'s Builder. When the build finishes it is marked done and ' . $cr->fromName . ' is told it is live.']) ?>
+<?php endif; ?>
+<?php /* The Builder's side, from the project's Ask (SiteChanges::dialog): its questions answered here, the dialog carried on here. */
+if ($dialog || $dialogProblem !== ''):
+    $last = $dialog ? end($dialog) : null; $lastState = $last['state'] ?? '';
+    $sayState = ['thinking' => 'Reading it…', 'build' => 'Being planned.', 'planned' => 'Planned: it is on the board, being built.',
+                 'unsure' => 'It is not sure whether to build this or answer it.', 'action' => 'It wants a go-ahead for something on the board.', 'did' => 'Done on the board.'];
+?>
+<section class="ui-panel mt-3" id="builder">
+  <div class="ui-panel-header"><h3>The Builder</h3><span class="ui-count">in <?= htmlspecialchars($project) ?>'s Ask</span></div>
+  <div class="ui-panel-body d-grid gap-3">
+    <?php if ($dialogProblem !== ''): ?><?= \app\Ui::notice(['tone' => 'warning', 'title' => 'What the Builder said could not be read.', 'text' => $dialogProblem]) ?><?php endif; ?>
+    <?php foreach ($dialog as $m): ?>
+      <div class="d-grid gap-2">
+        <div class="small ui-sub"><b class="text-body"><?= htmlspecialchars($m['who'] ?: 'Someone') ?></b> <?= $m['first'] ? 'sent this request to the Builder' : 'wrote' ?><?= $m['at'] !== '' ? ' · ' . htmlspecialchars($when($m['at'])) : '' ?></div>
+        <?php if (!$m['first'] && $m['sent'] !== ''): ?><div style="white-space:pre-wrap"><?= htmlspecialchars($m['sent']) ?></div><?php endif; ?>
+        <?php foreach ($m['qa'] as $x): ?>
+          <div class="ui-panel" style="padding:.6rem .8rem"><div class="small ui-sub">The Builder asked</div><div style="white-space:pre-wrap"><?= htmlspecialchars($x['q']) ?></div>
+            <div class="small ui-sub mt-2">Answered</div><div style="white-space:pre-wrap"><?= htmlspecialchars($x['a']) ?></div></div>
+        <?php endforeach; ?>
+        <?php if ($m['state'] === 'asking'): ?>
+          <div class="ui-panel" style="padding:.6rem .8rem;border-color:var(--ui-primary)"><div class="small ui-sub">The Builder asks</div><div style="white-space:pre-wrap"><?= htmlspecialchars($m['said']) ?></div></div>
+        <?php elseif (in_array($m['state'], ['answer', 'failed', 'missing'], true) || ($m['said'] !== '' && !isset($sayState[$m['state']]))): ?>
+          <div class="ui-panel" style="padding:.6rem .8rem"><div class="small ui-sub">The Builder <?= $m['state'] === 'failed' ? '— it did not go through' : 'answered' ?></div><div style="white-space:pre-wrap"><?= htmlspecialchars($m['said']) ?></div></div>
+        <?php else: ?>
+          <div class="small ui-sub"><i class="bi bi-hourglass-split"></i> <?= htmlspecialchars($sayState[$m['state']] ?? $m['state']) ?><?= $m['said'] !== '' ? ' ' . htmlspecialchars($m['said']) : '' ?></div>
+        <?php endif; ?>
+      </div>
+    <?php endforeach; ?>
+    <?php if ($lastState === 'asking' && (int) $last['member'] === $me): ?>
+      <?= \app\Ui::form(['action' => '/changerequests/answer', 'submit' => 'Answer the Builder', 'hidden' => ['id' => $id],
+          'fields' => [['name' => 'text', 'label' => 'Your answer', 'type' => 'textarea', 'rows' => 3, 'required' => true, 'help' => 'Planning goes on with it. "B" is enough when it offered choices.']]]) ?>
+    <?php elseif ($lastState === 'asking'): ?>
+      <?= \app\Ui::notice(['tone' => 'info', 'title' => 'Waiting on ' . $last['who'] . '\'s answer.', 'text' => 'The Builder asked whoever sent it this; they answer here or in the project\'s Ask.']) ?>
+    <?php elseif (in_array($lastState, ['answer', 'failed', 'missing', 'unsure', 'did', 'planned'], true) && !in_array($status, ['done', 'declined'], true)): ?>
+      <?= \app\Ui::form(['action' => '/changerequests/followup', 'submit' => 'Send to the Builder', 'hidden' => ['id' => $id],
+          'fields' => [['name' => 'text', 'label' => 'Reply to the Builder', 'type' => 'textarea', 'rows' => 3, 'required' => true,
+                        'help' => 'It reads this with what came before: ask it something, or tell it to go ahead and build.']]]) ?>
+    <?php endif; ?>
+  </div>
+</section>
 <?php endif; ?>
 <?= \app\Ui::detail(['items' => [
     'Where it is' => (\app\SiteChanges::LABELS[$status] ?? $status) . ($decidedBy !== '' ? ' — ' . $decidedBy . ', ' . $when((string) $cr->decidedAt) : ''),
@@ -51,7 +92,19 @@ if ($status !== 'done') $more[] = ['label' => 'Mark done', 'post' => '/changereq
     <?php endforeach; ?>
   </div>
 </section>
-<?php elseif ($shots): ?>
+<?php endif; ?>
+<?php if ($files): ?>
+<section class="ui-panel mt-3">
+  <div class="ui-panel-header"><h3>Files they attached</h3><span class="ui-count">for the builder to use</span></div>
+  <div class="ui-panel-body d-flex flex-wrap gap-2">
+    <?php foreach ($files as $i => $f): ?>
+      <a class="ui-chip text-decoration-none" href="/changerequests/file?id=<?= $id ?>&amp;n=<?= $i + 1 ?>"><i class="bi bi-paperclip"></i> <?= htmlspecialchars((string) $f['name']) ?>
+        <span class="ui-sub small"><?= htmlspecialchars(number_format(((int) $f['size']) / 1024, 0)) ?> KB<?= $f['note'] !== null ? ' · note ' . ((int) $f['note'] + 1) : '' ?></span></a>
+    <?php endforeach; ?>
+  </div>
+</section>
+<?php endif; ?>
+<?php if (!$notes && $shots): ?>
 <section class="ui-panel mt-3">
   <div class="ui-panel-header"><h3>Screenshots</h3></div>
   <div class="ui-panel-body d-flex flex-wrap gap-2">

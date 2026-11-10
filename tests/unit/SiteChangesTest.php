@@ -146,6 +146,25 @@ class SiteChangesTest extends ConceptsTestCase {
         catch (\InvalidArgumentException $e) { $this->assertStringContainsString('notes[0]', $e->getMessage()); }
     }
 
+    public function testFilesAreListedWithTheirNoteAndOnlyTheSitesRequestFilesCanBeOpened(): void {
+        $owner = $this->member('owner@x.test');
+        $path = '/srv/app/hosts/floorplan.example.com/data/changes/3/files/1-picklist.xlsx';
+        $cr = Bean::load('changerequest', $this->ask($this->project($owner, $owner), 11, [
+            'files' => [['name' => 'picklist.xlsx', 'type' => 'application/zip', 'size' => 9000, 'path' => $path]],
+            'notes' => [['page' => '/picks', 'text' => 'Make this list work like my sheet', 'files' => [0], 'shot' => null]]]));
+        $files = json_decode((string) $cr->filesJson, true);
+        $this->assertSame(0, $files[0]['note'], 'a file knows the note it came with');
+        $brief = SiteChanges::brief($cr);
+        $this->assertStringContainsString($path . ' (picklist.xlsx, with note 1): a spreadsheet', $brief);
+        $this->assertStringContainsString('deterministically', $brief);
+        foreach (['/srv/app/data/changes/3/files/1-a.md' => true, '/etc/passwd' => false, '/srv/app/data/changes/3/files/../../../conf/config.ini' => false,
+                  '/srv/app/data/changes/3/1.webp' => false, '/srv/app/secure/connections.db' => false] as $p => $ok) {
+            $this->assertSame($ok, SiteChanges::appPathOk($p), $p);
+        }
+        try { $this->ask($this->project($owner, $owner), 12, ['files' => [['name' => 'x', 'path' => '/srv/app/conf/config.ini']]]); $this->fail('a file outside the request folder was taken'); }
+        catch (\InvalidArgumentException $e) { $this->assertStringContainsString('files[0]', $e->getMessage()); }
+    }
+
     public function testWhatIsNotARequestIsRefusedBeforeAnythingIsKept(): void {
         $inst = $this->project($o = $this->member('owner@x.test'), $o);
         foreach ([['said' => 'short'], ['from_email' => 'nope'], ['site' => 'not a host'], ['shots' => [['name' => 'x.png', 'data' => base64_encode('<?php echo 1;')]]]] as $bad) {

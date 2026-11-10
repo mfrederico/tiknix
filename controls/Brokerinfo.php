@@ -354,14 +354,26 @@ class Brokerinfo extends Control {
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { Flight::jsonError('POST only.', 405); return; }
         $inst = Bean::load('instance', $iid);
         if (!$inst->id) { Flight::jsonError('That project is gone.', 404); return; }
+        $d = $this->jsonBody();
         try {
-            $id = SiteChanges::receive($inst, $this->jsonBody());
+            $id = SiteChanges::receive($inst, $d);
         } catch (\InvalidArgumentException $e) {
             Flight::jsonError($e->getMessage(), 400); return;
         } catch (\RuntimeException $e) {
             Flight::jsonError($e->getMessage(), 409); return;
         }
-        Flight::json(['ok' => true, 'ref' => $id]);
+        // the site's ROOT asked for it to go straight to the Builder: done when the builder is ready, else said why not
+        $b = !empty($d['build']) ? SiteChanges::buildNow($inst, $id) : ['built' => false, 'why' => ''];
+        Flight::json(['ok' => true, 'ref' => $id, 'built' => $b['built'], 'why' => $b['why']]);
+    }
+
+    /** GET /brokerinfo/canbuild — is this project's builder ready (for its site's ROOT, sending straight to build)? */
+    public function canbuild($params = []) {
+        [$key, $iid] = $this->requireBroker();
+        if (!$key) return;
+        $inst = Bean::load('instance', $iid);
+        if (!$inst->id) { Flight::jsonError('That project is gone.', 404); return; }
+        Flight::json(['ok' => true] + SiteChanges::canBuild($inst));
     }
 
     /** GET /brokerinfo/changes?site=&refs=1,2[&detail=1] — where the site's requests are, for its asker's pages. */

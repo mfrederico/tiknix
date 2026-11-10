@@ -54,8 +54,11 @@ class Changerequests extends Control {
         if (!$cr = $this->request()) return;
         $inst = Bean::load('instance', (int) $cr->instanceId);
         $by = (int) $cr->decidedRef > 0 ? Bean::load('member', (int) $cr->decidedRef) : null;
+        // what the Builder said about it in the project's Ask, to answer and carry on from here
+        try { $dialog = SiteChanges::dialog($cr); $dialogProblem = ''; }
+        catch (\Throwable $e) { $dialog = []; $dialogProblem = $e->getMessage(); $this->logger->error('Change request: the Builder dialog could not be read', ['id' => (int) $cr->id, 'error' => $e->getMessage()]); }
         $this->render('changerequests/view', ['title' => 'Change request', 'cr' => $cr, 'project' => $inst->id ? (string) ($inst->displayName ?: $inst->slug) : '(gone)',
-            'decidedBy' => $by && $by->id ? $by->displayName('someone') : '']);
+            'decidedBy' => $by && $by->id ? $by->displayName('someone') : '', 'dialog' => $dialog, 'dialogProblem' => $dialogProblem, 'me' => (int) $this->member->id]);
     }
 
     public function build($params = []) {
@@ -82,6 +85,45 @@ class Changerequests extends Control {
             $this->flash('error', 'It was not put into Ask: ' . $e->getMessage());
         }
         Flight::redirect('/changerequests/view?id=' . (int) $cr->id);
+    }
+
+    /** POST {text}: answer the Builder's question about this request; planning goes on with it. */
+    public function answer($params = []) {
+        if (!$cr = $this->request(true)) return;
+        try {
+            SiteChanges::answerBuilder($cr, (int) $this->member->id, (string) $this->getParam('text', ''));
+            $this->flash('success', 'Answered. The Builder plans it with your answer.');
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
+            $this->flash('error', $e->getMessage());
+        }
+        Flight::redirect('/changerequests/view?id=' . (int) $cr->id . '#builder');
+    }
+
+    /** POST {text}: carry on with the Builder about this request (a new Ask message, read with what came before). */
+    public function followup($params = []) {
+        if (!$cr = $this->request(true)) return;
+        try {
+            SiteChanges::followUp($cr, (int) $this->member->id, (string) $this->getParam('text', ''));
+            $this->flash('success', 'Sent to the Builder. Its answer appears here.');
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
+            $this->flash('error', $e->getMessage());
+        }
+        Flight::redirect('/changerequests/view?id=' . (int) $cr->id . '#builder');
+    }
+
+    /** One of the request's attached files, fetched from the app, as a download. */
+    public function file($params = []) {
+        if (!$cr = $this->request()) return;
+        try { [$tmp, $name] = SiteChanges::fetchFile($cr, (int) $this->getParam('n', 0)); }
+        catch (\RuntimeException $e) { $this->flash('error', $e->getMessage()); Flight::redirect('/changerequests/view?id=' . (int) $cr->id); return; }
+        while (ob_get_level() > 0) ob_end_clean();
+        header('Content-Type: application/octet-stream');
+        header('X-Content-Type-Options: nosniff');
+        header('Content-Disposition: attachment; filename="' . preg_replace('/[^\x20-\x7e]|["\\\\]/', '_', $name) . '"');
+        header('Content-Length: ' . (string) filesize($tmp));
+        readfile($tmp);
+        @unlink($tmp);
+        exit;
     }
 
     public function decline($params = []) {

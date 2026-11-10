@@ -85,6 +85,29 @@ class ChangeAskTest extends ConceptsTestCase {
         }
     }
 
+    public function testAttachedFilesMustBeWhatTheirNamesSayAndWithinBounds(): void {
+        $dir = sys_get_temp_dir() . '/chgdocs-' . getmypid(); @mkdir($dir);
+        file_put_contents("$dir/rules.md", "# Pick list\n- sort by bin\n");
+        file_put_contents("$dir/sheet.csv", "sku,qty\nA1,3\n");
+        file_put_contents("$dir/fake.xlsx", "<?php echo 'not a spreadsheet';");
+        file_put_contents("$dir/run.sh", "#!/bin/sh\n");
+        $f = fn($n) => ['tmp' => "$dir/$n", 'name' => $n, 'size' => filesize("$dir/$n"), 'error' => UPLOAD_ERR_OK];
+        try {
+            $ok = ChangeAsk::checkDocs([$f('rules.md'), $f('sheet.csv')]);
+            $this->assertSame(['rules.md', 'sheet.csv'], array_column($ok, 'safe'));
+            foreach (['fake.xlsx' => 'not what its name says', 'run.sh' => 'attach pictures'] as $bad => $why) {
+                try { ChangeAsk::checkDocs([$f($bad)]); $this->fail("{$bad} was taken"); }
+                catch (\InvalidArgumentException $e) { $this->assertStringContainsString($why, $e->getMessage()); }
+            }
+            try { ChangeAsk::checkDocs(array_fill(0, ChangeAsk::MAX_DOCS + 1, $f('rules.md'))); $this->fail('too many were taken'); }
+            catch (\InvalidArgumentException $e) { $this->assertStringContainsString('At most', $e->getMessage()); }
+            // a note names its files by index, and only files that came
+            $this->assertSame([0], ChangeAsk::checkNotes([['page' => '/x', 'text' => 'Work like my sheet', 'files' => [0]]], 0, 1)[0]['files']);
+            $this->expectException(\InvalidArgumentException::class);
+            ChangeAsk::checkNotes([['page' => '/x', 'text' => 'Work like my sheet', 'files' => [1]]], 0, 1);
+        } finally { array_map('unlink', glob("$dir/*")); @rmdir($dir); }
+    }
+
     public function testWhatIsNotARequestIsRefusedBeforeAnythingIsKept(): void {
         Feature::$platform = false;
         $m = $this->member(1);

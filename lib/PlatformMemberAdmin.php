@@ -71,8 +71,8 @@ class PlatformMemberAdmin implements MemberAdminExtension {
                 'by'  => Bean::load('member', (int) $a->byRef)->displayName('member #' . (int) $a->byRef),
             ], $member->box()->audits('free_projects', 10)),
             'panel'        => 'platform/member_billing',
-            // Which projects those are: owned and shared, each linked to its report (the members list's "1 / 1").
-            'card'         => 'platform/member_projects',
+            // Which projects those are, at the top of the page: owned and shared, each linked to its report (the members list's "1 / 1").
+            'top'          => 'platform/member_projects',
         ];
     }
 

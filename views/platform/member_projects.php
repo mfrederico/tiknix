@@ -1,12 +1,12 @@
 <?php
 /**
  * The platform's card on the member edit screen: the projects this member owns and those shared with them, each
- * linked to its report. Rendered by the runtime's admin/edit_member through the 'card' name
+ * linked to its report. Rendered by the runtime's admin/edit_member through the 'top' name
  * PlatformMemberAdmin::editView() returns. Vars: $editMember (the edit screen's own).
  */
 $__projects = \app\PlatformMemberAdmin::projects((int) $editMember->id);
 ?>
-<div class="mt-4">
+
 <?= \app\Ui::table([
     'title' => 'Projects', 'count' => 'project', 'rows' => $__projects,
     'columns' => [
@@ -22,4 +22,4 @@ $__projects = \app\PlatformMemberAdmin::projects((int) $editMember->id);
     ],
     'empty' => ['title' => 'No projects', 'text' => 'They have not made a project, and none is shared with them.'],
 ]) ?>
-</div>
+

@@ -18,6 +18,7 @@ $__projects = \app\PlatformMemberAdmin::projects((int) $editMember->id);
         ['label' => 'Counts', 'value' => fn($p) => $p['counts'] ? 'Yes' : 'No', 'as' => 'badge',
          'tones' => ['Yes' => 'success', 'No' => 'secondary']],
         ['label' => 'Status', 'value' => fn($p) => (string) ($p['inst']->status ?: '—'), 'quiet' => true],
+        ['label' => 'Last modified', 'value' => fn($p) => $p['last'], 'as' => 'datetime'],
         ['label' => 'Made', 'value' => fn($p) => (string) $p['inst']->createdAt, 'as' => 'date', 'quiet' => true],
     ],
     'empty' => ['title' => 'No projects', 'text' => 'They have not made a project, and none is shared with them.'],

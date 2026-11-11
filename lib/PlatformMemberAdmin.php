@@ -79,19 +79,54 @@ class PlatformMemberAdmin implements MemberAdminExtension {
     /**
      * The member's projects for the edit screen: owned ones first, then those shared with them through a team, none
      * deleted. 'counts' says whether it is one of the projects their allowance counts (ProjectQuota::countedProjects,
-     * the same rule as the members list's "1 / 1" and the invoice).
+     * the same rule as the members list's "1 / 1" and the invoice); 'last' is when THIS member last asked its Builder for
+     * something — the prompt log (PromptLog::lastAskedBy) or the project's own board (lastOnBoard), whichever is later:
+     * their own change, not an automatic fix's, a GitHub pull's or a teammate's — '' when never.
      *
-     * @return list<array{inst: object, role: string, counts: bool}>
+     * @return list<array{inst: object, role: string, counts: bool, last: string}>
      */
     public static function projects(int $memberId): array {
         $counted = array_column(ProjectQuota::countedProjects($memberId), 'id');
         $owned = array_flip(MemberProjects::ownedIds($memberId));
+        $insts = MemberProjects::accessible($memberId);
+        $last = PromptLog::lastAskedBy($memberId, $insts);
+        foreach ($insts as $inst) {
+            $board = self::lastOnBoard($inst, $memberId);
+            if ($board !== '' && $board > ($last[(int) $inst->id] ?? '')) $last[(int) $inst->id] = $board;
+        }
         $out = [];
-        foreach (MemberProjects::accessible($memberId) as $inst) {
+        foreach ($insts as $inst) {
             $out[] = ['inst' => $inst, 'role' => isset($owned[(int) $inst->id]) ? 'owner' : 'shared',
-                      'counts' => in_array((int) $inst->id, $counted, true)];
+                      'counts' => in_array((int) $inst->id, $counted, true), 'last' => $last[(int) $inst->id] ?? ''];
         }
         return $out;
+    }
+
+    /**
+     * The last thing this member did on a project's board (its data/workbench.db): an Ask message they sent, or a task
+     * made for them that no machine started (an automatic fix is source 'detected_error', a GitHub pull 'github'; a
+     * board from before the source column has only people's tasks). '' when nothing, or the project has no board.
+     * @throws \RuntimeException when the board is there and cannot be read
+     */
+    public static function lastOnBoard(object $inst, int $memberId): string {
+        $file = $inst->box()->workbenchDb();
+        if (!is_file($file)) return '';
+        try {
+            $pdo = new \PDO('sqlite:' . $file, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_TIMEOUT => 3]);
+            $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table'")->fetchAll(\PDO::FETCH_COLUMN);
+            $at = [];
+            if (in_array('askmessage', $tables, true)) {
+                $st = $pdo->prepare('SELECT MAX(created_at) FROM askmessage WHERE member_ref = ?'); $st->execute([$memberId]); $at[] = (string) $st->fetchColumn();
+            }
+            if (in_array('workbenchtask', $tables, true)) {
+                $cols = array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(\PDO::FETCH_ASSOC), 'name');
+                $st = $pdo->prepare('SELECT MAX(created_at) FROM workbenchtask WHERE member_id = ?' . (in_array('source', $cols, true) ? " AND COALESCE(source, '') = ''" : ''));
+                $st->execute([$memberId]); $at[] = (string) $st->fetchColumn();
+            }
+        } catch (\PDOException $e) {
+            throw new \RuntimeException("Could not read the board of project {$inst->slug} ({$file}): " . $e->getMessage(), 0, $e);
+        }
+        return $at ? max($at) : '';
     }
 
     public function deleting(int $memberId): void {

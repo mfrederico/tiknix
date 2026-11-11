@@ -236,6 +236,31 @@ class PromptLog {
         }, null);
     }
 
+    /**
+     * When this member last asked each project's Builder for something (an Ask message, a plan, a task, a terminal
+     * line) — the member's own last change to it, for the admin's member page. Only the time: what they typed stays
+     * theirs (see PRIVACY above). A row names its project by instance_id (newer rows) or "<slug>.<app>" (older ones).
+     *
+     * @param object[] $instances instance beans
+     * @return array<int,string> instance id => 'Y-m-d H:i:s'; a project they never asked anything of is absent
+     * @throws \RuntimeException when the log cannot be read
+     */
+    public static function lastAskedBy(int $memberId, array $instances): array {
+        if ($memberId <= 0 || !$instances) return [];
+        $r = self::withCore(function () use ($memberId, $instances) {
+            $out = [];
+            foreach ($instances as $inst) {
+                $at = (string) Bean::getCell('SELECT MAX(created_at) FROM promptlog WHERE member_id = ? AND (instance_id = ? OR instance_tag = ?)',
+                    [$memberId, (int) $inst->id, $inst->slug . '.' . ($inst->app ?: 'tiknix')]);
+                if ($at !== '') $out[(int) $inst->id] = $at;
+            }
+            return $out;
+        }, null);
+        // An unreadable log is not "never asked anything": say so rather than show every project as untouched.
+        if ($r === null) throw new \RuntimeException('PromptLog: could not read when member ' . $memberId . ' last asked their projects for something: ' . self::$lastError);
+        return $r;
+    }
+
     /** Per-source counts for the filter chips. */
     /** Counts per source, scoped the same way as the list they label. */
     public static function countsForMember(int $memberId, string $instanceTag = ''): array {

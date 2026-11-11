@@ -71,7 +71,27 @@ class PlatformMemberAdmin implements MemberAdminExtension {
                 'by'  => Bean::load('member', (int) $a->byRef)->displayName('member #' . (int) $a->byRef),
             ], $member->box()->audits('free_projects', 10)),
             'panel'        => 'platform/member_billing',
+            // Which projects those are: owned and shared, each linked to its report (the members list's "1 / 1").
+            'card'         => 'platform/member_projects',
         ];
+    }
+
+    /**
+     * The member's projects for the edit screen: owned ones first, then those shared with them through a team, none
+     * deleted. 'counts' says whether it is one of the projects their allowance counts (ProjectQuota::countedProjects,
+     * the same rule as the members list's "1 / 1" and the invoice).
+     *
+     * @return list<array{inst: object, role: string, counts: bool}>
+     */
+    public static function projects(int $memberId): array {
+        $counted = array_column(ProjectQuota::countedProjects($memberId), 'id');
+        $owned = array_flip(MemberProjects::ownedIds($memberId));
+        $out = [];
+        foreach (MemberProjects::accessible($memberId) as $inst) {
+            $out[] = ['inst' => $inst, 'role' => isset($owned[(int) $inst->id]) ? 'owner' : 'shared',
+                      'counts' => in_array((int) $inst->id, $counted, true)];
+        }
+        return $out;
     }
 
     public function deleting(int $memberId): void {

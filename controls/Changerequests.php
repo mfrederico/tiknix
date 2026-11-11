@@ -58,7 +58,8 @@ class Changerequests extends Control {
         try { $dialog = SiteChanges::dialog($cr); $dialogProblem = ''; }
         catch (\Throwable $e) { $dialog = []; $dialogProblem = $e->getMessage(); $this->logger->error('Change request: the Builder dialog could not be read', ['id' => (int) $cr->id, 'error' => $e->getMessage()]); }
         $this->render('changerequests/view', ['title' => 'Change request', 'cr' => $cr, 'project' => $inst->id ? (string) ($inst->displayName ?: $inst->slug) : '(gone)',
-            'decidedBy' => $by && $by->id ? $by->displayName('someone') : '', 'dialog' => $dialog, 'dialogProblem' => $dialogProblem, 'me' => (int) $this->member->id]);
+            'decidedBy' => $by && $by->id ? $by->displayName('someone') : '', 'dialog' => $dialog, 'dialogProblem' => $dialogProblem, 'me' => (int) $this->member->id,
+            'platform' => $inst->id && PlatformChanges::isPlatform($inst)]);   // a note on Tiknix itself: changed from its terminal
     }
 
     public function build($params = []) {

@@ -40,7 +40,7 @@ class ChangeAskTest extends ConceptsTestCase {
         return $m;
     }
 
-    public function testItIsAPerPersonGrantOnAnAppAndNeverOnThePlatform(): void {
+    public function testItIsAPerPersonGrantOnAnAppAndTheROOTsOnThePlatform(): void {
         Feature::$platform = false;
         $admin = $this->member(50); $member = $this->member(100, 'm@example.com'); $root = $this->member(1, 'r@example.com');
         $this->assertFalse(ChangeAsk::allowed($admin), 'an admin is not given it by their level');
@@ -52,9 +52,17 @@ class ChangeAskTest extends ConceptsTestCase {
         $this->assertTrue(ChangeAsk::allowed($member));
         $this->assertFalse(ChangeAsk::allowed(null));
 
+        // On the platform itself: its ROOT notes changes to Tiknix (answered here, PlatformChanges), nobody else does.
         Feature::$platform = true;
-        $this->assertFalse(ChangeAsk::allowed($root), 'there is no team to ask on the platform itself');
-        $this->assertFalse(ChangeAsk::allowed($member));
+        $local = ChangeAsk::$local;
+        try {
+            ChangeAsk::$local = fn() => [];
+            $this->assertTrue(ChangeAsk::allowed($root), 'the platform\'s ROOT notes changes to Tiknix');
+            $this->assertFalse(ChangeAsk::allowed($admin), 'an admin\'s grant is an app\'s, not the platform\'s');
+            $this->assertFalse(ChangeAsk::allowed($member));
+            ChangeAsk::$local = null;
+            $this->assertFalse(ChangeAsk::allowed($root), 'with nothing to answer the calls, not even ROOT');
+        } finally { ChangeAsk::$local = $local; }
     }
 
     public function testEachInstallIsOfferedOnlyTheGrantsThatMeanSomethingThere(): void {

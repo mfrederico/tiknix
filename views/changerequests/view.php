@@ -1,6 +1,6 @@
 <?php
 // ui: hand-made — the screenshots are a row of pictures
-/** @var object $cr changerequest  @var string $project  @var string $decidedBy  @var array $dialog SiteChanges::dialog  @var string $dialogProblem  @var int $me */
+/** @var object $cr changerequest  @var string $project  @var string $decidedBy  @var array $dialog SiteChanges::dialog  @var string $dialogProblem  @var int $me  @var bool $platform a note on Tiknix itself */
 $files = json_decode((string) ($cr->filesJson ?? '[]'), true) ?: [];   // kept on the app for the builder; opened through /changerequests/file
 $id = (int) $cr->id;
 $status = (string) $cr->status;
@@ -11,19 +11,22 @@ $page = (string) $cr->page;
 $pageUrl = $page !== '' ? 'https://' . $cr->site . (str_starts_with($page, '/') ? $page : '/' . $page) : '';
 $when = fn(string $at) => $at === '' ? '' : date('j M Y, g:i a', strtotime($at));
 $talk = (int) $cr->threadRef > 0 ? ['label' => 'Answer ' . $cr->fromName, 'url' => '/communications/thread/' . (int) $cr->threadRef, 'icon' => 'chat-left-text'] : null;
-$primary = $status === 'new'
+$primary = $status === 'new' && !$platform
     ? ['label' => 'Build it', 'post' => '/changerequests/build', 'fields' => ['id' => $id], 'icon' => 'hammer',
        'confirm' => 'Send this to the Builder to be planned and built? ' . $cr->fromName . ' is told it is being built.']
     : $talk;
 $more = [];
 if ($status === 'new' && $talk) $more[] = $talk;
-if ($status === 'new') $more[] = ['label' => 'Open in Ask', 'post' => '/changerequests/ask', 'fields' => ['id' => $id], 'icon' => 'chat-square-text',
+if ($status === 'new' && !$platform) $more[] = ['label' => 'Open in Ask', 'post' => '/changerequests/ask', 'fields' => ['id' => $id], 'icon' => 'chat-square-text',
                                   'confirm' => 'Put this into ' . $project . '\'s Ask? It answers there, or plans it for you to build. ' . $cr->fromName . ' is not told anything yet.'];
 if ($status !== 'done') $more[] = ['label' => 'Mark done', 'post' => '/changerequests/done', 'fields' => ['id' => $id], 'icon' => 'check2',
                                    'confirm' => 'Mark this done and tell ' . $cr->fromName . ' it is live?'];
 ?>
 <?= \app\Ui::page(['title' => mb_strimwidth((string) strtok((string) $cr->said, "\n"), 0, 80, '…'), 'eyebrow' => 'Change request · ' . $project,
                    'back' => ['label' => 'Change requests', 'url' => '/changerequests'], 'primary' => $primary, 'more' => $more]) ?>
+<?php if ($platform && !in_array($status, ['done', 'declined'], true)): ?>
+<?= \app\Ui::notice(['tone' => 'info', 'title' => 'A note on Tiknix itself.', 'text' => 'Tiknix is changed from its terminal, not by its Builder: there, scripts/change-requests.php lists this request with its notes, pictures and files. Mark it done when it is.']) ?>
+<?php endif; ?>
 <?php if ($status === 'building'): ?>
 <?= \app\Ui::notice(['tone' => 'info', 'title' => 'Being built.', 'text' => 'It is in ' . $project . '\'s Builder. When the build finishes it is marked done and ' . $cr->fromName . ' is told it is live.']) ?>
 <?php endif; ?>

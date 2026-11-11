@@ -126,6 +126,8 @@
 \app\Member::$builderPrefs = true;
 // The platform's grants (its sidecars, invitations) are offered here; an app's own (Ask for changes) are not.
 \app\Feature::$platform = true;
+// Notes on Tiknix itself (ROOT): they become change requests of the platform's own project, answered here, not through a broker.
+\app\ChangeAsk::$local = static fn(string $method, string $path, ?array $body): array => \app\PlatformChanges::call($method, $path, $body);
 // An agent's investigation of a support ticket waits on the ticket for a person (lib/SupportDraft.php).
 \app\Contact::$extension = new \app\SupportDraft();
 // tiknix.com's own Measurement ID: core's /connections is the hub for projects, so the plugin's page links to this one.

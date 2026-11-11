@@ -165,6 +165,30 @@ class SiteChangesTest extends ConceptsTestCase {
         catch (\InvalidArgumentException $e) { $this->assertStringContainsString('files[0]', $e->getMessage()); }
     }
 
+    public function testNotesOnTiknixItselfAreItsOwnProjectsQuietlyAndNeverBuiltByItsBuilder(): void {
+        $owner = $this->member('owner@x.test');
+        $core = $this->project($owner, $owner); $core->isDefault = 1; Bean::store($core);
+        $root = rtrim(\app\Paths::root(), '/');
+        $path = $root . '/data/changes/4/files/1-rules.md';
+        $r = \app\PlatformChanges::call('POST', '/brokerinfo/change', ['site' => 'tiknix.com', 'app_ref' => 4, 'from_name' => 'Owner', 'from_email' => 'owner@x.test',
+            'said' => 'The carousel arrows are off-centre', 'build' => true, 'files' => [['name' => 'rules.md', 'type' => 'text/plain', 'size' => 10, 'path' => $path]], 'notes' => [], 'shots' => []]);
+        $this->assertTrue($r['ok']);
+        $this->assertFalse($r['built'], 'asking to build it straight away is answered, not done');
+        $this->assertStringContainsString('terminal', $r['why']);
+        $this->assertSame([], $this->mailed, 'the platform\'s ROOT is not emailed about their own note');
+        $cr = Bean::load('changerequest', $r['ref']);
+        $this->assertSame((int) $core->id, (int) $cr->instanceId);
+        foreach (['build', 'ask'] as $fn) {
+            try { SiteChanges::$fn($cr, $owner); $this->fail("{$fn} was taken for Tiknix itself"); }
+            catch (\RuntimeException $e) { $this->assertStringContainsString('terminal', $e->getMessage()); }
+        }
+        $this->assertFalse(SiteChanges::canBuild($core)['ready']);
+        $this->assertTrue(SiteChanges::appPathOk($path, true), 'the platform keeps its notes\' files under its own root');
+        $this->assertFalse(SiteChanges::appPathOk($path), 'an app may not name a path of the platform');
+        $this->assertFalse(SiteChanges::appPathOk($root . '/conf/config.ini', true));
+        $this->assertSame('tiknix.com', \app\PlatformChanges::call('GET', '/brokerinfo/changes?site=tiknix.com&refs=4', null)['requests'][0]['ref'] === 4 ? 'tiknix.com' : 'missing');
+    }
+
     public function testWhatIsNotARequestIsRefusedBeforeAnythingIsKept(): void {
         $inst = $this->project($o = $this->member('owner@x.test'), $o);
         foreach ([['said' => 'short'], ['from_email' => 'nope'], ['site' => 'not a host'], ['shots' => [['name' => 'x.png', 'data' => base64_encode('<?php echo 1;')]]]] as $bad) {

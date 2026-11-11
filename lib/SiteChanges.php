@@ -70,7 +70,7 @@ final class SiteChanges {
         $cr->browser = mb_substr(trim((string) ($d['browser'] ?? '')), 0, 300);
         $cr->errorsJson = json_encode(array_slice(array_map(fn($e) => mb_substr((string) $e, 0, 600), (array) ($d['errors'] ?? [])), 0, 5), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $cr->shotsJson = '[]';
-        $files = self::checkFiles((array) ($d['files'] ?? []));
+        $files = self::checkFiles((array) ($d['files'] ?? []), PlatformChanges::isPlatform($inst));
         $checked = self::checkNotes((array) ($d['notes'] ?? []), count($shots), count($files));
         foreach ($checked as $ni => $n) foreach ($n['files'] as $fi) $files[$fi]['note'] = $ni;   // each file knows its note
         $cr->notesJson = json_encode($checked, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -107,7 +107,8 @@ final class SiteChanges {
         }
         Bean::store($cr);
 
-        self::tellTeam($people, 'New change request for ' . $project . ': ' . self::headline($said),
+        // the platform's ROOT noting their own platform (PlatformChanges) is not told about their own notes
+        if (!(PlatformChanges::isPlatform($inst) && !empty($d['quiet']))) self::tellTeam($people, 'New change request for ' . $project . ': ' . self::headline($said),
             '<p><strong>' . htmlspecialchars($name) . '</strong> (' . htmlspecialchars($cr->levelName ?: 'a member') . ' on ' . htmlspecialchars($site) . ') asked for a change:</p>'
             . '<blockquote>' . nl2br(htmlspecialchars($said)) . '</blockquote>'
             . (count($shots) ? '<p>With ' . count($shots) . ' screenshot' . (count($shots) === 1 ? '' : 's') . '.</p>' : '')
@@ -135,6 +136,7 @@ final class SiteChanges {
      * @return array{ready:bool,why:string}
      */
     public static function canBuild(object $inst): array {
+        if (PlatformChanges::isPlatform($inst)) return ['ready' => false, 'why' => PlatformChanges::NOT_BUILT];
         $r = Projectreport::freshReadiness($inst);
         if ($r === null) return ['ready' => false, 'why' => 'Tiknix has not heard from this project in the last half hour, so whether its builder is ready is not known.'];
         if (!$r['agent_ready']) return ['ready' => false, 'why' => 'this project has no builder agent ready' . ($r['agent_problem'] !== '' ? ' (' . $r['agent_problem'] . ')' : '') . '. Set one up on its AI agents page.'];
@@ -218,6 +220,7 @@ final class SiteChanges {
         if ((string) $cr->status !== 'new') throw new \RuntimeException('This request is ' . strtolower(self::LABELS[(string) $cr->status] ?? (string) $cr->status) . ' already.');
         $inst = Bean::load('instance', (int) $cr->instanceId);
         if (!$inst->id) throw new \RuntimeException('Its project is gone.');
+        if (PlatformChanges::isPlatform($inst)) throw new \RuntimeException(PlatformChanges::NOT_BUILT);
         $promptId = BuilderMail::queue($inst, $memberId, self::brief($cr), 'build');
         $cr->status = 'building'; self::track($cr, $promptId);
         self::decided($cr, $memberId);
@@ -235,6 +238,7 @@ final class SiteChanges {
         if (in_array((string) $cr->status, ['done', 'declined'], true)) throw new \RuntimeException('This request is ' . strtolower(self::LABELS[(string) $cr->status]) . ' already.');
         $inst = Bean::load('instance', (int) $cr->instanceId);
         if (!$inst->id) throw new \RuntimeException('Its project is gone.');
+        if (PlatformChanges::isPlatform($inst)) throw new \RuntimeException(PlatformChanges::NOT_BUILT);
         $promptId = BuilderMail::queue($inst, $memberId, self::brief($cr), 'auto');
         self::track($cr, $promptId);
         $cr->updatedAt = date('Y-m-d H:i:s');
@@ -528,29 +532,39 @@ final class SiteChanges {
      * The files the site kept for the builder (their bytes stay on the app): name, type, size, path on the app — under its
      * data/changes/, which is all /changerequests/file will ever read — and the note they belong to (set below).
      */
-    public static function checkFiles(array $files): array {
+    public static function checkFiles(array $files, bool $platform = false): array {
         if (count($files) > 6) throw new \InvalidArgumentException('files: at most 6.');
         $out = [];
         foreach (array_values($files) as $i => $f) {
             $path = (string) ($f['path'] ?? '');
-            if (!self::appPathOk($path)) throw new \InvalidArgumentException('files[' . $i . ']: not a file the site keeps for a request.');
+            if (!self::appPathOk($path, $platform)) throw new \InvalidArgumentException('files[' . $i . ']: not a file the site keeps for a request.');
             $out[] = ['name' => mb_substr(basename((string) ($f['name'] ?? 'file')), 0, 120), 'type' => mb_substr((string) ($f['type'] ?? ''), 0, 120),
                       'size' => max(0, (int) ($f['size'] ?? 0)), 'path' => $path, 'note' => null];
         }
         return $out;
     }
 
-    /** A path an app keeps a request's files at: /srv/app/[hosts/<host>/]data/changes/<id>/files/<n>-<name>. */
-    public static function appPathOk(string $path): bool {
-        return (bool) preg_match('#^/srv/app/(hosts/[a-z0-9.-]+/)?data/changes/\d+/files/\d+-[A-Za-z0-9._-]+$#', $path) && !str_contains($path, '..');
+    /**
+     * A path an app keeps a request's files at: /srv/app/[hosts/<host>/]data/changes/<id>/files/<n>-<name> — or, for the
+     * platform's own notes ($platform), the same under this install's root.
+     */
+    public static function appPathOk(string $path, bool $platform = false): bool {
+        $root = $platform ? '(' . preg_quote(rtrim(Paths::root(), '/'), '#') . '/)' : '/srv/app/(hosts/[a-z0-9.-]+/)?';
+        return (bool) preg_match('#^' . $root . 'data/changes/\d+/files/\d+-[A-Za-z0-9._-]+$#', $path) && !str_contains($path, '..');
     }
 
     /** One attached file, fetched from the app's container into a temporary file: [path, name]. @throws \RuntimeException */
     public static function fetchFile(object $cr, int $n): array {
         $f = (json_decode((string) ($cr->filesJson ?? '[]'), true) ?: [])[$n - 1] ?? null;
-        if (!is_array($f) || !self::appPathOk((string) $f['path'])) throw new \RuntimeException('No such file on this request.');
         $inst = Bean::load('instance', (int) $cr->instanceId);
         if (!$inst->id) throw new \RuntimeException('Its project is gone.');
+        $platform = PlatformChanges::isPlatform($inst);
+        if (!is_array($f) || !self::appPathOk((string) $f['path'], $platform)) throw new \RuntimeException('No such file on this request.');
+        if ($platform) {   // the platform's own notes: the file is on this machine
+            $tmp = tempnam(sys_get_temp_dir(), 'crf');
+            if (!is_file((string) $f['path']) || !copy((string) $f['path'], $tmp)) { @unlink($tmp); throw new \RuntimeException('The file is no longer here: ' . $f['path']); }
+            return [$tmp, (string) $f['name']];
+        }
         $tmp = tempnam(sys_get_temp_dir(), 'crf');
         [$code, $err] = TenantHost::ssh($inst, 'app', 'cat ' . escapeshellarg((string) $f['path']), null, 60, null, $tmp);
         if ($code !== 0) { @unlink($tmp); throw new \RuntimeException('The file could not be fetched from the app: ' . trim($err)); }

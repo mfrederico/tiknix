@@ -16,7 +16,7 @@ $primary = $status === 'new' && !$platform
        'confirm' => 'Send this to the Builder to be planned and built? ' . $cr->fromName . ' is told it is being built.']
     : $talk;
 $more = [];
-if ($status === 'new' && $talk) $more[] = $talk;
+if ($status === 'new' && !$platform && $talk) $more[] = $talk;   // otherwise it is the primary already
 if ($status === 'new' && !$platform) $more[] = ['label' => 'Open in Ask', 'post' => '/changerequests/ask', 'fields' => ['id' => $id], 'icon' => 'chat-square-text',
                                   'confirm' => 'Put this into ' . $project . '\'s Ask? It answers there, or plans it for you to build. ' . $cr->fromName . ' is not told anything yet.'];
 if ($status !== 'done') $more[] = ['label' => 'Mark done', 'post' => '/changerequests/done', 'fields' => ['id' => $id], 'icon' => 'check2',

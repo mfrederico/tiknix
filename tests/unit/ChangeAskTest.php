@@ -116,6 +116,27 @@ class ChangeAskTest extends ConceptsTestCase {
         } finally { array_map('unlink', glob("$dir/*")); @rmdir($dir); }
     }
 
+    public function testWatchingAsksOnlyAboutThePersonsOwnRequests(): void {
+        $me = $this->member(1); $other = $this->member(100, 'o@example.com');
+        $mk = function (object $m, int $ref) { $r = Bean::dispense('changeask'); $r->memberId = (int) $m->id; $r->said = 'Make it green'; $r->page = '/x'; $r->site = 'example.com'; $r->coreRef = $ref; Bean::store($r); return (int) $r->id; };
+        $mine = $mk($me, 7); $theirs = $mk($other, 8); $unsent = $mk($me, 0);
+        $local = ChangeAsk::$local; $asked = null; $base = \Flight::get('app.baseurl');
+        try {
+            \Flight::set('app.baseurl', 'https://example.com');
+            ChangeAsk::$local = function ($method, $path) use (&$asked) {
+                parse_str((string) parse_url($path, PHP_URL_QUERY), $q); $asked = $q['refs'];
+                return ['requests' => array_map(fn($r) => ['ref' => (int) $r, 'status' => 'done'], explode(',', $q['refs']))];
+            };
+            $this->assertSame([['id' => $mine, 'status' => 'done', 'label' => 'Done']], ChangeAsk::live($me, [$mine, $theirs, $unsent, -1]));
+            $this->assertSame((string) $mine, $asked, 'another person\'s request, and one never sent, are not asked about');
+            $asked = null;
+            $this->assertSame([], ChangeAsk::live($me, [$theirs]));
+            $this->assertNull($asked, 'nothing of theirs: Tiknix is not asked at all');
+            $this->expectException(\InvalidArgumentException::class);
+            ChangeAsk::live($me, range(1, 21));
+        } finally { ChangeAsk::$local = $local; \Flight::set('app.baseurl', $base); }
+    }
+
     public function testWhatIsNotARequestIsRefusedBeforeAnythingIsKept(): void {
         Feature::$platform = false;
         $m = $this->member(1);

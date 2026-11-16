@@ -23,7 +23,8 @@
           <?php if (!empty($__rep['agent_ready'])): ?>
             <span class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle flex-none" title="The AI this project builds with"><i class="bi bi-cpu me-1"></i>AI: <?= htmlspecialchars(mb_strimwidth($__aiName, 0, 28, '…')) ?><?= $__yours ? ' (yours)' : '' ?> ✓</span>
           <?php else: ?>
-            <a href="/yourai" class="badge text-bg-danger text-decoration-none flex-none" title="<?= htmlspecialchars((string) ($__rep['agent_problem'] ?? '')) ?>"><i class="bi bi-cpu me-1"></i>No AI connected — Connect</a>
+            <?php /* THIS project's AI agents page, signed in (Sign in with Claude, or any provider's key) — not Your AI, which only takes a key for every project. */ ?>
+            <a href="/projects/open?id=<?= (int) $__proj->id ?>&amp;to=<?= rawurlencode('/agents?builder=' . (int) $__proj->id) ?>" target="_blank" rel="noopener" class="btn btn-danger btn-sm flex-none text-nowrap" title="No AI connected: <?= htmlspecialchars((string) ($__rep['agent_problem'] ?? '')) ?>"><i class="bi bi-cpu"></i><span class="ui-pb-label ms-1">Connect your AI</span></a>
           <?php endif; ?>
         <?php endif; ?>
         <nav class="ui-pb-actions" aria-label="Project actions">

@@ -95,8 +95,9 @@ class Handoff extends Control {
         try { $member = SignInLink::createAccount((string) $h->email); }
         catch (\InvalidArgumentException $e) { $this->flash('error', $e->getMessage()); Flight::redirect($back); return; }
         $_SESSION['handoff_token'] = $token;
-        $next = SignInLink::startSession($member, '/yourai?next=' . urlencode($back));
-        $this->flash('success', 'Your account is ready. Next: connect your AI, then we build ' . $h->name . '.');
+        // Back to the plan, not to Your AI: the AI is connected on the plan's page once the project exists (Sign in with Claude on its agents page, or a key).
+        $next = SignInLink::startSession($member, $back);
+        $this->flash('success', 'Your account is ready. Start ' . $h->name . ', then connect your AI.');
         Flight::redirect($next);
     }
 

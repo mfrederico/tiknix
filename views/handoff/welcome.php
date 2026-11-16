@@ -15,11 +15,11 @@ if ($known) {
         'primary' => ['label' => 'Create my account and build', 'post' => '/handoff/join', 'fields' => ['token' => $token], 'icon' => 'rocket-takeoff'],
         'more' => [['label' => 'I already have a Tiknix account', 'url' => $login]]]);
 } else {
-    // No proven address: confirm it here. The emailed link makes the account (no password) and carries on to the AI, then the build.
+    // No proven address: confirm it here. The emailed link makes the account (no password) and comes back to this plan, where the AI is connected once the project exists.
     echo \app\Ui::page(['title' => 'Your project is ready to build', 'lead' => "Confirm your email and we make your free account, then start on {$name}. No password needed.",
         'more' => [['label' => 'I already have a Tiknix account', 'url' => $login]]]);
     echo \app\Ui::form(['action' => '/signin/join', 'submit' => 'Email me a link to create my account', 'values' => ['email' => $email],
-        'hidden' => ['to' => '/yourai?next=' . rawurlencode($back), 'back' => $back],
+        'hidden' => ['to' => $back, 'back' => $back],
         'fields' => [['name' => 'email', 'label' => 'Your email', 'type' => 'email', 'required' => true, 'autocomplete' => 'email', 'help' => 'One click on the link confirms it and makes your account.']]]);
 }
 echo \app\Ui::notice(['tone' => 'info', 'title' => 'Tiknix is a harness utility.', 'text' => 'You bring the AI that builds (an API key or your Claude subscription). Right after your account, we show you where to connect it.']);

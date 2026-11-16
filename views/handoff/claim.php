@@ -46,8 +46,11 @@ $h = $handoff;
         <li data-step="agent"><span class="hs-ic"></span> Connect your AI agent
           <div id="handoff-agent" class="hs-detail d-none">
             <p class="mb-2 small">Tiknix is a harness utility: your project builds with the AI you bring. Connect it &mdash; about a minute &mdash; and Phase 1 starts as soon as it&rsquo;s connected. Nothing is planned or built until then.</p>
-            <a class="btn btn-sm btn-primary" href="/yourai" target="_blank" rel="noopener">Connect your AI</a>
-            <a class="btn btn-sm btn-link" href="/projects/open?to=<?= rawurlencode('/agents') ?>" target="_blank" rel="noopener">or sign in with Claude</a>
+            <?php /* THIS project's AI agents page (?id= selects it; the current project may be another), signed in: Sign in with Claude there.
+                     ?builder= is that page's own "came from the Builder" marker. An API key works too, on Your AI (shared with every project). */ ?>
+            <?php $__pid = (int) $h->instanceRef; ?>
+            <a class="btn btn-sm btn-primary" href="/projects/open?id=<?= $__pid ?>&amp;to=<?= rawurlencode('/agents?builder=' . $__pid) ?>" target="_blank" rel="noopener"><i class="bi bi-box-arrow-in-right me-1"></i>Sign in with Claude</a>
+            <a class="btn btn-sm btn-link" href="/yourai" target="_blank" rel="noopener">or paste an API key instead</a>
             <span class="small text-body-secondary ms-2" id="handoff-agent-wait">Waiting for the sign-in&hellip;</span>
           </div>
         </li>

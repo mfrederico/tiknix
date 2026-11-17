@@ -33,7 +33,8 @@ fi
 apt-get install -yq --no-install-recommends \
   php$PHPV-fpm php$PHPV-cli php$PHPV-sqlite3 php$PHPV-mbstring php$PHPV-intl php$PHPV-zip \
   php$PHPV-gd php$PHPV-imagick php$PHPV-curl php$PHPV-xml php$PHPV-apcu php$PHPV-mysql php$PHPV-redis \
-  nginx git unzip curl ca-certificates openssh-server tmux valkey-server >/dev/null
+  nginx git unzip curl ca-certificates openssh-server tmux valkey-server sqlite3 >/dev/null
+# sqlite3: every app's database is SQLite; its backups (.backup) and a person's look inside need the command
 # tmux: the app's /claude page runs `claude setup-token` in a tmux session (AgentLogin)
 # valkey + php-redis: the query cache's version store ([cache] version_store = valkey), shared by
 # php-fpm, cron and pipelines — with apcu a pipeline's write reached the web only after the TTL

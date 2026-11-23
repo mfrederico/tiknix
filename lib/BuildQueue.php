@@ -76,12 +76,13 @@ class BuildQueue {
         $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY]);
         if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn()) return '';
         $ids = [];
+        $cols = self::columns($pdo);
         // a row that says "building" with no build behind it is not one (as building() has it)
-        foreach ($pdo->query("SELECT id FROM workbenchtask WHERE plan_status = 'building' ORDER BY id")->fetchAll(\PDO::FETCH_COLUMN) as $id) {
+        if (isset($cols['plan_status'])) foreach ($pdo->query("SELECT id FROM workbenchtask WHERE plan_status = 'building' ORDER BY id")->fetchAll(\PDO::FETCH_COLUMN) as $id) {
             if (PlanOrchestrator::running((int) $id, $slug)) $ids[] = (int) $id;
         }
         $n = count($ids);
-        if (in_array('queue_pos', array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(\PDO::FETCH_ASSOC), 'name'), true)) {
+        if (isset($cols['queue_pos'])) {
             foreach ($pdo->query('SELECT id FROM workbenchtask WHERE queue_pos > 0 ORDER BY queue_pos, id')->fetchAll(\PDO::FETCH_COLUMN) as $id) $ids[] = (int) $id;
         }
         if (!$ids) return '';
@@ -99,7 +100,9 @@ class BuildQueue {
         if (!is_file($db)) return '';
         $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY]);
         if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn()) return '';
-        $q = $pdo->prepare("SELECT t.id, t.title, t.status, t.related_files, t.adopts, t.error_message, p.id AS plan_id, p.title AS plan_title
+        $cols = self::columns($pdo);
+        if (!isset($cols['parent_task_id'], $cols['completed_at'])) return '';   // no task ever belonged to a plan, or ever finished
+        $q = $pdo->prepare("SELECT t.id, t.title, t.status, t.related_files, " . self::col($cols, 'adopts', 't') . ", " . self::col($cols, 'error_message', 't') . ", p.id AS plan_id, p.title AS plan_title
                             FROM workbenchtask t JOIN workbenchtask p ON p.id = t.parent_task_id
                             WHERE t.status IN ('merged', 'resolved', 'completed')
                               AND p.id IN (SELECT parent_task_id FROM workbenchtask WHERE completed_at >= ?)   -- the whole of a plan that was still building
@@ -125,9 +128,11 @@ class BuildQueue {
         $db = rtrim($dir, '/') . '/data/workbench.db';
         if (!is_file($db) || $planId <= 0) return '';
         $pdo = new \PDO('sqlite:' . $db, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY]);
+        $cols = self::columns($pdo);
+        if (!isset($cols['parent_task_id'])) return '';   // no task ever belonged to a plan
         $p = $pdo->prepare('SELECT title FROM workbenchtask WHERE id = ? AND parent_task_id IS NULL'); $p->execute([$planId]);
         if (($title = $p->fetchColumn()) === false) return '';
-        $q = $pdo->prepare("SELECT title, status, related_files, adopts, error_message FROM workbenchtask WHERE parent_task_id = ? ORDER BY id"); $q->execute([$planId]);
+        $q = $pdo->prepare("SELECT title, status, related_files, " . self::col($cols, 'adopts') . ", " . self::col($cols, 'error_message') . " FROM workbenchtask WHERE parent_task_id = ? ORDER BY id"); $q->execute([$planId]);
         $out = ["### #{$planId} " . trim((string) $title)];
         foreach ($q->fetchAll(\PDO::FETCH_ASSOC) as $t) {
             $files  = array_values(array_filter(array_map('strval', (array) (json_decode((string) $t['related_files'], true) ?: []))));
@@ -137,6 +142,23 @@ class BuildQueue {
                    . ($adopts ? "\n  - plugins adopted: " . implode(', ', $adopts) : '');
         }
         return implode("\n", $out);
+    }
+
+    /**
+     * The board's columns. The board is RedBean's, in fluid mode: a column exists only once some row
+     * was stored with a value in it, so an older board (one planned before plans had tasks, a build
+     * queue or adopted plugins) lacks them. A missing column means no row ever held that value,
+     * which these readers take as exactly that, not as a fault; anything else still throws.
+     *
+     * @return array<string, true>
+     */
+    private static function columns(\PDO $pdo): array {
+        return array_fill_keys(array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(\PDO::FETCH_ASSOC), 'name'), true);
+    }
+
+    /** A column to select, or NULL under its name when the board never had it (see columns()). */
+    private static function col(array $cols, string $name, string $alias = ''): string {
+        return isset($cols[$name]) ? ($alias !== '' ? "{$alias}.{$name}" : $name) : "NULL AS {$name}";
     }
 
     /** The queue, next first. */

@@ -35,7 +35,9 @@ class BoardDigest {
         if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn()) return $out;
         $cols = array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(), 'name');
         $col = fn(string $c) => in_array($c, $cols, true) ? $c : "'' AS {$c}";
-        $roots = $pdo->query('SELECT id, title, status, plan_status, ' . $col('source') . ', ' . $col('plan_checkpoint') . ' FROM workbenchtask WHERE parent_task_id IS NULL ORDER BY id DESC LIMIT 10')->fetchAll();
+        // A board from before plans (RedBean made no parent_task_id: no task ever belonged to one) has no requests to name.
+        if (!in_array('parent_task_id', $cols, true)) return $out;
+        $roots = $pdo->query('SELECT id, title, status, ' . $col('plan_status') . ', ' . $col('source') . ', ' . $col('plan_checkpoint') . ' FROM workbenchtask WHERE parent_task_id IS NULL ORDER BY id DESC LIMIT 10')->fetchAll();
         foreach ($roots as $i => $r) {
             $found = (string) $r['source'] === 'detected_error';
             if ($found) { if (in_array((string) $r['status'], ['pending', 'failed'], true)) $out['fix'][(int) $r['id']] = (string) $r['title']; continue; }
@@ -72,7 +74,8 @@ class BoardDigest {
         if (!$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workbenchtask'")->fetchColumn()) return '';
         $cols = array_column($pdo->query('PRAGMA table_info(workbenchtask)')->fetchAll(), 'name');
         $col = fn(string $c) => in_array($c, $cols, true) ? $c : "'' AS {$c}";
-        $roots = array_reverse($pdo->query('SELECT id, title, status, plan_status, ' . $col('source') . ', ' . $col('plan_goal') . ', ' . $col('audit_status') . ', ' . $col('audit_failures') . ', '
+        if (!in_array('parent_task_id', $cols, true)) return '';   // a board from before plans: no requests to describe
+        $roots = array_reverse($pdo->query('SELECT id, title, status, ' . $col('plan_status') . ', ' . $col('source') . ', ' . $col('plan_goal') . ', ' . $col('audit_status') . ', ' . $col('audit_failures') . ', '
             . $col('progress_message') . ', ' . $col('error_message') . ', created_at FROM workbenchtask WHERE parent_task_id IS NULL ORDER BY id DESC LIMIT ' . max(1, $items))->fetchAll());
         if (!$roots) return '';
         $hasLog = (bool) $pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tasklog'")->fetchColumn();

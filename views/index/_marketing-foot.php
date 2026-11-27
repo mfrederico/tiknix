@@ -1,4 +1,5 @@
-<?php /* The marketing pages' footer (landing, stories). */ ?>
+<?php /* The marketing pages' footer (landing, stories). The phone and "Book a chat" are clicksimple.com's (_reach.php). */
+$__reach = require __DIR__ . '/_reach.php'; ?>
   <!-- FOOTER -->
   <footer class="foot">
     <a class="logo" href="/" style="gap:10px;">
@@ -7,6 +8,8 @@
       <span style="font-size:13px; color:var(--dim); margin-left:8px;">&copy; <?= date('Y') ?> ClickSimple LLC</span>
     </a>
     <div class="foot-links">
+      <a href="<?= $__reach['phone_href'] ?>"><?= $__reach['phone'] ?></a>
+      <a href="<?= $__reach['book'] ?>" rel="noopener">Book a chat</a>
       <a href="/about">Who we are</a>
       <a href="/newsaas">NewSaaS</a>
       <a href="/stories">Stories</a>

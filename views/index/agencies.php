@@ -25,7 +25,7 @@ $start = 'https://start.tiknix.com/start';
     <meta property="og:site_name" content="tiknix">
     <meta property="og:title" content="Build it once. Run it for every client.">
     <meta property="og:description" content="<?= htmlspecialchars($desc) ?>">
-    <meta property="og:url" content="https://tiknix.com/">
+    <meta property="og:url" content="https://tiknix.com/agencies">
     <meta property="og:image" content="https://tiknix.com/img/og-agencies.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -34,7 +34,7 @@ $start = 'https://start.tiknix.com/start';
     <meta name="twitter:title" content="Build it once. Run it for every client.">
     <meta name="twitter:description" content="<?= htmlspecialchars($desc) ?>">
     <meta name="twitter:image" content="https://tiknix.com/img/og-agencies.png">
-    <link rel="canonical" href="https://tiknix.com/">
+    <link rel="canonical" href="https://tiknix.com/agencies">
     <link href="/rt/vendor/fonts/playfair.css" rel="stylesheet">
     <?php include __DIR__ . '/_marketing-style.php'; ?>
     <style>
@@ -87,7 +87,7 @@ $start = 'https://start.tiknix.com/start';
 </head>
 <body>
 <div class="container">
-<?php include __DIR__ . '/_marketing-nav.php'; ?>
+<?php $navCta = ['Start free', $start]; include __DIR__ . '/_marketing-nav.php'; ?>
 
   <!-- HERO -->
   <header class="hero">

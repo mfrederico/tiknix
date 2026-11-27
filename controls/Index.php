@@ -28,10 +28,10 @@ class Index extends BaseControls\Control {
         // First-run setup takes precedence over the landing page.
         if (!Install::isInstalled()) { Flight::redirect('/install'); return; }
 
-        // The front door is Tiknix for agencies (owner's call, 2026-11-07): build bespoke software once and
-        // run it for every client. Served at "/" itself, not a redirect. The NewSaaS manifesto it replaced
-        // here keeps its own address, /newsaas, and this page links to it.
-        $this->render('index/agencies', [], false);
+        // The front door is the done-for-you offer (owner's call, 2026-11-27): "we build your business app in a
+        // week", $1,500 then $49 a month. It replaced "Tiknix for agencies" (2026-11-07), which keeps its own
+        // address, /agencies (controls/Agencies.php). Served at "/" itself, not a redirect.
+        $this->render('index/build', [], false);
     }
 
     /** The old marketing landing's address (2026-11-07 the agency front page replaced it). */
